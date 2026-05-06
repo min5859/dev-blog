@@ -46,10 +46,11 @@ Checklist:
 - [x] Add minimal static blog generator
 - [x] Add sample Linux newsletter output
 - [x] Add basic validation command
+- [x] Add local preview command (`npm run dev`)
 
 Exit criteria:
 
-- A developer can run one local command and generate a readable static blog page.
+- A developer can run one local command and preview a readable static blog page on localhost.
 - The project has a committed baseline.
 
 ### Phase 1 — Static Blog MVP
@@ -209,3 +210,25 @@ When resuming work:
 5. Make one small, verifiable step.
 6. Run the smallest meaningful validation command.
 7. Commit the result with a clear message.
+
+## Local MVP Usage
+
+The current MVP is local-only. It does not deploy to GitHub Pages or any external host yet.
+
+Run:
+
+```bash
+npm run dev
+```
+
+Open:
+
+```text
+http://localhost:4321
+```
+
+For another port:
+
+```bash
+PORT=8080 npm run dev
+```

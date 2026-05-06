@@ -20,3 +20,23 @@ Read the durable plan first:
 - Publish output as a shareable web/blog site.
 - Prefer subscription-based AI execution such as `claude -p` or OpenClaw workflows.
 - Keep the system topic-extensible from the start.
+
+## Local Preview
+
+This MVP is intended to be checked locally first. It does not deploy anywhere yet.
+
+```bash
+npm run dev
+```
+
+Then open:
+
+```text
+http://localhost:4321
+```
+
+Use a different port if needed:
+
+```bash
+PORT=8080 npm run dev
+```
