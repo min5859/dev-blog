@@ -1,4 +1,4 @@
-# AGENTS.md - Linux Development Newsletter Web App
+# AGENTS.md - Dev Blog
 
 ## Role
 
@@ -15,7 +15,7 @@ The primary user is a Linux kernel developer who wants to continuously monitor L
 
 ## Product Goal
 
-Build a periodically running AI-assisted newsletter/blog system that tracks Linux development topics, summarizes them clearly, and publishes them on the web in a shareable blog-like format.
+Build Dev Blog: a periodically running AI-assisted newsletter/blog system that tracks Linux development topics, summarizes them clearly, and publishes them on the web in a shareable blog-like format.
 
 The first supported topic is Linux development, but the architecture should be topic-extensible from the start so it can later cover areas such as Android and AI.
 
