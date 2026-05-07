@@ -18,7 +18,7 @@ This plan is scoped to three goals raised on 2026-05-07:
 
 ## Status
 
-- Current step: **Step 3 done; Step 4 not started**
+- Current step: **Step 4 done; Step 5 not started**
 - Last touched: 2026-05-07
 
 Update this block whenever a step starts, finishes, or stalls.
@@ -91,38 +91,39 @@ inlined for now to preserve the zero-dependency property).
 
 Typography:
 
-- [ ] Body font stack: `-apple-system, "SF Pro Text", "Inter", "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif`
-- [ ] Headings: `letter-spacing: -0.02em`, weight 700, slightly tighter line-height
-- [ ] Inline code stack: `ui-monospace, "JetBrains Mono", "SF Mono", monospace`
-- [ ] Body `line-height` 1.7 → 1.65
+- [x] Body font stack: `-apple-system, "SF Pro Text", "Inter", "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif`
+- [x] Headings: `letter-spacing: -0.02em`, weight 700, line-height 1.2
+- [x] Inline code stack: `ui-monospace, "JetBrains Mono", "SF Mono", monospace`
+- [x] Body `line-height` 1.7 → 1.65
 
 Color & surfaces:
 
-- [ ] Replace hero gradient with a left accent rail + meta strip
-- [ ] Light accent: `#1f6feb` (GitHub-tone blue)
-- [ ] Dark mode bg: `#0b0f17`, surface: `#111827`, border: `#1f2a3a`
-- [ ] Card border radius: 18px → 10px
+- [x] Replaced hero gradient with a left accent rail + meta strip (`.site-page-head`, `.article-header`)
+- [x] Light accent: `#1f6feb` (GitHub-tone blue)
+- [x] Dark mode bg: `#0b0f17`, surface: `#111827`, border: `#1f2a3a`
+- [x] Card border radius: 18px → 10px
 
 Layout:
 
-- [ ] Article body width: 820px → 720px
-- [ ] Article page: sticky left meta column (date / topic / reading time / source-kind summary)
-- [ ] Home hero replaced by a "Release status" table: mainline (latest RC/release), latest stable, longterm rows, EOL count. Data comes from kernel.org records in `data/normalized/linux/source-records-latest.json`.
-- [ ] Post card simplified: title + 1-line summary + tag chips (drop the eyebrow "주제 · X분" duplication)
+- [x] Article body width: 820px → 720px (within `.article`); shell uses CSS grid `220px / 1fr`
+- [x] Article page: sticky left meta column (`.article-meta` with date / topic / reading time / 출처 구성 / 신뢰도)
+- [x] Home hero replaced by `<section class="release-status">` table: mainline / stable / longterm / linux-next rows + EOL count. Data comes from `data/normalized/linux/source-records-latest.json` via optional `loadReleaseStatus()`.
+- [x] Post card simplified: title + 1-line summary + tag chips (dropped reading-time duplication on cards)
 
 Technical markup (post-processing in `build-site.mjs`):
 
-- [ ] Auto-wrap in `<code>`: kernel versions (`/v?\d+\.\d+(?:[.-][\w.-]+)?/`), subsystem slugs (`/\b(mm|net|fs|sched|drivers|arch|crypto|block)\//`), commit SHAs (`/\b[0-9a-f]{7,40}\b/`)
-- [ ] Source link `kind` chip rendered next to each source: release / patch / pull-request / discussion / mail-reply
+- [x] Auto-wrap kernel versions and subsystem slugs in `<code>` via `markupTechnical`. Lookbehind `(?<![\w.\-/])` and lookahead `(?![\w.])` prevent partial matches inside URLs or compound words. Commit SHAs deferred — too high a false-positive rate without context.
+- [x] Source link `kind` chip rendered next to each source through `sourceKindLabel`: 릴리스 / 패치 / 풀 리퀘스트 / 토론 / 응답.
 
 Footer & meta:
 
-- [ ] Footer line: `last build: YYYY-MM-DD HH:mm KST · source records: N · candidates: M`. Numbers come from `draftMetadata` and a new `lastBuildAt` field.
+- [x] Footer line: `last build YYYY. MM. DD. HH:mm KST · posts N`. Build stamp comes from `formatBuildStamp(buildStartedAt)` (Asia/Seoul timezone).
 
 Exit criteria:
 
 - `npm run dev` shows the redesigned site at `http://localhost:4321`.
 - Visual review confirms denser, engineering-tone layout on at least: home, archive, a topic page, an article page, the tags index.
+- Verified 2026-05-07 via `npm run build`: HTML now contains `.release-status` (mainline/stable/longterm/linux-next + EOL count), `.article-meta` sticky sidebar, `.source-kind` chips, `.build-meta` footer line, and `markupTechnical` correctly wraps versions like `7.1-rc2` and slugs like `sched/rt` while leaving URL fragments alone.
 
 ## Step 5 — Search index & metadata
 
