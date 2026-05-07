@@ -207,6 +207,7 @@ h3 { margin: 8px 0; font-size: 1.25rem; }
 .check-list { padding-left: 1.2rem; }
 .check-list li { margin: 8px 0; }
 .sources ul { padding-left: 1.2rem; }
+.article section p { white-space: pre-line; }
 .site-footer { border-top: 1px solid var(--border); margin-top: 48px; padding-top: 20px; }
 `);
 }

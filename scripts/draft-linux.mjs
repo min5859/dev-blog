@@ -8,6 +8,7 @@ const generatedDir = path.join(root, 'data', 'generated', topic);
 const generatedAt = new Date().toISOString();
 const runDate = process.env.NEWSLETTER_DATE || generatedAt.slice(0, 10);
 const postId = `${runDate}-linux-daily-briefing`;
+const STALE_REPLY_MS = 24 * 60 * 60 * 1000;
 
 const subsystemPatterns = new Map([
   ['가상화', [/\bkvm\b/, /\bxen\b/, /\bvirt\b/, /hypervisor/]],
@@ -18,6 +19,14 @@ const subsystemPatterns = new Map([
   ['보안', [/security/, /\bcve\b/, /selinux/, /apparmor/, /crypto/]],
   ['드라이버', [/\bdriver\b/, /drivers\//, /\bgpu\b/, /\bdrm\b/, /\busb\b/, /\bpci\b/, /\biommu\b/]],
   ['아키텍처', [/\barm64\b/, /\bx86\b/, /\briscv\b/, /\bpowerpc\b/, /\bloongarch\b/]],
+]);
+
+const regressionPattern = /(regression|oops|panic|crash|cve|\bbug\b|security|\bfix\b)/i;
+const monikerImpact = new Map([
+  ['mainline', '메인라인 추적 대상 환경'],
+  ['stable', '안정 커널 사용 환경'],
+  ['longterm', '장기 지원 커널 사용 환경'],
+  ['linux-next', '머지 큐 추적 대상'],
 ]);
 
 async function readJson(file) {
@@ -70,7 +79,7 @@ function scoreRecord(record) {
       score += 8;
       reasons.push('버전이 명시된 패치');
     }
-    if (/(regression|oops|panic|fix|bug|crash|security|cve)/i.test(record.title)) {
+    if (regressionPattern.test(record.title)) {
       score += 18;
       reasons.push('회귀/버그/보안 신호');
     }
@@ -95,78 +104,199 @@ function scoreRecord(record) {
   };
 }
 
+function stripPatchPrefix(title) {
+  return title
+    .replace(/^Re:\s*/i, '')
+    .replace(/^\[PATCH\b[^\]]*\]\s*/i, '')
+    .replace(/^\[GIT\s+PULL\b[^\]]*\]\s*/i, '')
+    .replace(/^\[RFC\b[^\]]*\]\s*/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function patchVersion(record) {
+  const match = record.title.match(/\[PATCH\s+v(\d+)/i);
+  return match ? Number(match[1]) : 1;
+}
+
+function patchSeriesKey(record) {
+  if (record.sourceId !== 'lore-lkml-new') return null;
+  const stripped = stripPatchPrefix(record.title).toLowerCase();
+  if (!stripped) return null;
+  const author = record.metadata?.author?.email || record.metadata?.author?.name || '';
+  return `${stripped}::${author}`;
+}
+
+function mergePatchSeries(records) {
+  const grouped = new Map();
+  const passthrough = [];
+  for (const record of records) {
+    const key = patchSeriesKey(record);
+    if (!key) {
+      passthrough.push(record);
+      continue;
+    }
+    const existing = grouped.get(key);
+    if (!existing || patchVersion(record) > patchVersion(existing)) {
+      grouped.set(key, record);
+    }
+  }
+  return [...passthrough, ...grouped.values()];
+}
+
+function isStaleReply(record, nowMs = Date.now()) {
+  if (record.sourceId !== 'lore-lkml-new') return false;
+  const isReply = record.kind === 'mail-reply' || record.title.toLowerCase().startsWith('re:');
+  if (!isReply) return false;
+  if (!record.observedDate) return true;
+  const observedMs = Date.parse(`${record.observedDate}T00:00:00Z`);
+  if (!Number.isFinite(observedMs)) return true;
+  return nowMs - observedMs > STALE_REPLY_MS;
+}
+
+function isRegressionSignal(record) {
+  return record.sourceId === 'lore-lkml-new' && regressionPattern.test(record.title);
+}
+
 function pickCandidates(records) {
-  const scored = records.map(scoreRecord).sort((a, b) => b.score - a.score || String(b.observedDate).localeCompare(String(a.observedDate)));
-  const official = scored.filter((record) => record.sourceId === 'kernel-org-releases').slice(0, 5);
-  const patches = scored.filter((record) => record.sourceId === 'lore-lkml-new' && record.kind === 'patch-discussion').slice(0, 8);
-  const signals = scored.filter((record) => record.sourceId === 'lore-lkml-new' && record.score >= 28 && !patches.some((patch) => patch.id === record.id)).slice(0, 5);
-  const byId = new Map([...official, ...patches, ...signals].map((record) => [record.id, record]));
+  const nowMs = Date.now();
+  const scored = records.map(scoreRecord);
+  const merged = mergePatchSeries(scored);
+  const fresh = merged.filter((record) => !isStaleReply(record, nowMs));
+  fresh.sort((a, b) => b.score - a.score || String(b.observedDate).localeCompare(String(a.observedDate)));
+
+  const official = fresh.filter((record) => record.sourceId === 'kernel-org-releases').slice(0, 5);
+  const regressions = fresh.filter(isRegressionSignal).slice(0, 5);
+  const regressionIds = new Set(regressions.map((record) => record.id));
+  const patches = fresh
+    .filter((record) => record.sourceId === 'lore-lkml-new' && record.kind === 'patch-discussion' && !regressionIds.has(record.id))
+    .slice(0, 8);
+  const signals = fresh
+    .filter((record) => record.sourceId === 'lore-lkml-new' && record.score >= 28)
+    .filter((record) => !regressionIds.has(record.id) && !patches.some((patch) => patch.id === record.id))
+    .slice(0, 5);
+
+  const byId = new Map([...official, ...regressions, ...patches, ...signals].map((record) => [record.id, record]));
   return [...byId.values()].sort((a, b) => b.score - a.score || String(b.observedDate).localeCompare(String(a.observedDate)));
 }
 
-function summarizeCandidate(record) {
-  if (record.sourceId === 'kernel-org-releases') {
-    const moniker = record.metadata?.moniker || 'release';
-    return `${record.title}: ${record.summary} 후속 분석에서는 changelog/diffview를 확인해 실제 영향 범위를 분리해야 합니다.`;
+function bucketBySubsystem(records) {
+  const buckets = new Map();
+  for (const record of records) {
+    const labels = record.matchedSubsystems?.length ? record.matchedSubsystems : ['미분류'];
+    for (const label of labels) {
+      if (!buckets.has(label)) buckets.set(label, []);
+      buckets.get(label).push(record);
+    }
   }
-  const author = record.metadata?.author?.name || record.metadata?.author?.email || '작성자 미상';
-  const subsystem = record.matchedSubsystems.length ? ` 관련 영역은 ${record.matchedSubsystems.join(', ')}입니다.` : '';
-  return `${record.title}: ${author}의 LKML 항목입니다.${subsystem} 점수 사유는 ${record.scoreReasons.join(', ')}입니다.`;
+  return [...buckets.entries()].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0], 'ko'));
 }
 
-function sectionBody(records, fallback) {
+function impactRelease(record) {
+  const moniker = record.metadata?.moniker || 'release';
+  const date = record.observedDate || '공개일 미상';
+  const eol = record.metadata?.isEol ? ' · EOL 라인' : '';
+  const impact = monikerImpact.get(moniker) || '대상 환경 확인 필요';
+  const verifyLink = record.links?.find((link) => link.kind === 'changelog')?.url
+    || record.links?.find((link) => link.kind === 'gitweb')?.url
+    || record.links?.find((link) => link.kind === 'patch.full')?.url
+    || record.url;
+  return [
+    `- ${stripPatchPrefix(record.title)}`,
+    `  · 무엇: ${moniker} 라인 릴리스, 공개일 ${date}${eol}`,
+    `  · 영향: ${impact}`,
+    `  · 확인할 것: ${verifyLink}`,
+  ].join('\n');
+}
+
+function impactLkml(record) {
+  const author = record.metadata?.author?.name || record.metadata?.author?.email || '작성자 미상';
+  const subsystems = record.matchedSubsystems?.length ? record.matchedSubsystems.join(', ') : '서브시스템 미분류';
+  const kindLabel = record.kind === 'pull-request' ? 'pull request'
+    : record.kind === 'patch-discussion' ? `패치 토론${patchVersion(record) > 1 ? ` (v${patchVersion(record)})` : ''}`
+    : record.kind === 'mail-reply' ? '응답 메일'
+    : 'LKML 토론';
+  return [
+    `- ${stripPatchPrefix(record.title)}`,
+    `  · 무엇: ${author}이 보낸 ${kindLabel}`,
+    `  · 영향: ${subsystems}`,
+    `  · 확인할 것: ${record.url}`,
+  ].join('\n');
+}
+
+function buildSection(records, fallback, formatter) {
   if (!records.length) return fallback;
-  return records.slice(0, 5).map((record) => `- ${summarizeCandidate(record)}`).join('\n');
+  return records.map(formatter).join('\n\n');
+}
+
+function buildPatchSection(records, fallback) {
+  if (!records.length) return fallback;
+  const buckets = bucketBySubsystem(records);
+  return buckets
+    .map(([label, items]) => `[${label}]\n${items.slice(0, 3).map(impactLkml).join('\n\n')}`)
+    .join('\n\n');
 }
 
 function toPostDraft(candidates, sourceData) {
   const releases = candidates.filter((record) => record.sourceId === 'kernel-org-releases');
-  const patches = candidates.filter((record) => record.sourceId === 'lore-lkml-new' && record.kind === 'patch-discussion');
-  const signals = candidates.filter((record) => record.sourceId === 'lore-lkml-new' && record.kind !== 'patch-discussion');
+  const regressions = candidates.filter(isRegressionSignal);
+  const regressionIds = new Set(regressions.map((record) => record.id));
+  const patches = candidates.filter((record) => record.sourceId === 'lore-lkml-new'
+    && record.kind === 'patch-discussion'
+    && !regressionIds.has(record.id));
+  const otherSignals = candidates.filter((record) => record.sourceId === 'lore-lkml-new'
+    && record.kind !== 'patch-discussion'
+    && !regressionIds.has(record.id));
   const top = candidates.slice(0, 5);
-  const latestStable = sourceData.records.find((record) => record.sourceId === 'kernel-org-releases' && record.metadata?.moniker === 'stable');
   const mainline = sourceData.records.find((record) => record.sourceId === 'kernel-org-releases' && record.metadata?.moniker === 'mainline');
+  const latestStable = sourceData.records.find((record) => record.sourceId === 'kernel-org-releases' && record.metadata?.moniker === 'stable');
 
   return {
     id: postId,
     topic,
     title: `${runDate} 커널 개발 브리핑 (초안)`,
     date: runDate,
-    summary: `kernel.org 릴리스 정보와 LKML 최신 토론 ${sourceData.recordCount}건을 수집해 뉴스레터 후보 ${candidates.length}건을 선별한 자동 생성 초안입니다.`,
+    summary: `kernel.org 릴리스 ${releases.length}건, 회귀·보안 신호 ${regressions.length}건, 패치 토론 ${patches.length}건, 추가 LKML 신호 ${otherSignals.length}건을 후보로 정리한 자동 생성 초안입니다.`,
     tags: ['리눅스', '커널', 'LKML', '릴리스', '초안'],
-    highlights: top.map((record) => `${record.title} — 점수 ${record.score}`),
+    highlights: top.map((record) => stripPatchPrefix(record.title)),
     sections: [
       {
-        heading: '릴리스/로드맵 신호',
-        body: sectionBody(releases, '이번 수집분에서 우선순위가 높은 공식 릴리스 신호가 없습니다.'),
+        heading: '릴리스/로드맵',
+        body: buildSection(releases, '이번 수집분에서 우선순위가 높은 공식 릴리스 신호가 없습니다.', impactRelease),
       },
       {
-        heading: '패치 동향',
-        body: sectionBody(patches, '이번 수집분에서 우선순위가 높은 패치 토론이 없습니다.'),
+        heading: '회귀·보안 신호',
+        body: buildSection(regressions, '이번 수집분에서 회귀·보안으로 분류된 항목이 없습니다.', impactLkml),
       },
       {
-        heading: '추가로 볼 LKML 신호',
-        body: sectionBody(signals, '이번 수집분에서 추가로 볼 LKML 신호가 없습니다.'),
+        heading: '주요 패치/토론',
+        body: buildPatchSection(patches, '이번 수집분에서 우선순위가 높은 패치 토론이 없습니다.'),
+      },
+      {
+        heading: '추가 LKML 신호',
+        body: buildSection(otherSignals.slice(0, 5), '이번 수집분에서 추가로 볼 LKML 신호가 없습니다.', impactLkml),
       },
     ],
     implications: [
       mainline ? `mainline 상태: ${mainline.title}. 다음 릴리스 후보 흐름과 merge-window 신호를 계속 추적해야 합니다.` : 'mainline 릴리스 정보를 확인하지 못했습니다.',
       latestStable ? `latest stable 후보: ${latestStable.title}. stable changelog 기반 영향도 분류가 다음 보강 지점입니다.` : 'stable 릴리스 정보를 확인하지 못했습니다.',
-      'LKML 항목은 아직 제목/메타데이터 기반 선별이므로, 본문 기반 AI 요약 단계에서 실제 영향도와 중복 토론을 재평가해야 합니다.',
+      regressions.length
+        ? `회귀·보안 신호 ${regressions.length}건이 분류되었습니다. 게시 전 원문 스레드 확인이 필요합니다.`
+        : '회귀·보안 신호가 비어 있다면 새로 들어온 패치 시리즈가 안정 단계임을 의미할 수 있습니다.',
     ],
     nextActions: [
-      'AI 요약 어댑터를 연결해 후보별 원문 의미를 문단 단위로 재작성합니다.',
-      'LKML 중복 스레드 병합과 서브시스템별 중요도 가중치를 개선합니다.',
-      '생성 초안을 사람이 검토한 뒤 게시용 글로 승격하는 흐름을 추가합니다.',
+      '상위 릴리스 후보의 changelog/diffview를 확인해 실제 변경 범위를 분류합니다.',
+      '회귀·보안 섹션의 원문 스레드를 우선 확인해 영향 범위와 백포트 필요성을 판단합니다.',
+      '서브시스템별 패치 그룹 중 자기 환경에 해당하는 항목만 추려 팀에 공유합니다.',
     ],
     confidence: {
       level: '초안',
-      note: '현재 초안은 메타데이터/제목 기반 자동 선별 결과입니다. 게시 전 원문 검토 또는 AI 본문 요약이 필요합니다.',
+      note: '메타데이터/제목 기반 자동 선별 결과입니다. 게시 전 원문 검토 또는 AI 본문 요약이 필요합니다.',
     },
     sources: candidates.slice(0, 12).map((record) => ({
-      title: record.title,
+      title: stripPatchPrefix(record.title),
       url: record.url,
-      note: `${record.source} · score ${record.score}`,
+      note: `${record.source} · ${record.kind}`,
     })),
     draftMetadata: {
       generatedAt,
@@ -174,6 +304,12 @@ function toPostDraft(candidates, sourceData) {
       candidateCount: candidates.length,
       generator: 'scripts/draft-linux.mjs',
       candidateIds: candidates.map((record) => record.id),
+      bucketCounts: {
+        releases: releases.length,
+        regressions: regressions.length,
+        patches: patches.length,
+        otherSignals: otherSignals.length,
+      },
     },
   };
 }
@@ -194,8 +330,9 @@ async function main() {
   const draftOutput = path.join(generatedDir, `${postId}.json`);
   const draftLatest = path.join(generatedDir, 'draft-latest.json');
 
-  await writeFile(candidateOutput, JSON.stringify({ topic, generatedAt, sourceRecordCount: sourceData.recordCount, candidateCount: candidates.length, candidates }, null, 2));
-  await writeFile(candidateLatest, JSON.stringify({ topic, generatedAt, sourceRecordCount: sourceData.recordCount, candidateCount: candidates.length, candidates }, null, 2));
+  const candidatePayload = { topic, generatedAt, sourceRecordCount: sourceData.recordCount, candidateCount: candidates.length, candidates };
+  await writeFile(candidateOutput, JSON.stringify(candidatePayload, null, 2));
+  await writeFile(candidateLatest, JSON.stringify(candidatePayload, null, 2));
   await writeFile(draftOutput, JSON.stringify(draft, null, 2));
   await writeFile(draftLatest, JSON.stringify(draft, null, 2));
 

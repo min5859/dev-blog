@@ -18,7 +18,7 @@ This plan is scoped to three goals raised on 2026-05-07:
 
 ## Status
 
-- Current step: **Step 1 done; Step 2 not started**
+- Current step: **Step 2 done; Step 3 not started**
 - Last touched: 2026-05-07
 
 Update this block whenever a step starts, finishes, or stalls.
@@ -50,17 +50,19 @@ Exit criteria:
 Goal: surface practical signal, suppress meta-info noise. Touches mainly
 `scripts/draft-linux.mjs`.
 
-- [ ] Remove "점수 사유는 ...입니다" from `summarizeCandidate` body output. Keep `score` and `scoreReasons` only in candidate JSON metadata.
-- [ ] Patch series merge: extract `[PATCH vN]` and `[PATCH vN M/K]`; group candidates by `(stripped_title, author)`; keep only the highest `v`.
-- [ ] Subsystem grouping: bucket candidates by `matchedSubsystems` and emit per-subsystem mini-sections (not a flat list).
-- [ ] Regression / security bucket: titles matching `/(regression|oops|panic|crash|cve|security)/i` go into a dedicated section, not blended into "패치 동향".
-- [ ] Stale guard: pure reply mails (`title.toLowerCase().startsWith('re:')` or kind `mail-reply`) older than 24h are dropped from body. Still kept in candidate metadata.
-- [ ] 3-line impact template per body item: 무엇이 바뀌나 / 누가 영향받나 / 어디를 봐야 하나. Filled from metadata when known, left blank when unknown (do not fabricate).
+- [x] Remove "점수 사유는 ...입니다" from `summarizeCandidate` body output. Keep `score` and `scoreReasons` only in candidate JSON metadata.
+- [x] Patch series merge: extract `[PATCH vN]` and `[PATCH vN M/K]`; group candidates by `(stripped_title, author)`; keep only the highest `v`. (Generalized `stripPatchPrefix` to also handle `[PATCH net-next ...]`, `[GIT PULL ...]`, `[RFC ...]`.)
+- [x] Subsystem grouping: bucket candidates by `matchedSubsystems` and emit per-subsystem mini-sections (not a flat list). Rendered as `[서브시스템]` block headers inside section body.
+- [x] Regression / security bucket: titles matching `/(regression|oops|panic|crash|cve|bug|security|fix)/i` go into a dedicated section, not blended into "패치 동향".
+- [x] Stale guard: pure reply mails (`kind === 'mail-reply'` or `title.startsWith('re:')`) older than 24h are dropped from candidates. Kept in source records.
+- [x] 3-line impact template per body item: 무엇이 바뀌나 / 누가 영향받나 / 어디를 봐야 하나. Filled from metadata; subsystem-unmatched items show "서브시스템 미분류" without fabrication.
+- [x] `scripts/build-site.mjs` — added `.article section p { white-space: pre-line }` so the multi-line bullets render correctly.
 
 Exit criteria:
 
 - `data/generated/linux/draft-latest.json` matches the new structure.
 - `assertPost` in `scripts/build-site.mjs` still passes against the new draft.
+- Verified 2026-05-07: collect → draft → rewrite → build pipeline runs end-to-end. Bucket counts on real data: releases 5, regressions 1, patches 13, otherSignals 0.
 
 ## Step 3 — Prompt redesign
 
