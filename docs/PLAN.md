@@ -94,8 +94,9 @@ Planned work:
 - [x] Add collector scripts that store raw snapshots under `data/raw/`.
 - [x] Add normalized source records under `data/normalized/`.
 - [x] Avoid brittle scraping where feeds or structured data are available.
-- [ ] Add lore.kernel.org patch/discussion collection.
+- [x] Add lore.kernel.org patch/discussion collection.
 - [ ] Add sample fixtures or documented artifact retention policy for CI/offline checks.
+- [ ] Add topic-specific filtering/scoring so LKML volume is reduced to newsletter-worthy records.
 
 Exit criteria:
 

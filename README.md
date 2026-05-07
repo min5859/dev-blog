@@ -6,7 +6,7 @@ The first topic is Linux kernel development. The architecture is intended to exp
 
 ## Current Status
 
-The static Korean blog MVP is working. Phase 2 source collection has started with a kernel.org release collector.
+The static Korean blog MVP is working. Phase 2 source collection has started with kernel.org release metadata and LKML Atom feed collection from lore.kernel.org.
 
 Read the durable plan first:
 
@@ -23,7 +23,7 @@ Read the durable plan first:
 
 ## Source Collection
 
-Collect Linux release metadata from kernel.org and normalize it into source records:
+Collect Linux release metadata from kernel.org plus recent LKML Atom feed entries from lore.kernel.org, then normalize them into source records:
 
 ```bash
 npm run collect:linux
