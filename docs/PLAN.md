@@ -96,7 +96,7 @@ Planned work:
 - [x] Avoid brittle scraping where feeds or structured data are available.
 - [x] Add lore.kernel.org patch/discussion collection.
 - [ ] Add sample fixtures or documented artifact retention policy for CI/offline checks.
-- [ ] Add topic-specific filtering/scoring so LKML volume is reduced to newsletter-worthy records.
+- [x] Add topic-specific filtering/scoring so LKML volume is reduced to newsletter-worthy records.
 
 Exit criteria:
 
@@ -107,14 +107,17 @@ Exit criteria:
 
 Goal: convert collected source records into newsletter drafts.
 
+Status: in progress
+
 Planned work:
 
-- Define prompt templates for daily Linux summaries.
-- Support subscription-based AI execution first:
+- [x] Generate metadata-based Korean draft posts from normalized source records.
+- [ ] Define prompt templates for daily Linux summaries.
+- [ ] Support subscription-based AI execution first:
   - `claude -p`
   - OpenClaw workflow invocation
-- Keep AI provider execution behind an adapter boundary.
-- Store generated drafts with source references and prompt metadata.
+- [ ] Keep AI provider execution behind an adapter boundary.
+- [x] Store generated drafts with source references and prompt metadata.
 
 Exit criteria:
 

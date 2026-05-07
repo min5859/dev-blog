@@ -34,7 +34,15 @@ Outputs are written under:
 - `data/raw/linux/`
 - `data/normalized/linux/`
 
-These runtime outputs are ignored by git because they are reproducible and change over time.
+Generate a Korean newsletter draft from the latest normalized source records:
+
+```bash
+npm run draft:linux
+```
+
+Draft artifacts are written under `data/generated/linux/`, and the publishable draft post is written to `content/topics/linux/posts/`.
+
+Runtime data outputs are ignored by git because they are reproducible and change over time. Generated posts under `content/` are versioned.
 
 ## Local Preview
 
