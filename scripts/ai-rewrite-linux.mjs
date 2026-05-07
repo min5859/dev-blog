@@ -4,7 +4,8 @@ import path from 'node:path';
 
 const root = process.cwd();
 const topic = 'linux';
-const runDate = process.env.NEWSLETTER_DATE || new Date().toISOString().slice(0, 10);
+const todayKst = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date());
+const runDate = process.env.NEWSLETTER_DATE || todayKst();
 const postId = `${runDate}-linux-daily-briefing`;
 const draftPath = process.env.DRAFT_PATH || path.join(root, 'data', 'generated', topic, 'draft-latest.json');
 const fallbackDraftPath = path.join(root, 'content', 'topics', topic, 'posts', `${postId}.json`);

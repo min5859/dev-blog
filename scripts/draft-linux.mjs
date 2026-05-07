@@ -7,7 +7,8 @@ const topic = 'linux';
 const inputPath = path.join(root, 'data', 'normalized', topic, 'source-records-latest.json');
 const generatedDir = path.join(root, 'data', 'generated', topic);
 const generatedAt = new Date().toISOString();
-const runDate = process.env.NEWSLETTER_DATE || generatedAt.slice(0, 10);
+const todayKst = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date());
+const runDate = process.env.NEWSLETTER_DATE || todayKst();
 const postId = `${runDate}-linux-daily-briefing`;
 const STALE_REPLY_MS = 24 * 60 * 60 * 1000;
 
