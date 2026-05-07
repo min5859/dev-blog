@@ -355,6 +355,7 @@ function toPostDraft(candidates, sourceData) {
         patches: patches.length,
         otherSignals: otherSignals.length,
       },
+      subsystems: [...new Set(candidates.flatMap((record) => record.matchedSubsystems || []))],
     },
   };
 }

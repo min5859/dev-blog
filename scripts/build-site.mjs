@@ -60,6 +60,15 @@ function markupTechnical(escapedText) {
 }
 
 const PRIORITY_VALUES = new Set(['상', '중', '하']);
+const PRIORITY_ORDER = ['상', '중', '하'];
+
+function topPriority(highlights) {
+  if (!Array.isArray(highlights) || !highlights.length) return null;
+  for (const level of PRIORITY_ORDER) {
+    if (highlights.some((highlight) => highlight?.priority === level)) return level;
+  }
+  return null;
+}
 
 const SOURCE_KIND_LABELS = new Map([
   ['kernel-release', '릴리스'],
@@ -545,8 +554,20 @@ ${feedItems}
     topic: post.topicTitle,
     summary: post.summary,
     tags: post.tags || [],
+    subsystems: post.draftMetadata?.subsystems || [],
+    priority: topPriority(post.highlights),
     url: `/posts/${post.id}.html`,
   })), null, 2));
+
+  const buildMeta = {
+    lastBuildAt: buildStartedAt.toISOString(),
+    lastBuildAtFormatted: formatBuildStamp(buildStartedAt),
+    timezone: 'Asia/Seoul',
+    postCount: posts.length,
+    topicCount: topics.length,
+    tagCount: tagMap.size,
+  };
+  await writeFile(path.join(publicDir, 'build-meta.json'), JSON.stringify(buildMeta, null, 2));
 
   console.log(`Built ${topics.length} topic(s), ${posts.length} post(s), ${tagMap.size} tag(s) into public/`);
 }

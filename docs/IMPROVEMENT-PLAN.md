@@ -18,7 +18,7 @@ This plan is scoped to three goals raised on 2026-05-07:
 
 ## Status
 
-- Current step: **Step 4 done; Step 5 not started**
+- Current step: **Step 5 done; Step 6 not started**
 - Last touched: 2026-05-07
 
 Update this block whenever a step starts, finishes, or stalls.
@@ -127,12 +127,13 @@ Exit criteria:
 
 ## Step 5 — Search index & metadata
 
-- [ ] `public/search-index.json` entries gain `topic`, `tags`, `subsystems`, `priority` (when present).
-- [ ] `build-site.mjs` writes `lastBuildAt` (KST) into a small meta object consumed by the footer template.
+- [x] `public/search-index.json` entries now carry `topic`, `tags`, `subsystems` (from `draftMetadata.subsystems`, populated by `draft-linux.mjs`), and `priority` (top of `상`/`중`/`하` across the post's highlights via `topPriority`).
+- [x] `build-site.mjs` writes `public/build-meta.json` with `lastBuildAt` (ISO), `lastBuildAtFormatted` (KST), `timezone`, and post/topic/tag counts. The footer template still pulls its own `buildStamp` line, so the JSON is meant for downstream consumers (search UI, monitors).
 
 Exit criteria:
 
 - Search index keys: `id, title, date, topic, summary, tags, subsystems, priority, url`.
+- Verified 2026-05-07: published briefing reports `subsystems: ["스케줄러/실시간", "아키텍처", "네트워크", "드라이버"]` and `priority: "상"`; sample post reports `subsystems: []` and `priority: "중"`. `build-meta.json` matches the footer line.
 
 ## Step 6 — Validation hardening
 
