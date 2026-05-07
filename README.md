@@ -6,7 +6,7 @@ The first topic is Linux kernel development. The architecture is intended to exp
 
 ## Current Status
 
-The static Korean blog MVP is working. Phase 2 source collection has started with kernel.org release metadata and LKML Atom feed collection from lore.kernel.org.
+The static Korean blog MVP is working. Phase 2 source collection is active, and Phase 3 has a first AI-rewrite adapter boundary for Korean newsletter drafts.
 
 Read the durable plan first:
 
@@ -41,6 +41,20 @@ npm run draft:linux
 ```
 
 Draft artifacts are written under `data/generated/linux/`, and the publishable draft post is written to `content/topics/linux/posts/`.
+
+Rewrite the metadata draft into a more readable Korean newsletter. The default `template` adapter is deterministic and offline-safe:
+
+```bash
+npm run rewrite:linux
+```
+
+If Claude CLI is available and approved for the environment, use the subscription-style adapter:
+
+```bash
+npm run rewrite:linux:claude
+```
+
+The prompt template lives at `prompts/linux-newsletter-ko.md`.
 
 Runtime data outputs are ignored by git because they are reproducible and change over time. Generated posts under `content/` are versioned.
 

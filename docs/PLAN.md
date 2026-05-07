@@ -112,11 +112,11 @@ Status: in progress
 Planned work:
 
 - [x] Generate metadata-based Korean draft posts from normalized source records.
-- [ ] Define prompt templates for daily Linux summaries.
-- [ ] Support subscription-based AI execution first:
+- [x] Define prompt templates for daily Linux summaries.
+- [x] Support subscription-based AI execution first:
   - `claude -p`
-  - OpenClaw workflow invocation
-- [ ] Keep AI provider execution behind an adapter boundary.
+- [ ] Add OpenClaw workflow invocation as another adapter option.
+- [x] Keep AI provider execution behind an adapter boundary.
 - [x] Store generated drafts with source references and prompt metadata.
 
 Exit criteria:
