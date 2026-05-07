@@ -96,6 +96,7 @@ function renderLayout({ title, description = siteDescription, body, buildStamp }
       <div class="nav-links">
         <a href="/archive.html">아카이브</a>
         <a href="/tags/index.html">태그</a>
+        <a href="/search.html">검색</a>
         <a href="/feed.xml">RSS</a>
       </div>
     </nav>
@@ -441,6 +442,13 @@ p { margin: 8px 0; }
 .highlight-verify { margin-left: 8px; font-size: .85rem; }
 .highlight-verify-empty { margin-left: 8px; font-size: .8rem; color: var(--muted); }
 
+.search-shell { display: grid; gap: 16px; }
+#search-input { width: 100%; padding: 14px 18px; font-size: 1.05rem; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 10px; outline-offset: 2px; font-family: inherit; }
+#search-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.search-counter-row { font-size: .9rem; }
+.search-subsystem { background: var(--surface-alt); padding: 1px 8px; border-radius: 4px; font-size: .8rem; color: var(--muted); border: 1px solid var(--border); margin-right: 4px; }
+.search-divider { margin: 0 6px; color: var(--muted); }
+
 .site-footer { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; border-top: 1px solid var(--border); margin-top: 56px; padding-top: 16px; color: var(--muted); font-size: .85rem; }
 .build-meta { font-family: ui-monospace, "JetBrains Mono", "SF Mono", monospace; font-size: .8rem; }
 
@@ -451,6 +459,65 @@ p { margin: 8px 0; }
   .release-status .link-cell { display: none; }
 }
 `);
+}
+
+function renderSearchPage(buildStamp) {
+  const script = `
+    const data = await fetch('/search-index.json').then((r) => r.json());
+    const input = document.getElementById('search-input');
+    const results = document.getElementById('search-results');
+    const counter = document.getElementById('search-counter');
+    const escMap = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+    const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => escMap[c]);
+
+    function renderResults(matches) {
+      counter.textContent = matches.length + '건';
+      if (!matches.length) {
+        results.innerHTML = '<p class="muted">일치하는 글이 없습니다. 키워드를 줄여 보세요.</p>';
+        return;
+      }
+      results.innerHTML = matches.map((post) => {
+        const tags = (post.tags || []).map((t) => '<span>#' + esc(t) + '</span>').join(' ');
+        const subs = (post.subsystems || []).map((s) => '<span class="search-subsystem">' + esc(s) + '</span>').join(' ');
+        const priority = post.priority ? '<span class="priority priority-' + esc(post.priority) + '">' + esc(post.priority) + '</span>' : '';
+        return '<article class="card post-card">'
+          + '<div class="eyebrow">' + esc(post.date) + ' · ' + esc(post.topic) + '</div>'
+          + '<h3>' + priority + ' <a href="' + esc(post.url) + '">' + esc(post.title) + '</a></h3>'
+          + '<p>' + esc(post.summary) + '</p>'
+          + '<p class="tags">' + tags + (subs ? '<span class="search-divider">·</span>' + subs : '') + '</p>'
+          + '</article>';
+      }).join('');
+    }
+
+    function filter(query) {
+      const q = query.trim().toLowerCase();
+      if (!q) { renderResults(data); return; }
+      const matches = data.filter((post) => {
+        const haystack = [post.title, post.summary, post.topic, ...(post.tags || []), ...(post.subsystems || [])].join(' ').toLowerCase();
+        return haystack.includes(q);
+      });
+      renderResults(matches);
+    }
+
+    input.addEventListener('input', (event) => filter(event.target.value));
+    const initial = new URL(window.location.href).searchParams.get('q') || '';
+    if (initial) input.value = initial;
+    filter(initial);
+    input.focus();
+  `;
+  return renderLayout({
+    title: `검색 - ${siteTitle}`,
+    buildStamp,
+    body: `<header class="site-page-head"><div class="eyebrow">search</div><h1>검색</h1><p class="lead">제목, 요약, 태그, 서브시스템을 한 번에 찾아봅니다.</p></header>
+<section class="search-shell">
+  <input id="search-input" type="search" autocomplete="off" placeholder="예: stable, sched/rt, 회귀, 7.1-rc2" aria-label="검색어">
+  <div class="search-counter-row"><span id="search-counter" class="muted"></span></div>
+  <div id="search-results" class="grid"></div>
+</section>
+<script type="module">
+${script}
+</script>`,
+  });
 }
 
 function renderHomeHead() {
@@ -488,6 +555,7 @@ ${renderReleaseStatus(releaseStatus)}
     body: `<header class="site-page-head"><div class="eyebrow">archive</div><h1>아카이브</h1><p class="lead">날짜순으로 정리한 전체 개발 브리핑입니다.</p></header><section><div class="grid">${posts.map(renderPostCard).join('\n')}</div></section>`,
   });
   await writeFile(path.join(publicDir, 'archive.html'), archive);
+  await writeFile(path.join(publicDir, 'search.html'), renderSearchPage(buildStamp));
 
   const tagMap = new Map();
   for (const post of posts) {
