@@ -9,6 +9,7 @@ const generatedDir = path.join(root, 'data', 'generated', topic);
 const contentPostsDir = path.join(root, 'content', 'topics', topic, 'posts');
 const sourcePath = process.env.PUBLISH_SOURCE || path.join(generatedDir, 'rewritten-latest.json');
 const fallbackSourcePath = path.join(generatedDir, 'draft-latest.json');
+const draftReferencePath = path.join(generatedDir, 'draft-latest.json');
 const outputPath = path.join(contentPostsDir, `${postId}.json`);
 
 async function readJsonWithFallback(primary, fallback) {
@@ -19,6 +20,23 @@ async function readJsonWithFallback(primary, fallback) {
       return JSON.parse(await readFile(fallback, 'utf8'));
     } catch {
       throw primaryError;
+    }
+  }
+}
+
+async function tryReadJson(file) {
+  try {
+    return JSON.parse(await readFile(file, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function assertImmutableAgainstDraft(post, draft) {
+  if (!draft) return;
+  for (const key of ['id', 'topic', 'date']) {
+    if (post[key] !== draft[key]) {
+      throw new Error(`publish candidate ${key} (${post[key]}) does not match source draft ${key} (${draft[key]}) — rewrite must not mutate immutable fields`);
     }
   }
 }
@@ -45,7 +63,9 @@ function validatePost(post) {
 
 async function main() {
   const post = await readJsonWithFallback(sourcePath, fallbackSourcePath);
+  const draftReference = await tryReadJson(draftReferencePath);
   validatePost(post);
+  assertImmutableAgainstDraft(post, draftReference);
 
   await mkdir(contentPostsDir, { recursive: true });
   await writeFile(outputPath, JSON.stringify(post, null, 2));

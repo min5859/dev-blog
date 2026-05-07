@@ -18,7 +18,7 @@ This plan is scoped to three goals raised on 2026-05-07:
 
 ## Status
 
-- Current step: **Step 5 done; Step 6 not started**
+- Current step: **All steps done (1–6)**
 - Last touched: 2026-05-07
 
 Update this block whenever a step starts, finishes, or stalls.
@@ -137,17 +137,16 @@ Exit criteria:
 
 ## Step 6 — Validation hardening
 
-- [ ] `scripts/publish-linux.mjs` — extend `validatePost` to enforce that the rewritten post has not mutated `id`, `topic`, or `date` away from the source draft.
-- [ ] Add minimal `node --test` cases (no new dependencies):
-  - `scripts/draft-linux.test.mjs` — `scoreRecord` on representative records
-  - patch series merge picks the highest `v`
-  - subsystem classifier hits the expected label
-- [ ] `package.json` — add `"test": "node --test scripts/*.test.mjs"`
+- [x] `scripts/publish-linux.mjs` — added `assertImmutableAgainstDraft(post, draft)` that compares the publish candidate's `id`/`topic`/`date` against the canonical draft (`data/generated/linux/draft-latest.json`). Missing draft is treated as informational (no failure) so explicit `PUBLISH_SOURCE` workflows still work.
+- [x] `scripts/draft-linux.mjs` — refactored to a lib + entrypoint shape: `main()` only runs when invoked directly (`isMainModule` via `fileURLToPath`), and key helpers (`scoreRecord`, `stripPatchPrefix`, `patchVersion`, `patchSeriesKey`, `mergePatchSeries`, `isStaleReply`, `isRegressionSignal`, `bucketBySubsystem`, `pickCandidates`, `highlightOf`, `subsystemPatterns`) are exported.
+- [x] Added `scripts/draft-linux.test.mjs` — 9 `node --test` cases covering scoring (mainline release, subsystem slug match), patch series merge (keeps highest v, leaves unrelated alone), `patchVersion` parsing, `stripPatchPrefix` shapes, `isRegressionSignal` triggers, `isStaleReply` 24h cutoff and non-applicability to non-LKML/non-reply records.
+- [x] `package.json` — `"test": "node --test scripts/*.test.mjs"`.
 
 Exit criteria:
 
 - `npm test` passes locally.
 - A rewritten post that mutates `id`/`topic`/`date` fails `publish:linux` with a clear error.
+- Verified 2026-05-07: 9/9 tests pass; mutating the candidate id causes publish to fail with `publish candidate id (mutated-id) does not match source draft id (...) — rewrite must not mutate immutable fields`; restoring the candidate restores normal publish + build.
 
 ## Out of scope (deferred to `docs/PLAN.md`)
 

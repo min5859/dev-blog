@@ -1,4 +1,5 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 const root = process.cwd();
@@ -385,7 +386,24 @@ async function main() {
   console.log(`Selected ${candidates.length} newsletter candidate(s) from ${sourceData.recordCount} source record(s); wrote ${path.relative(root, draftOutput)}`);
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+const isMainModule = process.argv[1] && process.argv[1] === fileURLToPath(import.meta.url);
+if (isMainModule) {
+  main().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+}
+
+export {
+  scoreRecord,
+  stripPatchPrefix,
+  patchVersion,
+  patchSeriesKey,
+  mergePatchSeries,
+  isStaleReply,
+  isRegressionSignal,
+  bucketBySubsystem,
+  pickCandidates,
+  highlightOf,
+  subsystemPatterns,
+};
