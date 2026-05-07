@@ -12,8 +12,10 @@ This runs, in order:
 
 1. `npm run collect:linux`
 2. `npm run draft:linux`
-3. `npm run rewrite:linux`
+3. `npm run rewrite:linux:claude` (default — calls the Claude CLI)
 4. `npm run build`
+
+The rewrite step uses the Claude adapter by default so the daily run produces an AI-rewritten briefing rather than the deterministic template output. Override with `DAILY_REWRITE_ADAPTER=template` if you want the offline template path (no Claude CLI calls).
 
 By default this command does **not** publish generated drafts into `content/`. Generated artifacts remain under `data/generated/linux/` for review.
 
@@ -43,16 +45,25 @@ The status JSON is intended for monitoring or notification hooks.
 
 ## Local cron example
 
-Run at 07:00 every day in the machine's local timezone:
+Run at 07:00 every day in the machine's local timezone, generating only (no auto-publish):
 
 ```cron
+PATH=/Users/wooki/.local/bin:/Users/wooki/.nvm/versions/node/v24.14.0/bin:/usr/local/bin:/usr/bin:/bin
+CLAUDE_BIN=/Users/wooki/.local/bin/claude
 0 7 * * * cd /Users/wooki/project/git/wk/dev-blog && /Users/wooki/.nvm/versions/node/v24.14.0/bin/npm run daily:linux >> logs/daily/cron.log 2>&1
+```
+
+To also publish the generated briefing into `content/` (skips the human review step):
+
+```cron
+0 7 * * * cd /Users/wooki/project/git/wk/dev-blog && /Users/wooki/.nvm/versions/node/v24.14.0/bin/npm run daily:linux:publish >> logs/daily/cron.log 2>&1
 ```
 
 Notes:
 
-- Use the absolute `npm` path when cron has a minimal environment.
-- If using Claude CLI rewriting, set the required environment explicitly or use a wrapper script.
+- Cron has a minimal environment, so the absolute `npm` path is required and `PATH` must include the directory holding `claude` (here `~/.local/bin`).
+- `CLAUDE_BIN` is read by `scripts/ai-rewrite-linux.mjs` when the `claude` adapter runs; setting it explicitly avoids PATH surprises.
+- Set `DAILY_REWRITE_ADAPTER=template` on the cron line if Claude CLI is unavailable; the pipeline will fall back to the deterministic template adapter.
 - Runtime data in `data/raw/`, `data/normalized/`, `data/generated/`, and `logs/daily/` is reproducible and ignored by git.
 
 ## OpenClaw cron option
