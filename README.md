@@ -40,7 +40,7 @@ Generate a Korean newsletter draft from the latest normalized source records:
 npm run draft:linux
 ```
 
-Draft artifacts are written under `data/generated/linux/`, and the publishable draft post is written to `content/topics/linux/posts/`.
+Draft artifacts are written under `data/generated/linux/`. They are not published automatically.
 
 Rewrite the metadata draft into a more readable Korean newsletter. The default `template` adapter is deterministic and offline-safe:
 
@@ -56,10 +56,22 @@ npm run rewrite:linux:claude
 
 The prompt template lives at `prompts/linux-newsletter-ko.md`.
 
-Run the full daily pipeline:
+Promote the latest generated rewrite into versioned site content only after review:
+
+```bash
+npm run publish:linux
+```
+
+Run the full daily pipeline without publishing to `content/`:
 
 ```bash
 npm run daily:linux
+```
+
+Run and publish in one command only when the generated output is trusted:
+
+```bash
+npm run daily:linux:publish
 ```
 
 Scheduling details and cron examples are documented in `docs/SCHEDULING.md`.

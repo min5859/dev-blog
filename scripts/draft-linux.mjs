@@ -5,7 +5,6 @@ const root = process.cwd();
 const topic = 'linux';
 const inputPath = path.join(root, 'data', 'normalized', topic, 'source-records-latest.json');
 const generatedDir = path.join(root, 'data', 'generated', topic);
-const contentPostsDir = path.join(root, 'content', 'topics', topic, 'posts');
 const generatedAt = new Date().toISOString();
 const runDate = process.env.NEWSLETTER_DATE || generatedAt.slice(0, 10);
 const postId = `${runDate}-linux-daily-briefing`;
@@ -189,21 +188,18 @@ async function main() {
   const draft = toPostDraft(candidates, sourceData);
 
   await mkdir(generatedDir, { recursive: true });
-  await mkdir(contentPostsDir, { recursive: true });
 
   const candidateOutput = path.join(generatedDir, `candidates-${runDate}.json`);
   const candidateLatest = path.join(generatedDir, 'candidates-latest.json');
   const draftOutput = path.join(generatedDir, `${postId}.json`);
   const draftLatest = path.join(generatedDir, 'draft-latest.json');
-  const contentOutput = path.join(contentPostsDir, `${postId}.json`);
 
   await writeFile(candidateOutput, JSON.stringify({ topic, generatedAt, sourceRecordCount: sourceData.recordCount, candidateCount: candidates.length, candidates }, null, 2));
   await writeFile(candidateLatest, JSON.stringify({ topic, generatedAt, sourceRecordCount: sourceData.recordCount, candidateCount: candidates.length, candidates }, null, 2));
   await writeFile(draftOutput, JSON.stringify(draft, null, 2));
   await writeFile(draftLatest, JSON.stringify(draft, null, 2));
-  await writeFile(contentOutput, JSON.stringify(draft, null, 2));
 
-  console.log(`Selected ${candidates.length} newsletter candidate(s) from ${sourceData.recordCount} source record(s); wrote ${path.relative(root, contentOutput)}`);
+  console.log(`Selected ${candidates.length} newsletter candidate(s) from ${sourceData.recordCount} source record(s); wrote ${path.relative(root, draftOutput)}`);
 }
 
 main().catch((error) => {

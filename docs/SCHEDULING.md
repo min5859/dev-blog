@@ -15,6 +15,20 @@ This runs, in order:
 3. `npm run rewrite:linux`
 4. `npm run build`
 
+By default this command does **not** publish generated drafts into `content/`. Generated artifacts remain under `data/generated/linux/` for review.
+
+Publish explicitly after review:
+
+```bash
+npm run publish:linux
+```
+
+Or run and publish in one step only when trusted:
+
+```bash
+npm run daily:linux:publish
+```
+
 The command stops at the first failing step and exits non-zero.
 
 ## Logs
@@ -64,4 +78,6 @@ If a run fails:
 1. Inspect `logs/daily/linux-latest.log`.
 2. Fix the failing collector, draft, rewrite, or build step.
 3. Re-run `npm run daily:linux`.
-4. Commit generated content only if the resulting post should be versioned.
+4. If the generated draft is acceptable, run `npm run publish:linux`.
+5. Run `npm run build`.
+6. Commit generated content only if the resulting post should be versioned.

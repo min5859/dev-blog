@@ -10,10 +10,13 @@ const logPath = path.join(logDir, `${runDate}-linux.log`);
 const latestLogPath = path.join(logDir, 'linux-latest.log');
 const statusPath = path.join(logDir, 'linux-latest-status.json');
 
+const shouldPublish = process.env.PUBLISH_DAILY === '1';
+
 const steps = [
   ['collect', ['npm', ['run', 'collect:linux']]],
   ['draft', ['npm', ['run', 'draft:linux']]],
   ['rewrite', ['npm', ['run', 'rewrite:linux']]],
+  ...(shouldPublish ? [['publish', ['npm', ['run', 'publish:linux']]]] : []),
   ['build', ['npm', ['run', 'build']]],
 ];
 
@@ -113,8 +116,11 @@ async function main() {
     finishedAt: new Date().toISOString(),
     ok: results.every((result) => result.ok) && results.length === steps.length,
     steps: results,
+    publishEnabled: shouldPublish,
     outputs: {
-      post: `content/topics/linux/posts/${runDate}-linux-daily-briefing.json`,
+      generatedDraft: `data/generated/linux/${runDate}-linux-daily-briefing.json`,
+      generatedRewrite: `data/generated/linux/rewritten-${runDate}-linux-daily-briefing.json`,
+      post: shouldPublish ? `content/topics/linux/posts/${runDate}-linux-daily-briefing.json` : null,
       site: 'public/index.html',
       log: path.relative(root, logPath),
     },

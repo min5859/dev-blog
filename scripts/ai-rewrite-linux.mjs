@@ -10,7 +10,6 @@ const draftPath = process.env.DRAFT_PATH || path.join(root, 'data', 'generated',
 const fallbackDraftPath = path.join(root, 'content', 'topics', topic, 'posts', `${postId}.json`);
 const promptTemplatePath = path.join(root, 'prompts', 'linux-newsletter-ko.md');
 const generatedDir = path.join(root, 'data', 'generated', topic);
-const contentPostsDir = path.join(root, 'content', 'topics', topic, 'posts');
 const adapter = process.env.AI_ADAPTER || 'template';
 const generatedAt = new Date().toISOString();
 
@@ -158,7 +157,6 @@ async function main() {
   const prompt = buildPrompt(template, draft);
 
   await mkdir(generatedDir, { recursive: true });
-  await mkdir(contentPostsDir, { recursive: true });
 
   const promptOutput = path.join(generatedDir, `rewrite-prompt-${runDate}.md`);
   const promptLatest = path.join(generatedDir, 'rewrite-prompt-latest.md');
@@ -171,12 +169,10 @@ async function main() {
 
   const aiOutput = path.join(generatedDir, `rewritten-${postId}.json`);
   const aiLatest = path.join(generatedDir, 'rewritten-latest.json');
-  const contentOutput = path.join(contentPostsDir, `${postId}.json`);
   await writeFile(aiOutput, JSON.stringify(rewritten, null, 2));
   await writeFile(aiLatest, JSON.stringify(rewritten, null, 2));
-  await writeFile(contentOutput, JSON.stringify(rewritten, null, 2));
 
-  console.log(`Rewrote Linux newsletter with ${adapter} adapter; wrote ${path.relative(root, contentOutput)}`);
+  console.log(`Rewrote Linux newsletter with ${adapter} adapter; wrote ${path.relative(root, aiOutput)}`);
 }
 
 main().catch((error) => {

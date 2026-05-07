@@ -112,6 +112,7 @@ Status: in progress
 Planned work:
 
 - [x] Generate metadata-based Korean draft posts from normalized source records.
+- [x] Separate generated drafts from explicit publish-to-content step.
 - [x] Define prompt templates for daily Linux summaries.
 - [x] Support subscription-based AI execution first:
   - `claude -p`
