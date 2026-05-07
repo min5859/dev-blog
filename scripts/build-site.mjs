@@ -78,6 +78,8 @@ function assertTopic(topic, file) {
   }
 }
 
+const PRIORITY_VALUES = new Set(['상', '중', '하']);
+
 function assertPost(post, file) {
   for (const key of ['id', 'topic', 'title', 'date', 'summary', 'sections']) {
     if (!post[key]) throw new Error(`${file}: missing required field ${key}`);
@@ -89,6 +91,13 @@ function assertPost(post, file) {
   }
   for (const [index, source] of (post.sources || []).entries()) {
     if (!source.title || !source.url) throw new Error(`${file}: sources[${index}] requires title and url`);
+  }
+  for (const [index, highlight] of (post.highlights || []).entries()) {
+    if (!highlight || typeof highlight !== 'object') throw new Error(`${file}: highlights[${index}] must be an object`);
+    for (const key of ['title', 'priority', 'verifyLink', 'action']) {
+      if (typeof highlight[key] !== 'string' || !highlight[key]) throw new Error(`${file}: highlights[${index}].${key} required`);
+    }
+    if (!PRIORITY_VALUES.has(highlight.priority)) throw new Error(`${file}: highlights[${index}].priority must be 상/중/하`);
   }
 }
 
@@ -139,6 +148,19 @@ function renderList(items = []) {
   return `<ul class="check-list">${items.map((item) => `<li>${escapeHtml(item)}</li>`).join('\n')}</ul>`;
 }
 
+function renderHighlights(highlights = []) {
+  if (!highlights.length) return '';
+  return `<ul class="highlight-list">${highlights.map((item) => {
+    const verify = item.verifyLink && item.verifyLink !== '없음'
+      ? ` <a class="highlight-verify" href="${escapeHtml(item.verifyLink)}">확인하기</a>`
+      : ' <span class="highlight-verify-empty">확인 링크 없음</span>';
+    return `<li class="highlight-item">
+  <div class="highlight-head"><span class="priority priority-${escapeHtml(item.priority)}">${escapeHtml(item.priority)}</span><span class="highlight-title">${escapeHtml(item.title)}</span></div>
+  <p class="highlight-action">${escapeHtml(item.action)}${verify}</p>
+</li>`;
+  }).join('\n')}</ul>`;
+}
+
 function renderSources(sources = []) {
   if (!sources.length) return '';
   return `<section class="sources"><h2>출처</h2><ul>${sources.map((source) => `<li><a href="${escapeHtml(source.url)}">${escapeHtml(source.title)}</a>${source.note ? ` <span class="meta">${escapeHtml(source.note)}</span>` : ''}</li>`).join('\n')}</ul></section>`;
@@ -157,7 +179,7 @@ function renderPost(post, topic) {
     <p class="lead">${escapeHtml(post.summary)}</p>
     <p class="tags">${(post.tags || []).map((tag) => `<a href="/tags/${slugify(tag)}.html">#${escapeHtml(tag)}</a>`).join(' ')}</p>
   </header>
-  ${post.highlights?.length ? `<section class="panel"><h2>오늘의 핵심</h2>${renderList(post.highlights)}</section>` : ''}
+  ${post.highlights?.length ? `<section class="panel"><h2>오늘의 핵심</h2>${renderHighlights(post.highlights)}</section>` : ''}
   ${post.sections.map((section) => `<section><h2>${escapeHtml(section.heading)}</h2><p>${escapeHtml(section.body)}</p></section>`).join('\n')}
   ${post.implications?.length ? `<section class="panel"><h2>엔지니어링 관점</h2>${renderList(post.implications)}</section>` : ''}
   ${post.nextActions?.length ? `<section class="panel"><h2>다음에 확인할 것</h2>${renderList(post.nextActions)}</section>` : ''}
@@ -208,6 +230,22 @@ h3 { margin: 8px 0; font-size: 1.25rem; }
 .check-list li { margin: 8px 0; }
 .sources ul { padding-left: 1.2rem; }
 .article section p { white-space: pre-line; }
+.highlight-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 14px; }
+.highlight-item { padding: 14px 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.highlight-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.highlight-title { font-weight: 600; }
+.highlight-action { margin: 0; color: var(--muted); font-size: .95rem; }
+.priority { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; padding: 2px 8px; border-radius: 999px; font-size: .8rem; font-weight: 700; letter-spacing: .02em; }
+.priority-상 { background: #fde2e2; color: #8a1f1f; }
+.priority-중 { background: #fff1c5; color: #6b4f00; }
+.priority-하 { background: #e2eaf6; color: #2b3850; }
+@media (prefers-color-scheme: dark) {
+  .priority-상 { background: #4b1f1f; color: #ffd6d6; }
+  .priority-중 { background: #4a3b00; color: #ffe7a3; }
+  .priority-하 { background: #1f2a3a; color: #c8d3e6; }
+}
+.highlight-verify { margin-left: 8px; font-size: .85rem; }
+.highlight-verify-empty { margin-left: 8px; font-size: .85rem; color: var(--muted); }
 .site-footer { border-top: 1px solid var(--border); margin-top: 48px; padding-top: 20px; }
 `);
 }

@@ -23,14 +23,24 @@ async function readJsonWithFallback(primary, fallback) {
   }
 }
 
+const PRIORITY_VALUES = new Set(['상', '중', '하']);
+
 function validatePost(post) {
-  for (const key of ['id', 'topic', 'title', 'date', 'summary', 'sections', 'sources']) {
+  for (const key of ['id', 'topic', 'title', 'date', 'summary', 'sections', 'sources', 'highlights']) {
     if (!post[key]) throw new Error(`publish candidate missing ${key}`);
   }
   if (post.topic !== topic) throw new Error(`publish candidate topic must be ${topic}`);
   if (post.date !== runDate) throw new Error(`publish candidate date ${post.date} does not match NEWSLETTER_DATE ${runDate}`);
   if (!Array.isArray(post.sections) || post.sections.length === 0) throw new Error('publish candidate requires sections[]');
   if (!Array.isArray(post.sources) || post.sources.length === 0) throw new Error('publish candidate requires sources[]');
+  if (!Array.isArray(post.highlights) || post.highlights.length === 0) throw new Error('publish candidate requires highlights[]');
+  for (const [index, highlight] of post.highlights.entries()) {
+    if (!highlight || typeof highlight !== 'object') throw new Error(`highlights[${index}] must be an object`);
+    for (const key of ['title', 'priority', 'verifyLink', 'action']) {
+      if (typeof highlight[key] !== 'string' || !highlight[key]) throw new Error(`highlights[${index}].${key} required`);
+    }
+    if (!PRIORITY_VALUES.has(highlight.priority)) throw new Error(`highlights[${index}].priority must be 상/중/하`);
+  }
 }
 
 async function main() {

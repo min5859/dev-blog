@@ -83,56 +83,45 @@ function parseJsonResponse(text) {
   }
 }
 
-function compactSourceTitle(title) {
-  return title
-    .replace(/^Re:\s*/i, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
 function templateRewrite(draft) {
-  const releaseSection = draft.sections.find((section) => section.heading.includes('릴리스'));
-  const patchSection = draft.sections.find((section) => section.heading.includes('패치'));
-  const topSources = draft.sources.slice(0, 6);
-  const releaseSources = topSources.filter((source) => source.note.includes('kernel.org'));
-  const lkmlSources = topSources.filter((source) => source.note.includes('lore.kernel.org'));
+  const sectionByHeading = new Map(draft.sections.map((section) => [section.heading, section.body]));
+  const buckets = draft.draftMetadata?.bucketCounts || {};
 
   return {
     ...draft,
-    title: `${draft.date} 리눅스 커널 개발 브리핑`,
-    summary: `kernel.org 릴리스 흐름과 LKML 최신 토론을 바탕으로 선별한 일일 커널 개발 브리핑입니다. 오늘은 공식 릴리스 신호와 패치 토론 후보를 중심으로 후속 확인 지점을 정리했습니다.`,
-    highlights: [
-      releaseSources[0] ? `공식 릴리스 신호: ${compactSourceTitle(releaseSources[0].title)}` : '공식 릴리스 신호를 계속 추적해야 합니다.',
-      releaseSources[1] ? `추가 릴리스 확인: ${compactSourceTitle(releaseSources[1].title)}` : 'stable/mainline changelog 확인이 필요합니다.',
-      lkmlSources[0] ? `LKML 주요 후보: ${compactSourceTitle(lkmlSources[0].title)}` : 'LKML 후보는 본문 기반 재평가가 필요합니다.',
-      `총 ${draft.draftMetadata?.sourceRecordCount ?? '여러'}개 source record 중 ${draft.draftMetadata?.candidateCount ?? draft.sources.length}개 후보를 선별했습니다.`,
-    ],
+    title: `${draft.date} 커널 개발 브리핑`,
+    summary: `kernel.org 릴리스 ${buckets.releases ?? 0}건, 회귀·보안 ${buckets.regressions ?? 0}건, 패치 토론 ${buckets.patches ?? 0}건을 정리한 일일 커널 개발 브리핑입니다. 본문은 자동 선별 기반이므로 게시 전 원문 검토가 필요합니다.`,
+    highlights: draft.highlights,
     sections: [
       {
         heading: '릴리스/로드맵',
-        body: releaseSection?.body || '공식 릴리스 정보가 충분하지 않습니다. kernel.org와 linux-next 흐름을 계속 확인해야 합니다.',
+        body: sectionByHeading.get('릴리스/로드맵') || '이번 수집분에서 우선순위가 높은 공식 릴리스 신호가 없습니다.',
+      },
+      {
+        heading: '회귀·보안 신호',
+        body: sectionByHeading.get('회귀·보안 신호') || '이번 수집분에서 회귀·보안으로 분류된 항목이 없습니다.',
       },
       {
         heading: '주요 패치/토론',
-        body: patchSection?.body || 'LKML 패치 토론 후보가 충분하지 않습니다. 다음 수집에서 다시 평가해야 합니다.',
+        body: sectionByHeading.get('주요 패치/토론') || '이번 수집분에서 우선순위가 높은 패치 토론이 없습니다.',
       },
       {
-        heading: '엔지니어링 시사점',
-        body: draft.implications.join('\n'),
+        heading: '추가 LKML 신호',
+        body: sectionByHeading.get('추가 LKML 신호') || '이번 수집분에서 추가로 볼 LKML 신호가 없습니다.',
       },
     ],
     implications: [
       ...draft.implications,
-      '현재 단계는 자동 선별 기반이므로, 실제 게시 전에는 changelog와 LKML 원문을 확인해 영향 범위를 좁히는 것이 좋습니다.',
+      '본문 항목의 priority/verifyLink/action을 기준으로 팀 단위 검토 우선순위를 정하세요.',
     ],
     nextActions: [
-      '상위 릴리스 후보의 changelog/diffview를 확인해 실제 변경 범위를 분류합니다.',
-      '상위 LKML 후보의 원문 스레드를 확인해 단순 응답인지 실질적 설계 논의인지 구분합니다.',
-      'AI 어댑터를 `AI_ADAPTER=claude`로 실행해 문장 품질을 더 높입니다.',
+      '상위 priority 항목의 verifyLink를 먼저 확인해 영향 범위를 좁히세요.',
+      '회귀·보안 신호 섹션은 게시 전 원문 스레드 확인이 필요합니다.',
+      'AI 어댑터를 `AI_ADAPTER=claude`로 실행해 문장 품질을 더 높이세요.',
     ],
     confidence: {
       level: adapter === 'template' ? '템플릿 개선 초안' : 'AI 초안',
-      note: '출처 링크와 제목/메타데이터 기반으로 생성한 초안입니다. 본문 전체 의미를 완전히 검증한 상태는 아니므로 게시 전 원문 확인이 필요합니다.',
+      note: '메타데이터 기반 자동 선별 결과입니다. 본문 전체 의미를 완전히 검증한 상태는 아니므로 게시 전 원문 확인이 필요합니다.',
     },
     draftMetadata: {
       ...draft.draftMetadata,
@@ -143,12 +132,30 @@ function templateRewrite(draft) {
   };
 }
 
+const PRIORITY_VALUES = new Set(['상', '중', '하']);
+
+function validateHighlight(highlight, index) {
+  if (!highlight || typeof highlight !== 'object') {
+    throw new Error(`highlights[${index}] must be an object with title/priority/verifyLink/action`);
+  }
+  for (const key of ['title', 'priority', 'verifyLink', 'action']) {
+    if (typeof highlight[key] !== 'string' || !highlight[key]) {
+      throw new Error(`highlights[${index}].${key} is required`);
+    }
+  }
+  if (!PRIORITY_VALUES.has(highlight.priority)) {
+    throw new Error(`highlights[${index}].priority must be one of 상/중/하 (got ${highlight.priority})`);
+  }
+}
+
 function validatePost(post) {
-  for (const key of ['id', 'topic', 'title', 'date', 'summary', 'sections', 'sources']) {
+  for (const key of ['id', 'topic', 'title', 'date', 'summary', 'sections', 'sources', 'highlights']) {
     if (!post[key]) throw new Error(`rewritten post missing ${key}`);
   }
   if (!Array.isArray(post.sections) || post.sections.length < 2) throw new Error('rewritten post requires at least two sections');
   if (!Array.isArray(post.sources) || post.sources.length === 0) throw new Error('rewritten post requires sources');
+  if (!Array.isArray(post.highlights) || post.highlights.length === 0) throw new Error('rewritten post requires highlights');
+  post.highlights.forEach(validateHighlight);
 }
 
 async function main() {

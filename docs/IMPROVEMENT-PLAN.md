@@ -18,7 +18,7 @@ This plan is scoped to three goals raised on 2026-05-07:
 
 ## Status
 
-- Current step: **Step 2 done; Step 3 not started**
+- Current step: **Step 3 done; Step 4 not started**
 - Last touched: 2026-05-07
 
 Update this block whenever a step starts, finishes, or stalls.
@@ -69,17 +69,19 @@ Exit criteria:
 Goal: align the AI adapter and the deterministic template adapter on the
 same action-oriented schema.
 
-- [ ] `prompts/linux-newsletter-ko.md` — require for each highlight:
-  - 검토 우선순위 (상/중/하)
-  - 확인할 changelog/diff 링크 (없으면 명시적으로 "없음")
-  - 마지막 줄은 행동 지침 형태 (예: "linux-next에 머지되면 X 모듈을 재컴파일해야 합니다")
-- [ ] Extend the output JSON schema with a `priority` field on highlights and (optional) per-section `actions[]`.
-- [ ] Sync `templateRewrite` in `scripts/ai-rewrite-linux.mjs` so it populates the same fields from metadata when `AI_ADAPTER=template` is used.
+- [x] `prompts/linux-newsletter-ko.md` — rewrote to require `{ title, priority (상/중/하), verifyLink, action }` per highlight, with explicit instructions for action lines and "없음" sentinel when verifyLink is unknown.
+- [x] Extended output JSON schema: `highlights` is now an object array. Section bodies stay as multi-line strings (per-section actions[] deferred — single action per highlight covers the use case for now).
+- [x] Synced `templateRewrite` in `scripts/ai-rewrite-linux.mjs`: maps draft sections by heading, passes through draft.highlights (which `draft-linux.mjs` now populates as objects via `highlightOf`), emits the four-section structure aligned with Step 2.
+- [x] `validatePost` strengthened in both `scripts/ai-rewrite-linux.mjs` and `scripts/publish-linux.mjs`; `assertPost` in `scripts/build-site.mjs` enforces the new highlight schema. All require priority ∈ {상, 중, 하}.
+- [x] `scripts/build-site.mjs` — added `renderHighlights` and CSS for `.priority`, `.priority-{상,중,하}`, `.highlight-list`, `.highlight-action`, with light/dark variants.
+- [x] Migrated `content/topics/linux/posts/2026-05-07-sample.json` highlights to the new object schema.
+- [x] Re-ran `publish:linux` to refresh `2026-05-07-linux-daily-briefing.json` against the new draft.
 
 Exit criteria:
 
 - `template` and `claude` adapters emit identical schemas.
 - `validatePost` (in `scripts/ai-rewrite-linux.mjs` and `scripts/publish-linux.mjs`) enforces the required new fields.
+- Verified 2026-05-07: `npm run draft:linux && npm run rewrite:linux && npm run publish:linux && npm run build` end-to-end. Rendered HTML shows priority chips and per-highlight action links on the published briefing.
 
 ## Step 4 — UI redesign (`scripts/build-site.mjs`)
 

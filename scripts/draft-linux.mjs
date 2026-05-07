@@ -192,20 +192,65 @@ function bucketBySubsystem(records) {
   return [...buckets.entries()].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0], 'ko'));
 }
 
+function verifyLinkFor(record) {
+  if (record.sourceId === 'kernel-org-releases') {
+    return record.links?.find((link) => link.kind === 'changelog')?.url
+      || record.links?.find((link) => link.kind === 'gitweb')?.url
+      || record.links?.find((link) => link.kind === 'patch.full')?.url
+      || record.url
+      || '없음';
+  }
+  return record.url || '없음';
+}
+
+function priorityFor(record) {
+  if (isRegressionSignal(record)) return '상';
+  if (record.sourceId === 'kernel-org-releases') {
+    if (record.metadata?.moniker === 'mainline') return '상';
+    if (record.metadata?.moniker === 'stable' || record.metadata?.moniker === 'longterm') return '중';
+    return '하';
+  }
+  if (record.kind === 'pull-request') return '상';
+  if (record.kind === 'patch-discussion' && record.score >= 50) return '중';
+  return '하';
+}
+
+function actionFor(record) {
+  if (record.sourceId === 'kernel-org-releases') {
+    const moniker = record.metadata?.moniker || 'release';
+    if (moniker === 'mainline') return 'merge-window 흐름과 RC 후보 변화를 다음 수집까지 계속 추적하세요.';
+    if (moniker === 'stable') return 'changelog에서 자기 환경에 영향 가능한 백포트가 있는지 확인하세요.';
+    if (moniker === 'longterm') return '장기 지원 라인 사용 환경이라면 changelog와 보안 패치 포함 여부를 확인하세요.';
+    if (moniker === 'linux-next') return 'linux-next 스냅샷에서 자기 서브시스템의 새 패치가 들어왔는지 점검하세요.';
+    return '릴리스 메타데이터를 원본에서 다시 확인하세요.';
+  }
+  if (isRegressionSignal(record)) return '원문 스레드를 우선 확인해 영향 범위와 백포트 필요성을 판단하세요.';
+  if (record.kind === 'pull-request') return 'pull request 본문과 머지 대상을 확인해 영향 서브시스템을 좁히세요.';
+  if (record.matchedSubsystems?.length) {
+    return `자기 환경이 ${record.matchedSubsystems.join(', ')} 서브시스템에 의존한다면 스레드 흐름을 모니터링하세요.`;
+  }
+  return '스레드의 후속 응답을 모니터링해 실제 설계 논의인지 단순 응답인지 분류하세요.';
+}
+
+function highlightOf(record) {
+  return {
+    title: stripPatchPrefix(record.title),
+    priority: priorityFor(record),
+    verifyLink: verifyLinkFor(record),
+    action: actionFor(record),
+  };
+}
+
 function impactRelease(record) {
   const moniker = record.metadata?.moniker || 'release';
   const date = record.observedDate || '공개일 미상';
   const eol = record.metadata?.isEol ? ' · EOL 라인' : '';
   const impact = monikerImpact.get(moniker) || '대상 환경 확인 필요';
-  const verifyLink = record.links?.find((link) => link.kind === 'changelog')?.url
-    || record.links?.find((link) => link.kind === 'gitweb')?.url
-    || record.links?.find((link) => link.kind === 'patch.full')?.url
-    || record.url;
   return [
     `- ${stripPatchPrefix(record.title)}`,
     `  · 무엇: ${moniker} 라인 릴리스, 공개일 ${date}${eol}`,
     `  · 영향: ${impact}`,
-    `  · 확인할 것: ${verifyLink}`,
+    `  · 확인할 것: ${verifyLinkFor(record)}`,
   ].join('\n');
 }
 
@@ -258,7 +303,7 @@ function toPostDraft(candidates, sourceData) {
     date: runDate,
     summary: `kernel.org 릴리스 ${releases.length}건, 회귀·보안 신호 ${regressions.length}건, 패치 토론 ${patches.length}건, 추가 LKML 신호 ${otherSignals.length}건을 후보로 정리한 자동 생성 초안입니다.`,
     tags: ['리눅스', '커널', 'LKML', '릴리스', '초안'],
-    highlights: top.map((record) => stripPatchPrefix(record.title)),
+    highlights: top.map(highlightOf),
     sections: [
       {
         heading: '릴리스/로드맵',
