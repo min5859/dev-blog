@@ -100,7 +100,7 @@ function templateRewrite(draft) {
   return {
     ...draft,
     title: `${draft.date} 리눅스 커널 개발 브리핑`,
-    summary: `kernel.org 릴리스 흐름과 LKML 최신 토론을 바탕으로 선별한 한국어 일일 브리핑입니다. 오늘은 공식 릴리스 신호와 패치 토론 후보를 중심으로 후속 확인 지점을 정리했습니다.`,
+    summary: `kernel.org 릴리스 흐름과 LKML 최신 토론을 바탕으로 선별한 일일 커널 개발 브리핑입니다. 오늘은 공식 릴리스 신호와 패치 토론 후보를 중심으로 후속 확인 지점을 정리했습니다.`,
     highlights: [
       releaseSources[0] ? `공식 릴리스 신호: ${compactSourceTitle(releaseSources[0].title)}` : '공식 릴리스 신호를 계속 추적해야 합니다.',
       releaseSources[1] ? `추가 릴리스 확인: ${compactSourceTitle(releaseSources[1].title)}` : 'stable/mainline changelog 확인이 필요합니다.',

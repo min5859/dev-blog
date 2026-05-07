@@ -34,7 +34,7 @@ Outputs are written under:
 - `data/raw/linux/`
 - `data/normalized/linux/`
 
-Generate a Korean newsletter draft from the latest normalized source records:
+Generate a newsletter draft from the latest normalized source records:
 
 ```bash
 npm run draft:linux

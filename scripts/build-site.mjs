@@ -223,7 +223,7 @@ async function build() {
 
   const home = renderLayout({
     title: siteTitle,
-    body: `<header class="hero"><div class="eyebrow">Linux-first · topic-extensible · static publishing</div><h1>개발 흐름을 놓치지 않는 한국어 브리핑</h1><p class="lead">${escapeHtml(siteDescription)} 첫 주제는 리눅스 커널 개발이며, 이후 Android, AI, 보안, 툴체인으로 확장할 수 있게 구성했습니다.</p></header>
+    body: `<header class="hero"><div class="eyebrow">Linux-first · topic-extensible · static publishing</div><h1>개발 흐름을 놓치지 않는 기술 브리핑</h1><p class="lead">${escapeHtml(siteDescription)} 첫 주제는 리눅스 커널 개발이며, 이후 Android, AI, 보안, 툴체인으로 확장할 수 있게 구성했습니다.</p></header>
 <section><h2>주제</h2><div class="grid">${topics.map((topic) => `<article class="card"><h3><a href="/topics/${escapeHtml(topic.slug)}.html">${escapeHtml(topic.title)}</a></h3><p>${escapeHtml(topic.description)}</p><p class="meta">${topic.posts.length}개 글</p></article>`).join('\n')}</div></section>
 <section><h2>최근 글</h2><div class="grid">${posts.slice(0, 6).map(renderPostCard).join('\n')}</div></section>`
   });

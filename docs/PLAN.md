@@ -8,6 +8,8 @@ The first topic is Linux development. The system should later expand to Android,
 
 This document is the durable work plan. Future sessions should read this file first, then continue from the current phase and checklist.
 
+In-flight quality work (label cleanup, UI redesign, content quality) is tracked separately in `docs/IMPROVEMENT-PLAN.md`. Read that file too before picking up new work, and prefer continuing its first unchecked item over starting a new phase.
+
 ## Product Direction
 
 Build a daily web-published newsletter that helps Linux kernel developers track:
@@ -218,11 +220,12 @@ When resuming work:
 
 1. Read `AGENTS.md`.
 2. Read this `docs/PLAN.md`.
-3. Run `git status --short`.
-4. Check the current phase checklist.
-5. Make one small, verifiable step.
-6. Run the smallest meaningful validation command.
-7. Commit the result with a clear message.
+3. Read `docs/IMPROVEMENT-PLAN.md` for the active quality track.
+4. Run `git status --short`.
+5. Check the current phase checklist (this file) and the first unchecked item in IMPROVEMENT-PLAN.md.
+6. Make one small, verifiable step.
+7. Run the smallest meaningful validation command.
+8. Commit the result with a clear message.
 
 ## Local MVP Usage
 

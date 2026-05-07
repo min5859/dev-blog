@@ -130,7 +130,7 @@ function toPostDraft(candidates, sourceData) {
   return {
     id: postId,
     topic,
-    title: `${runDate} 리눅스 개발 브리핑 초안`,
+    title: `${runDate} 커널 개발 브리핑 (초안)`,
     date: runDate,
     summary: `kernel.org 릴리스 정보와 LKML 최신 토론 ${sourceData.recordCount}건을 수집해 뉴스레터 후보 ${candidates.length}건을 선별한 자동 생성 초안입니다.`,
     tags: ['리눅스', '커널', 'LKML', '릴리스', '초안'],
@@ -155,7 +155,7 @@ function toPostDraft(candidates, sourceData) {
       'LKML 항목은 아직 제목/메타데이터 기반 선별이므로, 본문 기반 AI 요약 단계에서 실제 영향도와 중복 토론을 재평가해야 합니다.',
     ],
     nextActions: [
-      'AI 요약 어댑터를 연결해 후보별 원문 의미를 한국어 문단으로 재작성합니다.',
+      'AI 요약 어댑터를 연결해 후보별 원문 의미를 문단 단위로 재작성합니다.',
       'LKML 중복 스레드 병합과 서브시스템별 중요도 가중치를 개선합니다.',
       '생성 초안을 사람이 검토한 뒤 게시용 글로 승격하는 흐름을 추가합니다.',
     ],
