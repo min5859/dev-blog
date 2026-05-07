@@ -77,6 +77,8 @@ Exit criteria:
 
 Goal: collect Linux development source material reproducibly.
 
+Status: in progress
+
 Initial candidate sources:
 
 - kernel.org releases and stable updates
@@ -88,10 +90,12 @@ Initial candidate sources:
 
 Planned work:
 
-- Add source configuration per topic.
-- Add collector scripts that store raw snapshots under `data/raw/`.
-- Add normalized source records under `data/normalized/`.
-- Avoid brittle scraping where feeds or structured data are available.
+- [x] Add source configuration per topic.
+- [x] Add collector scripts that store raw snapshots under `data/raw/`.
+- [x] Add normalized source records under `data/normalized/`.
+- [x] Avoid brittle scraping where feeds or structured data are available.
+- [ ] Add lore.kernel.org patch/discussion collection.
+- [ ] Add sample fixtures or documented artifact retention policy for CI/offline checks.
 
 Exit criteria:
 

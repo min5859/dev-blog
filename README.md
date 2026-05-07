@@ -6,7 +6,7 @@ The first topic is Linux kernel development. The architecture is intended to exp
 
 ## Current Status
 
-Project foundation is being built.
+The static Korean blog MVP is working. Phase 2 source collection has started with a kernel.org release collector.
 
 Read the durable plan first:
 
@@ -20,6 +20,21 @@ Read the durable plan first:
 - Publish output as a shareable web/blog site.
 - Prefer subscription-based AI execution such as `claude -p` or OpenClaw workflows.
 - Keep the system topic-extensible from the start.
+
+## Source Collection
+
+Collect Linux release metadata from kernel.org and normalize it into source records:
+
+```bash
+npm run collect:linux
+```
+
+Outputs are written under:
+
+- `data/raw/linux/`
+- `data/normalized/linux/`
+
+These runtime outputs are ignored by git because they are reproducible and change over time.
 
 ## Local Preview
 
