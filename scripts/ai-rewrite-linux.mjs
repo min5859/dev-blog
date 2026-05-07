@@ -90,38 +90,31 @@ function templateRewrite(draft) {
   return {
     ...draft,
     title: `${draft.date} 커널 개발 브리핑`,
-    summary: `kernel.org 릴리스 ${buckets.releases ?? 0}건, 회귀·보안 ${buckets.regressions ?? 0}건, 패치 토론 ${buckets.patches ?? 0}건을 정리한 일일 커널 개발 브리핑입니다. 본문은 자동 선별 기반이므로 게시 전 원문 검토가 필요합니다.`,
+    summary: `오늘의 핵심: 릴리스 ${buckets.releases ?? 0}건, 회귀·보안 ${buckets.regressions ?? 0}건, 시스템 영향 패치 ${buckets.patches ?? 0}건. 국부 드라이버/플랫폼 패치는 본문에서 제외했습니다.`,
     highlights: draft.highlights,
     sections: [
       {
         heading: '릴리스/로드맵',
-        body: sectionByHeading.get('릴리스/로드맵') || '이번 수집분에서 우선순위가 높은 공식 릴리스 신호가 없습니다.',
+        body: sectionByHeading.get('릴리스/로드맵') || '이번 수집에서 신규 릴리스가 없습니다.',
       },
       {
         heading: '회귀·보안 신호',
-        body: sectionByHeading.get('회귀·보안 신호') || '이번 수집분에서 회귀·보안으로 분류된 항목이 없습니다.',
+        body: sectionByHeading.get('회귀·보안 신호') || '회귀·보안 신호로 분류된 항목이 없습니다.',
       },
       {
-        heading: '주요 패치/토론',
-        body: sectionByHeading.get('주요 패치/토론') || '이번 수집분에서 우선순위가 높은 패치 토론이 없습니다.',
+        heading: '핵심 변경',
+        body: sectionByHeading.get('핵심 변경') || '이번 수집에서 시스템 전반에 영향을 줄 변경이 분류되지 않았습니다.',
       },
       {
-        heading: '추가 LKML 신호',
-        body: sectionByHeading.get('추가 LKML 신호') || '이번 수집분에서 추가로 볼 LKML 신호가 없습니다.',
+        heading: '기타',
+        body: sectionByHeading.get('기타') || '국부 드라이버/플랫폼 패치는 본문에서 제외했습니다.',
       },
     ],
-    implications: [
-      ...draft.implications,
-      '본문 항목의 priority/verifyLink/action을 기준으로 팀 단위 검토 우선순위를 정하세요.',
-    ],
-    nextActions: [
-      '상위 priority 항목의 verifyLink를 먼저 확인해 영향 범위를 좁히세요.',
-      '회귀·보안 신호 섹션은 게시 전 원문 스레드 확인이 필요합니다.',
-      'AI 어댑터를 `AI_ADAPTER=claude`로 실행해 문장 품질을 더 높이세요.',
-    ],
+    implications: draft.implications,
+    nextActions: draft.nextActions,
     confidence: {
-      level: adapter === 'template' ? '템플릿 개선 초안' : 'AI 초안',
-      note: '메타데이터 기반 자동 선별 결과입니다. 본문 전체 의미를 완전히 검증한 상태는 아니므로 게시 전 원문 확인이 필요합니다.',
+      level: adapter === 'template' ? '템플릿 초안' : 'AI 초안',
+      note: '제목·메타데이터 기반 자동 선별입니다. 본문 의미를 검증한 상태가 아니므로 게시 전 원문 확인이 필요합니다.',
     },
     draftMetadata: {
       ...draft.draftMetadata,

@@ -7,6 +7,7 @@ import {
   mergePatchSeries,
   isStaleReply,
   isRegressionSignal,
+  isBroadImpact,
 } from './draft-linux.mjs';
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -85,6 +86,39 @@ test('isRegressionSignal flags titles with regression/oops/cve markers', () => {
   assert.equal(isRegressionSignal(lkml({ title: '[PATCH] sched/rt: Fix RT_PUSH_IPI soft lockup loop' })), true);
   assert.equal(isRegressionSignal(lkml({ title: '[PATCH] mm: regression in folio_alloc' })), true);
   assert.equal(isRegressionSignal(lkml({ title: '[PATCH] x86: introduce new helper' })), false);
+});
+
+test('isRegressionSignal does not flag generic Fix patches', () => {
+  assert.equal(isRegressionSignal(lkml({ title: '[PATCH] usb: serial: Fix typo in device list' })), false);
+  assert.equal(isRegressionSignal(lkml({ title: '[PATCH v2] iio: adc: ad4691: Fix vref handling' })), false);
+});
+
+test('scoreRecord recognizes the 전력 관리 subsystem', () => {
+  const scored = scoreRecord(lkml({ title: '[PATCH] cpufreq: tune intel_pstate response' }));
+  assert.ok(scored.matchedSubsystems.includes('전력 관리'),
+    `expected 전력 관리 in ${JSON.stringify(scored.matchedSubsystems)}`);
+});
+
+test('isBroadImpact keeps releases, regressions, and broad-subsystem LKML records', () => {
+  const release = { sourceId: 'kernel-org-releases', title: 'Linux 7.1-rc2 mainline', tags: [], metadata: { moniker: 'mainline' }, matchedSubsystems: [] };
+  assert.equal(isBroadImpact(release), true);
+
+  const regression = scoreRecord(lkml({ title: '[PATCH] mm: regression in folio_alloc' }));
+  assert.equal(isBroadImpact(regression), true);
+
+  const sched = scoreRecord(lkml({ title: '[PATCH] sched: rebalance fix' }));
+  assert.equal(isBroadImpact(sched), true);
+});
+
+test('isBroadImpact filters out localized-only LKML records', () => {
+  const driverOnly = scoreRecord(lkml({ title: '[PATCH] drivers/usb: serial: tweak mxuport' }));
+  assert.equal(isBroadImpact(driverOnly), false);
+
+  const archOnly = scoreRecord(lkml({ title: '[PATCH] arm64: dts: apple: add t8122' }));
+  assert.equal(isBroadImpact(archOnly), false);
+
+  const unmatched = scoreRecord(lkml({ title: '[PATCH] coresight: refactor helper' }));
+  assert.equal(isBroadImpact(unmatched), false);
 });
 
 test('isStaleReply drops "Re:" mails older than 24 hours', () => {

@@ -17,12 +17,17 @@ const subsystemPatterns = new Map([
   ['스토리지/파일시스템', [/\bfs:/, /\bblock\b/, /\bbtrfs\b/, /\bxfs\b/, /\bext4\b/, /\bnvme\b/, /\bscsi\b/, /\bubi\b/]],
   ['메모리 관리', [/\bmm:/, /memory/, /\bpage\b/, /\bfolio\b/, /\bslab\b/, /vmalloc/]],
   ['스케줄러/실시간', [/\bsched\b/, /preempt_rt/, /\bPREEMPT_RT\b/i]],
-  ['보안', [/security/, /\bcve\b/, /selinux/, /apparmor/, /crypto/]],
-  ['드라이버', [/\bdriver\b/, /drivers\//, /\bgpu\b/, /\bdrm\b/, /\busb\b/, /\bpci\b/, /\biommu\b/]],
+  ['보안', [/security/, /\bcve\b/, /selinux/, /apparmor/, /crypto/, /\biommu\b/]],
+  ['전력 관리', [/\bpm:/, /\bpm_runtime\b/, /\bcpufreq\b/, /\bcpuidle\b/, /\bthermal\b/, /\bacpi\b/, /\bsuspend\b/]],
+  ['드라이버', [/\bdriver\b/, /drivers\//, /\bgpu\b/, /\bdrm\b/, /\busb\b/, /\bpci\b/]],
   ['아키텍처', [/\barm64\b/, /\bx86\b/, /\briscv\b/, /\bpowerpc\b/, /\bloongarch\b/]],
 ]);
 
-const regressionPattern = /(regression|oops|panic|crash|cve|\bbug\b|security|\bfix\b)/i;
+const broadSubsystems = new Set([
+  '가상화', '네트워크', '스토리지/파일시스템', '메모리 관리', '스케줄러/실시간', '보안', '전력 관리',
+]);
+
+const regressionPattern = /(\bregression\b|\boops\b|\bpanic\b|\bcrash\b|cve|\bsecurity\b|\bvuln|lockup|deadlock)/i;
 const monikerImpact = new Map([
   ['mainline', '메인라인 추적 대상 환경'],
   ['stable', '안정 커널 사용 환경'],
@@ -159,23 +164,34 @@ function isRegressionSignal(record) {
   return record.sourceId === 'lore-lkml-new' && regressionPattern.test(record.title);
 }
 
+function broadSubsystemsOf(record) {
+  return (record.matchedSubsystems || []).filter((s) => broadSubsystems.has(s));
+}
+
+function isBroadImpact(record) {
+  if (record.sourceId === 'kernel-org-releases') return true;
+  if (isRegressionSignal(record)) return true;
+  return broadSubsystemsOf(record).length > 0;
+}
+
 function pickCandidates(records) {
   const nowMs = Date.now();
   const scored = records.map(scoreRecord);
   const merged = mergePatchSeries(scored);
   const fresh = merged.filter((record) => !isStaleReply(record, nowMs));
-  fresh.sort((a, b) => b.score - a.score || String(b.observedDate).localeCompare(String(a.observedDate)));
+  const broad = fresh.filter(isBroadImpact);
+  broad.sort((a, b) => b.score - a.score || String(b.observedDate).localeCompare(String(a.observedDate)));
 
-  const official = fresh.filter((record) => record.sourceId === 'kernel-org-releases').slice(0, 5);
-  const regressions = fresh.filter(isRegressionSignal).slice(0, 5);
+  const official = broad.filter((record) => record.sourceId === 'kernel-org-releases').slice(0, 4);
+  const regressions = broad.filter(isRegressionSignal).slice(0, 3);
   const regressionIds = new Set(regressions.map((record) => record.id));
-  const patches = fresh
+  const patches = broad
     .filter((record) => record.sourceId === 'lore-lkml-new' && record.kind === 'patch-discussion' && !regressionIds.has(record.id))
-    .slice(0, 8);
-  const signals = fresh
+    .slice(0, 4);
+  const signals = broad
     .filter((record) => record.sourceId === 'lore-lkml-new' && record.score >= 28)
     .filter((record) => !regressionIds.has(record.id) && !patches.some((patch) => patch.id === record.id))
-    .slice(0, 5);
+    .slice(0, 2);
 
   const byId = new Map([...official, ...regressions, ...patches, ...signals].map((record) => [record.id, record]));
   return [...byId.values()].sort((a, b) => b.score - a.score || String(b.observedDate).localeCompare(String(a.observedDate)));
@@ -184,7 +200,8 @@ function pickCandidates(records) {
 function bucketBySubsystem(records) {
   const buckets = new Map();
   for (const record of records) {
-    const labels = record.matchedSubsystems?.length ? record.matchedSubsystems : ['미분류'];
+    const labels = broadSubsystemsOf(record);
+    if (!labels.length) continue;
     for (const label of labels) {
       if (!buckets.has(label)) buckets.set(label, []);
       buckets.get(label).push(record);
@@ -249,25 +266,19 @@ function impactRelease(record) {
   const impact = monikerImpact.get(moniker) || '대상 환경 확인 필요';
   return [
     `- ${stripPatchPrefix(record.title)}`,
-    `  · 무엇: ${moniker} 라인 릴리스, 공개일 ${date}${eol}`,
-    `  · 영향: ${impact}`,
-    `  · 확인할 것: ${verifyLinkFor(record)}`,
+    `  · 영향: ${impact} (공개일 ${date}${eol})`,
+    `  · 확인: ${verifyLinkFor(record)}`,
   ].join('\n');
 }
 
-function impactLkml(record) {
-  const author = record.metadata?.author?.name || record.metadata?.author?.email || '작성자 미상';
-  const subsystems = record.matchedSubsystems?.length ? record.matchedSubsystems.join(', ') : '서브시스템 미분류';
-  const kindLabel = record.kind === 'pull-request' ? 'pull request'
-    : record.kind === 'patch-discussion' ? `패치 토론${patchVersion(record) > 1 ? ` (v${patchVersion(record)})` : ''}`
-    : record.kind === 'mail-reply' ? '응답 메일'
-    : 'LKML 토론';
-  return [
-    `- ${stripPatchPrefix(record.title)}`,
-    `  · 무엇: ${author}이 보낸 ${kindLabel}`,
-    `  · 영향: ${subsystems}`,
-    `  · 확인할 것: ${record.url}`,
-  ].join('\n');
+function impactLkml(record, options = {}) {
+  const subsystems = broadSubsystemsOf(record).join(', ');
+  const lines = [`- ${stripPatchPrefix(record.title)}`];
+  if (options.withSubsystem !== false && subsystems) {
+    lines.push(`  · 영향: ${subsystems}`);
+  }
+  lines.push(`  · 확인: ${record.url}`);
+  return lines.join('\n');
 }
 
 function buildSection(records, fallback, formatter) {
@@ -279,7 +290,7 @@ function buildPatchSection(records, fallback) {
   if (!records.length) return fallback;
   const buckets = bucketBySubsystem(records);
   return buckets
-    .map(([label, items]) => `[${label}]\n${items.slice(0, 3).map(impactLkml).join('\n\n')}`)
+    .map(([label, items]) => `[${label}]\n${items.slice(0, 2).map((r) => impactLkml(r, { withSubsystem: false })).join('\n\n')}`)
     .join('\n\n');
 }
 
@@ -293,53 +304,53 @@ function toPostDraft(candidates, sourceData) {
   const otherSignals = candidates.filter((record) => record.sourceId === 'lore-lkml-new'
     && record.kind !== 'patch-discussion'
     && !regressionIds.has(record.id));
-  const top = candidates.slice(0, 5);
+  const top = candidates.slice(0, 4);
   const mainline = sourceData.records.find((record) => record.sourceId === 'kernel-org-releases' && record.metadata?.moniker === 'mainline');
-  const latestStable = sourceData.records.find((record) => record.sourceId === 'kernel-org-releases' && record.metadata?.moniker === 'stable');
 
   return {
     id: postId,
     topic,
     title: `${runDate} 커널 개발 브리핑 (초안)`,
     date: runDate,
-    summary: `kernel.org 릴리스 ${releases.length}건, 회귀·보안 신호 ${regressions.length}건, 패치 토론 ${patches.length}건, 추가 LKML 신호 ${otherSignals.length}건을 후보로 정리한 자동 생성 초안입니다.`,
-    tags: ['리눅스', '커널', 'LKML', '릴리스', '초안'],
+    summary: `오늘의 핵심: 릴리스 ${releases.length}건, 회귀·보안 ${regressions.length}건, 시스템 영향 패치 ${patches.length}건. 국부 드라이버/플랫폼 패치는 본문에서 제외했습니다.`,
+    tags: ['리눅스', '커널', '초안'],
     highlights: top.map(highlightOf),
     sections: [
       {
         heading: '릴리스/로드맵',
-        body: buildSection(releases, '이번 수집분에서 우선순위가 높은 공식 릴리스 신호가 없습니다.', impactRelease),
+        body: buildSection(releases, '이번 수집에서 신규 릴리스가 없습니다.', impactRelease),
       },
       {
         heading: '회귀·보안 신호',
-        body: buildSection(regressions, '이번 수집분에서 회귀·보안으로 분류된 항목이 없습니다.', impactLkml),
+        body: buildSection(regressions, '회귀·보안 신호로 분류된 항목이 없습니다.', (r) => impactLkml(r)),
       },
       {
-        heading: '주요 패치/토론',
-        body: buildPatchSection(patches, '이번 수집분에서 우선순위가 높은 패치 토론이 없습니다.'),
+        heading: '핵심 변경',
+        body: buildPatchSection(patches, '이번 수집에서 시스템 전반에 영향을 줄 변경이 분류되지 않았습니다.'),
       },
       {
-        heading: '추가 LKML 신호',
-        body: buildSection(otherSignals.slice(0, 5), '이번 수집분에서 추가로 볼 LKML 신호가 없습니다.', impactLkml),
+        heading: '기타',
+        body: otherSignals.length
+          ? buildSection(otherSignals.slice(0, 2), '추가 신호가 없습니다.', (r) => impactLkml(r))
+          : '국부 드라이버/플랫폼 패치는 본문에서 제외했습니다. 자기 영역 키워드로 lore.kernel.org에서 직접 검색하세요.',
       },
     ],
     implications: [
-      mainline ? `mainline 상태: ${mainline.title}. 다음 릴리스 후보 흐름과 merge-window 신호를 계속 추적해야 합니다.` : 'mainline 릴리스 정보를 확인하지 못했습니다.',
-      latestStable ? `latest stable 후보: ${latestStable.title}. stable changelog 기반 영향도 분류가 다음 보강 지점입니다.` : 'stable 릴리스 정보를 확인하지 못했습니다.',
+      mainline ? `mainline은 ${stripPatchPrefix(mainline.title)} 단계입니다.` : 'mainline 정보를 확인하지 못했습니다.',
       regressions.length
-        ? `회귀·보안 신호 ${regressions.length}건이 분류되었습니다. 게시 전 원문 스레드 확인이 필요합니다.`
-        : '회귀·보안 신호가 비어 있다면 새로 들어온 패치 시리즈가 안정 단계임을 의미할 수 있습니다.',
+        ? `회귀·보안 ${regressions.length}건 — 자기 환경 영향 가능성을 우선 확인하세요.`
+        : '회귀·보안 신호는 비어 있습니다.',
     ],
     nextActions: [
-      '상위 릴리스 후보의 changelog/diffview를 확인해 실제 변경 범위를 분류합니다.',
-      '회귀·보안 섹션의 원문 스레드를 우선 확인해 영향 범위와 백포트 필요성을 판단합니다.',
-      '서브시스템별 패치 그룹 중 자기 환경에 해당하는 항목만 추려 팀에 공유합니다.',
+      '회귀·보안 항목의 verifyLink를 먼저 열어 자기 환경에 영향이 있는지 판단하세요.',
+      '핵심 변경 섹션에 자기 관심 서브시스템이 보이면 코드 경로에 영향이 가는지 점검하세요.',
+      '릴리스 changelog는 자기가 베이스로 쓰는 라인(stable/longterm)에 한정해 빠르게 훑으세요.',
     ],
     confidence: {
       level: '초안',
-      note: '메타데이터/제목 기반 자동 선별 결과입니다. 게시 전 원문 검토 또는 AI 본문 요약이 필요합니다.',
+      note: '제목·메타데이터 기반 자동 선별입니다. 본문 의미를 검증한 상태가 아니므로 게시 전 원문 확인이 필요합니다.',
     },
-    sources: candidates.slice(0, 12).map((record) => ({
+    sources: candidates.slice(0, 8).map((record) => ({
       title: stripPatchPrefix(record.title),
       url: record.url,
       note: `${record.source} · ${record.kind}`,
@@ -356,7 +367,7 @@ function toPostDraft(candidates, sourceData) {
         patches: patches.length,
         otherSignals: otherSignals.length,
       },
-      subsystems: [...new Set(candidates.flatMap((record) => record.matchedSubsystems || []))],
+      subsystems: [...new Set(candidates.flatMap(broadSubsystemsOf))],
     },
   };
 }
@@ -402,6 +413,7 @@ export {
   mergePatchSeries,
   isStaleReply,
   isRegressionSignal,
+  isBroadImpact,
   bucketBySubsystem,
   pickCandidates,
   highlightOf,
