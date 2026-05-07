@@ -80,7 +80,7 @@ Runtime data outputs are ignored by git because they are reproducible and change
 
 ## Local Preview
 
-This MVP is intended to be checked locally first. It does not deploy anywhere yet.
+The site can be previewed locally. Once pushed to a GitHub repo with Pages enabled, `.github/workflows/pages.yml` deploys automatically — see `docs/DEPLOYMENT.md`.
 
 ```bash
 npm run dev

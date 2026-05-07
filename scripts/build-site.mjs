@@ -8,7 +8,12 @@ const normalizedDir = path.join(root, 'data', 'normalized');
 const siteTitle = 'Dev Blog';
 const siteDescription = 'AI가 보조하는 엔지니어링 주제별 개발 뉴스레터입니다.';
 const siteUrl = process.env.SITE_URL || 'http://localhost:4321';
+const basePath = (process.env.BASE_PATH || '').replace(/\/+$/, '');
 const buildStartedAt = new Date();
+
+function link(pathname) {
+  return `${basePath}${pathname}`;
+}
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -37,7 +42,7 @@ function formatBuildStamp(date) {
 }
 
 function absoluteUrl(pathname) {
-  return new URL(pathname, siteUrl).toString();
+  return new URL(link(pathname), siteUrl).toString();
 }
 
 function slugify(value) {
@@ -86,18 +91,18 @@ function renderLayout({ title, description = siteDescription, body, buildStamp }
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="${escapeHtml(description)}">
   <title>${escapeHtml(title)}</title>
-  <link rel="alternate" type="application/rss+xml" title="${escapeHtml(siteTitle)} RSS" href="/feed.xml">
-  <link rel="stylesheet" href="/assets/styles.css">
+  <link rel="alternate" type="application/rss+xml" title="${escapeHtml(siteTitle)} RSS" href="${link('/feed.xml')}">
+  <link rel="stylesheet" href="${link('/assets/styles.css')}">
 </head>
 <body>
   <div class="site-shell">
     <nav class="top-nav" aria-label="주요 메뉴">
-      <a class="brand" href="/index.html">Dev Blog</a>
+      <a class="brand" href="${link('/index.html')}">Dev Blog</a>
       <div class="nav-links">
-        <a href="/archive.html">아카이브</a>
-        <a href="/tags/index.html">태그</a>
-        <a href="/search.html">검색</a>
-        <a href="/feed.xml">RSS</a>
+        <a href="${link('/archive.html')}">아카이브</a>
+        <a href="${link('/tags/index.html')}">태그</a>
+        <a href="${link('/search.html')}">검색</a>
+        <a href="${link('/feed.xml')}">RSS</a>
       </div>
     </nav>
 ${body}
@@ -239,9 +244,9 @@ function renderPostCard(post) {
   const tags = (post.tags || []).slice(0, 4);
   return `<article class="card post-card">
   <div class="eyebrow">${escapeHtml(formatDate(post.date))} · ${escapeHtml(post.topicTitle || '')}</div>
-  <h3><a href="/posts/${escapeHtml(post.id)}.html">${escapeHtml(post.title)}</a></h3>
+  <h3><a href="${link(`/posts/${post.id}.html`)}">${escapeHtml(post.title)}</a></h3>
   <p>${escapeHtml(post.summary)}</p>
-  <p class="tags">${tags.map((tag) => `<a href="/tags/${slugify(tag)}.html">#${escapeHtml(tag)}</a>`).join(' ')}</p>
+  <p class="tags">${tags.map((tag) => `<a href="${link(`/tags/${slugify(tag)}.html`)}">#${escapeHtml(tag)}</a>`).join(' ')}</p>
 </article>`;
 }
 
@@ -290,7 +295,7 @@ function summarizeSourceKinds(sources = []) {
 function renderArticleMeta(post, topic) {
   const summary = summarizeSourceKinds(post.sources);
   return `<aside class="article-meta">
-  <a class="article-back" href="/topics/${escapeHtml(topic.slug)}.html">← ${escapeHtml(topic.title)}</a>
+  <a class="article-back" href="${link(`/topics/${topic.slug}.html`)}">← ${escapeHtml(topic.title)}</a>
   <dl>
     <dt>발행</dt><dd>${escapeHtml(formatDate(post.date))}</dd>
     <dt>주제</dt><dd>${escapeHtml(topic.title)}</dd>
@@ -313,7 +318,7 @@ function renderPost(post, topic, buildStamp) {
       <div class="eyebrow">${escapeHtml(formatDate(post.date))} · ${escapeHtml(topic.title)} · ${escapeHtml(post.readingMinutes)}분 읽기</div>
       <h1>${markupTechnical(escapeHtml(post.title))}</h1>
       <p class="lead">${escapeHtml(post.summary)}</p>
-      <p class="tags">${(post.tags || []).map((tag) => `<a href="/tags/${slugify(tag)}.html">#${escapeHtml(tag)}</a>`).join(' ')}</p>
+      <p class="tags">${(post.tags || []).map((tag) => `<a href="${link(`/tags/${slugify(tag)}.html`)}">#${escapeHtml(tag)}</a>`).join(' ')}</p>
     </header>
     ${post.highlights?.length ? `<section class="panel"><h2>오늘의 핵심</h2>${renderHighlights(post.highlights)}</section>` : ''}
     ${post.sections.map((section) => `<section><h2>${escapeHtml(section.heading)}</h2><p>${markupTechnical(escapeHtml(section.body))}</p></section>`).join('\n')}
@@ -463,7 +468,7 @@ p { margin: 8px 0; }
 
 function renderSearchPage(buildStamp) {
   const script = `
-    const data = await fetch('/search-index.json').then((r) => r.json());
+    const data = await fetch('${link('/search-index.json')}').then((r) => r.json());
     const input = document.getElementById('search-input');
     const results = document.getElementById('search-results');
     const counter = document.getElementById('search-counter');
@@ -545,7 +550,7 @@ async function build() {
     body: `${renderHomeHead()}
 ${renderReleaseStatus(releaseStatus)}
 <section><h2>최근 글</h2><div class="grid">${posts.slice(0, 6).map(renderPostCard).join('\n')}</div></section>
-<section><h2>주제</h2><div class="grid">${topics.map((topic) => `<article class="card"><h3><a href="/topics/${escapeHtml(topic.slug)}.html">${escapeHtml(topic.title)}</a></h3><p>${escapeHtml(topic.description)}</p><p class="meta">${topic.posts.length}개 글</p></article>`).join('\n')}</div></section>`,
+<section><h2>주제</h2><div class="grid">${topics.map((topic) => `<article class="card"><h3><a href="${link(`/topics/${topic.slug}.html`)}">${escapeHtml(topic.title)}</a></h3><p>${escapeHtml(topic.description)}</p><p class="meta">${topic.posts.length}개 글</p></article>`).join('\n')}</div></section>`,
   });
   await writeFile(path.join(publicDir, 'index.html'), home);
 
@@ -568,7 +573,7 @@ ${renderReleaseStatus(releaseStatus)}
   const tagIndex = renderLayout({
     title: `태그 - ${siteTitle}`,
     buildStamp,
-    body: `<header class="site-page-head"><div class="eyebrow">tags</div><h1>태그</h1><p class="lead">관심 키워드별로 글을 찾아볼 수 있습니다.</p></header><section class="tags">${[...tagMap.keys()].sort((a, b) => a.localeCompare(b, 'ko')).map((tag) => `<a class="card" href="/tags/${slugify(tag)}.html">#${escapeHtml(tag)} <span class="meta">${tagMap.get(tag).length}</span></a>`).join('\n')}</section>`,
+    body: `<header class="site-page-head"><div class="eyebrow">tags</div><h1>태그</h1><p class="lead">관심 키워드별로 글을 찾아볼 수 있습니다.</p></header><section class="tags">${[...tagMap.keys()].sort((a, b) => a.localeCompare(b, 'ko')).map((tag) => `<a class="card" href="${link(`/tags/${slugify(tag)}.html`)}">#${escapeHtml(tag)} <span class="meta">${tagMap.get(tag).length}</span></a>`).join('\n')}</section>`,
   });
   await writeFile(path.join(publicDir, 'tags', 'index.html'), tagIndex);
 
@@ -576,7 +581,7 @@ ${renderReleaseStatus(releaseStatus)}
     const tagPage = renderLayout({
       title: `#${tag} - ${siteTitle}`,
       buildStamp,
-      body: `<header class="site-page-head"><p><a href="/tags/index.html">← 태그</a></p><h1>#${escapeHtml(tag)}</h1><p class="lead">${taggedPosts.length}개 글</p></header><section><div class="grid">${taggedPosts.map(renderPostCard).join('\n')}</div></section>`,
+      body: `<header class="site-page-head"><p><a href="${link('/tags/index.html')}">← 태그</a></p><h1>#${escapeHtml(tag)}</h1><p class="lead">${taggedPosts.length}개 글</p></header><section><div class="grid">${taggedPosts.map(renderPostCard).join('\n')}</div></section>`,
     });
     await writeFile(path.join(publicDir, 'tags', `${slugify(tag)}.html`), tagPage);
   }
@@ -587,7 +592,7 @@ ${renderReleaseStatus(releaseStatus)}
       title: `${topic.title} - ${siteTitle}`,
       description: topic.description,
       buildStamp,
-      body: `<header class="site-page-head"><p><a href="/index.html">← Dev Blog</a></p><h1>${escapeHtml(topic.title)}</h1><p class="lead">${escapeHtml(topic.description)}</p></header>
+      body: `<header class="site-page-head"><p><a href="${link('/index.html')}">← Dev Blog</a></p><h1>${escapeHtml(topic.title)}</h1><p class="lead">${escapeHtml(topic.description)}</p></header>
 <section><h2>글 목록</h2><div class="grid">${topicPosts.map(renderPostCard).join('\n')}</div></section>`,
     });
     await writeFile(path.join(publicDir, 'topics', `${topic.slug}.html`), topicHtml);
@@ -624,7 +629,7 @@ ${feedItems}
     tags: post.tags || [],
     subsystems: post.draftMetadata?.subsystems || [],
     priority: topPriority(post.highlights),
-    url: `/posts/${post.id}.html`,
+    url: link(`/posts/${post.id}.html`),
   })), null, 2));
 
   const buildMeta = {

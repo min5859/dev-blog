@@ -229,7 +229,7 @@ When resuming work:
 
 ## Local MVP Usage
 
-The current MVP is local-only. It does not deploy to GitHub Pages or any external host yet.
+The site builds locally for development; once the repo is pushed to GitHub with Pages enabled, `.github/workflows/pages.yml` deploys automatically. See `docs/DEPLOYMENT.md` for setup details.
 
 Run:
 
