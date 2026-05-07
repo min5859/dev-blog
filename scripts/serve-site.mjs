@@ -2,7 +2,6 @@ import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(process.cwd(), 'public');
 const port = Number(process.env.PORT || 4321);
@@ -12,6 +11,7 @@ const contentTypes = new Map([
   ['.css', 'text/css; charset=utf-8'],
   ['.js', 'text/javascript; charset=utf-8'],
   ['.json', 'application/json; charset=utf-8'],
+  ['.xml', 'application/rss+xml; charset=utf-8'],
   ['.svg', 'image/svg+xml'],
   ['.png', 'image/png'],
   ['.jpg', 'image/jpeg'],
@@ -58,8 +58,21 @@ const server = createServer(async (req, res) => {
   }
 
   const ext = path.extname(file);
-  res.writeHead(200, { 'content-type': contentTypes.get(ext) || 'application/octet-stream' });
+  res.writeHead(200, {
+    'content-type': contentTypes.get(ext) || 'application/octet-stream',
+    'cache-control': 'no-store',
+  });
   createReadStream(file).pipe(res);
+});
+
+server.on('error', (error) => {
+  if (error.code === 'EADDRINUSE') {
+    console.error(`포트 ${port}가 이미 사용 중입니다.`);
+    console.error(`이미 dev 서버가 떠 있다면 http://localhost:${port} 를 새로고침하세요.`);
+    console.error(`다른 포트를 쓰려면 PORT=4322 npm run dev 처럼 실행하세요.`);
+    process.exit(1);
+  }
+  throw error;
 });
 
 server.listen(port, () => {
