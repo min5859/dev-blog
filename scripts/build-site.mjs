@@ -457,7 +457,7 @@ function renderHomeHead() {
   return `<header class="site-page-head">
   <div class="eyebrow">Linux-first · topic-extensible · static publishing</div>
   <h1>${escapeHtml(siteTitle)}</h1>
-  <p class="lead">${escapeHtml(siteDescription)} 첫 주제는 리눅스 커널 개발이며, Android·AI·보안·툴체인 등으로 확장할 수 있게 구성했습니다.</p>
+  <p class="lead">${escapeHtml(siteDescription)}</p>
 </header>`;
 }
 
