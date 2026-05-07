@@ -56,6 +56,14 @@ npm run rewrite:linux:claude
 
 The prompt template lives at `prompts/linux-newsletter-ko.md`.
 
+Run the full daily pipeline:
+
+```bash
+npm run daily:linux
+```
+
+Scheduling details and cron examples are documented in `docs/SCHEDULING.md`.
+
 Runtime data outputs are ignored by git because they are reproducible and change over time. Generated posts under `content/` are versioned.
 
 ## Local Preview

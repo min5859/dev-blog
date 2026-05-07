@@ -128,12 +128,16 @@ Exit criteria:
 
 Goal: run the pipeline daily.
 
+Status: in progress
+
 Planned work:
 
-- Add local cron/system scheduler documentation.
-- Add OpenClaw cron option if appropriate.
-- Ensure logs and generated artifacts are easy to inspect.
-- Make failures visible without silently skipping a day.
+- [x] Add daily pipeline command.
+- [x] Add local cron/system scheduler documentation.
+- [x] Add OpenClaw cron option if appropriate.
+- [x] Ensure logs and generated artifacts are easy to inspect.
+- [x] Make failures visible without silently skipping a day.
+- [ ] Register the actual recurring schedule when approved.
 
 Exit criteria:
 
