@@ -125,6 +125,15 @@ function templateRewrite(draft) {
     },
     draftMetadata: {
       ...draft.draftMetadata,
+    },
+  };
+}
+
+function withAuditMetadata(post) {
+  return {
+    ...post,
+    draftMetadata: {
+      ...post.draftMetadata,
       rewrittenAt: generatedAt,
       rewriteAdapter: adapter,
       promptTemplate: path.relative(root, promptTemplatePath),
@@ -171,7 +180,7 @@ async function main() {
   await writeFile(promptLatest, prompt);
 
   const aiText = await runAiAdapter(prompt);
-  const rewritten = aiText ? parseJsonResponse(aiText) : templateRewrite(draft);
+  const rewritten = withAuditMetadata(aiText ? parseJsonResponse(aiText) : templateRewrite(draft));
   validatePost(rewritten);
 
   const aiOutput = path.join(generatedDir, `rewritten-${postId}.json`);
