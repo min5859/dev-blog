@@ -8,6 +8,7 @@ import {
   isStaleReply,
   isRegressionSignal,
   isBroadImpact,
+  extractCommitMessage,
 } from './draft-linux.mjs';
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -127,6 +128,43 @@ test('isStaleReply drops "Re:" mails older than 24 hours', () => {
   const fresh = lkml({ kind: 'mail-reply', title: 'Re: [PATCH] foo', observedDate: '2026-05-07' });
   assert.equal(isStaleReply(stale, now), true);
   assert.equal(isStaleReply(fresh, now - ONE_DAY_MS / 2), false);
+});
+
+test('extractCommitMessage strips mail headers, diffs, and trailing tags', () => {
+  const sample = [
+    'From: Dev <dev@example.com>',
+    'Subject: [PATCH] mm: tighten folio_alloc validation',
+    'Date: Fri, 09 May 2026 12:00:00 +0000',
+    '',
+    'When folio_alloc is called with order > MAX_PAGE_ORDER it silently',
+    'returns NULL. Reject the call and warn so callers notice.',
+    '',
+    'Signed-off-by: Dev <dev@example.com>',
+    'Reviewed-by: Reviewer <r@example.com>',
+    '---',
+    ' mm/page_alloc.c | 5 +++++',
+    ' 1 file changed, 5 insertions(+)',
+    '',
+    'diff --git a/mm/page_alloc.c b/mm/page_alloc.c',
+    '+++ a/mm/page_alloc.c',
+  ].join('\n');
+  const out = extractCommitMessage(sample);
+  assert.match(out, /folio_alloc/);
+  assert.match(out, /MAX_PAGE_ORDER/);
+  assert.doesNotMatch(out, /Signed-off-by/);
+  assert.doesNotMatch(out, /diff --git/);
+  assert.doesNotMatch(out, /mm\/page_alloc\.c \| 5/);
+});
+
+test('extractCommitMessage handles missing header section gracefully', () => {
+  const out = extractCommitMessage('plain body without headers');
+  assert.equal(out, 'plain body without headers');
+});
+
+test('extractCommitMessage caps output length', () => {
+  const big = 'h: subject\n\n' + 'a'.repeat(5000);
+  const out = extractCommitMessage(big);
+  assert.ok(out.length <= 2400);
 });
 
 test('isStaleReply ignores non-LKML records and non-replies', () => {

@@ -111,6 +111,50 @@ function scoreRecord(record) {
   };
 }
 
+function extractCommitMessage(rawMbox) {
+  if (!rawMbox) return '';
+  const headersEnd = rawMbox.indexOf('\n\n');
+  let body = headersEnd >= 0 ? rawMbox.slice(headersEnd + 2) : rawMbox;
+  const dashSep = body.search(/(^|\n)---\s*\n/);
+  if (dashSep >= 0) body = body.slice(0, dashSep);
+  const diffStart = body.search(/(^|\n)diff --git /);
+  if (diffStart >= 0) body = body.slice(0, diffStart);
+  body = body.replace(/(^|\n)Signed-off-by:[^\n]*/gi, '');
+  body = body.replace(/(^|\n)(Reviewed-by|Acked-by|Tested-by|Cc):[^\n]*/gi, '');
+  return body.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim().slice(0, 2400);
+}
+
+async function fetchLoreBody(record) {
+  if (record.sourceId !== 'lore-lkml-new' || !record.url) return null;
+  const url = record.url.endsWith('/') ? `${record.url}raw` : `${record.url}/raw`;
+  try {
+    const response = await fetch(url, {
+      headers: { 'user-agent': 'dev-blog-collector/0.1 (+lore body fetcher)', accept: 'text/plain' },
+    });
+    if (!response.ok) return null;
+    return extractCommitMessage(await response.text());
+  } catch {
+    return null;
+  }
+}
+
+async function enrichWithBodies(candidates, { delayMs = 200 } = {}) {
+  const enriched = [];
+  for (const record of candidates) {
+    const commitMessage = await fetchLoreBody(record);
+    enriched.push({
+      id: record.id,
+      title: stripPatchPrefix(record.title),
+      url: record.url,
+      sourceId: record.sourceId,
+      kind: record.kind,
+      commitMessage: commitMessage || '',
+    });
+    if (delayMs) await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+  return enriched;
+}
+
 function stripPatchPrefix(title) {
   return title
     .replace(/^Re:\s*/i, '')
@@ -295,7 +339,7 @@ function buildPatchSection(records, fallback) {
     .join('\n\n');
 }
 
-function toPostDraft(candidates, sourceData) {
+function toPostDraft(candidates, sourceData, candidateBodies = []) {
   const releases = candidates.filter((record) => record.sourceId === 'kernel-org-releases');
   const regressions = candidates.filter(isRegressionSignal);
   const regressionIds = new Set(regressions.map((record) => record.id));
@@ -370,6 +414,7 @@ function toPostDraft(candidates, sourceData) {
       },
       subsystems: [...new Set(candidates.flatMap(broadSubsystemsOf))],
     },
+    candidateBodies,
   };
 }
 
@@ -380,7 +425,9 @@ async function main() {
   }
 
   const candidates = pickCandidates(sourceData.records);
-  const draft = toPostDraft(candidates, sourceData);
+  const candidateBodies = await enrichWithBodies(candidates);
+  const bodyHits = candidateBodies.filter((entry) => entry.commitMessage).length;
+  const draft = toPostDraft(candidates, sourceData, candidateBodies);
 
   await mkdir(generatedDir, { recursive: true });
 
@@ -395,7 +442,7 @@ async function main() {
   await writeFile(draftOutput, JSON.stringify(draft, null, 2));
   await writeFile(draftLatest, JSON.stringify(draft, null, 2));
 
-  console.log(`Selected ${candidates.length} newsletter candidate(s) from ${sourceData.recordCount} source record(s); wrote ${path.relative(root, draftOutput)}`);
+  console.log(`Selected ${candidates.length} newsletter candidate(s) from ${sourceData.recordCount} source record(s); fetched ${bodyHits} commit message(s); wrote ${path.relative(root, draftOutput)}`);
 }
 
 const isMainModule = process.argv[1] && process.argv[1] === fileURLToPath(import.meta.url);
@@ -416,6 +463,7 @@ export {
   isRegressionSignal,
   isBroadImpact,
   bucketBySubsystem,
+  extractCommitMessage,
   pickCandidates,
   highlightOf,
   subsystemPatterns,
