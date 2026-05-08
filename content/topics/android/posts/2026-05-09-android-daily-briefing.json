@@ -1,0 +1,140 @@
+{
+  "id": "2026-05-09-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-05-09 Android 커널 개발 브리핑",
+  "date": "2026-05-09",
+  "summary": "오늘은 ashmem_rust 구현 후속 버그 다섯 건이 한꺼번에 들어왔고, 그중 ASHMEM_GET_NAME 의 사용자 버퍼 길이 오용과 len==0 경로의 정수 언더플로가 가장 위험합니다. 다음 신호는 android16-6.12 의 deadline 스케줄러 NULL 역참조 수정과 FPSIMD vendor_hooks 의 mainline revert 입니다.",
+  "tags": [
+    "android",
+    "커널",
+    "ack",
+    "ashmem",
+    "스케줄러"
+  ],
+  "highlights": [
+    {
+      "title": "ashmem: Fix length of writes for ASHMEM_GET_NAME for memfds",
+      "priority": "상",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/511ed7a51d50e08362852fb62af295ed39a709ee",
+      "action": "ASHMEM_GET_NAME 가 항상 ASHMEM_NAME_LEN 만큼 사용자 버퍼에 쓰던 동작이 NUL 포함 실제 문자열 길이로 바뀝니다. 자기 디바이스의 HAL/네이티브 코드가 ASHMEM_NAME_LEN 크기 버퍼를 가정하고 있다면 그대로 통과하지만, 작은 버퍼를 넘기던 코드가 있었다면 동작 차이가 발생하므로 ashmem 사용 경로(graphics/audio/IPC) 전반을 재확인하세요."
+    },
+    {
+      "title": "ashmem: fix integer underflow on len==0",
+      "priority": "상",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/0e168fbe93ac702fa59789f380710d1745491e12",
+      "action": "오프셋이 파일 크기와 같을 때 ASHMEM_PIN/UNPIN 의 길이 계산이 음수로 래핑되어 커널 크래시를 유발하던 회귀입니다. ashmem_rust 가 들어간 ACK 라인을 빌드 중이라면 이 픽스를 반드시 함께 가져가세요."
+    },
+    {
+      "title": "sched: deadline: Fix null check in find_later_rq",
+      "priority": "상",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/baf206521e4270d733b2ce3bf37e35afbd7070df",
+      "action": "android16-6.12 의 deadline 스케줄러에서 exec_ctx NULL 가능성을 두고도 그대로 역참조하던 정적 분석 결함을 조기 반환으로 막습니다. SCHED_DEADLINE 태스크를 사용하는 RT 워크로드(카메라·오디오 파이프라인)가 있다면 6.12 기반 디바이스 빌드에 포함시키세요."
+    },
+    {
+      "title": "Revert \"vendor_hooks: FPSIMD save/restore by using vendor_hooks\"",
+      "priority": "중",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/7f118edb10119ed909cdae12d6d5fb063baa9929",
+      "action": "android-mainline 에서 FPSIMD save/restore 의 vendor hook 이 제거됩니다. 자기 vendor module 이 해당 hook(arm64 NEON 컨텍스트 스위치 커스터마이즈)에 의존한다면 다른 LTS 브랜치로 이관하거나 대체 경로를 준비해야 합니다."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "회귀·보안 신호",
+      "body": "ashmem_rust 구현(9b41e79f48c3, 88767401147c, 6bdbae6ea9fc) 후속 버그 다섯 건이 한꺼번에 들어왔습니다. ashmem 은 Android 디바이스 전반에서 graphics/audio/IPC 가 공유 메모리를 잡을 때 쓰는 경로라 모두 ack 와 vendor 에 직접 영향이 갑니다.\n\n- ashmem: Fix length of writes for ASHMEM_GET_NAME for memfds (511ed7a51d50 · android-mainline)\n  · 영향: ASHMEM_GET_NAME 이 항상 ASHMEM_NAME_LEN 바이트를 사용자 버퍼에 쓰던 동작을 NUL 포함 실제 길이만 쓰도록 고침. 작은 버퍼를 쓰는 사용자 공간 코드에서의 메모리 오염/정보 노출 가능성 차단.\n  · 확인: https://android.googlesource.com/kernel/common/+/511ed7a51d50e08362852fb62af295ed39a709ee\n\n- ashmem: fix integer underflow on len==0 (0e168fbe93ac · android-mainline)\n  · 영향: 오프셋이 파일 크기와 같을 때 잔여 바이트 계산이 0이 되어 길이 변수가 음수로 언더플로 → 커널 크래시. ASHMEM_PIN/UNPIN 경로의 회귀.\n  · 확인: https://android.googlesource.com/kernel/common/+/0e168fbe93ac702fa59789f380710d1745491e12\n\n- ashmem: fix is_ashmem_file() check in get_ashmem_area() (44f12c7ab0a2 · android-mainline)\n  · 영향: vendor 가 ashmem_area_size()/ashmem_area_vmfile() 을 호출하면 잘못된 결과를 반환하던 분류 결함(Bug 193397560). vendor module 이 ashmem 헬퍼 호출 중이면 회귀 영향 큼.\n  · 확인: https://android.googlesource.com/kernel/common/+/44f12c7ab0a29f99735ada7b2361e1d6dad41b16\n\n- ashmem: use dentry name snapshot in ASHMEM_GET_NAME (9d42ab9ac473 · android-mainline)\n  · 영향: memfd 가 아닌 tmpfs 파일이 들어왔을 때 이름이 잘못 읽히던 결함을 dentry snapshot 으로 방어 처리(Bug 498445098). 향후 memfd 이름 인라인 저장이 바뀌어도 안전.\n  · 확인: https://android.googlesource.com/kernel/common/+/9d42ab9ac473043ed0e1ccb701e8467cdf2122ad\n\n- ashmem: memfd_fcntl can be called on any file (1124d5c85f76 · android-mainline)\n  · 영향: fcntl(2) 로는 어떤 fd 든 호출 가능하다는 사실에 맞춰 안전성 주석을 정정. 동작 변경 없음, 코드 감사용 메타데이터.\n  · 확인: https://android.googlesource.com/kernel/common/+/1124d5c85f76c570b9ba6698c2358f6f37fcf6c9\n\n- sched: deadline: Fix null check in find_later_rq (baf206521e42 · android16-6.12)\n  · 영향: exec_ctx 를 null 가능으로 보면서 그대로 역참조하던 정적 분석 결함을 조기 반환으로 차단. android16-6.12 기반 디바이스에서 SCHED_DEADLINE 사용 시 잠재적 NULL 디리퍼런스 회귀.\n  · 확인: https://android.googlesource.com/kernel/common/+/baf206521e4270d733b2ce3bf37e35afbd7070df\n\n- ext4: update kunit test module name (18b8f659ef03 · android-mainline)\n  · 영향: upstream 에서 ext4-inode-test.ko → ext4-test.ko 로 모듈명이 바뀐 회귀(Fixes: 519b76ac0b31)에 맞춰 bazel/tradefed 메타데이터를 따라감. EXT4 KUNIT 테스트를 빌드/실행하는 인프라가 있다면 베이스라인 업데이트 필수.\n  · 확인: https://android.googlesource.com/kernel/common/+/18b8f659ef03db97c85b10e6ea1ffda8c0fc506f"
+    },
+    {
+      "heading": "ACK 전용 변경",
+      "body": "**defconfig/GKI 정리**\n\n- defconfig: enable RUNTIME_TESTING_MENU for crypto (b1545ccd8bf7 · android-mainline)\n  · 영향: upstream 7ac21b4032e5 이후 crypto-lib kunit 테스트가 RUNTIME_TESTING_MENU 하위로 이동. ACK GKI 테스트 빌드에서 crypto 자가검증 항목이 다시 켜집니다.\n  · 확인: https://android.googlesource.com/kernel/common/+/b1545ccd8bf79e5360ae86195080f362ce8b42a4\n\n- gki_defconfig: drop PROC_MEM_FORCE_PTRACE (24eae7ee8ebc · android-mainline)\n  · 영향: upstream 599bbba5a36f 이후 Kconfig 기본값이 되어 명시적 활성화 불필요. /proc/<pid>/mem 의 ptrace 강제 동작 자체는 그대로 유지, 단순 정리.\n  · 확인: https://android.googlesource.com/kernel/common/+/24eae7ee8ebc247c7b76180f9a78a051ab2f59bb\n\n**vendor_hooks 정리 (revert)**\n\n- Revert \"sched: Add trace hook for rt throttle dump\" (bc7a5d0dbca0 · android-mainline)\n  · 영향: GKI 에서 CONFIG_RT_GROUP_SCHED 가 꺼져 있어 사용되지 않던 코드 + 8ef2807042d0(hrtimer_get_expires_ns 제거) 이후 빌드 부적합 상태였음. 의존 vendor 가 있다면 별도 LTS 브랜치에 재적용 필요.\n  · 확인: https://android.googlesource.com/kernel/common/+/bc7a5d0dbca0f1843420bf17c4feb4c016700db6\n\n- Revert \"vendor_hooks: FPSIMD save/restore by using vendor_hooks\" (7f118edb1011 · android-mainline)\n  · 영향: arm64 FPSIMD save/restore 의 vendor hook 이 mainline 머지 충돌 사유로 제거. Samsung·MediaTek 에서 컨텍스트 스위치 커스터마이즈에 사용해 왔던 hook 이라 vendor module 이 의존 중이면 LTS 측에서 별도 유지 필요.\n  · 확인: https://android.googlesource.com/kernel/common/+/7f118edb10119ed909cdae12d6d5fb063baa9929"
+    },
+    {
+      "heading": "추적 브랜치",
+      "body": "- android-mainline: ashmem_rust 후속 정리 + FPSIMD/RT throttle vendor_hooks 제거가 동시 진행 중. 가장 최근 commit 18b8f659ef03.\n- android16-6.12: 오늘은 deadline 스케줄러 NULL 체크 픽스 한 건이 단독으로 백포트. 가장 최근 commit baf206521e42."
+    },
+    {
+      "heading": "기타",
+      "body": "단일 vendor/hardware 한정 패치는 본문에서 제외했습니다. 자기 디바이스 키워드(SoC 코드네임·드라이버 이름)로 ACK git log 를 직접 grep 하여 별도 추적하세요. 본문에 다룬 ashmem 및 vendor_hooks revert 는 vendor module ABI 에 직접 영향이 가는 항목이므로 우선 검토 대상입니다."
+    }
+  ],
+  "confidence": {
+    "level": "AI 초안",
+    "note": "gitiles JSON 과 commit 본문을 자동 정렬한 결과를 편집한 초안입니다. 게시 전 원문 commit 과 사내 ACK 베이스라인 적용 여부 확인이 필요합니다."
+  },
+  "sources": [
+    {
+      "title": "ext4: update kunit test module name",
+      "url": "https://android.googlesource.com/kernel/common/+/18b8f659ef03db97c85b10e6ea1ffda8c0fc506f",
+      "note": "android.googlesource.com · ack-android · 18b8f659ef03"
+    },
+    {
+      "title": "sched: deadline: Fix null check in find_later_rq",
+      "url": "https://android.googlesource.com/kernel/common/+/baf206521e4270d733b2ce3bf37e35afbd7070df",
+      "note": "android.googlesource.com · ack-android · baf206521e42"
+    },
+    {
+      "title": "defconfig: enable RUNTIME_TESTING_MENU for crypto",
+      "url": "https://android.googlesource.com/kernel/common/+/b1545ccd8bf79e5360ae86195080f362ce8b42a4",
+      "note": "android.googlesource.com · ack-android · b1545ccd8bf7"
+    },
+    {
+      "title": "gki_defconfig: drop PROC_MEM_FORCE_PTRACE",
+      "url": "https://android.googlesource.com/kernel/common/+/24eae7ee8ebc247c7b76180f9a78a051ab2f59bb",
+      "note": "android.googlesource.com · ack-android · 24eae7ee8ebc"
+    },
+    {
+      "title": "ashmem: fix integer underflow on len==0",
+      "url": "https://android.googlesource.com/kernel/common/+/0e168fbe93ac702fa59789f380710d1745491e12",
+      "note": "android.googlesource.com · ack-android · 0e168fbe93ac"
+    },
+    {
+      "title": "ashmem: memfd_fcntl can be called on any file",
+      "url": "https://android.googlesource.com/kernel/common/+/1124d5c85f76c570b9ba6698c2358f6f37fcf6c9",
+      "note": "android.googlesource.com · ack-android · 1124d5c85f76"
+    },
+    {
+      "title": "ashmem: fix is_ashmem_file() check in get_ashmem_area()",
+      "url": "https://android.googlesource.com/kernel/common/+/44f12c7ab0a29f99735ada7b2361e1d6dad41b16",
+      "note": "android.googlesource.com · ack-android · 44f12c7ab0a2"
+    },
+    {
+      "title": "ashmem: Fix length of writes for ASHMEM_GET_NAME for memfds",
+      "url": "https://android.googlesource.com/kernel/common/+/511ed7a51d50e08362852fb62af295ed39a709ee",
+      "note": "android.googlesource.com · ack-android · 511ed7a51d50"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-08T22:43:14.393Z",
+    "sourceRecordCount": 160,
+    "candidateCount": 11,
+    "generator": "scripts/draft-android.mjs",
+    "candidateIds": [
+      "ack-android-mainline:18b8f659ef03db97c85b10e6ea1ffda8c0fc506f",
+      "ack-android16-6.12:baf206521e4270d733b2ce3bf37e35afbd7070df",
+      "ack-android-mainline:b1545ccd8bf79e5360ae86195080f362ce8b42a4",
+      "ack-android-mainline:24eae7ee8ebc247c7b76180f9a78a051ab2f59bb",
+      "ack-android-mainline:0e168fbe93ac702fa59789f380710d1745491e12",
+      "ack-android-mainline:1124d5c85f76c570b9ba6698c2358f6f37fcf6c9",
+      "ack-android-mainline:44f12c7ab0a29f99735ada7b2361e1d6dad41b16",
+      "ack-android-mainline:511ed7a51d50e08362852fb62af295ed39a709ee",
+      "ack-android-mainline:9d42ab9ac473043ed0e1ccb701e8467cdf2122ad",
+      "ack-android-mainline:bc7a5d0dbca0f1843420bf17c4feb4c016700db6",
+      "ack-android-mainline:7f118edb10119ed909cdae12d6d5fb063baa9929"
+    ],
+    "bucketCounts": {
+      "regressions": 9,
+      "ackPatches": 0
+    },
+    "subsystems": [
+      "파일시스템/스토리지",
+      "스케줄러/EAS",
+      "GKI/모듈 ABI",
+      "Binder/IPC"
+    ],
+    "branches": [
+      "android-mainline",
+      "android16-6.12"
+    ],
+    "rewrittenAt": "2026-05-08T22:43:14.586Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/android-newsletter-ko.md"
+  }
+}

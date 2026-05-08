@@ -13,6 +13,11 @@ cd "${PROJECT_DIR}"
 
 "${NPM_BIN}" run daily:linux:publish
 
+# Android topic runs after Linux. Failure does not block the Linux push.
+if ! "${NPM_BIN}" run daily:android:publish; then
+  echo "android daily run failed; continuing with linux-only push"
+fi
+
 # Mondays (KST) get an additional weekly digest covering the past 7 days.
 if [ "$(TZ=Asia/Seoul date +%u)" = "1" ]; then
   if ! "${NPM_BIN}" run weekly:linux:claude; then
