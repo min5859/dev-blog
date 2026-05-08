@@ -14,6 +14,7 @@ import {
   annotateWithHistory,
   historyKeyFor,
   isKnownMaintainer,
+  parseAtomThreadEntries,
 } from './draft-linux.mjs';
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -300,6 +301,32 @@ test('scoreRecord boosts known-maintainer mail with a 주요 메인테이너 rea
   }));
   assert.ok(scored.score === baseline.score + 15, `expected +15 boost, got ${scored.score} vs ${baseline.score}`);
   assert.ok(scored.scoreReasons.some((r) => r.includes('메인테이너')));
+});
+
+test('parseAtomThreadEntries extracts author/email/excerpt from thread atom', () => {
+  const xml = `<?xml version="1.0"?><feed>
+    <entry>
+      <id>urn:uuid:1</id>
+      <title>Re: [PATCH] mm: foo</title>
+      <updated>2026-05-08T12:00:00Z</updated>
+      <link href="https://lore.kernel.org/lkml/abc/" />
+      <author><name>Andrew Morton</name><email>akpm@linux-foundation.org</email></author>
+      <content type="xhtml">Thanks, but please respin and use folio_alloc instead.</content>
+    </entry>
+    <entry>
+      <id>urn:uuid:2</id>
+      <title>Re: [PATCH] mm: foo</title>
+      <updated>2026-05-09T13:00:00Z</updated>
+      <link href="https://lore.kernel.org/lkml/def/" />
+      <author><name>Random Person</name><email>nobody@example.test</email></author>
+      <content type="xhtml">+1, this looks good.</content>
+    </entry>
+  </feed>`;
+  const entries = parseAtomThreadEntries(xml);
+  assert.equal(entries.length, 2);
+  assert.equal(entries[0].author.email, 'akpm@linux-foundation.org');
+  assert.match(entries[0].excerpt, /folio_alloc/);
+  assert.equal(entries[1].author.email, 'nobody@example.test');
 });
 
 test('annotateWithHistory leaves untracked records unchanged', () => {

@@ -178,6 +178,68 @@ async function fetchLoreBody(record) {
   }
 }
 
+function decodeXml(value = '') {
+  return String(value)
+    .replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&quot;', '"')
+    .replaceAll('&#34;', '"').replaceAll('&apos;', "'").replaceAll('&#39;', "'")
+    .replaceAll('&#38;', '&').replaceAll('&amp;', '&');
+}
+
+function stripTagsXml(value = '') {
+  return decodeXml(value.replaceAll(/<[^>]+>/g, ' ')).replaceAll(/\s+/g, ' ').trim();
+}
+
+function firstXmlMatch(text, pattern) {
+  return text.match(pattern)?.[1]?.trim() || null;
+}
+
+function parseAtomThreadEntries(xml) {
+  const entries = [...xml.matchAll(/<entry>([\s\S]*?)<\/entry>/g)].map((match) => match[1]);
+  return entries.map((entry) => {
+    const authorBlock = firstXmlMatch(entry, /<author>([\s\S]*?)<\/author>/);
+    const content = firstXmlMatch(entry, /<content\b[^>]*>([\s\S]*?)<\/content>/);
+    return {
+      url: decodeXml(firstXmlMatch(entry, /<link\b[^>]*href="([^"]+)"[^>]*\/>/) || ''),
+      updated: firstXmlMatch(entry, /<updated>([\s\S]*?)<\/updated>/),
+      title: decodeXml(firstXmlMatch(entry, /<title>([\s\S]*?)<\/title>/) || ''),
+      author: authorBlock ? {
+        name: decodeXml(firstXmlMatch(authorBlock, /<name>([\s\S]*?)<\/name>/) || ''),
+        email: decodeXml(firstXmlMatch(authorBlock, /<email>([\s\S]*?)<\/email>/) || ''),
+      } : null,
+      excerpt: stripTagsXml(content || '').slice(0, 700),
+    };
+  });
+}
+
+async function fetchMaintainerThreadComments(record) {
+  if (record.sourceId !== 'lore-lkml-new' || !record.url) return [];
+  const threadUrl = record.url.endsWith('/') ? `${record.url}t.atom` : `${record.url}/t.atom`;
+  try {
+    const response = await fetch(threadUrl, {
+      headers: { 'user-agent': 'dev-blog-collector/0.1 (+lore thread maintainer reader)', accept: 'application/atom+xml' },
+    });
+    if (!response.ok) return [];
+    const entries = parseAtomThreadEntries(await response.text());
+    const seen = new Set();
+    const comments = [];
+    for (const entry of entries) {
+      const email = entry.author?.email?.toLowerCase();
+      if (!email || !KNOWN_MAINTAINERS.has(email)) continue;
+      if (seen.has(email)) continue;
+      seen.add(email);
+      comments.push({
+        author: entry.author?.name || entry.author?.email,
+        url: entry.url,
+        excerpt: entry.excerpt,
+      });
+      if (comments.length >= 3) break;
+    }
+    return comments;
+  } catch {
+    return [];
+  }
+}
+
 function summarizeChangelog(rawText, maxItems = 30) {
   if (!rawText || !/^commit [a-f0-9]+\s*$/m.test(rawText)) return '';
   const commits = rawText.split(/^commit [a-f0-9]+\s*$/m);
@@ -266,8 +328,10 @@ async function enrichWithBodies(candidates, { delayMs = 200 } = {}) {
   const enriched = [];
   for (const record of candidates) {
     let body = null;
+    let maintainerComments = [];
     if (record.sourceId === 'lore-lkml-new') {
       body = await fetchLoreBody(record);
+      maintainerComments = await fetchMaintainerThreadComments(record);
     } else if (record.sourceId === 'kernel-org-releases') {
       body = await fetchChangelog(record);
     }
@@ -282,6 +346,7 @@ async function enrichWithBodies(candidates, { delayMs = 200 } = {}) {
       kind: record.kind,
       commitMessage: body || '',
       ...(isKnownMaintainer(record) ? { fromMaintainer: record.metadata?.author?.name || record.metadata?.author?.email } : {}),
+      ...(maintainerComments.length ? { maintainerComments } : {}),
       ...(history ? { history } : {}),
     });
     if (delayMs) await new Promise((resolve) => setTimeout(resolve, delayMs));
@@ -648,6 +713,7 @@ export {
   annotateWithHistory,
   historyKeyFor,
   isKnownMaintainer,
+  parseAtomThreadEntries,
   pickCandidates,
   highlightOf,
   subsystemPatterns,
