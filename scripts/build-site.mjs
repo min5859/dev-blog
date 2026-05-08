@@ -450,6 +450,14 @@ p { margin: 8px 0; }
 .search-shell { display: grid; gap: 16px; }
 #search-input { width: 100%; padding: 14px 18px; font-size: 1.05rem; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 10px; outline-offset: 2px; font-family: inherit; }
 #search-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.search-filters { display: flex; gap: 18px; flex-wrap: wrap; align-items: center; }
+.filter-group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.filter-label { font-size: .85rem; color: var(--muted); font-weight: 600; }
+.filter-chip { background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 4px 14px; font-size: .85rem; cursor: pointer; color: var(--text); font-family: inherit; }
+.filter-chip:hover { border-color: var(--accent); color: var(--accent); }
+.filter-chip.active { background: var(--accent); color: #ffffff; border-color: var(--accent); }
+#search-subsystem { padding: 6px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-family: inherit; font-size: .9rem; }
+#search-subsystem:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
 .search-counter-row { font-size: .9rem; }
 .search-subsystem { background: var(--surface-alt); padding: 1px 8px; border-radius: 4px; font-size: .8rem; color: var(--muted); border: 1px solid var(--border); margin-right: 4px; }
 .search-divider { margin: 0 6px; color: var(--muted); }
@@ -472,13 +480,25 @@ function renderSearchPage(buildStamp) {
     const input = document.getElementById('search-input');
     const results = document.getElementById('search-results');
     const counter = document.getElementById('search-counter');
+    const subsystemSelect = document.getElementById('search-subsystem');
+    const priorityChips = document.querySelectorAll('.filter-chip[data-priority]');
     const escMap = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
     const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => escMap[c]);
+
+    const allSubsystems = [...new Set(data.flatMap((p) => p.subsystems || []))].sort((a, b) => a.localeCompare(b, 'ko'));
+    for (const sub of allSubsystems) {
+      const opt = document.createElement('option');
+      opt.value = sub;
+      opt.textContent = sub;
+      subsystemSelect.appendChild(opt);
+    }
+
+    const filters = { q: '', priority: '', subsystem: '' };
 
     function renderResults(matches) {
       counter.textContent = matches.length + '건';
       if (!matches.length) {
-        results.innerHTML = '<p class="muted">일치하는 글이 없습니다. 키워드를 줄여 보세요.</p>';
+        results.innerHTML = '<p class="muted">조건에 맞는 글이 없습니다. 필터를 풀거나 키워드를 줄여 보세요.</p>';
         return;
       }
       results.innerHTML = matches.map((post) => {
@@ -494,28 +514,75 @@ function renderSearchPage(buildStamp) {
       }).join('');
     }
 
-    function filter(query) {
-      const q = query.trim().toLowerCase();
-      if (!q) { renderResults(data); return; }
+    function apply() {
+      const q = filters.q.trim().toLowerCase();
       const matches = data.filter((post) => {
+        if (filters.priority && post.priority !== filters.priority) return false;
+        if (filters.subsystem && !(post.subsystems || []).includes(filters.subsystem)) return false;
+        if (!q) return true;
         const haystack = [post.title, post.summary, post.topic, ...(post.tags || []), ...(post.subsystems || [])].join(' ').toLowerCase();
         return haystack.includes(q);
       });
       renderResults(matches);
     }
 
-    input.addEventListener('input', (event) => filter(event.target.value));
-    const initial = new URL(window.location.href).searchParams.get('q') || '';
-    if (initial) input.value = initial;
-    filter(initial);
+    function syncUrl() {
+      const url = new URL(window.location.href);
+      const set = (k, v) => v ? url.searchParams.set(k, v) : url.searchParams.delete(k);
+      set('q', filters.q);
+      set('priority', filters.priority);
+      set('subsystem', filters.subsystem);
+      history.replaceState({}, '', url);
+    }
+
+    function syncChipState() {
+      priorityChips.forEach((btn) => {
+        btn.classList.toggle('active', btn.dataset.priority === filters.priority);
+      });
+    }
+
+    input.addEventListener('input', (event) => { filters.q = event.target.value; syncUrl(); apply(); });
+    subsystemSelect.addEventListener('change', (event) => { filters.subsystem = event.target.value; syncUrl(); apply(); });
+    priorityChips.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const next = btn.dataset.priority;
+        filters.priority = filters.priority === next ? '' : next;
+        syncChipState();
+        syncUrl();
+        apply();
+      });
+    });
+
+    const params = new URL(window.location.href).searchParams;
+    filters.q = params.get('q') || '';
+    filters.priority = params.get('priority') || '';
+    filters.subsystem = params.get('subsystem') || '';
+    input.value = filters.q;
+    if (filters.subsystem && allSubsystems.includes(filters.subsystem)) {
+      subsystemSelect.value = filters.subsystem;
+    }
+    syncChipState();
+    apply();
     input.focus();
   `;
   return renderLayout({
     title: `검색 - ${siteTitle}`,
     buildStamp,
-    body: `<header class="site-page-head"><div class="eyebrow">search</div><h1>검색</h1><p class="lead">제목, 요약, 태그, 서브시스템을 한 번에 찾아봅니다.</p></header>
+    body: `<header class="site-page-head"><div class="eyebrow">search</div><h1>검색</h1><p class="lead">제목·요약·태그·서브시스템을 한 번에 찾고 우선순위와 서브시스템으로 좁힙니다.</p></header>
 <section class="search-shell">
   <input id="search-input" type="search" autocomplete="off" placeholder="예: stable, sched/rt, 회귀, 7.1-rc2" aria-label="검색어">
+  <div class="search-filters">
+    <div class="filter-group">
+      <span class="filter-label">우선순위</span>
+      <button type="button" class="filter-chip" data-priority="상">상</button>
+      <button type="button" class="filter-chip" data-priority="중">중</button>
+      <button type="button" class="filter-chip" data-priority="하">하</button>
+    </div>
+    <div class="filter-group">
+      <label class="filter-label" for="search-subsystem">서브시스템</label>
+      <select id="search-subsystem"><option value="">전체</option></select>
+    </div>
+  </div>
   <div class="search-counter-row"><span id="search-counter" class="muted"></span></div>
   <div id="search-results" class="grid"></div>
 </section>
