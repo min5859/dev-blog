@@ -24,6 +24,89 @@ function isoWeek(dateStr) {
   return { year: d.getUTCFullYear(), week };
 }
 
+function decodeXml(value = '') {
+  return String(value)
+    .replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&quot;', '"')
+    .replaceAll('&#34;', '"').replaceAll('&apos;', "'").replaceAll('&#39;', "'")
+    .replaceAll('&#38;', '&').replaceAll('&amp;', '&');
+}
+
+function firstMatch(text, pattern) {
+  return text.match(pattern)?.[1]?.trim() || null;
+}
+
+function parseAtomCommits(xml) {
+  const entries = [...xml.matchAll(/<entry>([\s\S]*?)<\/entry>/g)].map((m) => m[1]);
+  return entries.map((entry) => ({
+    title: decodeXml(firstMatch(entry, /<title>([\s\S]*?)<\/title>/) || ''),
+    updated: firstMatch(entry, /<updated>([\s\S]*?)<\/updated>/),
+    url: decodeXml(firstMatch(entry, /<link\b[^>]*href="([^"]+)"[^>]*\/>/) || ''),
+  })).filter((entry) => entry.title);
+}
+
+async function fetchMainlineCommits() {
+  const url = 'https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/atom/?h=master';
+  try {
+    const response = await fetch(url, {
+      headers: { 'user-agent': 'dev-blog-collector/0.1 (+mainline tracker)', accept: 'application/atom+xml' },
+    });
+    if (!response.ok) return [];
+    return parseAtomCommits(await response.text());
+  } catch {
+    return [];
+  }
+}
+
+function normalizeSubject(subject) {
+  return subject
+    .toLowerCase()
+    .replace(/^re:\s*/i, '')
+    .replace(/^\[[^\]]+\]\s*/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function looselyMatches(seriesSubject, commitSubject) {
+  if (!seriesSubject || !commitSubject) return false;
+  const a = normalizeSubject(seriesSubject);
+  const b = normalizeSubject(commitSubject);
+  if (a.length < 12 || b.length < 12) return false;
+  // commit subject is usually concise; series subject can be longer.
+  // Match by colon-prefix shared prefix (e.g., "sched/rt: fix ...").
+  const aColon = a.split(':').slice(0, 2).join(':').slice(0, 60);
+  const bColon = b.split(':').slice(0, 2).join(':').slice(0, 60);
+  if (aColon === bColon) return true;
+  // Else fall back to one-direction substring (commit subject contained in series subject).
+  if (b.length >= 20 && a.includes(b)) return true;
+  if (a.length >= 20 && b.includes(a.slice(0, 40))) return true;
+  return false;
+}
+
+function collectTrackedSubjects(dailies) {
+  const subjects = new Set();
+  for (const daily of dailies) {
+    for (const highlight of daily.highlights || []) {
+      if (highlight?.title) subjects.add(highlight.title);
+    }
+    for (const source of daily.sources || []) {
+      if (source?.title && source.note?.includes('lore.kernel')) subjects.add(source.title);
+    }
+  }
+  return [...subjects];
+}
+
+function findMergedSeries(trackedSubjects, mainlineCommits) {
+  const merges = [];
+  const seen = new Set();
+  for (const commit of mainlineCommits) {
+    const match = trackedSubjects.find((subject) => looselyMatches(subject, commit.title));
+    if (!match || seen.has(match)) continue;
+    seen.add(match);
+    merges.push({ trackedSubject: match, commitTitle: commit.title, commitUrl: commit.url, mergedAt: commit.updated });
+  }
+  return merges;
+}
+
 async function loadRecentDailyPosts(daysBack = 7) {
   const collected = [];
   const today = new Date(`${runDate}T00:00:00Z`);
@@ -162,8 +245,12 @@ async function main() {
     week,
   };
 
+  const mainlineCommits = await fetchMainlineCommits();
+  const trackedSubjects = collectTrackedSubjects(dailies);
+  const mainlineMerges = findMergedSeries(trackedSubjects, mainlineCommits);
+
   const promptTemplate = await readFile(promptTemplatePath, 'utf8');
-  const inputPayload = { id: meta.id, topic, date: meta.date, dailies };
+  const inputPayload = { id: meta.id, topic, date: meta.date, dailies, mainlineMerges };
   const prompt = promptTemplate.replace('{{INPUT_JSON}}', JSON.stringify(inputPayload, null, 2));
 
   await mkdir(generatedDir, { recursive: true });
@@ -188,6 +275,7 @@ async function main() {
     coveredDates: dailies.map((d) => d.date),
     year: meta.year,
     week: meta.week,
+    mainlineMergeMatches: mainlineMerges.length,
   };
 
   validateWeekly(post, meta);
@@ -196,7 +284,7 @@ async function main() {
   const out = path.join(postsDir, `${meta.id}.json`);
   await writeFile(out, JSON.stringify(post, null, 2));
 
-  console.log(`Wrote weekly briefing ${meta.id} (covering ${dailies.length} daily post(s))`);
+  console.log(`Wrote weekly briefing ${meta.id} (covering ${dailies.length} daily post(s); ${mainlineMerges.length} mainline merge match(es))`);
 }
 
 const isMainModule = process.argv[1] && process.argv[1] === fileURLToPath(import.meta.url);
@@ -207,4 +295,14 @@ if (isMainModule) {
   });
 }
 
-export { isoWeek, loadRecentDailyPosts, templateWeekly, validateWeekly };
+export {
+  isoWeek,
+  loadRecentDailyPosts,
+  templateWeekly,
+  validateWeekly,
+  parseAtomCommits,
+  normalizeSubject,
+  looselyMatches,
+  collectTrackedSubjects,
+  findMergedSeries,
+};
