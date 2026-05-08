@@ -13,6 +13,13 @@ cd "${PROJECT_DIR}"
 
 "${NPM_BIN}" run daily:linux:publish
 
+# Mondays (KST) get an additional weekly digest covering the past 7 days.
+if [ "$(TZ=Asia/Seoul date +%u)" = "1" ]; then
+  if ! "${NPM_BIN}" run weekly:linux:claude; then
+    echo "weekly run failed; continuing with daily-only push"
+  fi
+fi
+
 git add content/
 if git diff --cached --quiet; then
   echo "no content/ changes — nothing to push"
@@ -20,5 +27,10 @@ if git diff --cached --quiet; then
 fi
 
 DATE_KST="$(TZ=Asia/Seoul date +%Y-%m-%d)"
-git commit -m "daily: ${DATE_KST} Linux briefing"
+if [ "$(TZ=Asia/Seoul date +%u)" = "1" ]; then
+  MSG="daily + weekly briefing: ${DATE_KST}"
+else
+  MSG="daily: ${DATE_KST} Linux briefing"
+fi
+git commit -m "${MSG}"
 git push origin main
