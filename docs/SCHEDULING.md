@@ -43,28 +43,71 @@ Runtime logs are written under `logs/daily/` and ignored by git:
 
 The status JSON is intended for monitoring or notification hooks.
 
-## Local cron example
+## macOS — use launchd, not cron
 
-Run at 07:00 every day in the machine's local timezone, generating only (no auto-publish):
+On macOS, `cron` runs outside the user's GUI session and **cannot
+unlock the login keychain**. The Claude Code CLI stores its OAuth
+credential there, so a `cron` job ends up with `claude` exiting
+1 with `Not logged in · Please run /login`. Use `launchd` instead —
+LaunchAgents run inside the user session and have keychain access.
 
-```cron
-PATH=/Users/wooki/.local/bin:/Users/wooki/.nvm/versions/node/v24.14.0/bin:/usr/local/bin:/usr/bin:/bin
-CLAUDE_BIN=/Users/wooki/.local/bin/claude
-0 7 * * * cd /Users/wooki/project/git/wk/dev-blog && /Users/wooki/.nvm/versions/node/v24.14.0/bin/npm run daily:linux >> logs/daily/cron.log 2>&1
+A ready-to-use template lives at
+`docs/launchd/com.user.dev-blog.daily.plist.template`. Paths inside
+it match the developer's machine; copy and edit before installing.
+
+```bash
+# 1. Copy the template into your LaunchAgents directory
+cp docs/launchd/com.user.dev-blog.daily.plist.template \
+   ~/Library/LaunchAgents/com.user.dev-blog.daily.plist
+
+# 2. Edit paths in the copied plist if your layout differs
+#    (npm path, project path, claude path, log path).
+
+# 3. Load it. The job will fire daily at the StartCalendarInterval time.
+launchctl load ~/Library/LaunchAgents/com.user.dev-blog.daily.plist
+
+# 4. (Optional) Trigger immediately to verify
+launchctl start com.user.dev-blog.daily
+tail -f logs/daily/launchd.log
 ```
 
-To also publish the generated briefing into `content/` (skips the human review step):
+To unload (e.g., before editing):
 
-```cron
-0 7 * * * cd /Users/wooki/project/git/wk/dev-blog && /Users/wooki/.nvm/versions/node/v24.14.0/bin/npm run daily:linux:publish >> logs/daily/cron.log 2>&1
+```bash
+launchctl unload ~/Library/LaunchAgents/com.user.dev-blog.daily.plist
 ```
 
-Notes:
+If you previously had a `cron` line for this project, remove it
+(`crontab -e`) — running both will publish twice.
 
-- Cron has a minimal environment, so the absolute `npm` path is required and `PATH` must include the directory holding `claude` (here `~/.local/bin`).
-- `CLAUDE_BIN` is read by `scripts/ai-rewrite-linux.mjs` when the `claude` adapter runs; setting it explicitly avoids PATH surprises.
-- Set `DAILY_REWRITE_ADAPTER=template` on the cron line if Claude CLI is unavailable; the pipeline will fall back to the deterministic template adapter.
-- Runtime data in `data/raw/`, `data/normalized/`, `data/generated/`, and `logs/daily/` is reproducible and ignored by git.
+### Why the template publishes by default
+
+The template runs `npm run daily:linux:publish`, so the day's
+briefing is written into `content/` automatically. The earlier
+`docs/DEPLOYMENT.md` flow assumes this so the post can then be
+committed and pushed to GitHub.
+
+### Falling back to the template adapter
+
+Set `DAILY_REWRITE_ADAPTER=template` in `EnvironmentVariables` of the
+plist if Claude CLI auth ever breaks. The pipeline will produce a
+deterministic, AI-free briefing for the day instead of failing.
+
+## Linux cron (no Keychain involved)
+
+If running on Linux (or any environment without macOS Keychain), cron
+works directly. Example:
+
+```cron
+PATH=/home/wooki/.local/bin:/home/wooki/.nvm/versions/node/v24.14.0/bin:/usr/local/bin:/usr/bin:/bin
+CLAUDE_BIN=/home/wooki/.local/bin/claude
+0 7 * * * cd /home/wooki/project/git/wk/dev-blog && /home/wooki/.nvm/versions/node/v24.14.0/bin/npm run daily:linux:publish >> logs/daily/cron.log 2>&1
+```
+
+`PATH` must include the directory holding `claude`; `CLAUDE_BIN` is
+read by `scripts/ai-rewrite-linux.mjs` when the `claude` adapter
+runs. Runtime data (`data/raw/`, `data/normalized/`, `data/generated/`,
+`logs/daily/`) is reproducible and gitignored.
 
 ## OpenClaw cron option
 
