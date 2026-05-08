@@ -11,6 +11,8 @@ import {
   extractCommitMessage,
   summarizeChangelog,
   extractSeriesId,
+  annotateWithHistory,
+  historyKeyFor,
 } from './draft-linux.mjs';
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -235,6 +237,27 @@ test('mergePatchSeries collapses N/M parts of one series, prefers cover letter',
   assert.equal(merged[0].id, 'a');
   assert.equal(merged[0].seriesDenominator, 5);
   assert.equal(merged[0].seriesSize, 4);
+});
+
+test('annotateWithHistory flags v2→v3 upgrade and prior-day tracking', () => {
+  const author = { email: 'series@author.test' };
+  const today = lkml({ id: 'today', title: '[PATCH v3 1/5] foo', metadata: { author } });
+  const standalone = lkml({ id: 'solo', title: '[PATCH] standalone fix', metadata: { author } });
+  const history = new Map();
+  history.set(historyKeyFor(today), { version: 2, lastSeen: '2026-05-08' });
+  history.set(historyKeyFor(standalone), { version: 1, lastSeen: '2026-05-07' });
+  const [a, b] = annotateWithHistory([today, standalone], history);
+  assert.equal(a.previousVersion, 2);
+  assert.equal(a.previouslySeenAt, '2026-05-08');
+  assert.equal(b.previousVersion, undefined);
+  assert.equal(b.previouslySeenAt, '2026-05-07');
+});
+
+test('annotateWithHistory leaves untracked records unchanged', () => {
+  const record = lkml({ id: 'fresh', title: '[PATCH v1 1/3] novel', metadata: { author: { email: 'fresh@x' } } });
+  const [a] = annotateWithHistory([record], new Map());
+  assert.equal(a.previouslySeenAt, undefined);
+  assert.equal(a.previousVersion, undefined);
 });
 
 test('mergePatchSeries does not merge unrelated series sharing denominator', () => {

@@ -173,6 +173,55 @@ async function fetchChangelog(record) {
   }
 }
 
+function historyKeyFor(record) {
+  const series = extractSeriesId(record);
+  if (series) return series.key;
+  return patchSeriesKey(record);
+}
+
+async function loadRecentSeriesHistory(generatedDir, runDate, daysBack = 3) {
+  const history = new Map();
+  const today = new Date(`${runDate}T00:00:00Z`);
+  for (let offset = 1; offset <= daysBack; offset++) {
+    const date = new Date(today);
+    date.setUTCDate(date.getUTCDate() - offset);
+    const dateStr = date.toISOString().slice(0, 10);
+    const file = path.join(generatedDir, `candidates-${dateStr}.json`);
+    try {
+      const text = await readFile(file, 'utf8');
+      const data = JSON.parse(text);
+      for (const candidate of data.candidates || []) {
+        const key = historyKeyFor(candidate);
+        if (!key) continue;
+        const version = patchVersion(candidate);
+        const existing = history.get(key);
+        if (!existing || version > existing.version
+          || (version === existing.version && dateStr > existing.lastSeen)) {
+          history.set(key, { version, lastSeen: dateStr });
+        }
+      }
+    } catch {
+      // missing or unreadable file → skip silently
+    }
+  }
+  return history;
+}
+
+function annotateWithHistory(records, history) {
+  return records.map((record) => {
+    const key = historyKeyFor(record);
+    if (!key) return record;
+    const previous = history.get(key);
+    if (!previous) return record;
+    const currentVersion = patchVersion(record);
+    return {
+      ...record,
+      previouslySeenAt: previous.lastSeen,
+      ...(currentVersion > previous.version ? { previousVersion: previous.version } : {}),
+    };
+  });
+}
+
 async function enrichWithBodies(candidates, { delayMs = 200 } = {}) {
   const enriched = [];
   for (const record of candidates) {
@@ -182,6 +231,9 @@ async function enrichWithBodies(candidates, { delayMs = 200 } = {}) {
     } else if (record.sourceId === 'kernel-org-releases') {
       body = await fetchChangelog(record);
     }
+    const history = record.previouslySeenAt
+      ? { previouslySeenAt: record.previouslySeenAt, ...(record.previousVersion ? { previousVersion: record.previousVersion } : {}) }
+      : null;
     enriched.push({
       id: record.id,
       title: stripPatchPrefix(record.title),
@@ -189,6 +241,7 @@ async function enrichWithBodies(candidates, { delayMs = 200 } = {}) {
       sourceId: record.sourceId,
       kind: record.kind,
       commitMessage: body || '',
+      ...(history ? { history } : {}),
     });
     if (delayMs) await new Promise((resolve) => setTimeout(resolve, delayMs));
   }
@@ -396,8 +449,15 @@ function impactRelease(record) {
 
 function impactLkml(record, options = {}) {
   const subsystems = broadSubsystemsOf(record).join(', ');
-  const seriesNote = record.seriesDenominator ? ` (${record.seriesDenominator}-패치 시리즈)` : '';
-  const lines = [`- ${stripPatchPrefix(record.title)}${seriesNote}`];
+  const annotations = [];
+  if (record.seriesDenominator) annotations.push(`${record.seriesDenominator}-패치 시리즈`);
+  if (record.previousVersion) {
+    annotations.push(`v${record.previousVersion}→v${patchVersion(record)} 갱신`);
+  } else if (record.previouslySeenAt) {
+    annotations.push(`${record.previouslySeenAt}부터 추적`);
+  }
+  const note = annotations.length ? ` (${annotations.join(' · ')})` : '';
+  const lines = [`- ${stripPatchPrefix(record.title)}${note}`];
   if (options.withSubsystem !== false && subsystems) {
     lines.push(`  · 영향: ${subsystems}`);
   }
@@ -503,9 +563,12 @@ async function main() {
     throw new Error(`${path.relative(root, inputPath)} does not contain records[]`);
   }
 
-  const candidates = pickCandidates(sourceData.records);
+  const rawCandidates = pickCandidates(sourceData.records);
+  const seriesHistory = await loadRecentSeriesHistory(generatedDir, runDate);
+  const candidates = annotateWithHistory(rawCandidates, seriesHistory);
   const candidateBodies = await enrichWithBodies(candidates);
   const bodyHits = candidateBodies.filter((entry) => entry.commitMessage).length;
+  const trackedHits = candidateBodies.filter((entry) => entry.history).length;
   const draft = toPostDraft(candidates, sourceData, candidateBodies);
 
   await mkdir(generatedDir, { recursive: true });
@@ -521,7 +584,7 @@ async function main() {
   await writeFile(draftOutput, JSON.stringify(draft, null, 2));
   await writeFile(draftLatest, JSON.stringify(draft, null, 2));
 
-  console.log(`Selected ${candidates.length} newsletter candidate(s) from ${sourceData.recordCount} source record(s); fetched ${bodyHits} commit message(s); wrote ${path.relative(root, draftOutput)}`);
+  console.log(`Selected ${candidates.length} newsletter candidate(s) from ${sourceData.recordCount} source record(s); fetched ${bodyHits} commit message(s); ${trackedHits} carried over from prior runs; wrote ${path.relative(root, draftOutput)}`);
 }
 
 const isMainModule = process.argv[1] && process.argv[1] === fileURLToPath(import.meta.url);
@@ -545,6 +608,8 @@ export {
   extractCommitMessage,
   summarizeChangelog,
   extractSeriesId,
+  annotateWithHistory,
+  historyKeyFor,
   pickCandidates,
   highlightOf,
   subsystemPatterns,
