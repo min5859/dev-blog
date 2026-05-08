@@ -138,17 +138,57 @@ async function fetchLoreBody(record) {
   }
 }
 
+function summarizeChangelog(rawText, maxItems = 30) {
+  if (!rawText || !/^commit [a-f0-9]+\s*$/m.test(rawText)) return '';
+  const commits = rawText.split(/^commit [a-f0-9]+\s*$/m);
+  const subjects = [];
+  for (const chunk of commits) {
+    if (!chunk.trim()) continue;
+    const lines = chunk.split('\n');
+    let i = 0;
+    while (i < lines.length && !lines[i].trim()) i++;
+    while (i < lines.length && /^\s*[A-Z][a-zA-Z]+:/.test(lines[i])) i++;
+    while (i < lines.length && !lines[i].trim()) i++;
+    if (i < lines.length) subjects.push(lines[i].trim());
+  }
+  if (subjects[0] && /^Linux \d/.test(subjects[0])) subjects.shift();
+  if (!subjects.length) return '';
+  const limited = subjects.slice(0, maxItems);
+  const more = subjects.length > maxItems ? `\n(전체 ${subjects.length}건 중 상위 ${maxItems}건)` : '';
+  return `백포트된 커밋 제목 (총 ${subjects.length}건):\n${limited.map((s) => `- ${s}`).join('\n')}${more}`.slice(0, 2400);
+}
+
+async function fetchChangelog(record) {
+  if (record.sourceId !== 'kernel-org-releases') return null;
+  const url = record.links?.find((link) => link.kind === 'changelog')?.url;
+  if (!url) return null;
+  try {
+    const response = await fetch(url, {
+      headers: { 'user-agent': 'dev-blog-collector/0.1 (+changelog summarizer)', accept: 'text/plain' },
+    });
+    if (!response.ok) return null;
+    return summarizeChangelog(await response.text());
+  } catch {
+    return null;
+  }
+}
+
 async function enrichWithBodies(candidates, { delayMs = 200 } = {}) {
   const enriched = [];
   for (const record of candidates) {
-    const commitMessage = await fetchLoreBody(record);
+    let body = null;
+    if (record.sourceId === 'lore-lkml-new') {
+      body = await fetchLoreBody(record);
+    } else if (record.sourceId === 'kernel-org-releases') {
+      body = await fetchChangelog(record);
+    }
     enriched.push({
       id: record.id,
       title: stripPatchPrefix(record.title),
       url: record.url,
       sourceId: record.sourceId,
       kind: record.kind,
-      commitMessage: commitMessage || '',
+      commitMessage: body || '',
     });
     if (delayMs) await new Promise((resolve) => setTimeout(resolve, delayMs));
   }
@@ -464,6 +504,7 @@ export {
   isBroadImpact,
   bucketBySubsystem,
   extractCommitMessage,
+  summarizeChangelog,
   pickCandidates,
   highlightOf,
   subsystemPatterns,

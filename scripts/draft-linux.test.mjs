@@ -9,6 +9,7 @@ import {
   isRegressionSignal,
   isBroadImpact,
   extractCommitMessage,
+  summarizeChangelog,
 } from './draft-linux.mjs';
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -165,6 +166,41 @@ test('extractCommitMessage caps output length', () => {
   const big = 'h: subject\n\n' + 'a'.repeat(5000);
   const out = extractCommitMessage(big);
   assert.ok(out.length <= 2400);
+});
+
+test('summarizeChangelog extracts subjects and skips Linux X.Y.Z header', () => {
+  const sample = [
+    'commit aaaaaaa',
+    'Author: Greg KH <greg@example>',
+    'Date:   Mon May 1 12:00:00 2026',
+    '',
+    '    Linux 7.0.5',
+    '',
+    'commit bbbbbbb',
+    'Author: Some Dev <s@x>',
+    'Date:   Mon May 1 11:00:00 2026',
+    '',
+    '    netfilter: fix double-free in nf_tables',
+    '',
+    '    [Backport upstream commit ...]',
+    '',
+    'commit ccccccc',
+    'Author: Other Dev <o@x>',
+    'Date:   Mon May 1 10:00:00 2026',
+    '',
+    '    cifs: prevent UAF on session disconnect',
+    '',
+  ].join('\n');
+  const out = summarizeChangelog(sample);
+  assert.match(out, /netfilter: fix double-free/);
+  assert.match(out, /cifs: prevent UAF/);
+  assert.doesNotMatch(out, /^- Linux 7\.0\.5/m);
+  assert.match(out, /총 2건/);
+});
+
+test('summarizeChangelog returns empty string for non-changelog input', () => {
+  assert.equal(summarizeChangelog(''), '');
+  assert.equal(summarizeChangelog('not a git log'), '');
 });
 
 test('isStaleReply ignores non-LKML records and non-replies', () => {
