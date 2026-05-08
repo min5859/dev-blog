@@ -44,6 +44,43 @@ function parseAtomCommits(xml) {
   })).filter((entry) => entry.title);
 }
 
+function parseRssItems(xml) {
+  const items = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)].map((m) => m[1]);
+  return items.map((item) => ({
+    title: decodeXml(firstMatch(item, /<title>([\s\S]*?)<\/title>/) || ''),
+    link: firstMatch(item, /<link>([\s\S]*?)<\/link>/),
+    pubDate: firstMatch(item, /<pubDate>([\s\S]*?)<\/pubDate>/),
+  })).filter((entry) => entry.title);
+}
+
+async function fetchRssHeadlines(url, source) {
+  try {
+    const response = await fetch(url, {
+      headers: { 'user-agent': 'dev-blog-collector/0.1 (+external curated signals)', accept: 'application/rss+xml, application/xml' },
+    });
+    if (!response.ok) return [];
+    const items = parseRssItems(await response.text());
+    return items.map((item) => ({ source, ...item }));
+  } catch {
+    return [];
+  }
+}
+
+function withinLastWeek(items, runDateStr) {
+  const cutoff = new Date(`${runDateStr}T00:00:00Z`).getTime() - 7 * 24 * 3600 * 1000;
+  return items.filter((item) => {
+    const t = Date.parse(item.pubDate || '');
+    return Number.isFinite(t) && t >= cutoff;
+  });
+}
+
+async function fetchExternalSignals(runDateStr) {
+  const collected = [];
+  collected.push(...await fetchRssHeadlines('https://lwn.net/headlines/rss', 'lwn.net'));
+  collected.push(...await fetchRssHeadlines('https://www.phoronix.com/rss.php', 'phoronix.com'));
+  return withinLastWeek(collected, runDateStr).slice(0, 50);
+}
+
 async function fetchMainlineCommits() {
   const url = 'https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/atom/?h=master';
   try {
@@ -245,12 +282,15 @@ async function main() {
     week,
   };
 
-  const mainlineCommits = await fetchMainlineCommits();
+  const [mainlineCommits, externalSignals] = await Promise.all([
+    fetchMainlineCommits(),
+    fetchExternalSignals(meta.date),
+  ]);
   const trackedSubjects = collectTrackedSubjects(dailies);
   const mainlineMerges = findMergedSeries(trackedSubjects, mainlineCommits);
 
   const promptTemplate = await readFile(promptTemplatePath, 'utf8');
-  const inputPayload = { id: meta.id, topic, date: meta.date, dailies, mainlineMerges };
+  const inputPayload = { id: meta.id, topic, date: meta.date, dailies, mainlineMerges, externalSignals };
   const prompt = promptTemplate.replace('{{INPUT_JSON}}', JSON.stringify(inputPayload, null, 2));
 
   await mkdir(generatedDir, { recursive: true });
@@ -276,6 +316,7 @@ async function main() {
     year: meta.year,
     week: meta.week,
     mainlineMergeMatches: mainlineMerges.length,
+    externalSignalCount: externalSignals.length,
   };
 
   validateWeekly(post, meta);
@@ -284,7 +325,7 @@ async function main() {
   const out = path.join(postsDir, `${meta.id}.json`);
   await writeFile(out, JSON.stringify(post, null, 2));
 
-  console.log(`Wrote weekly briefing ${meta.id} (covering ${dailies.length} daily post(s); ${mainlineMerges.length} mainline merge match(es))`);
+  console.log(`Wrote weekly briefing ${meta.id} (covering ${dailies.length} daily post(s); ${mainlineMerges.length} mainline merge match(es); ${externalSignals.length} external curated headlines)`);
 }
 
 const isMainModule = process.argv[1] && process.argv[1] === fileURLToPath(import.meta.url);
@@ -301,8 +342,10 @@ export {
   templateWeekly,
   validateWeekly,
   parseAtomCommits,
+  parseRssItems,
   normalizeSubject,
   looselyMatches,
   collectTrackedSubjects,
   findMergedSeries,
+  withinLastWeek,
 };

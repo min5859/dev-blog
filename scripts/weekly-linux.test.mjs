@@ -8,6 +8,8 @@ import {
   looselyMatches,
   collectTrackedSubjects,
   findMergedSeries,
+  parseRssItems,
+  withinLastWeek,
 } from './weekly-linux.mjs';
 
 test('isoWeek returns ISO 8601 year and week for a Monday', () => {
@@ -69,6 +71,28 @@ test('findMergedSeries returns one entry per tracked subject', () => {
   const merges = findMergedSeries(tracked, commits);
   assert.equal(merges.length, 1);
   assert.equal(merges[0].trackedSubject, 'sched/rt: Fix RT_PUSH_IPI soft lockup');
+});
+
+test('parseRssItems extracts title/link/pubDate per <item>', () => {
+  const xml = `<?xml version="1.0"?><rss><channel>
+  <item><title>Foo: a kernel feature</title><link>https://example.com/a</link><pubDate>Mon, 05 May 2026 09:00:00 +0000</pubDate></item>
+  <item><title>Bar: another</title><link>https://example.com/b</link><pubDate>Tue, 06 May 2026 09:00:00 +0000</pubDate></item>
+  </channel></rss>`;
+  const items = parseRssItems(xml);
+  assert.equal(items.length, 2);
+  assert.equal(items[0].title, 'Foo: a kernel feature');
+  assert.equal(items[0].link, 'https://example.com/a');
+});
+
+test('withinLastWeek keeps items pubDate within 7 days of runDate', () => {
+  const items = [
+    { title: 'fresh', pubDate: 'Fri, 08 May 2026 09:00:00 +0000' },
+    { title: 'stale', pubDate: 'Wed, 22 Apr 2026 09:00:00 +0000' },
+    { title: 'no-date', pubDate: undefined },
+  ];
+  const out = withinLastWeek(items, '2026-05-11');
+  assert.equal(out.length, 1);
+  assert.equal(out[0].title, 'fresh');
 });
 
 test('collectTrackedSubjects pulls from highlights and lore sources', () => {
