@@ -489,7 +489,6 @@ function toPostDraft(candidates, sourceData, candidateBodies = []) {
     && record.kind !== 'patch-discussion'
     && !regressionIds.has(record.id));
   const top = candidates.slice(0, 4);
-  const mainline = sourceData.records.find((record) => record.sourceId === 'kernel-org-releases' && record.metadata?.moniker === 'mainline');
 
   return {
     id: postId,
@@ -518,17 +517,6 @@ function toPostDraft(candidates, sourceData, candidateBodies = []) {
           ? buildSection(otherSignals.slice(0, 2), '추가 신호가 없습니다.', (r) => impactLkml(r))
           : '국부 드라이버/플랫폼 패치는 본문에서 제외했습니다. 자기 영역 키워드로 lore.kernel.org에서 직접 검색하세요.',
       },
-    ],
-    implications: [
-      mainline ? `mainline은 ${stripPatchPrefix(mainline.title)} 단계입니다.` : 'mainline 정보를 확인하지 못했습니다.',
-      regressions.length
-        ? `회귀·보안 ${regressions.length}건 — 자기 환경 영향 가능성을 우선 확인하세요.`
-        : '회귀·보안 신호는 비어 있습니다.',
-    ],
-    nextActions: [
-      '회귀·보안 항목의 verifyLink를 먼저 열어 자기 환경에 영향이 있는지 판단하세요.',
-      '핵심 변경 섹션에 자기 관심 서브시스템이 보이면 코드 경로에 영향이 가는지 점검하세요.',
-      '릴리스 changelog는 자기가 베이스로 쓰는 라인(stable/longterm)에 한정해 빠르게 훑으세요.',
     ],
     confidence: {
       level: '초안',

@@ -55,11 +55,11 @@
 
 링크가 없으면 `· 확인` 줄을 생략합니다. 점수, 메타데이터, 작성자 이름 같은 잡음은 본문에 넣지 마세요.
 
-## summary, implications, nextActions
+## summary
 
-- `summary` — 두 문장 이내. 첫 문장은 오늘의 가장 중요한 한 가지, 두 번째는 그 다음 신호.
-- `implications` — 최대 2개. mainline 상태 한 줄 + 회귀·보안 카운트 한 줄.
-- `nextActions` — 최대 3개. 모두 "...하세요" 명령형으로 끝납니다.
+두 문장 이내. 첫 문장은 오늘의 가장 중요한 한 가지, 두 번째는 그 다음 신호.
+
+`implications`나 `nextActions` 같은 보충 섹션은 만들지 마세요. summary, highlights, sections만으로 정보가 충분히 전달되어야 합니다 — 같은 사실을 여러 곳에 반복하지 않습니다.
 
 ## 원하는 JSON 형태
 
@@ -80,8 +80,6 @@
     { "heading": "핵심 변경", "body": "..." },
     { "heading": "기타", "body": "..." }
   ],
-  "implications": ["..."],
-  "nextActions": ["..."],
   "confidence": { "level": "AI 초안", "note": "..." },
   "sources": [ { "title": "...", "url": "...", "note": "..." } ],
   "draftMetadata": { }

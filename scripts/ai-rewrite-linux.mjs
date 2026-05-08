@@ -111,8 +111,6 @@ function templateRewrite(draft) {
         body: sectionByHeading.get('기타') || '국부 드라이버/플랫폼 패치는 본문에서 제외했습니다.',
       },
     ],
-    implications: draft.implications,
-    nextActions: draft.nextActions,
     confidence: {
       level: adapter === 'template' ? '템플릿 초안' : 'AI 초안',
       note: '제목·메타데이터 기반 자동 선별입니다. 본문 의미를 검증한 상태가 아니므로 게시 전 원문 확인이 필요합니다.',
