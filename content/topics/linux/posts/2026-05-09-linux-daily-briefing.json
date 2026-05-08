@@ -3,7 +3,7 @@
   "topic": "linux",
   "title": "2026-05-09 커널 개발 브리핑",
   "date": "2026-05-09",
-  "summary": "7.1-rc2가 공개되어 7.x 머지 윈도우 흐름이 이어지고, 7.0.5 stable에는 xfrm ESP 공유 skb 프래그먼트 in-place 복호화 회피가 백포트되었습니다. 6.19.14는 mm/blk-cgroup·mm/kasan UAF, ocfs2 OOB write, KVM SEV 잠금 등 219건과 함께 EOL을 맞았고, tun/tap의 qdisc 셰이핑 준비 시리즈와 cgroup-bpf 기반 mTHP RFC 반려도 주목할 만합니다.",
+  "summary": "오늘 핵심은 Linux 6.19.14 EOL stable에 219건이 한꺼번에 백포트되며 다수의 UAF·KASAN double free·KVM SEV 수정이 들어간 점입니다. 7.1-rc2가 진행 중인 가운데, 네트워크 코어에서는 tun/tap의 ptr_ring 큐 깨우기 헬퍼가 제안되었고 mm 쪽에서는 cgroup-bpf로 mTHP를 노출하려던 RFC가 정책상 이유로 반려되었습니다.",
   "tags": [
     "리눅스",
     "커널"
@@ -13,48 +13,48 @@
       "title": "Linux 7.1-rc2 mainline",
       "priority": "상",
       "verifyLink": "https://git.kernel.org/torvalds/h/v7.1-rc2",
-      "action": "자기 서브시스템에서 머지된 변경이 어떻게 안정화되는지 다음 RC까지 계속 추적하세요."
+      "action": "merge-window 마무리 흐름과 RC2에 들어온 자기 서브시스템 변경을 점검하세요."
     },
     {
-      "title": "Linux 7.0.5 stable: xfrm ESP shared skb frag in-place decrypt 회피",
-      "priority": "중",
-      "verifyLink": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.0.5",
-      "action": "IPsec ESP를 운용한다면 7.0.5로 갱신해 공유 프래그먼트 경로의 데이터 손상 가능성을 차단하세요."
-    },
-    {
-      "title": "Linux 6.19.14 stable · EOL (219건 백포트)",
+      "title": "Linux 6.19.14 EOL stable — UAF·KASAN 다수 백포트",
       "priority": "중",
       "verifyLink": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.19.14",
-      "action": "6.19 라인을 운용 중이라면 이번이 마지막 stable이라는 점을 인지하고, mm/blk-cgroup·mm/kasan UAF·ocfs2 OOB write 등 핵심 백포트 적용 후 상위 라인 이전 계획을 점검하세요."
+      "action": "6.19 라인을 운용 중이라면 EOL 직전 백포트 219건에서 자기 드라이버 경로의 UAF·KASAN 수정이 포함됐는지 확인하세요."
     },
     {
-      "title": "mTHP cgroup-bpf RFC, mm 메인테이너 반려",
+      "title": "tun/tap: ptr_ring consume 헬퍼와 netdev 큐 깨우기",
+      "priority": "중",
+      "verifyLink": "https://lore.kernel.org/lkml/20260508151048.183125-2-simon.schippers@tu-dortmund.de/",
+      "action": "tun/tap 또는 ptr_ring 기반 가상 NIC 경로를 다룬다면 큐 정지·깨우기 시점이 바뀌는 점을 검토하세요."
+    },
+    {
+      "title": "mTHP cgroup-bpf 노출 RFC 반려",
       "priority": "하",
       "verifyLink": "https://lore.kernel.org/lkml/af376QFXC36uf7kp@lucifer/",
-      "action": "cgroup 단위 mTHP 크기 제어가 필요했던 워크로드라면 단기간 메인라인 진입은 어렵다고 보고 자체 우회 전략을 유지하세요."
+      "action": "mTHP 정책을 cgroup-bpf로 제어할 계획이라면 당분간 머지 가능성이 낮다는 점을 일정에 반영하세요."
     }
   ],
   "sections": [
     {
       "heading": "릴리스/로드맵",
-      "body": "- Linux 7.1-rc2 mainline\n  · 영향: 7.x 머지 윈도우 종료 후 두 번째 RC. 자기 서브시스템 변경이 머지된 경우 회귀 보고 창구가 본격 열림.\n  · 확인: https://git.kernel.org/torvalds/h/v7.1-rc2\n\n- Linux 7.0.5 stable\n  · 영향: xfrm ESP에서 공유 skb 프래그먼트에 대한 in-place 복호화를 피하도록 한 1건 백포트. IPsec/ESP 트래픽이 있는 환경의 데이터 정합성에 직결.\n  · 확인: https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.0.5\n\n- Linux 6.19.14 stable · EOL\n  · 영향: 6.19 라인의 마지막 stable. mm/blk-cgroup cgwb_release_workfn UAF, mm/kasan double-free, ocfs2 inline data OOB write, KVM SEV 다중 vCPU 잠금, x86 copy_from_user_nocache 정리, em28xx·bcache·ALSA 6fire UAF 등 219건 백포트. 6.19를 계속 운용한다면 상위 라인 이전 계획이 필요.\n  · 확인: https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.19.14"
+      "body": "- Linux 7.1-rc2 mainline\n  · 영향: 7.1 머지 윈도우가 닫힌 뒤 RC 안정화 단계 진입. 메인라인 추적 환경에서는 자기 서브시스템 머지분이 RC2까지 들어왔는지 확인 시점입니다.\n  · 확인: https://git.kernel.org/torvalds/h/v7.1-rc2\n\n- Linux 6.19.14 stable · EOL\n  · 영향: 6.19 longterm 라인 종료 직전의 마지막 정리. 219건이 한꺼번에 백포트되었고 회귀·보안 성격의 수정 비중이 큽니다 (자세한 항목은 회귀·보안 신호 섹션 참조).\n  · 확인: https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.19.14\n\n- Linux 7.0.5 stable\n  · 영향: 백포트는 단 1건 — `xfrm: esp: avoid in-place decrypt on shared skb frags`. shared skb fragment 상에서 in-place decrypt를 회피하므로 IPsec ESP를 쓰는 환경이라면 즉시 적용 검토.\n  · 확인: https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.0.5"
     },
     {
       "heading": "회귀·보안 신호",
-      "body": "별도로 분류된 신규 회귀·CVE 보고는 없습니다. 다만 7.0.5 백포트의 xfrm ESP 공유 skb 프래그먼트 회피는 사실상 데이터 손상 회귀 수정이므로 IPsec 운영 환경은 우선 적용을 검토하세요."
+      "body": "- Linux 6.19.14 EOL 백포트에 다수의 use-after-free 수정\n  · 영향: bcache cached_dev.sb_bio, ALSA 6fire/em28xx/mediatek vcodec USB·미디어 디스커넥트 경로, hwmon powerz USB 분리, blk-cgroup cgwb_release_workfn 등 디스커넥트·해제 경로의 UAF가 한꺼번에 정리되었습니다. 6.19 운용 중이라면 자기 드라이버의 release/disconnect 콜백 경로가 영향권인지 점검하세요.\n  · 확인: https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.19.14\n\n- mm/KASAN 메모리 안전 관련 수정\n  · 영향: `mm/kasan: fix double free for kasan pXds`, `mm/userfaultfd: fix hugetlb fault mutex hash calculation` 등 mm 내부 자료구조 결함이 정정됐습니다. KASAN을 켜고 운용하는 검증 환경이라면 거짓 양성 감소·진단 정확도 변화에 유의하세요.\n  · 확인: https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.19.14\n\n- ocfs2 인라인 데이터 OOB write\n  · 영향: `ocfs2: fix out-of-bounds write in ocfs2_write_end_inline` 및 i_size 검증 추가. ocfs2를 쓰는 클러스터 환경에서 inline data 파일 작성 경로가 즉시 보안 백포트 대상입니다.\n  · 확인: https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.19.14"
     },
     {
       "heading": "핵심 변경",
-      "body": "[네트워크]\n- tun/tap: ptr_ring consume helper with netdev queue wakeup (4-패치 시리즈)\n  · 영향: tun_ring_consume() 헬퍼를 도입해 ring의 절반이 소진되거나 마지막 항목 소비 시 정지된 netdev subqueue를 깨우도록 변경. 후속 패치에서 ptr_ring tail-drop 대신 큐 정지를 도입해 qdisc 기반 트래픽 셰이핑을 가능하게 하려는 준비 작업이며, tun/tap을 데이터 경로로 쓰는 가상화·컨테이너 네트워킹 스택에 영향.\n  · 확인: https://lore.kernel.org/lkml/20260508151048.183125-2-simon.schippers@tu-dortmund.de/\n\n[메모리 관리]\n- mm: introduce mthp_ext via cgroup-bpf to make mTHP more transparent (RFC 4-패치)\n  · 영향: cgroup 단위 mTHP 크기 선택을 BPF 훅으로 노출하려는 RFC. mm 메인테이너가 'THP/mTHP가 안정화되기 전이며 BPF 인터페이스는 영구적이라 실험 도입도 어렵다'며 반려 의사를 표명. 당분간 cgroup별 THP 크기 제어는 메인라인 외부에서 해결해야 함.\n  · 확인: https://lore.kernel.org/lkml/af376QFXC36uf7kp@lucifer/"
+      "body": "- [네트워크] tun/tap: ptr_ring consume 헬퍼와 netdev 서브큐 깨우기\n  · 영향: `tun_ring_consume()`이 `ptr_ring_consume()`을 감싸 ring 절반 소진 시 정지된 netdev 서브큐를 깨우도록 바뀝니다 (`tun_file.cons_cnt` 추가). qdisc 기반 트래픽 셰이핑을 위해 ring full 시 큐를 정지시키는 후속 패치의 토대이며, `__tun_detach`는 `tx_ring.consumer_lock`을 잡아 queue_index 경합을 막습니다. tun/tap 또는 유사 ptr_ring 기반 가상 NIC 경로의 wake/stop 타이밍이 변하므로 자체 측정·플로우 컨트롤 로직이 있다면 회귀 가능성을 검토하세요.\n  · 확인: https://lore.kernel.org/lkml/20260508151048.183125-2-simon.schippers@tu-dortmund.de/\n\n- [메모리 관리] cgroup-bpf 기반 mTHP 노출 RFC 반려\n  · 영향: cgroup별로 mTHP 크기를 BPF로 선택하게 하자는 RFC가 검토자로부터 거절되었습니다 — 사유는 (1) THP·mTHP 자체가 아직 안정화 단계가 아니고 khugepaged의 mTHP 지원도 아직 머지되지 않았으며, (2) BPF 인터페이스는 한 번 노출되면 사실상 제거 불가하기 때문이라고 명시되었습니다. mTHP 정책을 cgroup으로 제어할 계획이 있다면 당분간 머지 가능성이 낮으므로 사용자 공간 측 의존을 미리 만들지 않는 것이 안전합니다.\n  · 확인: https://lore.kernel.org/lkml/af376QFXC36uf7kp@lucifer/"
     },
     {
       "heading": "기타",
-      "body": "- linux-next next-20260508 머지 큐 스냅샷이 공개됐습니다. 자기 서브시스템 신규 패치가 들어왔는지 점검하세요. (https://git.kernel.org/next/linux-next/h/next-20260508)\n- i2c-tegra pm_runtime 누수 수정, vdpa/mlx5 kvzalloc_flex 정리, p54spi DT 바인딩 추가 등 국부 드라이버/플랫폼 패치는 본문에서 제외했습니다. 자기 영역 키워드로 lore.kernel.org에서 직접 검색하세요."
+      "body": "국부 드라이버/플랫폼 패치(i2c-tegra `pm_runtime` 누수 수정, p54spi DT binding 신설, vdpa/mlx5 `kvzalloc_flex()` 리팩터 등)는 본문에서 제외했습니다. 자기 영역 키워드로 lore.kernel.org에서 직접 검색하세요."
     }
   ],
   "confidence": {
     "level": "AI 초안",
-    "note": "kernel.org ChangeLog와 lore commit message를 기반으로 한 자동 요약입니다. 게시 전 원문에서 백포트 범위와 패치 적용 여부를 확인하세요."
+    "note": "메타데이터와 LKML/kernel.org 본문을 바탕으로 정리했습니다. 게시 전 원문 링크에서 백포트 범위·패치 시리즈 진행 상황을 다시 확인하세요."
   },
   "sources": [
     {
@@ -83,23 +83,28 @@
       "note": "lore.kernel.org/lkml · patch-discussion"
     },
     {
-      "title": "i2c: tegra: fix pm_runtime leak on mutex_lock failure",
-      "url": "https://lore.kernel.org/lkml/6f982323-27f2-4e22-a24d-dbc6d8576629@nvidia.com/",
+      "title": "mm: introduce mthp_ext via cgroup-bpf to make mTHP more transparent (RFC 반려)",
+      "url": "https://lore.kernel.org/lkml/af376QFXC36uf7kp@lucifer/",
       "note": "lore.kernel.org/lkml · patch-discussion"
     },
     {
-      "title": "mm: introduce mthp_ext via cgroup-bpf to make mTHP more transparent",
-      "url": "https://lore.kernel.org/lkml/af376QFXC36uf7kp@lucifer/",
+      "title": "i2c: tegra: fix pm_runtime leak on mutex_lock failure",
+      "url": "https://lore.kernel.org/lkml/6f982323-27f2-4e22-a24d-dbc6d8576629@nvidia.com/",
       "note": "lore.kernel.org/lkml · patch-discussion"
     },
     {
       "title": "[v5 net-next] dt-bindings: net: add st,stlc4560/p54spi binding",
       "url": "https://lore.kernel.org/lkml/20260508-matchless-easily-80421ce426fe@spud/",
       "note": "lore.kernel.org/lkml · patch-discussion"
+    },
+    {
+      "title": "vdpa/mlx5: Use kvzalloc_flex() for MTT command memory",
+      "url": "https://lore.kernel.org/lkml/nwnfka23bthiptuzscsd6iteec4ht3knaxjgjyl4xmwuhypgab@uofxficme7ni/",
+      "note": "lore.kernel.org/lkml · patch-discussion"
     }
   ],
   "draftMetadata": {
-    "generatedAt": "2026-05-08T15:57:15.846Z",
+    "generatedAt": "2026-05-08T16:01:19.530Z",
     "sourceRecordCount": 35,
     "candidateCount": 9,
     "generator": "scripts/draft-linux.mjs",
@@ -125,7 +130,7 @@
       "전력 관리",
       "메모리 관리"
     ],
-    "rewrittenAt": "2026-05-08T15:57:20.357Z",
+    "rewrittenAt": "2026-05-08T16:02:01.792Z",
     "rewriteAdapter": "claude",
     "promptTemplate": "prompts/linux-newsletter-ko.md"
   }

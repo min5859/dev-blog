@@ -28,6 +28,35 @@ const broadSubsystems = new Set([
   '가상화', '네트워크', '스토리지/파일시스템', '메모리 관리', '스케줄러/실시간', '보안', '전력 관리',
 ]);
 
+const KNOWN_MAINTAINERS = new Set([
+  'torvalds@linux-foundation.org',
+  'gregkh@linuxfoundation.org',
+  'gregkh@kernel.org',
+  'akpm@linux-foundation.org',
+  'paulmck@kernel.org',
+  'peterz@infradead.org',
+  'tglx@linutronix.de',
+  'mingo@kernel.org',
+  'davem@davemloft.net',
+  'kuba@kernel.org',
+  'edumazet@google.com',
+  'pabeni@redhat.com',
+  'tytso@mit.edu',
+  'axboe@kernel.dk',
+  'hch@infradead.org',
+  'hch@lst.de',
+  'will@kernel.org',
+  'catalin.marinas@arm.com',
+  'sfr@canb.auug.org.au',
+  'dsterba@suse.com',
+  'clm@fb.com',
+  'jstultz@google.com',
+  'rostedt@goodmis.org',
+  'ast@kernel.org',
+  'daniel@iogearbox.net',
+  'pmladek@suse.com',
+]);
+
 const regressionPattern = /(\bregression\b|\boops\b|\bpanic\b|\bcrash\b|cve|\bsecurity\b|\bvuln|lockup|deadlock)/i;
 const monikerImpact = new Map([
   ['mainline', '메인라인 추적 대상 환경'],
@@ -40,11 +69,21 @@ async function readJson(file) {
   return JSON.parse(await readFile(file, 'utf8'));
 }
 
+function isKnownMaintainer(record) {
+  const email = record.metadata?.author?.email?.toLowerCase();
+  return email ? KNOWN_MAINTAINERS.has(email) : false;
+}
+
 function scoreRecord(record) {
   let score = 0;
   const reasons = [];
   const title = record.title.toLowerCase();
   const tags = new Set(record.tags || []);
+
+  if (isKnownMaintainer(record)) {
+    score += 15;
+    reasons.push('주요 메인테이너 발신');
+  }
 
   if (record.sourceId === 'kernel-org-releases') {
     score += 40;
@@ -241,6 +280,7 @@ async function enrichWithBodies(candidates, { delayMs = 200 } = {}) {
       sourceId: record.sourceId,
       kind: record.kind,
       commitMessage: body || '',
+      ...(isKnownMaintainer(record) ? { fromMaintainer: record.metadata?.author?.name || record.metadata?.author?.email } : {}),
       ...(history ? { history } : {}),
     });
     if (delayMs) await new Promise((resolve) => setTimeout(resolve, delayMs));
@@ -598,6 +638,7 @@ export {
   extractSeriesId,
   annotateWithHistory,
   historyKeyFor,
+  isKnownMaintainer,
   pickCandidates,
   highlightOf,
   subsystemPatterns,

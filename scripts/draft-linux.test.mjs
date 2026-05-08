@@ -13,6 +13,7 @@ import {
   extractSeriesId,
   annotateWithHistory,
   historyKeyFor,
+  isKnownMaintainer,
 } from './draft-linux.mjs';
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -251,6 +252,30 @@ test('annotateWithHistory flags v2→v3 upgrade and prior-day tracking', () => {
   assert.equal(a.previouslySeenAt, '2026-05-08');
   assert.equal(b.previousVersion, undefined);
   assert.equal(b.previouslySeenAt, '2026-05-07');
+});
+
+test('isKnownMaintainer matches whitelist by email lowercase', () => {
+  const r1 = lkml({ metadata: { author: { email: 'gregkh@kernel.org' } } });
+  const r2 = lkml({ metadata: { author: { email: 'GregKH@KERNEL.org' } } });
+  const r3 = lkml({ metadata: { author: { email: 'random@example.com' } } });
+  const r4 = lkml({ metadata: { author: {} } });
+  assert.equal(isKnownMaintainer(r1), true);
+  assert.equal(isKnownMaintainer(r2), true);
+  assert.equal(isKnownMaintainer(r3), false);
+  assert.equal(isKnownMaintainer(r4), false);
+});
+
+test('scoreRecord boosts known-maintainer mail with a 주요 메인테이너 reason', () => {
+  const scored = scoreRecord(lkml({
+    title: '[PATCH] mm: tighten folio tracking',
+    metadata: { author: { email: 'akpm@linux-foundation.org', name: 'Andrew Morton' } },
+  }));
+  const baseline = scoreRecord(lkml({
+    title: '[PATCH] mm: tighten folio tracking',
+    metadata: { author: { email: 'noone@example.test', name: 'Random' } },
+  }));
+  assert.ok(scored.score === baseline.score + 15, `expected +15 boost, got ${scored.score} vs ${baseline.score}`);
+  assert.ok(scored.scoreReasons.some((r) => r.includes('메인테이너')));
 });
 
 test('annotateWithHistory leaves untracked records unchanged', () => {
