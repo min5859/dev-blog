@@ -15,7 +15,12 @@ cd "${PROJECT_DIR}"
 
 # Android topic runs after Linux. Failure does not block the Linux push.
 if ! "${NPM_BIN}" run daily:android:publish; then
-  echo "android daily run failed; continuing with linux-only push"
+  echo "android daily run failed; continuing"
+fi
+
+# Opensource trending topic. Same failure-isolated pattern.
+if ! "${NPM_BIN}" run daily:opensource:publish; then
+  echo "opensource daily run failed; continuing"
 fi
 
 # Mondays (KST) get an additional weekly digest covering the past 7 days.
