@@ -218,6 +218,18 @@ function patchSeriesKey(record) {
   return `${stripped}::${author}`;
 }
 
+function extractSeriesId(record) {
+  if (record.sourceId !== 'lore-lkml-new') return null;
+  const partMatch = record.title.match(/\[PATCH\b[^\]]*?\b(\d+)\/(\d+)\]/i);
+  if (!partMatch) return null;
+  const numerator = Number(partMatch[1]);
+  const denominator = Number(partMatch[2]);
+  const versionMatch = record.title.match(/\bv(\d+)\b/i);
+  const version = versionMatch ? Number(versionMatch[1]) : 1;
+  const author = record.metadata?.author?.email || record.metadata?.author?.name || '';
+  return { key: `${author}::v${version}::${denominator}`, numerator, denominator, version };
+}
+
 function mergePatchSeries(records) {
   const grouped = new Map();
   const passthrough = [];
@@ -232,7 +244,33 @@ function mergePatchSeries(records) {
       grouped.set(key, record);
     }
   }
-  return [...passthrough, ...grouped.values()];
+  const afterTitleMerge = [...passthrough, ...grouped.values()];
+
+  const seriesGroups = new Map();
+  const standalone = [];
+  for (const record of afterTitleMerge) {
+    const id = extractSeriesId(record);
+    if (!id) {
+      standalone.push(record);
+      continue;
+    }
+    const existing = seriesGroups.get(id.key);
+    if (!existing) {
+      seriesGroups.set(id.key, { record, numerator: id.numerator, count: 1, denominator: id.denominator });
+    } else {
+      existing.count++;
+      if (id.numerator < existing.numerator) {
+        existing.record = record;
+        existing.numerator = id.numerator;
+      }
+    }
+  }
+  const seriesEntries = [...seriesGroups.values()].map(({ record, count, denominator }) => ({
+    ...record,
+    seriesSize: count,
+    seriesDenominator: denominator,
+  }));
+  return [...standalone, ...seriesEntries];
 }
 
 function isStaleReply(record, nowMs = Date.now()) {
@@ -358,7 +396,8 @@ function impactRelease(record) {
 
 function impactLkml(record, options = {}) {
   const subsystems = broadSubsystemsOf(record).join(', ');
-  const lines = [`- ${stripPatchPrefix(record.title)}`];
+  const seriesNote = record.seriesDenominator ? ` (${record.seriesDenominator}-패치 시리즈)` : '';
+  const lines = [`- ${stripPatchPrefix(record.title)}${seriesNote}`];
   if (options.withSubsystem !== false && subsystems) {
     lines.push(`  · 영향: ${subsystems}`);
   }
@@ -505,6 +544,7 @@ export {
   bucketBySubsystem,
   extractCommitMessage,
   summarizeChangelog,
+  extractSeriesId,
   pickCandidates,
   highlightOf,
   subsystemPatterns,

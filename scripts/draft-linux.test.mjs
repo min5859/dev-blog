@@ -10,6 +10,7 @@ import {
   isBroadImpact,
   extractCommitMessage,
   summarizeChangelog,
+  extractSeriesId,
 } from './draft-linux.mjs';
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -201,6 +202,48 @@ test('summarizeChangelog extracts subjects and skips Linux X.Y.Z header', () => 
 test('summarizeChangelog returns empty string for non-changelog input', () => {
   assert.equal(summarizeChangelog(''), '');
   assert.equal(summarizeChangelog('not a git log'), '');
+});
+
+test('extractSeriesId parses [PATCH vN M/K]', () => {
+  const id = extractSeriesId(lkml({ title: '[PATCH v3 2/5] foo: do bar' }));
+  assert.equal(id.numerator, 2);
+  assert.equal(id.denominator, 5);
+  assert.equal(id.version, 3);
+});
+
+test('extractSeriesId handles branch name in prefix', () => {
+  const id = extractSeriesId(lkml({ title: '[PATCH net-next 8/12] dt-bindings: net: foo' }));
+  assert.equal(id.numerator, 8);
+  assert.equal(id.denominator, 12);
+});
+
+test('extractSeriesId returns null for non-series titles', () => {
+  assert.equal(extractSeriesId(lkml({ title: '[PATCH] foo: do bar' })), null);
+  assert.equal(extractSeriesId(lkml({ title: '[PATCH v2] foo' })), null);
+});
+
+test('mergePatchSeries collapses N/M parts of one series, prefers cover letter', () => {
+  const author = { email: 'series@author.test' };
+  const records = [
+    lkml({ id: 'a', title: '[PATCH v3 0/5] cover: foo', metadata: { author } }),
+    lkml({ id: 'b', title: '[PATCH v3 1/5] foo: do bar', metadata: { author } }),
+    lkml({ id: 'c', title: '[PATCH v3 2/5] foo: do baz', metadata: { author } }),
+    lkml({ id: 'd', title: '[PATCH v3 3/5] foo: do qux', metadata: { author } }),
+  ];
+  const merged = mergePatchSeries(records);
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0].id, 'a');
+  assert.equal(merged[0].seriesDenominator, 5);
+  assert.equal(merged[0].seriesSize, 4);
+});
+
+test('mergePatchSeries does not merge unrelated series sharing denominator', () => {
+  const records = [
+    lkml({ id: 'a', title: '[PATCH v3 1/5] alpha', metadata: { author: { email: 'a@x' } } }),
+    lkml({ id: 'b', title: '[PATCH v3 1/5] beta',  metadata: { author: { email: 'b@x' } } }),
+  ];
+  const merged = mergePatchSeries(records);
+  assert.equal(merged.length, 2);
 });
 
 test('isStaleReply ignores non-LKML records and non-replies', () => {
