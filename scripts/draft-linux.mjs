@@ -58,6 +58,7 @@ const KNOWN_MAINTAINERS = new Set([
 ]);
 
 const regressionPattern = /(\bregression\b|\boops\b|\bpanic\b|\bcrash\b|cve|\bsecurity\b|\bvuln|lockup|deadlock)/i;
+const bodyRegressionPattern = /^[\s>]*Fixes:\s*[0-9a-f]{8,}/im;
 const monikerImpact = new Map([
   ['mainline', '메인라인 추적 대상 환경'],
   ['stable', '안정 커널 사용 환경'],
@@ -377,7 +378,10 @@ function isStaleReply(record, nowMs = Date.now()) {
 }
 
 function isRegressionSignal(record) {
-  return record.sourceId === 'lore-lkml-new' && regressionPattern.test(record.title);
+  if (record.sourceId !== 'lore-lkml-new') return false;
+  if (regressionPattern.test(record.title)) return true;
+  if (record.commitMessage && bodyRegressionPattern.test(record.commitMessage)) return true;
+  return false;
 }
 
 function broadSubsystemsOf(record) {
@@ -595,6 +599,11 @@ async function main() {
   const seriesHistory = await loadRecentSeriesHistory(generatedDir, runDate);
   const candidates = annotateWithHistory(rawCandidates, seriesHistory);
   const candidateBodies = await enrichWithBodies(candidates);
+  const bodyById = new Map(candidateBodies.map((entry) => [entry.id, entry]));
+  for (const candidate of candidates) {
+    const body = bodyById.get(candidate.id);
+    if (body?.commitMessage) candidate.commitMessage = body.commitMessage;
+  }
   const bodyHits = candidateBodies.filter((entry) => entry.commitMessage).length;
   const trackedHits = candidateBodies.filter((entry) => entry.history).length;
   const draft = toPostDraft(candidates, sourceData, candidateBodies);

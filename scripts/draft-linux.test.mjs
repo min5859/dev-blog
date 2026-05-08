@@ -99,6 +99,30 @@ test('isRegressionSignal does not flag generic Fix patches', () => {
   assert.equal(isRegressionSignal(lkml({ title: '[PATCH v2] iio: adc: ad4691: Fix vref handling' })), false);
 });
 
+test('isRegressionSignal flags Fixes: <hash> in commit message body', () => {
+  const record = lkml({
+    title: '[PATCH] sched: tighten fairness in nice 19',
+    commitMessage: 'sched: tighten fairness in nice 19\n\nFixes: deadbeef1234 ("sched: bad helper")\n\nThis fixes a corner case ...',
+  });
+  assert.equal(isRegressionSignal(record), true);
+});
+
+test('isRegressionSignal flags Fixes: lines that are quoted in a reply', () => {
+  const record = lkml({
+    title: 'Re: [PATCH v2 1/2] i2c: tegra: fix pm_runtime leak',
+    commitMessage: 'On 08/05/2026, ...\n>> Add the missing pm_runtime_put() before returning ...\n>>\n>> Fixes: 6077cfd716fb ("i2c: tegra: Add support for SW mutex register")\n>> Signed-off-by: ...',
+  });
+  assert.equal(isRegressionSignal(record), true);
+});
+
+test('isRegressionSignal stays negative when neither title nor Fixes-tag triggers', () => {
+  const record = lkml({
+    title: '[PATCH] sched: introduce X helper',
+    commitMessage: 'Add X helper to make Y easier. No regression involved.',
+  });
+  assert.equal(isRegressionSignal(record), false);
+});
+
 test('scoreRecord recognizes the 전력 관리 subsystem', () => {
   const scored = scoreRecord(lkml({ title: '[PATCH] cpufreq: tune intel_pstate response' }));
   assert.ok(scored.matchedSubsystems.includes('전력 관리'),
