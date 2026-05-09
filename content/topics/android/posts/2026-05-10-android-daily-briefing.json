@@ -1,0 +1,146 @@
+{
+  "id": "2026-05-10-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-05-10 Android 커널 개발 브리핑",
+  "date": "2026-05-10",
+  "summary": "android-mainline 의 Rust 기반 ashmem 재작성 이후 정수 언더플로우·버퍼 오버런 등 보안 회귀 버그픽스가 집중적으로 들어왔고, android16-6.12 에는 deadline 스케줄러 find_later_rq() NULL 체크 누락 크래시 픽스가 도달했습니다. 동시에 FPSIMD vendor_hooks 가 mainline 머지 충돌을 이유로 revert 되어 Samsung·MediaTek 등 의존 vendor 모듈은 다른 브랜치로의 재적용 여부를 검토해야 합니다.",
+  "tags": ["android", "커널", "ack"],
+  "highlights": [
+    {
+      "title": "ashmem: fix integer underflow on len==0",
+      "priority": "상",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/0e168fbe93ac702fa59789f380710d1745491e12",
+      "action": "Rust 기반 ashmem(`ashmem_rust`)을 사용하는 디바이스라면 즉시 백포트 검토. offset 이 파일 크기와 같을 때 len==0 처리에서 언더플로우가 일어나 커널 크래시로 이어지므로, 사용자 영역에서 memfd/ashmem 핸들을 임의 offset 으로 다루는 코드(미디어, 그래픽 버퍼 공유 등)의 fuzz 결과를 다시 확인하세요."
+    },
+    {
+      "title": "ashmem: Fix length of writes for ASHMEM_GET_NAME for memfds",
+      "priority": "상",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/511ed7a51d50e08362852fb62af295ed39a709ee",
+      "action": "ASHMEM_GET_NAME 가 사용자 버퍼에 ASHMEM_NAME_LEN(상한) 만큼 무조건 쓰던 동작이 NUL 종단 길이까지로 수정됐습니다. 작은 버퍼를 넘기는 user-space 헬퍼가 있으면 종전엔 buffer overrun 이 발생할 수 있었으니, 자체 HAL/native 라이브러리 호출부를 함께 점검하세요."
+    },
+    {
+      "title": "sched/deadline: Fix null check in find_later_rq",
+      "priority": "상",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/baf206521e4270d733b2ce3bf37e35afbd7070df",
+      "action": "android16-6.12 라인을 베이스로 잡는 디바이스 우선 적용. SCHED_DEADLINE 태스크에서 exec_ctx==NULL 분기가 누락되어 find_later_rq() 가 NULL 역참조로 패닉할 수 있습니다. proxy execution 경로를 사용하는 EAS 튜닝/RT 데몬을 운영한다면 회귀 테스트에 포함하세요."
+    },
+    {
+      "title": "Revert \"vendor_hooks: FPSIMD save/restore by using vendor_hooks\"",
+      "priority": "중",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/7f118edb10119ed909cdae12d6d5fb063baa9929",
+      "action": "android-mainline 에서 FPSIMD save/restore vendor_hook(Samsung·MediaTek 의존)이 mainline 머지 충돌을 이유로 빠졌습니다. 자기 vendor 모듈이 해당 hook 에 attach 한다면 빌드 깨짐을 미리 확인하고, 필요하면 product 브랜치(android16/15)에서만 캐리하는 정책으로 분기하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- ashmem: fix integer underflow on len==0 (0e168fbe93ac · android-mainline)\n  · 영향: ashmem Rust 구현(`ashmem_rust`)에서 offset 이 파일 크기와 같고 len==0 일 때 \"남은 바이트\" 계산이 언더플로우되어 크래시. ASHMEM_PIN/UNPIN 도입(88767401147c) 회귀.\n  · 확인: https://android.googlesource.com/kernel/common/+/0e168fbe93ac702fa59789f380710d1745491e12\n\n- ashmem: Fix length of writes for ASHMEM_GET_NAME for memfds (511ed7a51d50 · android-mainline)\n  · 영향: ASHMEM_GET_NAME 이 사용자 버퍼에 항상 ASHMEM_NAME_LEN 만큼 써서 작은 버퍼를 전달하면 오버런. NUL 종단 문자열 길이만 쓰도록 수정. memfd ioctl 도입(9b41e79f48c3) 회귀.\n  · 확인: https://android.googlesource.com/kernel/common/+/511ed7a51d50e08362852fb62af295ed39a709ee\n\n- ashmem: use dentry name snapshot in ASHMEM_GET_NAME (9d42ab9ac473 · android-mainline)\n  · 영향: memfd 가 아닌 일반 tmpfs 파일에 ASHMEM_GET_NAME 이 들어왔을 때 이름을 잘못 읽던 결함을 dentry name snapshot 방식으로 방어적으로 수정.\n  · 확인: https://android.googlesource.com/kernel/common/+/9d42ab9ac473043ed0e1ccb701e8467cdf2122ad\n\n- ashmem: fix is_ashmem_file() check in get_ashmem_area() (44f12c7ab0a2 · android-mainline)\n  · 영향: vendor 모듈이 `ashmem_area_size()`·`ashmem_area_vmfile()` 를 직접 호출할 때 잘못된 분기를 타게 되던 버그. is_ashmem_file() 추가(6bdbae6ea9fc) 회귀.\n  · 확인: https://android.googlesource.com/kernel/common/+/44f12c7ab0a29f99735ada7b2361e1d6dad41b16\n\n- ashmem: memfd_fcntl can be called on any file (1124d5c85f76 · android-mainline)\n  · 영향: memfd_fcntl() 의 안전성 주석을 \"memfd 파일 한정\"으로 잘못 적어둔 부분 수정. 코드 동작 변화 없음, 후속 감사용.\n  · 확인: https://android.googlesource.com/kernel/common/+/1124d5c85f76c570b9ba6698c2358f6f37fcf6c9\n\n- sched/deadline: Fix null check in find_later_rq (baf206521e42 · android16-6.12)\n  · 영향: proxy execution 경로의 `exec_ctx` 가 NULL 일 수 있는데 find_later_rq() 에서 역참조 → 커널 패닉 가능. SCHED_DEADLINE 사용 시 안정 브랜치 회귀 위험.\n  · 확인: https://android.googlesource.com/kernel/common/+/baf206521e4270d733b2ce3bf37e35afbd7070df"
+    },
+    {
+      "heading": "ACK 전용 변경",
+      "body": "**빌드·테스트 인프라 (ANDROID 전용)**\n\n- ext4: update kunit test module name (18b8f659ef03 · android-mainline)\n  · 영향: upstream 에서 `ext4-inode-test.ko` → `ext4-test.ko` 로 모듈명이 바뀌어 ACK 의 bazel·tradefed 정의를 동기화. CI/Treble VTS 가 ext4 kunit 을 로드한다면 빌드 산출물 경로 변경 확인 필요.\n  · 확인: https://android.googlesource.com/kernel/common/+/18b8f659ef03db97c85b10e6ea1ffda8c0fc506f\n\n- defconfig: enable RUNTIME_TESTING_MENU for crypto (b1545ccd8bf7 · android-mainline)\n  · 영향: upstream 7ac21b4032e5 이후 crypto-lib kunit 들이 RUNTIME_TESTING_MENU 아래로 이동. defconfig 에 옵션을 켜 줘야 GKI 빌드에서 테스트가 살아남.\n  · 확인: https://android.googlesource.com/kernel/common/+/b1545ccd8bf79e5360ae86195080f362ce8b42a4\n\n- gki_defconfig: drop PROC_MEM_FORCE_PTRACE (24eae7ee8ebc · android-mainline)\n  · 영향: upstream 에서 PROC_MEM_FORCE_PTRACE 가 Kconfig 기본값이 되었으므로 GKI defconfig 의 명시 활성화를 제거. ABI 영향 없음.\n  · 확인: https://android.googlesource.com/kernel/common/+/24eae7ee8ebc247c7b76180f9a78a051ab2f59bb\n\n**vendor_hooks · 트레이스 정리 (revert)**\n\n- Revert \"sched: Add trace hook for rt throttle dump\" (bc7a5d0dbca0 · android-mainline)\n  · 영향: GKI 에서 CONFIG_RT_GROUP_SCHED 가 꺼져 있어 사실상 dead code 였고, hrtimer_get_expires_ns() 제거(8ef2807042d0)와 충돌. RT throttle dump 디버깅 훅에 의존하던 도구가 있다면 product 브랜치에서 재적용 여부 결정 필요.\n  · 확인: https://android.googlesource.com/kernel/common/+/bc7a5d0dbca0f1843420bf17c4feb4c016700db6\n\n- Revert \"vendor_hooks: FPSIMD save/restore by using vendor_hooks\" (7f118edb1011 · android-mainline)\n  · 영향: Samsung(Wooyeon Kim)·MediaTek(Jing-Ting Wu) 가 사용하던 FPSIMD save/restore vendor_hook 이 mainline 머지 충돌을 이유로 제거. 의존 vendor 모듈은 빌드 깨짐 + 안전한 FPSIMD 핸들링 경로 재설계가 필요할 수 있음.\n  · 확인: https://android.googlesource.com/kernel/common/+/7f118edb10119ed909cdae12d6d5fb063baa9929"
+    },
+    {
+      "heading": "추적 브랜치",
+      "body": "- **android-mainline**: 오늘 변경의 대부분이 이 브랜치. ashmem Rust 재작성(memfd ioctl, ASHMEM_PIN/UNPIN, is_ashmem_file 등)에서 파생된 버그픽스 5건이 한꺼번에 들어왔고, GKI defconfig·bazel 빌드 정리, FPSIMD/RT throttle vendor_hook 두 건 revert 가 함께 진행 중. 가장 최근 commit `18b8f659ef03`.\n- **android16-6.12**: 안정 브랜치쪽은 deadline 스케줄러 NULL 역참조 픽스 1건. proxy execution 적용 디바이스의 회귀 검증 우선순위가 올라갑니다. 가장 최근 commit `baf206521e42`."
+    },
+    {
+      "heading": "기타",
+      "body": "단일 vendor·하드웨어 한정 패치는 본문에서 제외했습니다. SoC·디바이스 키워드(SoC 코드명, drivers 경로 등)로 ACK gitiles 의 git log 를 직접 조회하세요. 예: `git log --grep=<your-soc> origin/android-mainline -- drivers/`."
+    }
+  ],
+  "confidence": {
+    "level": "AI 초안",
+    "note": "gitiles JSON 과 commit subject·body 를 자동 수집한 후 한국어 편집 패스를 거친 결과입니다. 게시 전 원문 commit 의 Fixes:/Bug: 태그와 본인 디바이스 베이스 라인 합류 여부를 직접 확인해 주세요."
+  },
+  "sources": [
+    {
+      "title": "ashmem: fix integer underflow on len==0",
+      "url": "https://android.googlesource.com/kernel/common/+/0e168fbe93ac702fa59789f380710d1745491e12",
+      "note": "android.googlesource.com · ack-android · 0e168fbe93ac"
+    },
+    {
+      "title": "ashmem: Fix length of writes for ASHMEM_GET_NAME for memfds",
+      "url": "https://android.googlesource.com/kernel/common/+/511ed7a51d50e08362852fb62af295ed39a709ee",
+      "note": "android.googlesource.com · ack-android · 511ed7a51d50"
+    },
+    {
+      "title": "ashmem: use dentry name snapshot in ASHMEM_GET_NAME",
+      "url": "https://android.googlesource.com/kernel/common/+/9d42ab9ac473043ed0e1ccb701e8467cdf2122ad",
+      "note": "android.googlesource.com · ack-android · 9d42ab9ac473"
+    },
+    {
+      "title": "ashmem: fix is_ashmem_file() check in get_ashmem_area()",
+      "url": "https://android.googlesource.com/kernel/common/+/44f12c7ab0a29f99735ada7b2361e1d6dad41b16",
+      "note": "android.googlesource.com · ack-android · 44f12c7ab0a2"
+    },
+    {
+      "title": "ashmem: memfd_fcntl can be called on any file",
+      "url": "https://android.googlesource.com/kernel/common/+/1124d5c85f76c570b9ba6698c2358f6f37fcf6c9",
+      "note": "android.googlesource.com · ack-android · 1124d5c85f76"
+    },
+    {
+      "title": "sched/deadline: Fix null check in find_later_rq",
+      "url": "https://android.googlesource.com/kernel/common/+/baf206521e4270d733b2ce3bf37e35afbd7070df",
+      "note": "android.googlesource.com · ack-android · baf206521e42"
+    },
+    {
+      "title": "ext4: update kunit test module name",
+      "url": "https://android.googlesource.com/kernel/common/+/18b8f659ef03db97c85b10e6ea1ffda8c0fc506f",
+      "note": "android.googlesource.com · ack-android · 18b8f659ef03"
+    },
+    {
+      "title": "defconfig: enable RUNTIME_TESTING_MENU for crypto",
+      "url": "https://android.googlesource.com/kernel/common/+/b1545ccd8bf79e5360ae86195080f362ce8b42a4",
+      "note": "android.googlesource.com · ack-android · b1545ccd8bf7"
+    },
+    {
+      "title": "gki_defconfig: drop PROC_MEM_FORCE_PTRACE",
+      "url": "https://android.googlesource.com/kernel/common/+/24eae7ee8ebc247c7b76180f9a78a051ab2f59bb",
+      "note": "android.googlesource.com · ack-android · 24eae7ee8ebc"
+    },
+    {
+      "title": "Revert \"sched: Add trace hook for rt throttle dump\"",
+      "url": "https://android.googlesource.com/kernel/common/+/bc7a5d0dbca0f1843420bf17c4feb4c016700db6",
+      "note": "android.googlesource.com · ack-merge · bc7a5d0dbca0"
+    },
+    {
+      "title": "Revert \"vendor_hooks: FPSIMD save/restore by using vendor_hooks\"",
+      "url": "https://android.googlesource.com/kernel/common/+/7f118edb10119ed909cdae12d6d5fb063baa9929",
+      "note": "android.googlesource.com · ack-merge · 7f118edb1011"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-09T22:01:56.741Z",
+    "sourceRecordCount": 160,
+    "candidateCount": 11,
+    "generator": "scripts/draft-android.mjs",
+    "candidateIds": [
+      "ack-android-mainline:18b8f659ef03db97c85b10e6ea1ffda8c0fc506f",
+      "ack-android16-6.12:baf206521e4270d733b2ce3bf37e35afbd7070df",
+      "ack-android-mainline:b1545ccd8bf79e5360ae86195080f362ce8b42a4",
+      "ack-android-mainline:24eae7ee8ebc247c7b76180f9a78a051ab2f59bb",
+      "ack-android-mainline:0e168fbe93ac702fa59789f380710d1745491e12",
+      "ack-android-mainline:1124d5c85f76c570b9ba6698c2358f6f37fcf6c9",
+      "ack-android-mainline:44f12c7ab0a29f99735ada7b2361e1d6dad41b16",
+      "ack-android-mainline:511ed7a51d50e08362852fb62af295ed39a709ee",
+      "ack-android-mainline:9d42ab9ac473043ed0e1ccb701e8467cdf2122ad",
+      "ack-android-mainline:bc7a5d0dbca0f1843420bf17c4feb4c016700db6",
+      "ack-android-mainline:7f118edb10119ed909cdae12d6d5fb063baa9929"
+    ],
+    "bucketCounts": {
+      "regressions": 9,
+      "ackPatches": 0
+    },
+    "subsystems": [
+      "파일시스템/스토리지",
+      "스케줄러/EAS",
+      "GKI/모듈 ABI",
+      "Binder/IPC"
+    ],
+    "branches": [
+      "android-mainline",
+      "android16-6.12"
+    ]
+  }
+}
