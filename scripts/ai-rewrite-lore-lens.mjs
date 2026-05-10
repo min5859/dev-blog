@@ -15,8 +15,8 @@ const pipelinePath = path.join(root, 'content', 'topics', topic, 'pipeline.json'
 const todayKst = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date());
 const runDate = process.env.NEWSLETTER_DATE || todayKst();
 
-/** 기본: Claude CLI. Cursor는 `AI_ADAPTER=cursor`. 오프라인은 `AI_ADAPTER=template`. */
-const LENS_DEFAULT_ADAPTER = 'claude';
+/** 기본: Cursor Agent CLI. Claude는 `AI_ADAPTER=claude`. 오프라인은 `AI_ADAPTER=template`. */
+const LENS_DEFAULT_ADAPTER = 'cursor';
 
 const PRIORITY_VALUES = new Set(['상', '중', '하']);
 

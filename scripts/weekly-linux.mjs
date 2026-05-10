@@ -11,7 +11,7 @@ const generatedDir = path.join(root, 'data', 'generated', topic);
 const promptTemplatePath = path.join(root, 'prompts', 'linux-newsletter-weekly-ko.md');
 const todayKst = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date());
 const runDate = process.env.NEWSLETTER_DATE || todayKst();
-const adapter = resolveAiAdapter('template');
+const adapter = resolveAiAdapter('cursor');
 const generatedAt = new Date().toISOString();
 
 const PRIORITY_VALUES = new Set(['상', '중', '하']);
@@ -260,7 +260,7 @@ async function main() {
   await writeFile(path.join(generatedDir, `weekly-prompt-${meta.id}.md`), prompt);
   await writeFile(path.join(generatedDir, 'weekly-prompt-latest.md'), prompt);
 
-  const aiText = await runAiAdapterPrompt(prompt, { defaultAdapter: 'template' });
+  const aiText = await runAiAdapterPrompt(prompt, { defaultAdapter: 'cursor' });
   const post = aiText ? parseNewsletterJsonFromAiOutput(aiText) : templateWeekly(dailies, meta);
 
   if (post && (!post.id || !post.topic || !post.date)) {

@@ -1,6 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseNewsletterJsonFromAiOutput, resolveAiAdapter } from './lib/ai-rewrite-adapter.mjs';
+import { normalizeDailyRewriteAdapter, parseNewsletterJsonFromAiOutput, resolveAiAdapter } from './lib/ai-rewrite-adapter.mjs';
+
+test('normalizeDailyRewriteAdapter defaults empty and cursor-agent to cursor', () => {
+  assert.equal(normalizeDailyRewriteAdapter(''), 'cursor');
+  assert.equal(normalizeDailyRewriteAdapter('cursor-agent'), 'cursor');
+  assert.equal(normalizeDailyRewriteAdapter('claude'), 'claude');
+});
 
 test('parseNewsletterJsonFromAiOutput unwraps Cursor CLI json result envelope', () => {
   const inner = {

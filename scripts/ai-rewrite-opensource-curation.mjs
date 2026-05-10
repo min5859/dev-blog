@@ -4,46 +4,69 @@ import path from 'node:path';
 import { parseNewsletterJsonFromAiOutput, resolveAiAdapter, runAiAdapterPrompt } from './lib/ai-rewrite-adapter.mjs';
 
 const root = process.cwd();
-const topic = 'opensource';
+const topic = 'opensource-curation';
+const PICK_HEADING = '이번 주 선정 (큐레이션)';
 const todayKst = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date());
 const runDate = process.env.NEWSLETTER_DATE || todayKst();
-const postId = `${runDate}-opensource-trending`;
+const postId = `${runDate}-opensource-curation`;
 const draftPath = process.env.DRAFT_PATH || path.join(root, 'data', 'generated', topic, 'draft-latest.json');
 const fallbackDraftPath = path.join(root, 'content', 'topics', topic, 'posts', `${postId}.json`);
-const promptTemplatePath = path.join(root, 'prompts', 'opensource-newsletter-ko.md');
+const promptTemplatePath = path.join(root, 'prompts', 'opensource-curation-newsletter-ko.md');
 const generatedDir = path.join(root, 'data', 'generated', topic);
 const adapter = resolveAiAdapter('cursor');
 const generatedAt = new Date().toISOString();
 
 const PRIORITY_VALUES = new Set(['상', '중', '하']);
 
-async function readText(file) { return readFile(file, 'utf8'); }
+async function readText(file) {
+  return readFile(file, 'utf8');
+}
 
 async function readJsonWithFallback(primary, fallback) {
-  try { return JSON.parse(await readText(primary)); }
-  catch (primaryError) {
-    try { return JSON.parse(await readText(fallback)); }
-    catch { throw primaryError; }
+  try {
+    return JSON.parse(await readText(primary));
+  } catch (primaryError) {
+    try {
+      return JSON.parse(await readText(fallback));
+    } catch {
+      throw primaryError;
+    }
   }
 }
 
-function buildPrompt(template, draft) { return template.replace('{{DRAFT_JSON}}', JSON.stringify(draft, null, 2)); }
+function buildPrompt(template, draft) {
+  return template.replace('{{DRAFT_JSON}}', JSON.stringify(draft, null, 2));
+}
 
 function templateRewrite(draft) {
   const sectionByHeading = new Map(draft.sections.map((s) => [s.heading, s.body]));
   const buckets = draft.draftMetadata?.bucketCounts || {};
   return {
     ...draft,
-    title: `${draft.date} 오픈소스 트렌드`,
-    summary: `오늘 GitHub 트렌딩: HN frontpage ${buckets.hnHits ?? 0}건, 60일 내 신규 ${buckets.newRepos ?? 0}건, 별 5k+ 활발 ${buckets.activeGiants ?? 0}건.`,
-    highlights: draft.highlights,
+    title: `${draft.date} 오픈소스 큐레이션`,
+    summary:
+      (draft.summary && String(draft.summary).replace(/\s*\(초안\)\s*$/, '').trim()) ||
+      `선정 레포 ${draft.draftMetadata?.candidateCount ?? 0}건 — 심층 분석 ${buckets.withAnalysis ?? 0}건.`,
+    tags: ['opensource-curation', 'github', 'opensource'],
     sections: [
-      { heading: '지금 화제 (HN frontpage)', body: sectionByHeading.get('지금 화제 (HN frontpage)') || 'Hacker News frontpage에 GitHub URL 신호가 없습니다.' },
-      { heading: '최근 떠오른 신규 프로젝트', body: sectionByHeading.get('최근 떠오른 신규 프로젝트') || '60일 내 만들어진 인기 신규 프로젝트가 잡히지 않았습니다.' },
-      { heading: '활발히 갱신 중인 인기 프로젝트', body: sectionByHeading.get('활발히 갱신 중인 인기 프로젝트') || '별 5k 이상 활발 프로젝트가 잡히지 않았습니다.' },
-      { heading: '기타', body: sectionByHeading.get('기타') || '검색 API의 별 수 정렬은 long-tail 거대 프로젝트로 치우치므로 신규/HN 섹션을 우선 참고하세요.' },
+      {
+        heading: PICK_HEADING,
+        body: sectionByHeading.get(PICK_HEADING) || '선정 레포 요약이 없습니다.',
+      },
+      {
+        heading: '언어·규모 스냅샷',
+        body: sectionByHeading.get('언어·규모 스냅샷') || '스냅샷이 비었습니다.',
+      },
+      {
+        heading: '심층 분석 하이라이트',
+        body: sectionByHeading.get('심층 분석 하이라이트') || '분석 발췌가 없습니다.',
+      },
+      {
+        heading: '기타',
+        body: sectionByHeading.get('기타') || '데이터를 주기적으로 갱신하세요.',
+      },
     ],
-    confidence: { level: adapter === 'template' ? '템플릿 초안' : 'AI 초안', note: 'GitHub Search API + HN frontpage 기반 자동 선별입니다.' },
+    confidence: { level: adapter === 'template' ? '템플릿 초안' : 'AI 초안', note: '선정 repos·심층 분석 마크다운 기반입니다.' },
     draftMetadata: { ...draft.draftMetadata },
   };
 }
@@ -91,7 +114,10 @@ async function main() {
 
   await writeFile(path.join(generatedDir, `rewritten-${postId}.json`), JSON.stringify(rewritten, null, 2));
   await writeFile(path.join(generatedDir, 'rewritten-latest.json'), JSON.stringify(rewritten, null, 2));
-  console.log(`Rewrote opensource trending with ${adapter} adapter; wrote data/generated/${topic}/rewritten-${postId}.json`);
+  console.log(`Rewrote opensource-curation with ${adapter} adapter; wrote data/generated/${topic}/rewritten-${postId}.json`);
 }
 
-main().catch((error) => { console.error(error); process.exit(1); });
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

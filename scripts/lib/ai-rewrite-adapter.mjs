@@ -8,6 +8,12 @@ import path from 'node:path';
  * Claude: CLAUDE_BIN, CLAUDE_ARGS (기본 `-p`), stdin으로 프롬프트 전달
  * Cursor CLI: CURSOR_AGENT_BIN (기본 `agent`), CURSOR_AGENT_EXTRA_ARGS — 프롬프트는 임시 파일 + file 경로 안내
  */
+export function normalizeDailyRewriteAdapter(raw) {
+  const v = typeof raw === 'string' ? raw.trim() : '';
+  if (!v || v === 'cursor-agent') return 'cursor';
+  return v;
+}
+
 export function resolveAiAdapter(defaultValue = 'template') {
   const raw = process.env.AI_ADAPTER?.trim();
   if (!raw) return defaultValue;

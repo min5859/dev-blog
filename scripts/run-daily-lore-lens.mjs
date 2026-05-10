@@ -2,6 +2,8 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 
+import { normalizeDailyRewriteAdapter } from './lib/ai-rewrite-adapter.mjs';
+
 const root = process.cwd();
 const topic = process.argv[2] || process.env.TOPIC;
 if (!topic) {
@@ -18,7 +20,7 @@ const latestLogPath = path.join(logDir, `${topic}-latest.log`);
 const statusPath = path.join(logDir, `${topic}-latest-status.json`);
 
 const shouldPublish = process.env.PUBLISH_DAILY === '1';
-const rewriteAdapter = process.env.DAILY_REWRITE_ADAPTER || 'claude';
+const rewriteAdapter = normalizeDailyRewriteAdapter(process.env.DAILY_REWRITE_ADAPTER);
 
 function runStep(name, command, args, extraEnv = {}) {
   const stepStartedAt = new Date().toISOString();
@@ -104,9 +106,9 @@ async function main() {
 
   const rewriteEnv = rewriteAdapter === 'template'
     ? { AI_ADAPTER: 'template' }
-    : rewriteAdapter === 'cursor'
-      ? { AI_ADAPTER: 'cursor' }
-      : { AI_ADAPTER: 'claude' };
+    : rewriteAdapter === 'claude'
+      ? { AI_ADAPTER: 'claude' }
+      : { AI_ADAPTER: 'cursor' };
 
   const steps = [
     ['collect', 'node', ['scripts/collect-lore-lens.mjs', topic], {}],

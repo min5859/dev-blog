@@ -2,6 +2,8 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 
+import { normalizeDailyRewriteAdapter } from './lib/ai-rewrite-adapter.mjs';
+
 const root = process.cwd();
 const todayKst = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date());
 const runDate = process.env.NEWSLETTER_DATE || todayKst();
@@ -12,13 +14,13 @@ const latestLogPath = path.join(logDir, 'android-latest.log');
 const statusPath = path.join(logDir, 'android-latest-status.json');
 
 const shouldPublish = process.env.PUBLISH_DAILY === '1';
-const rewriteAdapter = process.env.DAILY_REWRITE_ADAPTER || 'claude';
+const rewriteAdapter = normalizeDailyRewriteAdapter(process.env.DAILY_REWRITE_ADAPTER);
 const rewriteScriptMap = {
   template: 'rewrite:android',
   claude: 'rewrite:android:claude',
   cursor: 'rewrite:android:cursor',
 };
-const rewriteScript = rewriteScriptMap[rewriteAdapter] || 'rewrite:android:claude';
+const rewriteScript = rewriteScriptMap[rewriteAdapter] || 'rewrite:android:cursor';
 
 const steps = [
   ['collect', ['npm', ['run', 'collect:android']]],

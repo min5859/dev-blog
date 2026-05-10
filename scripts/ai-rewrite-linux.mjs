@@ -12,7 +12,7 @@ const draftPath = process.env.DRAFT_PATH || path.join(root, 'data', 'generated',
 const fallbackDraftPath = path.join(root, 'content', 'topics', topic, 'posts', `${postId}.json`);
 const promptTemplatePath = path.join(root, 'prompts', 'linux-newsletter-ko.md');
 const generatedDir = path.join(root, 'data', 'generated', topic);
-const adapter = resolveAiAdapter('template');
+const adapter = resolveAiAdapter('cursor');
 const generatedAt = new Date().toISOString();
 
 async function readText(file) {
@@ -122,7 +122,7 @@ async function main() {
   await writeFile(promptOutput, prompt);
   await writeFile(promptLatest, prompt);
 
-  const aiText = await runAiAdapterPrompt(prompt, { defaultAdapter: 'template' });
+  const aiText = await runAiAdapterPrompt(prompt, { defaultAdapter: 'cursor' });
   const rewritten = withAuditMetadata(aiText ? parseNewsletterJsonFromAiOutput(aiText) : templateRewrite(draft));
   validatePost(rewritten);
 

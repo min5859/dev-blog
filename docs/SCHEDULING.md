@@ -12,10 +12,10 @@ This runs, in order:
 
 1. `npm run collect:linux`
 2. `npm run draft:linux`
-3. `npm run rewrite:linux:claude` (default — calls the Claude CLI)
+3. `npm run rewrite:linux:cursor` (default — Cursor Agent CLI, `agent -p`)
 4. `npm run build`
 
-The rewrite step uses the Claude adapter by default so the daily run produces an AI-rewritten briefing rather than the deterministic template output. Override with `DAILY_REWRITE_ADAPTER=template` if you want the offline template path (no Claude CLI calls). Use `DAILY_REWRITE_ADAPTER=cursor` to run the [Cursor Agent CLI](https://cursor.com/docs/cli/headless) (`agent -p`) instead; set `CURSOR_API_KEY` and optionally `CURSOR_AGENT_BIN` / `CURSOR_AGENT_EXTRA_ARGS`. Per-invocation override: `AI_ADAPTER=claude|cursor|template` on `npm run rewrite:*` scripts.
+The rewrite step uses the **Cursor** adapter by default so the daily run calls the [Cursor Agent CLI](https://cursor.com/docs/cli/headless). Set `CURSOR_API_KEY` (and optionally `CURSOR_AGENT_BIN` / `CURSOR_AGENT_EXTRA_ARGS`) for headless runs. Override with `DAILY_REWRITE_ADAPTER=template` for the offline template path, or `DAILY_REWRITE_ADAPTER=claude` for the Claude CLI. `DAILY_REWRITE_ADAPTER=cursor-agent` is treated the same as `cursor`. Per-invocation override: `AI_ADAPTER=claude|cursor|template` on `npm run rewrite:*` scripts.
 
 By default this command does **not** publish generated drafts into `content/`. Generated artifacts remain under `data/generated/linux/` for review.
 
@@ -108,6 +108,19 @@ CLAUDE_BIN=/home/wooki/.local/bin/claude
 read by `scripts/ai-rewrite-linux.mjs` when the `claude` adapter
 runs. Runtime data (`data/raw/`, `data/normalized/`, `data/generated/`,
 `logs/daily/`) is reproducible and gitignored.
+
+## 오픈소스 큐레이션 (`opensource-curation`)
+
+In-repo pipeline (별도 프로젝트 체크아웃 불필요):
+
+1. `npm run opensource-curation:discover` — GitHub Search + Trending → `data/opensource-curation/repos.json`
+2. `npm run opensource-curation:fetch` — README + metadata
+3. `npm run opensource-curation:analyze` — `data/opensource-curation/analysis/*.md` (`AI_ADAPTER` / `OPENSOURCE_CURATION_ANALYZE_ADAPTER`, `prompts/opensource-curation-analyze-ko.md`)
+
+Then `npm run daily:opensource-curation` runs those three steps, then collect → draft → rewrite → build. Only blog steps:
+`OPENSOURCE_CURATION_SKIP_UPSTREAM=1 npm run daily:opensource-curation`.
+
+Configuration: `content/topics/opensource-curation/opensource-curation.config.json`. Optional: `OPENSOURCE_CURATION_ROOT` for `collect:opensource-curation` if data lives outside the default tree.
 
 ## OpenClaw cron option
 

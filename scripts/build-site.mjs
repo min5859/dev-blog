@@ -1,5 +1,8 @@
 import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { marked } from 'marked';
+
+marked.setOptions({ gfm: true, breaks: true });
 
 const root = process.cwd();
 const contentDir = path.join(root, 'content', 'topics');
@@ -62,6 +65,12 @@ function markupTechnical(escapedText) {
   return escapedText
     .replace(SUBSYSTEM_SLUG, (match) => `<code>${match}</code>`)
     .replace(KERNEL_VERSION, (match) => `<code>${match}</code>`);
+}
+
+/** 게시 JSON의 section.body(Markdown) → 안전한 서버 생성 HTML */
+function renderSectionBodyMarkdown(markdown) {
+  const raw = typeof markdown === 'string' ? markdown : '';
+  return marked.parse(raw);
 }
 
 const PRIORITY_VALUES = new Set(['상', '중', '하']);
@@ -166,7 +175,13 @@ async function loadTopics() {
     assertTopic(topic, topicFile);
 
     const postsDir = path.join(topicPath, 'posts');
-    const postFiles = (await readdir(postsDir)).filter((file) => file.endsWith('.json'));
+    let listable = [];
+    try {
+      listable = await readdir(postsDir);
+    } catch (err) {
+      if (err.code !== 'ENOENT') throw err;
+    }
+    const postFiles = listable.filter((file) => file.endsWith('.json'));
     const posts = [];
 
     for (const postFile of postFiles) {
@@ -321,7 +336,7 @@ function renderPost(post, topic, buildStamp) {
       <p class="tags">${(post.tags || []).map((tag) => `<a href="${link(`/tags/${slugify(tag)}.html`)}">#${escapeHtml(tag)}</a>`).join(' ')}</p>
     </header>
     ${post.highlights?.length ? `<section class="panel"><h2>오늘의 핵심</h2>${renderHighlights(post.highlights)}</section>` : ''}
-    ${post.sections.map((section) => `<section><h2>${escapeHtml(section.heading)}</h2><p>${markupTechnical(escapeHtml(section.body))}</p></section>`).join('\n')}
+    ${post.sections.map((section) => `<section class="article-section"><h2>${escapeHtml(section.heading)}</h2><div class="md-content">${renderSectionBodyMarkdown(section.body)}</div></section>`).join('\n')}
     ${post.implications?.length ? `<section class="panel"><h2>엔지니어링 관점</h2>${renderList(post.implications)}</section>` : ''}
     ${post.nextActions?.length ? `<section class="panel"><h2>다음에 확인할 것</h2>${renderList(post.nextActions)}</section>` : ''}
     ${post.confidence ? `<aside class="note"><strong>신뢰도</strong> ${escapeHtml(post.confidence.level || '미정')} — ${escapeHtml(post.confidence.note || '')}</aside>` : ''}
@@ -419,7 +434,21 @@ p { margin: 8px 0; }
 .article { max-width: 720px; }
 .article-header { margin-bottom: 24px; padding-left: 16px; border-left: 4px solid var(--rail); }
 .article section { margin-top: 28px; }
-.article section p { white-space: pre-line; }
+.article-section .md-content { margin-top: 4px; line-height: 1.65; }
+.article-section .md-content h2 { font-size: 1.18rem; margin: 1.15em 0 0.5em; font-weight: 700; }
+.article-section .md-content h3 { font-size: 1.07rem; margin: 1em 0 0.4em; font-weight: 600; }
+.article-section .md-content h4 { font-size: 1rem; margin: 0.85em 0 0.35em; font-weight: 600; }
+.article-section .md-content p { margin: 0.55em 0; white-space: normal; }
+.article-section .md-content ul, .article-section .md-content ol { margin: 0.45em 0 0.75em; padding-left: 1.35em; }
+.article-section .md-content li { margin: 0.28em 0; }
+.article-section .md-content li > p { margin: 0.2em 0; }
+.article-section .md-content hr { border: none; border-top: 1px solid var(--border); margin: 1.15em 0; }
+.article-section .md-content blockquote { margin: 0.6em 0; padding: 8px 14px; border-left: 3px solid var(--accent); background: var(--surface-alt); color: var(--muted); }
+.article-section .md-content strong { font-weight: 600; }
+.article-section .md-content pre { overflow-x: auto; padding: 12px 14px; border-radius: 8px; background: var(--surface-alt); border: 1px solid var(--border); font-size: 0.9em; line-height: 1.5; }
+.article-section .md-content pre code { background: none; border: none; padding: 0; font-size: inherit; }
+.article-section .md-content table { width: 100%; border-collapse: collapse; font-size: 0.95em; margin: 0.75em 0; }
+.article-section .md-content th, .article-section .md-content td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; }
 .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; margin-top: 28px; }
 .panel h2 { margin-top: 0; }
 .note { background: var(--surface-alt); border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 8px; padding: 12px 16px; margin-top: 24px; font-size: .95rem; }
