@@ -15,6 +15,9 @@ const pipelinePath = path.join(root, 'content', 'topics', topic, 'pipeline.json'
 const todayKst = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date());
 const runDate = process.env.NEWSLETTER_DATE || todayKst();
 
+/** `run-daily-linux`와 같이 일상 실행은 Claude CLI가 기본입니다. 오프라인은 `AI_ADAPTER=template`. */
+const DEFAULT_ADAPTER = 'claude';
+
 const PRIORITY_VALUES = new Set(['상', '중', '하']);
 
 async function readJson(file) {
@@ -67,7 +70,7 @@ function runCommand(command, args, input) {
 }
 
 async function runAiAdapter(prompt) {
-  const adapter = process.env.AI_ADAPTER || 'template';
+  const adapter = process.env.AI_ADAPTER || DEFAULT_ADAPTER;
   if (adapter === 'template') return null;
   if (adapter === 'claude') {
     const command = process.env.CLAUDE_BIN || 'claude';
@@ -91,7 +94,7 @@ function parseJsonResponse(text) {
 }
 
 function templateRewrite(draft, pipeline) {
-  const adapterName = process.env.AI_ADAPTER || 'template';
+  const adapterName = process.env.AI_ADAPTER || DEFAULT_ADAPTER;
   const sectionByHeading = new Map(draft.sections.map((section) => [section.heading, section.body]));
   const buckets = draft.draftMetadata?.bucketCounts || {};
   const titleTemplate = pipeline.rewriteTitleTemplate || '{{date}} 커널 렌즈 브리핑';
@@ -167,7 +170,7 @@ function withAuditMetadata(post, pipeline, promptTemplatePath, generatedAt, adap
 }
 
 async function main() {
-  const adapter = process.env.AI_ADAPTER || 'template';
+  const adapter = process.env.AI_ADAPTER || DEFAULT_ADAPTER;
   const pipeline = await readJson(pipelinePath);
   if (!pipeline.postIdSuffix) {
     throw new Error(`${path.relative(root, pipelinePath)}: postIdSuffix required`);
