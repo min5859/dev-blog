@@ -12,6 +12,10 @@ const runDate = process.env.NEWSLETTER_DATE || todayKst();
 const postId = `${runDate}-linux-daily-briefing`;
 const STALE_REPLY_MS = 24 * 60 * 60 * 1000;
 
+export function isLoreKernelMailRecord(record) {
+  return record.sourceId !== 'kernel-org-releases';
+}
+
 const subsystemPatterns = new Map([
   ['가상화', [/\bkvm\b/, /\bxen\b/, /\bvirt\b/, /hypervisor/]],
   ['네트워크', [/\bnet:/, /\bnetdev\b/, /\bdsa\b/, /\btcp\b/, /\budp\b/, /ethernet/, /wifi/, /wireless/]],
@@ -107,9 +111,9 @@ function scoreRecord(record) {
     }
   }
 
-  if (record.sourceId === 'lore-lkml-new') {
+  if (isLoreKernelMailRecord(record)) {
     score += 8;
-    reasons.push('LKML 최신 토론');
+    reasons.push('메일링 리스트 최신 토론');
     if (record.kind === 'patch-discussion') {
       score += 28;
       reasons.push('패치 토론');
@@ -165,7 +169,7 @@ function extractCommitMessage(rawMbox) {
 }
 
 async function fetchLoreBody(record) {
-  if (record.sourceId !== 'lore-lkml-new' || !record.url) return null;
+  if (!isLoreKernelMailRecord(record) || !record.url) return null;
   const url = record.url.endsWith('/') ? `${record.url}raw` : `${record.url}/raw`;
   try {
     const response = await fetch(url, {
@@ -212,7 +216,7 @@ function parseAtomThreadEntries(xml) {
 }
 
 async function fetchMaintainerThreadComments(record) {
-  if (record.sourceId !== 'lore-lkml-new' || !record.url) return [];
+  if (!isLoreKernelMailRecord(record) || !record.url) return [];
   const threadUrl = record.url.endsWith('/') ? `${record.url}t.atom` : `${record.url}/t.atom`;
   try {
     const response = await fetch(threadUrl, {
@@ -281,7 +285,7 @@ function historyKeyFor(record) {
   return patchSeriesKey(record);
 }
 
-async function loadRecentSeriesHistory(generatedDir, runDate, daysBack = 3) {
+export async function loadRecentSeriesHistory(generatedDir, runDate, daysBack = 3) {
   const history = new Map();
   const today = new Date(`${runDate}T00:00:00Z`);
   for (let offset = 1; offset <= daysBack; offset++) {
@@ -309,7 +313,7 @@ async function loadRecentSeriesHistory(generatedDir, runDate, daysBack = 3) {
   return history;
 }
 
-function annotateWithHistory(records, history) {
+export function annotateWithHistory(records, history) {
   return records.map((record) => {
     const key = historyKeyFor(record);
     if (!key) return record;
@@ -324,12 +328,12 @@ function annotateWithHistory(records, history) {
   });
 }
 
-async function enrichWithBodies(candidates, { delayMs = 200 } = {}) {
+export async function enrichWithBodies(candidates, { delayMs = 200 } = {}) {
   const enriched = [];
   for (const record of candidates) {
     let body = null;
     let maintainerComments = [];
-    if (record.sourceId === 'lore-lkml-new') {
+    if (isLoreKernelMailRecord(record)) {
       body = await fetchLoreBody(record);
       maintainerComments = await fetchMaintainerThreadComments(record);
     } else if (record.sourceId === 'kernel-org-releases') {
@@ -370,7 +374,7 @@ function patchVersion(record) {
 }
 
 function patchSeriesKey(record) {
-  if (record.sourceId !== 'lore-lkml-new') return null;
+  if (!isLoreKernelMailRecord(record)) return null;
   const stripped = stripPatchPrefix(record.title).toLowerCase();
   if (!stripped) return null;
   const author = record.metadata?.author?.email || record.metadata?.author?.name || '';
@@ -378,7 +382,7 @@ function patchSeriesKey(record) {
 }
 
 function extractSeriesId(record) {
-  if (record.sourceId !== 'lore-lkml-new') return null;
+  if (!isLoreKernelMailRecord(record)) return null;
   const partMatch = record.title.match(/\[PATCH\b[^\]]*?\b(\d+)\/(\d+)\]/i);
   if (!partMatch) return null;
   const numerator = Number(partMatch[1]);
@@ -433,7 +437,7 @@ function mergePatchSeries(records) {
 }
 
 function isStaleReply(record, nowMs = Date.now()) {
-  if (record.sourceId !== 'lore-lkml-new') return false;
+  if (!isLoreKernelMailRecord(record)) return false;
   const isReply = record.kind === 'mail-reply' || record.title.toLowerCase().startsWith('re:');
   if (!isReply) return false;
   if (!record.observedDate) return true;
@@ -443,13 +447,13 @@ function isStaleReply(record, nowMs = Date.now()) {
 }
 
 function isRegressionSignal(record) {
-  if (record.sourceId !== 'lore-lkml-new') return false;
+  if (!isLoreKernelMailRecord(record)) return false;
   if (regressionPattern.test(record.title)) return true;
   if (record.commitMessage && bodyRegressionPattern.test(record.commitMessage)) return true;
   return false;
 }
 
-function broadSubsystemsOf(record) {
+export function broadSubsystemsOf(record) {
   return (record.matchedSubsystems || []).filter((s) => broadSubsystems.has(s));
 }
 
@@ -471,10 +475,10 @@ function pickCandidates(records) {
   const regressions = broad.filter(isRegressionSignal).slice(0, 3);
   const regressionIds = new Set(regressions.map((record) => record.id));
   const patches = broad
-    .filter((record) => record.sourceId === 'lore-lkml-new' && record.kind === 'patch-discussion' && !regressionIds.has(record.id))
+    .filter((record) => isLoreKernelMailRecord(record) && record.kind === 'patch-discussion' && !regressionIds.has(record.id))
     .slice(0, 4);
   const signals = broad
-    .filter((record) => record.sourceId === 'lore-lkml-new' && record.score >= 28)
+    .filter((record) => isLoreKernelMailRecord(record) && record.score >= 28)
     .filter((record) => !regressionIds.has(record.id) && !patches.some((patch) => patch.id === record.id))
     .slice(0, 2);
 
@@ -544,7 +548,7 @@ function highlightOf(record) {
   };
 }
 
-function impactRelease(record) {
+export function impactRelease(record) {
   const moniker = record.metadata?.moniker || 'release';
   const date = record.observedDate || '공개일 미상';
   const eol = record.metadata?.isEol ? ' · EOL 라인' : '';
@@ -556,7 +560,7 @@ function impactRelease(record) {
   ].join('\n');
 }
 
-function impactLkml(record, options = {}) {
+export function impactLkml(record, options = {}) {
   const subsystems = broadSubsystemsOf(record).join(', ');
   const annotations = [];
   if (record.seriesDenominator) annotations.push(`${record.seriesDenominator}-패치 시리즈`);
@@ -574,12 +578,12 @@ function impactLkml(record, options = {}) {
   return lines.join('\n');
 }
 
-function buildSection(records, fallback, formatter) {
+export function buildSection(records, fallback, formatter) {
   if (!records.length) return fallback;
   return records.map(formatter).join('\n\n');
 }
 
-function buildPatchSection(records, fallback) {
+export function buildPatchSection(records, fallback) {
   if (!records.length) return fallback;
   const buckets = bucketBySubsystem(records);
   return buckets
@@ -591,10 +595,10 @@ function toPostDraft(candidates, sourceData, candidateBodies = []) {
   const releases = candidates.filter((record) => record.sourceId === 'kernel-org-releases');
   const regressions = candidates.filter(isRegressionSignal);
   const regressionIds = new Set(regressions.map((record) => record.id));
-  const patches = candidates.filter((record) => record.sourceId === 'lore-lkml-new'
+  const patches = candidates.filter((record) => isLoreKernelMailRecord(record)
     && record.kind === 'patch-discussion'
     && !regressionIds.has(record.id));
-  const otherSignals = candidates.filter((record) => record.sourceId === 'lore-lkml-new'
+  const otherSignals = candidates.filter((record) => isLoreKernelMailRecord(record)
     && record.kind !== 'patch-discussion'
     && !regressionIds.has(record.id));
   const top = candidates.slice(0, 4);
@@ -710,7 +714,6 @@ export {
   extractCommitMessage,
   summarizeChangelog,
   extractSeriesId,
-  annotateWithHistory,
   historyKeyFor,
   isKnownMaintainer,
   parseAtomThreadEntries,
