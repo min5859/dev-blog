@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { spawn } from 'node:child_process';
 import path from 'node:path';
+
+import { parseNewsletterJsonFromAiOutput, resolveAiAdapter, runAiAdapterPrompt } from './lib/ai-rewrite-adapter.mjs';
 
 const root = process.cwd();
 const topic = 'linux';
@@ -11,7 +12,7 @@ const draftPath = process.env.DRAFT_PATH || path.join(root, 'data', 'generated',
 const fallbackDraftPath = path.join(root, 'content', 'topics', topic, 'posts', `${postId}.json`);
 const promptTemplatePath = path.join(root, 'prompts', 'linux-newsletter-ko.md');
 const generatedDir = path.join(root, 'data', 'generated', topic);
-const adapter = process.env.AI_ADAPTER || 'template';
+const adapter = resolveAiAdapter('template');
 const generatedAt = new Date().toISOString();
 
 async function readText(file) {
@@ -32,56 +33,6 @@ async function readJsonWithFallback(primary, fallback) {
 
 function buildPrompt(template, draft) {
   return template.replace('{{DRAFT_JSON}}', JSON.stringify(draft, null, 2));
-}
-
-function runCommand(command, args, input) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'] });
-    let stdout = '';
-    let stderr = '';
-
-    child.stdout.on('data', (chunk) => {
-      stdout += chunk;
-    });
-    child.stderr.on('data', (chunk) => {
-      stderr += chunk;
-    });
-    child.on('error', reject);
-    child.on('close', (code) => {
-      if (code !== 0) {
-        reject(new Error(`${command} exited with ${code}: ${stderr}`));
-        return;
-      }
-      resolve(stdout.trim());
-    });
-
-    child.stdin.end(input);
-  });
-}
-
-async function runAiAdapter(prompt) {
-  if (adapter === 'template') return null;
-
-  if (adapter === 'claude') {
-    const command = process.env.CLAUDE_BIN || 'claude';
-    const args = (process.env.CLAUDE_ARGS || '-p').split(/\s+/).filter(Boolean);
-    return runCommand(command, args, prompt);
-  }
-
-  throw new Error(`Unsupported AI_ADAPTER: ${adapter}`);
-}
-
-function parseJsonResponse(text) {
-  const trimmed = text.trim();
-  if (!trimmed) throw new Error('AI response was empty');
-
-  try {
-    return JSON.parse(trimmed);
-  } catch {
-    const match = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/) || trimmed.match(/({[\s\S]*})/);
-    if (!match) throw new Error('AI response did not contain JSON');
-    return JSON.parse(match[1]);
-  }
 }
 
 function templateRewrite(draft) {
@@ -171,8 +122,8 @@ async function main() {
   await writeFile(promptOutput, prompt);
   await writeFile(promptLatest, prompt);
 
-  const aiText = await runAiAdapter(prompt);
-  const rewritten = withAuditMetadata(aiText ? parseJsonResponse(aiText) : templateRewrite(draft));
+  const aiText = await runAiAdapterPrompt(prompt, { defaultAdapter: 'template' });
+  const rewritten = withAuditMetadata(aiText ? parseNewsletterJsonFromAiOutput(aiText) : templateRewrite(draft));
   validatePost(rewritten);
 
   const aiOutput = path.join(generatedDir, `rewritten-${postId}.json`);

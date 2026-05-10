@@ -13,7 +13,12 @@ const statusPath = path.join(logDir, 'linux-latest-status.json');
 
 const shouldPublish = process.env.PUBLISH_DAILY === '1';
 const rewriteAdapter = process.env.DAILY_REWRITE_ADAPTER || 'claude';
-const rewriteScript = rewriteAdapter === 'template' ? 'rewrite:linux' : 'rewrite:linux:claude';
+const rewriteScriptMap = {
+  template: 'rewrite:linux',
+  claude: 'rewrite:linux:claude',
+  cursor: 'rewrite:linux:cursor',
+};
+const rewriteScript = rewriteScriptMap[rewriteAdapter] || 'rewrite:linux:claude';
 
 const steps = [
   ['collect', ['npm', ['run', 'collect:linux']]],

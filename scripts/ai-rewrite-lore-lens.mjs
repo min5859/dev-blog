@@ -1,8 +1,8 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { spawn } from 'node:child_process';
 import path from 'node:path';
 
 import { applyTemplate } from './draft-lore-lens.mjs';
+import { parseNewsletterJsonFromAiOutput, resolveAiAdapter, runAiAdapterPrompt } from './lib/ai-rewrite-adapter.mjs';
 
 const root = process.cwd();
 const topic = process.argv[2] || process.env.TOPIC;
@@ -15,8 +15,8 @@ const pipelinePath = path.join(root, 'content', 'topics', topic, 'pipeline.json'
 const todayKst = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date());
 const runDate = process.env.NEWSLETTER_DATE || todayKst();
 
-/** `run-daily-linux`와 같이 일상 실행은 Claude CLI가 기본입니다. 오프라인은 `AI_ADAPTER=template`. */
-const DEFAULT_ADAPTER = 'claude';
+/** 기본: Claude CLI. Cursor는 `AI_ADAPTER=cursor`. 오프라인은 `AI_ADAPTER=template`. */
+const LENS_DEFAULT_ADAPTER = 'claude';
 
 const PRIORITY_VALUES = new Set(['상', '중', '하']);
 
@@ -44,57 +44,8 @@ function buildPrompt(template, draft) {
   return template.replace('{{DRAFT_JSON}}', JSON.stringify(draft, null, 2));
 }
 
-function runCommand(command, args, input) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'] });
-    let stdout = '';
-    let stderr = '';
-
-    child.stdout.on('data', (chunk) => {
-      stdout += chunk;
-    });
-    child.stderr.on('data', (chunk) => {
-      stderr += chunk;
-    });
-    child.on('error', reject);
-    child.on('close', (code) => {
-      if (code !== 0) {
-        reject(new Error(`${command} exited with ${code}: ${stderr}`));
-        return;
-      }
-      resolve(stdout.trim());
-    });
-
-    child.stdin.end(input);
-  });
-}
-
-async function runAiAdapter(prompt) {
-  const adapter = process.env.AI_ADAPTER || DEFAULT_ADAPTER;
-  if (adapter === 'template') return null;
-  if (adapter === 'claude') {
-    const command = process.env.CLAUDE_BIN || 'claude';
-    const args = (process.env.CLAUDE_ARGS || '-p').split(/\s+/).filter(Boolean);
-    return runCommand(command, args, prompt);
-  }
-  throw new Error(`Unsupported AI_ADAPTER: ${adapter}`);
-}
-
-function parseJsonResponse(text) {
-  const trimmed = text.trim();
-  if (!trimmed) throw new Error('AI response was empty');
-
-  try {
-    return JSON.parse(trimmed);
-  } catch {
-    const match = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/) || trimmed.match(/({[\s\S]*})/);
-    if (!match) throw new Error('AI response did not contain JSON');
-    return JSON.parse(match[1]);
-  }
-}
-
 function templateRewrite(draft, pipeline) {
-  const adapterName = process.env.AI_ADAPTER || DEFAULT_ADAPTER;
+  const adapterName = resolveAiAdapter(LENS_DEFAULT_ADAPTER);
   const sectionByHeading = new Map(draft.sections.map((section) => [section.heading, section.body]));
   const buckets = draft.draftMetadata?.bucketCounts || {};
   const titleTemplate = pipeline.rewriteTitleTemplate || '{{date}} 커널 렌즈 브리핑';
@@ -170,7 +121,7 @@ function withAuditMetadata(post, pipeline, promptTemplatePath, generatedAt, adap
 }
 
 async function main() {
-  const adapter = process.env.AI_ADAPTER || DEFAULT_ADAPTER;
+  const adapter = resolveAiAdapter(LENS_DEFAULT_ADAPTER);
   const pipeline = await readJson(pipelinePath);
   if (!pipeline.postIdSuffix) {
     throw new Error(`${path.relative(root, pipelinePath)}: postIdSuffix required`);
@@ -194,9 +145,9 @@ async function main() {
   await writeFile(promptOutput, prompt);
   await writeFile(promptLatest, prompt);
 
-  const aiText = await runAiAdapter(prompt);
+  const aiText = await runAiAdapterPrompt(prompt, { defaultAdapter: LENS_DEFAULT_ADAPTER });
   const rewritten = withAuditMetadata(
-    aiText ? parseJsonResponse(aiText) : templateRewrite(draft, pipeline),
+    aiText ? parseNewsletterJsonFromAiOutput(aiText) : templateRewrite(draft, pipeline),
     pipeline,
     promptTemplatePath,
     generatedAt,

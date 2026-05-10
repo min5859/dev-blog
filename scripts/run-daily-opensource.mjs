@@ -13,7 +13,12 @@ const statusPath = path.join(logDir, 'opensource-latest-status.json');
 
 const shouldPublish = process.env.PUBLISH_DAILY === '1';
 const rewriteAdapter = process.env.DAILY_REWRITE_ADAPTER || 'claude';
-const rewriteScript = rewriteAdapter === 'template' ? 'rewrite:opensource' : 'rewrite:opensource:claude';
+const rewriteScriptMap = {
+  template: 'rewrite:opensource',
+  claude: 'rewrite:opensource:claude',
+  cursor: 'rewrite:opensource:cursor',
+};
+const rewriteScript = rewriteScriptMap[rewriteAdapter] || 'rewrite:opensource:claude';
 
 const steps = [
   ['collect', ['npm', ['run', 'collect:opensource']]],

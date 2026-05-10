@@ -1,7 +1,8 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+
+import { parseNewsletterJsonFromAiOutput, resolveAiAdapter, runAiAdapterPrompt } from './lib/ai-rewrite-adapter.mjs';
 
 const root = process.cwd();
 const topic = 'linux';
@@ -10,7 +11,7 @@ const generatedDir = path.join(root, 'data', 'generated', topic);
 const promptTemplatePath = path.join(root, 'prompts', 'linux-newsletter-weekly-ko.md');
 const todayKst = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date());
 const runDate = process.env.NEWSLETTER_DATE || todayKst();
-const adapter = process.env.AI_ADAPTER || 'template';
+const adapter = resolveAiAdapter('template');
 const generatedAt = new Date().toISOString();
 
 const PRIORITY_VALUES = new Set(['상', '중', '하']);
@@ -162,44 +163,6 @@ async function loadRecentDailyPosts(daysBack = 7) {
   return collected.reverse();
 }
 
-function runCommand(command, args, input) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'] });
-    let stdout = '';
-    let stderr = '';
-    child.stdout.on('data', (chunk) => { stdout += chunk; });
-    child.stderr.on('data', (chunk) => { stderr += chunk; });
-    child.on('error', reject);
-    child.on('close', (code) => {
-      if (code !== 0) reject(new Error(`${command} exited with ${code}: ${stderr}`));
-      else resolve(stdout.trim());
-    });
-    child.stdin.end(input);
-  });
-}
-
-async function runAiAdapter(prompt) {
-  if (adapter === 'template') return null;
-  if (adapter === 'claude') {
-    const command = process.env.CLAUDE_BIN || 'claude';
-    const args = (process.env.CLAUDE_ARGS || '-p').split(/\s+/).filter(Boolean);
-    return runCommand(command, args, prompt);
-  }
-  throw new Error(`Unsupported AI_ADAPTER: ${adapter}`);
-}
-
-function parseJsonResponse(text) {
-  const trimmed = text.trim();
-  if (!trimmed) throw new Error('AI response was empty');
-  try {
-    return JSON.parse(trimmed);
-  } catch {
-    const match = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/) || trimmed.match(/({[\s\S]*})/);
-    if (!match) throw new Error('AI response did not contain JSON');
-    return JSON.parse(match[1]);
-  }
-}
-
 function templateWeekly(dailies, meta) {
   const sections = ['이번 주 릴리스', '이번 주 회귀·보안', '이번 주 핵심 흐름', '기타'];
   const allHighlights = dailies.flatMap((d) => (d.highlights || []).map((h) => ({ ...h, _date: d.date })));
@@ -297,8 +260,8 @@ async function main() {
   await writeFile(path.join(generatedDir, `weekly-prompt-${meta.id}.md`), prompt);
   await writeFile(path.join(generatedDir, 'weekly-prompt-latest.md'), prompt);
 
-  const aiText = await runAiAdapter(prompt);
-  const post = aiText ? parseJsonResponse(aiText) : templateWeekly(dailies, meta);
+  const aiText = await runAiAdapterPrompt(prompt, { defaultAdapter: 'template' });
+  const post = aiText ? parseNewsletterJsonFromAiOutput(aiText) : templateWeekly(dailies, meta);
 
   if (post && (!post.id || !post.topic || !post.date)) {
     post.id = post.id || meta.id;

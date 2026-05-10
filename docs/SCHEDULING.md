@@ -15,7 +15,7 @@ This runs, in order:
 3. `npm run rewrite:linux:claude` (default — calls the Claude CLI)
 4. `npm run build`
 
-The rewrite step uses the Claude adapter by default so the daily run produces an AI-rewritten briefing rather than the deterministic template output. Override with `DAILY_REWRITE_ADAPTER=template` if you want the offline template path (no Claude CLI calls).
+The rewrite step uses the Claude adapter by default so the daily run produces an AI-rewritten briefing rather than the deterministic template output. Override with `DAILY_REWRITE_ADAPTER=template` if you want the offline template path (no Claude CLI calls). Use `DAILY_REWRITE_ADAPTER=cursor` to run the [Cursor Agent CLI](https://cursor.com/docs/cli/headless) (`agent -p`) instead; set `CURSOR_API_KEY` and optionally `CURSOR_AGENT_BIN` / `CURSOR_AGENT_EXTRA_ARGS`. Per-invocation override: `AI_ADAPTER=claude|cursor|template` on `npm run rewrite:*` scripts.
 
 By default this command does **not** publish generated drafts into `content/`. Generated artifacts remain under `data/generated/linux/` for review.
 

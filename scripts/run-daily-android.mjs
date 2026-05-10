@@ -13,7 +13,12 @@ const statusPath = path.join(logDir, 'android-latest-status.json');
 
 const shouldPublish = process.env.PUBLISH_DAILY === '1';
 const rewriteAdapter = process.env.DAILY_REWRITE_ADAPTER || 'claude';
-const rewriteScript = rewriteAdapter === 'template' ? 'rewrite:android' : 'rewrite:android:claude';
+const rewriteScriptMap = {
+  template: 'rewrite:android',
+  claude: 'rewrite:android:claude',
+  cursor: 'rewrite:android:cursor',
+};
+const rewriteScript = rewriteScriptMap[rewriteAdapter] || 'rewrite:android:claude';
 
 const steps = [
   ['collect', ['npm', ['run', 'collect:android']]],
