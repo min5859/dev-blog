@@ -1,0 +1,132 @@
+{
+  "id": "2026-05-12-linux-daily-briefing",
+  "topic": "linux",
+  "title": "2026-05-12 커널 개발 브리핑",
+  "date": "2026-05-12",
+  "summary": "6.19.14 EOL 라인의 changelog에 mm·bcache·KVM·kasan 등 use-after-free와 메모리 무결성 관련 백포트가 한꺼번에 들어 있어, 안정 커널을 맡는 환경이라면 이번 릴리스가 유난히 중요할 수 있습니다. 한편 mm에서는 process_mrelease에 자동 SIGKILL을 묶는 UAPI 플래그 제안과, 폴트 주소를 페이지 할당·스왑 경로로 넘기는 시리즈 논의가 이어지고 있습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "초안"
+  ],
+  "highlights": [
+    {
+      "title": "Linux 7.1-rc3 mainline",
+      "priority": "상",
+      "verifyLink": "https://git.kernel.org/torvalds/h/v7.1-rc3",
+      "action": "7.1 계열 mainline·RC를 직접 추적하는 트리라면 `git log v7.1-rc2..v7.1-rc3 --oneline`으로 관심 서브트리 경로만 먼저 걸러 본 뒤, torvalds 태그 페이지와 diffstat를 같이 열어 RC3에서 자기 코드 경로에 회귀 후보가 스쳐 지나갔는지 대조해 보세요."
+    },
+    {
+      "title": "Linux 6.19.14 stable · EOL",
+      "priority": "중",
+      "verifyLink": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.19.14",
+      "action": "6.19.x EOL 안정선을 배포하거나 검증하는 라인이라면 ChangeLog-6.19.14 원문에서 `use-after-free`·`mm:`·`KVM:`·`kasan`·`blk-cgroup` 같은 키워드를 한 번에 grep한 뒤, 걸린 항목의 Fixes 해시가 자기 빌드 트리/백포트 목록에 실제로 들어왔는지 `git log --grep` 또는 stable 트리 해시로 대조해 보세요."
+    },
+    {
+      "title": "mm: process_mrelease에 PROCESS_MRELEASE_REAP_KILL 플래그 제안",
+      "priority": "중",
+      "verifyLink": "https://lore.kernel.org/lkml/20260511214226.937793-1-minchan@kernel.org/",
+      "action": "`process_mrelease(2)`나 프로세스 종료 직후 주소 공간을 빨리 비워야 하는 사용자 공간·서비스 매니저 경로를 다룬다면, lore 패치 본문에서 SIGKILL 주입·`mmgrab()` 시점·공유 mm에 대한 시그널 전달 방식이 기존에 쓰던 “먼저 죽이고 나서 mrelease” 계약과 어떻게 달라지는지 diff와 오류 반환 조건을 따라가며 맞춰 보세요."
+    },
+    {
+      "title": "mm: 사용자 폴트 주소를 페이지 할당 경로로 실어 보내는 시리즈",
+      "priority": "중",
+      "verifyLink": "https://lore.kernel.org/lkml/20260511175032-mutt-send-email-mst@kernel.org/",
+      "action": "페이지 폴트→`vma_alloc_folio`·스왑 폴리오 할당처럼 정렬/주소 전달이 성능·정확도에 직접 닿는 mm 코드를 만진다면, 동일 스레드의 후속 패치(`alloc_swap_folio` 등)와 함께 열어 `USER_ADDR_NONE` 센티널과 폴트 주소를 그대로 넘기는 변경이 자기 아키텍처/매핑 가정과 충돌하지 않는지 인접 메일의 논의와 코드 diff를 연속으로 읽어 보세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "- Linux 6.19.14 stable · EOL\n  · 영향: EOL에 가까운 6.19.x 안정선에서 mm·dma·가상화·블록 cgroup 등 코어 쪽 UAF·무결성 수정과 여러 서브드라이버 수정이 한꺼번에 백포트된 릴리스로 보입니다.\n  · 확인: https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.19.14\n\n- Linux 7.1-rc3 mainline\n  · 영향: 7.1 머지 윈도우 이후 RC 단계의 mainline 태그로, 공개 tarball·태그 페이지가 갱신된 시점의 기준점입니다.\n  · 확인: https://git.kernel.org/torvalds/h/v7.1-rc3\n\n- Linux 7.0.6 stable\n  · 영향: changelog 기준으로는 rxrpc 쪽 DATA/RESPONSE 패킷 처리와 단편 버퍼가 겹칠 때의 unshare 동작을 보완하는 백포트 한 건으로 보입니다.\n  · 확인: https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.0.6"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- Stable 6.19.14 changelog에 집중된 UAF·메모리/가상화 계열 수정\n  · 영향: CVE로 자동 태깅된 단일 항목은 아니지만, 배포/검증 담당자 입장에서는 이번 안정 릴리스가 보안·안정성 패치 묶음처럼 읽힐 수 있습니다.\n  · 확인: https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.19.14"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "- mm: process_mrelease 자동 SIGKILL·race 완화 UAPI 플래그\n  · 영향: 희생 프로세스에 먼저 SIGKILL을 보내야 했던 분리 때문에 생기던 스케줄링 레이스를 줄이고, 필요 시 `process_mrelease()` 안에서 바로 SIGKILL을 넣도록 제안하는 변경으로, 메모리 압박·빠른 mm 회수가 중요한 환경의 계약에 닿을 수 있습니다.\n  · 확인: https://lore.kernel.org/lkml/20260511214226.937793-1-minchan@kernel.org/\n\n- mm: 폴트 주소를 페이지 할당·제로잇·스왑 폴리오 경로로 넘기는 다패치 시리즈\n  · 영향: 사용자 폴트 주소를 정렬 값 대신 그대로 전달하는 방향과 `USER_ADDR_NONE` 같은 센티널 도입이 뒤따르며, 제로 페이지·캐시 동작·스왑 입출력 경로 일관성을 손보는 작업으로 이해할 수 있습니다.\n  · 확인: https://lore.kernel.org/lkml/20260511175032-mutt-send-email-mst@kernel.org/\n\n- mm: process_mrelease 회수 경로에서 파일 folio까지 적극 건드리는 후속 논의(5월 9일부터 추적 중인 시리즈)\n  · 영향: 스레드가 살아 있는 상태로, 새 `free_pages_and_caches()`류 도우미에서 `folio_test_anon()` 분기가 shmem/swapcache 케이스를 놓칠 수 있다는 자기 지적과 조건 정리 논의가 오가며, 시리즈 전반이 아직 다듬어지는 중으로 보입니다.\n  · 확인: https://lore.kernel.org/lkml/agJOy1vnvYGipnku@google.com/"
+    },
+    {
+      "heading": "기타",
+      "body": "· Linux next-20260508 스냅샷과 7.0.6의 단일 rxrpc 백포트는 여기서 깊게 다루지 않았습니다. next를 핀ning 하는 팀이라면 태그 페이지의 diff 범위만 빠르게 훑어 보세요.\n· SCSI devinfo에서 특정 MATSHITA·NEC PD-1 변형에 `BLIST_NO_LUN_1F`를 넓히려던 7패치 시리즈는 메일에서 미검증 하드웨어 패치는 빼자는 쪽으로 정리된 것으로 읽히며, 국부 장치 쿼크에 가깝다고 보고 본문 핵심에서는 뺐습니다.\n· 그 밖의 개별 사운드·미디어·hwmon·와이어가드 등 드라이버 단 patch는 국부 변경으로 묶어 제외했습니다."
+    }
+  ],
+  "confidence": {
+    "level": "AI 초안",
+    "note": "후보 메일·changelog 발췌를 바탕으로 재서술한 것이며, 메인라인 반영 여부와 최종 API 형태는 원문 스레드와 stable 트리를 직접 확인하는 것이 안전합니다."
+  },
+  "sources": [
+    {
+      "title": "Linux 6.19.14 stable · EOL",
+      "url": "https://git.kernel.org/stable/h/v6.19.14",
+      "note": "kernel.org · kernel-release"
+    },
+    {
+      "title": "Linux 7.1-rc3 mainline",
+      "url": "https://git.kernel.org/torvalds/h/v7.1-rc3",
+      "note": "kernel.org · kernel-release"
+    },
+    {
+      "title": "Linux 7.0.6 stable",
+      "url": "https://git.kernel.org/stable/h/v7.0.6",
+      "note": "kernel.org · kernel-release"
+    },
+    {
+      "title": "Linux next-20260508 linux-next",
+      "url": "https://git.kernel.org/next/linux-next/h/next-20260508",
+      "note": "kernel.org · kernel-release"
+    },
+    {
+      "title": "mm: process_mrelease: introduce PROCESS_MRELEASE_REAP_KILL flag",
+      "url": "https://lore.kernel.org/lkml/20260511214226.937793-1-minchan@kernel.org/",
+      "note": "lore.kernel.org/lkml · patch-discussion"
+    },
+    {
+      "title": "scsi: scsi_devinfo: extend BLIST_NO_LUN_1F to MATSHITA and NEC PD-1 variants",
+      "url": "https://lore.kernel.org/lkml/1436af33-87d8-4070-ae67-a6a290fc0240@kernel.org/",
+      "note": "lore.kernel.org/lkml · patch-discussion"
+    },
+    {
+      "title": "mm: thread user_addr through page allocator for cache-friendly zeroing",
+      "url": "https://lore.kernel.org/lkml/20260511175032-mutt-send-email-mst@kernel.org/",
+      "note": "lore.kernel.org/lkml · patch-discussion"
+    },
+    {
+      "title": "mm: alloc_swap_folio: pass raw fault address to vma_alloc_folio",
+      "url": "https://lore.kernel.org/lkml/agJPpxyu4gKqq8rj@gourry-fedora-PF4VCD3F/",
+      "note": "lore.kernel.org/lkml · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-11T22:00:07.633Z",
+    "sourceRecordCount": 35,
+    "candidateCount": 9,
+    "generator": "scripts/draft-linux.mjs",
+    "candidateIds": [
+      "kernel-org:stable:6.19.14",
+      "kernel-org:mainline:7.1-rc3",
+      "kernel-org:stable:7.0.6",
+      "kernel-org:linux-next:next-20260508",
+      "lore-lkml:urn:uuid:e6f968b6-447d-eaa7-cf35-0c8497ff52ee",
+      "lore-lkml:urn:uuid:59a0b74c-60fe-ea18-c0ce-ad22bcecdd75",
+      "lore-lkml:urn:uuid:9ece45b5-e389-77da-52eb-662b5d1353fa",
+      "lore-lkml:urn:uuid:7396e5d9-abc4-db13-b507-a6b902933d93",
+      "lore-lkml:urn:uuid:b508ad6d-5dc4-4d3e-3633-423acba5644e"
+    ],
+    "bucketCounts": {
+      "releases": 4,
+      "regressions": 0,
+      "patches": 5,
+      "otherSignals": 0
+    },
+    "subsystems": [
+      "메모리 관리",
+      "스토리지/파일시스템"
+    ],
+    "rewrittenAt": "2026-05-11T22:00:16.133Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-newsletter-ko.md"
+  }
+}
