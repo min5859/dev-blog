@@ -34,9 +34,13 @@
     - `중`: stable·longterm 릴리스, 시스템 전반 패치 시리즈
     - `하`: linux-next 스냅샷, 단순 응답, 영향 범위 미확정
   - `verifyLink` — changelog/스레드/diff URL. 모르면 문자열 `"없음"`.
-  - `action` — 행동 지침 한 줄. 일반 드라이버 담당자가 이해할 수 있는 표현.
-    - 예: "자기 드라이버에서 회귀가 보고됐는지 lore에서 확인하세요."
-    - 예: "RT 워크로드를 운용한다면 stable 백포트 가능성을 점검하세요."
+  - `action` — 행동 지침 한 줄. **반드시 다음 두 요소를 모두 포함**합니다.
+    1. **조건절**: "…를 사용/운용한다면" 또는 "…경로를 건드리는 코드라면" 처럼 *어떤 독자에게* 해당하는지 명시.
+    2. **구체 검증 단서**: 단순 "확인하세요"가 아니라 *무엇을 어디서* 검증할지 — 예: "commit message의 Fixes 태그를 따라가 자기 트리에 들어왔는지 비교", "changelog에서 `net/ipv6/`·`drivers/nvme/` 등 자기 서브시스템 키워드로 grep", "lore 스레드 첫 댓글의 reproducer 명령을 자기 환경에 적용".
+    - 좋은 예: "ACRN irqfd 경로를 쓰는 가상화 스택이라면 패치의 cleanup 순서(eventfd_ctx_remove_wait_queue → put)가 기존 코드와 일치하는지 diff 로 대조하세요."
+    - 좋은 예: "stable 6.19.x 를 배포하는 라인이라면 changelog 에서 `nft_` 접두사 항목과 `Fixes:` 해시를 한 번에 grep 해 보안 백포트 누락이 없는지 확인하세요."
+    - 나쁜 예 (절대 금지): "다음 수집까지 계속 확인하세요.", "RC 흐름을 봐 두세요.", "changelog 를 확인하세요." — 조건절도 없고 검증 단서도 없음.
+    - release 항목(`kernel.org`)도 같은 룰을 적용합니다. mainline RC 라도 "RC 면 무엇을 보는지"를 적습니다 (예: "자기 서브시스템의 머지 윈도우 PR 이 RC1~RC3 사이에 회귀 보고를 받았는지 `git log v7.0..v7.1-rc3 -- drivers/foo/` 로 한 번 훑으세요").
 
 ## sections
 

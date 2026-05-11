@@ -14,7 +14,7 @@
   - kernel.org 릴리스가 함께 있으면: 백포트/릴리스 요약은 핵심 2~5개 커밋만 골라 한 줄로 묶습니다.
   - 본문이 비어 있으면 메타데이터 기반으로 보수적으로 서술합니다.
 - **`history`, `fromMaintainer`, `maintainerComments`** 는 `linux-newsletter-ko.md` 와 동일한 해석 규칙을 적용합니다.
-- 단정은 피하고 행동 지침("확인하세요")으로 마무리합니다.
+- 단정은 피하고 행동 지침으로 마무리하되, **`action` 은 반드시 (1) 어떤 독자에게 해당하는지 조건절 + (2) 무엇을 어디서 검증할지 구체 단서** 두 가지를 모두 포함합니다. "확인하세요"·"점검하세요" 한 마디로 끝나는 action 은 금지. 예: "ACRN irqfd 경로를 쓰는 가상화 스택이라면 cleanup 순서(eventfd_ctx_remove_wait_queue → put)가 자기 트리와 일치하는지 diff 로 대조하세요."
 - 출처 URL이 없는 주장은 만들지 않습니다.
 - 입력 draft의 `id`, `topic`, `date`, `sources`, `draftMetadata`는 변경하지 않습니다.
 - `candidateBodies`는 출력 JSON에 포함하지 않습니다.
@@ -24,6 +24,7 @@
 - 최대 4개. 우선순위는 상 1~2 / 중 2 / 하 0~1 을 목표로 합니다.
 - `priority`: `상`/`중`/`하` — 렌즈 주제에 맞게 판단 (보안/회귀/ABI는 상 후보).
 - `verifyLink` — 스레드 URL. 없으면 `"없음"`.
+- **kernel.org 릴리스(mainline RC, stable, longterm)는 입력 draft 의 `highlights` 에 이미 들어 있을 때만 인용합니다.** draft 가 release 를 highlights 에서 제외했다면 출력 highlights 에도 추가하지 마세요. 릴리스 정보는 항상 "릴리스/로드맵" 섹션에서 다룹니다.
 
 ## sections
 
@@ -39,6 +40,8 @@
 ## summary
 
 두 문장 이내. 이 렌즈 독자에게 오늘 가장 중요한 한 가지와 그 다음 신호.
+
+**저신호일 처리** — 입력 draft 의 `draftMetadata.signalLevel === 'low'` 면 summary 를 단일 항목으로 부풀리지 말고 **첫 문장을 "오늘은 이 렌즈에서 신호가 적은 날입니다."** 로 시작하세요. 두 번째 문장에서 그 단일 항목을 한 줄로 요약하거나, 신호가 0 이면 "릴리스/로드맵·기타" 만 정리하고 마무리합니다. placeholder highlight 나 잡신호 부풀리기는 금지.
 
 ## 원하는 JSON 형태
 

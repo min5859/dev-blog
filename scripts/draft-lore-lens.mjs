@@ -84,15 +84,54 @@ function toPostDraftLens(candidates, sourceData, pipeline, candidateBodies = [])
   const otherSignals = candidates.filter((record) => isLoreKernelMailRecord(record)
     && record.kind !== 'patch-discussion'
     && !regressionIds.has(record.id));
-  const top = candidates.slice(0, 4);
+
+  // Lens highlights should foreground signals from this lens's own list
+  // rather than reusing the shared kernel.org release trio that every lens
+  // sees. Releases stay in the "릴리스/로드맵" section. A lens that genuinely
+  // owns release tracking (e.g. linux-distro-stable) opts back in via
+  // pipeline.json: `highlightReleaseMonikers: ['stable', 'longterm']`.
+  const allowedReleaseMonikers = new Set(
+    Array.isArray(pipeline.highlightReleaseMonikers) ? pipeline.highlightReleaseMonikers : [],
+  );
+  const releasesAsHighlights = allowedReleaseMonikers.size
+    ? releases.filter((record) => allowedReleaseMonikers.has(record.metadata?.moniker))
+    : [];
+  const seen = new Set();
+  const lensSpecific = [...regressions, ...patches, ...otherSignals].filter((record) => {
+    if (seen.has(record.id)) return false;
+    seen.add(record.id);
+    return true;
+  });
+  lensSpecific.sort((a, b) => b.score - a.score
+    || String(b.observedDate).localeCompare(String(a.observedDate)));
+  const lensTop = lensSpecific.slice(0, 4);
+  const releaseTop = releasesAsHighlights
+    .filter((record) => !seen.has(record.id))
+    .slice(0, Math.max(0, 4 - lensTop.length));
+  let top = [...lensTop, ...releaseTop];
+  if (top.length < 2) {
+    // 신호가 너무 적은 날에는 후순위로 candidates 전체에서 채워 빈 highlights 를 막는다.
+    const ids = new Set(top.map((record) => record.id));
+    for (const candidate of candidates) {
+      if (ids.has(candidate.id)) continue;
+      top.push(candidate);
+      ids.add(candidate.id);
+      if (top.length >= 2) break;
+    }
+  }
   const tags = Array.isArray(pipeline.draftTags) && pipeline.draftTags.length ? pipeline.draftTags : ['리눅스', '커널', '초안'];
+  const lensSignalCount = regressions.length + patches.length + otherSignals.length;
+  const signalLevel = lensSignalCount >= 3 ? 'high' : lensSignalCount >= 2 ? 'medium' : 'low';
+  const signalSummary = signalLevel === 'low'
+    ? `오늘은 이 렌즈에서 신호가 적은 날입니다 (lens-specific ${lensSignalCount}건). `
+    : '';
 
   return {
     id: postId,
     topic,
     title: applyTemplate(pipeline.draftTitleTemplate, { date: runDate }),
     date: runDate,
-    summary: `오늘의 핵심: 릴리스 ${releases.length}건, 회귀·리스크 ${regressions.length}건, 패치 ${patches.length}건. ${pipeline.summaryNote || '본 토픽은 전문 메일링 리스트 렌즈입니다. 세부 드라이버·단일 보드 변경은 후보에서 제외했을 수 있습니다.'}`,
+    summary: `${signalSummary}오늘의 핵심: 릴리스 ${releases.length}건, 회귀·리스크 ${regressions.length}건, 패치 ${patches.length}건. ${pipeline.summaryNote || '본 토픽은 전문 메일링 리스트 렌즈입니다. 세부 드라이버·단일 보드 변경은 후보에서 제외했을 수 있습니다.'}`,
     tags,
     highlights: top.map(highlightOf),
     sections: [
@@ -136,6 +175,8 @@ function toPostDraftLens(candidates, sourceData, pipeline, candidateBodies = [])
         patches: patches.length,
         otherSignals: otherSignals.length,
       },
+      lensSignalCount,
+      signalLevel,
       subsystems: [...new Set(candidates.flatMap((c) => broadSubsystemsOf(c)))],
       lensPipeline: pipeline.pipelineName || topic,
     },

@@ -2,6 +2,8 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
+import { enrichCandidatesWithReadme } from './lib/github-readme.mjs';
+
 const root = process.cwd();
 const topic = 'opensource-curation';
 const PICK_HEADING = '이번 주 선정 (큐레이션)';
@@ -245,6 +247,7 @@ async function main() {
   }
   const candidates = pickCandidates(sourceData.records);
   const draft = toPostDraft(candidates, sourceData, config);
+  await enrichCandidatesWithReadme(draft.candidateBodies, { concurrency: 3, limit: 10 });
 
   await mkdir(generatedDir, { recursive: true });
   const candidatePayload = { topic, generatedAt, sourceRecordCount: sourceData.recordCount, candidateCount: candidates.length, candidates };

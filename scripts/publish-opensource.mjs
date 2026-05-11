@@ -51,10 +51,24 @@ function validatePost(post) {
   }
 }
 
+const REQUIRED_DISCLAIMER = '본 브리핑의 설명은 GitHub 메타데이터·HN 신호·짧은 README 발췌에서 추출되었습니다. 구체 옵션·설정 키·플래그 이름은 도입 전 반드시 원문으로 확인하세요.';
+
+function ensureDisclaimer(post) {
+  const existing = post.confidence && typeof post.confidence === 'object' ? post.confidence : {};
+  const note = typeof existing.note === 'string' ? existing.note : '';
+  if (note.includes(REQUIRED_DISCLAIMER)) return post;
+  const merged = note ? `${note} ${REQUIRED_DISCLAIMER}` : REQUIRED_DISCLAIMER;
+  return {
+    ...post,
+    confidence: { level: existing.level || 'AI 초안', note: merged },
+  };
+}
+
 async function main() {
-  const post = await readJsonWithFallback(sourcePath, fallbackSourcePath);
+  let post = await readJsonWithFallback(sourcePath, fallbackSourcePath);
   validatePost(post);
   assertImmutableAgainstDraft(post, await tryReadJson(draftReferencePath));
+  post = ensureDisclaimer(post);
 
   await mkdir(contentPostsDir, { recursive: true });
   await writeFile(outputPath, JSON.stringify(post, null, 2));

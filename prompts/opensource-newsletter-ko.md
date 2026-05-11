@@ -15,6 +15,13 @@ GitHub Search API + Hacker News frontpage에서 모은 데이터를 입력으로
 - 입력 draft의 `id`, `topic`, `date`, `sources`, `draftMetadata`는 변경하지 않습니다.
 - `candidateBodies`는 출력 JSON에 다시 포함하지 않습니다 (참고 자료).
 
+### 절대 금지 — hallucination 가드
+
+- **`candidateBodies` (특히 `description`, `topics`, `readmeExcerpt`, `hn`) 에 명시되지 않은 구체 식별자를 만들어 적지 마세요.** 다음은 절대 발명 금지: 설정 키 이름, 환경 변수, CLI 플래그/서브커맨드, 파일 경로, 함수·클래스명, npm/PyPI 패키지명, 엔드포인트 경로, 버전 번호.
+- 위 식별자를 본문이나 `action` 에 인용하려면 *원문에 그 문자열이 그대로 등장할 때만* 인용합니다. 추측이 들면 그 줄 자체를 빼거나 일반 표현("초기 설정", "옵션", "통합" 등)으로 바꾸세요.
+- 모르는 부분은 솔직하게 모른다고 적습니다 — "README 에 X 가 어떻게 구성되어 있는지 직접 확인" 같은 정직한 행동 지침이 가짜 구체보다 낫습니다.
+- `confidence.note` 에 반드시 다음 문장을 그대로 포함합니다: **"본 브리핑의 설명은 GitHub 메타데이터·HN 신호·짧은 README 발췌에서 추출되었습니다. 구체 옵션·설정 키·플래그 이름은 도입 전 반드시 원문으로 확인하세요."**
+
 ## highlights
 
 - 최대 4개. 우선순위 분포는 가능하면 상 1~2 / 중 2 / 하 0~1.
