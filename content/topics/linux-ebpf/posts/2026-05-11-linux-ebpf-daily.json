@@ -1,0 +1,126 @@
+{
+  "id": "2026-05-11-linux-ebpf-daily",
+  "topic": "linux-ebpf",
+  "title": "2026-05-11 eBPF·커널 관측성 브리핑",
+  "date": "2026-05-11",
+  "summary": "negative dentry가 넘어올 때 dentry xattr 관련 BPF kfunc가 inode를 잠그기 전에 NULL 검사를 하지 않아 패닉으로 이어질 수 있던 경로가 수정·브랜치 적용으로 안내되었으니 관련 훅·도구부터 교차 확인하는 것이 좋습니다. verifier의 스택 인자 상태 가지치기, netpoll 경유 UDP 송신 kfunc 제안과 메인테이너의 Kconfig 관련 질문, 그리고 cgroup-bpf 기반 mTHP 노출 시도에 대한 강한 거부가 각각 검증 신뢰도·관측 출력 설계·향후 BPF–메모리 경계 협상 신호로 남습니다.",
+  "tags": [
+    "eBPF",
+    "verifier",
+    "tracing",
+    "kfunc"
+  ],
+  "highlights": [
+    {
+      "title": "bpf: dentry xattr kfunc의 negative dentry NULL inode 잠금 회귀 수정",
+      "priority": "상",
+      "verifyLink": "https://lore.kernel.org/bpf/20260511-anziehen-kringeln-26b280c04ce9@brauner/",
+      "action": "보안 훅 등에서 해당 kfunc를 호출하는 경로가 있는지, vfs.git vfs-7.2.kfunc 브랜치·linux-next 반영 상황과 lore 원문을 대조해 백포트 필요성까지 확인하세요."
+    },
+    {
+      "title": "bpf: BPF 함수 스택 인자와 verifier 상태 가지치기 안전성 보강 논의",
+      "priority": "상",
+      "verifyLink": "https://lore.kernel.org/bpf/1bb0dfc54cc2dbe6a38c21af2717f1b575ba60ba66a763952f38ada03a65bf85@mail.kernel.org/",
+      "action": "스택 인자·비표준 호출 규약을 다루는 확장을 따라간다면 bpf-ci 봇 지적과 후속 버전에서 func_states_equal/stack_arg_safe가 무엇을 비교하는지 스레드를 끝까지 추적하세요."
+    },
+    {
+      "title": "bpf: netpoll로 UDP를 보내는 kfunc 시리즈와 프로그램 타입 제약",
+      "priority": "중",
+      "verifyLink": "https://lore.kernel.org/bpf/4b64ecd8-eade-4676-822e-da73abe2421d@iogearbox.net/",
+      "action": "에이전트 없이 텔레메트리를 UDP로 내보내려는 설계라면 create/acquire/release/send_udp 수명 주기·sleepable/컨텍스트 제한과 Daniel Borkmann의 별도 Kconfig 노브 필요성 질문에 대한 스레드 응답을 계속 모니터링하세요."
+    },
+    {
+      "title": "selftests/bpf: nanosleep 경로 hrtimer 심볼을 런타임에 선택하는 vmlinux 테스트 보강",
+      "priority": "중",
+      "verifyLink": "https://lore.kernel.org/bpf/agF_a9RYywaT2c7f@krava/",
+      "action": "여러 커널 헤드를 한 번에 도는 CI에서 kprobe/fentry 심볼 불일치가 나면 libbpf_find_vmlinux_btf_id와 수동 attach 패턴을 참고해 테스트 대상 심볼 선택 로직을 점검하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이 렌즈는 lore.kernel.org bpf 메일링 리스트 중심입니다. 메인라인·stable 릴리스와 RC 로드맵은 ‘리눅스 개발’ 토픽 쪽 공지를 함께 보는 편이 안전합니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- bpf_set_dentry_xattr·bpf_remove_dentry_xattr가 dentry의 inode를 잠그기 전 negative dentry에서 d_inode()가 NULL일 수 있음을 간과해 inode_lock(NULL)로 패닉에 이를 수 있던 문제를, 잠금 전 inode NULL이면 -EINVAL로 되돌리는 검사로 막습니다(vfs.git vfs-7.2.kfunc 브랜치 적용·linux-next 유입 예정으로 안내됨).\n  · 영향: 보안 inode 생성 훅 등에서 넘어오는 dentry 성격에 따라 해당 kfunc를 호출하는 BPF가 직접적으로 노출됩니다.\n  · 확인: https://lore.kernel.org/bpf/20260511-anziehen-kringeln-26b280c04ce9@brauner/"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "- bpf_netpoll_create·bpf_netpoll_acquire·bpf_netpoll_release·bpf_netpoll_send_udp 형태로 netpoll 인프라를 통해 일반 네트워킹 스택에 의존하지 않고 UDP 패킷을 내보내려는 kfunc 묶음이 제안되었고, 수명 주기·프로그램 타입별 컨텍스트 제한과 함께 Daniel Borkmann이 다른 BPF 기능과 달리 별도 Kconfig 노브가 필요한지를 묻는 후속이 있습니다.\n  · 영향: LSM 등 관측 BPF가 에이전트 중단 상황에서도 UDP 경로로 이벤트를 내보낼 수 있게 하는 설계 논의와 빌드 스위치 표면 변화 가능성을 함께 봐야 합니다.\n  · 확인: https://lore.kernel.org/bpf/4b64ecd8-eade-4676-822e-da73abe2421d@iogearbox.net/\n- BPF 함수의 스택 인자를 verifier가 추적하면서 상태 가지치기 시 스택 인자 슬롯 정합성과 연관 플래그 비교가 빠져 잘못 병합될 수 있다는 bpf-ci 봇 지적을 계기로 stack_arg_safe 등 보강이 논의되는 패치 흐름이 올라와 있습니다.\n  · 영향: 복잡한 호출 규약을 가정하는 프로그램에서 검증 결과가 과도하게 낙관적으로 가지치기되는 위험을 줄이려는 방향으로 읽을 수 있습니다.\n  · 확인: https://lore.kernel.org/bpf/1bb0dfc54cc2dbe6a38c21af2717f1b575ba60ba66a763952f38ada03a65bf85@mail.kernel.org/\n- nanosleep 경로가 hrtimer_start_range_ns_user 쪽으로 바뀐 뒤 단일 심볼에 고정된 vmlinux selftest가 bpf 트리와 linux-next에서 어긋날 수 있어, BTF로 후보 심볼 존재를 보고 kprobe/fentry 부착 대상을 런타임에 고르는 방식으로 테스트를 고칩니다.\n  · 영향: 여러 커널 리비전을 동시에 검증하는 자체 BPF 트레이스 테스트 작성 방식의 참고 사례가 됩니다.\n  · 확인: https://lore.kernel.org/bpf/agF_a9RYywaT2c7f@krava/\n- cgroup-bpf로 mTHP 동작을 더 투명하게 노출하려는 대규모 시리즈에 대해 Lorenzo Stoakes 등이 RFC 절차·THP/mTHP 성숙도·BPF 인터페이스의 되돌리기 불가 속성을 이유로 강하게 반대·추가 리비전을 보내지 말 것을 요구했습니다.\n  · 영향: 단기적으로 cgroup-bpf를 통한 mTHP 제어 계약을 기대하기 어렵다는 협상 신호로 받아들일 수 있습니다.\n  · 확인: https://lore.kernel.org/bpf/agGzD8K9EBMMkhEH@lucifer/"
+    },
+    {
+      "heading": "기타",
+      "body": "- Jiayuan Chen을 sockmap 공동 메인테이너 후보로 올려 리뷰 부담을 세 명 체제로 되돌리자는 유지보수 조직 제안이 bpf 리스트에 올라왔습니다.\n  · 영향: sockmap·네트워킹 BPF 삼각 주변 패치 처리 속도를 간접적으로 가늠하는 참고용입니다.\n  · 확인: https://lore.kernel.org/bpf/20260511-sockmap-ktls-fix-1-v1-1-96ff8c1906e4@cloudflare.com/\n- bpf_netpoll 도입을 포괄적으로 설명하는 커버 레터 스레드는 위 netpoll kfunc 패치와 같은 주제의 배경·컨퍼런스 논의·자기 테스트 추가를 한데 묶어 제시합니다.\n  · 영향: 설계 동기와 테스트 범위를 한 번에 파악할 때 보조 링크로 쓰입니다.\n  · 확인: https://lore.kernel.org/bpf/20260511085344.3302-1-mahe.tardy@gmail.com/"
+    }
+  ],
+  "confidence": {
+    "level": "초안",
+    "note": "candidateBodies와 메인테이너 발화 발췌를 반영했으나 게시 전 각 lore 스레드 원문 확인이 필요합니다."
+  },
+  "sources": [
+    {
+      "title": "bpf: fix crash in bpf_[set|remove]_dentry_xattr for negative dentries",
+      "url": "https://lore.kernel.org/bpf/20260511-anziehen-kringeln-26b280c04ce9@brauner/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "bpf: Add netpoll kfuncs for sending UDP packets",
+      "url": "https://lore.kernel.org/bpf/4b64ecd8-eade-4676-822e-da73abe2421d@iogearbox.net/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "bpf: Add Jiayuan Chen to sockmap maintainers",
+      "url": "https://lore.kernel.org/bpf/20260511-sockmap-ktls-fix-1-v1-1-96ff8c1906e4@cloudflare.com/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "bpf: Introduce bpf_netpoll",
+      "url": "https://lore.kernel.org/bpf/20260511085344.3302-1-mahe.tardy@gmail.com/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "mm: introduce mthp_ext via cgroup-bpf to make mTHP more transparent",
+      "url": "https://lore.kernel.org/bpf/agGzD8K9EBMMkhEH@lucifer/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "selftests/bpf: Use both hrtimer enqueue helpers in vmlinux test",
+      "url": "https://lore.kernel.org/bpf/agF_a9RYywaT2c7f@krava/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "bpf: Support stack arguments for bpf functions",
+      "url": "https://lore.kernel.org/bpf/1bb0dfc54cc2dbe6a38c21af2717f1b575ba60ba66a763952f38ada03a65bf85@mail.kernel.org/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-11T14:13:20.551Z",
+    "sourceRecordCount": 25,
+    "candidateCount": 7,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "lore-bpf:urn:uuid:ae76d51c-b3e3-2161-af55-bb3651495100",
+      "lore-bpf:urn:uuid:d08933d8-feea-2f64-bf65-64a03e96c49d",
+      "lore-bpf:urn:uuid:00ff72ed-a3e1-cb66-1f08-17bf7835c210",
+      "lore-bpf:urn:uuid:2c1225d6-7e13-9c89-8e4e-fb6e3caa8e81",
+      "lore-bpf:urn:uuid:590c13d1-1f76-42c4-1927-e4ce64c0cb6c",
+      "lore-bpf:urn:uuid:7eaa20e1-bb76-d705-355f-b665c96f5272",
+      "lore-bpf:urn:uuid:3a962d6a-61d3-1095-0f4c-e9d4f43943f5"
+    ],
+    "bucketCounts": {
+      "releases": 0,
+      "regressions": 1,
+      "patches": 6,
+      "otherSignals": 0
+    },
+    "subsystems": [
+      "메모리 관리"
+    ],
+    "lensPipeline": "linux-ebpf",
+    "rewrittenAt": "2026-05-11T14:13:28.347Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-ko.md"
+  }
+}

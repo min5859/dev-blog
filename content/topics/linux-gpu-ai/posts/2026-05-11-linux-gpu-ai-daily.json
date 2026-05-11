@@ -1,0 +1,127 @@
+{
+  "id": "2026-05-11-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-05-11 GPU·디스플레이·가속기 브리핑",
+  "date": "2026-05-11",
+  "summary": "PROVE_LOCKING과 메모리 회수 압력에서 드러난 MSM GEM shrinker 경로의 락 순서 문제가 가장 먼저 확인할 가치가 있습니다. GEM LRU 락을 drm_device로 고정하는 변경과 MSM 구형 perf 제거·AMD PM의 mutex 가드 전환이 드라이버/DMA·GEM 경계에서의 잠금 계약을 조금씩 바꿉니다.",
+  "tags": [
+    "DRM",
+    "GPU",
+    "가속기",
+    "dri-devel",
+    "MSM"
+  ],
+  "highlights": [
+    {
+      "title": "MSM GEM shrinker가 회수 경로에서 reservation/ww_mutex와 맞물려 교착 가능",
+      "priority": "상",
+      "verifyLink": "https://lore.kernel.org/dri-devel/CACSVV03ZMuVEK8YKg4RwHWTU_CbWcwdWKSeyiaU=yV1Fg@mail.gmail.com/",
+      "action": "Arm64·PROVE_LOCKING·메모리 압력 시나리오에서 원문 스레드와 패치 방향을 확인하고 백포트 필요성을 판단하세요."
+    },
+    {
+      "title": "GEM LRU 락을 drm_device로 옮겨 gem->lru 경유 잠금으로 생기던 경쟁을 제거",
+      "priority": "중",
+      "verifyLink": "https://lore.kernel.org/dri-devel/CACSVV00NdUKe6-05U3g0q5X3tw4zmqO_s2gk-KZxQVykpydvAA@mail.gmail.com/",
+      "action": "GEM LRU·shrinker·WW lock을 쓰는 DRM 드라이버는 dev->gem_lru_mutex 기준으로 잠금 규칙이 바뀌는지 스레드를 추적하세요."
+    },
+    {
+      "title": "MSM에서 a3xx 밖에선 거의 안 쓰이던 구형 perf/debugfs 경로를 걷어냄",
+      "priority": "중",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260511130017.96867-2-robin.clark@oss.qualcomm.com/",
+      "action": "구 debugfs perf UI나 스크립트에 의존했다면 대체 도구(nvtop·perfetto 등)로 이행 계획을 점검하세요."
+    },
+    {
+      "title": "AMD PM amdgpu_dpm에서 mutex를 guard()/scoped_guard로 정리",
+      "priority": "하",
+      "verifyLink": "https://lore.kernel.org/dri-devel/cef3ac12-b306-4b72-b015-49f77556874e@amd.com/",
+      "action": "전력 관리 코드 경로를 포크·백포트하는 환경이라면 조기 return·락 해제 누락 회귀가 없는지 빌드와 리� 코멘트를 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이 렌즈는 dri-devel 메일링 리스트 중심입니다. 오늘 입력에는 kernel.org 릴리스 항목이 없어 별도 백포트 요약은 두지 않습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- MSM GEM shrinker: VM 회수(kswapd)·fs_reclaim와 MSM GEM shrinker_scan·DMA reservation ww_mutex 사이 락 순서가 교착을 일으킬 수 있음\n  · 영향: PROVE_LOCKING이 켜진 Arm 보드에서 메모리 압력 시 재현 보고·교착 클래스 후보\n  · 확인: https://lore.kernel.org/dri-devel/CACSVV03ZMuVEK8YKg4RwHWTU_CbWcwdWKSeyiaU=yV1Fg@mail.gmail.com/"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "[GEM 코어]\n- drm/gem: GEM LRU 보호용 뮤텍스를 객체 경유가 아니라 drm_device의 gem_lru_mutex로 고정\n  · 영향: shrinker·LRU 순회·드라이버(msm·panthor 등)가 동일 디바이스에서 따르는 잠금 위치가 바뀜\n  · 확인: https://lore.kernel.org/dri-devel/CACSVV00NdUKe6-05U3g0q5X3tw4zmqO_s2gk-KZxQVykpydvAA@mail.gmail.com/\n\n[Qualcomm MSM]\n- drm/msm: 구형 perf 인프라와 debugfs \"perf\" 노드 제거\n  · 영향: 옛 perf 카운터 경로는 사실상 폐기, 이후 perfcntr 작업과 이름 충돌을 줄이려는 정리\n  · 확인: https://lore.kernel.org/dri-devel/20260511130017.96867-2-robin.clark@oss.qualcomm.com/\n\n[AMD 전력 관리]\n- drm/amd/pm: amdgpu_dpm.c에서 mutex_lock/unlock 대신 guard(mutex)·scoped_guard 패턴으로 전환\n  · 영향: 동작 계약은 동일하지만 조기 return·리뷰 라운드에서 보이던 잠금 실수를 줄이는 리팩터링\n  · 확인: https://lore.kernel.org/dri-devel/cef3ac12-b306-4b72-b015-49f77556874e@amd.com/"
+    },
+    {
+      "heading": "기타",
+      "body": "- drm/bridge it66121: 커넥터 sink 타입에 따라 HDMI·DVI 모드와 AVI infoframe 전송을 가림(일부 DVI 모니터 호환)\n  · 확인: https://lore.kernel.org/dri-devel/20260511-gentle-grouse-of-growth-3ac263@houat/ , https://lore.kernel.org/dri-devel/8733zyysac.fsf@ocarina.mail-host-address-is-not-set/\n- drm/tidss: BeagleY-AI·AM62P/J722S 계열 표시 경로·바인딩 묶음 시리즈(특정 보드 중심)\n  · 확인: https://lore.kernel.org/dri-devel/53985724-09bd-494b-9093-3e7efb6a6ce0@ti.com/"
+    }
+  ],
+  "confidence": {
+    "level": "중간",
+    "note": "candidateBodies의 커밋 메시지·인용문을 반영했으나, 본문 전체와 머지 상태는 게시 전 lore 스레드에서 재확인하는 것이 안전합니다."
+  },
+  "sources": [
+    {
+      "title": "drm/msm: Fix shrinker deadlock",
+      "url": "https://lore.kernel.org/dri-devel/CACSVV03ZMuVEK6OegD8YKg4RwHWTU_CbWcwdWKSeyiaU=yV1Fg@mail.gmail.com/",
+      "note": "lore.kernel.org/dri-devel · patch-discussion"
+    },
+    {
+      "title": "drm/msm: Remove obsolete perf infrastructure",
+      "url": "https://lore.kernel.org/dri-devel/20260511130017.96867-2-robin.clark@oss.qualcomm.com/",
+      "note": "lore.kernel.org/dri-devel · patch-discussion"
+    },
+    {
+      "title": "drm/amd/pm: Use guard(mutex) instead of manual lock+unlock",
+      "url": "https://lore.kernel.org/dri-devel/cef3ac12-b306-4b72-b015-49f77556874e@amd.com/",
+      "note": "lore.kernel.org/dri-devel · patch-discussion"
+    },
+    {
+      "title": "drm/gem: Make the GEM LRU lock part of drm_device",
+      "url": "https://lore.kernel.org/dri-devel/CACSVV00NdUKe6-05U3g0q5X3tw4zmqO_s2gk-KZxQVykpydvAA@mail.gmail.com/",
+      "note": "lore.kernel.org/dri-devel · patch-discussion"
+    },
+    {
+      "title": "drm/bridge: it66121: Select HDMI or DVI mode based on sink type",
+      "url": "https://lore.kernel.org/dri-devel/20260511-gentle-grouse-of-growth-3ac263@houat/",
+      "note": "lore.kernel.org/dri-devel · patch-discussion"
+    },
+    {
+      "title": "drm/bridge: it66121: Select HDMI or DVI mode based on sink type",
+      "url": "https://lore.kernel.org/dri-devel/8733zyysac.fsf@ocarina.mail-host-address-is-not-set/",
+      "note": "lore.kernel.org/dri-devel · patch-discussion"
+    },
+    {
+      "title": "drm/tidss: Add BeagleY-AI display support (and some more)",
+      "url": "https://lore.kernel.org/dri-devel/53985724-09bd-494b-9093-3e7efb6a6ce0@ti.com/",
+      "note": "lore.kernel.org/dri-devel · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-11T14:16:05.728Z",
+    "sourceRecordCount": 25,
+    "candidateCount": 7,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "lore-dri-devel:urn:uuid:8022e7bd-0045-dc36-dc44-d4d5d0f7b978",
+      "lore-dri-devel:urn:uuid:3a2bfc2d-edca-bd10-c013-42c2ada6d0e4",
+      "lore-dri-devel:urn:uuid:8f565ab1-38e0-c055-0e31-c5537afdc041",
+      "lore-dri-devel:urn:uuid:283ed933-e1d0-5015-683e-271a09609639",
+      "lore-dri-devel:urn:uuid:473544ba-757c-a5c8-9e0a-3e4c1f7b80ad",
+      "lore-dri-devel:urn:uuid:8a1f1d8f-98d9-7d71-7743-b35be9dac729",
+      "lore-dri-devel:urn:uuid:b89ef3c5-eb66-3973-f1bf-d014666159d2"
+    ],
+    "bucketCounts": {
+      "releases": 0,
+      "regressions": 1,
+      "patches": 6,
+      "otherSignals": 0
+    },
+    "subsystems": [
+      "전력 관리"
+    ],
+    "lensPipeline": "linux-gpu-ai",
+    "rewrittenAt": "2026-05-11T14:16:13.574Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-ko.md"
+  }
+}
