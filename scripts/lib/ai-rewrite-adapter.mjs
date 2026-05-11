@@ -102,26 +102,115 @@ export async function runAiAdapterPrompt(prompt, { defaultAdapter = 'template' }
 
 /**
  * Claude stdout / Cursor `--output-format json`의 result 문자열 / fenced JSON 모두 처리
+ * Cursor 가 NDJSON (stream-json) 으로 떨어지는 경우도 흡수: 첫 `{`부터 균형 잡힌 JSON 값들을
+ * 순회하며 `type === 'result'` 봉투를 찾고, 못 찾으면 가장 큰 객체를 채택한다.
  */
 export function parseNewsletterJsonFromAiOutput(text) {
   const trimmed = text.trim();
   if (!trimmed) throw new Error('AI response was empty');
 
-  let payload = trimmed;
-  try {
-    const outer = JSON.parse(trimmed);
-    if (outer && typeof outer === 'object' && outer.type === 'result' && typeof outer.result === 'string') {
-      payload = outer.result.trim();
+  const single = tryJsonParse(trimmed);
+  if (single) {
+    if (isResultEnvelope(single)) {
+      const unwrapped = unwrapResultEnvelope(single);
+      if (unwrapped) return unwrapped;
+      throw new Error('AI result envelope did not contain newsletter JSON');
     }
-  } catch {
-    // 전체가 뉴스레터 JSON이거나 마크다운 등
+    return single;
   }
 
-  try {
-    return JSON.parse(payload);
-  } catch {
-    const match = payload.match(/```(?:json)?\s*([\s\S]*?)```/) || payload.match(/({[\s\S]*})/);
-    if (!match) throw new Error('AI response did not contain JSON');
-    return JSON.parse(match[1]);
+  const values = collectJsonValues(trimmed);
+  for (const value of values) {
+    const unwrapped = unwrapResultEnvelope(value);
+    if (unwrapped) return unwrapped;
   }
+  const newsletterCandidate = values.find(looksLikeNewsletter);
+  if (newsletterCandidate) return newsletterCandidate;
+
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fenced) {
+    const parsed = tryJsonParse(fenced[1].trim());
+    if (parsed) return parsed;
+  }
+
+  throw new Error('AI response did not contain JSON');
+}
+
+function tryJsonParse(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function isResultEnvelope(value) {
+  return Boolean(value && typeof value === 'object' && value.type === 'result' && typeof value.result === 'string');
+}
+
+function unwrapResultEnvelope(value) {
+  if (!isResultEnvelope(value)) return null;
+  const resultText = value.result.trim();
+  if (!resultText) return null;
+  const direct = tryJsonParse(resultText);
+  if (direct) return direct;
+  const fenced = resultText.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fenced) {
+    const parsed = tryJsonParse(fenced[1].trim());
+    if (parsed) return parsed;
+  }
+  for (const candidate of collectJsonValues(resultText)) {
+    if (looksLikeNewsletter(candidate)) return candidate;
+  }
+  return null;
+}
+
+function looksLikeNewsletter(value) {
+  return Boolean(
+    value &&
+      typeof value === 'object' &&
+      typeof value.id === 'string' &&
+      typeof value.topic === 'string' &&
+      Array.isArray(value.sections),
+  );
+}
+
+function collectJsonValues(text) {
+  const values = [];
+  let i = 0;
+  while (i < text.length) {
+    const start = text.indexOf('{', i);
+    if (start < 0) break;
+    const end = findMatchingBrace(text, start);
+    if (end < 0) break;
+    const slice = text.slice(start, end + 1);
+    const parsed = tryJsonParse(slice);
+    if (parsed) values.push(parsed);
+    i = end + 1;
+  }
+  return values;
+}
+
+function findMatchingBrace(text, start) {
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escape) escape = false;
+      else if (ch === '\\') escape = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+    } else if (ch === '{') {
+      depth += 1;
+    } else if (ch === '}') {
+      depth -= 1;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
 }

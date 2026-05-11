@@ -40,3 +40,40 @@ test('resolveAiAdapter maps cursor-agent alias', () => {
   assert.equal(resolveAiAdapter('template'), 'cursor');
   delete process.env.AI_ADAPTER;
 });
+
+test('parseNewsletterJsonFromAiOutput finds result envelope inside NDJSON stream', () => {
+  const newsletter = {
+    id: 'z',
+    topic: 'linux',
+    title: 't',
+    date: '2026-05-11',
+    summary: 's',
+    sections: [{ heading: 'a', body: 'b' }],
+    sources: [{ title: 'u', url: 'https://u', note: 'n' }],
+    highlights: [{ title: 'h', priority: '상', verifyLink: '없음', action: 'a' }],
+  };
+  const stream = [
+    JSON.stringify({ type: 'system', subtype: 'init' }),
+    JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: '…' }] } }),
+    JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: JSON.stringify(newsletter) }),
+  ].join('\n');
+  const out = parseNewsletterJsonFromAiOutput(stream);
+  assert.equal(out.id, 'z');
+  assert.equal(out.sections.length, 1);
+});
+
+test('parseNewsletterJsonFromAiOutput tolerates trailing text after newsletter JSON', () => {
+  const newsletter = {
+    id: 'q',
+    topic: 'linux',
+    title: 't',
+    date: '2026-05-11',
+    summary: 's',
+    sections: [{ heading: 'a', body: 'b' }],
+    sources: [{ title: 'u', url: 'https://u', note: 'n' }],
+    highlights: [{ title: 'h', priority: '상', verifyLink: '없음', action: 'a' }],
+  };
+  const noisy = `${JSON.stringify(newsletter)}\nDone.`;
+  const out = parseNewsletterJsonFromAiOutput(noisy);
+  assert.equal(out.id, 'q');
+});

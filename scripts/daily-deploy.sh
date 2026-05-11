@@ -11,14 +11,16 @@ NPM_BIN="${NPM_BIN:-/Users/wooki/.nvm/versions/node/v24.14.0/bin/npm}"
 
 cd "${PROJECT_DIR}"
 
-"${NPM_BIN}" run daily:linux:publish
+# Failure-isolated for every topic so a single topic's adapter glitch does not
+# block the rest of the day's content from being pushed.
+if ! "${NPM_BIN}" run daily:linux:publish; then
+  echo "linux daily run failed; continuing"
+fi
 
-# Android topic runs after Linux. Failure does not block the Linux push.
 if ! "${NPM_BIN}" run daily:android:publish; then
   echo "android daily run failed; continuing"
 fi
 
-# Opensource trending topic. Same failure-isolated pattern.
 if ! "${NPM_BIN}" run daily:opensource:publish; then
   echo "opensource daily run failed; continuing"
 fi
