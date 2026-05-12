@@ -48,8 +48,13 @@ function validatePost(post) {
   if (!Array.isArray(post.highlights) || post.highlights.length === 0) throw new Error('publish candidate requires highlights[]');
   for (const [index, highlight] of post.highlights.entries()) {
     if (!highlight || typeof highlight !== 'object') throw new Error(`highlights[${index}] must be an object`);
-    for (const key of ['title', 'priority', 'verifyLink', 'action']) {
+    for (const key of ['title', 'priority', 'verifyLink']) {
       if (typeof highlight[key] !== 'string' || !highlight[key]) throw new Error(`highlights[${index}].${key} required`);
+    }
+    const hasAction = typeof highlight.action === 'string' && highlight.action;
+    const hasStructured = ['if', 'do', 'verify'].every((k) => typeof highlight[k] === 'string' && highlight[k]);
+    if (!hasAction && !hasStructured) {
+      throw new Error(`highlights[${index}] requires either action or all of if/do/verify`);
     }
     if (!PRIORITY_VALUES.has(highlight.priority)) throw new Error(`highlights[${index}].priority must be 상/중/하`);
   }

@@ -170,12 +170,22 @@ function templateWeekly(dailies, meta) {
     .filter((h) => PRIORITY_VALUES.has(h.priority))
     .sort((a, b) => ['상', '중', '하'].indexOf(a.priority) - ['상', '중', '하'].indexOf(b.priority))
     .slice(0, 4);
-  const ensureHighlight = (h) => ({
-    title: h.title,
-    priority: PRIORITY_VALUES.has(h.priority) ? h.priority : '중',
-    verifyLink: h.verifyLink || '없음',
-    action: h.action || '본문에서 확인하세요.',
-  });
+  const ensureHighlight = (h) => {
+    const out = {
+      title: h.title,
+      priority: PRIORITY_VALUES.has(h.priority) ? h.priority : '중',
+      verifyLink: h.verifyLink || '없음',
+    };
+    const hasStructured = ['if', 'do', 'verify'].every((k) => typeof h[k] === 'string' && h[k]);
+    if (hasStructured) {
+      out.if = h.if;
+      out.do = h.do;
+      out.verify = h.verify;
+    } else {
+      out.action = h.action || '본문에서 확인하세요.';
+    }
+    return out;
+  };
 
   return {
     id: meta.id,
@@ -223,8 +233,13 @@ function validateWeekly(post, meta) {
   if (!Array.isArray(post.highlights) || post.highlights.length === 0) throw new Error('weekly post requires highlights');
   for (const [index, h] of post.highlights.entries()) {
     if (!h || typeof h !== 'object') throw new Error(`highlights[${index}] must be an object`);
-    for (const key of ['title', 'priority', 'verifyLink', 'action']) {
+    for (const key of ['title', 'priority', 'verifyLink']) {
       if (typeof h[key] !== 'string' || !h[key]) throw new Error(`highlights[${index}].${key} required`);
+    }
+    const hasAction = typeof h.action === 'string' && h.action;
+    const hasStructured = ['if', 'do', 'verify'].every((k) => typeof h[k] === 'string' && h[k]);
+    if (!hasAction && !hasStructured) {
+      throw new Error(`highlights[${index}] requires either action or all of if/do/verify`);
     }
     if (!PRIORITY_VALUES.has(h.priority)) throw new Error(`highlights[${index}].priority must be 상/중/하`);
   }
