@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { parseNewsletterJsonFromAiOutput, resolveAiAdapter, runAiAdapterPrompt } from './lib/ai-rewrite-adapter.mjs';
+import { auditPostQuality } from './lib/quality-guard.mjs';
 
 const root = process.cwd();
 const topic = 'opensource-curation';
@@ -111,6 +112,7 @@ async function main() {
   const aiText = await runAiAdapterPrompt(prompt, { defaultAdapter: 'cursor' });
   const rewritten = withAuditMetadata(aiText ? parseNewsletterJsonFromAiOutput(aiText) : templateRewrite(draft));
   validatePost(rewritten);
+  auditPostQuality(rewritten);
 
   await writeFile(path.join(generatedDir, `rewritten-${postId}.json`), JSON.stringify(rewritten, null, 2));
   await writeFile(path.join(generatedDir, 'rewritten-latest.json'), JSON.stringify(rewritten, null, 2));
