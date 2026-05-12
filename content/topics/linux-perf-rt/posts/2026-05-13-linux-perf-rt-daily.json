@@ -1,0 +1,153 @@
+{
+  "id": "2026-05-13-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-05-13 실시간 푸시 고착 논의 — 관측성·실시간(eBPF·RT)",
+  "date": "2026-05-13",
+  "headline": "실시간 작업 이주가 네트 수신 부하 속에서 스케줄 전에 같은 요청으로 반복되며 멈출 수 있다는 설명과 이를 끊는 변경이 올랐고, 저장 장치 다중 대기열의 정지 단계를 원자로 바꾸는 일곱 번째 안과 측정 이벤트 생성기 병렬화도 함께 공개됐다.",
+  "summary": "오늘 가장 큰 신호는 다른 처리장치로 실시간 작업을 넘기는 경로가 연속 소프트 인터럽트 부하 속에서 스케줄 돌기 전에 같은 분기를 반복해 멈출 수 있다는 점을 다루는 패치 논의입니다. 이어서 블록 다중 대기열의 정지 처리에 원자 카운터와 전체 메모리 장벽을 쓰는 수정안, 네트 콘솔과 넷폴 코드 분리, 동적 추적 틈 메우기 서문, 성능 이벤트 자료 생성기 병렬화가 같은 날 묶였습니다.",
+  "tags": [
+    "eBPF",
+    "verifier",
+    "tracing",
+    "PREEMPT_RT",
+    "실시간",
+    "블록입출력",
+    "스케줄러"
+  ],
+  "highlights": [
+    {
+      "title": "sched/rt: Fix RT_PUSH_IPI soft lockup loop",
+      "priority": "상",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260512113754.448c1f5b@gandalf.local.home/",
+      "if": "실시간 작업을 다른 처리장치로 넘기는 경로를 쓰는 커널을 다룬다면",
+      "do": "연속 네트 수신 부하에서 스케줄 전에 같은 밀어내기 분기가 반복될 수 있다는 설명과 우선 순위 조기 반환을 건너뛰는 차이를 읽으세요",
+      "verify": "고정된 스레드 본문과 후속 응답에서 고침 범위 표기와 중첩 원인에 대한 서로 다른 해석을 줄 흐름으로 대조하세요"
+    },
+    {
+      "title": "block/blk-mq: use atomic_t for quiesce_depth to avoid lock contention on RT",
+      "priority": "상",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260512062815.10815-1-ionut.nechita@windriver.com/",
+      "if": "실시간에서 블록 다중 대기열 정지 처리로 잠금 대기가 길어진다면",
+      "do": "정지 단계를 원자로 두고 읽기 경로에 완전 장벽을 추가한다는 요지와 이전 판 대비 바뀐 장벽 한 건만 짚어 읽으세요",
+      "verify": "공개된 일곱 번째 안에서 대기 해제 호출과 동기화 전제, 장벽 짝을 쓰는 위치를 코드 주석과 함께 따라가며 확인하세요"
+    },
+    {
+      "title": "netconsole: move find_skb() from netpoll",
+      "priority": "중",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260511183718.04781b86@kernel.org/",
+      "if": "네트 콘솔과 관련 심볼 내보내기를 검토하는 네트워크 작업이라면",
+      "do": "새로 내보내는 완료 대기열 비우기 함수 이름과 내부 전용 공개 수준에 대한 유지자 질문을 한 흐름으로 읽으세요",
+      "verify": "같은 메일 스레드에서 제안된 이름 접두와 내부 공개 표시에 대한 응답이 더 붙었는지 아래쪽까지 훑어 확인하세요"
+    },
+    {
+      "title": "perf pmu-events: Parallelize JSON and metric pre-computation in jevents.py",
+      "priority": "중",
+      "verifyLink": "https://lore.kernel.org/bpf/20260512174638.120445-16-irogers@google.com/",
+      "if": "커널을 자주 전체 빌드하며 이벤트 자료 생성에 걸리는 시간이 부담이라면",
+      "do": "여러 중앙처리장치로 이벤트 자료 구문 분석과 준비를 나누어 빌드 시작 단계 시간을 줄인다는 요지를 요약해서 읽으세요",
+      "verify": "공개된 생성기 설명에 적힌 이전 순차 소요와 병렬화 후 대략 소요를 같은 단락에서 나란히 숫자로 대조하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이 렌즈는 메일링 리스트 중심입니다. 메인라인 정식 릴리스와 넓은 스케줄 로드맵은 ‘리눅스 개발’ 토픽을 함께 보시기 바랍니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- sched/rt: 실시간 작업을 다른 처리장치로 넘기는 중간 단계가 연속 네트 수신 부하 속에서 스케줄 돌기 전에 같은 우선 순위 조기 반환 분기를 반복해 멈출 수 있다는 설명과, 그 분기를 밀어내기 경로에서는 건너뛰자는 변경이 함께 올라왔습니다. 후속 메일에서는 예전에 넣은 짧은 경로가 원래 문제를 다시 드러낼 수 있는지 등 상충이 언급됩니다.\n  · 영향: 실시간 스케줄과 부하가 겹칠 때 지연·멈춤 신호\n  · 확인: https://lore.kernel.org/linux-rt-devel/20260512113754.448c1f5b@gandalf.local.home/\n\n- uprobes/x86: 사용자 공간 동적 추적에서 짧은 틈 메우기로 쌓은 공간을 조정할 때 빨간 여백을 밟지 않도록 서문을 다룬다는 논의가 올라왔고, 다른 응답에서 더 짧은 명령 조합을 제안합니다.\n  · 영향: 추적 삽입 경로와 호출 규약\n  · 확인: https://lore.kernel.org/bpf/CAEf4Bza4sqLw8GHoq+MFBgsnhiJ_s91UUrMcA-paYeBr7=bz0A@mail.gmail.com/"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "[블록 입출력]\n- block/blk-mq: 실시간에서 정지 단계를 잠금으로 돌리며 생긴 성능 저하를 줄이려 정지 깊이를 원자로 두고, 대기 해제와 실행 사이의 저장·읽기 순서를 전체 메모리 장벽으로 맞추는 일곱 번째 수정안이 공개됐습니다.\n  · 영향: 실시간 환경의 다중 대기열 정지·재개 경로\n  · 확인: https://lore.kernel.org/linux-rt-devel/20260512062815.10815-1-ionut.nechita@windriver.com/\n\n[네트워크·콘솔]\n- netpoll: 네트 콘솔 전용 송신 경로와 보조 코드를 넷폴 코어에서 나누어 한쪽만 바이트 묶음을 만드는 길을 남기고, 한 번에 한 함수씩 옮기는 시리즈가 다시 제출됐습니다. 새로 계속 내보내게 되는 완료 대기열 비우기 함수는 이후 정리 목적입니다.\n  · 영향: 넷폴 공용 구조체와 네트 콘솔 전용 자원의 경계\n  · 확인: https://lore.kernel.org/linux-rt-devel/20260512-netconsole_split-v2-0-1191d14ad66d@debian.org/\n\n- netconsole: 넷폴 쪽에 있던 수신 버퍼 찾기를 네트 콘솔 파일로 옮기는 과정에서 방금 내보낸 완료 대기열 비우기 심볼 이름을 무엇으로 둘지 유지자가 짚었습니다.\n  · 영향: 공개 심볼 이름과 내부 전용 공개 여부\n  · 확인: https://lore.kernel.org/linux-rt-devel/20260511183718.04781b86@kernel.org/\n\n[성능 측정 도구]\n- perf pmu-events: 측정 이벤트 자료를 만드는 생성기가 모든 구조를 순서대로 읽느라 걸리던 시간을 여러 중앙처리장치로 나누어 짧게 줄였다고 합니다.\n  · 영향: 커널 빌드 초반의 이벤트 자료 생성 단계 소요\n  · 확인: https://lore.kernel.org/bpf/20260512174638.120445-16-irogers@google.com/"
+    },
+    {
+      "heading": "기타",
+      "body": "- riscv: 특정 확장을 켤 때 자원 제어 파일 시스템 구성 옵션이 따라 켜지도록 정리한다는 안이 같은 리스트에 보였으며, 이전에도 짧게 다룬 적이 있습니다.\n  · 확인: https://lore.kernel.org/linux-rt-devel/20260510-ssqosid-cbqri-rqsc-v7-0-v4-18-eb53831ef683@kernel.org/\n\n리스트 화면 밖의 넓은 주제는 뺐습니다. 더 보려면 lore.kernel.org에서 키워드를 좁혀 검색하세요."
+    }
+  ],
+  "confidence": {
+    "level": "초안",
+    "note": "제목·메타데이터 기반 자동 선별을 편집했습니다. 게시 전 원문 확인이 필요합니다."
+  },
+  "sources": [
+    {
+      "title": "sched/rt: Fix RT_PUSH_IPI soft lockup loop",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260512113754.448c1f5b@gandalf.local.home/",
+      "note": "lore.kernel.org/linux-rt-devel · patch-discussion"
+    },
+    {
+      "title": "sched/rt: Fix RT_PUSH_IPI soft lockup loop",
+      "url": "https://lore.kernel.org/linux-rt-devel/xhsmh8q9o2xui.mognet@vschneid-thinkpadt14sgen2i.remote.csb/",
+      "note": "lore.kernel.org/linux-rt-devel · patch-discussion"
+    },
+    {
+      "title": "sched/rt: Fix RT_PUSH_IPI soft lockup loop",
+      "url": "https://lore.kernel.org/linux-rt-devel/056f95bc5805f7e161458984fff4b3cb@kernel.org/",
+      "note": "lore.kernel.org/linux-rt-devel · patch-discussion"
+    },
+    {
+      "title": "netconsole: move find_skb() from netpoll",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260511183718.04781b86@kernel.org/",
+      "note": "lore.kernel.org/linux-rt-devel · patch-discussion"
+    },
+    {
+      "title": "block/blk-mq: use atomic_t for quiesce_depth to avoid lock contention on RT",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260512062815.10815-1-ionut.nechita@windriver.com/",
+      "note": "lore.kernel.org/linux-rt-devel · patch-discussion"
+    },
+    {
+      "title": "riscv: enable resctrl filesystem for Ssqosid",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260510-ssqosid-cbqri-rqsc-v7-0-v4-18-eb53831ef683@kernel.org/",
+      "note": "lore.kernel.org/linux-rt-devel · patch-discussion"
+    },
+    {
+      "title": "perf pmu-events: Parallelize JSON and metric pre-computation in jevents.py",
+      "url": "https://lore.kernel.org/bpf/20260512174638.120445-16-irogers@google.com/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "netpoll: move out netconsole-specific functions",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260512-netconsole_split-v2-0-1191d14ad66d@debian.org/",
+      "note": "lore.kernel.org/linux-rt-devel · patch-discussion"
+    },
+    {
+      "title": "uprobes/x86: Fix red zone clobbering in nop5 optimization",
+      "url": "https://lore.kernel.org/bpf/CAEf4Bza4sqLw8GHoq+MFBgsnhiJ_s91UUrMcA-paYeBr7=bz0A@mail.gmail.com/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-12T22:09:45.585Z",
+    "sourceRecordCount": 50,
+    "candidateCount": 9,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "lore-linux-rt-devel:urn:uuid:71649bbc-0f4c-b347-04af-49917a47b012",
+      "lore-linux-rt-devel:urn:uuid:21c12562-de61-cbf5-4509-0507b70a7fe2",
+      "lore-linux-rt-devel:urn:uuid:313d091a-30da-bb4e-bb04-f4b47dab1a7b",
+      "lore-linux-rt-devel:urn:uuid:db50c27f-1370-f27f-1da2-41abc6face1a",
+      "lore-linux-rt-devel:urn:uuid:4d0f09b7-4fdc-c709-0109-901cf9420b4d",
+      "lore-bpf:urn:uuid:0d10217c-226f-5ad8-8ead-f93798b164af",
+      "lore-linux-rt-devel:urn:uuid:fa7ff55d-ed12-f6cb-4e34-08693af144dc",
+      "lore-bpf:urn:uuid:ca4389ee-a666-e55c-43f6-b699b9d70a85",
+      "lore-linux-rt-devel:urn:uuid:7390d9c1-a9b5-a190-c74f-3bda2811d412"
+    ],
+    "bucketCounts": {
+      "releases": 0,
+      "regressions": 3,
+      "patches": 6,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 9,
+    "signalLevel": "high",
+    "subsystems": [
+      "스케줄러/실시간",
+      "스토리지/파일시스템"
+    ],
+    "lensPipeline": "linux-perf-rt",
+    "rewrittenAt": "2026-05-12T22:09:55.621Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-ko.md"
+  }
+}
