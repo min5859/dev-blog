@@ -9,7 +9,7 @@ const contentDir = path.join(root, 'content', 'topics');
 const publicDir = path.join(root, 'public');
 const normalizedDir = path.join(root, 'data', 'normalized');
 const siteTitle = 'Dev Blog';
-const siteDescription = 'AI가 보조하는 엔지니어링 주제별 개발 뉴스레터입니다.';
+const siteDescription = '커널·시스템·오픈소스 엔지니어를 위한 일일 개발 브리핑입니다. 매일 lore.kernel.org·Android Common Kernel·GitHub 신호를 수집해 핵심만 정리합니다.';
 const siteUrl = process.env.SITE_URL || 'http://localhost:4321';
 const basePath = (process.env.BASE_PATH || '').replace(/\/+$/, '');
 const buildStartedAt = new Date();
@@ -71,6 +71,95 @@ function markupTechnical(escapedText) {
 function renderSectionBodyMarkdown(markdown) {
   const raw = typeof markdown === 'string' ? markdown : '';
   return marked.parse(raw);
+}
+
+// 본문이 사실상 "이 섹션에는 콘텐츠가 없다"를 다르게 말한 placeholder 인지 판별.
+// 200자 미만이면서 아래 패턴들 중 하나에 매치되면 섹션 전체를 hide 한다.
+const PLACEHOLDER_PATTERNS = [
+  /분류된\s*(?:항목|회귀|CVE|스레드|신호|엔트리)[^]*없습니다/,
+  /(?:이|본)\s*(?:렌즈|토픽)는[^]*(?:참고하세요|보세요|보시기\s*바랍니다|함께\s*보는)/,
+  /입력\s*초안\s*기준으로는[^]*없습니다/,
+  /오늘\s*입력에는[^]*없(?:어|습니다)/,
+  /이번\s*수집\s*버킷에[^]*없습니다/,
+  /릴리스\s*엔트리는\s*포착되지\s*않았/,
+];
+
+function isPlaceholderSection(section) {
+  const body = typeof section?.body === 'string' ? section.body.trim() : '';
+  if (!body) return true;
+  if (body.length > 200) return false;
+  return PLACEHOLDER_PATTERNS.some((re) => re.test(body));
+}
+
+// 약어·식별자에 첫 등장 시 hover 설명을 붙인다. 글마다 처음 한 번만 감싼다.
+let glossaryCache = null;
+
+async function loadGlossary() {
+  if (glossaryCache !== null) return glossaryCache;
+  try {
+    const data = JSON.parse(await readFile(path.join(root, 'content', 'glossary.json'), 'utf8'));
+    const terms = (data.terms || [])
+      .filter((t) => t && typeof t.term === 'string' && t.term)
+      .map((t) => ({ ...t, _re: new RegExp(`(?<![\\w가-힣])${escapeRegex(t.term)}(?![\\w가-힣])`) }))
+      .sort((a, b) => b.term.length - a.term.length);
+    glossaryCache = terms;
+  } catch {
+    glossaryCache = [];
+  }
+  return glossaryCache;
+}
+
+function escapeRegex(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// 이미 마크업된 HTML 의 텍스트 노드만 골라 한 번씩 첫 등장 용어에 <abbr> 를 감싼다.
+// <code>, <a>, <abbr> 안쪽의 텍스트는 건드리지 않는다.
+function annotateGlossary(html, terms, seen) {
+  if (!terms.length || !html) return html;
+  let out = '';
+  let i = 0;
+  const skipTags = /<(code|a|abbr|pre)\b[^>]*>/gi;
+  // 토큰화: 태그·텍스트 교차. <(code|a|abbr|pre) ... </\1> 구간은 통째 스킵.
+  const SKIP_BLOCK = /<(code|a|abbr|pre)\b[^>]*>[\s\S]*?<\/\1>/i;
+  const ANY_TAG = /<[^>]+>/;
+  while (i < html.length) {
+    const remaining = html.slice(i);
+    const skip = remaining.match(SKIP_BLOCK);
+    const tag = remaining.match(ANY_TAG);
+    const skipIdx = skip ? skip.index : -1;
+    const tagIdx = tag ? tag.index : -1;
+    if (skipIdx === -1 && tagIdx === -1) {
+      out += annotateTextChunk(remaining, terms, seen);
+      break;
+    }
+    if (skipIdx !== -1 && (tagIdx === -1 || skipIdx <= tagIdx)) {
+      out += annotateTextChunk(remaining.slice(0, skipIdx), terms, seen);
+      out += skip[0];
+      i += skipIdx + skip[0].length;
+    } else {
+      out += annotateTextChunk(remaining.slice(0, tagIdx), terms, seen);
+      out += tag[0];
+      i += tagIdx + tag[0].length;
+    }
+  }
+  return out;
+}
+
+function annotateTextChunk(text, terms, seen, startIdx = 0) {
+  if (!text || startIdx >= terms.length) return text;
+  const t = terms[startIdx];
+  if (seen.has(t.term)) return annotateTextChunk(text, terms, seen, startIdx + 1);
+  const m = t._re.exec(text);
+  if (!m) return annotateTextChunk(text, terms, seen, startIdx + 1);
+  seen.add(t.term);
+  const before = text.slice(0, m.index);
+  const matched = m[0];
+  const after = text.slice(m.index + matched.length);
+  const tip = `${t.expand} — ${t.short}`;
+  const beforeAnnotated = annotateTextChunk(before, terms, seen, startIdx + 1);
+  const afterAnnotated = annotateTextChunk(after, terms, seen, startIdx + 1);
+  return `${beforeAnnotated}<abbr class="glossary-term" title="${escapeHtml(tip)}">${matched}</abbr>${afterAnnotated}`;
 }
 
 const PRIORITY_VALUES = new Set(['상', '중', '하']);
@@ -157,7 +246,12 @@ function assertPost(post, file) {
   }
   for (const [index, highlight] of (post.highlights || []).entries()) {
     if (!highlight || typeof highlight !== 'object') throw new Error(`${file}: highlights[${index}] must be an object`);
-    for (const key of ['title', 'priority', 'verifyLink', 'action']) {
+    const hasAction = typeof highlight.action === 'string' && highlight.action;
+    const hasStructured = ['if', 'do', 'verify'].every((k) => typeof highlight[k] === 'string' && highlight[k]);
+    if (!hasAction && !hasStructured) {
+      throw new Error(`${file}: highlights[${index}] requires either action or all of if/do/verify`);
+    }
+    for (const key of ['title', 'priority', 'verifyLink']) {
       if (typeof highlight[key] !== 'string' || !highlight[key]) throw new Error(`${file}: highlights[${index}].${key} required`);
     }
     if (!PRIORITY_VALUES.has(highlight.priority)) throw new Error(`${file}: highlights[${index}].priority must be 상/중/하`);
@@ -257,10 +351,11 @@ function renderReleaseStatus(status) {
 
 function renderPostCard(post) {
   const tags = (post.tags || []).slice(0, 4);
+  const lead = post.headline || post.summary || '';
   return `<article class="card post-card">
   <div class="eyebrow">${escapeHtml(formatDate(post.date))} · ${escapeHtml(post.topicTitle || '')}</div>
   <h3><a href="${link(`/posts/${post.id}.html`)}">${escapeHtml(post.title)}</a></h3>
-  <p>${escapeHtml(post.summary)}</p>
+  <p>${escapeHtml(lead)}</p>
   <p class="tags">${tags.map((tag) => `<a href="${link(`/tags/${slugify(tag)}.html`)}">#${escapeHtml(tag)}</a>`).join(' ')}</p>
 </article>`;
 }
@@ -273,12 +368,20 @@ function renderList(items = []) {
 function renderHighlights(highlights = []) {
   if (!highlights.length) return '';
   return `<ul class="highlight-list">${highlights.map((item) => {
-    const verify = item.verifyLink && item.verifyLink !== '없음'
+    const verifyLink = item.verifyLink && item.verifyLink !== '없음'
       ? ` <a class="highlight-verify" href="${escapeHtml(item.verifyLink)}">확인하기</a>`
       : ' <span class="highlight-verify-empty">확인 링크 없음</span>';
+    const hasStructured = item.if || item.do || item.verify;
+    const body = hasStructured
+      ? `<dl class="highlight-action-struct">
+    ${item.if ? `<dt>해당 독자</dt><dd>${escapeHtml(item.if)}</dd>` : ''}
+    ${item.do ? `<dt>무엇을</dt><dd>${escapeHtml(item.do)}</dd>` : ''}
+    ${item.verify ? `<dt>어떻게 검증</dt><dd>${escapeHtml(item.verify)}${verifyLink}</dd>` : ''}
+  </dl>`
+      : `<p class="highlight-action">${escapeHtml(item.action || '')}${verifyLink}</p>`;
     return `<li class="highlight-item">
   <div class="highlight-head"><span class="priority priority-${escapeHtml(item.priority)}">${escapeHtml(item.priority)}</span><span class="highlight-title">${markupTechnical(escapeHtml(item.title))}</span></div>
-  <p class="highlight-action">${escapeHtml(item.action)}${verify}</p>
+  ${body}
 </li>`;
   }).join('\n')}</ul>`;
 }
@@ -321,27 +424,30 @@ function renderArticleMeta(post, topic) {
 </aside>`;
 }
 
-function renderPost(post, topic, buildStamp) {
+function renderPost(post, topic, buildStamp, glossaryTerms = []) {
+  const article = `<article class="article">
+    <header class="article-header">
+      <div class="eyebrow">${escapeHtml(formatDate(post.date))} · ${escapeHtml(topic.title)} · ${escapeHtml(post.readingMinutes)}분 읽기</div>
+      <h1>${markupTechnical(escapeHtml(post.title))}</h1>
+      ${post.headline ? `<p class="headline">${escapeHtml(post.headline)}</p>` : ''}
+      <p class="lead">${escapeHtml(post.summary)}</p>
+      <p class="tags">${(post.tags || []).map((tag) => `<a href="${link(`/tags/${slugify(tag)}.html`)}">#${escapeHtml(tag)}</a>`).join(' ')}</p>
+    </header>
+    ${post.highlights?.length ? `<section class="panel"><h2>오늘의 핵심</h2>${renderHighlights(post.highlights)}</section>` : ''}
+    ${post.sections.filter((section) => !isPlaceholderSection(section)).map((section) => `<section class="article-section"><h2>${escapeHtml(section.heading)}</h2><div class="md-content">${renderSectionBodyMarkdown(section.body)}</div></section>`).join('\n')}
+    ${post.implications?.length ? `<section class="panel"><h2>엔지니어링 관점</h2>${renderList(post.implications)}</section>` : ''}
+    ${post.nextActions?.length ? `<section class="panel"><h2>다음에 확인할 것</h2>${renderList(post.nextActions)}</section>` : ''}
+    ${post.confidence ? `<aside class="note"><strong>신뢰도</strong> ${escapeHtml(post.confidence.level || '미정')} — ${escapeHtml(post.confidence.note || '')}</aside>` : ''}
+    ${renderSources(post.sources)}
+  </article>`;
+  const annotated = annotateGlossary(article, glossaryTerms, new Set());
   return renderLayout({
     title: `${post.title} - ${siteTitle}`,
     description: post.summary,
     buildStamp,
     body: `<div class="article-shell">
   ${renderArticleMeta(post, topic)}
-  <article class="article">
-    <header class="article-header">
-      <div class="eyebrow">${escapeHtml(formatDate(post.date))} · ${escapeHtml(topic.title)} · ${escapeHtml(post.readingMinutes)}분 읽기</div>
-      <h1>${markupTechnical(escapeHtml(post.title))}</h1>
-      <p class="lead">${escapeHtml(post.summary)}</p>
-      <p class="tags">${(post.tags || []).map((tag) => `<a href="${link(`/tags/${slugify(tag)}.html`)}">#${escapeHtml(tag)}</a>`).join(' ')}</p>
-    </header>
-    ${post.highlights?.length ? `<section class="panel"><h2>오늘의 핵심</h2>${renderHighlights(post.highlights)}</section>` : ''}
-    ${post.sections.map((section) => `<section class="article-section"><h2>${escapeHtml(section.heading)}</h2><div class="md-content">${renderSectionBodyMarkdown(section.body)}</div></section>`).join('\n')}
-    ${post.implications?.length ? `<section class="panel"><h2>엔지니어링 관점</h2>${renderList(post.implications)}</section>` : ''}
-    ${post.nextActions?.length ? `<section class="panel"><h2>다음에 확인할 것</h2>${renderList(post.nextActions)}</section>` : ''}
-    ${post.confidence ? `<aside class="note"><strong>신뢰도</strong> ${escapeHtml(post.confidence.level || '미정')} — ${escapeHtml(post.confidence.note || '')}</aside>` : ''}
-    ${renderSources(post.sources)}
-  </article>
+  ${annotated}
 </div>`,
   });
 }
@@ -464,6 +570,13 @@ p { margin: 8px 0; }
 .highlight-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; flex-wrap: wrap; }
 .highlight-title { font-weight: 600; }
 .highlight-action { margin: 0; color: var(--muted); font-size: .92rem; }
+.highlight-action-struct { margin: 8px 0 0; display: grid; grid-template-columns: minmax(96px, max-content) 1fr; column-gap: 10px; row-gap: 4px; font-size: .92rem; }
+.highlight-action-struct dt { color: var(--muted); font-size: .78rem; letter-spacing: 0.04em; text-transform: uppercase; align-self: start; padding-top: 2px; }
+.highlight-action-struct dd { margin: 0; color: var(--text); }
+.headline { margin: 4px 0 14px; padding: 12px 16px; background: var(--accent-soft); border-left: 4px solid var(--accent); border-radius: 6px; color: var(--text); font-size: 1.05rem; font-weight: 500; }
+abbr.glossary-term { text-decoration: underline dotted var(--muted); text-underline-offset: 3px; cursor: help; }
+.audience-note { margin: 14px 0 0; padding: 12px 16px; background: var(--surface-alt); border: 1px solid var(--border); border-radius: 6px; color: var(--muted); font-size: .92rem; max-width: 720px; }
+.audience-note strong { color: var(--text); }
 .priority { display: inline-flex; align-items: center; justify-content: center; min-width: 26px; padding: 2px 8px; border-radius: 999px; font-size: .78rem; font-weight: 700; letter-spacing: .02em; }
 .priority-상 { background: #fde2e2; color: #8a1f1f; }
 .priority-중 { background: #fff1c5; color: #6b4f00; }
@@ -626,11 +739,12 @@ function renderHomeHead() {
   <div class="eyebrow">Linux-first · topic-extensible · static publishing</div>
   <h1>${escapeHtml(siteTitle)}</h1>
   <p class="lead">${escapeHtml(siteDescription)}</p>
+  <p class="audience-note"><strong>대상 독자.</strong> 커널·드라이버·플랫폼 엔지니어, ACK 벤더 트리 담당자, 시스템·도구체인 책임자. 본문에는 lore 메일 ID·커밋 해시·서브시스템 슬러그가 그대로 등장합니다. 입문자에게는 글 첫머리의 한 줄 헤드라인과 「오늘의 핵심」만 빠르게 훑는 것을 권합니다.</p>
 </header>`;
 }
 
 async function build() {
-  const [topics, releaseStatus] = await Promise.all([loadTopics(), loadReleaseStatus()]);
+  const [topics, releaseStatus, glossaryTerms] = await Promise.all([loadTopics(), loadReleaseStatus(), loadGlossary()]);
   const posts = flattenPosts(topics).sort((a, b) => b.date.localeCompare(a.date));
   const buildStamp = `last build ${formatBuildStamp(buildStartedAt)} · posts ${posts.length}`;
 
@@ -694,7 +808,7 @@ ${renderReleaseStatus(releaseStatus)}
     await writeFile(path.join(publicDir, 'topics', `${topic.slug}.html`), topicHtml);
 
     for (const post of topic.posts) {
-      await writeFile(path.join(publicDir, 'posts', `${post.id}.html`), renderPost(post, topic, buildStamp));
+      await writeFile(path.join(publicDir, 'posts', `${post.id}.html`), renderPost(post, topic, buildStamp, glossaryTerms));
     }
   }
 

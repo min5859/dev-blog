@@ -2,6 +2,8 @@
 
 AI-assisted development newsletter/blog system.
 
+**Target audience.** Kernel/driver/platform engineers, ACK vendor-tree maintainers, system & toolchain owners. Posts surface lore mail IDs, commit hashes, and subsystem slugs as-is. Newcomers should skim only the per-post one-line headline and the "오늘의 핵심" block.
+
 The first topic is Linux kernel development. The architecture is intended to expand later to Android, AI, security, toolchains, distributions, and other engineering topics.
 
 ## Current Status
