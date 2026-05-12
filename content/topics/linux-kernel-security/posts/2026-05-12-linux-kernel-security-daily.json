@@ -1,0 +1,128 @@
+{
+  "id": "2026-05-12-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-05-12 커널 보안·하드닝 브리핑",
+  "date": "2026-05-12",
+  "summary": "오늘 하드닝 렌즈에서는 간접 호출을 해시로 묶어 검사하는 KCFI ABI 시리즈가 GCC 16 이후 재제출되어 툴체인·커널 교차 테스트 논의로 이어졌습니다. 동시에 RANDOM_KMALLOC_CACHES를 일반 KMALLOC_PARTITION_CACHES 안의 모드로 재구조화하면서 Clang allocation token 기반 타입별 슬랩 분할과 힙 격리 신호가 제안되었고, kernel.org 브랜치 네 갱신은 changelog·머지 큐 각 링크로 백포트 범위를 짚어보면 됩니다.",
+  "tags": [
+    "보안",
+    "하드닝",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "Linux Kernel Control Flow Integrity ABI 및 다중 아키 구현",
+      "priority": "상",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20260511194847.faster.180-kees@kernel.org/",
+      "action": "간접 호출 무결성·GCC 백엔드를 실험하는 빌드/보안 담당자라면 lore 스레드 본문에 인용된 https://gcc.gnu.org/bugzilla/show_bug.cgi?id=107048 과 KSPP 트래커(https://github.com/KSPP/linux/issues/369) 요약과 패치 목록을 읽은 뒤, 자신이 쓰는 아키 브랜치 가정(typeinfo mangling ↔ kcfi 코어 ↔ 아키 md) 순서와 v10 대비 변경점이 재현 빌드 로그와 일치하는지 대조하세요."
+    },
+    {
+      "title": "컴파일 보조 타입별 slab 분할 및 KMALLOC_PARTITION_CACHES 확장",
+      "priority": "중",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20260511200136.3201646-1-elver@google.com/",
+      "action": "슬랩·kmalloc 강화 플래그를 검토하는 mm 담당자라면 패치 텍스트의 KMALLOC_PARTITION_TYPED 설명과 __builtin_infer_alloc_token이 kmalloc 인자 패턴으로 토큰을 추론해 캐시를 고정하는 계약을 정리하고, Clang 22+에서 실제 kmalloc_obj·kmalloc(sizeof(T)) 패턴이 토큰 0 폴백 없이 적용 가능한지 자기 설정과 교차 검증 스크립트로 확인하세요."
+    },
+    {
+      "title": "ALSA·ASoC: 컨트롤 캐시·SigmaDSP 버퍼를 flex 배열·kzalloc_flex로 정리",
+      "priority": "하",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20260511230351.28868-1-rosenp@gmail.com/",
+      "action": "AudioGraph·해당 카드 클래스를 패치하는 드라이버 유지보수 담당자라면 두 lore 스레드(https://lore.kernel.org/linux-hardening/20260511230121.28606-1-rosenp@gmail.com/ 포함)와 sound/soc 또는 staging 경로 차이가 자기 브랜치에 순서대로 들어왔는지 git log --grep 또는 파일 경로 기준으로 diff 하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "- Linux 6.19.14 stable · EOL\n  · 영향: 6.19 안정 브랜치·EOL 라인을 그대로 쓰는 제품 장비 및 리눅스 디스트로 릴리스 엔지니어링\n  · 확인: https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.19.14\n\n- Linux 7.1-rc3 mainline\n  · 영향: 메인라인 후보 커널을 미리 테스트하는 회귀·CI 파이프라인\n  · 확인: https://git.kernel.org/torvalds/h/v7.1-rc3\n\n- Linux 7.0.6 stable\n  · 영향: 7.0 안정 브랜치 추종 환경\n  · 확인: https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.0.6\n\n- Linux next-20260508 linux-next\n  · 영향: 다음 머지 윈도우를 앞둔 개발 트래킹 및 서브시스템 간 충돌 스캔\n  · 확인: https://git.kernel.org/next/linux-next/h/next-20260508\n\n메타 노트:\n· 6.19.14 포함 219건 백포트 가운데 dma-debug 중복 허용, mm/userfaultfd hugetlb 뮤텍스 해시, bcache cached_dev sb_bio UAF 등 블록/미디어/가상화 광역 수정과 mm/blk-cgroup UAF 교정 등이 같은 tarball에 들어 있습니다(전체 명단은 해당 ChangeLog에서 확인).\n· 7.0.6은 rxrpc가 paged 프래그가 있을 때 DATA/RESPONSE 패킷을 unshare 하는 단일 교정 변경만 기록되어 있습니다.\n· v7.1-rc3 및 next-20260508 스냅샷 커밋 메시지 덤프가 비어 커널 디렉터리 메타 확인은 위 고정 포인터 링크에 의존합니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "회귀·보안 신호로 분류된 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "[메모리 관리·하드닝]\n- 컴파일러 보조 KMALLOC 분할 인프라: RANDOM_KMALLOC_CACHES를 KMALLOC_PARTITION_CACHES의 한 모드로 넣고, Clang allocation token으로 kmalloc 타입 T를 근거 삼아 슬랩 캐시를 분리하는 KMALLOC_PARTITION_TYPED를 추가함으로써 포인터를 포함하지 않은 객체와 포함한 객체를 서로 다른 캐시에 고정합니다(Clang 22+ 토큰 해시 규칙과 kmalloc_obj 패턴 명시 포함).\n  · 확인: https://lore.kernel.org/linux-hardening/20260511200136.3201646-1-elver@google.com/\n\n[KCFI·툴체인]\n- 커널 모든 간접 호출 주변의 해시 검사와 트랩 동작으로 forward-edge 제어 흐름 무결성을 제공하는 ABI를 GCC 패치 세트와 연동,typeinfo 이름 맹글링·아키별 brk 즉시값 출력 등 테스트 변화까지 묶었습니다.\n  · 확인: https://lore.kernel.org/linux-hardening/20260511194847.faster.180-kees@kernel.org/ 및 본문이 링크한 https://gcc.gnu.org/bugzilla/show_bug.cgi?id=107048"
+    },
+    {
+      "heading": "기타",
+      "body": "- ASoC: pcm6240: flexible array 로 config 블록 포인터 테이블을 상위 할당 안에 포함시키고 별도 free 경로를 제거하는 패턴이 같은 날 lore 스레드에 올라왔습니다(https://lore.kernel.org/linux-hardening/20260511231313.31929-1-rosenp@gmail.com/).\n- 리스트 범위 밖 토론은 제외했습니다. 필요하면 lore.kernel.org/linux-hardening 에서 kmalloc·kcfi·flex array 키워드로 범위를 좁혀 검색하세요."
+    }
+  ],
+  "confidence": {
+    "level": "편집",
+    "note": "lore.kernel.org/linux-hardening 스레드 본문·kernel.org 게시물과 교차 검증한 편집본입니다."
+  },
+  "sources": [
+    {
+      "title": "Linux 6.19.14 stable · EOL",
+      "url": "https://git.kernel.org/stable/h/v6.19.14",
+      "note": "kernel.org · kernel-release"
+    },
+    {
+      "title": "Linux 7.1-rc3 mainline",
+      "url": "https://git.kernel.org/torvalds/h/v7.1-rc3",
+      "note": "kernel.org · kernel-release"
+    },
+    {
+      "title": "Linux 7.0.6 stable",
+      "url": "https://git.kernel.org/stable/h/v7.0.6",
+      "note": "kernel.org · kernel-release"
+    },
+    {
+      "title": "Linux next-20260508 linux-next",
+      "url": "https://git.kernel.org/next/linux-next/h/next-20260508",
+      "note": "kernel.org · kernel-release"
+    },
+    {
+      "title": "slab: support for compiler-assisted type-based slab cache partitioning",
+      "url": "https://lore.kernel.org/linux-hardening/20260511200136.3201646-1-elver@google.com/",
+      "note": "lore.kernel.org/linux-hardening · patch-discussion"
+    },
+    {
+      "title": "Introduce Kernel Control Flow Integrity ABI [PR107048]",
+      "url": "https://lore.kernel.org/linux-hardening/20260511194847.faster.180-kees@kernel.org/",
+      "note": "lore.kernel.org/linux-hardening · patch-discussion"
+    },
+    {
+      "title": "ALSA: asihpi: Use flexible array for control cache",
+      "url": "https://lore.kernel.org/linux-hardening/20260511230121.28606-1-rosenp@gmail.com/",
+      "note": "lore.kernel.org/linux-hardening · patch-discussion"
+    },
+    {
+      "title": "ASoC: sigmadsp: Use flexible array for control cache",
+      "url": "https://lore.kernel.org/linux-hardening/20260511230351.28868-1-rosenp@gmail.com/",
+      "note": "lore.kernel.org/linux-hardening · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-12T00:35:22.485Z",
+    "sourceRecordCount": 35,
+    "candidateCount": 9,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "kernel-org:stable:6.19.14",
+      "kernel-org:mainline:7.1-rc3",
+      "kernel-org:stable:7.0.6",
+      "kernel-org:linux-next:next-20260508",
+      "lore-linux-hardening:urn:uuid:16fba605-971c-eacb-07a2-3623b65865b1",
+      "lore-linux-hardening:urn:uuid:490b98f4-5728-cfe5-8a4b-38e8667746f9",
+      "lore-linux-hardening:urn:uuid:29e48066-dca5-a987-5c3b-7aefd8f60c7b",
+      "lore-linux-hardening:urn:uuid:5e6dd3c8-63e1-73ce-3e89-365285d10d56",
+      "lore-linux-hardening:urn:uuid:e83cebed-dfe8-a581-0dba-0726625ea7e3"
+    ],
+    "bucketCounts": {
+      "releases": 4,
+      "regressions": 0,
+      "patches": 5,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 5,
+    "signalLevel": "high",
+    "subsystems": [
+      "메모리 관리"
+    ],
+    "lensPipeline": "linux-kernel-security",
+    "rewrittenAt": "2026-05-12T00:35:29.044Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-ko.md"
+  }
+}
