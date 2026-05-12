@@ -759,7 +759,6 @@ async function build() {
     buildStamp,
     body: `${renderHomeHead()}
 ${renderReleaseStatus(releaseStatus)}
-<section><h2>최근 글</h2><div class="grid">${posts.slice(0, 6).map(renderPostCard).join('\n')}</div></section>
 <section><h2>주제</h2><div class="grid">${topics.map((topic) => `<article class="card"><h3><a href="${link(`/topics/${topic.slug}.html`)}">${escapeHtml(topic.title)}</a></h3><p>${escapeHtml(topic.description)}</p><p class="meta">${topic.posts.length}개 글</p></article>`).join('\n')}</div></section>`,
   });
   await writeFile(path.join(publicDir, 'index.html'), home);
