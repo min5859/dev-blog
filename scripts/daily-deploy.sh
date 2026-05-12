@@ -29,10 +29,9 @@ if ! "${NPM_BIN}" run daily:opensource-curation:publish; then
   echo "opensource-curation daily run failed; continuing"
 fi
 
-# 8 Linux lens topics: kernel-security, toolchain, distro-stable, ebpf,
-# perf-rt, arch-platform, rust, gpu-ai. run-all-kernel-lenses bails on the
-# first failure, so iterate per-topic to keep one bad lens from sinking the rest.
-for LENS in linux-kernel-security linux-toolchain linux-distro-stable linux-ebpf linux-perf-rt linux-arch-platform linux-rust linux-gpu-ai; do
+# 6 Linux lens topics. Iterate per-topic so one bad lens doesn't sink the rest;
+# run-all-kernel-lenses bails on the first failure, which is why we don't use it here.
+for LENS in linux-kernel-security linux-toolchain linux-distro-stable linux-perf-rt linux-arch-platform linux-gpu-ai; do
   if ! PUBLISH_DAILY=1 node scripts/run-daily-lore-lens.mjs "${LENS}"; then
     echo "${LENS} daily run failed; continuing"
   fi

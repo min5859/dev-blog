@@ -6,10 +6,8 @@ const topics = [
   'linux-kernel-security',
   'linux-toolchain',
   'linux-distro-stable',
-  'linux-ebpf',
   'linux-perf-rt',
   'linux-arch-platform',
-  'linux-rust',
   'linux-gpu-ai',
 ];
 
