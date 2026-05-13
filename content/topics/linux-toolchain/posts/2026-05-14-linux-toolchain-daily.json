@@ -1,0 +1,142 @@
+{
+  "id": "2026-05-14-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-05-14 빌드 실패와 검사 도구 확대 — 커널 도구체인·Rust",
+  "date": "2026-05-14",
+  "headline": "실험용 컴파일러 자동 빌드가 여러 패치에서 깨졌고 설정 검사 명령과 메모리 분할 제안이 함께 올라왔습니다.",
+  "summary": "오늘 렌즈에서는 자동 빌드 로봇이 실험 계열 컴파일러와 링커 조합으로 여러 패치 연쇄에서 오류를 낸 사례가 한데 모였습니다. 설정 트리 결함을 찾는 새 빌드 검사, 유형 정보를 활용한 메모리 분할 제안, 교차 함수 최적화로 생긴 섹션 불일치 완화, 그래픽 모듈 분리 시 정리 순서를 다루는 논의가 이어집니다.",
+  "tags": [
+    "도구체인",
+    "LLVM",
+    "kbuild",
+    "Rust",
+    "브리핑"
+  ],
+  "highlights": [
+    {
+      "title": "네트 장애 페일오버 패치가 실험 빌드에서 잠금 헬퍼 미선언 오류로 깨짐",
+      "priority": "상",
+      "verifyLink": "https://lore.kernel.org/llvm/202605131116.TbbaiahQ-lkp@intel.com/",
+      "if": "네트 페일오버 변경을 실험 계열 컴파일로 검증하는 경우라면",
+      "do": "미선언 호출 오류가 가리키는 소스 줄과 패치 본문을 로그와 함께 대조하세요",
+      "verify": "로봇 스레드와 재현 패키지 링크에서 쓰인 설정과 도구 조합을 확인하세요"
+    },
+    {
+      "title": "컴파일러 할당 토큰을 쓰는 유형 기반 슬랩 분할 모드가 설정으로 제안됨",
+      "priority": "중",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20260511200136.3201646-1-elver@google.com/",
+      "if": "메모리 분할 옵션과 컴파일 유도 기능을 같이 보는 경우라면",
+      "do": "무작위 분할과 유형 분할의 관계와 필요한 호출 패턴을 시리즈 서술 순서대로 읽으세요",
+      "verify": "제안 메일과 패치 본문에서 토큰 추론 전제와 한계를 확인하세요"
+    },
+    {
+      "title": "그래픽 전력 경로의 자동 잠금 가드가 특정 빌드에서 반환문 근처 문법 오류를 유발",
+      "priority": "하",
+      "verifyLink": "https://lore.kernel.org/llvm/202605130808.IJrao3wX-lkp@intel.com/",
+      "if": "전력 관련 드라이버 패치를 동일한 도구 조합으로 빌드하는 경우라면",
+      "do": "가드 매크로 바로 아래 반환 형태가 로그 줄번호와 일치하는지 패치 diff를 따라가세요",
+      "verify": "로봇가 첨부한 재현 설정과 오류 발췌 전체를 확인하세요"
+    },
+    {
+      "title": "새 계열 컴파일러 최적화가 초기화 섹션 불일치 경고를 내 속성 매크로로 막음",
+      "priority": "하",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20260513145425.1579430-1-arnd@kernel.org/",
+      "if": "장치 입출력 관리 단위와 디버그 자가 검사를 교차 빌드하는 경우라면",
+      "do": "교차 함수 인라인 때문에 생긴 섹션 참조를 끊기 위한 속성 표식 변화를 검토하세요",
+      "verify": "패치 설명에 인용된 원 경고 스레드와 본문 변경 파일을 대조해 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이 렌즈는 메일링 리스트 중심입니다. 메인라인 릴리스와 로드맵은 ‘리눅스 개발’ 토픽을 참고하세요."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- 네트 장애 페일오버 패치 적용 뒤 실험 빌드에서 잠금 헬퍼 호출이 미선언으로 실패함을 로봇이 보고\n  · 영향: 네트 장애 조합 경로와 최신 도구 조합 사이의 회귀 신호\n  · 확인: https://lore.kernel.org/llvm/202605131116.TbbaiahQ-lkp@intel.com/\n\n- 장치 입출력 관리 단위와 디버그 객체 자가 검사가 새 계열 컴파일러 교차 함수 최적화로 섹션 불일치를 유발해 빌드 단계에서 걸림\n  · 영향: 완화 없이는 회귀 빌드로 이어질 수 있는 경고 취급\n  · 확인: https://lore.kernel.org/linux-kbuild/20260513145425.1579430-1-arnd@kernel.org/"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "[메모리 관리·도구 연계]\n- 기존 무작위 분할 설정을 더 넓은 분할 프레임 안의 한 모드로 묶고, 컴파일러가 할당 인자에서 유형 토큰을 추론해 슬랩 캐시를 나누는 모드를 추가하는 패치 묶음\n  · 영향: 커널 빌드 선택지와 힙 완화 전략 설계에 직접 연결\n  · 확인: https://lore.kernel.org/linux-kbuild/20260511200136.3201646-1-elver@google.com/\n\n[블록 입출력·링커]\n- 지연 제어 변경이 분할 처리 흐름을 넣은 뒤 링커가 특정 완료 후킹 심볼을 찾지 못해 이미지 결합이 실패함을 로봇이 보고\n  · 영향: 지연 측정 경로와 도구 연결 전제가 함께 움직임\n  · 확인: https://lore.kernel.org/llvm/202605131650.wyKmtlTK-lkp@intel.com/\n\n[그래픽 전력]\n- 자동 잠금 가드로 바꾼 패치가 특정 설정에서 반환문 근처 문법 오류로 컴파일을 멈추게 함을 보고\n  · 영향: 전력 경로 코드를 최신 도구로 검증할 때의 회귀 신호\n  · 확인: https://lore.kernel.org/llvm/202605130808.IJrao3wX-lkp@intel.com/\n\n[설정 시스템]\n- 표현식에서만 등장하고 어디에도 정의되지 않은 설정 기호와 대문자 삼태 상태 리터럴 사용을 잡는 정적 검사를 빌드 명령으로 추가\n  · 영향: 설정 의존 그래프 유지와 거짓 참조 조기 발견\n  · 확인: https://lore.kernel.org/linux-kbuild/20260513210329.637892-1-andrew.jones@linux.dev/\n\n[Rust 드라이버]\n- 그래픽 모듈 분리 때 펌웨어 작업과 공유 영역을 정리하는 내리기 순서를 넣는 시리즈가 검토 중이며 병합 준비 여부를 묻는 답글이 올라옴\n  · 영향: 재결합 전 재부팅 없이 탐색 가능하게 할지와 자원 회수 안전\n  · 확인: https://lore.kernel.org/rust-for-linux/72641f20-a15d-4ac8-ac1d-26c88f52ee25@nvidia.com/"
+    },
+    {
+      "heading": "기타",
+      "body": "단일 보드나 단일 칩셋 전용 경고만 다룬 메일은 필요 시 빠졌을 수 있습니다. 자기 서브시스템 명과 도구 줄 версии를 키워드로 로어 검색을 좁혀 확인하세요."
+    }
+  ],
+  "confidence": {
+    "level": "초안",
+    "note": "제목·메타데이터와 로봇 로그 발췌를 바탕으로 선별했습니다. 게시 전 원문 스레드 확인이 필요합니다."
+  },
+  "sources": [
+    {
+      "title": "net: net_failover: Fix the deadlock in slave register",
+      "url": "https://lore.kernel.org/llvm/202605131116.TbbaiahQ-lkp@intel.com/",
+      "note": "lore.kernel.org/llvm · patch-discussion"
+    },
+    {
+      "title": "slab: support for compiler-assisted type-based slab cache partitioning",
+      "url": "https://lore.kernel.org/linux-kbuild/20260511200136.3201646-1-elver@google.com/",
+      "note": "lore.kernel.org/linux-kbuild · patch-discussion"
+    },
+    {
+      "title": "drm/amd/pm: Use guard(mutex) instead of manual lock+unlock",
+      "url": "https://lore.kernel.org/llvm/202605130808.IJrao3wX-lkp@intel.com/",
+      "note": "lore.kernel.org/llvm · patch-discussion"
+    },
+    {
+      "title": "[v2] iommu, debugobjects: avoid gcc-16.1 section mismatch warnings",
+      "url": "https://lore.kernel.org/linux-kbuild/20260513145425.1579430-1-arnd@kernel.org/",
+      "note": "lore.kernel.org/linux-kbuild · patch-discussion"
+    },
+    {
+      "title": "block/blk-iolatency: Add the processing flow of the chained bio in the QoS and define the related types to solve the problem of incorrect inflight processing in the QoS. The usage of the done_split_bio abstract function in the blk-iolatency project.",
+      "url": "https://lore.kernel.org/llvm/202605131650.wyKmtlTK-lkp@intel.com/",
+      "note": "lore.kernel.org/llvm · patch-discussion"
+    },
+    {
+      "title": "gpu: nova-core: run unload sequence upon unbinding",
+      "url": "https://lore.kernel.org/rust-for-linux/72641f20-a15d-4ac8-ac1d-26c88f52ee25@nvidia.com/",
+      "note": "lore.kernel.org/rust-for-linux · patch-discussion"
+    },
+    {
+      "title": "kconfig: add kconfig-sym-check static checker",
+      "url": "https://lore.kernel.org/linux-kbuild/20260513210329.637892-1-andrew.jones@linux.dev/",
+      "note": "lore.kernel.org/linux-kbuild · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-13T22:07:43.811Z",
+    "sourceRecordCount": 75,
+    "candidateCount": 7,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "lore-llvm:urn:uuid:b10aeae2-87d5-1112-d917-31a1cb4fbed4",
+      "lore-linux-kbuild:urn:uuid:16fba605-971c-eacb-07a2-3623b65865b1",
+      "lore-llvm:urn:uuid:0a9c7e23-2f79-b12e-44ba-644ac2faf028",
+      "lore-linux-kbuild:urn:uuid:4787d4ea-0b34-3e60-93d3-ccf89f672e8f",
+      "lore-llvm:urn:uuid:32909fbd-4086-a114-a4ab-d94dd5ec98b5",
+      "lore-rust-for-linux:urn:uuid:2e94c4fa-6067-31f4-2d54-08c313dc371a",
+      "lore-linux-kbuild:urn:uuid:f2859881-4443-9d44-a8e0-1f7515769df1"
+    ],
+    "bucketCounts": {
+      "releases": 0,
+      "regressions": 1,
+      "patches": 6,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 7,
+    "signalLevel": "high",
+    "subsystems": [
+      "네트워크",
+      "메모리 관리",
+      "전력 관리",
+      "보안",
+      "스토리지/파일시스템"
+    ],
+    "lensPipeline": "linux-toolchain",
+    "rewrittenAt": "2026-05-13T22:07:52.621Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-ko.md"
+  }
+}
