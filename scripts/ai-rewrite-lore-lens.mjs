@@ -4,6 +4,7 @@ import path from 'node:path';
 import { applyTemplate } from './draft-lore-lens.mjs';
 import { parseNewsletterJsonFromAiOutput, resolveAiAdapter, runAiAdapterPrompt } from './lib/ai-rewrite-adapter.mjs';
 import { auditPostQuality } from './lib/quality-guard.mjs';
+import { validateHighlight } from './lib/highlight-schema.mjs';
 
 const root = process.cwd();
 const topic = process.argv[2] || process.env.TOPIC;
@@ -18,8 +19,6 @@ const runDate = process.env.NEWSLETTER_DATE || todayKst();
 
 /** 기본: Cursor Agent CLI. Claude는 `AI_ADAPTER=claude`. 오프라인은 `AI_ADAPTER=template`. */
 const LENS_DEFAULT_ADAPTER = 'cursor';
-
-const PRIORITY_VALUES = new Set(['상', '중', '하']);
 
 async function readJson(file) {
   return JSON.parse(await readFile(file, 'utf8'));
@@ -84,25 +83,6 @@ function templateRewrite(draft, pipeline) {
   };
 }
 
-function validateHighlight(highlight, index) {
-  if (!highlight || typeof highlight !== 'object') {
-    throw new Error(`highlights[${index}] must be an object with title/priority/verifyLink and either action or if/do/verify`);
-  }
-  for (const key of ['title', 'priority', 'verifyLink']) {
-    if (typeof highlight[key] !== 'string' || !highlight[key]) {
-      throw new Error(`highlights[${index}].${key} is required`);
-    }
-  }
-  const hasStructured = ['if', 'do', 'verify'].every((k) => typeof highlight[k] === 'string' && highlight[k]);
-  const hasFlat = typeof highlight.action === 'string' && highlight.action;
-  if (!hasStructured && !hasFlat) {
-    throw new Error(`highlights[${index}] must provide either action or all of if/do/verify`);
-  }
-  if (!PRIORITY_VALUES.has(highlight.priority)) {
-    throw new Error(`highlights[${index}].priority must be one of 상/중/하 (got ${highlight.priority})`);
-  }
-}
-
 function validatePost(post) {
   for (const key of ['id', 'topic', 'title', 'date', 'summary', 'sections', 'sources', 'highlights']) {
     if (!post[key]) throw new Error(`rewritten post missing ${key}`);
@@ -152,6 +132,10 @@ async function main() {
   await writeFile(promptLatest, prompt);
 
   const aiText = await runAiAdapterPrompt(prompt, { defaultAdapter: LENS_DEFAULT_ADAPTER });
+  if (aiText) {
+    await writeFile(path.join(generatedDir, `rewrite-stdout-${runDate}.txt`), aiText);
+    await writeFile(path.join(generatedDir, 'rewrite-stdout-latest.txt'), aiText);
+  }
   const rewritten = withAuditMetadata(
     aiText ? parseNewsletterJsonFromAiOutput(aiText) : templateRewrite(draft, pipeline),
     pipeline,

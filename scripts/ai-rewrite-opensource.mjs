@@ -3,6 +3,7 @@ import path from 'node:path';
 
 import { parseNewsletterJsonFromAiOutput, resolveAiAdapter, runAiAdapterPrompt } from './lib/ai-rewrite-adapter.mjs';
 import { auditPostQuality } from './lib/quality-guard.mjs';
+import { validateHighlight } from './lib/highlight-schema.mjs';
 
 const root = process.cwd();
 const topic = 'opensource';
@@ -15,8 +16,6 @@ const promptTemplatePath = path.join(root, 'prompts', 'opensource-newsletter-ko.
 const generatedDir = path.join(root, 'data', 'generated', topic);
 const adapter = resolveAiAdapter('cursor');
 const generatedAt = new Date().toISOString();
-
-const PRIORITY_VALUES = new Set(['상', '중', '하']);
 
 async function readText(file) { return readFile(file, 'utf8'); }
 
@@ -68,18 +67,7 @@ function validatePost(post) {
   if (!Array.isArray(post.sections) || post.sections.length < 2) throw new Error('rewritten post requires at least two sections');
   if (!Array.isArray(post.sources) || post.sources.length === 0) throw new Error('rewritten post requires sources');
   if (!Array.isArray(post.highlights) || post.highlights.length === 0) throw new Error('rewritten post requires highlights');
-  for (const [i, h] of post.highlights.entries()) {
-    if (!h || typeof h !== 'object') throw new Error(`highlights[${i}] must be an object`);
-    for (const k of ['title', 'priority', 'verifyLink']) {
-      if (typeof h[k] !== 'string' || !h[k]) throw new Error(`highlights[${i}].${k} required`);
-    }
-    const hasAction = typeof h.action === 'string' && h.action;
-    const hasStructured = ['if', 'do', 'verify'].every((k) => typeof h[k] === 'string' && h[k]);
-    if (!hasAction && !hasStructured) {
-      throw new Error(`highlights[${i}] requires either action or all of if/do/verify`);
-    }
-    if (!PRIORITY_VALUES.has(h.priority)) throw new Error(`highlights[${i}].priority must be 상/중/하`);
-  }
+  post.highlights.forEach((h, i) => validateHighlight(h, i));
 }
 
 async function main() {
@@ -92,6 +80,10 @@ async function main() {
   await writeFile(path.join(generatedDir, 'rewrite-prompt-latest.md'), prompt);
 
   const aiText = await runAiAdapterPrompt(prompt, { defaultAdapter: 'cursor' });
+  if (aiText) {
+    await writeFile(path.join(generatedDir, `rewrite-stdout-${runDate}.txt`), aiText);
+    await writeFile(path.join(generatedDir, 'rewrite-stdout-latest.txt'), aiText);
+  }
   const rewritten = withAuditMetadata(aiText ? parseNewsletterJsonFromAiOutput(aiText) : templateRewrite(draft));
   validatePost(rewritten);
   auditPostQuality(rewritten);

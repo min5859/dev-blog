@@ -11,6 +11,12 @@ NPM_BIN="${NPM_BIN:-/Users/wooki/.nvm/versions/node/v24.14.0/bin/npm}"
 
 cd "${PROJECT_DIR}"
 
+# launchd.log 가 1MB 넘으면 .prev 로 회전. 매일 추가되니 두 달이면 충분히 큼.
+LAUNCHD_LOG="${PROJECT_DIR}/logs/daily/launchd.log"
+if [ -f "${LAUNCHD_LOG}" ] && [ "$(wc -c < "${LAUNCHD_LOG}")" -gt 1048576 ]; then
+  mv "${LAUNCHD_LOG}" "${LAUNCHD_LOG}.prev"
+fi
+
 # Failure-isolated for every topic so a single topic's adapter glitch does not
 # block the rest of the day's content from being pushed.
 if ! "${NPM_BIN}" run daily:linux:publish; then
@@ -44,17 +50,23 @@ if [ "$(TZ=Asia/Seoul date +%u)" = "1" ]; then
   fi
 fi
 
-git add content/
+# content/ 와 함께 logs/daily/*-latest-status.json 도 add — 모든 토픽이 실패해 content 변경이
+# 없어도 사이트 빌드를 트리거해 "자동 파이프라인 상태" 카드가 갱신되도록 한다.
+git add content/ logs/daily/*-latest-status.json 2>/dev/null || git add content/
 if git diff --cached --quiet; then
-  echo "no content/ changes — nothing to push"
+  echo "no content/ or status changes — nothing to push"
   exit 0
 fi
 
 DATE_KST="$(TZ=Asia/Seoul date +%Y-%m-%d)"
-if [ "$(TZ=Asia/Seoul date +%u)" = "1" ]; then
-  MSG="daily + weekly briefing: ${DATE_KST}"
+if git diff --cached --name-only | grep -q '^content/'; then
+  if [ "$(TZ=Asia/Seoul date +%u)" = "1" ]; then
+    MSG="daily + weekly briefing: ${DATE_KST}"
+  else
+    MSG="daily: ${DATE_KST} Linux briefing"
+  fi
 else
-  MSG="daily: ${DATE_KST} Linux briefing"
+  MSG="ops: ${DATE_KST} pipeline status update (no new content)"
 fi
 git commit -m "${MSG}"
 git push origin main

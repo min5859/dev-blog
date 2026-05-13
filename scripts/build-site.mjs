@@ -2,12 +2,15 @@ import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { marked } from 'marked';
 
+import { validateHighlight } from './lib/highlight-schema.mjs';
+
 marked.setOptions({ gfm: true, breaks: true });
 
 const root = process.cwd();
 const contentDir = path.join(root, 'content', 'topics');
 const publicDir = path.join(root, 'public');
 const normalizedDir = path.join(root, 'data', 'normalized');
+const dailyLogDir = path.join(root, 'logs', 'daily');
 const siteTitle = 'Dev Blog';
 const siteDescription = '커널·시스템·오픈소스 엔지니어를 위한 일일 개발 브리핑입니다. 매일 lore.kernel.org·Android Common Kernel·GitHub 신호를 수집해 핵심만 정리합니다.';
 const siteUrl = process.env.SITE_URL || 'http://localhost:4321';
@@ -162,7 +165,6 @@ function annotateTextChunk(text, terms, seen, startIdx = 0) {
   return `${beforeAnnotated}<abbr class="glossary-term" title="${escapeHtml(tip)}">${matched}</abbr>${afterAnnotated}`;
 }
 
-const PRIORITY_VALUES = new Set(['상', '중', '하']);
 const PRIORITY_ORDER = ['상', '중', '하'];
 
 function topPriority(highlights) {
@@ -244,18 +246,7 @@ function assertPost(post, file) {
   for (const [index, source] of (post.sources || []).entries()) {
     if (!source.title || !source.url) throw new Error(`${file}: sources[${index}] requires title and url`);
   }
-  for (const [index, highlight] of (post.highlights || []).entries()) {
-    if (!highlight || typeof highlight !== 'object') throw new Error(`${file}: highlights[${index}] must be an object`);
-    const hasAction = typeof highlight.action === 'string' && highlight.action;
-    const hasStructured = ['if', 'do', 'verify'].every((k) => typeof highlight[k] === 'string' && highlight[k]);
-    if (!hasAction && !hasStructured) {
-      throw new Error(`${file}: highlights[${index}] requires either action or all of if/do/verify`);
-    }
-    for (const key of ['title', 'priority', 'verifyLink']) {
-      if (typeof highlight[key] !== 'string' || !highlight[key]) throw new Error(`${file}: highlights[${index}].${key} required`);
-    }
-    if (!PRIORITY_VALUES.has(highlight.priority)) throw new Error(`${file}: highlights[${index}].priority must be 상/중/하`);
-  }
+  (post.highlights || []).forEach((h, i) => validateHighlight(h, i, file));
 }
 
 async function loadTopics() {
@@ -295,6 +286,78 @@ async function loadTopics() {
 
 function flattenPosts(topics) {
   return topics.flatMap((topic) => topic.posts.map((post) => ({ ...post, topicTitle: topic.title, topicSlug: topic.slug })));
+}
+
+/**
+ * `logs/daily/*-latest-status.json` 들을 모아 자동 파이프라인 상태를 종합한다.
+ * 사이트 홈에 "오늘 자동 트리거 결과" 카드를 그리기 위한 데이터.
+ */
+async function loadPipelineStatus() {
+  let entries = [];
+  try {
+    const files = await readdir(dailyLogDir);
+    entries = files.filter((name) => name.endsWith('-latest-status.json'));
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err;
+    return null;
+  }
+  if (!entries.length) return null;
+
+  const todayKst = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date());
+  const topics = [];
+  for (const file of entries) {
+    const data = await tryReadJson(path.join(dailyLogDir, file));
+    if (!data) continue;
+    const failedStep = (data.steps || []).find((s) => !s.ok);
+    topics.push({
+      topic: data.topic || file.replace('-latest-status.json', ''),
+      runDate: data.runDate || '',
+      ok: Boolean(data.ok),
+      finishedAt: data.finishedAt || '',
+      failedStep: failedStep?.name || null,
+      isToday: data.runDate === todayKst,
+    });
+  }
+  topics.sort((a, b) => a.topic.localeCompare(b.topic));
+  return { topics, todayKst };
+}
+
+function renderPipelineStatus(status) {
+  if (!status || !status.topics.length) return '';
+  const today = status.topics.filter((t) => t.isToday);
+  const failedToday = today.filter((t) => !t.ok);
+  const okToday = today.filter((t) => t.ok);
+  const stale = status.topics.filter((t) => !t.isToday);
+
+  let level = 'ok';
+  let summary = '';
+  if (today.length === 0) {
+    level = 'warn';
+    summary = `${status.todayKst} 자동 파이프라인 실행 기록이 없습니다.`;
+  } else if (failedToday.length === 0) {
+    level = 'ok';
+    summary = `${status.todayKst} 모든 토픽이 정상 게시되었습니다 (${okToday.length}건).`;
+  } else if (okToday.length === 0) {
+    level = 'fail';
+    summary = `${status.todayKst} 모든 토픽이 실패했습니다 (${failedToday.length}건).`;
+  } else {
+    level = 'fail';
+    summary = `${status.todayKst} ${failedToday.length}개 토픽 실패 / ${okToday.length}개 성공.`;
+  }
+
+  const failedRows = failedToday.map((t) => `<li><code>${escapeHtml(t.topic)}</code> — ${escapeHtml(t.failedStep || '미상')} 단계에서 실패</li>`).join('\n');
+  const staleRows = stale.length
+    ? `<details><summary class="muted">이전 실행 ${stale.length}건</summary><ul>${stale.map((t) => `<li><code>${escapeHtml(t.topic)}</code> · 마지막 ${escapeHtml(t.runDate || '미상')} · ${t.ok ? '성공' : '실패'}</li>`).join('\n')}</ul></details>`
+    : '';
+
+  return `<section class="pipeline-status pipeline-status-${level}">
+  <header class="pipeline-status-header">
+    <h2>자동 파이프라인 상태</h2>
+    <span class="pipeline-status-summary">${escapeHtml(summary)}</span>
+  </header>
+  ${failedRows ? `<ul class="pipeline-status-failed">${failedRows}</ul>` : ''}
+  ${staleRows}
+</section>`;
 }
 
 async function loadReleaseStatus() {
@@ -531,6 +594,26 @@ p { margin: 8px 0; }
   .status-flag.eol { background: #4b1f1f; color: #ffd6d6; }
 }
 
+.pipeline-status { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; margin-bottom: 28px; border-left-width: 4px; }
+.pipeline-status-ok { border-left-color: #2f9d5a; }
+.pipeline-status-warn { border-left-color: #cf9e16; }
+.pipeline-status-fail { border-left-color: #c0392b; }
+.pipeline-status-header { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 6px; }
+.pipeline-status h2 { margin: 0; font-size: 1.05rem; }
+.pipeline-status-summary { font-size: .92rem; }
+.pipeline-status-ok .pipeline-status-summary { color: #1f6f3e; }
+.pipeline-status-warn .pipeline-status-summary { color: #6b4f00; }
+.pipeline-status-fail .pipeline-status-summary { color: #8a1f1f; font-weight: 600; }
+.pipeline-status-failed { margin: 8px 0 0; padding-left: 18px; font-size: .9rem; }
+.pipeline-status-failed code { background: var(--surface-alt); padding: 1px 6px; border-radius: 4px; }
+.pipeline-status details { margin-top: 8px; }
+.pipeline-status details ul { padding-left: 18px; font-size: .85rem; color: var(--muted); }
+@media (prefers-color-scheme: dark) {
+  .pipeline-status-ok .pipeline-status-summary { color: #6dd49a; }
+  .pipeline-status-warn .pipeline-status-summary { color: #ffe7a3; }
+  .pipeline-status-fail .pipeline-status-summary { color: #ffd6d6; }
+}
+
 .article-shell { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 36px; align-items: start; }
 .article-meta { position: sticky; top: 24px; padding: 18px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); font-size: .92rem; }
 .article-meta dl { margin: 0; display: grid; grid-template-columns: 1fr; gap: 6px; }
@@ -744,7 +827,7 @@ function renderHomeHead() {
 }
 
 async function build() {
-  const [topics, releaseStatus, glossaryTerms] = await Promise.all([loadTopics(), loadReleaseStatus(), loadGlossary()]);
+  const [topics, releaseStatus, pipelineStatus, glossaryTerms] = await Promise.all([loadTopics(), loadReleaseStatus(), loadPipelineStatus(), loadGlossary()]);
   const posts = flattenPosts(topics).sort((a, b) => b.date.localeCompare(a.date));
   const buildStamp = `last build ${formatBuildStamp(buildStartedAt)} · posts ${posts.length}`;
 
@@ -758,6 +841,7 @@ async function build() {
     title: siteTitle,
     buildStamp,
     body: `${renderHomeHead()}
+${renderPipelineStatus(pipelineStatus)}
 ${renderReleaseStatus(releaseStatus)}
 <section><h2>주제</h2><div class="grid">${topics.map((topic) => `<article class="card"><h3><a href="${link(`/topics/${topic.slug}.html`)}">${escapeHtml(topic.title)}</a></h3><p>${escapeHtml(topic.description)}</p><p class="meta">${topic.posts.length}개 글</p></article>`).join('\n')}</div></section>`,
   });

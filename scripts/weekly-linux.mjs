@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 import { parseNewsletterJsonFromAiOutput, resolveAiAdapter, runAiAdapterPrompt } from './lib/ai-rewrite-adapter.mjs';
+import { PRIORITY_VALUES, validateHighlight } from './lib/highlight-schema.mjs';
 
 const root = process.cwd();
 const topic = 'linux';
@@ -13,8 +14,6 @@ const todayKst = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul'
 const runDate = process.env.NEWSLETTER_DATE || todayKst();
 const adapter = resolveAiAdapter('cursor');
 const generatedAt = new Date().toISOString();
-
-const PRIORITY_VALUES = new Set(['상', '중', '하']);
 
 function isoWeek(dateStr) {
   const d = new Date(`${dateStr}T00:00:00Z`);
@@ -231,18 +230,7 @@ function validateWeekly(post, meta) {
   if (post.date !== meta.date) throw new Error(`weekly post date ${post.date} does not match ${meta.date}`);
   if (!Array.isArray(post.sections) || post.sections.length < 2) throw new Error('weekly post requires at least two sections');
   if (!Array.isArray(post.highlights) || post.highlights.length === 0) throw new Error('weekly post requires highlights');
-  for (const [index, h] of post.highlights.entries()) {
-    if (!h || typeof h !== 'object') throw new Error(`highlights[${index}] must be an object`);
-    for (const key of ['title', 'priority', 'verifyLink']) {
-      if (typeof h[key] !== 'string' || !h[key]) throw new Error(`highlights[${index}].${key} required`);
-    }
-    const hasAction = typeof h.action === 'string' && h.action;
-    const hasStructured = ['if', 'do', 'verify'].every((k) => typeof h[k] === 'string' && h[k]);
-    if (!hasAction && !hasStructured) {
-      throw new Error(`highlights[${index}] requires either action or all of if/do/verify`);
-    }
-    if (!PRIORITY_VALUES.has(h.priority)) throw new Error(`highlights[${index}].priority must be 상/중/하`);
-  }
+  post.highlights.forEach((h, i) => validateHighlight(h, i));
 }
 
 async function main() {
@@ -276,6 +264,10 @@ async function main() {
   await writeFile(path.join(generatedDir, 'weekly-prompt-latest.md'), prompt);
 
   const aiText = await runAiAdapterPrompt(prompt, { defaultAdapter: 'cursor' });
+  if (aiText) {
+    await writeFile(path.join(generatedDir, `weekly-stdout-${meta.id}.txt`), aiText);
+    await writeFile(path.join(generatedDir, 'weekly-stdout-latest.txt'), aiText);
+  }
   const post = aiText ? parseNewsletterJsonFromAiOutput(aiText) : templateWeekly(dailies, meta);
 
   if (post && (!post.id || !post.topic || !post.date)) {
