@@ -2,6 +2,7 @@ import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { validateHighlight } from './lib/highlight-schema.mjs';
+import { markPublishOk } from './lib/write-status.mjs';
 
 const root = process.cwd();
 const topic = 'opensource-curation';
@@ -78,6 +79,7 @@ async function main() {
   await mkdir(contentPostsDir, { recursive: true });
   await writeFile(outputPath, JSON.stringify(post, null, 2));
   await copyFile(outputPath, path.join(generatedDir, `published-${postId}.json`));
+  await markPublishOk({ topic, runDate, logDir: path.join(root, 'logs', 'daily'), publishedPath: path.relative(root, outputPath) });
   console.log(`Published opensource-curation: ${path.relative(root, outputPath)}`);
 }
 

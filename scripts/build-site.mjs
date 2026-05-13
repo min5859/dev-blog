@@ -316,6 +316,7 @@ async function loadPipelineStatus() {
       finishedAt: data.finishedAt || '',
       failedStep: failedStep?.name || null,
       isToday: data.runDate === todayKst,
+      isManual: Boolean(data.manualRepublishedAt),
     });
   }
   topics.sort((a, b) => a.topic.localeCompare(b.topic));
@@ -327,13 +328,21 @@ function renderPipelineStatus(status) {
   const today = status.topics.filter((t) => t.isToday);
   const failedToday = today.filter((t) => !t.ok);
   const okToday = today.filter((t) => t.ok);
+  const manualToday = today.filter((t) => t.isManual);
   const stale = status.topics.filter((t) => !t.isToday);
+  const lastSeen = status.topics
+    .map((t) => t.runDate)
+    .filter(Boolean)
+    .sort()
+    .pop() || null;
 
   let level = 'ok';
   let summary = '';
   if (today.length === 0) {
     level = 'warn';
-    summary = `${status.todayKst} 자동 파이프라인 실행 기록이 없습니다.`;
+    summary = lastSeen
+      ? `${status.todayKst} 자동 파이프라인 실행 기록이 없습니다 (마지막 실행: ${lastSeen}).`
+      : `${status.todayKst} 자동 파이프라인 실행 기록이 없습니다.`;
   } else if (failedToday.length === 0) {
     level = 'ok';
     summary = `${status.todayKst} 모든 토픽이 정상 게시되었습니다 (${okToday.length}건).`;
@@ -344,10 +353,14 @@ function renderPipelineStatus(status) {
     level = 'fail';
     summary = `${status.todayKst} ${failedToday.length}개 토픽 실패 / ${okToday.length}개 성공.`;
   }
+  if (manualToday.length) {
+    summary += ` (수동 재실행 ${manualToday.length}건 포함)`;
+  }
 
-  const failedRows = failedToday.map((t) => `<li><code>${escapeHtml(t.topic)}</code> — ${escapeHtml(t.failedStep || '미상')} 단계에서 실패</li>`).join('\n');
+  const renderTopicLabel = (t) => `<code>${escapeHtml(t.topic)}</code>${t.isManual ? ' <span class="pipeline-status-manual" title="수동 재실행으로 갱신됨">🔁</span>' : ''}`;
+  const failedRows = failedToday.map((t) => `<li>${renderTopicLabel(t)} — ${escapeHtml(t.failedStep || '미상')} 단계에서 실패</li>`).join('\n');
   const staleRows = stale.length
-    ? `<details><summary class="muted">이전 실행 ${stale.length}건</summary><ul>${stale.map((t) => `<li><code>${escapeHtml(t.topic)}</code> · 마지막 ${escapeHtml(t.runDate || '미상')} · ${t.ok ? '성공' : '실패'}</li>`).join('\n')}</ul></details>`
+    ? `<details><summary class="muted">이전 실행 ${stale.length}건</summary><ul>${stale.map((t) => `<li>${renderTopicLabel(t)} · 마지막 ${escapeHtml(t.runDate || '미상')} · ${t.ok ? '성공' : '실패'}</li>`).join('\n')}</ul></details>`
     : '';
 
   return `<section class="pipeline-status pipeline-status-${level}">
@@ -608,6 +621,7 @@ p { margin: 8px 0; }
 .pipeline-status-failed code { background: var(--surface-alt); padding: 1px 6px; border-radius: 4px; }
 .pipeline-status details { margin-top: 8px; }
 .pipeline-status details ul { padding-left: 18px; font-size: .85rem; color: var(--muted); }
+.pipeline-status-manual { font-size: .8rem; color: var(--muted); cursor: help; }
 @media (prefers-color-scheme: dark) {
   .pipeline-status-ok .pipeline-status-summary { color: #6dd49a; }
   .pipeline-status-warn .pipeline-status-summary { color: #ffe7a3; }

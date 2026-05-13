@@ -2,6 +2,7 @@ import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { validateHighlight } from './lib/highlight-schema.mjs';
+import { markPublishOk } from './lib/write-status.mjs';
 
 const root = process.cwd();
 const topic = process.argv[2] || process.env.TOPIC;
@@ -84,6 +85,7 @@ async function main() {
   const publishedCopy = path.join(generatedDir, `published-${postId}.json`);
   await copyFile(outputPath, publishedCopy);
 
+  await markPublishOk({ topic, runDate, logDir: path.join(root, 'logs', 'daily'), publishedPath: path.relative(root, outputPath) });
   console.log(`[${topic}] Published: ${path.relative(root, outputPath)}`);
 }
 
