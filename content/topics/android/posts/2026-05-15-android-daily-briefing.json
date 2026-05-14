@@ -1,0 +1,147 @@
+{
+  "id": "2026-05-15-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-05-15 ashmem 패닉·이름 과쓰기 수정 연속 적용 — Android 커널",
+  "date": "2026-05-15",
+  "headline": "공유메모리 쪽에서 패닉과 버퍼 과쓰기 위험을 줄이고, 테스트·설정 줄도 따라잡았습니다. 바뀐 커널 줄을 따라가며 빌드·동작 회귀를 짧게 검토하면 됩니다.",
+  "summary": "길이 0 처리에서 발생하던 정수 언더플로 때문에 커널이 죽던 경로와, 이름 조회가 작은 사용자 공간 버퍼를 무조건 고정 길이로 채우던 경로가 메인라인 커널 줄에 같이 막혔습니다. arm 가상 디바이스용 공통 모듈 목록 수정과 KVM 하객 메모리 재보충의 경계 검사 교정처럼 줄마다 따라붙던 빌드·일관성 이슈가 나란히 정리된 날입니다.",
+  "tags": [
+    "android",
+    "커널",
+    "ack"
+  ],
+  "highlights": [
+    {
+      "title": "파일 끝에서 길이 0이 되면 공유메모리 읽기 과정에서 정수 언더플로 후 패닉이 나던 경로를 고칩니다",
+      "priority": "상",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/0e168fbe93ac702fa59789f380710d1745491e12",
+      "if": "플랫폼이 공유메모리 맵·핀을 커널에 맡긴 코드를 쓰는 독자라면",
+      "do": "경계 근처 읽기·고정 크기 버퍼 가정 코드를 새 커널 줄에 맞춰 점검하세요",
+      "verify": "링크 원문 차이점과 디바이스 해당 줄 패치 존재를 비교 확인하세요"
+    },
+    {
+      "title": "더 많은 모듈이 생기던 arm 가상 디바이스 줄에서 새로 생긴 모듈 이름을 빌드 목록에 넣어 링커 깨짐을 막습니다",
+      "priority": "상",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/20cf7b36edc70ae9d47d90a3d3528204036955bf",
+      "if": "arm 가상 디바이스·공통모듈 이미지를 베젤 등으로 재현하는 빌드를 돌린다면",
+      "do": "목록 문자열 업데이트가 들어간 커널 줄로 맞춰 동일 명령을 다시 빌드하세요",
+      "verify": "변경 줄의 부트 가능 이미지를 한 번 깨끗이 전체 재빌드로 검증 확인하세요"
+    },
+    {
+      "title": "메모파일 이름을 읽어올 때 작은 사용자 공간 버퍼도 고정 이름 길이만큼 쓰이지 않도록 쓸 길이를 줄입니다",
+      "priority": "중",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/511ed7a51d50e08362852fb62af295ed39a709ee",
+      "if": "메모 이름 조회 결과를 고정 문자열 크기로만 받던 네이티브 코드가 있다면",
+      "do": "네트워크 줄과 동작 가정 길이를 다시 비교해서 오프바이 원 오류 가능성은 걷어내세요",
+      "verify": "이름 버퍼가 아주 짧아도 패닉 나지 않는지 ioctl 경로 테스트로 확인하세요"
+    },
+    {
+      "title": "하이브리저 메모리 재보충 루프에서 허용 식별자 상한까지 포함해 한 치 벗어난 값을 거르게 검사 순서를 바로잡습니다",
+      "priority": "중",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/98413bc16eb8898b120427b78386b399eaeecd83",
+      "if": "커널 기반 게스트 가상머신을 디바이스에 실어 두었다면",
+      "do": "표준 메인라인 줄에 붙어 있는 교정 패치가 반영된 태그인지 줄 비교부터 하세요",
+      "verify": "게스트 시작·내리기 과정 재현 로그와 링크 커밋 차이를 대조 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- 새 부트 테스트 모듈 파일 이름 이름에 맞게 빌드·테스트 설정 문자열만 고칩니다 (18b8f659ef03 · android-mainline)\n  · 영향: 확장 저장소 관련 테스트 자동 실행 스크립트가 어긋나지 않도록 맞춤\n  · 확인: https://android.googlesource.com/kernel/common/+/18b8f659ef03db97c85b10e6ea1ffda8c0fc506f\n\n- arm 가상 디바이스에서 더 많아진 모듈 이름을 빌드 목록에 넣습니다 (20cf7b36edc7 · android16-6.12)\n  · 영향: 공통커널 새 모듈 묶음이 생긴 줄에서 빌드가 잘린 문제를 회복\n  · 확인: https://android.googlesource.com/kernel/common/+/20cf7b36edc70ae9d47d90a3d3528204036955bf\n\n- 하객 초고속 재할당 과정에서 식별자가 허용 끝을 한 치 넘을 때 명확히 거부합니다 (98413bc16eb8 · android16-6.12)\n  · 영향: 가상머신 하부 메모리 관리 상태가 허술해져 이상 상태로 가는 빈틈 줄이기\n  · 확인: https://android.googlesource.com/kernel/common/+/98413bc16eb8898b120427b78386b399eaeecd83\n\n- 저장소 테스트가 상위 테스트 메뉴 전체를 바꿀 수 있도록 기본 줄에 테스트 메뉴 전환 플래그를 켭니다 (b1545ccd8bf7 · android-mainline)\n  · 영향: 암호 라이브러리 단위시험이 꺼지지 않고 구성 따라 켜짐\n  · 확인: https://android.googlesource.com/kernel/common/+/b1545ccd8bf79e5360ae86195080f362ce8b42a4\n\n- 공통커널 줄에서 따라붙던 메모 접근 추가 제한 줄을 빼 메인라인 줄 기본과 맞춥니다 (24eae7ee8ebc · android-mainline)\n  · 영향: 설정 중복 줄을 없애 기본 줄과 어긋난 줄을 줄임\n  · 확인: https://android.googlesource.com/kernel/common/+/24eae7ee8ebc247c7b76180f9a78a051ab2f59bb\n\n- 파일 끝에서 남은 길이가 0이 된 탓에 공유메모리 고정 처리에서 패닉이 나던 버그를 막습니다 (0e168fbe93ac · android-mainline)\n  · 영향: 고정 기능을 쓰는 앱 계층 회귀로 커널이 죽는 것을 줄임\n  · 확인: https://android.googlesource.com/kernel/common/+/0e168fbe93ac702fa59789f380710d1745491e12\n\n- 메모 정리 함수 호출 형태 안전 설명이 실제 열린 설명과 달라 주석만 바로잡습니다 (1124d5c85f76 · android-mainline)\n  · 영향: 동작 줄은 그대로이고 유지 보수 단서만 맞춤\n  · 확인: https://android.googlesource.com/kernel/common/+/1124d5c85f76c570b9ba6698c2358f6f37fcf6c9\n\n- 공유메모리 영역 크기 같은 값을 줄 때 진짜 공유메모리인지 헷갈리면 잘못된 값으로 돌아가던 줄을 고칩니다 (44f12c7ab0a2 · android-mainline)\n  · 영향: 벤더가 공유 크기 헬퍼를 직접 부르던 경우 결과가 빗나가지 않도록\n  · 확인: https://android.googlesource.com/kernel/common/+/44f12c7ab0a29f99735ada7b2361e1d6dad41b16\n\n- 메모파일 이름을 읽을 때 허용 길이까지만 사용자 공간에 씁니다 (511ed7a51d50 · android-mainline)\n  · 영향: 짧은 버퍼 이름 조회가 고정 이름 길이로 덮여 메모 깨지는 줄을 줄임\n  · 확인: https://android.googlesource.com/kernel/common/+/511ed7a51d50e08362852fb62af295ed39a709ee"
+    },
+    {
+      "heading": "ACK 전용 변경",
+      "body": "**플랫폼별 공유메모리 줄**\n- 패닉 줄을 막는 길이 0 처리, 파일 종류 헷갈림 교정, 짧은 버퍼로 이름 읽게 바꿈 세 건 등이 메인라인 커널 줄에 연달아 들어 왔습니다. 주석 줄 정리 하나는 동작 줄을 바꾸지 않고 설명만 맞춥니다.\n  · 참고 줄: 공유메모리 관련 줄 (0e168fbe93ac, 44f12c7ab0a2, 511ed7a51d50, 1124d5c85f76)\n\n**가상머신 하부 줄**\n- 하객 메모 재보충 루프에서 허용 식별자 끝을 한 치 지나도록 두던 검사 순서가 바르게 바뀌었습니다. (98413bc16eb8 · android16-6.12)\n\n**공통 빌드·설정 줄**\n- 새 모듈 묶음에 맞춰 arm 빌드 목록을 늘리고 (20cf7b36edc7 · android16-6.12), 확장 테스트 모듈 이름과 암호 단위시험 구성 줄이 상위 테스트 메뉴 전환에 맞게 따라갔습니다 (18b8f659ef03, b1545ccd8bf7 · android-mainline). 공통커널 메모 접근 줄은 메인 기본 줄과 같은 모양이라 중복 줄을 빼 놓았습니다 (24eae7ee8ebc · android-mainline).\n\n**스케줄러 줄 정리**\n- 실속 없는 실시 추적 덤프 훅을 되돌려 유지 문제를 피했습니다 (bc7a5d0dbca0 · android-mainline).\n"
+    },
+    {
+      "heading": "추적 브랜치",
+      "body": "- android-mainline: 가장 마지막으로 본 줄은 테스트 모듈 이름과 공유메모리 쪽 줄이 이어 들어 간 머리(18b8f659ef03 맥락) 입니다.\n- android16-6.12: arm 공통커널 줄의 모듈 목록과 하객 메모 줄이 함께 움직인 머리(20cf7b36edc7 맥락) 입니다."
+    },
+    {
+      "heading": "기타",
+      "body": "디버그용 참조 보드 네무선설정 줄을 번들링과 맞춰 되돌린 변경 등 단일 기기·판매 일정에 특화된 줄은 브리핑 목록에서는 건너뛰었습니다. 자기 보드 문자열과 제품 줄로 커널 저장소 검색 문자열 조합을 만들어 필요한 줄만 따라가 확인하세요."
+    }
+  ],
+  "confidence": {
+    "level": "AI 초안",
+    "note": "자동 선택된 줄을 사람이 검토해야 합니다. 출시 줄에 붙일 때는 링크된 원문 줄과 줄 번호 차이까지 대조해야 합니다."
+  },
+  "sources": [
+    {
+      "title": "ext4: update kunit test module name",
+      "url": "https://android.googlesource.com/kernel/common/+/18b8f659ef03db97c85b10e6ea1ffda8c0fc506f",
+      "note": "android.googlesource.com · ack-android · 18b8f659ef03"
+    },
+    {
+      "title": "Fix GKI module list for arm",
+      "url": "https://android.googlesource.com/kernel/common/+/20cf7b36edc70ae9d47d90a3d3528204036955bf",
+      "note": "android.googlesource.com · ack-android · 20cf7b36edc7"
+    },
+    {
+      "title": "KVM: arm64: Fix off-by-one bounds check in hyp_alloc_mgt_refill()",
+      "url": "https://android.googlesource.com/kernel/common/+/98413bc16eb8898b120427b78386b399eaeecd83",
+      "note": "android.googlesource.com · ack-android · 98413bc16eb8"
+    },
+    {
+      "title": "defconfig: enable RUNTIME_TESTING_MENU for crypto",
+      "url": "https://android.googlesource.com/kernel/common/+/b1545ccd8bf79e5360ae86195080f362ce8b42a4",
+      "note": "android.googlesource.com · ack-android · b1545ccd8bf7"
+    },
+    {
+      "title": "gki_defconfig: drop PROC_MEM_FORCE_PTRACE",
+      "url": "https://android.googlesource.com/kernel/common/+/24eae7ee8ebc247c7b76180f9a78a051ab2f59bb",
+      "note": "android.googlesource.com · ack-android · 24eae7ee8ebc"
+    },
+    {
+      "title": "ashmem: fix integer underflow on len==0",
+      "url": "https://android.googlesource.com/kernel/common/+/0e168fbe93ac702fa59789f380710d1745491e12",
+      "note": "android.googlesource.com · ack-android · 0e168fbe93ac"
+    },
+    {
+      "title": "ashmem: memfd_fcntl can be called on any file",
+      "url": "https://android.googlesource.com/kernel/common/+/1124d5c85f76c570b9ba6698c2358f6f37fcf6c9",
+      "note": "android.googlesource.com · ack-android · 1124d5c85f76"
+    },
+    {
+      "title": "ashmem: fix is_ashmem_file() check in get_ashmem_area()",
+      "url": "https://android.googlesource.com/kernel/common/+/44f12c7ab0a29f99735ada7b2361e1d6dad41b16",
+      "note": "android.googlesource.com · ack-android · 44f12c7ab0a2"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-14T22:00:54.224Z",
+    "sourceRecordCount": 160,
+    "candidateCount": 11,
+    "generator": "scripts/draft-android.mjs",
+    "candidateIds": [
+      "ack-android-mainline:18b8f659ef03db97c85b10e6ea1ffda8c0fc506f",
+      "ack-android16-6.12:20cf7b36edc70ae9d47d90a3d3528204036955bf",
+      "ack-android16-6.12:98413bc16eb8898b120427b78386b399eaeecd83",
+      "ack-android-mainline:b1545ccd8bf79e5360ae86195080f362ce8b42a4",
+      "ack-android-mainline:24eae7ee8ebc247c7b76180f9a78a051ab2f59bb",
+      "ack-android-mainline:0e168fbe93ac702fa59789f380710d1745491e12",
+      "ack-android-mainline:1124d5c85f76c570b9ba6698c2358f6f37fcf6c9",
+      "ack-android-mainline:44f12c7ab0a29f99735ada7b2361e1d6dad41b16",
+      "ack-android-mainline:511ed7a51d50e08362852fb62af295ed39a709ee",
+      "ack-android-mainline:bc7a5d0dbca0f1843420bf17c4feb4c016700db6",
+      "ack-android-mainline:0f52375dc9c3cc9c2a81dc8dbfb42791ff2b799a"
+    ],
+    "bucketCounts": {
+      "regressions": 9,
+      "ackPatches": 0
+    },
+    "subsystems": [
+      "파일시스템/스토리지",
+      "GKI/모듈 ABI",
+      "보안",
+      "스케줄러/EAS"
+    ],
+    "branches": [
+      "android-mainline",
+      "android16-6.12"
+    ],
+    "rewrittenAt": "2026-05-14T22:00:54.417Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/android-newsletter-ko.md"
+  }
+}
