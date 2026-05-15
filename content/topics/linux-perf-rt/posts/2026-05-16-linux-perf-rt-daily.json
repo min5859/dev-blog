@@ -1,0 +1,133 @@
+{
+  "id": "2026-05-16-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-05-16 탐침 회귀와 차단 경로 — 관측성·실시간(eBPF·RT)",
+  "date": "2026-05-16",
+  "headline": "탐침 경로의 스택 침범 가능 성질을 줄이는 패치와, 패킷 필터에서 제어 메시지로 연결을 끊는 새 함수 후보가 함께 논의됩니다.",
+  "summary": "오늘은 최적화된 사용자 탐침이 호출 경로에서 스택 레드존을 침범할 수 있다는 피드백을 다루는 수정안이 중심으로 올랐습니다. 이어 그룹 패킷 필터용 제어 메시지 전송 후보, 이벤트 정의 생성 속도 개선, 네트폴 내부 공개 함수 정리, 가상화 갱신 흐름 후보도 같은 목록에서 보입니다.",
+  "tags": [
+    "eBPF",
+    "verifier",
+    "tracing",
+    "PREEMPT_RT",
+    "실시간",
+    "초안"
+  ],
+  "highlights": [
+    {
+      "title": "x86에서 최적화된 사용자 탐침이 짧은 패치 구간을 넓혀 호출 전 스택을 내림",
+      "priority": "상",
+      "verifyLink": "https://lore.kernel.org/bpf/CAEf4BzZxNLEeyDE2aJVm=T=RzDayaHzAbHxXQqn6M6uqa45obA@mail.gmail.com/",
+      "if": "x86에서 사용자 공간 탐침·동적 추적에 의존한다면",
+      "do": "호출 전에 스택 포인터를 한 번 내리고 넓은 패치 구간에서 호출하게 한다는 요지를 읽어두세요",
+      "verify": "올린 메일의 설명·벤치 숫자 줄을 자기 커널·도구 가정과 한 번 대조해 보세요"
+    },
+    {
+      "title": "그룹 패킷 필터에서 제어 메시지로 흐름을 거부하는 커널 함수 후보",
+      "priority": "상",
+      "verifyLink": "https://lore.kernel.org/bpf/20260515194746.50920-1-mahe.tardy@gmail.com/",
+      "if": "내부망 동·서향 패킷을 필터에서 끊어야 한다면",
+      "do": "여러 번 호출될 수 있고 통과 결과와 메시지가 엇갈릴 수 있다는 주의를 숙지하세요",
+      "verify": "다섯 번째 초안 본문과 자가 검사·문서 추가를 한눈에 모은 단락을 메일에서 찾아보세요"
+    },
+    {
+      "title": "perf 이벤트 정의 생성 스크립트의 다중 처리 단위 병렬화",
+      "priority": "중",
+      "verifyLink": "https://lore.kernel.org/bpf/20260515193314.1593560-12-irogers@google.com/",
+      "if": "커널을 자주 전부 빌드해 이벤트 정의 단계를 느껴왔다면",
+      "do": "이벤트·지표 묶음을 읽는 일을 여러 프로세스로 나눈다는 변경 요지를 따라가 보세요",
+      "verify": "작성자가 적은 이전·이후 시간 비교를 자기 장비 빌드 체감과 대략 맞춰 검토하세요"
+    },
+    {
+      "title": "네트폴 완료 큐를 비우는 함수 이름 통일과 내부 기호 내보내기",
+      "priority": "중",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260512-netconsole_split-v2-8-1191d14ad66d@debian.org/",
+      "if": "네트 콘솔·내부 네트 장치 경계 코드를 본다면",
+      "do": "동작은 그대로이며 앞 분리 작업에서 부를 수 있게 하려는 목적이라는 설명을 확인하세요",
+      "verify": "전일에 이어 올라왔다는 맥락과 기호·이름공간 줄을 자기 트리 버전과 맞춰 보세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이 렌즈는 메일 목록 중심입니다. 메인라인 릴리스와 일반 스케줄러 흐름은 ‘리눅스 개발’ 토픽을 참고하세요."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- x86에서 최적화된 사용자 탐침이 호출 저장 때문에 스택 레드존을 덮어쓸 수 있다는 보고에 대응해, 넓은 무명령 자리 위에 호출 전 스택을 내리는 한 줄을 끼워 넣는 방향이 제시됩니다.\n  · 영향: 사용자 코드가 규약 없이 스택 빨간 구역에 임시값을 둔 채 추적이 걸리면 잘못된 덮어쓰기가 날 수 있습니다.\n  · 확인: https://lore.kernel.org/bpf/CAEf4BzZxNLEeyDE2aJVm=T=RzDayaHzAbHxXQqn6M6uqa45obA@mail.gmail.com/"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "- 그룹 패킷 필터에서 도달 불가 계열 제어 메시지를 보내 내부망 흐름을 끊을 수 있게 하는 커널 함수 후보가 다시 올라왔습니다. 연결을 바로 끊는 다른 경로와 목적이 다르며, 같은 호출을 여러 번 하거나 필터가 통과인데도 메시지가 나갈 수 있어 설계상 헷갈림이 남을 수 있다고 적혀 있습니다.\n  · 확인: https://lore.kernel.org/bpf/20260515194746.50920-1-mahe.tardy@gmail.com/\n\n- perf 이벤트·지표용 파일 묶음을 읽는 생성 스크립트가 여러 실행 단위로 일을 나누어, 한 코어에 몰리던 수 초짜리 단계를 수백 밀리초 수준으로 줄였다고 합니다. 새 실행 방식에서 묶음 넘기기가 깨지지 않게 하기 위해 일꾼 초기화 위치를 고정했다는 설명이 있습니다.\n  · 확인: https://lore.kernel.org/bpf/20260515193314.1593560-12-irogers@google.com/\n\n- 네트폴 경로에서 소프트넷 완료 큐를 비우는 함수 이름을 계통과 맞추고 내부 네트 장치 이름 공간으로 내보냅니다. 기능 변화는 없으며 앞으로 네트 콘솔 쪽에서 이 함수를 부를 여지를 만들기 위한 준비라고 합니다.\n  · 확인: https://lore.kernel.org/linux-rt-devel/20260512-netconsole_split-v2-8-1191d14ad66d@debian.org/\n\n- 기밀 가상화 확장 모듈을 런타임에 갱신하는 흐름이 아홉 번째 초안으로 다시 올라왔습니다. 검토에서 제안된 이진 묶음 형식을 받아들이고, 갱신 중 모듈 버전 출력을 빼며, 정리용 두 조각을 앞에 붙였다는 회신이 있습니다.\n  · 확인: https://lore.kernel.org/linux-rt-devel/20260513151045.1420990-1-chao.gao@intel.com/"
+    },
+    {
+      "heading": "기타",
+      "body": "- 경계 로더 호출을 감싸는 초안 설명에서, 부팅 때만 쓰이는 다른 로더와 이름이 비슷해 오해를 줄 문장을 고치는 논의가 이어졌습니다. 실행 경로를 바꾸기보다 문서적 구분에 가깝습니다.\n  · 확인: https://lore.kernel.org/linux-rt-devel/1715ba67-2e51-4deb-aa2c-58952914adc9@intel.com/\n\n- 목록 범위 밖 토론은 넣지 않았습니다. 더 찾으려면 메일 보관소에서 주제어를 좁혀 검색하세요."
+    }
+  ],
+  "confidence": {
+    "level": "초안",
+    "note": "제목·메타데이터 기반 자동 선별입니다. 게시 전 원문 확인이 필요합니다."
+  },
+  "sources": [
+    {
+      "title": "x86/virt/seamldr: Introduce a wrapper for P-SEAMLDR SEAMCALLs",
+      "url": "https://lore.kernel.org/linux-rt-devel/1715ba67-2e51-4deb-aa2c-58952914adc9@intel.com/",
+      "note": "lore.kernel.org/linux-rt-devel · patch-discussion"
+    },
+    {
+      "title": "bpf: add icmp_send kfunc",
+      "url": "https://lore.kernel.org/bpf/20260515194746.50920-1-mahe.tardy@gmail.com/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "perf pmu-events: Parallelize JSON and metric pre-computation in jevents.py",
+      "url": "https://lore.kernel.org/bpf/20260515193314.1593560-12-irogers@google.com/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "Runtime TDX module update support",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260513151045.1420990-1-chao.gao@intel.com/",
+      "note": "lore.kernel.org/linux-rt-devel · patch-discussion"
+    },
+    {
+      "title": "netpoll: rename and export netpoll_zap_completion_queue()",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260512-netconsole_split-v2-8-1191d14ad66d@debian.org/",
+      "note": "lore.kernel.org/linux-rt-devel · patch-discussion"
+    },
+    {
+      "title": "uprobes/x86: Move optimized uprobe from nop5 to nop10",
+      "url": "https://lore.kernel.org/bpf/CAEf4BzZxNLEeyDE2aJVm=T=RzDayaHzAbHxXQqn6M6uqa45obA@mail.gmail.com/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-15T22:09:22.797Z",
+    "sourceRecordCount": 50,
+    "candidateCount": 6,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "lore-linux-rt-devel:urn:uuid:4bba0ac5-01a9-1bbc-2bb0-76558e5ccbab",
+      "lore-bpf:urn:uuid:9a17e063-4f6e-708b-45a7-67ed3ec9cefe",
+      "lore-bpf:urn:uuid:7fe9fa40-4c8b-69fc-833e-5d219bc66def",
+      "lore-linux-rt-devel:urn:uuid:103af042-4cef-da07-4711-2582782ee20f",
+      "lore-linux-rt-devel:urn:uuid:f1b52d77-02f4-fac0-178a-6708c5599018",
+      "lore-bpf:urn:uuid:540b01b7-4c5f-a106-921c-bdb8c5596070"
+    ],
+    "bucketCounts": {
+      "releases": 0,
+      "regressions": 1,
+      "patches": 5,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 6,
+    "signalLevel": "high",
+    "subsystems": [
+      "가상화"
+    ],
+    "lensPipeline": "linux-perf-rt",
+    "rewrittenAt": "2026-05-15T22:09:32.017Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-ko.md"
+  }
+}
