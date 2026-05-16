@@ -104,11 +104,7 @@ function renderLog(status) {
 async function main() {
   await mkdir(logDir, { recursive: true });
 
-  const rewriteEnv = rewriteAdapter === 'template'
-    ? { AI_ADAPTER: 'template' }
-    : rewriteAdapter === 'cursor'
-      ? { AI_ADAPTER: 'cursor' }
-      : { AI_ADAPTER: 'claude' };
+  const rewriteEnv = { AI_ADAPTER: rewriteAdapter };
 
   const steps = [
     ['collect', 'node', ['scripts/collect-lore-lens.mjs', topic], {}],

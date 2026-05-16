@@ -1,12 +1,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeDailyRewriteAdapter, parseNewsletterJsonFromAiOutput, resolveAiAdapter } from './lib/ai-rewrite-adapter.mjs';
+import { DEFAULT_AI_ADAPTER, normalizeDailyRewriteAdapter, parseNewsletterJsonFromAiOutput, resolveAiAdapter } from './lib/ai-rewrite-adapter.mjs';
 
-test('normalizeDailyRewriteAdapter defaults empty to claude and maps cursor-agent alias', () => {
-  assert.equal(normalizeDailyRewriteAdapter(''), 'claude');
+test('normalizeDailyRewriteAdapter falls back to DEFAULT_AI_ADAPTER and maps cursor-agent alias', () => {
+  assert.equal(normalizeDailyRewriteAdapter(''), DEFAULT_AI_ADAPTER);
   assert.equal(normalizeDailyRewriteAdapter('cursor-agent'), 'cursor');
   assert.equal(normalizeDailyRewriteAdapter('cursor'), 'cursor');
   assert.equal(normalizeDailyRewriteAdapter('claude'), 'claude');
+});
+
+test('resolveAiAdapter without args returns DEFAULT_AI_ADAPTER when env unset', () => {
+  delete process.env.AI_ADAPTER;
+  assert.equal(resolveAiAdapter(), DEFAULT_AI_ADAPTER);
 });
 
 test('parseNewsletterJsonFromAiOutput unwraps Cursor CLI json result envelope', () => {

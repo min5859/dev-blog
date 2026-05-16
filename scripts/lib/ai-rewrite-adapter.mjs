@@ -7,15 +7,20 @@ import path from 'node:path';
  * AI_ADAPTER: template | claude | cursor (별칭 cursor-agent → cursor)
  * Claude: CLAUDE_BIN, CLAUDE_ARGS (기본 `-p`), stdin으로 프롬프트 전달
  * Cursor CLI: CURSOR_AGENT_BIN (기본 `agent`), CURSOR_AGENT_EXTRA_ARGS — 프롬프트는 임시 파일 + file 경로 안내
+ *
+ * 기본 어댑터는 아래 DEFAULT_AI_ADAPTER 한 곳에서만 바꾼다.
+ * 모든 ai-rewrite-*.mjs / run-daily-*.mjs 는 이 상수를 통해 default를 받는다.
  */
+export const DEFAULT_AI_ADAPTER = 'claude';
+
 export function normalizeDailyRewriteAdapter(raw) {
   const v = typeof raw === 'string' ? raw.trim() : '';
   if (v === 'cursor-agent') return 'cursor';
-  if (!v) return 'claude';
+  if (!v) return DEFAULT_AI_ADAPTER;
   return v;
 }
 
-export function resolveAiAdapter(defaultValue = 'template') {
+export function resolveAiAdapter(defaultValue = DEFAULT_AI_ADAPTER) {
   const raw = process.env.AI_ADAPTER?.trim();
   if (!raw) return defaultValue;
   if (raw === 'cursor-agent') return 'cursor';
@@ -93,7 +98,7 @@ async function runCursorAgentFilePrompt(prompt) {
 /**
  * @returns {Promise<string|null>} 원시 stdout 텍스트; template이면 null
  */
-export async function runAiAdapterPrompt(prompt, { defaultAdapter = 'template' } = {}) {
+export async function runAiAdapterPrompt(prompt, { defaultAdapter = DEFAULT_AI_ADAPTER } = {}) {
   const adapter = resolveAiAdapter(defaultAdapter);
   if (adapter === 'template') return null;
   if (adapter === 'claude') return runClaudeStdin(prompt);

@@ -17,9 +17,6 @@ const pipelinePath = path.join(root, 'content', 'topics', topic, 'pipeline.json'
 const todayKst = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date());
 const runDate = process.env.NEWSLETTER_DATE || todayKst();
 
-/** 기본: Claude CLI (`claude -p`). Cursor는 `AI_ADAPTER=cursor`. 오프라인은 `AI_ADAPTER=template`. */
-const LENS_DEFAULT_ADAPTER = 'claude';
-
 async function readJson(file) {
   return JSON.parse(await readFile(file, 'utf8'));
 }
@@ -45,7 +42,7 @@ function buildPrompt(template, draft) {
 }
 
 function templateRewrite(draft, pipeline) {
-  const adapterName = resolveAiAdapter(LENS_DEFAULT_ADAPTER);
+  const adapterName = resolveAiAdapter();
   const sectionByHeading = new Map(draft.sections.map((section) => [section.heading, section.body]));
   const buckets = draft.draftMetadata?.bucketCounts || {};
   const titleTemplate = pipeline.rewriteTitleTemplate || '{{date}} 커널 렌즈 브리핑';
@@ -107,7 +104,7 @@ function withAuditMetadata(post, pipeline, promptTemplatePath, generatedAt, adap
 }
 
 async function main() {
-  const adapter = resolveAiAdapter(LENS_DEFAULT_ADAPTER);
+  const adapter = resolveAiAdapter();
   const pipeline = await readJson(pipelinePath);
   if (!pipeline.postIdSuffix) {
     throw new Error(`${path.relative(root, pipelinePath)}: postIdSuffix required`);
@@ -131,7 +128,7 @@ async function main() {
   await writeFile(promptOutput, prompt);
   await writeFile(promptLatest, prompt);
 
-  const aiText = await runAiAdapterPrompt(prompt, { defaultAdapter: LENS_DEFAULT_ADAPTER });
+  const aiText = await runAiAdapterPrompt(prompt);
   if (aiText) {
     await writeFile(path.join(generatedDir, `rewrite-stdout-${runDate}.txt`), aiText);
     await writeFile(path.join(generatedDir, 'rewrite-stdout-latest.txt'), aiText);

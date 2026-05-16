@@ -14,7 +14,7 @@ const draftPath = process.env.DRAFT_PATH || path.join(root, 'data', 'generated',
 const fallbackDraftPath = path.join(root, 'content', 'topics', topic, 'posts', `${postId}.json`);
 const promptTemplatePath = path.join(root, 'prompts', 'opensource-newsletter-ko.md');
 const generatedDir = path.join(root, 'data', 'generated', topic);
-const adapter = resolveAiAdapter('claude');
+const adapter = resolveAiAdapter();
 const generatedAt = new Date().toISOString();
 
 async function readText(file) { return readFile(file, 'utf8'); }
@@ -79,7 +79,7 @@ async function main() {
   await writeFile(path.join(generatedDir, `rewrite-prompt-${runDate}.md`), prompt);
   await writeFile(path.join(generatedDir, 'rewrite-prompt-latest.md'), prompt);
 
-  const aiText = await runAiAdapterPrompt(prompt, { defaultAdapter: 'cursor' });
+  const aiText = await runAiAdapterPrompt(prompt);
   if (aiText) {
     await writeFile(path.join(generatedDir, `rewrite-stdout-${runDate}.txt`), aiText);
     await writeFile(path.join(generatedDir, 'rewrite-stdout-latest.txt'), aiText);

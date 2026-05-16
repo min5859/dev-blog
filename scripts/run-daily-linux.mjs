@@ -2,7 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 
-import { normalizeDailyRewriteAdapter } from './lib/ai-rewrite-adapter.mjs';
+import { DEFAULT_AI_ADAPTER, normalizeDailyRewriteAdapter } from './lib/ai-rewrite-adapter.mjs';
 
 const root = process.cwd();
 const todayKst = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date());
@@ -20,7 +20,7 @@ const rewriteScriptMap = {
   claude: 'rewrite:linux:claude',
   cursor: 'rewrite:linux:cursor',
 };
-const rewriteScript = rewriteScriptMap[rewriteAdapter] || 'rewrite:linux:claude';
+const rewriteScript = rewriteScriptMap[rewriteAdapter] || rewriteScriptMap[DEFAULT_AI_ADAPTER];
 
 const steps = [
   ['collect', ['npm', ['run', 'collect:linux']]],
