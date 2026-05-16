@@ -1,0 +1,130 @@
+{
+  "id": "2026-05-17-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-05-17 Rust 무신뢰 데이터 API 재기동 — 커널 도구체인·Rust",
+  "date": "2026-05-17",
+  "headline": "Greg KH가 멈춰 있던 Rust 무신뢰 데이터 API를 살려 사용자 포인터 바인딩에 얹었고, seq_file 매크로도 C FFI를 우회하는 경로로 단순해졌습니다.",
+  "summary": "오늘 이 렌즈의 핵심은 Rust 사용자 공간 데이터 안전성 모델인 Untrusted API 가 v4 로 재제출되며 사용자 포인터 바인딩에 실제로 적용되기 시작했다는 점입니다. 뒤이어 seq_file 의 Rust 포맷팅을 C 의 vsnprintf·%pA 우회 경로로 옮기는 최적화와 nova-core 의 펌웨어 명령 네임스페이스 정리가 함께 진행 중입니다.",
+  "tags": [
+    "도구체인",
+    "LLVM",
+    "kbuild",
+    "Rust",
+    "Untrusted"
+  ],
+  "highlights": [
+    {
+      "title": "Rust Untrusted Data API v4 재제출 + 사용자 포인터 바인딩 이행",
+      "priority": "상",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/2026051610-flint-compound-810f@gregkh/",
+      "if": "Rust 커널 코드에서 사용자 공간 포인터·데이터를 다루는 드라이버라면",
+      "do": "이번 사이클 머지 후보인 앞 두 패치(bare-bones API)와 Greg KH 가 옮긴 사용자 포인터 바인딩 변경을 함께 읽어 두세요",
+      "verify": "자기 트리의 user pointer 래퍼가 Untrusted<T> 로 갈아끼울 수 있는 형태인지 v4 시리즈와 diff 로 대조하고, 검증 로직(3번째 패치)은 별도 트래킹으로 분리해 두세요"
+    },
+    {
+      "title": "rust: seq_file — seq_print! 가 seq_printf 대신 seq_write 로 직결",
+      "priority": "상",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260516040812.477347-1-donplat@barrensea.org/",
+      "if": "Rust 드라이버에서 seq_print! 매크로로 debugfs·proc 항목을 출력한다면",
+      "do": "&SeqFile 에 core::fmt::Write 를 구현해 %pA FFI 콜백을 거치지 않는 새 경로의 변경 범위를 검토하세요",
+      "verify": "출력이 여러 seq_write 호출로 쪼개져도 오버플로 재시도 시 의미 차이가 없는지 자기 seq_file 사용처에서 한 줄 짜리 회귀 테스트로 확인하세요"
+    },
+    {
+      "title": "nova-core: 펌웨어 명령 wildcard 임포트 제거, fw:: 네임스페이스로 분리",
+      "priority": "중",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260515-nova-unload-v5-2-c4d6250ad160@nvidia.com/",
+      "if": "Rust 기반 nova-core GPU 드라이버 트리를 추적하거나 위에 패치를 쌓고 있다면",
+      "do": "v5 에서 모든 fw 명령을 직접 import 하던 관행이 사라지고 fw::Cmd 형태로 명시 참조하도록 바뀌는 변경을 미리 흡수하세요",
+      "verify": "out-of-tree 패치가 GSP 명령과 같은 이름의 상위 타입을 만든다면 v5 적용 후 컴파일러가 모호성 에러를 내는지 빌드로 확인하세요"
+    },
+    {
+      "title": "iio: sun20i-gpadc — sparse channel 의 io-channels phandle 해석 변경",
+      "priority": "하",
+      "verifyLink": "https://lore.kernel.org/llvm/20260516161134.0fc1ad10@jic23-huawei/",
+      "if": "Allwinner D1/T113 계열 GPADC 와 iio-hwmon 같은 consumer 를 함께 쓰는 DT 라면",
+      "do": "phandle 인자를 채널 배열 인덱스가 아니라 chan->channel 번호로 매핑하는 fwnode_xlate 변경(iio.git testing 적용)을 dts 와 같이 점검하세요",
+      "verify": "<&gpadc N> 표기가 sparse 매핑에서도 의도한 hw 채널을 가리키는지 디바이스 부팅 후 /sys/bus/iio/devices 로 한 번 대조하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이 토픽은 lore 전용 렌즈입니다. mainline·stable 릴리스는 '리눅스 개발' 토픽을 참고하세요."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- accel/amdxdna: ubuf mmap/export 제거 후 unused const 경고\n· 영향: 0-day 봇이 clang W=1 빌드에서 amdxdna_ubuf_vm_ops 가 더 이상 참조되지 않는다고 보고. 빌드 자체는 통과하지만 -Werror 환경에서는 깨질 수 있습니다.\n· 확인: https://lore.kernel.org/llvm/202605161116.6FTLJOlI-lkp@intel.com/ 의 reproduce 로그와 자기 트리의 vm_operations_struct 잔재를 함께 정리하세요."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "- Rust Untrusted Data API v4 (Benno Lossin, Greg KH)\n· 영향: 사용자 공간에서 들어오는 데이터에 타입 수준으로 '검증 전' 표시를 붙이는 모델입니다. v4 는 앞 두 패치를 이번 사이클에 머지해 실험을 시작하자는 합의가 형성됐고, Greg KH 가 user data 포인터 Rust 바인딩을 실제로 Untrusted 로 갈아끼운 예시를 함께 제시했습니다. 필드 프로젝션은 upstream Rust 의 2025H2 project goal·tracking issue 로 별도 진행 중.\n· 확인: 자기 드라이버의 copy_from_user 래퍼가 검증 전·후를 타입으로 구분할 수 있는 구조인지 점검하세요. 검증 로직(세 번째 패치)은 아직 더 다듬어야 하므로 그 위에 의존하는 코드는 보류가 안전합니다.\n\n- rust: seq_file 출력 경로 단축 (Donjuanplatinum)\n· 영향: seq_print! 가 fmt::Arguments → %pA → vsnprintf → 콜백을 거치던 우회로를 없애고, &SeqFile 에 fmt::Write 를 직접 구현해 bindings::seq_write 로 곧장 흘려보냅니다. memcpy 기반이라 NUL 종단 가정이 사라지고, 출력은 여러 chunk 로 쪼개지지만 seq_file 의 overflow→재시도 의미는 그대로 보존됩니다.\n· 확인: 자기 코드가 한 번의 seq_print! 호출이 atomic 하게 한 record 로 들어간다고 가정하지 않는지 다시 보세요. fmt::Write chunking 으로 인해 중간 overflow 가 더 잘게 발생할 수 있습니다.\n\n- gpu/nova-core: fw 명령 네임스페이스 정리 (Danilo Krummrich 시리즈, v5)\n· 영향: 지금까지는 fw 명령을 전부 use 로 끌어다 써서 GSP 명령과 이름 충돌 시 동명 타입을 만들 수 없었습니다. v5 부터는 fw::Cmd 형태로 명시 참조해 계층(fw vs GSP)이 이름만 봐도 드러나게 됩니다.\n· 확인: 이미 본 적 있는 시리즈(previouslySeenAt: 2026-05-16)의 후속입니다. 자기 패치가 wildcard import 에 의존한다면 v5 적용 시 빌드가 깨질 수 있습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "- iio: adc: sun20i-gpadc fwnode_xlate v3 가 iio.git testing 브랜치에 적용됐습니다. 같은 패턴(sparse io-channels)을 쓰는 다른 ADC 드라이버가 있다면 LLVM·linux-iio 두 리스트에서 fwnode_xlate 키워드로 좁혀 보는 것도 유용합니다.\n- 단일 드라이버 LLVM 경고나 칩셋별 빌드 픽스는 이 렌즈에서 우선순위를 낮춰 다뤘습니다. 자기 서브시스템 경고 정책을 보고 싶다면 lore 의 llvm 리스트를 maintainer·파일 경로로 좁혀 검색하세요."
+    }
+  ],
+  "confidence": {
+    "level": "초안",
+    "note": "candidateBodies 의 commit message·maintainer 코멘트를 바탕으로 정리했습니다. v4/v5 시리즈는 게시 전 lore 스레드에서 최신 상태(머지 여부·후속 응답)를 다시 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Untrusted Data API",
+      "url": "https://lore.kernel.org/rust-for-linux/2026051610-flint-compound-810f@gregkh/",
+      "note": "lore.kernel.org/rust-for-linux · patch-discussion"
+    },
+    {
+      "title": "gpu: nova-core: do not import firmware commands into GSP command module",
+      "url": "https://lore.kernel.org/rust-for-linux/20260515-nova-unload-v5-2-c4d6250ad160@nvidia.com/",
+      "note": "lore.kernel.org/rust-for-linux · patch-discussion"
+    },
+    {
+      "title": "iio: adc: sun20i-gpadc: support non-contiguous channel lookups",
+      "url": "https://lore.kernel.org/llvm/20260516-fix-sunxi-gpadc-sparse-channels-v3-1-4d229d18ff3b@mmpsystems.pl/",
+      "note": "lore.kernel.org/llvm · patch-discussion"
+    },
+    {
+      "title": "rust: seq_file: route seq_print! directly to seq_write",
+      "url": "https://lore.kernel.org/rust-for-linux/20260516040812.477347-1-donplat@barrensea.org/",
+      "note": "lore.kernel.org/rust-for-linux · patch-discussion"
+    },
+    {
+      "title": "iio: adc: sun20i-gpadc: support non-contiguous channel lookups",
+      "url": "https://lore.kernel.org/llvm/20260516161134.0fc1ad10@jic23-huawei/",
+      "note": "lore.kernel.org/llvm · patch-discussion"
+    },
+    {
+      "title": "accel/amdxdna: Remove mmap and export support for ubuf",
+      "url": "https://lore.kernel.org/llvm/202605161116.6FTLJOlI-lkp@intel.com/",
+      "note": "lore.kernel.org/llvm · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-16T22:16:22.339Z",
+    "sourceRecordCount": 75,
+    "candidateCount": 6,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "lore-rust-for-linux:urn:uuid:4739096b-c69e-afc9-16df-6656a0c34732",
+      "lore-rust-for-linux:urn:uuid:1e0e7e3a-2812-a8af-96e1-6efca7608679",
+      "lore-llvm:urn:uuid:65432907-06f7-bbe9-e18c-f8a523f8f70e",
+      "lore-rust-for-linux:urn:uuid:551d0f9d-b616-77fc-ee8f-9de163916209",
+      "lore-llvm:urn:uuid:3b5196a4-c858-5e32-4e01-2e57787d0630",
+      "lore-llvm:urn:uuid:c1e8b5da-8c15-6128-6a29-2b0f4f5bbbdd"
+    ],
+    "bucketCounts": {
+      "releases": 0,
+      "regressions": 0,
+      "patches": 6,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 6,
+    "signalLevel": "high",
+    "subsystems": [],
+    "lensPipeline": "linux-toolchain",
+    "rewrittenAt": "2026-05-16T22:16:28.206Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-ko.md"
+  }
+}

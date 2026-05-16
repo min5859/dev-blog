@@ -1,0 +1,105 @@
+{
+  "id": "2026-05-17-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-05-17 HDMI 브리지 정비 부활 — GPU·디스플레이·가속기",
+  "date": "2026-05-17",
+  "headline": "Rockchip HDMI 브리지 정비 시리즈가 부활했고, 2009년 아이맥용 라데온 패널 복구 패치도 함께 제출되었습니다.",
+  "summary": "오늘 GPU·디스플레이 렌즈는 dri-devel 패치 3건이며, dw-hdmi 의 전원·HPD·CEC·EDID 처리 정비 시리즈 부활이 가장 큰 사건입니다. 그 다음 신호는 구형 아이맥(RV770/DCE3.1) 라데온의 eDP 재개·내부 패널 복구 패치 묶음입니다.",
+  "tags": [
+    "DRM",
+    "GPU",
+    "가속기",
+    "초안"
+  ],
+  "highlights": [
+    {
+      "title": "dw-hdmi 전원·CEC·EDID 처리 정비 시리즈 부활 (장기 LibreELEC 패치의 상류 정착 첫 묶음, 향후 HDMI 브리지 전환 사전 정리)",
+      "priority": "상",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260516183838.2024991-1-jonas@kwiboo.se/",
+      "if": "Rockchip RK33xx 등 dw-hdmi 커넥터·브리지를 쓰는 디스플레이 스택이라면",
+      "do": "정상 DRM 함수 경로에서의 power on/off 와 detect() 에서의 EDID·CEC phys addr 갱신, HPD 디바운스 도입 차이를 미리 검토하세요",
+      "verify": "drm.debug=0xe 로그의 epoch counter 증가와 hotplug 이벤트 순서가 자기 보드(특히 RK3328/3399/3568)에서 시리즈 적용 전후로 일관되는지 대조하세요"
+    },
+    {
+      "title": "drm/radeon: iMac11,1 (RV770/DCE3.1) 내부 디스플레이·eDP suspend 복귀 복구 시리즈",
+      "priority": "중",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260516185226.3005-1-gilles.risch@gmail.com/",
+      "if": "RV770 세대 라데온이나 2009~2010년 아이맥 KMS 지원을 다루는 배포·커널이라면",
+      "do": "ASIC_IS_DCE31() 신설(시작 칩 CHIP_RV770)과 atombios_set_edp_panel_power() 가드 완화, ATOM_ENCODER_CMD_DP_VIDEO_ON/OFF 의 DCE3.1 확장 영향을 점검하세요",
+      "verify": "suspend/resume 사이클 후 내부 eDP 가 점등되는지, HPD 폴링이 첫 이터레이션에 assert 되는지, DIG Link B 라우팅 quirk 가 자기 보드 ID 와 매칭되는지 직접 시험하세요"
+    },
+    {
+      "title": "radeon DCE 매크로 enum 순서 지적 — ASIC_IS_DCE31() 가 ASIC_IS_DCE32() 를 포섭한다는 점이 명시되지 않음",
+      "priority": "하",
+      "verifyLink": "https://lore.kernel.org/dri-devel/agiy9II5jkHEgPAq@wunner.de/",
+      "if": "ASIC_IS_DCE3x 매크로나 radeon 칩 enum 순서에 의존하는 외부 패치·드라이버 분기를 가지고 있다면",
+      "do": "CHIP_RV770 이 CHIP_RV730 보다 앞에 있다는 enum 전제와 새 매크로 포함 관계를 자기 트리에서 명시적으로 정리하세요",
+      "verify": "ASIC_IS_DCE31/DCE32 호출 지점을 grep 해 의도한 칩 집합(RV770 포함 여부)과 실제 분기가 일치하는지 한 번씩 대조하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "오늘 이 렌즈에는 kernel.org 메인라인·stable·longterm 릴리스 공지가 포함되지 않았습니다. dri-devel 리스트의 패치 토론을 중심으로 정리합니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "오늘 회귀·보안으로 분류된 항목은 없습니다. 다만 (1) dw-hdmi 정비 시리즈는 향후 dw-hdmi 를 HDMI 브리지로 완전 전환하기 위한 사전 정리라는 점, (2) atombios_set_edp_panel_power() 의 가드 완화가 기존에 정상 동작하던 DCE4+ 경로에 부작용을 주지 않는지 리뷰 단계에서 추가 검토 여지가 있다는 점은 기록해 둡니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "[디스플레이 브리지]\n- drm: bridge: dw_hdmi: Misc enable/disable, CEC and EDID cleanup\n  · 영향: 평상 DRM 함수 경로에서 power on/off 와 CEC phys addr 무효화를 수행하고, detect() 에서 EDID·CEC 갱신을 브리지 커넥터와 동일하게 통일. HPD 디바운스로 저전압 펄스 시 풀 disable/enable 사이클을 회피. Rockchip RK3328/3399/3568, Amlogic S905X 에서 테스트.\n  · 확인: https://lore.kernel.org/dri-devel/20260516183838.2024991-1-jonas@kwiboo.se/\n\n[전력 관리 / 구형 GPU]\n- drm/radeon: fix eDP resume from suspend on iMac11,1 / DCE3.1 systems\n  · 영향: atombios_set_edp_panel_power() 의 !ASIC_IS_DCE4() 가드를 !ASIC_IS_DCE31() 로 바꾸고 DCE3.1 에서도 ATOM_ENCODER_CMD_DP_VIDEO_ON/OFF 를 발행하여 RV770 계열 eDP 가 resume 후 점등되도록 함.\n  · 확인: https://lore.kernel.org/dri-devel/20260516185226.3005-1-gilles.risch@gmail.com/\n- drm/radeon: fix internal display on iMac11,1 (RV770/DCE3.1)\n  · 영향: ASIC_IS_DCE31() 매크로를 CHIP_RV770 부터 시작하도록 신설하여 RV770 이 DCE3.2 분기에서 빠지던 문제를 해소하고, iMac11,1 을 DIG Link B 라우팅 quirk 목록에 추가."
+    },
+    {
+      "heading": "기타",
+      "body": "오늘 이 렌즈에는 별도로 기록할 메타 토론·정책·도구 변화가 없습니다. 두 번째 radeon 스레드는 동일 시리즈에 대한 메인테이너 외 리뷰 코멘트(매크로 포섭 관계 명확화 요청)이며 위 핵심 변경 항목과 함께 읽으면 됩니다. 벤더 클로즈드 GPU 스택 토픽은 dri-devel 범위 밖이라 제외했습니다."
+    }
+  ],
+  "confidence": {
+    "level": "초안",
+    "note": "메일 본문(commit message) 기반으로 정리했으나 게시 전 원문 패치 및 후속 리뷰 확인이 필요합니다."
+  },
+  "sources": [
+    {
+      "title": "drm: bridge: dw_hdmi: Misc enable/disable, CEC and EDID cleanup",
+      "url": "https://lore.kernel.org/dri-devel/20260516183838.2024991-1-jonas@kwiboo.se/",
+      "note": "lore.kernel.org/dri-devel · patch-discussion"
+    },
+    {
+      "title": "drm/radeon: fix eDP resume from suspend on iMac11, 1 / DCE3.1 systems",
+      "url": "https://lore.kernel.org/dri-devel/20260516185226.3005-1-gilles.risch@gmail.com/",
+      "note": "lore.kernel.org/dri-devel · patch-discussion"
+    },
+    {
+      "title": "drm/radeon: fix internal display on iMac11, 1 (RV770/DCE3.1)",
+      "url": "https://lore.kernel.org/dri-devel/agiy9II5jkHEgPAq@wunner.de/",
+      "note": "lore.kernel.org/dri-devel · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-16T22:26:17.826Z",
+    "sourceRecordCount": 25,
+    "candidateCount": 3,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "lore-dri-devel:urn:uuid:58636f71-0702-9e2c-3900-4875dabef2d6",
+      "lore-dri-devel:urn:uuid:72e7354f-9f50-5a99-29dc-e446cf5fa787",
+      "lore-dri-devel:urn:uuid:412d284c-3fd4-488a-513c-a8325f033d5c"
+    ],
+    "bucketCounts": {
+      "releases": 0,
+      "regressions": 0,
+      "patches": 3,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 3,
+    "signalLevel": "high",
+    "subsystems": [
+      "전력 관리"
+    ],
+    "lensPipeline": "linux-gpu-ai",
+    "rewrittenAt": "2026-05-16T22:26:21.243Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-ko.md"
+  }
+}
