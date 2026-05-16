@@ -14,7 +14,7 @@ const draftPath = process.env.DRAFT_PATH || path.join(root, 'data', 'generated',
 const fallbackDraftPath = path.join(root, 'content', 'topics', topic, 'posts', `${postId}.json`);
 const promptTemplatePath = path.join(root, 'prompts', 'opensource-newsletter-ko.md');
 const generatedDir = path.join(root, 'data', 'generated', topic);
-const adapter = resolveAiAdapter('cursor');
+const adapter = resolveAiAdapter('claude');
 const generatedAt = new Date().toISOString();
 
 async function readText(file) { return readFile(file, 'utf8'); }

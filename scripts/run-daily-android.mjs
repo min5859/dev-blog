@@ -20,7 +20,7 @@ const rewriteScriptMap = {
   claude: 'rewrite:android:claude',
   cursor: 'rewrite:android:cursor',
 };
-const rewriteScript = rewriteScriptMap[rewriteAdapter] || 'rewrite:android:cursor';
+const rewriteScript = rewriteScriptMap[rewriteAdapter] || 'rewrite:android:claude';
 
 const steps = [
   ['collect', ['npm', ['run', 'collect:android']]],

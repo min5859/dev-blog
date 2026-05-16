@@ -106,9 +106,9 @@ async function main() {
 
   const rewriteEnv = rewriteAdapter === 'template'
     ? { AI_ADAPTER: 'template' }
-    : rewriteAdapter === 'claude'
-      ? { AI_ADAPTER: 'claude' }
-      : { AI_ADAPTER: 'cursor' };
+    : rewriteAdapter === 'cursor'
+      ? { AI_ADAPTER: 'cursor' }
+      : { AI_ADAPTER: 'claude' };
 
   const steps = [
     ['collect', 'node', ['scripts/collect-lore-lens.mjs', topic], {}],

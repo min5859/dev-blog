@@ -20,7 +20,7 @@ const rewriteScriptMap = {
   claude: 'rewrite:linux:claude',
   cursor: 'rewrite:linux:cursor',
 };
-const rewriteScript = rewriteScriptMap[rewriteAdapter] || 'rewrite:linux:cursor';
+const rewriteScript = rewriteScriptMap[rewriteAdapter] || 'rewrite:linux:claude';
 
 const steps = [
   ['collect', ['npm', ['run', 'collect:linux']]],

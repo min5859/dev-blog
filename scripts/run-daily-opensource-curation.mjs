@@ -20,7 +20,7 @@ const rewriteScriptMap = {
   claude: 'rewrite:opensource-curation:claude',
   cursor: 'rewrite:opensource-curation:cursor',
 };
-const rewriteScript = rewriteScriptMap[rewriteAdapter] || 'rewrite:opensource-curation:cursor';
+const rewriteScript = rewriteScriptMap[rewriteAdapter] || 'rewrite:opensource-curation:claude';
 
 const skipUpstream = process.env.OPENSOURCE_CURATION_SKIP_UPSTREAM === '1';
 const upstreamSteps = skipUpstream

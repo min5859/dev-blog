@@ -10,7 +10,8 @@ import path from 'node:path';
  */
 export function normalizeDailyRewriteAdapter(raw) {
   const v = typeof raw === 'string' ? raw.trim() : '';
-  if (!v || v === 'cursor-agent') return 'cursor';
+  if (v === 'cursor-agent') return 'cursor';
+  if (!v) return 'claude';
   return v;
 }
 

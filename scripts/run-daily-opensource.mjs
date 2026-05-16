@@ -20,7 +20,7 @@ const rewriteScriptMap = {
   claude: 'rewrite:opensource:claude',
   cursor: 'rewrite:opensource:cursor',
 };
-const rewriteScript = rewriteScriptMap[rewriteAdapter] || 'rewrite:opensource:cursor';
+const rewriteScript = rewriteScriptMap[rewriteAdapter] || 'rewrite:opensource:claude';
 
 const steps = [
   ['collect', ['npm', ['run', 'collect:opensource']]],

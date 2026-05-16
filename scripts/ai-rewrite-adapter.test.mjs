@@ -2,9 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeDailyRewriteAdapter, parseNewsletterJsonFromAiOutput, resolveAiAdapter } from './lib/ai-rewrite-adapter.mjs';
 
-test('normalizeDailyRewriteAdapter defaults empty and cursor-agent to cursor', () => {
-  assert.equal(normalizeDailyRewriteAdapter(''), 'cursor');
+test('normalizeDailyRewriteAdapter defaults empty to claude and maps cursor-agent alias', () => {
+  assert.equal(normalizeDailyRewriteAdapter(''), 'claude');
   assert.equal(normalizeDailyRewriteAdapter('cursor-agent'), 'cursor');
+  assert.equal(normalizeDailyRewriteAdapter('cursor'), 'cursor');
   assert.equal(normalizeDailyRewriteAdapter('claude'), 'claude');
 });
 
