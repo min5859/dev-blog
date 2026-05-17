@@ -1,0 +1,133 @@
+{
+  "id": "2026-05-18-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-05-18 Rust 드라이버 데이터 분리 — 커널 도구체인·Rust",
+  "date": "2026-05-18",
+  "headline": "Rust 드라이버 트레이트가 사적 데이터 타입을 별도 연관 타입으로 분리하면서 동시성 경계 위치가 다시 논의되고 있습니다.",
+  "summary": "오늘 도구체인 렌즈에서 가장 중요한 신호는 Rust 드라이버 모델이 사적 데이터를 별도 `type Data` 연관 타입으로 떼어내는 작업이고, 핵심 후속 논점은 `Send` 경계가 트레이트 본체와 연관 타입 중 어디에 붙는지입니다. 그 다음 신호로는 selftests/bpf 부분 빌드 관용화 시리즈가 메인테이너 응답을 기다리고, kernel test robot 이 잡은 빌드 에러 두 건이 컴파일러 진단 정책 관점에서 참고할 만합니다.",
+  "tags": [
+    "도구체인",
+    "LLVM",
+    "kbuild",
+    "Rust",
+    "초안"
+  ],
+  "highlights": [
+    {
+      "title": "rust: driver: 사적 데이터 타입을 드라이버 트레이트와 분리",
+      "priority": "상",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/DIL0WRS36ZL2.2CT5UNXVH8VKE@kernel.org/",
+      "if": "Rust 드라이버 추상을 다루는 서브시스템·외부 트리 메인테이너라면",
+      "do": "`Driver: Send` 가 빠지고 `type Data: Send` 로 옮기자는 제안 흐름을 따라가세요",
+      "verify": "두 변형의 diff 를 자기 어댑터의 시그니처·동시성 가정과 한 번 대조하세요"
+    },
+    {
+      "title": "lib: rspdm: SPDM CHALLENGE 응답을 Rust Validate 추상으로 처리",
+      "priority": "상",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/23e1bcba-da88-4cc6-83ca-b77bcdaa9d2c@gmail.com/",
+      "if": "Rust 로 외부 바이트 스트림을 검증·디코딩하는 추상을 만들고 있다면",
+      "do": "raw_mut → cast::<T>() → unsafe { &mut *ptr } 패턴의 SAFETY 주석을 자기 코드와 비교하세요",
+      "verify": "gregkh 의 별도 스레드와 본 스레드의 정렬·길이 검증 논평을 함께 읽으세요"
+    },
+    {
+      "title": "selftests/bpf: 부분 빌드를 관용하는 시리즈가 메인테이너 응답 대기",
+      "priority": "중",
+      "verifyLink": "https://lore.kernel.org/llvm/DIKKC3RENM6O.24MCCPOVFAVZ6@gmail.com/",
+      "if": "여러 .config 로 selftests/bpf 를 빌드하는 CI 매트릭스를 운용한다면",
+      "do": "Makefile 이 어떤 config 조합에서 빌드 실패를 그레이스풀하게 넘기는지 변경 범위를 추려두세요",
+      "verify": "메인테이너 응답이 붙은 뒤 자기 CI 매트릭스에 그대로 적용 가능한지 다시 보세요"
+    },
+    {
+      "title": "kernel test robot 가 drm/radeon·net/octeon staging 패치에서 빌드 에러 보고",
+      "priority": "중",
+      "verifyLink": "https://lore.kernel.org/llvm/202605171126.1g7CRkTZ-lkp@intel.com/",
+      "if": "out-of-tree 드라이버 시리즈를 0day 봇 노출 경로로 보내는 운영팀이라면",
+      "do": "implicit function declaration(ASIC_IS_DCE31) 와 시그니처 충돌(cvm_oct_common_stop) 두 패턴을 사전 점검 체크리스트에 넣으세요",
+      "verify": "두 보고에 적힌 Reported-by 태그 절차가 자기 패치 워크플로우에 통합돼 있는지 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이 렌즈는 lore 메일링 리스트(llvm·linux-kbuild·rust-for-linux) 중심입니다. mainline·stable 릴리스 정보는 ‘리눅스 개발’ 토픽을 참고하세요."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "정식 회귀로 분류된 항목은 없습니다. 다만 kernel test robot(0day) 이 두 건의 빌드 에러를 보고했습니다.\n- drm/radeon eDP 재개 패치: ASIC_IS_DCE31 가 헤더 없이 호출되어 implicit function declaration 에러.\n  · 영향: 본체 트리에는 아직 적용되지 않은 패치이며 0day 매트릭스 빌드만 노출됩니다.\n  · 확인: https://lore.kernel.org/llvm/202605171126.1g7CRkTZ-lkp@intel.com/\n- net/octeon staging: cvm_oct_common_stop 의 헤더 선언(int 반환) 과 정의(void) 시그니처 충돌.\n  · 영향: staging 트리 한정. 도구체인 관점에서는 헤더 의존 누락과 반환형 일관성 점검 신호입니다.\n  · 확인: https://lore.kernel.org/llvm/202605180508.53ptUezJ-lkp@intel.com/"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "[Rust]\n- rust: driver: decouple driver private data from driver type — 드라이버 트레이트에서 사적 데이터를 `type Data` 연관 타입으로 분리. 후속 응답에서 `Driver: Send` 를 떼고 `type Data: Send` 로 옮기자는 제안이 붙음.\n  · 영향: 외부 트리에서 `Driver` 를 구현하던 코드는 Send 경계 위치 변경에 따라 시그니처와 어댑터 코드를 재확인해야 합니다.\n  · 확인: https://lore.kernel.org/rust-for-linux/DIL0WRS36ZL2.2CT5UNXVH8VKE@kernel.org/\n- lib: rspdm: Support SPDM challenge — SPDM CHALLENGE 응답을 Rust 로 검증·디코딩. `Validate<&mut Unvalidated<KVec<u8>>>` 구현이 raw 포인터 캐스트와 SAFETY 주석 패턴을 채택. 별도 gregkh 스레드와 연계되어 검토 중.\n  · 영향: Rust 추상이 외부 바이트 스트림을 받을 때의 검증 계약 사례. 머지 시점은 미정.\n  · 확인: https://lore.kernel.org/rust-for-linux/23e1bcba-da88-4cc6-83ca-b77bcdaa9d2c@gmail.com/\n\n[Kbuild]\n- selftests/bpf: Tolerate partial builds across kernel configs — config 별 부분 빌드를 허용하는 시리즈. 메인테이너 측 코멘트는 \"개념은 합리적, makefile 전문가 리뷰 대기\".\n  · 영향: 여러 .config 로 selftests/bpf 를 빌드하는 CI 환경에 영향. 본체 머지 시기는 미정.\n  · 확인: https://lore.kernel.org/llvm/DIKKC3RENM6O.24MCCPOVFAVZ6@gmail.com/"
+    },
+    {
+      "heading": "기타",
+      "body": "단일 SoC ADC 드라이버 변경(sun20i-gpadc 의 비연속 채널 룩업 지원) 은 한 트리·한 보드 한정이라 도구체인 관심사에서 제외합니다. 자기 서브시스템의 컴파일러 경고 정책과 Kconfig 분기는 lore 에서 직접 좁혀 검색하세요."
+    }
+  ],
+  "confidence": {
+    "level": "초안",
+    "note": "제목·메타데이터 기반 자동 선별입니다. 게시 전 원문 확인이 필요합니다."
+  },
+  "sources": [
+    {
+      "title": "iio: adc: sun20i-gpadc: support non-contiguous channel lookups",
+      "url": "https://lore.kernel.org/llvm/20260516-fix-sunxi-gpadc-sparse-channels-v3-1-4d229d18ff3b@mmpsystems.pl/",
+      "note": "lore.kernel.org/llvm · patch-discussion"
+    },
+    {
+      "title": "rust: driver: decouple driver private data from driver type",
+      "url": "https://lore.kernel.org/rust-for-linux/DIL0WRS36ZL2.2CT5UNXVH8VKE@kernel.org/",
+      "note": "lore.kernel.org/rust-for-linux · patch-discussion"
+    },
+    {
+      "title": "drm/radeon: fix eDP resume from suspend on iMac11, 1 / DCE3.1 systems",
+      "url": "https://lore.kernel.org/llvm/202605171126.1g7CRkTZ-lkp@intel.com/",
+      "note": "lore.kernel.org/llvm · patch-discussion"
+    },
+    {
+      "title": "selftests/bpf: Tolerate partial builds across kernel configs",
+      "url": "https://lore.kernel.org/llvm/DIKKC3RENM6O.24MCCPOVFAVZ6@gmail.com/",
+      "note": "lore.kernel.org/llvm · patch-discussion"
+    },
+    {
+      "title": "lib: rspdm: Support SPDM challenge",
+      "url": "https://lore.kernel.org/rust-for-linux/23e1bcba-da88-4cc6-83ca-b77bcdaa9d2c@gmail.com/",
+      "note": "lore.kernel.org/rust-for-linux · patch-discussion"
+    },
+    {
+      "title": "net: octeon: fix carrier state, null guard, and modernize phy ioctl",
+      "url": "https://lore.kernel.org/llvm/202605180508.53ptUezJ-lkp@intel.com/",
+      "note": "lore.kernel.org/llvm · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-17T22:16:07.330Z",
+    "sourceRecordCount": 75,
+    "candidateCount": 6,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "lore-llvm:urn:uuid:65432907-06f7-bbe9-e18c-f8a523f8f70e",
+      "lore-rust-for-linux:urn:uuid:7adf44ce-2485-6530-c926-8e138d514a05",
+      "lore-llvm:urn:uuid:65d4f9bb-5a3d-905b-de0b-96a392d2c5ba",
+      "lore-llvm:urn:uuid:a87166aa-ede0-e89f-3e3c-43da9c768a4a",
+      "lore-rust-for-linux:urn:uuid:c7c9dd7e-6855-ebf5-c4ca-dc280e8975ca",
+      "lore-llvm:urn:uuid:2059d5d0-d97d-a60b-da6a-4bb4f8819b71"
+    ],
+    "bucketCounts": {
+      "releases": 0,
+      "regressions": 0,
+      "patches": 6,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 6,
+    "signalLevel": "high",
+    "subsystems": [
+      "전력 관리",
+      "네트워크"
+    ],
+    "lensPipeline": "linux-toolchain",
+    "rewrittenAt": "2026-05-17T22:16:13.494Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-ko.md"
+  }
+}

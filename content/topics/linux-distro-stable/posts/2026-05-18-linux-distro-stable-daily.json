@@ -1,0 +1,144 @@
+{
+  "id": "2026-05-18-linux-distro-stable-daily",
+  "topic": "linux-distro-stable",
+  "title": "2026-05-18 6.19 안정 트리 마감과 회귀 차단 — 스테이블·배포 롱텀",
+  "headline": "6.19 안정 라인이 EOL로 닫히는 가운데 네트워크 devmem TX와 IPv6 IOAM 회귀를 막는 패치가 stable 큐로 올라왔습니다.",
+  "date": "2026-05-18",
+  "summary": "오늘 이 렌즈의 핵심은 6.19.14 가 6.19 안정 라인의 마지막 릴리스로 EOL 처리된 점과, devmem TCP TX 경로에서 비페이지 정렬 dma-buf 가 tx_vec 배열을 한 칸 넘겨 읽히던 OOB 를 사전에 거부하도록 막는 패치(Fixes: bd61848900bf)가 stable 리스트에 올라온 점입니다. 그 다음 신호는 IPv6 IOAM Hop-by-Hop 처리에서 인터페이스 종료 중 idev=NULL 역참조를 차단하는 수정과, 7.0.9 stable·7.1-rc4 동시 공개로 다음 분기 백포트 우선순위를 다시 정렬해야 하는 흐름입니다.",
+  "tags": [
+    "stable",
+    "longterm",
+    "백포트",
+    "EOL",
+    "네트워크"
+  ],
+  "highlights": [
+    {
+      "title": "net: devmem TX dma-buf 비페이지 정렬 크기·SG 거부로 tx_vec OOB 차단",
+      "priority": "상",
+      "verifyLink": "https://lore.kernel.org/stable/20260517201814.222563-1-devnexen@gmail.com/",
+      "if": "devmem TCP TX 경로(가상화·NIC 오프로드 스택)를 쓰는 배포 라인을 관리한다면",
+      "do": "dmabuf->size 와 모든 sg_dma_len() 이 PAGE_SIZE 배수가 아닐 때 바인드를 거부하는 이 수정을 stable 백포트 큐에 올려 두세요",
+      "verify": "원문 스레드의 tx_vec 가 dmabuf->size / PAGE_SIZE 로 크기 잡힌 시나리오와 Fixes: bd61848900bf 백포트가 자기 트리에 흘러왔는지 diff 로 대조하세요"
+    },
+    {
+      "title": "ipv6: ioam Hop-by-Hop 경로에서 idev NULL 역참조 차단",
+      "priority": "상",
+      "verifyLink": "https://lore.kernel.org/stable/20260517183059.29140-1-justin.iurman@gmail.com/",
+      "if": "IPv6 IOAM Pre-allocated Trace(ioam6_enabled) 를 켠 라우터·관측 노드를 운용한다면",
+      "do": "addrconf_ifdown 가 RCU 로 dev->ip6_ptr 를 비우는 동안 ipv6_hop_ioam() 이 __in6_dev_get() NULL 을 만나는 창구가 막혔는지 확인하세요",
+      "verify": "Fixes: 9ee11f0fff20 백포트 여부와 SKB_DROP_REASON_IPV6DISABLED 드롭 카운터가 새로 잡히는지 자기 stable 트리·재현 시나리오로 대조하세요"
+    },
+    {
+      "title": "iio: temperature: tmp006 트리거 등록을 devm 스코프로 정합",
+      "priority": "중",
+      "verifyLink": "https://lore.kernel.org/stable/20260517182614.218-1-sozdayvek@gmail.com/",
+      "if": "TMP006 온도 센서 모듈을 로드·언로드하며 운용하는 임베디드 배포라면",
+      "do": "iio_trigger_register() 를 devm_iio_trigger_register() 로 바꿔 unload 후 dangling 트리거 잔존을 막는 백포트를 따라가세요",
+      "verify": "Fixes: 91f75ccf9f03 백포트 이후 모듈 rmmod 를 반복해도 전역 trigger 리스트에 죽은 항목이 남지 않는지 자기 트리에서 점검하세요"
+    },
+    {
+      "title": "powerpc/bpf 긴 분기 트램폴린 정렬과 검증기 selftest 시리즈",
+      "priority": "하",
+      "verifyLink": "https://lore.kernel.org/stable/20260517214043.12975-1-adubey@linux.ibm.com/",
+      "if": "ppc64 환경에서 BPF 검증기 selftest 를 회귀 게이트로 쓰는 배포라면",
+      "do": "Out-of-line stub 와 long branch stub 사이 8바이트 dummy_tramp_addr 위치를 분리해 디스어셈블이 끊기지 않게 한 시리즈를 추적하세요",
+      "verify": "리뷰 스레드에서 지적된 PPC32(bpf_jit_comp32.c) 시그니처 미정합 빌드 실패가 해결됐는지 8xx·book3s32 cross-build 로 직접 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "- Linux 6.19.14 stable · EOL\n  · 영향: 6.19 안정 라인의 마지막 릴리스로 EOL 처리. 219건 백포트 중 dma-mapping/dma-debug 추적 보정, mm/userfaultfd hugetlb 폴트 뮤텍스 해시 수정, blk-cgroup cgwb_release_workfn() UAF, hwmon powerz USB disconnect UAF, ALSA 6fire/em28xx/vidtv/mediatek-vcodec/bcache UAF 다수, KASAN pXds 이중 해제, OCFS2 인라인 OOB, KVM SEV-SNP VMSA 동기화 락 보강 등이 묶여 들어갔습니다. 6.19 베이스 배포는 다음 longterm 라인으로의 이전 일정을 굳혀야 합니다.\n  · 확인: https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.19.14\n\n- Linux 7.1-rc4 mainline\n  · 영향: 메인라인 추적 트리. 배포 staging 큐에 머지 풍향계로 두고 다음 분기 백포트 우선순위 정리에 활용하세요.\n  · 확인: https://git.kernel.org/torvalds/h/v7.1-rc4\n\n- Linux 7.0.9 stable\n  · 영향: 197건 백포트. AMDGPU VCN3/VCN4 msg bound 오버플로 방지, vsock/virtio 의 accept-큐 카운트 누수·tap skb 빈 페이로드·분할 패킷 길이/오프셋·버퍼 크기 클램프 순서 등 가상화 네트워크 회귀 4건 묶음, mm/vma mmap_prepare() 경로의 unmap 회피, sched_ext bypass_lb_cpu()·isolcpus 도메인 감지 보정, cgroup css percpu_ref 종료 지연, EDAC versalnet 디바이스명 누수, batman-adv backbone/claim 참조·정리 다수 등이 포함됐습니다.\n  · 확인: https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.0.9\n\n- Linux next-20260508 linux-next\n  · 영향: 머지 큐 스냅샷. 배포 관점에서는 다음 분기 백포트 후보 정렬에 사용하세요.\n  · 확인: https://git.kernel.org/next/linux-next/h/next-20260508\n\n- 6.18.32-rc 리뷰 사이클(papr-hvpipe 빌드 실패 보고)\n  · 영향: gentoo 6.18 트리에서 arch/powerpc/platforms/pseries/papr-hvpipe.c 가 FD_PREPARE/fd_publish 묵시적 선언으로 빌드 실패. FD_PREPARE 는 011703a9acd7 (\"file: add FD_{ADD,PREPARE}()\") 도입분으로 6.18 에는 없으므로, papr-hvpipe 의 FD_PREPARE 전환 패치는 6.18-stable 백포트 대상이 아님을 stable 큐에서 정리해야 합니다.\n  · 확인: https://lore.kernel.org/stable/87cxyuq6oa.fsf@gentoo.org/"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- net: devmem: reject TX dma-buf with non-page-aligned size or SG length\n  · 영향: dmabuf->size 가 PAGE_SIZE 배수가 아니면 sendmsg() 가 마지막 슬롯 너머의 tail 영역을 만지면서 tx_vec[] 를 한 칸 넘겨 OOB 로 읽고, 비페이지 정렬·비최종 SG 항목은 뒤따르는 슬롯을 desync 시켜 같은 OOB 를 간접 유발. udmabuf/dma-buf heaps/GPU 드라이버 같은 실제 exporter 는 이미 페이지 정렬을 보장하므로, 이 거부는 TX 경로가 백킹할 수 없는 레이아웃만 차단합니다.\n  · 확인: https://lore.kernel.org/stable/20260517201814.222563-1-devnexen@gmail.com/\n\n- ipv6: ioam: add NULL check for idev in ipv6_hop_ioam()\n  · 영향: addrconf_ifdown() 가 RCU 로 dev->ip6_ptr 를 비우는 사이 __in6_dev_get(skb->dev) 가 NULL 을 돌려주면 cnf.ioam6_enabled 접근에서 NULL 역참조. 인터페이스 teardown 중 IOAM Hop-by-Hop 옵션을 처리하는 경로에서 발생 가능. NULL 시 SKB_DROP_REASON_IPV6DISABLED 로 떨어뜨려 막습니다.\n  · 확인: https://lore.kernel.org/stable/20260517183059.29140-1-justin.iurman@gmail.com/\n\n- iio: temperature: tmp006: use devm_iio_trigger_register\n  · 영향: tmp006_probe() 가 DRDY 트리거를 devm_iio_trigger_alloc() 로 할당해 놓고 등록은 plain iio_trigger_register() 로 했고, 드라이버에 .remove() 콜백이 없어 모듈 unload 시 트리거 메모리는 devm 으로 해제되지만 전역 trigger 리스트에는 dangling 항목이 남는 구조적 문제. 동일 devm 스코프로 모아 해결합니다.\n  · 확인: https://lore.kernel.org/stable/20260517182614.218-1-sozdayvek@gmail.com/\n\n- papr-hvpipe FD_PREPARE 전환 패치 빌드 실패 보고 (6.18.32-rc)\n  · 영향: 6.18 에 존재하지 않는 FD_PREPARE/fd_publish 를 쓰는 패치가 stable 리뷰로 들어와 ppc64 배포 빌드를 끊었다는 보고. 의존 커밋 011703a9acd7 가 함께 백포트되지 않으면 적용 불가이므로 stable 큐에서 해당 패치는 보류·되돌림 대상으로 다뤄야 합니다.\n  · 확인: https://lore.kernel.org/stable/87cxyuq6oa.fsf@gentoo.org/"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "[아키텍처·BPF]\n- powerpc/bpf: 긴 분기 트램폴린 정렬 및 검증기 selftest 도입 시리즈\n  · 영향: 현재 ppc64 트램폴린 구현은 Out-of-line stub 와 Long branch stub 사이에 8바이트 dummy_tramp_addr 를 끼워 두는 구조라, jited 이미지를 디스어셈블해 instruction 패턴을 매칭하는 verifier selftest 가 그 8바이트에서 실패합니다. 시리즈는 (1) 8바이트 정렬을 재배치해 디스어셈블이 끊기지 않게 하고, (2) __powerpc64 아키텍처 태그를 도입해 verifier 테스트 필터링을 정상화하며, (3) ppc64 tailcall verifier 테스트케이스를 추가합니다. 다만 리뷰 스레드는 같은 시리즈의 bpf_jit.h 시그니처 변경이 bpf_jit_comp32.c 를 함께 갱신하지 않아 PPC_BOOK3S_32/PPC_8xx 빌드에서 prototype 충돌을 일으킬 수 있다는 점을 지적했으니, 배포 cross-build 매트릭스에 포함된 라인은 재제출 흐름을 따라가세요.\n  · 확인: https://lore.kernel.org/stable/20260517214043.12975-1-adubey@linux.ibm.com/\n  · 확인: https://lore.kernel.org/stable/fd8a7c45cebfb013732ee23ab22dc9e06a5e27d5e0d130f2bbe061eead6a3556@mail.kernel.org/"
+    },
+    {
+      "heading": "기타",
+      "body": "리스트 범위 밖 토론은 제외했습니다. 6.19 가 EOL 로 닫힌 만큼 supported-kernel 정책에 따라 7.0.y 또는 차기 longterm 라인으로의 이전 일정을 갱신하고, gregkh 의 6.18.32-rc 리뷰 메일에서 papr-hvpipe FD_PREPARE 빌드 실패 같은 의존성 불일치 보고가 자기 트리에 미해결로 쌓이지 않았는지 한 번 훑어 두세요."
+    }
+  ],
+  "confidence": {
+    "level": "초안",
+    "note": "제목·메타데이터 기반 자동 선별입니다. 게시 전 원문 확인이 필요합니다."
+  },
+  "sources": [
+    {
+      "title": "Linux 6.19.14 stable · EOL",
+      "url": "https://git.kernel.org/stable/h/v6.19.14",
+      "note": "kernel.org · kernel-release"
+    },
+    {
+      "title": "Linux 7.1-rc4 mainline",
+      "url": "https://git.kernel.org/torvalds/h/v7.1-rc4",
+      "note": "kernel.org · kernel-release"
+    },
+    {
+      "title": "Linux 7.0.9 stable",
+      "url": "https://git.kernel.org/stable/h/v7.0.9",
+      "note": "kernel.org · kernel-release"
+    },
+    {
+      "title": "Linux next-20260508 linux-next",
+      "url": "https://git.kernel.org/next/linux-next/h/next-20260508",
+      "note": "kernel.org · kernel-release"
+    },
+    {
+      "title": "net: devmem: reject TX dma-buf with non-page-aligned size or SG length",
+      "url": "https://lore.kernel.org/stable/20260517201814.222563-1-devnexen@gmail.com/",
+      "note": "lore.kernel.org/stable · patch-discussion"
+    },
+    {
+      "title": "powerpc/bpf: Add support for verifier selftest",
+      "url": "https://lore.kernel.org/stable/20260517214043.12975-1-adubey@linux.ibm.com/",
+      "note": "lore.kernel.org/stable · patch-discussion"
+    },
+    {
+      "title": "ipv6: ioam: add NULL check for idev in ipv6_hop_ioam()",
+      "url": "https://lore.kernel.org/stable/20260517183059.29140-1-justin.iurman@gmail.com/",
+      "note": "lore.kernel.org/stable · patch-discussion"
+    },
+    {
+      "title": "powerpc/bpf: fix alignment of long branch trampoline address",
+      "url": "https://lore.kernel.org/stable/fd8a7c45cebfb013732ee23ab22dc9e06a5e27d5e0d130f2bbe061eead6a3556@mail.kernel.org/",
+      "note": "lore.kernel.org/stable · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-17T22:19:18.259Z",
+    "sourceRecordCount": 35,
+    "candidateCount": 10,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "kernel-org:stable:6.19.14",
+      "kernel-org:mainline:7.1-rc4",
+      "kernel-org:stable:7.0.9",
+      "kernel-org:linux-next:next-20260508",
+      "lore-stable:urn:uuid:43c630ac-59d9-c470-5486-10caa7d6d75d",
+      "lore-stable:urn:uuid:9c842531-03e7-d764-5b88-86122ec58848",
+      "lore-stable:urn:uuid:014a6aca-14a9-8873-f9e5-aac92e31fa78",
+      "lore-stable:urn:uuid:cc9d5f56-e92f-9818-117d-3477ea1d16aa",
+      "lore-stable:urn:uuid:06af3928-c5fc-9c5b-0049-a310a96e0796",
+      "lore-stable:urn:uuid:29acb71a-a2af-5c8e-d73a-1c853c42335a"
+    ],
+    "bucketCounts": {
+      "releases": 4,
+      "regressions": 3,
+      "patches": 3,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 6,
+    "signalLevel": "high",
+    "subsystems": [
+      "네트워크",
+      "메모리 관리"
+    ],
+    "lensPipeline": "linux-distro-stable"
+  }
+}

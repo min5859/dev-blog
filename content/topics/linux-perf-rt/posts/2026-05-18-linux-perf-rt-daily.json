@@ -1,0 +1,134 @@
+{
+  "id": "2026-05-18-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-05-18 BPF JIT 정렬과 PTE 헬퍼 — 관측성·실시간(eBPF·RT)",
+  "headline": "powerpc BPF 트램폴린 8바이트 정렬 재제출과 bpf_arena 페이지 폴트용 PTE 설치 헬퍼가 함께 진행 중입니다.",
+  "date": "2026-05-18",
+  "summary": "오늘의 핵심은 powerpc BPF JIT 트램폴린 dummy 주소 정렬 재제출과 bpf_arena 페이지 폴트 복구를 노린 락-프리 PTE 설치 헬퍼입니다. 그다음 신호로는 netconsole 분할을 위한 netpoll 큐 심볼 공개와 TDX 모듈 런타임 업데이트 v9 가 7.2 머지 윈도를 노리고 있습니다.",
+  "tags": [
+    "eBPF",
+    "BPF JIT",
+    "powerpc",
+    "bpf_arena",
+    "PREEMPT_RT",
+    "TDX",
+    "netpoll"
+  ],
+  "highlights": [
+    {
+      "title": "powerpc BPF JIT dummy_tramp_addr 를 long branch stub 뒤로 이동해 8바이트 정렬",
+      "priority": "상",
+      "verifyLink": "https://lore.kernel.org/bpf/20260517214043.12975-3-adubey@linux.ibm.com/",
+      "if": "PPC64 환경에서 BPF 트램폴린 selftest 를 돌린다면",
+      "do": "dummy_tramp_addr 위치 이동과 마지막 8바이트 제외 로직을 읽어 두세요",
+      "verify": "bpf_arch_text_poke() 가 새 오프셋으로 트램폴린 주소를 갱신하는지 디스어셈블 로그로 대조하세요"
+    },
+    {
+      "title": "mm: bpf_arena 페이지 폴트용 락-프리 PTE 설치 헬퍼 ptep_try_install() 도입 제안",
+      "priority": "상",
+      "verifyLink": "https://lore.kernel.org/bpf/20260517211232.1670594-2-tj@kernel.org/",
+      "if": "bpf_arena 커널측 폴트 복구나 PTE 락 경합을 다루는 코드를 본다면",
+      "do": "x86·arm64 cmpxchg 구현과 그 외 아키텍처의 false 스텁 차이를 정리해 두세요",
+      "verify": "자기 아키 콜러가 폴트 시 oops 폴백을 그대로 받아들이는지 트리에서 확인하세요"
+    },
+    {
+      "title": "netpoll: zap_completion_queue 를 netpoll_ 접두사로 개명하고 NETDEV_INTERNAL 로 공개",
+      "priority": "중",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260512-netconsole_split-v2-8-1191d14ad66d@debian.org/",
+      "if": "netconsole 분할 작업이나 softnet 완료 큐 경로에 의존한다면",
+      "do": "EXPORT_SYMBOL_NS_GPL 네임스페이스와 헤더 선언 위치 변화를 확인하세요",
+      "verify": "include/linux/netpoll.h 의 신규 프로토타입이 자기 모듈 빌드와 충돌하지 않는지 검증하세요"
+    },
+    {
+      "title": "Runtime TDX module update v9 — tdx_blob 포맷 개편과 cleanup 패치 흡수",
+      "priority": "중",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260513151045.1420990-1-chao.gao@intel.com/",
+      "if": "TDX 호스트에서 런타임 모듈 교체를 다루는 가상화·실시간 스택이라면",
+      "do": "v8 대비 do-while 루프 재구성과 신규 cleanup 두 패치를 읽으세요",
+      "verify": "7.2 머지 윈도 진입 가능성을 메인테이너 응답 흐름에서 추적하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이 토픽은 lore 전용 렌즈입니다. mainline 릴리스·일반 스케줄러 변경은 ‘리눅스 개발’ 토픽을 참고하세요.\n- 보조 신호: TDX 모듈 런타임 업데이트 시리즈가 v9 로 재제출되며 7.2 머지 윈도를 명시적으로 노리고 있습니다.\n  · 확인: https://lore.kernel.org/linux-rt-devel/20260513151045.1420990-1-chao.gao@intel.com/"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "[BPF JIT · powerpc]\n- powerpc/bpf 트램폴린 주소 정렬 패치(ce3a7a39e286) 에 자동 리뷰가 3건의 잠재 결함을 제기했습니다.\n  · 영향: pass 0 할당 단계에서 정렬 NOP 가 빠져 proglen 이 과소 계상되면 후속 exception table 영역으로 오버플로할 우려가 지적되었습니다. PPC32 빌드(bpf_jit_comp32.c) 가 새 fimage 인자를 받지 않아 헤더와 .c 시그니처 불일치 가능성도 함께 보고됐습니다.\n  · 확인: https://lore.kernel.org/bpf/20260517180201.87B8AC2BCB0@smtp.kernel.org/\n  · 확인: https://lore.kernel.org/bpf/fd8a7c45cebfb013732ee23ab22dc9e06a5e27d5e0d130f2bbe061eead6a3556@mail.kernel.org/"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "[BPF JIT · powerpc]\n- dummy_tramp_addr 를 long branch stub 최하단으로 옮겨 디스어셈블이 마지막 8바이트 직전까지 끊기지 않게 정렬합니다. 오프셋 계산은 stub 끝 기준으로 갱신되어 bpf_arch_text_poke() 가 실제 트램폴린 주소를 새 위치에 기록합니다. 모든 BPF 트램폴린 selftest 가 통과한다고 보고됐습니다.\n  · 확인: https://lore.kernel.org/bpf/20260517214043.12975-3-adubey@linux.ibm.com/\n\n[메모리 관리 · bpf_arena]\n- ptep_try_install(ptep, new_pte) 가 추가되어 pte_none() 인 슬롯에만 cmpxchg 로 새 PTE 를 설치합니다. bpf_arena 커널측 폴트 복구가 폴팅 caller 의 락과 경합하지 않도록 락-프리 경로로 설계됐고, 제네릭 구현은 false, x86·arm64 만 실제 cmpxchg 를 제공합니다.\n  · 확인: https://lore.kernel.org/bpf/20260517211232.1670594-2-tj@kernel.org/\n\n[netpoll · netconsole]\n- 파일 정적이던 zap_completion_queue() 가 netpoll_zap_completion_queue() 로 개명되고 NETDEV_INTERNAL 네임스페이스의 EXPORT_SYMBOL_NS_GPL 로 승격됐습니다. netconsole 분할 시리즈에서 find_skb() 가 외부로 분리될 때 이 심볼을 호출할 수 있게 하기 위한 변경으로, 기능 변경은 없습니다.\n  · 확인: https://lore.kernel.org/linux-rt-devel/20260512-netconsole_split-v2-8-1191d14ad66d@debian.org/\n\n[가상화 · TDX]\n- Runtime TDX module update v9 가 v8 리뷰 피드백을 반영해 tdx_blob 포맷을 신규 형태로 바꾸고, 업데이트 중 모듈 버전 출력 제거, do-while 루프 가독성 개선, 그리고 cleanup 두 건을 1·2번 패치로 흡수했습니다.\n  · 확인: https://lore.kernel.org/linux-rt-devel/20260513151045.1420990-1-chao.gao@intel.com/"
+    },
+    {
+      "heading": "기타",
+      "body": "리스트 범위 밖 토론은 제외했습니다. 필요 시 lore.kernel.org 의 bpf·linux-rt-devel 아카이브에서 키워드를 좁혀 검색하세요."
+    }
+  ],
+  "confidence": {
+    "level": "초안",
+    "note": "메일 본문 일부를 반영했지만 자동 선별 결과입니다. 게시 전 원문 스레드 확인이 필요합니다."
+  },
+  "sources": [
+    {
+      "title": "powerpc/bpf: Move out dummy_tramp_addr after Long branch stub",
+      "url": "https://lore.kernel.org/bpf/20260517214043.12975-3-adubey@linux.ibm.com/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "mm: Add ptep_try_install() for lockless empty-slot installs",
+      "url": "https://lore.kernel.org/bpf/20260517211232.1670594-2-tj@kernel.org/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "Runtime TDX module update support",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260513151045.1420990-1-chao.gao@intel.com/",
+      "note": "lore.kernel.org/linux-rt-devel · patch-discussion"
+    },
+    {
+      "title": "netpoll: rename and export netpoll_zap_completion_queue()",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260512-netconsole_split-v2-8-1191d14ad66d@debian.org/",
+      "note": "lore.kernel.org/linux-rt-devel · patch-discussion"
+    },
+    {
+      "title": "powerpc/bpf: fix alignment of long branch trampoline address",
+      "url": "https://lore.kernel.org/bpf/20260517180201.87B8AC2BCB0@smtp.kernel.org/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "powerpc/bpf: fix alignment of long branch trampoline address",
+      "url": "https://lore.kernel.org/bpf/fd8a7c45cebfb013732ee23ab22dc9e06a5e27d5e0d130f2bbe061eead6a3556@mail.kernel.org/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-17T22:23:06.187Z",
+    "sourceRecordCount": 50,
+    "candidateCount": 6,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "lore-bpf:urn:uuid:8e501e33-d380-9374-c3f7-c9d4e30ffada",
+      "lore-bpf:urn:uuid:a10a9bf6-e898-4806-760b-f5a84004c5b1",
+      "lore-linux-rt-devel:urn:uuid:103af042-4cef-da07-4711-2582782ee20f",
+      "lore-linux-rt-devel:urn:uuid:f1b52d77-02f4-fac0-178a-6708c5599018",
+      "lore-bpf:urn:uuid:937750ea-f4e4-fd2f-8c5e-f3d1aa36bd0b",
+      "lore-bpf:urn:uuid:cc9d5f56-e92f-9818-117d-3477ea1d16aa"
+    ],
+    "bucketCounts": {
+      "releases": 0,
+      "regressions": 0,
+      "patches": 6,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 6,
+    "signalLevel": "high",
+    "subsystems": [
+      "메모리 관리"
+    ],
+    "lensPipeline": "linux-perf-rt",
+    "rewrittenAt": "2026-05-17T22:23:12.464Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-ko.md"
+  }
+}

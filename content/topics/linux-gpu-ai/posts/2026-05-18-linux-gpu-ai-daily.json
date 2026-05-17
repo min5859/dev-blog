@@ -1,0 +1,126 @@
+{
+  "id": "2026-05-18-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-05-18 Tegra 버퍼 캐시 해제 수정 — GPU·디스플레이·가속기",
+  "date": "2026-05-18",
+  "headline": "엔비디아 Tegra 드라이버에서 버퍼 객체 캐시가 영영 해제되지 않던 순환 참조 회귀가 약한 참조 방식으로 풀립니다.",
+  "summary": "오늘 dri-devel 렌즈의 핵심은 host1x BO 캐시가 버퍼 객체를 영원히 붙들고 있던 회귀를 약한 참조로 끊어 내는 수정입니다. 그 다음 신호는 virtio-gpu 의 plane 업데이트 경로에서 인터럽트 불가 resv 락을 단일 BO 한정으로 좁히자는 리뷰 피드백입니다.",
+  "tags": [
+    "DRM",
+    "GPU",
+    "가속기",
+    "회귀"
+  ],
+  "highlights": [
+    {
+      "title": "gpu: host1x: BO 캐시 항목을 실제로 해제 가능하게 수정",
+      "priority": "상",
+      "verifyLink": "https://lore.kernel.org/dri-devel/CALHNRZ8-UKV1aVf6z_8uKOQ5eP1aP_7SEVJAtQ0fvCuAybb37Q@mail.gmail.com/",
+      "if": "Tegra DRM·host1x 를 쓰는 SoC 스택을 유지한다면",
+      "do": "캐시가 BO 강참조를 들고 있던 기존 동작을 약한 참조로 바꾸는 차이를 읽어 두세요",
+      "verify": "tegra_bo_pin/unpin 의 host1x_bo_get/put 제거가 자기 트리와 일치하는지 diff 로 대조하세요"
+    },
+    {
+      "title": "drm/virtio: plane 업데이트에 인터럽트 불가 resv 락 도입 (리뷰)",
+      "priority": "중",
+      "verifyLink": "https://lore.kernel.org/dri-devel/afec1199-4889-4d35-964c-4432ec792fa3@collabora.com/",
+      "if": "virtio-gpu 게스트에서 plane 갱신 경로를 만진다면",
+      "do": "drm_gem_lock_reservations 가 인터럽트 가능하므로 단일 BO 전용 헬퍼로 좁히자는 피드백을 반영하세요",
+      "verify": "objs->nents 가 1 이외일 때 -EINVAL 로 떨어지는 분기를 패치 v2 에서 확인하세요"
+    },
+    {
+      "title": "drm/bridge: lt9611uxc, EDID 블록 4개까지 지원 확장",
+      "priority": "중",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260517-lt9611usc_edid34_misc_next-v1-1-5e2fd8c6399b@oss.qualcomm.com/",
+      "if": "LT9611UXC 브리지로 3~4 블록 EDID 디스플레이를 붙이는 보드를 다룬다면",
+      "do": "0xb02a EDID ready 플래그 재설정으로 두 번째 페이지를 재요청하는 시퀀스를 검토하세요",
+      "verify": "HPD 끊김까지 EDID 캐시를 재사용하는 동작이 자기 패널의 HPD 토글 빈도와 충돌하지 않는지 부트 로그로 확인하세요"
+    },
+    {
+      "title": "drm/bridge: sii902x, i2c_check_functionality 호출 인라인 정리",
+      "priority": "하",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260517172136.3321-2-thorsten.blum@linux.dev/",
+      "if": "sii902x HDMI 브리지를 쓰는 보드를 유지한다면",
+      "do": "에러 코드 변환을 없애고 부울 반환을 그대로 평가하는 cleanup 임을 파악해 두세요",
+      "verify": "동작 변화는 없으므로 머지 시 리그레션이 아닌 정리 패치로 분류되는지 메인테이너 응답에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이 렌즈는 dri-devel 리스트 중심이며 오늘 kernel.org 릴리스 신호는 없습니다. 벤더 클로즈드 GPU 스택은 범위 밖이라는 점에 유의하세요."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- gpu: host1x: Allow entries in BO caches to be freed (Fixes: 1f39b1dfa53c)\n  · 영향: 캐시된 매핑이 버퍼 객체에 강참조를 유지해 한 번 캐시되면 BO 가 해제되지 않던 누수를 약참조로 끊어 냅니다. tegra_bo_pin·gather_bo_pin 의 refcount 조작을 host1x 공통 코드로 옮기는 구조 변경이 함께 들어갑니다.\n  · 확인: https://lore.kernel.org/dri-devel/CALHNRZ8-UKV1aVf6z_8uKOQ5eP1aP_7SEVJAtQ0fvCuAybb37Q@mail.gmail.com/\n- drm/virtio: use uninterruptible resv lock for plane updates (리뷰)\n  · 영향: plane 업데이트 경로의 dma_resv 락을 인터럽트 불가로 바꾸려는 제안에 대해, drm_gem_lock_reservations 가 인터럽트 가능하므로 단일 BO 한정 헬퍼로 좁히자는 피드백이 달렸습니다.\n  · 확인: https://lore.kernel.org/dri-devel/afec1199-4889-4d35-964c-4432ec792fa3@collabora.com/"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "- drm/bridge: lt9611uxc, EDID 4 블록까지 지원\n  · 영향: 브리지가 한 번에 2 블록만 가져오는 한계를 우회해 0xb02a 의 EDID ready 플래그를 클리어한 뒤 재시도하는 방식으로 최대 4 블록을 읽습니다. 드라이버에 EDID blob 을 캐싱하고 HPD 끊김 이벤트 전까지 재사용합니다.\n  · 확인: https://lore.kernel.org/dri-devel/20260517-lt9611usc_edid34_misc_next-v1-1-5e2fd8c6399b@oss.qualcomm.com/"
+    },
+    {
+      "heading": "기타",
+      "body": "- drm/bridge: sii902x, i2c_check_functionality 인라인화 — 부울 반환을 그대로 평가하도록 정리. https://lore.kernel.org/dri-devel/20260517172136.3321-2-thorsten.blum@linux.dev/\n- dma-buf: heaps, dma_heap_ioctl 에서 중첩 max 두 번을 max3 한 번으로 대체. https://lore.kernel.org/dri-devel/20260517172352.3615-2-thorsten.blum@linux.dev/\n- 리스트 범위 밖 토론은 제외했습니다. 필요 시 lore.kernel.org 에서 키워드를 좁혀 검색하세요."
+    }
+  ],
+  "confidence": {
+    "level": "초안",
+    "note": "제목·메타데이터·candidateBodies 기반 자동 선별 결과를 편집했습니다. 게시 전 원문 확인이 필요합니다."
+  },
+  "sources": [
+    {
+      "title": "drm/bridge: sii902x: inline i2c_check_functionality check",
+      "url": "https://lore.kernel.org/dri-devel/20260517172136.3321-2-thorsten.blum@linux.dev/",
+      "note": "lore.kernel.org/dri-devel · patch-discussion"
+    },
+    {
+      "title": "dma-buf: heaps: use max3 in dma_heap_ioctl",
+      "url": "https://lore.kernel.org/dri-devel/20260517172352.3615-2-thorsten.blum@linux.dev/",
+      "note": "lore.kernel.org/dri-devel · patch-discussion"
+    },
+    {
+      "title": "drm/virtio: use uninterruptible resv lock for plane updates",
+      "url": "https://lore.kernel.org/dri-devel/afec1199-4889-4d35-964c-4432ec792fa3@collabora.com/",
+      "note": "lore.kernel.org/dri-devel · patch-discussion"
+    },
+    {
+      "title": "drm/bridge: lt9611uxc: support displays with up to 4 EDID blocks",
+      "url": "https://lore.kernel.org/dri-devel/20260517-lt9611usc_edid34_misc_next-v1-1-5e2fd8c6399b@oss.qualcomm.com/",
+      "note": "lore.kernel.org/dri-devel · patch-discussion"
+    },
+    {
+      "title": "drm/bridge: sii902x: inline i2c_check_functionality check",
+      "url": "https://lore.kernel.org/dri-devel/t5v6r4nl2o2kr3v5rkn7dmih74m4htc4cuyij32t2m6pxadc7m@vobfko5ywjsz/",
+      "note": "lore.kernel.org/dri-devel · patch-discussion"
+    },
+    {
+      "title": "gpu: host1x: Allow entries in BO caches to be freed",
+      "url": "https://lore.kernel.org/dri-devel/CALHNRZ8-UKV1aVf6z_8uKOQ5eP1aP_7SEVJAtQ0fvCuAybb37Q@mail.gmail.com/",
+      "note": "lore.kernel.org/dri-devel · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-17T22:29:00.007Z",
+    "sourceRecordCount": 25,
+    "candidateCount": 6,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "lore-dri-devel:urn:uuid:28b55b96-fbce-15ce-5b4b-3ae08252466d",
+      "lore-dri-devel:urn:uuid:66b31e7f-6492-e30b-c94b-1af8dc0640ff",
+      "lore-dri-devel:urn:uuid:8d61fdae-ce4f-e524-8668-bd59f44eda5a",
+      "lore-dri-devel:urn:uuid:a1d67210-6485-adce-7b37-862fb0ba3288",
+      "lore-dri-devel:urn:uuid:a60c26aa-8fdf-c134-d9e0-2ae11304a35c",
+      "lore-dri-devel:urn:uuid:041f3b92-d11e-fe70-e294-deb96065e83a"
+    ],
+    "bucketCounts": {
+      "releases": 0,
+      "regressions": 1,
+      "patches": 5,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 6,
+    "signalLevel": "high",
+    "subsystems": [],
+    "lensPipeline": "linux-gpu-ai"
+  }
+}

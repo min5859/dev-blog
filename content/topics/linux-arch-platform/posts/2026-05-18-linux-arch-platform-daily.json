@@ -1,0 +1,135 @@
+{
+  "id": "2026-05-18-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-05-18 RISC-V 가상화·스택 회귀 차단 — 아키텍처·플랫폼",
+  "date": "2026-05-18",
+  "headline": "RISC-V 측 KVM 게스트의 호스트 NULL 역참조와 KASAN 스택 OOB 가 같은 날 차단 패치로 올라오고, ARM64 Renesas 보드는 펌웨어 예약 영역을 비로소 묶습니다.",
+  "summary": "오늘 가장 큰 신호는 RISC-V KVM 의 SBI v0.1 SEND_IPI 가 게스트 hart mask 로 호스트를 죽이던 NULL 역참조와, walk_stackframe() 가 KASAN stack-out-of-bounds 를 일으키던 fp_is_valid 상한 두 회귀가 동시에 차단되는 흐름입니다. 그 다음 신호는 ARM64 Renesas Ironhide(r8a78000) DTS 가 TFA BL31·OPTEE-OS·IPL 공유 영역을 reserved-memory 로 묶는 수정과, RISC-V KVM dirty logging 쓰기 fault 를 read-side mmu_lock·cmpxchg 로 절반 가까이 단축하는 5패치 시리즈입니다.",
+  "tags": [
+    "ARM64",
+    "RISC-V",
+    "아키텍처",
+    "KVM",
+    "Renesas"
+  ],
+  "highlights": [
+    {
+      "title": "RISC-V KVM SBI v0.1 SEND_IPI 가 게스트 hart mask 로 호스트를 죽이던 NULL 역참조 차단",
+      "priority": "상",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260517124414.420919-1-xujiakai2025@iscas.ac.cn/",
+      "if": "RISC-V KVM 호스트로 게스트를 돌린다면",
+      "do": "kvm_get_vcpu_by_id() 반환을 NULL 체크하고 skip 하는 가드가 들어갔는지 확인하세요",
+      "verify": "vcpu_sbi_v01.c 의 hart mask 루프 차분이 자기 트리와 같은 모양인지 Fixes a046c2d8578c 기준으로 대조하세요"
+    },
+    {
+      "title": "RISC-V stacktrace 가 KASAN stack-out-of-bounds 를 일으키던 fp_is_valid 상한을 task_pt_regs 로 교정",
+      "priority": "상",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260517143704.659416-1-xujiakai2025@iscas.ac.cn/",
+      "if": "RISC-V 에서 KASAN·언와인더를 활성화한다면",
+      "do": "walk_stackframe() 상한이 ALIGN(sp,THREAD_SIZE) 대신 task_pt_regs(task) 로 바뀌었는지 확인하세요",
+      "verify": "재현되던 stack-out-of-bounds 리포트가 패치 적용 후 사라지는지 자기 CI·KASAN 로그로 대조하세요"
+    },
+    {
+      "title": "ARM64 Renesas Ironhide(r8a78000) DTS 가 TFA BL31·OPTEE-OS·IPL 공유 영역을 reserved-memory 로 묶음",
+      "priority": "중",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260517200814.21624-1-marek.vasut+renesas@mailbox.org/",
+      "if": "Renesas Ironhide(R-Car) 보드를 메인라인으로 부팅한다면",
+      "do": "0x8c100000(32 KiB)·0x8c200000(512 KiB)·0x8c400000(32 MiB) no-map 노드가 자기 DT 에 들어왔는지 확인하세요",
+      "verify": "고메모리 부하 시 TFA·OPTEE 영역이 Linux 에 의해 덮여 멈추는 증상이 없는지 dmesg·DT decompile 로 검증하세요"
+    },
+    {
+      "title": "RISC-V KVM dirty logging 쓰기 fault 를 rwlock mmu_lock 의 read 측·cmpxchg 로 약 50% 단축",
+      "priority": "중",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260517153427.94889-1-tjytimi@163.com/",
+      "if": "RISC-V KVM 호스트에서 라이브 마이그레이션·dirty log 를 돌린다면",
+      "do": "rwlock 전환·G-stage PTE cmpxchg 헬퍼·읽기측 빠른경로 5패치 시리즈 흐름을 따라가세요",
+      "verify": "dirty_log_perf_test -m 19 -v 4 -b 1G 가 자기 호스트에서도 절반 가까운 개선을 보이는지 측정 로그로 대조하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이 렌즈는 lore 리스트 중심입니다. 메인라인 RC·stable 타이밍은 '리눅스 개발'·'스테이블·배포 롱텀' 토픽을 참고하세요."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- RISC-V: KVM: Fix NULL pointer dereference in SBI v0.1 SEND_IPI handler\n  · 영향: 게스트가 존재하지 않는 vcpu_id 비트를 포함한 hart mask 를 넘기면 kvm_get_vcpu_by_id() 가 NULL 을 돌려주고, kvm_riscv_vcpu_set_interrupt() 가 무조건 역참조하면서 호스트 커널이 죽습니다. NULL 체크 후 skip 하도록 가드를 추가합니다. Fixes a046c2d8578c.\n  · 확인: https://lore.kernel.org/linux-riscv/20260517124414.420919-1-xujiakai2025@iscas.ac.cn/\n\n- riscv: stacktrace: fix stack-out-of-bounds in walk_stackframe()\n  · 영향: fp_is_valid() 가 ALIGN(sp, THREAD_SIZE) 를 상한으로 쓰는 탓에 sp 가 이미 스택 영역을 벗어났을 때 상한이 위로 따라 올라가, 언와인더가 task 스택 끝을 넘어 읽으며 KASAN stack-out-of-bounds 가 터집니다. 상한을 task_pt_regs(task) 로 고정해 종료 조건을 일관되게 만듭니다. Fixes a2a4d4a6a0bf.\n  · 확인: https://lore.kernel.org/linux-riscv/20260517143704.659416-1-xujiakai2025@iscas.ac.cn/\n\n- arm64: dts: renesas: r8a78000: Describe all reserved memory\n  · 영향: 첫 memory bank 를 memory@40000000 로 통합하고, 다른 코어가 쓰는 518 MiB no-map 영역 + IPL·SCP·TFA BL31·TEE 공유 32 KiB + TFA BL31 512 KiB + OPTEE-OS TZ 32 MiB 를 reserved-memory 로 묶습니다. 고메모리 부하 시 Linux 가 TFA·OPTEE 영역을 덮어 시스템이 멈추던 위험을 차단합니다. Fixes ad142a4ef710.\n  · 확인: https://lore.kernel.org/linux-arm-kernel/20260517200814.21624-1-marek.vasut+renesas@mailbox.org/\n\n- Kernel Panic: store/AMO access fault in __memset on JH7110(Star64) gcc·gentoo-sources 빌드 중\n  · 영향: 8 GB DRAM 이 정상 인식되는 JH7110/Star64 (Pine64) 에서 sys-devel/gcc-16.1.0 또는 sys-kernel/gentoo-sources 컴파일(또는 대용량 rm·cp) 중 __memset 에서 store/AMO access fault 가 재현된다는 첫 보고입니다. 6.19.12-gentoo·7.0.8-gentoo 두 커널, zram on/off, -j1..-j4 모두에서 재현된다고 합니다. 아직 분류 전 단계로, 보드/펌웨어·메모리·f2fs 의존성을 좁히는 토론이 필요합니다.\n  · 확인: https://lore.kernel.org/linux-riscv/CAB4LXH9MY8-2r4PH+ki_KtdmUXmjyWPe2rN5SnRoP1TU9s=knQ@mail.gmail.com/"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "[메모리 관리]\n- mm: Add ptep_try_install() for lockless empty-slot installs (8-패치 시리즈)\n  · 영향: ptep_try_install(ptep, new_pte) 가 pte_none() 인 경우에만 cmpxchg 로 *ptep 를 갱신하는 헬퍼를 도입합니다. bpf_arena 의 커널 측 page fault 복구 경로가 호출자의 락과 부딪힐 수 있어 lock-free 가 필요합니다. <linux/pgtable.h> 의 제너릭은 false 를 돌려주고, x86·arm64 는 pteval try_cmpxchg 기반 구현을 제공합니다. 다른 아키는 false stub 로, 기존 oops 경로로 떨어집니다.\n  · 확인: https://lore.kernel.org/linux-arm-kernel/20260517211232.1670594-2-tj@kernel.org/\n\n[RISC-V KVM]\n- KVM: riscv: Speed up dirty logging write faults (5-패치 시리즈)\n  · 영향: 공통 MMU notifier 잠금 계약을 명시한 뒤 mmu_lock 을 KVM 의 rwlock 형식으로 전환하고, G-stage PTE cmpxchg 헬퍼를 도입해 권한 변경을 atomic 으로 처리합니다. 마지막 패치는 dirty logging 쓰기 fault 가 이미 존재하는 4K G-stage 리프에 대해 발생하면 mmu_lock 의 read 측에서 PTE 의 write/dirty 비트를 한 번에 갱신해 빠른경로로 빠집니다. QEMU 호스트의 dirty_log_perf_test 측정에서 1 GB·64 MB workload 모두에서 약 45~50% 단축이 보고되었습니다.\n  · 확인: https://lore.kernel.org/linux-riscv/20260517153427.94889-1-tjytimi@163.com/\n\n[ARM SCMI 펌웨어]\n- firmware: arm_scmi: Fix protocol parsing and validation\n  · 영향: SENSOR_CONFIG_GET 의 clear response 가 사양상 4 바이트인데 드라이버가 64 비트로 읽던 폭 불일치를 바로잡고, BASE_ERROR_EVENT·SENSOR_UPDATE 의 가변 trailing array 길이를 복사·파싱 전에 payload 크기로 검증하도록 강화합니다. Powercap v2 헬퍼는 캐시된 per-domain 상태에 접근하기 전에 domain id 를 먼저 검사합니다. well-formed 응답에는 동작 변화가 없습니다.\n  · 확인: https://lore.kernel.org/linux-arm-kernel/20260517-scmi_fixes-v1-0-d86daec4defd@kernel.org/"
+    },
+    {
+      "heading": "기타",
+      "body": "단일 보드·드라이버 한정 토론은 제외했습니다. JH7110 패닉 보고는 아직 분류 전 단계이므로 회귀·보안 신호 섹션에 남겨 두었고, 자기 보드와 무관하면 스레드 진척만 추적하면 됩니다."
+    }
+  ],
+  "confidence": {
+    "level": "초안",
+    "note": "제목·메타데이터·메일 본문 기반 자동 선별입니다. 게시 전 원문 확인이 필요합니다."
+  },
+  "sources": [
+    {
+      "title": "arm64: dts: renesas: r8a78000: Describe all reserved memory",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260517200814.21624-1-marek.vasut+renesas@mailbox.org/",
+      "note": "lore.kernel.org/linux-arm-kernel · patch-discussion"
+    },
+    {
+      "title": "riscv: stacktrace: fix stack-out-of-bounds in walk_stackframe()",
+      "url": "https://lore.kernel.org/linux-riscv/20260517143704.659416-1-xujiakai2025@iscas.ac.cn/",
+      "note": "lore.kernel.org/linux-riscv · patch-discussion"
+    },
+    {
+      "title": "mm: Add ptep_try_install() for lockless empty-slot installs",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260517211232.1670594-2-tj@kernel.org/",
+      "note": "lore.kernel.org/linux-arm-kernel · patch-discussion"
+    },
+    {
+      "title": "KVM: riscv: Speed up dirty logging write faults",
+      "url": "https://lore.kernel.org/linux-riscv/20260517153427.94889-1-tjytimi@163.com/",
+      "note": "lore.kernel.org/linux-riscv · patch-discussion"
+    },
+    {
+      "title": "RISC-V: KVM: Fix NULL pointer dereference in SBI v0.1 SEND_IPI handler",
+      "url": "https://lore.kernel.org/linux-riscv/20260517124414.420919-1-xujiakai2025@iscas.ac.cn/",
+      "note": "lore.kernel.org/linux-riscv · patch-discussion"
+    },
+    {
+      "title": "firmware: arm_scmi: Fix protocol parsing and validation",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260517-scmi_fixes-v1-0-d86daec4defd@kernel.org/",
+      "note": "lore.kernel.org/linux-arm-kernel · patch-discussion"
+    },
+    {
+      "title": "Kernel Panic: Oops - store (or AMO) access fault in __memset during gcc/gentoo-sources compilation on riscv64 (JH7110 / Star64)",
+      "url": "https://lore.kernel.org/linux-riscv/CAB4LXH9MY8-2r4PH+ki_KtdmUXmjyWPe2rN5SnRoP1TU9s=knQ@mail.gmail.com/",
+      "note": "lore.kernel.org/linux-riscv · mail-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-17T22:25:15.074Z",
+    "sourceRecordCount": 50,
+    "candidateCount": 7,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "lore-linux-arm-kernel:urn:uuid:44df3a96-8835-a062-bfe3-88925a03842b",
+      "lore-linux-riscv:urn:uuid:82ff73db-309e-d22f-0673-636dd3de3110",
+      "lore-linux-arm-kernel:urn:uuid:a10a9bf6-e898-4806-760b-f5a84004c5b1",
+      "lore-linux-riscv:urn:uuid:98853b21-9e8b-0433-bfbc-604f2dbc1e06",
+      "lore-linux-riscv:urn:uuid:3a652e5f-3193-f7f2-8904-c087764aec66",
+      "lore-linux-arm-kernel:urn:uuid:43092b9a-cb68-1449-5234-58cadc41a21c",
+      "lore-linux-riscv:urn:uuid:b0bb669f-a372-0453-420f-803e191d15fc"
+    ],
+    "bucketCounts": {
+      "releases": 0,
+      "regressions": 4,
+      "patches": 3,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 7,
+    "signalLevel": "high",
+    "subsystems": [
+      "메모리 관리"
+    ],
+    "lensPipeline": "linux-arch-platform"
+  }
+}
