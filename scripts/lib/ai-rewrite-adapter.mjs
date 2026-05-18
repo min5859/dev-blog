@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -104,6 +104,62 @@ export async function runAiAdapterPrompt(prompt, { defaultAdapter = DEFAULT_AI_A
   if (adapter === 'claude') return runClaudeStdin(prompt);
   if (adapter === 'cursor') return runCursorAgentFilePrompt(prompt);
   throw new Error(`Unsupported AI_ADAPTER: ${adapter}. Use template, claude, or cursor.`);
+}
+
+/**
+ * 어댑터 호출 + JSON 파싱을 한 번에 처리한다. 파싱 실패 시 raw 응답을 덤프하고 1회 재시도한다.
+ * 반환: `{ raw, post }` (어댑터 호출 시) 또는 `null` (template 모드).
+ *
+ * options.runner 는 테스트용 주입 지점. 기본은 runAiAdapterPrompt.
+ */
+export async function runAiAdapterAndParse(prompt, options = {}) {
+  const {
+    defaultAdapter = DEFAULT_AI_ADAPTER,
+    logLabel = 'ai-rewrite',
+    maxAttempts = 2,
+    failureDir,
+    runner = runAiAdapterPrompt,
+  } = options;
+  let lastError = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const raw = await runner(prompt, { defaultAdapter });
+    if (raw === null) return null;
+    try {
+      const post = parseNewsletterJsonFromAiOutput(raw);
+      return { raw, post };
+    } catch (err) {
+      lastError = err;
+      const dumpPath = await dumpFailedAiResponse({ label: logLabel, raw, err, attempt, dir: failureDir });
+      const where = dumpPath ? ` raw saved to ${dumpPath}` : '';
+      console.warn(
+        `[ai-rewrite][${logLabel}] attempt ${attempt}/${maxAttempts} parse failed: ${err.message};${where}`,
+      );
+    }
+  }
+  throw lastError ?? new Error('AI response parse failed');
+}
+
+async function dumpFailedAiResponse({ label, raw, err, attempt, dir }) {
+  try {
+    const root = dir || process.env.AI_REWRITE_FAILURE_DIR || path.join(process.cwd(), 'logs', 'ai-rewrite-failures');
+    await mkdir(root, { recursive: true });
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    const safeLabel = String(label).replace(/[^a-zA-Z0-9._-]+/g, '_');
+    const file = path.join(root, `${ts}-${safeLabel}-attempt${attempt}.txt`);
+    const header = [
+      '# ai-rewrite parse failure',
+      `# label: ${label}`,
+      `# attempt: ${attempt}`,
+      `# timestamp: ${new Date().toISOString()}`,
+      `# error: ${err.message}`,
+      '---',
+      '',
+    ].join('\n');
+    await writeFile(file, header + raw, 'utf8');
+    return file;
+  } catch {
+    return null;
+  }
 }
 
 /**

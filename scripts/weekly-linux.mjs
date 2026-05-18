@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
-import { parseNewsletterJsonFromAiOutput, resolveAiAdapter, runAiAdapterPrompt } from './lib/ai-rewrite-adapter.mjs';
+import { resolveAiAdapter, runAiAdapterAndParse } from './lib/ai-rewrite-adapter.mjs';
 import { PRIORITY_VALUES, validateHighlight } from './lib/highlight-schema.mjs';
 
 const root = process.cwd();
@@ -263,12 +263,12 @@ async function main() {
   await writeFile(path.join(generatedDir, `weekly-prompt-${meta.id}.md`), prompt);
   await writeFile(path.join(generatedDir, 'weekly-prompt-latest.md'), prompt);
 
-  const aiText = await runAiAdapterPrompt(prompt, { defaultAdapter: 'cursor' });
-  if (aiText) {
-    await writeFile(path.join(generatedDir, `weekly-stdout-${meta.id}.txt`), aiText);
-    await writeFile(path.join(generatedDir, 'weekly-stdout-latest.txt'), aiText);
+  const aiResult = await runAiAdapterAndParse(prompt, { defaultAdapter: 'cursor', logLabel: 'weekly-linux' });
+  if (aiResult) {
+    await writeFile(path.join(generatedDir, `weekly-stdout-${meta.id}.txt`), aiResult.raw);
+    await writeFile(path.join(generatedDir, 'weekly-stdout-latest.txt'), aiResult.raw);
   }
-  const post = aiText ? parseNewsletterJsonFromAiOutput(aiText) : templateWeekly(dailies, meta);
+  const post = aiResult ? aiResult.post : templateWeekly(dailies, meta);
 
   if (post && (!post.id || !post.topic || !post.date)) {
     post.id = post.id || meta.id;

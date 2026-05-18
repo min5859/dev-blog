@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { applyTemplate } from './draft-lore-lens.mjs';
-import { parseNewsletterJsonFromAiOutput, resolveAiAdapter, runAiAdapterPrompt } from './lib/ai-rewrite-adapter.mjs';
+import { resolveAiAdapter, runAiAdapterAndParse } from './lib/ai-rewrite-adapter.mjs';
 import { auditPostQuality } from './lib/quality-guard.mjs';
 import { validateHighlight } from './lib/highlight-schema.mjs';
 
@@ -128,13 +128,13 @@ async function main() {
   await writeFile(promptOutput, prompt);
   await writeFile(promptLatest, prompt);
 
-  const aiText = await runAiAdapterPrompt(prompt);
-  if (aiText) {
-    await writeFile(path.join(generatedDir, `rewrite-stdout-${runDate}.txt`), aiText);
-    await writeFile(path.join(generatedDir, 'rewrite-stdout-latest.txt'), aiText);
+  const aiResult = await runAiAdapterAndParse(prompt, { logLabel: topic });
+  if (aiResult) {
+    await writeFile(path.join(generatedDir, `rewrite-stdout-${runDate}.txt`), aiResult.raw);
+    await writeFile(path.join(generatedDir, 'rewrite-stdout-latest.txt'), aiResult.raw);
   }
   const rewritten = withAuditMetadata(
-    aiText ? parseNewsletterJsonFromAiOutput(aiText) : templateRewrite(draft, pipeline),
+    aiResult ? aiResult.post : templateRewrite(draft, pipeline),
     pipeline,
     promptTemplatePath,
     generatedAt,
