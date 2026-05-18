@@ -1,0 +1,132 @@
+{
+  "id": "2026-05-19-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-05-19 DSP 드라이버 해제 경쟁 — GPU·디스플레이·가속기",
+  "date": "2026-05-19",
+  "headline": "퀄컴 가속기 드라이버에서 파일 닫기와 작업 큐가 경쟁해 해제된 사용자 구조체에 접근하는 결함이 보고됐습니다.",
+  "summary": "오늘 가장 큰 신호는 퀄컴 fastrpc 의 use-after-free 수정으로, DSP 가속을 쓰는 임베디드·안드로이드 트리는 백포트 여부를 결정해야 합니다. 그 다음은 dma-heap 의 명시적 memcg 회계 도입으로, 중앙 할당기 모델에서 cgroup 제한이 실제 소비자에게 걸리도록 ioctl 과 회계 경로가 바뀝니다.",
+  "tags": [
+    "DRM",
+    "GPU",
+    "가속기",
+    "fastrpc",
+    "dma-heap"
+  ],
+  "highlights": [
+    {
+      "title": "misc: fastrpc 작업 큐 경쟁으로 인한 사용자 컨텍스트 use-after-free 수정",
+      "priority": "상",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260518203507.3754994-1-anandu.e@oss.qualcomm.com/",
+      "if": "퀄컴 DSP 가속을 쓰는 안드로이드·임베디드 빌드라면",
+      "do": "fastrpc_user 에 kref 를 도입하는 패치 적용을 검토하세요",
+      "verify": "Fixes 태그 6cffd79504ce 가 자기 LTS 베이스에 포함되는지 대조하세요"
+    },
+    {
+      "title": "dma-heap: pidfd 기반 명시적 memcg 회계로 dma-buf 비용을 실제 소비자에 부과",
+      "priority": "상",
+      "verifyLink": "https://lore.kernel.org/dri-devel/CABdmKX3wwgovwS-V8rVC3=+EZcTvPs_cttpQb1w6WemwLAVhsw@mail.gmail.com/",
+      "if": "중앙 프로세스가 클라이언트 대신 dma-buf 를 대행 할당하는 임베디드 스택이면",
+      "do": "charge_pid_fd ioctl 확장과 MEMCG_DMABUF 경로 설계 토론을 따라가세요",
+      "verify": "system-heap 의 __GFP_ACCOUNT 제거가 자기 회계 가정과 충돌하지 않는지 점검하세요"
+    },
+    {
+      "title": "drm/meson dw-hdmi: 13-패치 정리, CEC notifier 와 HPD 지연 워크 헬퍼 전환",
+      "priority": "중",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260518194744.2483580-1-jonas@kwiboo.se/",
+      "if": "Amlogic 셋톱·보드에서 HDMI 출력과 CEC 를 함께 쓴다면",
+      "do": "PM ops 분리와 HPD 지연 워크 도입이 자기 보드 시나리오에 맞는지 보세요",
+      "verify": "선행 시리즈 patchwork 134727 의존성이 자기 트리에 들어와 있는지 확인하세요"
+    },
+    {
+      "title": "drm/msm shrinker: C23 확장 경고로 빌드 실패하는 파라미터 이름 복원",
+      "priority": "중",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260518-drm-msm-fix-c23-extensions-v1-1-0833559418c7@kernel.org/",
+      "if": "최신 Clang·GCC 로 msm GPU 드라이버를 빌드한다면",
+      "do": "purge·evict 두 번째 인자 이름을 unused 로 되살리는 패치를 적용하세요",
+      "verify": "CONFIG_WERROR 빌드에서 msm_gem_shrinker.c 가 통과하는지 로그로 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "오늘은 mainline RC·stable 인용이 없습니다. 이 렌즈는 dri-devel 리스트 중심이며, 벤더 클로즈드 스택의 출시 흐름은 범위 밖입니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- misc: fastrpc 사용자 구조체 use-after-free 수정\n  · 영향: DSP 응답 작업 큐가 fastrpc_device_release() 와 경쟁하며 해제된 fastrpc_user 의 cctx·vmperms·fl->lock 에 접근, kref 기반 참조 카운팅으로 마지막 참조 시점에 정리하도록 재구성\n  · 확인: https://lore.kernel.org/dri-devel/20260518203507.3754994-1-anandu.e@oss.qualcomm.com/\n\n- drm/msm shrinker C23 확장 경고로 빌드 실패\n  · 영향: 3392291fc509 이후 지원되는 모든 clang 과 일부 gcc 에서 파라미터 이름 누락이 hard error 로 바뀌어, CONFIG_WERROR 빌드가 정지\n  · 확인: https://lore.kernel.org/dri-devel/20260518-drm-msm-fix-c23-extensions-v1-1-0833559418c7@kernel.org/"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "[메모리 관리]\n- dma-heap: charge_pid_fd 와 MEMCG_DMABUF 로 dma-buf 명시 회계 도입 (5-패치)\n  · 영향: 중앙 할당기 모델에서 cgroup 메모리 제한이 실제 소비자에게 적용되도록 ioctl 인자와 회계 경로를 재배치하고, 이중 과금을 막기 위해 system-heap 의 __GFP_ACCOUNT 를 제거\n  · 확인: https://lore.kernel.org/dri-devel/CABdmKX3wwgovwS-V8rVC3=+EZcTvPs_cttpQb1w6WemwLAVhsw@mail.gmail.com/\n\n[디스플레이·HDMI]\n- drm/meson dw-hdmi: 13-패치 정리, bridge connector CEC notifier 와 HPD 지연 워크 헬퍼 채택, suspend_late·resume_early·resume_noirq PM ops 로 전환\n  · 확인: https://lore.kernel.org/dri-devel/20260518194744.2483580-1-jonas@kwiboo.se/\n\n- drm/rockchip dw_hdmi: PHY 설정을 mode_set() 에서 atomic_mode_set() 으로 이동, HDMI 헬퍼가 협상한 TMDS 문자 속도와 출력 bpc 를 phy_configure() 로 전달할 준비\n  · 확인: https://lore.kernel.org/dri-devel/20260518193748.2482823-10-jonas@kwiboo.se/"
+    },
+    {
+      "heading": "기타",
+      "body": "- drm/fsl-dcu: connector destroy 콜백에서 중복된 drm_connector_unregister() 호출 제거, drm_dev_unregister 경로가 이미 sysfs 인터페이스를 정리\n  · 확인: https://lore.kernel.org/dri-devel/20260518200755.5389-1-souradiptodas6@gmail.com/"
+    }
+  ],
+  "confidence": {
+    "level": "초안",
+    "note": "원문 commit message 기반 정리이지만, 백포트·적용 결정은 자기 트리에서 다시 검증해야 합니다."
+  },
+  "sources": [
+    {
+      "title": "drm/meson: dw-hdmi: Misc cleanup and use CEC notifier helpers",
+      "url": "https://lore.kernel.org/dri-devel/20260518194744.2483580-1-jonas@kwiboo.se/",
+      "note": "lore.kernel.org/dri-devel · patch-discussion"
+    },
+    {
+      "title": "drm/rockchip: dw_hdmi: Configure HDMI PHY in atomic_mode_set()",
+      "url": "https://lore.kernel.org/dri-devel/20260518193748.2482823-10-jonas@kwiboo.se/",
+      "note": "lore.kernel.org/dri-devel · patch-discussion"
+    },
+    {
+      "title": "misc: fastrpc: fix use-after-free of fastrpc_user in workqueue context",
+      "url": "https://lore.kernel.org/dri-devel/20260518203507.3754994-1-anandu.e@oss.qualcomm.com/",
+      "note": "lore.kernel.org/dri-devel · patch-discussion"
+    },
+    {
+      "title": "drm/fsl-dcu: Remove redundant unregister call in connector destroy",
+      "url": "https://lore.kernel.org/dri-devel/20260518200755.5389-1-souradiptodas6@gmail.com/",
+      "note": "lore.kernel.org/dri-devel · patch-discussion"
+    },
+    {
+      "title": "drm/msm: Restore second parameter name in purge() and evict()",
+      "url": "https://lore.kernel.org/dri-devel/20260518-drm-msm-fix-c23-extensions-v1-1-0833559418c7@kernel.org/",
+      "note": "lore.kernel.org/dri-devel · patch-discussion"
+    },
+    {
+      "title": "dma-heap: charge dma-buf memory via explicit memcg",
+      "url": "https://lore.kernel.org/dri-devel/CABdmKX3wwgovwS-V8rVC3=+EZcTvPs_cttpQb1w6WemwLAVhsw@mail.gmail.com/",
+      "note": "lore.kernel.org/dri-devel · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-18T23:07:10.720Z",
+    "sourceRecordCount": 25,
+    "candidateCount": 6,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "lore-dri-devel:urn:uuid:49623662-fcd4-ddf0-f57b-8fb173359c3b",
+      "lore-dri-devel:urn:uuid:ed88c032-4428-2448-be30-6028f306fdfa",
+      "lore-dri-devel:urn:uuid:d5089d10-2dfb-61bd-243c-95f3bf46853a",
+      "lore-dri-devel:urn:uuid:5b4d9f6c-b9ad-ebf1-43be-f2781d1e5e20",
+      "lore-dri-devel:urn:uuid:842f5b82-fe63-4991-9571-a30885def592",
+      "lore-dri-devel:urn:uuid:002311d1-966a-bad6-5d65-e291b07767d8"
+    ],
+    "bucketCounts": {
+      "releases": 0,
+      "regressions": 2,
+      "patches": 4,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 6,
+    "signalLevel": "high",
+    "subsystems": [
+      "메모리 관리"
+    ],
+    "lensPipeline": "linux-gpu-ai",
+    "rewrittenAt": "2026-05-18T23:07:16.883Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-ko.md"
+  }
+}

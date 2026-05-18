@@ -1,0 +1,149 @@
+{
+  "id": "2026-05-19-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-05-19 FPIN 카운터 결함과 하드닝 가드 정리 — 커널 보안·하드닝",
+  "date": "2026-05-19",
+  "headline": "광채널 패브릭 알림 한 건으로 호스트 스레드를 멈출 수 있는 결함과 컴파일러 의존성 정리가 함께 보고됐습니다.",
+  "summary": "오늘 이 렌즈에서 가장 큰 신호는 광채널 패브릭이 보내는 FPIN 알림 한 건으로 lpfc 또는 qla2xxx 초기자의 ELS 수신 스레드를 무한 루프에 빠뜨릴 수 있다는 결함 보고입니다. 그 다음으로는 LLVM 17 의무화에 따라 사실상 항상 참인 CC_HAS_ZERO_CALL_USED_REGS 의존성을 정리하는 패치와 슬랩 타입 기반 분할(KMALLOC_PARTITION_TYPED) RFC 후속 논의가 주목할 만합니다.",
+  "tags": [
+    "보안",
+    "하드닝",
+    "커널",
+    "초안"
+  ],
+  "highlights": [
+    {
+      "title": "security/Kconfig.hardening: Remove tautological condition from CC_HAS_ZERO_CALL_USED_REGS",
+      "priority": "상",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20260518210552.GA3979157@ax162/",
+      "if": "Clang 빌드에서 zero-call-used-regs 하드닝을 켜는 트리라면",
+      "do": "최소 LLVM 17 의무화에 맞춰 사라진 의존성 줄이 자기 빌드 옵션과 충돌하지 않는지 점검하세요",
+      "verify": "Arnd 가 요청한 'gcc-11 이상' 주석이 최종 적용본에 들어갔는지 lore 스레드 끝까지 추적하세요"
+    },
+    {
+      "title": "scsi: scsi_transport_fc: widen FPIN pname walker counter to u32",
+      "priority": "상",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20260518143706.2808177-1-michael.bommarito@gmail.com/",
+      "if": "lpfc 또는 qla2xxx 로 광채널 패브릭에 붙는 호스트를 운영한다면",
+      "do": "fc_fpin_li_stats_update 와 peer_congn_stats_update 워커가 u8 카운터로 도는 자기 트리 상태를 확인하세요",
+      "verify": "pname_count 가 256 인 FPIN 페이로드로 KASAN 빌드에서 ELS 스레드 무한루프 재현 여부를 검증하세요"
+    },
+    {
+      "title": "wifi: mwifiex: Use flexible array for RX reorder table",
+      "priority": "중",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20260518211826.11245-1-rosenp@gmail.com/",
+      "if": "Marvell mwifiex 무선 칩셋 기반 빌드를 유지하고 있다면",
+      "do": "RX reorder 포인터 배열이 별도 할당에서 reorder 테이블 내 flexible array 로 이동하는 변경을 미리 살피세요",
+      "verify": "kzalloc_flex 호환 동작과 카운팅 변수 할당 순서가 자기 트리의 GCC 15 동작과 일치하는지 패치 diff 로 대조하세요"
+    },
+    {
+      "title": "riscv: lib: add optimized memcmp() and extend KUnit tests",
+      "priority": "중",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20260518131407.1026049-1-milant2002@gmail.com/",
+      "if": "RISC-V 타깃으로 커널 문자열 라이브러리를 빌드한다면",
+      "do": "Zbb 확장 기반 memcmp v4 와 KUnit 벤치 모드를 자기 보드 토글로 시험해 보세요",
+      "verify": "v3 대비 STRING_BENCH 빌드 오류 수정과 정렬 처리 변경이 자기 회귀 셋과 충돌하지 않는지 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "- Linux 6.19.14 stable · EOL\n  · 영향: EOL 안정 라인 사용 환경 (공개 2026-04-22, 백포트 219건)\n  · 확인: https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.19.14\n  · 메모: mm/kasan pXd double-free, ocfs2 인라인 OOB write, KVM SEV-SNP vCPU 잠금 처리, em28xx/6fire/powerz USB UAF 등 보안 관련 수정 다수 포함\n\n- Linux 7.1-rc4 mainline\n  · 영향: 메인라인 추적 환경 (공개 2026-05-17)\n  · 확인: https://git.kernel.org/torvalds/h/v7.1-rc4\n\n- Linux 7.0.9 stable\n  · 영향: 안정 커널 사용 환경 (공개 2026-05-17, 백포트 197건)\n  · 확인: https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.0.9\n  · 메모: batman-adv bla 클레임 UAF, vsock/virtio 전송 누수, mm/vma mmap_prepare 회귀, io_uring/zcrx freelist 경고 등 회귀·UAF 수정 위주\n\n- Linux next-20260518 linux-next\n  · 영향: 머지 큐 추적 대상 (공개 2026-05-18)\n  · 확인: https://git.kernel.org/next/linux-next/h/next-20260518"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- security/Kconfig.hardening: Remove tautological condition from CC_HAS_ZERO_CALL_USED_REGS (16-패치 시리즈)\n  · 영향: LLVM 17 최소 버전 상승으로 '!CC_IS_CLANG || CLANG_VERSION > 150006' 의존성이 항상 참이 되어 정리. Arnd Bergmann 이 'gcc-11 이상' 주석 추가를 제안했고 Nathan Chancellor 가 머지 시 반영 예정\n  · 확인: https://lore.kernel.org/linux-hardening/20260518210552.GA3979157@ax162/\n\n- scsi: scsi_transport_fc: widen FPIN pname walker counter to u32\n  · 영향: u8 루프 카운터가 32-bit __be32 pname_count 와 비교돼 256 에서 롤오버. 패브릭 컨트롤러나 S_ID 0xFFFFFD 를 위조한 동거 N_Port 가 보낸 FPIN ELS 한 건으로 lpfc/qla2xxx 의 ELS 수신 스레드가 fc_host->rport_lock 을 잡은 채 무한 루프에 빠질 수 있음\n  · 확인: https://lore.kernel.org/linux-hardening/20260518143706.2808177-1-michael.bommarito@gmail.com/"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "[네트워크]\n- wifi: mwifiex: Use flexible array for RX reorder table\n  · 영향: RX reorder 포인터 배열을 별도 할당에서 reorder 테이블 내부 flexible array 로 이동하여 lifetime 을 묶고 정리 경로를 단일화. kzalloc_flex 사용 및 카운팅 변수 할당 순서가 GCC 15 이상 동작에 맞춰 조정됨\n  · 확인: https://lore.kernel.org/linux-hardening/20260518211826.11245-1-rosenp@gmail.com/\n\n[메모리 관리]\n- slab: support for compiler-assisted type-based slab cache partitioning (3-패치 시리즈 · 2026-05-16부터 추적)\n  · 영향: 기존 RANDOM_KMALLOC_CACHES 를 KMALLOC_PARTITION_CACHES 로 일반화하고, Clang 22 의 __builtin_infer_alloc_token 을 활용한 KMALLOC_PARTITION_TYPED 모드를 추가. 포인터 포함 객체와 그렇지 않은 객체를 별도 캐시로 분리해 1차원 버퍼 오버플로우의 메타데이터 손상을 완화하려는 시도\n  · 확인: https://lore.kernel.org/linux-hardening/CANpmjNOYd9RnJARZ7qUDifsftwWOhhakaWSu926PKA6-SepTwQ@mail.gmail.com/\n\n[스토리지/파일시스템]\n- [DRAFT][PATCH] scsi: scsi_transport_fc: widen FPIN pname walker counter to u32\n  · 영향: 정식 제출본의 초안. KASAN 활성화 mainline f0db6484b6ea 에서 out-of-tree 모듈로 fc_host_fpin_rcv() 를 호출해 재현 절차를 기록. 정식 패치에서 desc_len 기반 클램프와 u32 카운터로 정리됨\n  · 확인: https://lore.kernel.org/linux-hardening/20260518140945.2751273-1-michael.bommarito@gmail.com/\n\n[아키텍처]\n- riscv: lib: add optimized memcmp() and extend KUnit tests (v4)\n  · 영향: Zbb 확장을 활용한 RISC-V memcmp 와 KUnit 벤치 모드 도입. v3 에서 보고된 STRING_BENCH 미선언 빌드 오류를 수정하고 정렬 처리·루프 구조를 재검토\n  · 확인: https://lore.kernel.org/linux-hardening/20260518131407.1026049-1-milant2002@gmail.com/"
+    },
+    {
+      "heading": "기타",
+      "body": "- nios2 아키텍처 제거 시리즈가 linux-hardening 에도 cross-post 됨. Peter Zijlstra 가 Arnd 의 'Siemens Energy 가 아직 운영 중' 코멘트에 'LTS 분기가 그것을 위한 것 아니냐'고 응수하며 한 해 전 논쟁을 환기. 하드닝 관점의 직접 영향은 적지만 해당 아키텍처를 유지 중인 사이트는 LTS 정책을 미리 점검하세요.\n  · 확인: https://lore.kernel.org/linux-hardening/20260518105735.GW3126523@noisy.programming.kicks-ass.net/\n- 리스트 범위 밖 단일 보드/단일 드라이버 토론은 제외했습니다. 필요 시 lore.kernel.org/linux-hardening 에서 키워드를 좁혀 검색하세요."
+    }
+  ],
+  "confidence": {
+    "level": "초안",
+    "note": "제목·메타데이터·메일 commit message 기반 자동 선별입니다. 게시 전 원문 스레드에서 패치 버전·식별자·CVE 번호를 직접 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Linux 6.19.14 stable · EOL",
+      "url": "https://git.kernel.org/stable/h/v6.19.14",
+      "note": "kernel.org · kernel-release"
+    },
+    {
+      "title": "Linux 7.1-rc4 mainline",
+      "url": "https://git.kernel.org/torvalds/h/v7.1-rc4",
+      "note": "kernel.org · kernel-release"
+    },
+    {
+      "title": "Linux 7.0.9 stable",
+      "url": "https://git.kernel.org/stable/h/v7.0.9",
+      "note": "kernel.org · kernel-release"
+    },
+    {
+      "title": "Linux next-20260518 linux-next",
+      "url": "https://git.kernel.org/next/linux-next/h/next-20260518",
+      "note": "kernel.org · kernel-release"
+    },
+    {
+      "title": "security/Kconfig.hardening: Remove tautological condition from CC_HAS_ZERO_CALL_USED_REGS",
+      "url": "https://lore.kernel.org/linux-hardening/20260518210552.GA3979157@ax162/",
+      "note": "lore.kernel.org/linux-hardening · patch-discussion"
+    },
+    {
+      "title": "scsi: scsi_transport_fc: widen FPIN pname walker counter to u32",
+      "url": "https://lore.kernel.org/linux-hardening/20260518143706.2808177-1-michael.bommarito@gmail.com/",
+      "note": "lore.kernel.org/linux-hardening · patch-discussion"
+    },
+    {
+      "title": "wifi: mwifiex: Use flexible array for RX reorder table",
+      "url": "https://lore.kernel.org/linux-hardening/20260518211826.11245-1-rosenp@gmail.com/",
+      "note": "lore.kernel.org/linux-hardening · patch-discussion"
+    },
+    {
+      "title": "riscv: lib: add optimized memcmp() and extend KUnit tests",
+      "url": "https://lore.kernel.org/linux-hardening/20260518131407.1026049-1-milant2002@gmail.com/",
+      "note": "lore.kernel.org/linux-hardening · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-18T22:28:19.635Z",
+    "sourceRecordCount": 35,
+    "candidateCount": 11,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "kernel-org:stable:6.19.14",
+      "kernel-org:mainline:7.1-rc4",
+      "kernel-org:stable:7.0.9",
+      "kernel-org:linux-next:next-20260518",
+      "lore-linux-hardening:urn:uuid:5782a90e-3429-3efb-5cf7-68d279a850b5",
+      "lore-linux-hardening:urn:uuid:69f5fff8-289d-c3bf-6c56-cb067a5a524c",
+      "lore-linux-hardening:urn:uuid:99ca862a-3ece-555e-bd86-6d4be14b653f",
+      "lore-linux-hardening:urn:uuid:ec669c1b-a5e4-6798-3de6-cc1105118318",
+      "lore-linux-hardening:urn:uuid:7d01cd86-e343-199b-efbe-089d00f5d145",
+      "lore-linux-hardening:urn:uuid:918fb0f3-cc6f-5d70-2427-d5f8e7c32a63",
+      "lore-linux-hardening:urn:uuid:d666ffd1-800a-fb08-d7e0-be30eb5f0042"
+    ],
+    "bucketCounts": {
+      "releases": 4,
+      "regressions": 2,
+      "patches": 5,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 7,
+    "signalLevel": "high",
+    "subsystems": [
+      "보안",
+      "스토리지/파일시스템",
+      "네트워크",
+      "메모리 관리"
+    ],
+    "lensPipeline": "linux-kernel-security",
+    "rewrittenAt": "2026-05-18T22:28:28.487Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-ko.md"
+  }
+}

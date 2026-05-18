@@ -1,0 +1,157 @@
+{
+  "id": "2026-05-19-linux-distro-stable-daily",
+  "topic": "linux-distro-stable",
+  "title": "2026-05-19 스테이블 백포트 빌드 회귀 — 스테이블·배포 롱텀",
+  "date": "2026-05-19",
+  "headline": "6.6.140 백포트 중 일부 패치가 6.6 암호화 API 와 어긋나 빌드가 깨졌고, InfiniBand 관리 평면 DoS 캡이 함께 들어왔습니다.",
+  "summary": "오늘은 6.6.140 백포트 회귀가 가장 큰 신호이며, scomp 마이그레이션 의존성이 6.6 ABI 와 어긋나 빌드가 깨졌습니다. 그 다음으론 IB MAD RMPP 재조립 윈도우를 64 로 캡해 비인증 피어가 만들 수 있는 DoS 표면을 좁힌 패치가 올라왔습니다.",
+  "tags": [
+    "stable",
+    "longterm",
+    "백포트",
+    "빌드 회귀",
+    "RMPP",
+    "sockmap"
+  ],
+  "highlights": [
+    {
+      "title": "crypto/nx scomp 마이그레이션이 6.6 ABI 와 충돌해 6.6.140-rc1 빌드 실패",
+      "priority": "상",
+      "verifyLink": "https://lore.kernel.org/stable/87lddgbjk8.fsf@gentoo.org/",
+      "if": "6.6.140-rc 시리즈를 자기 빌드 파이프라인에 돌리고 있다면",
+      "do": "nx 마이그레이션 패치를 드롭하고 의존성 후속 픽스만 별도로 가져오세요",
+      "verify": "drivers/crypto/nx/nx-common-pseries.c 가 자기 트리에서 다시 빌드되는지 확인하세요"
+    },
+    {
+      "title": "IB/mad RMPP 재조립 윈도우를 64 로 캡해 관리 평면 DoS 표면 축소",
+      "priority": "상",
+      "verifyLink": "https://lore.kernel.org/stable/20260518212336.337104-1-michael.bommarito@gmail.com/",
+      "if": "InfiniBand 나 RoCEv2 가 노출된 호스트를 운영한다면",
+      "do": "window_size 캡 패치를 적용하고 recv_queue_size 튜닝 정책을 재평가하세요",
+      "verify": "find_seg_location 워크가 큰 윈도우 환경에서 밀리초 단위로 튀지 않는지 측정하세요"
+    },
+    {
+      "title": "bpf sockmap 이 sk_msg copy 비트 동기화로 페이지 캐시 손상 차단",
+      "priority": "상",
+      "verifyLink": "https://lore.kernel.org/stable/rclmtymkiaor247n7gwi6ggmpwi2hyu5hicggroopeohspfnyv@7ryrgezzs63q/",
+      "if": "sk_msg 페이로드를 push/pop/pull 하는 BPF 프로그램을 운용한다면",
+      "do": "엔트리 이동·분할·해제 시 copy 비트를 함께 갱신하는 패치를 백포트하세요",
+      "verify": "splice() 로 읽기 전용 페이지 캐시를 덮어쓰는 PoC 가 더 이상 재현되지 않는지 확인하세요"
+    },
+    {
+      "title": "drm/msm purge/evict 파라미터 이름 복원으로 C23 빌드 오류 해소",
+      "priority": "중",
+      "verifyLink": "https://lore.kernel.org/stable/20260518-drm-msm-fix-c23-extensions-v1-1-0833559418c7@kernel.org/",
+      "if": "MSM DRM 을 자체 빌드 또는 백포트하는 환경이라면",
+      "do": "shrinker deadlock 수정 위에 올라온 파라미터 이름 복원 패치를 함께 가져오세요",
+      "verify": "CONFIG_WERROR=y 빌드에서 purge/evict 의 C23 확장 경고가 사라지는지 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "- Linux 6.19.14 stable · EOL (백포트 219건)\n  · 영향: dma-mapping/dma-debug 추적 보강, mm/userfaultfd 해시 수정, KASAN 더블 프리·UAF 다수 등이 EOL 라인에 마지막으로 모였습니다.\n  · 확인: https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.19.14\n\n- Linux 7.1-rc4 mainline\n  · 영향: 5/17 컷. 메인라인 추적 대상 환경에서 회귀 모니터링 대상입니다.\n  · 확인: https://git.kernel.org/torvalds/h/v7.1-rc4\n\n- Linux 7.0.9 stable (백포트 197건)\n  · 영향: drm/amdgpu vcn3/vcn4 오버플로 가드, vsock/virtio 일련의 누수·길이 버그, sched_ext bypass_lb_cpu, batman-adv use-after-free·정수 오버플로 등 보안성 픽스가 다수.\n  · 확인: https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.0.9\n\n- Linux next-20260518 linux-next\n  · 영향: 머지 큐 추적 대상. 자기 트리 기반 빌드 회귀 사전 감지에 사용하세요.\n  · 확인: https://git.kernel.org/next/linux-next/h/next-20260518"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- crypto/nx scomp 마이그레이션이 6.6.140-rc1 빌드를 깨뜨림\n  · 영향: 상류 980b5705f4e7 는 6.6 이후의 alloc_ctx(void)/free_ctx(void *) 시그니처를 가정하지만, 6.6 트리는 여전히 alloc_ctx(struct crypto_scomp *) 시그니처라 nx-common-pseries.c 가 incompatible pointer 오류로 빌드 실패합니다. 본 패치는 의존 픽스 adb3faf2db1a 를 위한 Stable-dep-of 로 끌려들어 왔으나 실제 의존 관계는 없습니다.\n  · 확인: https://lore.kernel.org/stable/87lddgbjk8.fsf@gentoo.org/\n\n- IB/mad RMPP 재조립 윈도우 비인증 DoS 캡\n  · 영향: QP1 GMP RMPP 는 IBTA 사양상 비인증이므로 같은 서브넷·RoCEv2 L2(또는 UDP/4791 도달 가능한 인터넷 노출 포트)에서 역순 세그먼트 버스트로 per-port MAD kworker 를 수 밀리초 동안 잠글 수 있습니다. window_size 가 recv_queue_size 의 1/8 이라 8192 로 튜닝된 환경은 윈도우 1024 까지 늘어나 O(F^2) 비용이 더 커집니다. 본 패치는 윈도우를 64 로 캡해 워커 공격면을 차단합니다.\n  · 확인: https://lore.kernel.org/stable/20260518212336.337104-1-michael.bommarito@gmail.com/\n\n- bpf sockmap sk_msg copy 비트 동기화로 페이지 캐시 손상 차단\n  · 영향: bpf_msg_pull/push/pop_data 가 scatterlist 링을 재배치하면서 parallel copy 비트를 동기화하지 않아, 복사본 엔트리가 copy 비트가 꺼진 슬롯에 자리잡고 데이터·data_end 직접 쓰기 대상으로 노출되는 corruption primitive 가 존재합니다. 보고자는 splice() 로 read-only 파일의 페이지 캐시를 덮는 시연을 확인했다고 언급했습니다.\n  · 확인: https://lore.kernel.org/stable/rclmtymkiaor247n7gwi6ggmpwi2hyu5hicggroopeohspfnyv@7ryrgezzs63q/"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "[보안·하드닝]\n- drm/msm: purge/evict 파라미터 이름 복원 (clang 의 C23 확장 경고와 일부 GCC 의 하드 오류 차단)\n  · 확인: https://lore.kernel.org/stable/20260518-drm-msm-fix-c23-extensions-v1-1-0833559418c7@kernel.org/"
+    },
+    {
+      "heading": "기타",
+      "body": "- LoongArch KVM switch.S 를 모듈 대신 커널 본문으로 직접 컴파일 (6.12 stable 큐 픽).\n  · 확인: https://lore.kernel.org/stable/20260518155236.reply-0009@kernel.org/\n\n- hwmon adm1266 GPIO 경로 다섯 건 픽스 시리즈 (PDIO 스캔 상한 수정, 잘못된 *bits 리셋 제거, smbus 응답 길이 검증, 등록 순서 정정, pmbus_lock 인입). 보고자는 추가 보강을 권유받았으니 v2 가 곧 따라올 가능성.\n  · 확인: https://lore.kernel.org/stable/6ec6270c-595e-49b2-8465-31b5019de87c@roeck-us.net/"
+    }
+  ],
+  "confidence": {
+    "level": "검토",
+    "note": "스레드 본문과 commit message 를 기반으로 보강한 렌즈 요약입니다. 자기 환경 적용 여부는 자체 점검 필요."
+  },
+  "sources": [
+    {
+      "title": "Linux 6.19.14 stable · EOL",
+      "url": "https://git.kernel.org/stable/h/v6.19.14",
+      "note": "kernel.org · kernel-release"
+    },
+    {
+      "title": "Linux 7.1-rc4 mainline",
+      "url": "https://git.kernel.org/torvalds/h/v7.1-rc4",
+      "note": "kernel.org · kernel-release"
+    },
+    {
+      "title": "Linux 7.0.9 stable",
+      "url": "https://git.kernel.org/stable/h/v7.0.9",
+      "note": "kernel.org · kernel-release"
+    },
+    {
+      "title": "Linux next-20260518 linux-next",
+      "url": "https://git.kernel.org/next/linux-next/h/next-20260518",
+      "note": "kernel.org · kernel-release"
+    },
+    {
+      "title": "drm/msm: Restore second parameter name in purge() and evict()",
+      "url": "https://lore.kernel.org/stable/20260518-drm-msm-fix-c23-extensions-v1-1-0833559418c7@kernel.org/",
+      "note": "lore.kernel.org/stable · patch-discussion"
+    },
+    {
+      "title": "crypto: nx - Migrate to scomp API",
+      "url": "https://lore.kernel.org/stable/87lddgbjk8.fsf@gentoo.org/",
+      "note": "lore.kernel.org/stable · patch-discussion"
+    },
+    {
+      "title": "IB/mad: cap RMPP reassembly window size to bound find_seg_location walk",
+      "url": "https://lore.kernel.org/stable/20260518212336.337104-1-michael.bommarito@gmail.com/",
+      "note": "lore.kernel.org/stable · patch-discussion"
+    },
+    {
+      "title": "bpf, sockmap: keep sk_msg copy state in sync",
+      "url": "https://lore.kernel.org/stable/rclmtymkiaor247n7gwi6ggmpwi2hyu5hicggroopeohspfnyv@7ryrgezzs63q/",
+      "note": "lore.kernel.org/stable · patch-discussion"
+    },
+    {
+      "title": "LoongArch: KVM: Compile switch.S directly into the kernel",
+      "url": "https://lore.kernel.org/stable/20260518155236.reply-0009@kernel.org/",
+      "note": "lore.kernel.org/stable · patch-discussion"
+    },
+    {
+      "title": "hwmon: (pmbus/adm1266) GPIO accessor fixes",
+      "url": "https://lore.kernel.org/stable/6ec6270c-595e-49b2-8465-31b5019de87c@roeck-us.net/",
+      "note": "lore.kernel.org/stable · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-18T22:47:14.235Z",
+    "sourceRecordCount": 35,
+    "candidateCount": 10,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "kernel-org:stable:6.19.14",
+      "kernel-org:mainline:7.1-rc4",
+      "kernel-org:stable:7.0.9",
+      "kernel-org:linux-next:next-20260518",
+      "lore-stable:urn:uuid:842f5b82-fe63-4991-9571-a30885def592",
+      "lore-stable:urn:uuid:d8f4277f-a1eb-20cf-d58e-af5cb99a5e93",
+      "lore-stable:urn:uuid:05f37903-9cb2-58f7-f759-61f15ff860ab",
+      "lore-stable:urn:uuid:f02382e2-4670-9cec-0873-3cf041426f8b",
+      "lore-stable:urn:uuid:3857856e-0ca4-6580-fd2a-7886c85beed4",
+      "lore-stable:urn:uuid:66a44cfb-44a8-cded-fb3d-7fc0108488ec"
+    ],
+    "bucketCounts": {
+      "releases": 4,
+      "regressions": 3,
+      "patches": 3,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 6,
+    "signalLevel": "high",
+    "subsystems": [
+      "보안"
+    ],
+    "lensPipeline": "linux-distro-stable",
+    "rewrittenAt": "2026-05-18T22:47:22.441Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-ko.md"
+  }
+}

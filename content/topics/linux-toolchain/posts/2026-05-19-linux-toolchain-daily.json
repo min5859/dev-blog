@@ -1,0 +1,144 @@
+{
+  "id": "2026-05-19-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-05-19 LLVM 도구 버전 옵션 정비 — 커널 도구체인·Rust",
+  "date": "2026-05-19",
+  "headline": "LLVM 도구별 버전 옵션이 일관화되고 nova-core 의 Rust GPU 메모리 골격이 두 시리즈로 다시 올라왔습니다.",
+  "summary": "오늘 도구체인 렌즈의 핵심은 `LLVM=-15` 같은 접미사가 일부 도구에서만 통하던 빌드 문제를 정리한 tools/build v2 시리즈이고, 그다음 신호는 nova-core 의 Rust GPU 메모리 관리자·VMM·페이지 테이블 트레잇 골격이 두 시리즈로 분리되어 재제출된 점입니다. 보조 신호로 `CC_HAS_ZERO_CALL_USED_REGS` 의 Clang 15.0.6 가드가 LLVM 최소 17.0.1 상향에 따라 정리되고, nios2 아키텍처 제거 시리즈에 LTS 백포트로 충분하다는 의견이 붙었습니다.",
+  "tags": [
+    "도구체인",
+    "LLVM",
+    "kbuild",
+    "Rust"
+  ],
+  "highlights": [
+    {
+      "title": "tools/build: LLVM=-N 옵션을 모든 LLVM 도구로 확장",
+      "priority": "상",
+      "verifyLink": "https://lore.kernel.org/llvm/20260518-james-perf-llvm-version-v2-0-f12cc4f031d8@linaro.org/",
+      "if": "`LLVM=-15` 같은 접미사로 트리를 빌드하는 환경이라면",
+      "do": "Makefile.include 의 LLVM_SUFFIX 변경분을 자기 빌드 스크립트와 비교하세요",
+      "verify": "perf·일부 selftests 빌드에서 접미사 인식 여부를 v2 시리즈로 재현해 확인하세요"
+    },
+    {
+      "title": "security/Kconfig.hardening: CC_HAS_ZERO_CALL_USED_REGS 의 Clang 15.0.6 가드 제거",
+      "priority": "상",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/55186588-0cff-4908-923a-d5611707a3b0@app.fastmail.com/",
+      "if": "Clang 17 미만을 허용하는 사내 빌드 정책이라면",
+      "do": "ZERO_CALL_USED_REGS 가 의도와 다르게 켜지거나 빠지지 않는지 검토하세요",
+      "verify": "cc-option 결과와 .config 의 CC_HAS_ZERO_CALL_USED_REGS 값을 함께 대조하세요"
+    },
+    {
+      "title": "nova-core: Rust GPU 중앙 메모리 관리자(GpuMm) 와 VMM·페이지 테이블 트레잇 골격",
+      "priority": "중",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260518181126.2493572-1-joelagnelf@nvidia.com/",
+      "if": "rust-for-linux 를 따라가는 GPU·드라이버 개발자라면",
+      "do": "prereq 와 본 시리즈의 적용 순서, GpuMm·PteOps·MmuConfig 트레잇을 함께 읽으세요",
+      "verify": "nova-mm-v1-20260518 태그로 함께 빌드해 maple_tree·bitfield 의존성을 확인하세요"
+    },
+    {
+      "title": "nios2: 아키텍처 제거 시리즈에 LTS 백포트로 충분하다는 의견 제기",
+      "priority": "중",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20260518105735.GW3126523@noisy.programming.kicks-ass.net/",
+      "if": "자기 트리에 nios2 잔재 또는 의존 빌드 옵션이 남았다면",
+      "do": "제거 시리즈와 Siemens 사용처·LTS 백포트로 충분하다는 의견을 함께 따라가세요",
+      "verify": "linux-kbuild 스레드의 합의 흐름을 보고 자기 트리의 아치 의존 제거 시점을 잡으세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이 렌즈는 lore 메일링 리스트(llvm·linux-kbuild·rust-for-linux) 중심입니다. mainline·stable 릴리스 정보는 ‘리눅스 개발’ 토픽을 참고하세요."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "정식 회귀로 분류된 항목은 없고, 도구체인 정책 측면의 가드 제거와 빌드 옵션 정비 두 건이 같이 진행됩니다.\n- tools/build: Allow versioning of all LLVM tools (v2) — `Documentation/kbuild/llvm.rst` 에 적힌 `LLVM=-15` 접미사가 일부 tools/ 만 인식하던 문제를 정리. perf 등 다른 셀렉티드 빌드에서 똑같이 통하게 만드는 후속 정돈도 포함.\n  · 영향: 빌드. 접미사 기반 LLVM 도구 선택을 사용하는 CI·재현 빌드에 직접 영향.\n  · 확인: https://lore.kernel.org/llvm/20260518-james-perf-llvm-version-v2-0-f12cc4f031d8@linaro.org/\n- security/Kconfig.hardening: Remove tautological condition from CC_HAS_ZERO_CALL_USED_REGS — 커널 빌드 최소 LLVM 이 17.0.1 로 올라가면서 `!CC_IS_CLANG || CLANG_VERSION > 150006` 의존이 항상 참이 되어 제거. Arnd 가 “이제 gcc-11 이상 필요”라는 주석을 함께 남기자고 요청했고 Nathan 이 수용.\n  · 영향: 하드닝 Kconfig 정책. 빌드 결과에는 변화가 없지만 최소 컴파일러 버전을 가정하는 코드 경계가 한 단계 정리됩니다.\n  · 확인: https://lore.kernel.org/linux-kbuild/55186588-0cff-4908-923a-d5611707a3b0@app.fastmail.com/"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "[Rust·GPU 메모리 관리]\n- nova-core: 중앙 메모리 관리자 GpuMm 도입 (12-패치 prereq 시리즈) — 시리즈 시작 시점에는 GpuMm 이 PRAMIN 윈도(VRAM 직접 접근) 만 소유하고, buddy allocator·TLB 매니저는 후속 패치에서 합류. 이후 PRAMIN aperture 셀프테스트가 `self.mm.pramin()` 으로 깨끗이 접근하도록 설계.\n  · 영향: nova-core 의 메모리 관련 API 가 GpuMm 중심으로 재배치되므로 외부에서 직접 PRAMIN 을 만지던 코드가 있다면 경로가 바뀝니다.\n  · 확인: https://lore.kernel.org/rust-for-linux/20260518180342.2387845-12-joelagnelf@nvidia.com/\n- nova-core: 페이지 테이블 타입·VMM·BAR1 매핑 골격 (16-패치 본 시리즈) — `PteOps`·`PdeOps`·`DualPdeOps`·`MmuConfig` 트레잇으로 MMU v2/v3 포맷 분기를 추상화하고, VMM 은 maple_tree 로 가상 주소 범위를 추적. BAR1 사용자는 작은 할당 API 와 셀프테스트로 VRAM 매핑을 노출. v12 한 덩이를 prereq + 본편 두 시리즈로 분리한 v1.\n  · 영향: rust-for-linux 의존성(`bitfield` v2/v3, `maple_tree` Send/Sync v3) 적용 순서가 중요하므로 단독 적용은 비추천.\n  · 확인: https://lore.kernel.org/rust-for-linux/20260518181126.2493572-1-joelagnelf@nvidia.com/\n\n[아키텍처]\n- nios2: 아키텍처 제거 시리즈 — Altera 가 2024년부터 라이선스 판매 중단, GCC 15·Buildroot·QEMU 에서 이미 제거. 다만 Siemens Energy 가 프로덕션에서 nios2 를 쓰고 있다는 작년 의견이 다시 거론되고, Peter Zijlstra 는 “그건 LTS 가 있는 이유 아니냐”고 답함.\n  · 영향: kbuild. 아치 트리·아치 의존 빌드 분기를 가진 외부 트리는 제거 일정과 LTS 잔존 정책을 함께 봐야 합니다.\n  · 확인: https://lore.kernel.org/linux-kbuild/20260518105735.GW3126523@noisy.programming.kicks-ass.net/\n\n[빌드 SBOM]\n- scripts/sbom: SPDX 출력 그래프 추가 — 빌드 산출물(distributable build outputs) 과 고수준 메타데이터를 담는 SPDX 출력 그래프 구현. 시리즈 단위로 SBOM 생성 파이프라인이 들어오는 흐름.\n  · 영향: 배포 SBOM 을 생성·검증하는 빌드 팀에 직접 영향. mainline 머지 시점은 시리즈 진척에 따라 변동.\n  · 확인: https://lore.kernel.org/linux-kbuild/20260518062102.2051814-12-luis.augenstein@tngtech.com/"
+    },
+    {
+      "heading": "기타",
+      "body": "drm/msm 의 PERFCNTR_CONFIG ioctl(v7) 은 llvm 리스트로 흘러왔지만 사실상 Adreno GPU 의 사용자 공간 UABI 설계라 이 렌즈의 도구체인·Rust 주제와는 어긋납니다. 관심이 있다면 GPU·디스플레이·가속기 토픽에서 다루는 글로벌·로컬 카운터 예약 모델을 보세요. 또한 단일 드라이버 경고 수정은 이 렌즈에서 의도적으로 제외되었을 수 있으니, 자기 서브시스템 경고 정책은 lore 에서 좁혀 검색하세요."
+    }
+  ],
+  "confidence": {
+    "level": "초안",
+    "note": "제목·메타데이터 기반 자동 선별입니다. 게시 전 원문 확인이 필요합니다."
+  },
+  "sources": [
+    {
+      "title": "security/Kconfig.hardening: Remove tautological condition from CC_HAS_ZERO_CALL_USED_REGS",
+      "url": "https://lore.kernel.org/linux-kbuild/55186588-0cff-4908-923a-d5611707a3b0@app.fastmail.com/",
+      "note": "lore.kernel.org/linux-kbuild · patch-discussion"
+    },
+    {
+      "title": "security/Kconfig.hardening: Remove tautological condition from CC_HAS_ZERO_CALL_USED_REGS",
+      "url": "https://lore.kernel.org/linux-kbuild/20260518210552.GA3979157@ax162/",
+      "note": "lore.kernel.org/linux-kbuild · patch-discussion"
+    },
+    {
+      "title": "gpu: nova-core: mm: Add GpuMm centralized memory manager",
+      "url": "https://lore.kernel.org/rust-for-linux/20260518180342.2387845-12-joelagnelf@nvidia.com/",
+      "note": "lore.kernel.org/rust-for-linux · patch-discussion"
+    },
+    {
+      "title": "drm/msm: Add PERFCNTR_CONFIG ioctl",
+      "url": "https://lore.kernel.org/llvm/20260518190735.16236-1-robin.clark@oss.qualcomm.com/",
+      "note": "lore.kernel.org/llvm · patch-discussion"
+    },
+    {
+      "title": "Introduce page table types, vmm and bar1 mapping support",
+      "url": "https://lore.kernel.org/rust-for-linux/20260518181126.2493572-1-joelagnelf@nvidia.com/",
+      "note": "lore.kernel.org/rust-for-linux · patch-discussion"
+    },
+    {
+      "title": "scripts/sbom: add SPDX output graph",
+      "url": "https://lore.kernel.org/linux-kbuild/20260518062102.2051814-12-luis.augenstein@tngtech.com/",
+      "note": "lore.kernel.org/linux-kbuild · patch-discussion"
+    },
+    {
+      "title": "tools/build: Allow versioning of all LLVM tools",
+      "url": "https://lore.kernel.org/llvm/20260518-james-perf-llvm-version-v2-0-f12cc4f031d8@linaro.org/",
+      "note": "lore.kernel.org/llvm · patch-discussion"
+    },
+    {
+      "title": "nios2: remove the architecture",
+      "url": "https://lore.kernel.org/linux-kbuild/20260518105735.GW3126523@noisy.programming.kicks-ass.net/",
+      "note": "lore.kernel.org/linux-kbuild · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-18T22:37:23.039Z",
+    "sourceRecordCount": 75,
+    "candidateCount": 8,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "lore-linux-kbuild:urn:uuid:38f29f59-4d0b-b3de-9fdb-6b712cb9b921",
+      "lore-linux-kbuild:urn:uuid:5782a90e-3429-3efb-5cf7-68d279a850b5",
+      "lore-rust-for-linux:urn:uuid:dcaed3fb-50cf-9ee2-2f3e-f41ffb976581",
+      "lore-llvm:urn:uuid:7bb35cc5-b9b7-bc6e-a645-a3adb560b9d4",
+      "lore-rust-for-linux:urn:uuid:5e879c03-306a-3242-4855-9c5a13eacc17",
+      "lore-linux-kbuild:urn:uuid:bfc837a7-ad49-6b89-8ae5-b74b90ce557d",
+      "lore-llvm:urn:uuid:ef5be4f2-218b-6a77-8ace-d7fa08c2b934",
+      "lore-linux-kbuild:urn:uuid:7d01cd86-e343-199b-efbe-089d00f5d145"
+    ],
+    "bucketCounts": {
+      "releases": 0,
+      "regressions": 2,
+      "patches": 6,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 8,
+    "signalLevel": "high",
+    "subsystems": [
+      "보안",
+      "메모리 관리"
+    ],
+    "lensPipeline": "linux-toolchain",
+    "rewrittenAt": "2026-05-18T22:37:31.326Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-ko.md"
+  }
+}

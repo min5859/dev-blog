@@ -1,0 +1,132 @@
+{
+  "id": "2026-05-19-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-05-19 SMMUv3 무효화 흐름 재정리 — 아키텍처·플랫폼",
+  "headline": "ARM IOMMU 드라이버가 통합 페이지 테이블 전환을 앞두고 TLB 무효화 호출 위치를 사슬 상단으로 끌어올리는 8-패치 시리즈를 제안했습니다.",
+  "date": "2026-05-19",
+  "summary": "오늘 이 렌즈의 1번 신호는 ARM SMMUv3 무효화 흐름을 iommupt 도입 전 단계로 재정리하는 8-패치 시리즈입니다. 그 다음으로 FF-A v1.3 SPMC 의 PARTITION_INFO_GET_REGS 응답을 디스크립터 크기 기반 stride 로 고치는 회귀 수정 패치가 따라옵니다.",
+  "tags": [
+    "ARM64",
+    "RISC-V",
+    "IOMMU",
+    "FF-A",
+    "아키텍처"
+  ],
+  "highlights": [
+    {
+      "title": "iommu/arm-smmu-v3: tlbi 호출을 사슬 상단으로 끌어올리는 8-패치 시리즈",
+      "priority": "상",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/6-v1-5b1ac97a5403+6588f-smmu_tlbi_jgg@nvidia.com/",
+      "if": "ARM SMMUv3 기반 IOMMU 스택을 다룬다면",
+      "do": "8-패치의 호출 흐름 변경과 iommupt 분기 지점을 읽어 두세요",
+      "verify": "arm_smmu_domain_inv_range 호출 위치가 자기 트리와 일치하는지 diff 로 대조하세요"
+    },
+    {
+      "title": "firmware: arm_ffa: PARTITION_INFO_GET_REGS 에서 디스크립터 크기 적용",
+      "priority": "상",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260518203116.42624-1-jamien@nvidia.com/",
+      "if": "FF-A v1.3 SPMC 와 통신하는 펌웨어 경로라면",
+      "do": "buf_sz 기반 stride 수정을 백포트 후보로 검토하세요",
+      "verify": "__ffa_partition_info_get_regs 가 PARTITION_INFO_SZ 를 stride 로 쓰는지 확인하세요"
+    },
+    {
+      "title": "lib 및 lib/cmdline: 오버플로 처리 강화와 RISC-V 더블워드 시프트",
+      "priority": "중",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260518113502.11a2f420d48f79bb7de31c67@linux-foundation.org/",
+      "if": "memparse 와 부트 인자 파서를 쓰는 빌드라면",
+      "do": "오버플로 거부 변경과 새 KUnit 시나리오를 확인하세요",
+      "verify": "mm-nonmm-unstable 머지 후 자기 아키 빌드와 KUnit 결과를 비교하세요"
+    },
+    {
+      "title": "riscv: 최적화된 memcmp() 와 KUnit 벤치마크 확장 (v4)",
+      "priority": "중",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260518131407.1026049-1-milant2002@gmail.com/",
+      "if": "RISC-V 라이브러리 성능을 추적한다면",
+      "do": "v4 의 정렬 처리와 Zbb 확장 활용 차이를 읽어 두세요",
+      "verify": "KUnit 벤치마크 모드 결과를 자기 빌드 구성과 비교해 회귀가 없는지 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이 렌즈는 리스트 중심이며, 오늘 kernel.org 릴리스 신호는 없습니다. 메인라인 타이밍은 ‘리눅스 개발’ 토픽을 참고하세요."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- firmware: arm_ffa: honor descriptor size in PARTITION_INFO_GET_REGS\n  · 영향: __ffa_partition_info_get_regs 가 24바이트 stride 를 하드코딩해 v1.3 SPMC 응답(48바이트 디스크립터)을 절반씩 어긋나게 파싱합니다.\n  · 확인: https://lore.kernel.org/linux-arm-kernel/20260518203116.42624-1-jamien@nvidia.com/"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "[IOMMU·보안]\n- iommu/arm-smmu-v3: Populate the tlbi at the top of the call chain (8-패치 시리즈)\n  · 영향: arm_smmu_domain_inv_range 인자로 tlbi 를 미리 채워 iommupt 도입 시 호출 사슬을 분기할 수 있도록 준비합니다.\n  · 확인: https://lore.kernel.org/linux-arm-kernel/6-v1-5b1ac97a5403+6588f-smmu_tlbi_jgg@nvidia.com/\n- Organize the SMMUv3 invalidation flow so iommupt can use it (상위 시리즈)\n  · 영향: io-pgtable 무효화를 iommupt 가 쓸 수 있도록 table/leaf 비트맵 형식으로 다리 놓고, 비-리프 무효화의 TLBI 폭증 문제를 RIL 단일 명령으로 정리합니다.\n  · 확인: https://lore.kernel.org/linux-arm-kernel/0-v1-5b1ac97a5403+6588f-smmu_tlbi_jgg@nvidia.com/\n\n[RISC-V 라이브러리]\n- lib and lib/cmdline enhancements (mm-nonmm-unstable 반영)\n  · 영향: _parse_integer_limit / memparse 가 오버플로를 더 이상 묵살하지 않고, 64-bit 변환 테스트와 memparse KUnit 가 추가됐으며 RISC-V 측 더블워드 시프트가 함께 들어옵니다.\n  · 확인: https://lore.kernel.org/linux-riscv/20260518113502.11a2f420d48f79bb7de31c67@linux-foundation.org/\n- riscv: lib: add optimized memcmp() and extend KUnit tests (v4)\n  · 영향: 정렬 처리·루프 구조를 다듬고 Zbb 확장을 활용하며, KUnit 에 memcmp 기능 테스트와 벤치마크 모드를 추가합니다. v4 에서 STRING_BENCH 미선언 빌드 오류도 수정됐습니다.\n  · 확인: https://lore.kernel.org/linux-riscv/20260518131407.1026049-1-milant2002@gmail.com/"
+    },
+    {
+      "heading": "기타",
+      "body": "- riscv: dts: spacemit: k3: Add pwm support — SpacemiT K3 SoC PWM 노드와 pinctrl 정보를 추가하는 단일 보드 범위 변경입니다.\n  · 확인: https://lore.kernel.org/linux-riscv/20260518-04-k3-pwm-dts-v2-1-c0ccba430abf@kernel.org/\n- 그 외 리스트 범위 밖 토론은 제외했습니다. 필요 시 lore.kernel.org 에서 키워드를 좁혀 검색하세요."
+    }
+  ],
+  "confidence": {
+    "level": "검수",
+    "note": "candidateBodies 의 commit message 와 maintainer 응답을 기반으로 작성했습니다. 게시 전 원문 스레드 재확인을 권장합니다."
+  },
+  "sources": [
+    {
+      "title": "lib and lib/cmdline enhancements",
+      "url": "https://lore.kernel.org/linux-riscv/20260518113502.11a2f420d48f79bb7de31c67@linux-foundation.org/",
+      "note": "lore.kernel.org/linux-riscv · patch-discussion"
+    },
+    {
+      "title": "riscv: dts: spacemit: k3: Add pwm support",
+      "url": "https://lore.kernel.org/linux-riscv/20260518-04-k3-pwm-dts-v2-1-c0ccba430abf@kernel.org/",
+      "note": "lore.kernel.org/linux-riscv · patch-discussion"
+    },
+    {
+      "title": "iommu/arm-smmu-v3: Populate the tlbi at the top of the call chain",
+      "url": "https://lore.kernel.org/linux-arm-kernel/6-v1-5b1ac97a5403+6588f-smmu_tlbi_jgg@nvidia.com/",
+      "note": "lore.kernel.org/linux-arm-kernel · patch-discussion"
+    },
+    {
+      "title": "riscv: lib: add optimized memcmp() and extend KUnit tests",
+      "url": "https://lore.kernel.org/linux-riscv/20260518131407.1026049-1-milant2002@gmail.com/",
+      "note": "lore.kernel.org/linux-riscv · patch-discussion"
+    },
+    {
+      "title": "firmware: arm_ffa: honor descriptor size in PARTITION_INFO_GET_REGS",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260518203116.42624-1-jamien@nvidia.com/",
+      "note": "lore.kernel.org/linux-arm-kernel · patch-discussion"
+    },
+    {
+      "title": "Organize the SMMUv3 invalidation flow so iommupt can use it",
+      "url": "https://lore.kernel.org/linux-arm-kernel/0-v1-5b1ac97a5403+6588f-smmu_tlbi_jgg@nvidia.com/",
+      "note": "lore.kernel.org/linux-arm-kernel · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-18T23:04:40.549Z",
+    "sourceRecordCount": 50,
+    "candidateCount": 6,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "lore-linux-riscv:urn:uuid:615aa664-fde2-07f6-32c3-8aa559b7d341",
+      "lore-linux-riscv:urn:uuid:09a384b9-82fb-0c53-4289-c837d44c9500",
+      "lore-linux-arm-kernel:urn:uuid:0692daf8-281a-20ea-d220-39b28cfe2e3d",
+      "lore-linux-riscv:urn:uuid:ec669c1b-a5e4-6798-3de6-cc1105118318",
+      "lore-linux-arm-kernel:urn:uuid:de315299-2a1f-22de-9382-c16c12523fda",
+      "lore-linux-arm-kernel:urn:uuid:884fb0d4-bf70-4688-a384-8435b20351e7"
+    ],
+    "bucketCounts": {
+      "releases": 0,
+      "regressions": 1,
+      "patches": 5,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 6,
+    "signalLevel": "high",
+    "subsystems": [
+      "보안"
+    ],
+    "lensPipeline": "linux-arch-platform",
+    "rewrittenAt": "2026-05-18T23:04:46.468Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-ko.md"
+  }
+}

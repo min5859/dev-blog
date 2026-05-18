@@ -1,0 +1,138 @@
+{
+  "id": "2026-05-19-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-05-19 네트워크 해체 패닉 가드 — 관측성·실시간(eBPF·RT)",
+  "headline": "오늘은 클라우드 네트워크 어댑터 드라이버의 해체 경로에서 빈 포인터 역참조로 일어나던 커널 패닉을 막는 보호 패치가 핵심입니다.",
+  "date": "2026-05-19",
+  "summary": "오늘의 핵심은 Azure 네트워크 어댑터(MANA) 드라이버가 attach 도중 실패한 뒤 해체 경로에서 apc->rxqs/tx_qp 를 NULL 디레퍼런스해 패닉으로 이어지던 회귀를 가드 패치와 워커 우회로 막는 시리즈입니다. 그다음 신호로는 같은 드라이버에서 4K 페이지 ARM64 호스트의 15~20% 처리량 회귀를 되돌리는 full-page RX 이더툴 사설 플래그, 그리고 bpf_arena 전용 락-프리 PTE 설치 헬퍼에 일반 인터페이스 반대가 붙은 토론입니다.",
+  "tags": [
+    "eBPF",
+    "MANA",
+    "네트워크",
+    "XDP",
+    "bpf_arena",
+    "PREEMPT_RT",
+    "TDX"
+  ],
+  "highlights": [
+    {
+      "title": "net: mana: attach 실패 뒤 해체 경로 NULL 디레퍼런스 패닉 가드 시리즈",
+      "priority": "상",
+      "verifyLink": "https://lore.kernel.org/bpf/20260518194654.735580-1-dipayanroy@linux.microsoft.com/",
+      "if": "Azure MANA NIC 드라이버를 빌드·운영하는 호스트라면",
+      "do": "rxqs/tx_qp NULL 가드 패치와 detach 우회 2번째 패치를 함께 검토하세요",
+      "verify": "rxqs·tx_qp 가드가 vport·fence·dealloc 경로에서 모두 검사되는지 자기 트리와 대조하세요"
+    },
+    {
+      "title": "net: mana: full-page RX 이더툴 사설 플래그로 4K 페이지 ARM64 처리량 회귀 우회",
+      "priority": "중",
+      "verifyLink": "https://lore.kernel.org/bpf/aguFpq8+LV+I9oH0@linuxonhyperv3.guj3yctzbm1etfxqx2vob5hsef.xx.internal.cloudapp.net/",
+      "if": "4K 페이지 ARM64 환경에서 MANA 처리량 회귀를 본 운영자라면",
+      "do": "full-page-rx 토글 시 detach·attach 로 RX 레이아웃이 재적용되는 흐름을 읽으세요",
+      "verify": "page_pool fragment 우회가 자기 워크로드에서 회귀를 되돌리는지 ethtool 카운터로 측정하세요"
+    },
+    {
+      "title": "selftests: net: xdp_native IPv4 분기 IP·UDP 체크섬 누락 수정",
+      "priority": "중",
+      "verifyLink": "https://lore.kernel.org/bpf/20260518143138.74839bf9@kernel.org/",
+      "if": "drivers/net XDP selftest 의 데이터 조정 케이스를 돌린다면",
+      "do": "IPv4 분기가 IP·UDP 체크섬을 갱신하도록 한 수정과 respin 권고를 살펴보세요",
+      "verify": "IPv6 우선 마스킹이 풀린 환경에서 두 IP 버전 모두 selftest 가 통과하는지 확인하세요"
+    },
+    {
+      "title": "mm: bpf_arena 전용 락-프리 PTE 설치 헬퍼 ptep_try_install() 에 일반 인터페이스 반대",
+      "priority": "하",
+      "verifyLink": "https://lore.kernel.org/bpf/agtuPrgIDNKSu2Oo@slm.duckdns.org/",
+      "if": "bpf_arena 페이지 폴트 복구 코드를 보는 메모리·BPF 메인테이너라면",
+      "do": "Hildenbrand 의 일반 인터페이스 반대 의견과 Tejun 의 BPF arena 한정 응답을 읽으세요",
+      "verify": "차기 시리즈에서 헬퍼가 BPF arena 호출자로만 게이팅되는지 lore 스레드 흐름을 추적하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이 토픽은 lore 전용 렌즈입니다. mainline 릴리스·일반 스케줄러 변경은 ‘리눅스 개발’ 토픽을 참고하세요.\n- 보조 신호: Runtime TDX module update 가 v9 로 재제출되며 7.2 머지 윈도 진입을 명시했습니다.\n  · 확인: https://lore.kernel.org/linux-rt-devel/20260513151045.1420990-1-chao.gao@intel.com/"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "[네트워크 · MANA]\n- net: mana: 해체 경로 NULL 디레퍼런스 패닉 가드 (단일 패치 + 2-패치 시리즈 커버레터)\n  · 영향: mana_attach() 가 큐 할당 도중 실패하면 apc->tx_qp 와 apc->rxqs 가 해제·NULL 화되지만, mana_remove()·mana_change_mtu() 복구·mana_alloc_queues() 내부 오류 경로가 mana_chn_setxdp(rxqs[0] 디레퍼런스 시 CR2=0x0 으로 oops)·mana_destroy_vport·mana_fence_rqs·mana_dealloc_queues 를 NULL 검사 없이 재호출했습니다. 패닉을 일으킨 Fixes 태그는 초기 MANA 드라이버 커밋(ca9c54d2d6a5).\n  · 수정: fence_rqs·destroy_vport·dealloc_queues 에 apc->rxqs/tx_qp NULL 가드를 추가하고 mana_chn_setxdp 직전에도 가드. 2번째 패치는 큐 reset 워커가 netif_device_present() 로 이미 detach 된 포트를 감지하면 중복 detach 를 건너뛰고 mana_attach() 만 재시도합니다.\n  · 확인: https://lore.kernel.org/bpf/20260518194654.735580-1-dipayanroy@linux.microsoft.com/\n  · 확인: https://lore.kernel.org/bpf/CAEAWyHcFE5kUPthnRHQJS5s=YBRhdaOP9mYNsxkMt-Pm1U_1+A@mail.gmail.com/"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "[네트워크 · MANA]\n- net: mana: full-page-rx 이더툴 사설 플래그 도입 제안 — 4K PAGE_SIZE ARM64 호스트에서 고연결 수 환경 시 관측되던 15~20% 처리량 회귀를 완화하기 위해 RX 버퍼 1개를 페이지 1개에 매핑하여 page_pool fragment 경로를 우회합니다. 플래그 토글 시 mana_detach() + mana_attach() 로 새 RX 레이아웃을 적용하고, port 가 down 상태면 다음 up 때 적용. AI 자동 리뷰가 Jakub Kicinski 명의로 첨부된 점이 특이 사항입니다.\n  · 확인: https://lore.kernel.org/bpf/aguFpq8+LV+I9oH0@linuxonhyperv3.guj3yctzbm1etfxqx2vob5hsef.xx.internal.cloudapp.net/\n\n[XDP selftest]\n- selftests: net: xdp_native 데이터 조정 케이스가 \"Data exchange failed\" 로 끊기던 원인은 IPv4 분기에서 IP·UDP 체크섬을 갱신하지 않은 누락이었습니다. 듀얼 스택 구성에서는 테스트 하니스가 IPv6 를 우선해 마스킹됐고, Jakub Kicinski 가 두 IP 버전 모두 자동 실행하자고 제안. Sashiko 의 추가 지적으로 respin 이 요구된 상태입니다.\n  · 확인: https://lore.kernel.org/bpf/20260518143138.74839bf9@kernel.org/\n\n[메모리 관리 · bpf_arena]\n- mm: ptep_try_install(ptep, new_pte) 추가 제안 — pte_none() 슬롯에만 cmpxchg 로 새 PTE 를 설치해 bpf_arena 커널측 폴트 복구를 락-프리로 만든다는 취지입니다. 다만 David Hildenbrand 가 \"사용자 PTE 에 절대 쓰면 안 될 매우 나쁜 일반 인터페이스\" 라고 반대하자, Tejun 은 BPF arena 가 자체 관리하는 PTE 전용이며 적절한 게이팅을 받아들이겠다고 응답했습니다(2026-05-18 부터 추적).\n  · 확인: https://lore.kernel.org/bpf/agtuPrgIDNKSu2Oo@slm.duckdns.org/\n\n[가상화 · TDX]\n- Runtime TDX module update v9 — v8 리뷰 피드백을 반영해 tdx_blob 포맷을 신규 형태로 변경하고, 업데이트 중 모듈 버전 출력 제거, do-while 루프 재구성으로 가독성 개선, cleanup 두 건을 1·2번 패치로 흡수했습니다. 7.2 머지 윈도 진입을 명시(2026-05-18 부터 추적).\n  · 확인: https://lore.kernel.org/linux-rt-devel/20260513151045.1420990-1-chao.gao@intel.com/\n\n[netpoll · netconsole]\n- netpoll: zap_completion_queue() 를 netpoll_zap_completion_queue() 로 개명하고 NETDEV_INTERNAL 네임스페이스의 EXPORT_SYMBOL_NS_GPL 로 승격. 다가오는 netconsole 분할 시리즈에서 find_skb() 가 외부 모듈로 분리될 때 호출 가능하도록 하기 위한 준비이며, 기능 변경은 없습니다(2026-05-18 부터 추적).\n  · 확인: https://lore.kernel.org/linux-rt-devel/20260512-netconsole_split-v2-8-1191d14ad66d@debian.org/"
+    },
+    {
+      "heading": "기타",
+      "body": "리스트 범위 밖 토론은 제외했습니다. 필요 시 lore.kernel.org 의 bpf·linux-rt-devel 아카이브에서 키워드를 좁혀 검색하세요."
+    }
+  ],
+  "confidence": {
+    "level": "초안",
+    "note": "메일 본문 일부를 반영했지만 자동 선별 결과입니다. 게시 전 원문 스레드 확인이 필요합니다."
+  },
+  "sources": [
+    {
+      "title": "net: mana: Add NULL guards in teardown path to prevent panic on attach failure",
+      "url": "https://lore.kernel.org/bpf/CAEAWyHcFE5kUPthnRHQJS5s=YBRhdaOP9mYNsxkMt-Pm1U_1+A@mail.gmail.com/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "selftests: net: Fix checksums in xdp_native",
+      "url": "https://lore.kernel.org/bpf/20260518143138.74839bf9@kernel.org/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "net: mana: Fix NULL dereferences during teardown after attach failure.",
+      "url": "https://lore.kernel.org/bpf/20260518194654.735580-1-dipayanroy@linux.microsoft.com/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "net: mana: force full-page RX buffers via ethtool private flag",
+      "url": "https://lore.kernel.org/bpf/aguFpq8+LV+I9oH0@linuxonhyperv3.guj3yctzbm1etfxqx2vob5hsef.xx.internal.cloudapp.net/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "Runtime TDX module update support",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260513151045.1420990-1-chao.gao@intel.com/",
+      "note": "lore.kernel.org/linux-rt-devel · patch-discussion"
+    },
+    {
+      "title": "netpoll: rename and export netpoll_zap_completion_queue()",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260512-netconsole_split-v2-8-1191d14ad66d@debian.org/",
+      "note": "lore.kernel.org/linux-rt-devel · patch-discussion"
+    },
+    {
+      "title": "mm: Add ptep_try_install() for lockless empty-slot installs",
+      "url": "https://lore.kernel.org/bpf/agtuPrgIDNKSu2Oo@slm.duckdns.org/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-18T22:56:32.846Z",
+    "sourceRecordCount": 50,
+    "candidateCount": 7,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "lore-bpf:urn:uuid:bcbdca7e-c51a-1f31-8410-453b49db8b32",
+      "lore-bpf:urn:uuid:553dc17e-75b3-2623-573f-502af62d8518",
+      "lore-bpf:urn:uuid:184cbfa8-5582-b800-7192-9ea116db7d21",
+      "lore-bpf:urn:uuid:ff38372b-5a5d-72e3-fd7b-16147534651b",
+      "lore-linux-rt-devel:urn:uuid:103af042-4cef-da07-4711-2582782ee20f",
+      "lore-linux-rt-devel:urn:uuid:f1b52d77-02f4-fac0-178a-6708c5599018",
+      "lore-bpf:urn:uuid:cabc550b-dd3f-7686-63cf-123e2258049c"
+    ],
+    "bucketCounts": {
+      "releases": 0,
+      "regressions": 1,
+      "patches": 6,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 7,
+    "signalLevel": "high",
+    "subsystems": [
+      "네트워크",
+      "메모리 관리"
+    ],
+    "lensPipeline": "linux-perf-rt"
+  }
+}

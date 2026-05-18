@@ -1,0 +1,150 @@
+{
+  "id": "2026-05-19-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-05-19 ashmem·KVM 안전 회귀 수정 — Android 커널",
+  "date": "2026-05-19",
+  "headline": "Android 커널에 ashmem 크래시, arm64 KVM 경계 오류, 스케줄러 워크큐 레이스 등 안전 회귀가 한 묶음으로 고쳐졌습니다. ACK 백포트 검토 단계.",
+  "summary": "오늘의 핵심은 ashmem 길이 0 경계에서 정수 언더플로우로 크래시가 발생하던 회귀와, android16-6.12 의 Proxy Execution 워크큐 레이스 종결입니다. 그 다음으로 arm64 KVM 의 hyp 할당기 off-by-one 경계 검사가 정정되었고, GKI arm 빌드 break 도 동시에 복구되었습니다.",
+  "tags": [
+    "android",
+    "커널",
+    "ack"
+  ],
+  "highlights": [
+    {
+      "title": "ashmem: 길이 0 경계에서 정수 언더플로우 크래시 수정",
+      "priority": "상",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/0e168fbe93ac702fa59789f380710d1745491e12",
+      "if": "vendor 모듈이 ashmem 매핑·핀 경로에 의존한다면",
+      "do": "offset 이 파일 크기와 같아 남은 바이트가 0 이 되는 호출 경로를 점검하세요",
+      "verify": "ASHMEM_PIN/UNPIN 과 mmap 경계 케이스에 대한 ABI·런타임 테스트를 돌려 확인하세요"
+    },
+    {
+      "title": "sched proxy-exec: workqueue 지연을 유발하던 레이스 종결",
+      "priority": "상",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/b5d6bd9d8749f09b6c37d9fa63562b82a3822bda",
+      "if": "android16-6.12 기반에서 Proxy Execution 과 KVM irqfd 를 함께 쓴다면",
+      "do": "kvm-irqfd-cleanup 과 rcu_gp 가 같은 per-cpu 풀에 묶이는 시나리오를 재현해 보세요",
+      "verify": "패치 적용 전후 워크큐 지연·데드락 재현 테스트를 돌려 확인하세요"
+    },
+    {
+      "title": "KVM arm64: hyp_alloc_mgt_refill() off-by-one 경계 검사 수정",
+      "priority": "상",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/98413bc16eb8898b120427b78386b399eaeecd83",
+      "if": "arm64 pKVM 또는 hyp 메모리 풀 경로를 빌드·테스트한다면",
+      "do": "id 값이 MAX_ALLOC_ID 와 같을 때 호출이 거부되는지 확인하세요",
+      "verify": "hyp_alloc 관련 KUnit·KVM 회귀 테스트를 돌려 확인하세요"
+    },
+    {
+      "title": "GKI 모듈 목록 누락으로 인한 arm 빌드 break 복구",
+      "priority": "중",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/20cf7b36edc70ae9d47d90a3d3528204036955bf",
+      "if": "android16-6.12 의 GKI arm 또는 virtual_device_arm 빌드를 운영한다면",
+      "do": "최근 추가된 GKI 모듈이 모듈 목록에 모두 들어왔는지 확인하세요",
+      "verify": "tools/bazel build //common-modules/virtual-device:virtual_device_arm 결과를 돌려 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- ashmem: 길이 0 경계에서 정수 언더플로우 크래시 수정 (0e168fbe93ac · android-mainline)\n  · 영향: offset 이 파일 크기와 같아 남은 바이트가 0 이 될 때 길이 계산이 음수로 내려가 크래시. ashmem 의 핀·매핑 경로 전반에 닿습니다. Fixes 라인은 ASHMEM_PIN/UNPIN 도입 패치.\n  · 확인: https://android.googlesource.com/kernel/common/+/0e168fbe93ac702fa59789f380710d1745491e12\n\n- ashmem: memfd_fcntl 이 모든 파일에서 호출될 수 있음을 안전 주석에 반영 (1124d5c85f76 · android-mainline)\n  · 영향: 동작 변화는 없고, fcntl 경로에서 임의 fd 로 호출될 수 있다는 전제를 안전 주석에 명시. memfd 전용이라는 잘못된 가정을 코드 리뷰 단계에서 제거합니다.\n  · 확인: https://android.googlesource.com/kernel/common/+/1124d5c85f76c570b9ba6698c2358f6f37fcf6c9\n\n- KVM arm64: hyp_alloc_mgt_refill() off-by-one 경계 검사 수정 (98413bc16eb8 · android16-6.12)\n  · 영향: id 인자 상한이 MAX_ALLOC_ID 미만이어야 하는데 같은 값까지 허용되던 검사. array_index_nospec() 덕에 보안 영향은 없지만, hypervisor 할당기 정확성을 정정합니다.\n  · 확인: https://android.googlesource.com/kernel/common/+/98413bc16eb8898b120427b78386b399eaeecd83\n\n- sched proxy-exec: workqueue 지연을 유발하던 레이스 종결 (b5d6bd9d8749 · android16-6.12)\n  · 영향: Proxy Execution 활성 환경에서 kvm-irqfd-cleanup 워커가 mutex 를 쥔 채 synchronize_srcu_expedited() 를 부르고, 같은 per-cpu 풀의 다른 워커가 막혀 워크큐 작업이 지연·데드락. KVM 사용 디바이스의 시스템 응답성에 직접 영향.\n  · 확인: https://android.googlesource.com/kernel/common/+/b5d6bd9d8749f09b6c37d9fa63562b82a3822bda\n\n- GKI 모듈 목록 누락으로 인한 arm 빌드 break 복구 (20cf7b36edc7 · android16-6.12)\n  · 영향: 직전 \"build additional gki modules\" 변경으로 생성되는 모듈이 목록에 들어가지 않아 arm 빌드가 깨졌던 회귀를 복구. virtual_device_arm 으로 검증.\n  · 확인: https://android.googlesource.com/kernel/common/+/20cf7b36edc70ae9d47d90a3d3528204036955bf"
+    },
+    {
+      "heading": "ACK 전용 변경",
+      "body": "ACK 패치를 서브시스템별로 묶어 정리했습니다.\n\n- 파일시스템/스토리지\n  - ext4 KUnit 테스트 모듈명을 ext4-test.ko 로 갱신해 bazel·tradefed 빌드 메타데이터를 맞췄습니다 (18b8f659ef03 · android-mainline).\n  - 확인: https://android.googlesource.com/kernel/common/+/18b8f659ef03db97c85b10e6ea1ffda8c0fc506f\n\n- 암호화·무선\n  - db845c GKI 프래그먼트에서 CRYPTO_MICHAEL_MIC 를 제거. 알고리즘은 cfg80211 안으로 통합되어 더 이상 별도 활성화가 필요 없습니다 (a4a8cebc5913 · android-mainline).\n  - 확인: https://android.googlesource.com/kernel/common/+/a4a8cebc5913ab577186cccf9a79dfd4d80adae6\n  - defconfig 에 RUNTIME_TESTING_MENU 를 활성화해 crypto-lib KUnit 테스트가 다시 빌드 대상에 들어옵니다 (b1545ccd8bf7 · android-mainline).\n  - 확인: https://android.googlesource.com/kernel/common/+/b1545ccd8bf79e5360ae86195080f362ce8b42a4\n\n- proc·메모리 관리\n  - gki_defconfig 에서 PROC_MEM_FORCE_PTRACE 명시 활성화를 제거. mainline 기본값이 켜지면서 중복이 됐습니다 (24eae7ee8ebc · android-mainline).\n  - 확인: https://android.googlesource.com/kernel/common/+/24eae7ee8ebc247c7b76180f9a78a051ab2f59bb"
+    },
+    {
+      "heading": "추적 브랜치",
+      "body": "- android-mainline: 최신 commit 18b8f659ef03. 오늘은 ashmem 안전성 수정과 defconfig 정리 흐름이 중심입니다.\n- android16-6.12: 최신 commit b5d6bd9d8749. Proxy Execution 워크큐 레이스, arm64 KVM 경계 검사, GKI 모듈 목록 복구가 같은 날 들어왔습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "- 단일 vendor·hardware 패치와 GKI 영향이 없는 merge commit (예: bpf-next merge, RT throttle dump trace hook revert) 는 본문에서 제외했습니다.\n- 자기 디바이스 키워드가 필요한 경우 ACK git log 에서 직접 검색해 보강하세요."
+    }
+  ],
+  "confidence": {
+    "level": "AI 초안",
+    "note": "gitiles JSON 과 commit subject·body 일부를 자동 선별·재구성한 결과입니다. 게시 전 원문 commit 본문과 ACK 브랜치 상태를 다시 확인하시기 바랍니다."
+  },
+  "sources": [
+    {
+      "title": "ashmem: fix integer underflow on len==0",
+      "url": "https://android.googlesource.com/kernel/common/+/0e168fbe93ac702fa59789f380710d1745491e12",
+      "note": "android.googlesource.com · ack-android · 0e168fbe93ac"
+    },
+    {
+      "title": "ashmem: memfd_fcntl can be called on any file",
+      "url": "https://android.googlesource.com/kernel/common/+/1124d5c85f76c570b9ba6698c2358f6f37fcf6c9",
+      "note": "android.googlesource.com · ack-android · 1124d5c85f76"
+    },
+    {
+      "title": "KVM: arm64: Fix off-by-one bounds check in hyp_alloc_mgt_refill()",
+      "url": "https://android.googlesource.com/kernel/common/+/98413bc16eb8898b120427b78386b399eaeecd83",
+      "note": "android.googlesource.com · ack-android · 98413bc16eb8"
+    },
+    {
+      "title": "sched: proxy-exec: Close race causing workqueue work being delayed",
+      "url": "https://android.googlesource.com/kernel/common/+/b5d6bd9d8749f09b6c37d9fa63562b82a3822bda",
+      "note": "android.googlesource.com · ack-android · b5d6bd9d8749"
+    },
+    {
+      "title": "Fix GKI module list for arm",
+      "url": "https://android.googlesource.com/kernel/common/+/20cf7b36edc70ae9d47d90a3d3528204036955bf",
+      "note": "android.googlesource.com · ack-android · 20cf7b36edc7"
+    },
+    {
+      "title": "ext4: update kunit test module name",
+      "url": "https://android.googlesource.com/kernel/common/+/18b8f659ef03db97c85b10e6ea1ffda8c0fc506f",
+      "note": "android.googlesource.com · ack-android · 18b8f659ef03"
+    },
+    {
+      "title": "db845c: drop michael_mic",
+      "url": "https://android.googlesource.com/kernel/common/+/a4a8cebc5913ab577186cccf9a79dfd4d80adae6",
+      "note": "android.googlesource.com · ack-android · a4a8cebc5913"
+    },
+    {
+      "title": "defconfig: enable RUNTIME_TESTING_MENU for crypto",
+      "url": "https://android.googlesource.com/kernel/common/+/b1545ccd8bf79e5360ae86195080f362ce8b42a4",
+      "note": "android.googlesource.com · ack-android · b1545ccd8bf7"
+    },
+    {
+      "title": "gki_defconfig: drop PROC_MEM_FORCE_PTRACE",
+      "url": "https://android.googlesource.com/kernel/common/+/24eae7ee8ebc247c7b76180f9a78a051ab2f59bb",
+      "note": "android.googlesource.com · ack-android · 24eae7ee8ebc"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-18T22:02:34.418Z",
+    "sourceRecordCount": 160,
+    "candidateCount": 11,
+    "generator": "scripts/draft-android.mjs",
+    "candidateIds": [
+      "ack-android-mainline:18b8f659ef03db97c85b10e6ea1ffda8c0fc506f",
+      "ack-android16-6.12:b5d6bd9d8749f09b6c37d9fa63562b82a3822bda",
+      "ack-android16-6.12:20cf7b36edc70ae9d47d90a3d3528204036955bf",
+      "ack-android16-6.12:98413bc16eb8898b120427b78386b399eaeecd83",
+      "ack-android-mainline:a4a8cebc5913ab577186cccf9a79dfd4d80adae6",
+      "ack-android-mainline:b1545ccd8bf79e5360ae86195080f362ce8b42a4",
+      "ack-android-mainline:24eae7ee8ebc247c7b76180f9a78a051ab2f59bb",
+      "ack-android-mainline:0e168fbe93ac702fa59789f380710d1745491e12",
+      "ack-android-mainline:1124d5c85f76c570b9ba6698c2358f6f37fcf6c9",
+      "ack-android-mainline:bc7a5d0dbca0f1843420bf17c4feb4c016700db6",
+      "ack-android-mainline:0ecf74f880fc85356c2f2539b1fa7314ebb59838"
+    ],
+    "bucketCounts": {
+      "regressions": 9,
+      "ackPatches": 0
+    },
+    "subsystems": [
+      "파일시스템/스토리지",
+      "스케줄러/EAS",
+      "GKI/모듈 ABI",
+      "보안",
+      "네트워크/이더넷"
+    ],
+    "branches": [
+      "android-mainline",
+      "android16-6.12"
+    ]
+  }
+}
