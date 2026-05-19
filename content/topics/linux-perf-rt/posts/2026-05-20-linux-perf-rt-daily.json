@@ -1,0 +1,131 @@
+{
+  "id": "2026-05-20-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-05-20 서명 BPF 로더 배타 맵 강제 — 관측성·실시간(eBPF·RT)",
+  "headline": "BPF 서명 로더가 동결만으로 부족해 배타 맵까지 요구하고, 함수 단락 킬스위치 제안은 메인테이너 반대로 막혔습니다.",
+  "date": "2026-05-20",
+  "summary": "오늘의 핵심은 서명 BPF 프로그램 로더가 동결된 메타데이터 맵의 sha 검사만으로는 다른 프로그램이 내용을 바꿀 수 있다는 점을 인정하고 배타(exclusive) 맵이 아니면 -EINVAL 로 거부하도록 강화한 보안 보강입니다. 그다음 신호로 PREEMPT_RT 진영의 Per-CPU Work(PW, 옛 QPW) 헬퍼 v4 가 schedule_work_on 회피를 다시 제안했고, 함수 단위 단락(killswitch) 완화 도구 제안은 Greg KH 와 BPF 메인테이너들의 강한 반대로 사실상 막혔습니다.",
+  "tags": [
+    "eBPF",
+    "verifier",
+    "signed-loader",
+    "PREEMPT_RT",
+    "tracing",
+    "killswitch"
+  ],
+  "highlights": [
+    {
+      "title": "서명 BPF 로더, 비배타 메타데이터 맵 거부",
+      "priority": "상",
+      "verifyLink": "https://lore.kernel.org/bpf/20260519215358.126364-1-kpsingh@kernel.org/",
+      "if": "서명 BPF 프로그램 로딩 경로를 직접 운용한다면",
+      "do": "frozen 만으로 sha 우회가 가능한 이유와 excl_prog_sha 추가 근거를 읽으세요",
+      "verify": "gen_loader 가 비배타 맵을 -EINVAL 로 거부하는지 자기 테스트에서 재현하세요"
+    },
+    {
+      "title": "함수 단락 killswitch 완화 도구 제안 반려",
+      "priority": "상",
+      "verifyLink": "https://lore.kernel.org/bpf/CAPhsuW6C3hyciA4=z+V0BkQ9EEubuNCKLwoxtXorSbnhkUxdJQ@mail.gmail.com/",
+      "if": "CVE 완화용 함수 단락 기법 도입을 검토 중이라면",
+      "do": "fail_function·bpf_override_return 한계와 반대 사유를 따라 읽으세요",
+      "verify": "LSM 단락 위험과 livepatch 의 서명 가드 비교를 스레드 끝까지 확인하세요"
+    },
+    {
+      "title": "PREEMPT_RT 용 Per-CPU Work(PW) 헬퍼 v4",
+      "priority": "중",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260519012754.240804-1-leobras.c@gmail.com/",
+      "if": "PREEMPT_RT 빌드에서 원격 워크큐로 마감을 놓친 적 있다면",
+      "do": "QPW 에서 PW 로 개명된 v4 API 와 CONFIG_PWLOCKS 동작을 살피세요",
+      "verify": "pwlocks=1 부팅과 CPU 격리 자동 활성 조건이 자기 구성과 맞는지 대조하세요"
+    },
+    {
+      "title": "tracing/eprobes BTF 디레퍼런스 v5 빌드 실패",
+      "priority": "중",
+      "verifyLink": "https://lore.kernel.org/bpf/202605200427.0xXjKghz-lkp@intel.com/",
+      "if": "eprobes 로 BTF 이름 기반 디레퍼런스를 시도 중이라면",
+      "do": "kernel test robot 의 s390 빌드 에러와 v5 패치 차분을 함께 읽으세요",
+      "verify": "parse_trace_event·ctx_btf 미선언 오류가 자기 W=1 빌드에서도 재현되는지 시험하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이 토픽은 lore.kernel.org 의 bpf 및 linux-rt-devel 리스트 중심 렌즈입니다. mainline 릴리스·일반 스케줄러 변경은 ‘리눅스 개발’ 토픽을 참고하세요."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- 서명 BPF 로더, 비배타 메타데이터 맵 거부 (kpsingh@kernel.org)\n  · 영향: 동결된 맵이라도 다른 프로그램이 접근 권한을 가지면 sha 검증 후 내용을 바꿔 검사를 우회할 수 있다는 사실상의 보안 결함입니다. excl_prog_sha 를 sha[] 바로 뒤에 두고 gen_loader 가 NULL 이면 -EINVAL 로 빠지도록 보강합니다.\n  · 확인: https://lore.kernel.org/bpf/20260519215358.126364-1-kpsingh@kernel.org/\n\n- tracing/eprobes BTF 디레퍼런스 v5 s390 빌드 실패 (Steven Rostedt 패치, kernel test robot 보고)\n  · 영향: s390 randconfig + W=1 빌드에서 parse_trace_event, ctx_btf 가 implicit declaration 으로 잡혀 -Werror 로 깨지며, parse_trace_event_arg 도 unused 경고가 동반됩니다. 새 BTF 기반 dereference 문법을 도입하기 전 정리 패치가 필요한 상태입니다.\n  · 확인: https://lore.kernel.org/bpf/202605200427.0xXjKghz-lkp@intel.com/"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "- Per-CPU Work(PW, 옛 QPW) 헬퍼 v4 (Leonardo Bras)\n  · 영향: local_locks + schedule_work_on 으로 처리하던 원격 작업을 PREEMPT_RT 빌드에서는 대상 CPU 의 per-cpu 스핀락을 직접 잡고 로컬에서 수행하도록 바꿔 RT 워크로드가 스케줄아웃되지 않게 합니다. CONFIG_PWLOCKS=n 이면 기존 동작 그대로, =y + pwlocks=1 일 때만 새 경로가 켜집니다. v4 에서 명명 규약(pw_*)이 정리됐고 CPU 격리 활성 시 자동 enable 도 들어왔습니다.\n  · 확인: https://lore.kernel.org/linux-rt-devel/20260519012754.240804-1-leobras.c@gmail.com/\n\n- killswitch: per-function short-circuit mitigation primitive (논의 종결 방향)\n  · 영향: 공개된 CVE 함수를 무인자 모듈로 단락시키는 새 기본 도구 제안에 대해 Greg KH 가 강한 반대 의견을 내고, Daniel Borkmann·Song Liu 가 fail_function 과 bpf_override_return 의 ALLOW_ERROR_INJECTION 화이트리스트 제약, lockdown=integrity 차단 등을 들어 “보안을 단락시킬 위험이 본래 버그보다 크다”는 입장을 굳혔습니다. livepatch 와 달리 서명·로드 정책 가드도 별도로 필요합니다.\n  · 확인: https://lore.kernel.org/bpf/CAPhsuW6C3hyciA4=z+V0BkQ9EEubuNCKLwoxtXorSbnhkUxdJQ@mail.gmail.com/"
+    },
+    {
+      "heading": "기타",
+      "body": "- Runtime TDX module update support v9 (Chao Gao, Intel): linux-rt-devel 에도 크로스포스트되지만 본질적으로는 TDX 모듈 라이브 갱신용입니다. v8 리뷰 반영으로 tdx_blob 포맷 교체와 do-while 정리, 클린업 패치 2건이 추가됐습니다. RT 관점에서 직접적인 신호는 아닙니다 — https://lore.kernel.org/linux-rt-devel/20260513151045.1420990-1-chao.gao@intel.com/\n- arch: HAVE_ARCH_BITREVERSE 를 BITREVERSE 의존으로 변경 (Yury Norov, 재핑): arm/arm64/loongarch/mips Kconfig 에서 비트역순 명령을 가진 아키텍처라도 BITREVERSE 가 꺼져 있으면 select 하지 않도록 조정하는 정리 패치입니다 — https://lore.kernel.org/bpf/agziMgYIg96fTVst@yury/"
+    }
+  ],
+  "confidence": {
+    "level": "초안",
+    "note": "제목·메타데이터 기반 자동 선별과 candidateBodies 본문을 함께 읽어 정리했습니다. 게시 전 원문 스레드 재확인이 필요합니다."
+  },
+  "sources": [
+    {
+      "title": "Introduce Per-CPU Work helpers (was QPW)",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260519012754.240804-1-leobras.c@gmail.com/",
+      "note": "lore.kernel.org/linux-rt-devel · patch-discussion"
+    },
+    {
+      "title": "Runtime TDX module update support",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260513151045.1420990-1-chao.gao@intel.com/",
+      "note": "lore.kernel.org/linux-rt-devel · patch-discussion"
+    },
+    {
+      "title": "tracing/eprobes: Allow use of BTF names to dereference pointers",
+      "url": "https://lore.kernel.org/bpf/202605200427.0xXjKghz-lkp@intel.com/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "bpf, libbpf: reject non-exclusive metadata maps in the signed loader",
+      "url": "https://lore.kernel.org/bpf/20260519215358.126364-1-kpsingh@kernel.org/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "killswitch: add per-function short-circuit mitigation primitive",
+      "url": "https://lore.kernel.org/bpf/CAPhsuW6C3hyciA4=z+V0BkQ9EEubuNCKLwoxtXorSbnhkUxdJQ@mail.gmail.com/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "arch: select HAVE_ARCH_BITREVERSE conditionally on BITREVERSE",
+      "url": "https://lore.kernel.org/bpf/agziMgYIg96fTVst@yury/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-19T22:24:08.197Z",
+    "sourceRecordCount": 50,
+    "candidateCount": 6,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "lore-linux-rt-devel:urn:uuid:94d6b75b-3e4d-7ac6-003b-cf1a21fe7dd0",
+      "lore-linux-rt-devel:urn:uuid:103af042-4cef-da07-4711-2582782ee20f",
+      "lore-bpf:urn:uuid:0a992eb6-b740-5cc2-3ea2-8241281350f3",
+      "lore-bpf:urn:uuid:6623683e-6903-11fc-53fe-5aa075f20727",
+      "lore-bpf:urn:uuid:a477c4bd-3376-5a08-a13d-c57c6df8e3c2",
+      "lore-bpf:urn:uuid:0eff5716-421e-d70d-1da1-a089faac3ec1"
+    ],
+    "bucketCounts": {
+      "releases": 0,
+      "regressions": 0,
+      "patches": 6,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 6,
+    "signalLevel": "high",
+    "subsystems": [],
+    "lensPipeline": "linux-perf-rt",
+    "rewrittenAt": "2026-05-19T22:24:14.459Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-ko.md"
+  }
+}

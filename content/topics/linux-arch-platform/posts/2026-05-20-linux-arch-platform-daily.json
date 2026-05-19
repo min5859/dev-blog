@@ -1,0 +1,129 @@
+{
+  "id": "2026-05-20-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-05-20 RISC-V 정수 파서 보강 mm 트리 안착 — 아키텍처·플랫폼",
+  "date": "2026-05-20",
+  "headline": "Andrew Morton이 RISC-V 32비트 더블워드 시프트와 명령줄 파서 오버플로 보강을 mm-nonmm 트리에 흡수했습니다.",
+  "summary": "오늘 이 렌즈에서 가장 중요한 신호는 lib/cmdline 오버플로 검증과 RISC-V32 더블워드 시프트 헬퍼를 묶은 v11 시리즈가 Andrew Morton의 mm-nonmm-unstable에 받아들여졌다는 점입니다. 다음 신호는 arm-smmu-v3의 kdump 경로에서 EVTQ/PRIQ 인터럽트 처리 방식이 IRQ 핸들러 안 MMIO 읽기를 포기하고 핸들러 등록 자체를 분리하는 방향으로 합의되어 가는 흐름입니다.",
+  "tags": [
+    "RISC-V",
+    "ARM64",
+    "IOMMU",
+    "아키텍처"
+  ],
+  "highlights": [
+    {
+      "title": "lib/cmdline 오버플로 검증과 RISC-V32 더블워드 시프트 v11이 mm 트리에 흡수",
+      "priority": "상",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260519121031.95ff192c46f02eb05e847e42@linux-foundation.org/",
+      "if": "RISC-V32 또는 lib/cmdline 파서에 의존하는 빌드라면",
+      "do": "v11의 asm-prototypes 추가와 Kconfig.debug 의존 변경을 자기 트리와 diff 하세요",
+      "verify": "mm-nonmm-unstable에서 SHDI3_KUNIT_TEST 의존이 자기 아키 매트릭스와 맞는지 확인하세요"
+    },
+    {
+      "title": "arm-smmu-v3 kdump 경로 EVTQ/PRIQ IRQ 처리, MMIO 읽기 대신 핸들러 분리로 합의 이동",
+      "priority": "상",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260519222749.GL3602937@nvidia.com/",
+      "if": "ARM SMMU-v3 서버에서 kdump를 검증한다면",
+      "do": "v3의 ISR 안 CR0 읽기 대신 EVTQ/PRIQ 핸들러 미등록 합의를 추적하세요",
+      "verify": "다음 리스핀에서 gerror만 남고 EVTQ/PRIQ IRQ 요청이 빠지는지 자기 트리 반영 전에 대조하세요"
+    },
+    {
+      "title": "VMA 단위 쓰기 잠금 페이지폴트 최적화, Wilcox의 실측 입증 요구로 압박",
+      "priority": "중",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/CAHbLzkp7WcXA6Zey2QjBDrcs1w2hP4dhBoda2G3XF+Q0h_hwsQ@mail.gmail.com/",
+      "if": "VMA 단위 쓰기 잠금에 의존한 폴트 경로를 따라간다면",
+      "do": "Barry Song 측이 stalled mprotect/madvise 실측을 어떻게 제시하는지 추적하세요",
+      "verify": "Wilcox의 인프라 회수 가능성을 보고 자기 워크로드 의존도와 폴백 경로를 평가하세요"
+    },
+    {
+      "title": "crypto/atmel ECC 구조체 atmel_i2c_client_mgmt로 리네이밍 12-패치 시리즈",
+      "priority": "중",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260519204803.17034-5-l.rubusch@gmail.com/",
+      "if": "Atmel ECC/I2C 보안 칩 드라이버를 유지보수한다면",
+      "do": "리네이밍 후 client 관리 인프라를 atmel-i2c 코어로 옮기는 후속 패치를 따라가세요",
+      "verify": "patch 5 이후 호출자에서 식별자 교체 외 기능 변화가 없는지 직접 대조하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이 렌즈는 lore 메일링 리스트 중심이라 오늘 kernel.org 릴리스는 없습니다. 메인라인 시점은 ‘리눅스 개발’ 토픽에서 따라가세요."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "회귀로 분류된 항목은 없습니다. 다만 arm-smmu-v3 kdump 경로 패치가 IRQ 핸들러 안에서 CR0_EVTQEN MMIO 비트를 읽어 정지된 큐를 회피하는 방식으로 제출되었으나, Jason Gunthorpe가 인터럽트 경로에서의 레지스터 읽기를 거부하면서 EVTQ/PRIQ 핸들러를 kdump 커널에서 아예 등록하지 않는 방향으로 합의가 형성되고 있습니다. 보안 측면에서는 Atmel ECC/I2C 드라이버 구조체 리네이밍이 12-패치 시리즈로 진행 중이며, 기능 변경 없이 후속 client 관리 코드 이전을 준비하는 단계입니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "[메모리·lib]\n- lib + lib/cmdline overflow 검증과 RISC-V32 더블워드 시프트 헬퍼 v11 (8-패치 시리즈)\n  · 영향: _parse_integer_limit()·memparse()가 오버플로를 더 이상 무시하지 않으며, ARM·XTENSA·MICROBLAZE·32비트 RISCV/SPARC용 __ashldi3/__ashrdi3/__lshrdi3 어셈블리가 신설됩니다. Andrew Morton이 mm-nonmm-unstable에 picked-up 했고, v11에서 asm-prototypes.h 보강과 SHDI3_KUNIT_TEST 의존 조건이 다시 정리됐습니다.\n  · 확인: https://lore.kernel.org/linux-riscv/20260519121031.95ff192c46f02eb05e847e42@linux-foundation.org/\n\n- mm: mmap_lock 경합 감소·페이지폴트 성능 (논의 진행)\n  · 영향: Matthew Wilcox가 per-VMA 쓰기 잠금 인프라의 실측 효과 입증을 거듭 요구. Barry Song과 Yang Shi가 안드로이드 단말에서 filemap_fault()의 I/O 지연이 mprotect/madvise를 어떻게 막는지 측정해 회신 중. 입증 실패 시 관련 인프라를 \"rip out\"하겠다는 압박이 유지되고 있어 ARM/Android 워크로드 의존도가 큰 트리는 영향권에 있습니다.\n  · 확인: https://lore.kernel.org/linux-arm-kernel/CAHbLzkp7WcXA6Zey2QjBDrcs1w2hP4dhBoda2G3XF+Q0h_hwsQ@mail.gmail.com/\n\n[보안·IOMMU]\n- iommu/arm-smmu-v3: kdump 커널에서 EVTQ/PRIQ 이벤트 억제 (6-패치 시리즈)\n  · 영향: v3은 ISR 진입 시점에 CR0_EVTQEN을 MMIO로 읽어 정지된 큐로의 false drain을 회피했으나, Jason Gunthorpe가 \"IRQ 경로에서 레지스터 읽기는 안 된다\"고 거부. Nicolin Chen 측도 \"kdump 케이스에서는 gerror 외 IRQ 요청 자체를 생략하자\"로 동의해, 다음 리스핀은 핸들러 분리 방향으로 정리될 가능성이 높습니다.\n  · 확인: https://lore.kernel.org/linux-arm-kernel/20260519222749.GL3602937@nvidia.com/\n\n- crypto: atmel - atmel_ecc_driver_data를 atmel_i2c_client_mgmt로 리네이밍 (12-패치 시리즈)\n  · 영향: I2C 클라이언트 추적·잠금을 공유하는 구조체 이름을 일반화해, 후속 패치에서 client 관리 코드를 atmel-i2c 코어 드라이버로 이전할 길을 엽니다. 본 패치만 보면 기능 변화는 없습니다(\"No functional changes intended\").\n  · 확인: https://lore.kernel.org/linux-arm-kernel/20260519204803.17034-5-l.rubusch@gmail.com/"
+    },
+    {
+      "heading": "기타",
+      "body": "단일 SoC 보드 차원의 신호로, airoha AN7581의 USB 3.0 지원 v7이 Serdes 라인을 위한 더블 PHY 모델(clk 드라이버가 Serdes용 PHY를 노출하고 USB PHY가 이를 select)로 재설계되어 dt-bindings와 함께 재제출됐습니다. 별도 SSR 드라이버 의존성을 PHY 드라이버로 흡수한 방향이 핵심입니다 (https://lore.kernel.org/linux-arm-kernel/20260519220813.28468-1-ansuelsmth@gmail.com/). 그 외 리스트 범위 밖 토론은 제외했습니다."
+    }
+  ],
+  "confidence": {
+    "level": "검토필요",
+    "note": "메일 본문(commitMessage)과 메인테이너 회신을 기반으로 재구성했습니다. arm-smmu-v3 합의는 차기 리스핀 시점에 다시 확인이 필요합니다."
+  },
+  "sources": [
+    {
+      "title": "lib and lib/cmdline enhancements",
+      "url": "https://lore.kernel.org/linux-riscv/20260519121031.95ff192c46f02eb05e847e42@linux-foundation.org/",
+      "note": "lore.kernel.org/linux-riscv · patch-discussion"
+    },
+    {
+      "title": "crypto: atmel - rename atmel_ecc_driver_data to atmel_i2c_client_mgmt",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260519204803.17034-5-l.rubusch@gmail.com/",
+      "note": "lore.kernel.org/linux-arm-kernel · patch-discussion"
+    },
+    {
+      "title": "airoha: an7581: USB support",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260519220813.28468-1-ansuelsmth@gmail.com/",
+      "note": "lore.kernel.org/linux-arm-kernel · patch-discussion"
+    },
+    {
+      "title": "lib and lib/cmdline enhancements",
+      "url": "https://lore.kernel.org/linux-riscv/20260519172259.908980-1-dmantipov@yandex.ru/",
+      "note": "lore.kernel.org/linux-riscv · patch-discussion"
+    },
+    {
+      "title": "iommu/arm-smmu-v3: Suppress EVTQ/PRIQ events in kdump kernel",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260519222749.GL3602937@nvidia.com/",
+      "note": "lore.kernel.org/linux-arm-kernel · patch-discussion"
+    },
+    {
+      "title": "mm: reduce mmap_lock contention and improve page fault performance",
+      "url": "https://lore.kernel.org/linux-arm-kernel/CAHbLzkp7WcXA6Zey2QjBDrcs1w2hP4dhBoda2G3XF+Q0h_hwsQ@mail.gmail.com/",
+      "note": "lore.kernel.org/linux-arm-kernel · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-19T22:30:24.129Z",
+    "sourceRecordCount": 50,
+    "candidateCount": 6,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "lore-linux-riscv:urn:uuid:567aca63-4c9c-ca92-d694-84f4263da8de",
+      "lore-linux-arm-kernel:urn:uuid:71d9baec-6db8-b2ac-66d5-a453b0535595",
+      "lore-linux-arm-kernel:urn:uuid:9fe9bfd0-aa2d-28d4-5c46-9caf919a0279",
+      "lore-linux-riscv:urn:uuid:a36bbc7b-cfe2-2217-b4d5-a1d26db50359",
+      "lore-linux-arm-kernel:urn:uuid:2545edd3-6abd-b183-53ca-446b0d7161cf",
+      "lore-linux-arm-kernel:urn:uuid:34802f0c-8193-240f-5148-72f8933826f8"
+    ],
+    "bucketCounts": {
+      "releases": 0,
+      "regressions": 0,
+      "patches": 6,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 6,
+    "signalLevel": "high",
+    "subsystems": [
+      "보안",
+      "메모리 관리"
+    ],
+    "lensPipeline": "linux-arch-platform"
+  }
+}

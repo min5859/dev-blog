@@ -1,0 +1,139 @@
+{
+  "id": "2026-05-20-linux-daily-briefing",
+  "topic": "linux",
+  "title": "2026-05-20 hotplug altmap 메모리 손상 수정 — 리눅스 개발",
+  "date": "2026-05-20",
+  "headline": "메모리 hotplug 오류 경로에서 altmap 누락으로 잘못된 페이지가 buddy 할당기에 풀리는 버그 수정이 stable 큐에 올랐습니다. 배포 검토 권장.",
+  "summary": "오늘의 가장 큰 신호는 memory_hotplug 오류 경로의 altmap 누락 수정이 Acked-by와 stable CC를 달고 백포트 대상으로 정리된 점입니다. 안정 라인 6.19.14가 EOL 직전 219건의 백포트를 묶었고, x86 PCID 환경에서 broadcast TLB 무효화를 끄는 패치는 메인테이너 요청으로 v3 작업에 들어갔습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "mm/memory_hotplug altmap 누락 메모리 손상 수정",
+      "priority": "상",
+      "verifyLink": "https://lore.kernel.org/lkml/35028dcc-3bb1-4e76-b471-183f319a7f46@oss.qualcomm.com/",
+      "if": "memmap_on_memory로 메모리 핫플러그를 쓰는 배포라면",
+      "do": "create_altmaps_and_memory_blocks 오류 경로 패치를 백포트하세요",
+      "verify": "arch_remove_memory 호출이 params.altmap을 전달하는지 자기 트리와 diff로 비교하세요"
+    },
+    {
+      "title": "Linux 6.19.14 stable · EOL",
+      "priority": "상",
+      "verifyLink": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.19.14",
+      "if": "6.19 stable 라인을 운용하는 배포 라인이라면",
+      "do": "EOL 전 마지막 백포트 묶음에서 UAF·KASAN 수정을 점검하세요",
+      "verify": "changelog에서 use-after-free와 mm/kasan 키워드로 자기 서브시스템 영향 항목을 grep하세요"
+    },
+    {
+      "title": "mm/vmalloc vrealloc 축소 시 미사용 페이지 해제 (v14)",
+      "priority": "중",
+      "verifyLink": "https://lore.kernel.org/lkml/2462e6ab-3679-42c2-b553-afa44342b479@zohomail.in/",
+      "if": "vrealloc로 큰 버퍼를 축소·재할당하는 코드라면",
+      "do": "mm-new로 들어간 v14를 따라가며 자기 호출부의 GFP_ZERO 일관성을 점검하세요",
+      "verify": "Andrew Morton 응답과 Sashiko 리뷰 5건의 회신이 모두 정리됐는지 스레드 끝을 보세요"
+    },
+    {
+      "title": "x86/mm PCID 비활성 시 broadcast TLB flush 차단",
+      "priority": "중",
+      "verifyLink": "https://lore.kernel.org/lkml/bd564599-e13b-4b67-9e5e-ba588f6280d6@intel.com/",
+      "if": "PCID를 끄고 broadcast TLB 무효화를 쓰는 x86 환경이라면",
+      "do": "Dave Hansen이 요청한 v3 게시 전까지 머지 대기로 두세요",
+      "verify": "스레드 끝에서 v3 commit message 재작성과 게시 여부를 직접 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "- Linux 6.19.14 stable · EOL\n  · 영향: 6.19 안정 라인의 마지막 백포트 묶음(219건)으로 UAF·KASAN·KVM SEV 관련 다수가 포함됐습니다. 이 라인을 쓰는 배포는 이번을 최종 업데이트로 보고 다음 LTS 전환 계획을 점검하세요.\n  · 확인: https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.19.14\n\n- Linux 7.1-rc4 mainline\n  · 영향: 메인라인 추적 환경용 RC 스냅샷입니다. 별도 본문이 비어 있어 자기 서브시스템 PR이 RC1~RC3 사이에 회귀 보고를 받았는지 git log로 훑어 두세요.\n  · 확인: https://git.kernel.org/torvalds/h/v7.1-rc4\n\n- Linux 7.0.9 stable\n  · 영향: 7.0 안정 라인의 정기 스테이블. vsock/virtio 버퍼 처리, mm/vma 정리, sched_ext, batman-adv UAF 다수가 백포트됐습니다.\n  · 확인: https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.0.9"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- mm/memory_hotplug: 오류 경로 altmap 누락으로 메모리 손상 발생\n  · 영향: memmap_on_memory를 켠 환경에서 create_memory_block_devices가 실패하면 vmemmap 페이지가 altmap 대신 buddy 할당기로 풀려 추후 머신 체크나 데이터 손상으로 이어집니다. Acked-by David Hildenbrand에 stable CC가 붙어 백포트 후보로 정리됐습니다.\n  · 확인: https://lore.kernel.org/lkml/35028dcc-3bb1-4e76-b471-183f319a7f46@oss.qualcomm.com/"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "[메모리 관리]\n- mm/vmalloc: vrealloc() 축소 시 미사용 페이지 해제 (v14 시리즈)\n  · 영향: vrealloc로 버퍼를 줄였을 때 페이지 매핑이 그대로 남던 TODO가 v14에서 마무리되어 Andrew Morton이 mm-new 큐에 받았습니다(이후 mm-unstable 이동 예고). Sashiko가 지적한 5건 중 nr_pages==0인 VM_ALLOC 영역에서 vread_iter가 건너뛰는 /proc/kcore 가시성 회귀는 후속 패치로 정리되었습니다.\n  · 확인: https://lore.kernel.org/lkml/2462e6ab-3679-42c2-b553-afa44342b479@zohomail.in/\n\n- x86/mm: PCID 비활성 시 broadcast TLB flush 차단\n  · 영향: AMD INVLPGB 같은 broadcast 무효화가 PCID 미사용 경로에서도 도는 잠재 문제를 끄는 패치입니다. Dave Hansen이 AI 작성 changelog를 정리하라며 v3를 요구해 v2 상태로는 머지되지 않습니다.\n  · 확인: https://lore.kernel.org/lkml/bd564599-e13b-4b67-9e5e-ba588f6280d6@intel.com/\n\n[가상화]\n- iommu/vt-d: liveupdate를 통한 IOMMU 상태·도메인 ID 복원 (16-패치 시리즈)\n  · 영향: 커널 라이브 업데이트 중 root_table과 보존된 도메인 ID를 이전 커널에서 그대로 이어받도록 iommu_alloc_root_entry와 free_dmar_iommu 경로를 수정합니다. 리뷰어가 iommu_ser 분기를 호출부로 빼라는 minor nit를 달았습니다.\n  · 확인: https://lore.kernel.org/lkml/agzaTPROvwVO-3lO@google.com/"
+    },
+    {
+      "heading": "기타",
+      "body": "- linux-next 스냅샷 next-20260519는 별도 본문 없이 머지 큐 추적용으로만 노출됐습니다. 자기 서브시스템 키워드로 lore.kernel.org에서 직접 확인하세요.\n  · 확인: https://git.kernel.org/next/linux-next/h/next-20260519\n- 국부 드라이버·플랫폼 패치는 본문에서 제외했습니다."
+    }
+  ],
+  "confidence": {
+    "level": "AI 초안",
+    "note": "후보 commit message와 메인테이너 응답을 근거로 정리했으나 v14 시리즈 mm-unstable 이동과 v3 게시 시점은 스레드 진행에 따라 변할 수 있어 게시 전 원문 확인이 필요합니다."
+  },
+  "sources": [
+    {
+      "title": "Linux 6.19.14 stable · EOL",
+      "url": "https://git.kernel.org/stable/h/v6.19.14",
+      "note": "kernel.org · kernel-release"
+    },
+    {
+      "title": "Linux 7.1-rc4 mainline",
+      "url": "https://git.kernel.org/torvalds/h/v7.1-rc4",
+      "note": "kernel.org · kernel-release"
+    },
+    {
+      "title": "Linux 7.0.9 stable",
+      "url": "https://git.kernel.org/stable/h/v7.0.9",
+      "note": "kernel.org · kernel-release"
+    },
+    {
+      "title": "Linux next-20260519 linux-next",
+      "url": "https://git.kernel.org/next/linux-next/h/next-20260519",
+      "note": "kernel.org · kernel-release"
+    },
+    {
+      "title": "x86/mm: Disable broadcast TLB flush when PCID is disabled",
+      "url": "https://lore.kernel.org/lkml/bd564599-e13b-4b67-9e5e-ba588f6280d6@intel.com/",
+      "note": "lore.kernel.org/lkml · patch-discussion"
+    },
+    {
+      "title": "mm/vmalloc: free unused pages on vrealloc() shrink",
+      "url": "https://lore.kernel.org/lkml/2462e6ab-3679-42c2-b553-afa44342b479@zohomail.in/",
+      "note": "lore.kernel.org/lkml · patch-discussion"
+    },
+    {
+      "title": "mm/memory_hotplug: Fix incorrect altmap passing in error path",
+      "url": "https://lore.kernel.org/lkml/35028dcc-3bb1-4e76-b471-183f319a7f46@oss.qualcomm.com/",
+      "note": "lore.kernel.org/lkml · patch-discussion"
+    },
+    {
+      "title": "iommu/vt-d: Restore IOMMU state and reclaimed domain ids",
+      "url": "https://lore.kernel.org/lkml/agzaTPROvwVO-3lO@google.com/",
+      "note": "lore.kernel.org/lkml · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-19T22:00:04.532Z",
+    "sourceRecordCount": 35,
+    "candidateCount": 8,
+    "generator": "scripts/draft-linux.mjs",
+    "candidateIds": [
+      "kernel-org:stable:6.19.14",
+      "kernel-org:mainline:7.1-rc4",
+      "kernel-org:stable:7.0.9",
+      "kernel-org:linux-next:next-20260519",
+      "lore-lkml:urn:uuid:6dbaf091-02ce-d7dd-5994-f09d83a4385a",
+      "lore-lkml:urn:uuid:23d09753-f3f9-681b-c045-3d970f67c2dc",
+      "lore-lkml:urn:uuid:490352dc-2165-64f2-2c70-731edb599823",
+      "lore-lkml:urn:uuid:ece69ec0-bab1-31cc-826a-ada2502a3546"
+    ],
+    "bucketCounts": {
+      "releases": 4,
+      "regressions": 1,
+      "patches": 3,
+      "otherSignals": 0
+    },
+    "subsystems": [
+      "메모리 관리",
+      "보안"
+    ],
+    "rewrittenAt": "2026-05-19T22:00:13.167Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-newsletter-ko.md"
+  }
+}

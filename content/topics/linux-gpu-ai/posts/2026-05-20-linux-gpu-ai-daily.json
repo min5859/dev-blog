@@ -1,0 +1,128 @@
+{
+  "id": "2026-05-20-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-05-20 Hyper-V 디스플레이 입력 검증 강화 — GPU·디스플레이·가속기",
+  "date": "2026-05-20",
+  "headline": "Hyper-V 합성 비디오 드라이버 입력 검증 강화 v3 와 VFIO 피어 DMA 인터페이스 확정이 같이 진행 중입니다.",
+  "summary": "오늘 이 렌즈에서는 Hyper-V 합성 비디오 드라이버의 호스트 메시지 검증 강화 시리즈가 v3 에 도달한 것이 가장 큰 신호입니다. 그 다음으로 VFIO dma-buf 의 TPH 피어 DMA uAPI 가 write-once 형태로 굳어졌고, KMS colorop 상태 처리와 Panthor 스케줄러의 IRQ 경로 정리가 함께 논의되고 있습니다.",
+  "tags": [
+    "DRM",
+    "GPU",
+    "가속기",
+    "Hyper-V",
+    "VFIO",
+    "Panthor"
+  ],
+  "highlights": [
+    {
+      "title": "drm/hyperv 합성 비디오 호스트 메시지 검증 강화 v3",
+      "priority": "상",
+      "verifyLink": "https://lore.kernel.org/dri-devel/cover.1779221339.git.me@berkoc.com/",
+      "if": "Hyper-V 게스트에서 합성 비디오 드라이버를 쓰는 환경이라면",
+      "do": "v3 의 해상도 응답 바운드 검사와 WIN8 폴백 일원화 흐름을 따라가세요",
+      "verify": "SYNTHVID 응답이 drm_err_ratelimited 로 거절되는지 부팅 로그에서 확인하세요"
+    },
+    {
+      "title": "vfio/dma-buf TPH 피어 DMA uAPI v4 — write-once 로 확정 단계",
+      "priority": "상",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260519201401.1558410-1-zhipingz@meta.com/",
+      "if": "VFIO dma-buf 로 피어 DMA 를 쓰는 RDMA·가상화 스택이라면",
+      "do": "DMA_BUF_TPH 가 write-once 가 된 점과 struct 12 바이트 축소를 검토하세요",
+      "verify": "두 번째 TPH SET 호출이 EBUSY 로 거절되는지 자기 테스트 케이스로 검증하세요"
+    },
+    {
+      "title": "drm/atomic: 활성 컬러 파이프라인의 colorop 만 상태에 포함",
+      "priority": "중",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260519211111.228303-2-mwen@igalia.com/",
+      "if": "KMS 컬러 파이프라인을 다루는 컴포지터·드라이버라면",
+      "do": "활성 파이프라인의 colorop 만 state 에 추가되는 새 동작을 검토하세요",
+      "verify": "비활성 colorop 가 atomic check 에서 빠지는지 IGT 로 회귀 확인하세요"
+    },
+    {
+      "title": "drm/panthor 스케줄러를 FW 이벤트의 IRQ 컨텍스트 처리에 맞게 정리",
+      "priority": "중",
+      "verifyLink": "https://lore.kernel.org/dri-devel/CAPaKu7TUmZcAJLmub0Xu-wsFOGeQp0zwrhXKLavBo9E=83kSdA@mail.gmail.com/",
+      "if": "Arm Mali Panthor GPU 를 운용하는 스택이라면",
+      "do": "SYNC_UPDATE 외 이벤트도 IRQ 핸들러에서 디먹스되는 변경 의도를 읽어 두세요",
+      "verify": "IRQ 지속 시간과 sched_queue_work 호출 패턴을 trace-cmd 로 비교하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이 렌즈는 dri-devel 메일링 리스트 중심으로 운영됩니다. 오늘은 kernel.org 메인라인·stable·longterm 릴리스 신호가 없으며, 트리 단위 릴리스 흐름은 메인 Linux 렌즈에서 추적하세요."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- drm/hyperv 합성 비디오 호스트 메시지 검증 강화 v3\n· 영향: Hyper-V 호스트가 보내는 SYNTHVID 메시지의 resolution_count 와 bytes_recvd 가 사전 검증되지 않던 두 경로를 막고, WIN10 프로브 실패와 pre-WIN10 경로의 WIN8 폴백을 단일 분기로 합쳤습니다. CoCo 게스트 모델을 따르는 점진적 하드닝으로, 거절 경로는 drm_err_ratelimited 로 가시화됩니다.\n· 확인: https://lore.kernel.org/dri-devel/cover.1779221339.git.me@berkoc.com/"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "- vfio/dma-buf TPH 피어 DMA uAPI v4 — write-once 로 확정 단계\n· 영향: VFIO_DEVICE_FEATURE_DMA_BUF_TPH 가 dma-buf 단위 write-once 로 굳었고, 같은 dma-buf 에 두 번째 SET 을 시도하면 EBUSY 가 돌아옵니다. steering_tag 가 8 비트로 정렬되고 구조체가 12 바이트로 줄어 ABI 가 단순해졌으며, PCI/TPH 헬퍼는 활성 요청자 모드를 노출하는 형태로 분리되었습니다. 소비자인 mlx5 RDMA 의 ST 인덱스 해제 순서·refcount 누수 수정도 함께 포함됩니다.\n· 확인: https://lore.kernel.org/dri-devel/20260519201401.1558410-1-zhipingz@meta.com/\n\n- drm/atomic: 활성 컬러 파이프라인의 colorop 만 상태에 포함\n· 영향: 플레인의 모든 colorop 상태를 끌어오던 동작이, 현재 활성화된 컬러 파이프라인의 colorop 만 atomic state 에 추가하도록 좁혀졌습니다. 비활성 파이프라인이 의도치 않게 검증 단계에 끼어들던 부수 효과가 줄어 컴포지터·드라이버 모두에 동작 차이가 생깁니다.\n· 확인: https://lore.kernel.org/dri-devel/20260519211111.228303-2-mwen@igalia.com/\n\n- drm/panthor 스케줄러를 FW 이벤트의 IRQ 컨텍스트 처리에 맞게 정리\n· 영향: 기존엔 CSG_SYNC_UPDATE 만 IRQ 안에서 다루고 나머지는 work item 으로 미뤘으나, 어차피 이벤트 디먹싱 비용이 비슷하다는 측정에 따라 전역·CSG 이벤트를 모두 events_lock 보호 아래 하드 IRQ 컨텍스트에서 처리하는 방향으로 재작성됐습니다. IRQ 지속 시간 영향에 대한 후속 검토가 dri-devel 에서 이어지고 있습니다.\n· 확인: https://lore.kernel.org/dri-devel/CAPaKu7TUmZcAJLmub0Xu-wsFOGeQp0zwrhXKLavBo9E=83kSdA@mail.gmail.com/"
+    },
+    {
+      "heading": "기타",
+      "body": "- drm/panthor 스파스 매핑 지원 — 사용자 공간 BO 의존 제거\n· 영향: Vulkan 스파스 리소스를 위해 UMD 측 BO 대신 커널이 더미 BO 를 가상 주소 범위에 순환 매핑합니다. 리뷰에서 remap_evicted_vma() 가 sparse 플래그를 인지하도록 drm_gpuva_op_map 경유로 재구성하고 2 메가바이트 정렬 가정을 WARN_ON 으로 점검하자는 후속 다이프가 제안되었습니다.\n· 확인: https://lore.kernel.org/dri-devel/agy06w1k_rbiZTFN@sobremesa/\n\n- drm/hyperv v3 답신 — 리뷰어 지적 반영 요약\n· 영향: v2 의 reinit_completion 변경은 별도 resume 경로 패치로 분리되고, pre-WIN10 의 preferred_* 누락과 else 중복도 제거되었습니다. 시리즈에 코딩 어시스턴트 사용을 명시한 Assisted-by 트레일러가 붙은 점도 정책상 참고할 만합니다.\n· 확인: https://lore.kernel.org/dri-devel/v3-reply-03-reply1.1779222028@berkoc.com/"
+    }
+  ],
+  "confidence": {
+    "level": "검수",
+    "note": "후보 6건의 커밋 메시지·리뷰 답신을 직접 읽고 정리했습니다. 게시 전에 각 시리즈의 최신 버전(v3/v4 이후 갱신 여부)을 lore.kernel.org 에서 다시 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/hyperv: harden host message parsing",
+      "url": "https://lore.kernel.org/dri-devel/cover.1779221339.git.me@berkoc.com/",
+      "note": "lore.kernel.org/dri-devel · patch-discussion"
+    },
+    {
+      "title": "drm/atomic: only add colorop state from active color pipeline",
+      "url": "https://lore.kernel.org/dri-devel/20260519211111.228303-2-mwen@igalia.com/",
+      "note": "lore.kernel.org/dri-devel · patch-discussion"
+    },
+    {
+      "title": "vfio/dma-buf: add TPH support for peer-to-peer access",
+      "url": "https://lore.kernel.org/dri-devel/20260519201401.1558410-1-zhipingz@meta.com/",
+      "note": "lore.kernel.org/dri-devel · patch-discussion"
+    },
+    {
+      "title": "drm/panthor: Prepare the scheduler logic for FW events in IRQ context",
+      "url": "https://lore.kernel.org/dri-devel/CAPaKu7TUmZcAJLmub0Xu-wsFOGeQp0zwrhXKLavBo9E=83kSdA@mail.gmail.com/",
+      "note": "lore.kernel.org/dri-devel · patch-discussion"
+    },
+    {
+      "title": "drm/panthor: Support sparse mappings",
+      "url": "https://lore.kernel.org/dri-devel/agy06w1k_rbiZTFN@sobremesa/",
+      "note": "lore.kernel.org/dri-devel · patch-discussion"
+    },
+    {
+      "title": "drm/hyperv: validate resolution_count and harden VSP request paths",
+      "url": "https://lore.kernel.org/dri-devel/v3-reply-03-reply1.1779222028@berkoc.com/",
+      "note": "lore.kernel.org/dri-devel · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-19T22:36:52.799Z",
+    "sourceRecordCount": 25,
+    "candidateCount": 6,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "lore-dri-devel:urn:uuid:6a11dc07-e019-5dff-44ae-d5a88bae27cd",
+      "lore-dri-devel:urn:uuid:71f69bc5-1c84-5706-edb1-548814b6ebaa",
+      "lore-dri-devel:urn:uuid:a4fea89b-8235-f5c5-7365-0d34392109a6",
+      "lore-dri-devel:urn:uuid:2bbe2041-24eb-f00f-a16a-adac89136510",
+      "lore-dri-devel:urn:uuid:2e410a34-3626-e884-427a-dadc124a2448",
+      "lore-dri-devel:urn:uuid:59bb93cb-893a-9fdd-f0eb-020148365f84"
+    ],
+    "bucketCounts": {
+      "releases": 0,
+      "regressions": 0,
+      "patches": 6,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 6,
+    "signalLevel": "high",
+    "subsystems": [],
+    "lensPipeline": "linux-gpu-ai"
+  }
+}

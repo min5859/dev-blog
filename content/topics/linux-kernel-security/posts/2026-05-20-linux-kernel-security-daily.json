@@ -1,0 +1,136 @@
+{
+  "id": "2026-05-20-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-05-20 FC 패브릭 카운터 폭주 패치 — 커널 보안·하드닝",
+  "date": "2026-05-20",
+  "headline": "패브릭 인접 공격자가 FC 초기자를 무한 루프에 가두던 FPIN 카운터 결함이 v3 단계에 들어갔습니다.",
+  "summary": "오늘의 핵심은 FC 패브릭 측 ELS 프레임이 FC 전송 계층의 u8 카운터를 감싸 무한 루프를 만들던 결함이 u32 확장과 desc_len 클램프로 다듬어진 SCSI 시리즈입니다. 다음 신호는 arm64 데이터·BSS 영역의 쓰기 가능 선형 별칭을 아예 풀어 KASLR 우회 표면을 줄이는 v5 하드닝 시리즈입니다.",
+  "tags": [
+    "보안",
+    "하드닝",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "FC FPIN 카운터 폭주를 막는 SCSI 전송 계층 u32 확장 패치 v3",
+      "priority": "상",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20260519190615.2761667-1-michael.bommarito@gmail.com/",
+      "if": "lpfc·qla2xxx 같은 FC 초기자를 쓰는 호스트라면",
+      "do": "u8 → u32 확장과 desc_len 기반 pname_count 클램프 로직을 살펴보세요",
+      "verify": "Hellwig 가 제안한 min_t 정리 반영 여부와 v2→v3 차분을 스레드에서 대조하세요"
+    },
+    {
+      "title": "arm64 커널 데이터·BSS 선형 별칭을 해제하는 v5 하드닝 시리즈",
+      "priority": "상",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20260519151616.2557018-15-ardb+git@google.com/",
+      "if": "부트로더가 커널을 DRAM 하단에 두는 arm64 환경이라면",
+      "do": "선형 별칭 언맵 흐름과 set_memory_valid 호출 시점을 읽어 두세요",
+      "verify": "v4 대비 변경점과 empty_zero_page 상수화 영향이 자기 트리와 충돌하지 않는지 빌드로 확인하세요"
+    },
+    {
+      "title": "sized_strscpy 페이지 경계 정리를 mm 트리가 수용",
+      "priority": "하",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20260519123740.458d905f958f39d41cb130fd@linux-foundation.org/",
+      "if": "lib/string 정리 흐름을 따라가는 메인테이너라면",
+      "do": "Morton 이 지적한 캐스트 난립과 IS_ALIGNED·ALIGN_DOWN 대체 가능성을 읽어 두세요",
+      "verify": "다음 mm-next 풀에서 후속 클린업 패치가 붙는지 lore 스레드에서 모니터링하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "- Linux 7.1-rc4 mainline\n  · 영향: 메인라인 추적 환경 (공개일 2026-05-17, 다음 머지창 준비)\n  · 확인: https://git.kernel.org/torvalds/h/v7.1-rc4\n\n- Linux 7.0.9 stable\n  · 영향: 7.0 안정 라인 운용 환경 (vsock·sched_ext·io_uring/zcrx·EDAC 등 197건 백포트, vsock 버퍼 크기 클램프 순서·sched_ext bypass_lb_cpu 스테일 rq 가드·io_uring/zcrx freelist 위반 경고 포함)\n  · 확인: https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.0.9\n\n- Linux 6.19.14 stable · EOL\n  · 영향: 6.19 라인 마지막 푸시 (USB·미디어·블록·KVM 등 219건 백포트, em28xx·6fire·powerz·bcache 등 use-after-free 다수 처리). 6.19 사용처는 7.0 라인 이전 계획을 세워야 합니다.\n  · 확인: https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.19.14\n\n- Linux next-20260519 linux-next\n  · 영향: 머지 큐 추적 대상 (공개일 2026-05-19)\n  · 확인: https://git.kernel.org/next/linux-next/h/next-20260519"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- scsi: scsi_transport_fc — FPIN pname walker 카운터를 u32 로 확장 (v3)\n  · 영향: lpfc·qla2xxx 등 FC 초기자. 인접 패브릭 행위자가 FPIN ELS 프레임에 pname_count=256 을 실어 보내면 기존 u8 루프 카운터가 감싸며 Link-Integrity·Peer-Congestion 워커가 무한 루프에 빠지던 DoS 표면. v3 은 공통 워커 헬퍼로 통합하고, desc_len 기반 max_count 로 클램프한 뒤 순회합니다. 로컬 사용자 공간이나 IP 망 경로가 아니라 패브릭 인접성이 필요한 조건이라는 점이 위협 모델의 핵심입니다.\n  · 확인: https://lore.kernel.org/linux-hardening/20260519190615.2761667-1-michael.bommarito@gmail.com/\n\n- mmc: mmc_test — mmc_test_alloc_mem() 카운터 추적 수정\n  · 영향: __counted_by(cnt) 가 max_segs 로 초기화돼 sg 매핑 실패 후 해제 경로가 NULL 슬롯에 __free_pages 를 호출하며 커널 패닉을 내던 회귀를 막습니다. cnt 를 0 으로 리셋한 뒤 슬롯을 채울 때마다 선증가하도록 바뀌고, 해제 루프는 정수 언더플로 위험이 있던 post-decrement while 대신 전진 for 로 다시 씁니다. 테스트 모듈 한정이지만 __counted_by 와 flex 배열을 다루는 다른 코드의 검토 신호로 가치가 있습니다.\n  · 확인: https://lore.kernel.org/linux-hardening/18c41409-e1d1-4877-87a6-1c3156f943aa@embeddedor.com/"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "- arm64: 커널 데이터·BSS 의 선형 별칭 언맵 (v5, Ard Biesheuvel)\n  · 영향: 원래 arm64 부팅 규약을 따르는 부트로더가 커널을 DRAM 하단에 배치하면 선형 맵 무작위화 부재 때문에 KASLR 위치와 무관하게 data/bss 의 쓰기 가능 별칭이 예측 가능한 주소에 노출되던 표면을 제거합니다. v5 에서는 fixmap 페이지 테이블 r/o 리맵 패치가 분리되고, empty_zero_page 가 const 로 바뀌며, data/bss 별칭에 강제 페이지 매핑을 요구하지 않습니다. arm64 안드로이드 단말처럼 부팅 레이아웃이 고정된 환경이 1차 수혜자입니다.\n  · 확인: https://lore.kernel.org/linux-hardening/20260519151616.2557018-15-ardb+git@google.com/\n\n- string: sized_strscpy 에 min() 도입 정리 (mm 트리 수용)\n  · 영향: src 정렬되지 않은 경우 페이지 경계 보호 코드를 min() 한 줄로 줄이는 정리 패치. Morton 이 머지하면서도 \"캐스트 난립\"·\"IS_ALIGNED·ALIGN_DOWN 헬퍼 대체 여지\" 를 명시했으므로 후속 클린업 가능성이 큽니다. 동작 변화는 없지만 word-at-a-time 경계 처리 코드를 만지는 사람은 이 스레드를 표지로 두면 좋습니다.\n  · 확인: https://lore.kernel.org/linux-hardening/20260519123740.458d905f958f39d41cb130fd@linux-foundation.org/"
+    },
+    {
+      "heading": "기타",
+      "body": "- nvmem: 라즈베리 파이 OTP nvmem 드라이버 (v4, Pi 5 대상)\n  · 영향: 펌웨어 경유 OTP 영역을 nvmem 으로 노출하는 보드 한정 드라이버. dt-bindings 정리와 __counted_by_le, 정렬 체크 추가가 v4 의 핵심이며 Stefan Wahren 이 v5 때 arm64/defconfig 의 모듈 활성화 패치를 함께 붙여 달라고 요청했습니다. 하드닝 리스트에 흐르긴 했지만 보안 표면 변화보다는 보드 지원 흐름에 가깝습니다.\n  · 확인: https://lore.kernel.org/linux-hardening/ppjkp4v4por5ot3ahmmhr5tz7mderm5ga7ttsop34ob4kbcqft@crydafv6wscb/"
+    }
+  ],
+  "confidence": {
+    "level": "초안",
+    "note": "제목·메타데이터 기반 자동 선별입니다. 게시 전 원문 확인이 필요합니다."
+  },
+  "sources": [
+    {
+      "title": "Linux 6.19.14 stable · EOL",
+      "url": "https://git.kernel.org/stable/h/v6.19.14",
+      "note": "kernel.org · kernel-release"
+    },
+    {
+      "title": "Linux 7.1-rc4 mainline",
+      "url": "https://git.kernel.org/torvalds/h/v7.1-rc4",
+      "note": "kernel.org · kernel-release"
+    },
+    {
+      "title": "Linux 7.0.9 stable",
+      "url": "https://git.kernel.org/stable/h/v7.0.9",
+      "note": "kernel.org · kernel-release"
+    },
+    {
+      "title": "Linux next-20260519 linux-next",
+      "url": "https://git.kernel.org/next/linux-next/h/next-20260519",
+      "note": "kernel.org · kernel-release"
+    },
+    {
+      "title": "scsi: scsi_transport_fc: widen FPIN pname walker counter to u32",
+      "url": "https://lore.kernel.org/linux-hardening/20260519190615.2761667-1-michael.bommarito@gmail.com/",
+      "note": "lore.kernel.org/linux-hardening · patch-discussion"
+    },
+    {
+      "title": "arm64: Unmap linear alias of kernel data/bss",
+      "url": "https://lore.kernel.org/linux-hardening/20260519151616.2557018-15-ardb+git@google.com/",
+      "note": "lore.kernel.org/linux-hardening · patch-discussion"
+    },
+    {
+      "title": "string: use min in sized_strscpy",
+      "url": "https://lore.kernel.org/linux-hardening/20260519123740.458d905f958f39d41cb130fd@linux-foundation.org/",
+      "note": "lore.kernel.org/linux-hardening · patch-discussion"
+    },
+    {
+      "title": "nvmem: Add Raspberry Pi OTP nvmem driver",
+      "url": "https://lore.kernel.org/linux-hardening/ppjkp4v4por5ot3ahmmhr5tz7mderm5ga7ttsop34ob4kbcqft@crydafv6wscb/",
+      "note": "lore.kernel.org/linux-hardening · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-19T22:14:38.771Z",
+    "sourceRecordCount": 35,
+    "candidateCount": 10,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "kernel-org:stable:6.19.14",
+      "kernel-org:mainline:7.1-rc4",
+      "kernel-org:stable:7.0.9",
+      "kernel-org:linux-next:next-20260519",
+      "lore-linux-hardening:urn:uuid:4bf61233-3052-e75c-d8da-368893c39172",
+      "lore-linux-hardening:urn:uuid:325727a9-6ae9-696e-6d81-e6e32b7c55aa",
+      "lore-linux-hardening:urn:uuid:a1804ae8-3274-85d3-8c95-b33350ec3b4e",
+      "lore-linux-hardening:urn:uuid:028dab34-e5ac-1c46-0e6f-0175f24dc4a2",
+      "lore-linux-hardening:urn:uuid:2b45fa52-b33f-bb0e-26e4-e27654b46239",
+      "lore-linux-hardening:urn:uuid:5bf71924-988f-d3ce-9e42-3ffa86fbf465"
+    ],
+    "bucketCounts": {
+      "releases": 4,
+      "regressions": 2,
+      "patches": 4,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 6,
+    "signalLevel": "high",
+    "subsystems": [
+      "스토리지/파일시스템"
+    ],
+    "lensPipeline": "linux-kernel-security",
+    "rewrittenAt": "2026-05-19T22:14:45.712Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-ko.md"
+  }
+}
