@@ -207,7 +207,7 @@ function templateWeekly(dailies, meta) {
     })),
     confidence: {
       level: '템플릿 주간 초안',
-      note: '일일 브리핑 메타데이터를 기계적으로 합친 초안입니다. AI_ADAPTER=claude로 다시 실행하면 흐름 묶음이 가능합니다.',
+      note: '일일 브리핑 메타데이터를 기계적으로 합친 초안입니다. AI_ADAPTER=cursor로 다시 실행하면 흐름 묶음이 가능합니다.',
     },
     sources: dailies.flatMap((d) => (d.sources || []).slice(0, 2)).slice(0, 12),
     draftMetadata: {

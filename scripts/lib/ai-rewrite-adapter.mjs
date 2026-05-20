@@ -11,7 +11,7 @@ import path from 'node:path';
  * 기본 어댑터는 아래 DEFAULT_AI_ADAPTER 한 곳에서만 바꾼다.
  * 모든 ai-rewrite-*.mjs / run-daily-*.mjs 는 이 상수를 통해 default를 받는다.
  */
-export const DEFAULT_AI_ADAPTER = 'claude';
+export const DEFAULT_AI_ADAPTER = 'cursor';
 
 export function normalizeDailyRewriteAdapter(raw) {
   const v = typeof raw === 'string' ? raw.trim() : '';
