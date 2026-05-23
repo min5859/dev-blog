@@ -55,6 +55,7 @@ function runClaudeStdin(prompt) {
 
 async function runCursorAgentFilePrompt(prompt) {
   const command = process.env.CURSOR_AGENT_BIN || 'agent';
+  const model = process.env.CURSOR_MODEL || 'claude-4.6-sonnet-medium';
   const extra = (process.env.CURSOR_AGENT_EXTRA_ARGS || '').split(/\s+/).filter(Boolean);
   const dir = await mkdtemp(path.join(tmpdir(), 'dev-blog-rewrite-'));
   const promptFile = path.join(dir, 'prompt.md');
@@ -68,7 +69,7 @@ async function runCursorAgentFilePrompt(prompt) {
       `File: ${promptFile}`,
     ].join('\n');
 
-    const args = ['-p', '--output-format', 'json', '--mode=ask', ...extra, userMessage];
+    const args = ['-p', '--model', model, '--output-format', 'json', '--mode=ask', ...extra, userMessage];
     return await new Promise((resolve, reject) => {
       const child = spawn(command, args, {
         stdio: ['ignore', 'pipe', 'pipe'],
