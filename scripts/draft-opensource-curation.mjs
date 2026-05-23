@@ -164,10 +164,10 @@ function toPostDraft(candidates, sourceData, config) {
   return {
     id: postId,
     topic,
-    title: `${runDate} 오픈소스 큐레이션 (초안)`,
+    title: `${runDate} 오픈소스 큐레이션`,
     date: runDate,
     summary: `검색 토픽: ${kwShort}.`,
-    tags: ['opensource-curation', 'github', 'opensource', '초안'],
+    tags: ['opensource-curation', 'github', 'opensource'],
     highlights: top.length ? top.map(highlightOf) : [],
     sections: [
       {
@@ -188,8 +188,8 @@ function toPostDraft(candidates, sourceData, config) {
       },
     ],
     confidence: {
-      level: '초안',
-      note: 'repos.json·분석 마크다운을 기반으로 자동 구성했습니다. 오픈소스 트렌드 토픽과 달리 *선정·심층 요약*에 초점을 둡니다.',
+      level: '자동 생성',
+      note: 'AI가 원문 후보와 메타데이터를 요약했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요.',
     },
     sources: candidates.slice(0, 12).map((record) => ({
       title: record.metadata?.fullName || record.title,

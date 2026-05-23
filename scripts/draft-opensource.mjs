@@ -149,10 +149,10 @@ function toPostDraft(candidates, sourceData) {
   return {
     id: postId,
     topic,
-    title: `${runDate} 오픈소스 트렌드 (초안)`,
+    title: `${runDate} 오픈소스 트렌드`,
     date: runDate,
     summary: `오늘 GitHub 트렌딩 시그널: HN frontpage ${hnHits.length}건, 60일 내 신규 인기 ${newRepos.length}건, 별 5k 이상 활발 ${activeGiants.length}건.`,
-    tags: ['opensource', 'github', 'trending', '초안'],
+    tags: ['opensource', 'github', 'trending'],
     highlights: top.length ? top.map(highlightOf) : [],
     sections: [
       {
@@ -173,8 +173,8 @@ function toPostDraft(candidates, sourceData) {
       },
     ],
     confidence: {
-      level: '초안',
-      note: 'GitHub Search API와 HN frontpage 메타데이터를 기반으로 자동 선별했습니다. README나 프로젝트 활동성은 별도로 검토해야 합니다.',
+      level: '자동 생성',
+      note: 'AI가 원문 후보와 메타데이터를 요약했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요.',
     },
     sources: candidates.slice(0, 10).map((record) => ({
       title: record.metadata?.fullName || record.title,

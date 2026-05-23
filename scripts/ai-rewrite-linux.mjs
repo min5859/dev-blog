@@ -65,8 +65,8 @@ function templateRewrite(draft) {
       },
     ],
     confidence: {
-      level: adapter === 'template' ? '템플릿 초안' : 'AI 초안',
-      note: '제목·메타데이터 기반 자동 선별입니다. 본문 의미를 검증한 상태가 아니므로 게시 전 원문 확인이 필요합니다.',
+      level: '자동 생성',
+      note: 'AI가 원문 후보와 메타데이터를 요약했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요.',
     },
     draftMetadata: {
       ...draft.draftMetadata,

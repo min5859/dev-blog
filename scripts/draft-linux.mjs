@@ -606,10 +606,10 @@ function toPostDraft(candidates, sourceData, candidateBodies = []) {
   return {
     id: postId,
     topic,
-    title: `${runDate} 커널 개발 브리핑 (초안)`,
+    title: `${runDate} 커널 개발 브리핑`,
     date: runDate,
     summary: `오늘의 핵심: 릴리스 ${releases.length}건, 회귀·보안 ${regressions.length}건, 시스템 영향 패치 ${patches.length}건. 국부 드라이버/플랫폼 패치는 본문에서 제외했습니다.`,
-    tags: ['리눅스', '커널', '초안'],
+    tags: ['리눅스', '커널'],
     highlights: top.map(highlightOf),
     sections: [
       {
@@ -632,8 +632,8 @@ function toPostDraft(candidates, sourceData, candidateBodies = []) {
       },
     ],
     confidence: {
-      level: '초안',
-      note: '제목·메타데이터 기반 자동 선별입니다. 본문 의미를 검증한 상태가 아니므로 게시 전 원문 확인이 필요합니다.',
+      level: '자동 생성',
+      note: 'AI가 원문 후보와 메타데이터를 요약했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요.',
     },
     sources: candidates.slice(0, 8).map((record) => ({
       title: stripPatchPrefix(record.title),

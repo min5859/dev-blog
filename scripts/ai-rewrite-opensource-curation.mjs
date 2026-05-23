@@ -66,7 +66,7 @@ function templateRewrite(draft) {
         body: sectionByHeading.get('기타') || '데이터를 주기적으로 갱신하세요.',
       },
     ],
-    confidence: { level: adapter === 'template' ? '템플릿 초안' : 'AI 초안', note: '선정 repos·심층 분석 마크다운 기반입니다.' },
+    confidence: { level: '자동 생성', note: 'AI가 원문 후보와 메타데이터를 요약했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요.' },
     draftMetadata: { ...draft.draftMetadata },
   };
 }

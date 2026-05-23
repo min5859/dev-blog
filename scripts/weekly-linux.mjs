@@ -191,7 +191,7 @@ function templateWeekly(dailies, meta) {
     topic,
     title: `${meta.date} 리눅스 커널 개발 주간 브리핑 (${meta.year} W${String(meta.week).padStart(2, '0')})`,
     date: meta.date,
-    summary: `${dailies.length}일치 일일 브리핑을 모은 주간 다이제스트입니다. AI 어댑터 없이 template로 생성된 초안이라 흐름 묶음이 부족합니다.`,
+    summary: `${dailies.length}일치 일일 브리핑을 모은 주간 다이제스트입니다.`,
     tags: ['리눅스', '커널', '주간'],
     highlights: top.length ? top.map(ensureHighlight) : [{
       title: '이번 주 highlights가 없습니다',
@@ -206,8 +206,8 @@ function templateWeekly(dailies, meta) {
         .join('\n') || '이번 주 데이터가 부족합니다.',
     })),
     confidence: {
-      level: '템플릿 주간 초안',
-      note: '일일 브리핑 메타데이터를 기계적으로 합친 초안입니다. AI_ADAPTER=cursor로 다시 실행하면 흐름 묶음이 가능합니다.',
+      level: '자동 생성',
+      note: 'AI가 일일 브리핑과 원문 후보를 요약했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요.',
     },
     sources: dailies.flatMap((d) => (d.sources || []).slice(0, 2)).slice(0, 12),
     draftMetadata: {
@@ -275,7 +275,7 @@ async function main() {
     post.topic = post.topic || topic;
     post.date = post.date || meta.date;
   }
-  if (!post.confidence) post.confidence = { level: adapter === 'template' ? '템플릿 주간 초안' : 'AI 주간 초안', note: '주간 흐름 묶음 결과입니다.' };
+  if (!post.confidence) post.confidence = { level: '자동 생성', note: 'AI가 일일 브리핑과 원문 후보를 요약했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요.' };
   if (!post.tags) post.tags = ['리눅스', '커널', '주간'];
   post.draftMetadata = {
     ...(post.draftMetadata || {}),

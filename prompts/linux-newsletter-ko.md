@@ -86,7 +86,7 @@
     { "heading": "핵심 변경", "body": "..." },
     { "heading": "기타", "body": "..." }
   ],
-  "confidence": { "level": "AI 초안", "note": "..." },
+  "confidence": { "level": "자동 생성", "note": "AI가 원문 후보와 메타데이터를 요약했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요." },
   "sources": [ { "title": "...", "url": "...", "note": "..." } ],
   "draftMetadata": { }
 }

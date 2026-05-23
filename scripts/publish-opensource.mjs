@@ -55,7 +55,7 @@ function ensureDisclaimer(post) {
   const merged = note ? `${note} ${REQUIRED_DISCLAIMER}` : REQUIRED_DISCLAIMER;
   return {
     ...post,
-    confidence: { level: existing.level || 'AI 초안', note: merged },
+    confidence: { level: '자동 생성', note: merged },
   };
 }
 

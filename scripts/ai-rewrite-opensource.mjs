@@ -43,7 +43,7 @@ function templateRewrite(draft) {
       { heading: '활발히 갱신 중인 인기 프로젝트', body: sectionByHeading.get('활발히 갱신 중인 인기 프로젝트') || '별 5k 이상 활발 프로젝트가 잡히지 않았습니다.' },
       { heading: '기타', body: sectionByHeading.get('기타') || '검색 API의 별 수 정렬은 long-tail 거대 프로젝트로 치우치므로 신규/HN 섹션을 우선 참고하세요.' },
     ],
-    confidence: { level: adapter === 'template' ? '템플릿 초안' : 'AI 초안', note: 'GitHub Search API + HN frontpage 기반 자동 선별입니다.' },
+    confidence: { level: '자동 생성', note: 'AI가 원문 후보와 메타데이터를 요약했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요.' },
     draftMetadata: { ...draft.draftMetadata },
   };
 }

@@ -196,10 +196,10 @@ function toPostDraft(candidates, sourceData) {
   return {
     id: postId,
     topic,
-    title: `${runDate} Android 커널 개발 브리핑 (초안)`,
+    title: `${runDate} Android 커널 개발 브리핑`,
     date: runDate,
     summary: `오늘의 Android 커널 변경: 회귀·보안 ${regressions.length}건, ACK 전용 패치 ${ackPatches.length}건. 추적 브랜치: ${branches.join(', ') || '없음'}.`,
-    tags: ['android', '커널', 'ack', '초안'],
+    tags: ['android', '커널', 'ack'],
     highlights: top.length ? top.map(highlightOf) : [],
     sections: [
       {
@@ -222,8 +222,8 @@ function toPostDraft(candidates, sourceData) {
       },
     ],
     confidence: {
-      level: '초안',
-      note: 'gitiles JSON과 commit subject·body 일부를 자동 선별한 결과입니다. 게시 전 원문 commit 검토가 필요합니다.',
+      level: '자동 생성',
+      note: 'AI가 원문 후보와 메타데이터를 요약했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요.',
     },
     sources: candidates.slice(0, 8).map((record) => ({
       title: stripPrefix(record.title),

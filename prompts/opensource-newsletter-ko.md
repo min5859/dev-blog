@@ -76,7 +76,7 @@ GitHub Search API + Hacker News frontpage에서 모은 데이터를 입력으로
     { "heading": "활발히 갱신 중인 인기 프로젝트", "body": "..." },
     { "heading": "기타", "body": "..." }
   ],
-  "confidence": { "level": "AI 초안", "note": "..." },
+  "confidence": { "level": "자동 생성", "note": "..." },
   "sources": [ { "title": "...", "url": "...", "note": "..." } ],
   "draftMetadata": { }
 }

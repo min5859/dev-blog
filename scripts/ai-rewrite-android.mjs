@@ -43,7 +43,7 @@ function templateRewrite(draft) {
       { heading: '추적 브랜치', body: sectionByHeading.get('추적 브랜치') || '추적 브랜치 정보를 확인하지 못했습니다.' },
       { heading: '기타', body: sectionByHeading.get('기타') || '단일 vendor 디바이스 패치는 본문에서 제외했습니다.' },
     ],
-    confidence: { level: adapter === 'template' ? '템플릿 초안' : 'AI 초안', note: 'gitiles JSON과 commit message 일부를 기반으로 한 자동 선별입니다.' },
+    confidence: { level: '자동 생성', note: 'AI가 원문 후보와 메타데이터를 요약했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요.' },
     draftMetadata: { ...draft.draftMetadata },
   };
 }

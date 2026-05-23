@@ -57,7 +57,7 @@
     { "heading": "심층 분석 하이라이트", "body": "..." },
     { "heading": "기타", "body": "..." }
   ],
-  "confidence": { "level": "AI 초안", "note": "..." },
+  "confidence": { "level": "자동 생성", "note": "..." },
   "sources": [ { "title": "...", "url": "...", "note": "..." } ],
   "draftMetadata": { }
 }
