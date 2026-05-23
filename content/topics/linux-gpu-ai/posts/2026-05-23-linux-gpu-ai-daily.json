@@ -1,0 +1,129 @@
+{
+  "id": "2026-05-23-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-05-23 성능 접근 통합 — GPU·디스플레이·가속기",
+  "headline": "그래픽 관측 권한과 가상 화면 타이머 방어가 오늘의 핵심 변화입니다.",
+  "date": "2026-05-23",
+  "summary": "오늘은 그래픽 관측 기능이 시스템 성능 측정 권한 정책을 따르도록 맞추는 패치와, 잘못된 화면 모드가 고해상도 타이머 폭주를 일으키지 못하게 막는 방어 패치가 가장 중요합니다. 다음 신호는 가속기 성능 카운터 사용자 공간 계약과 디스플레이 브리지의 출력 모드 판정 정리입니다.",
+  "tags": [
+    "DRM",
+    "GPU",
+    "가속기",
+    "초안"
+  ],
+  "highlights": [
+    {
+      "title": "그래픽 관측 스트림이 시스템 성능 측정 권한 정책을 따르도록 변경",
+      "priority": "상",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260523084056.GE3102624@noisy.programming.kicks-ass.net/",
+      "if": "그래픽 성능 관측을 노출하는 환경이라면 영향 범위를 확인하세요",
+      "do": "관측 스트림 권한이 시스템 성능 정책과 맞는지 검토하세요",
+      "verify": "스레드의 헬퍼 내보내기와 xe 관측 경로 변경을 대조하세요"
+    },
+    {
+      "title": "잘못된 화면 모드가 타이머 폭주를 만들지 못하게 방어",
+      "priority": "상",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260523025447.581709-1-w15303746062@163.com/",
+      "if": "가상 디스플레이 드라이버를 쓰는 환경이라면 해당 여부를 확인하세요",
+      "do": "프레임 기간이 0일 때 거부되는지 자기 트리에서 확인하세요",
+      "verify": "drm_crtc_vblank_start_timer 변경과 재현 조건을 확인하세요"
+    },
+    {
+      "title": "가속기 성능 카운터가 사용자 공간 계약으로 추가",
+      "priority": "중",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260523083730.255310-1-tomeu@tomeuvizoso.net/",
+      "if": "Arm Ethos-U 성능 도구를 유지한다면 사용자 공간 영향을 확인하세요",
+      "do": "이벤트 목록을 사용자 공간에서 관리한다는 계약을 반영하세요",
+      "verify": "스레드의 V3D 유사 계약과 카운터 반환 형식을 확인하세요"
+    },
+    {
+      "title": "디스플레이 브리지가 출력 장치 정보를 보고 출력 모드를 선택",
+      "priority": "중",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260523-it66121-fix-dvi-mode-v5-v5-0-33b4468162f9@redhat.com/",
+      "if": "ITE IT66121 브리지를 쓰는 보드라면 출력 조합을 확인하세요",
+      "do": "HDMI 헬퍼 전환과 DVI 판정 변경을 통합 전에 검토하세요",
+      "verify": "v5 스레드의 atomic_enable 이동과 테스트 설명을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이 렌즈는 오늘 kernel.org 릴리스 항목 없이 dri-devel 리스트 중심 신호만 다룹니다. 릴리스보다 권한 정책, 타이머 방어, 가속기 성능 카운터, 디스플레이 브리지 정리가 중심입니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- 0 기간 화면 타이머 거부\n· 영향: 악의적이거나 비정상적인 화면 모드가 소프트웨어 수직 동기 타이머를 즉시 반복 실행해 하드 인터럽트 루프와 시스템 정체를 유발할 수 있다는 방어 패치입니다. vmwgfx, vkms처럼 코어의 소프트웨어 수직 동기 시뮬레이션에 의존하는 경로가 직접 영향권입니다.\n· 확인: https://lore.kernel.org/dri-devel/20260523025447.581709-1-w15303746062@163.com/ 에서 drm_crtc_vblank_start_timer가 0 나노초 프레임 기간을 거부하는 위치와, DRM_IOCTL_MODE_SETCRTC로 들어오는 비정상 모드 조건을 자기 테스트와 대조하세요.\n\n- 그래픽 관측 권한의 성능 측정 정책 정렬\n· 영향: xe의 관측 스트림이 별도 권한 판단 대신 시스템 성능 측정 권한 정책과 보안 모듈 훅을 따르도록 바뀝니다. 이미 perf_event_paranoid나 보안 모듈 정책으로 관측 권한을 통제하는 환경에서는 그래픽 관측도 같은 정책에 묶일 수 있습니다.\n· 확인: https://lore.kernel.org/dri-devel/20260523084056.GE3102624@noisy.programming.kicks-ass.net/ 에서 perf_allow_cpu와 perf_allow_tracepoint 내보내기, PERF_EVENTS가 꺼진 설정의 대체 경로, xe_oa와 xe_eu_stall 호출부 변경을 확인하세요."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "- Arm Ethos-U 성능 카운터 지원\n· 영향: Ethos-U NPU에 성능 카운터 지원을 추가하면서 V3D 드라이버와 유사한 사용자 공간 계약을 가져오되, 이벤트 목록 조회 인터페이스는 두지 않습니다. U65와 U85의 이벤트 목록 차이는 사용자 공간 도구가 관리해야 하며, 카운터 읽기는 요청 이벤트와 사이클 카운터를 함께 반환합니다.\n· 확인: https://lore.kernel.org/dri-devel/20260523083730.255310-1-tomeu@tomeuvizoso.net/ 에서 이벤트 목록을 커널이 노출하지 않는다는 점과 읽기 반환 형식을 사용자 공간 도구의 가정과 맞춰 보세요.\n\n- ITE IT66121 브리지의 HDMI 헬퍼 전환과 DVI 출력 수정\n· 영향: 브리지 드라이버가 항상 HDMI 싱크라고 가정하던 부분을 정리하고, 표시 장치 정보를 바탕으로 HDMI와 DVI 모드를 고르도록 바뀝니다. 동시에 정보 프레임 처리를 HDMI 헬퍼로 옮기고 mode_set 동작을 atomic_enable 쪽으로 이동합니다.\n· 확인: https://lore.kernel.org/dri-devel/20260523-it66121-fix-dvi-mode-v5-v5-0-33b4468162f9@redhat.com/ 에서 v5 변경 사항, 오디오 정보 프레임, 벤더 정보 프레임, tmds_rate 사용, DVI와 HDMI 모니터 테스트 결과를 확인하세요.\n\n- DRM RAS 정리 패치\n· 영향: 오류 카운터 획득 실패 시 메시지를 취소하고 해제하는 경로, xe 쪽 카운터 할당의 drm 관리 전환, 노드별 정리 액션, 하드웨어 오류 로그 접두어 정리가 묶였습니다. 새 기능보다 실패 경로와 자원 수명 정리에 가까운 변화입니다.\n· 확인: https://lore.kernel.org/dri-devel/20260523050212.557292-1-raag.jadav@intel.com/ 에서 drm_ras.c와 xe_drm_ras.c의 실패 처리 순서, v2의 goto 사용과 실패 시 정보 포인터 유지 조건을 확인하세요."
+    },
+    {
+      "heading": "기타",
+      "body": "- Novatek NT36672A 패널 초기화 시퀀스 인라인화\n· 영향: 패널 명령 테이블과 래퍼를 제거하고 MIPI DSI 쓰기 헬퍼를 직접 호출하도록 바꾸는 가독성 중심 정리입니다. 특정 패널 초기화 코드에 국한되므로 일반 디스플레이 플랫폼 신호로 확대 해석하지 않는 편이 안전합니다.\n· 확인: https://lore.kernel.org/dri-devel/20260523035734.6602-1-chintanlike@gmail.com/ 에서 prepare와 unprepare 경로가 새 함수 포인터 기반 초기화 함수로 동일한 명령 순서를 유지하는지 확인하세요."
+    }
+  ],
+  "confidence": {
+    "level": "초안",
+    "note": "제목·메타데이터 기반 자동 선별입니다. 게시 전 원문 확인이 필요합니다."
+  },
+  "sources": [
+    {
+      "title": "complete perf_allow_* trio and use in drm/xe",
+      "url": "https://lore.kernel.org/dri-devel/20260523084056.GE3102624@noisy.programming.kicks-ass.net/",
+      "note": "lore.kernel.org/dri-devel · patch-discussion"
+    },
+    {
+      "title": "drm/vblank: Reject 0-period timers to prevent hrtimer storm",
+      "url": "https://lore.kernel.org/dri-devel/20260523025447.581709-1-w15303746062@163.com/",
+      "note": "lore.kernel.org/dri-devel · patch-discussion"
+    },
+    {
+      "title": "drm/panel: novatek-nt36672a: Inline panel init sequences",
+      "url": "https://lore.kernel.org/dri-devel/20260523035734.6602-1-chintanlike@gmail.com/",
+      "note": "lore.kernel.org/dri-devel · patch-discussion"
+    },
+    {
+      "title": "drm/bridge: ite-it66121: Switch to HDMI helpers and fix DVI output",
+      "url": "https://lore.kernel.org/dri-devel/20260523-it66121-fix-dvi-mode-v5-v5-0-33b4468162f9@redhat.com/",
+      "note": "lore.kernel.org/dri-devel · patch-discussion"
+    },
+    {
+      "title": "accel: ethosu: Add performance counter support",
+      "url": "https://lore.kernel.org/dri-devel/20260523083730.255310-1-tomeu@tomeuvizoso.net/",
+      "note": "lore.kernel.org/dri-devel · patch-discussion"
+    },
+    {
+      "title": "DRM RAS Fixes",
+      "url": "https://lore.kernel.org/dri-devel/20260523050212.557292-1-raag.jadav@intel.com/",
+      "note": "lore.kernel.org/dri-devel · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-23T13:19:48.978Z",
+    "sourceRecordCount": 25,
+    "candidateCount": 6,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "lore-dri-devel:urn:uuid:8f4012fd-37de-f993-97c5-7110d91d3e71",
+      "lore-dri-devel:urn:uuid:79a8a27f-1d6c-16b8-f3b4-44a5d5a28993",
+      "lore-dri-devel:urn:uuid:b1d8cc4c-8b6f-abf3-53d5-7e7464a9cadf",
+      "lore-dri-devel:urn:uuid:4096daaa-af79-acc8-ebda-77376ee80b40",
+      "lore-dri-devel:urn:uuid:24383b1a-96b5-00d6-ea76-586691aad138",
+      "lore-dri-devel:urn:uuid:a8377c9b-3675-54ba-aeb2-d93ae1f7d344"
+    ],
+    "bucketCounts": {
+      "releases": 0,
+      "regressions": 0,
+      "patches": 6,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 6,
+    "signalLevel": "high",
+    "subsystems": [],
+    "lensPipeline": "linux-gpu-ai",
+    "rewrittenAt": "2026-05-23T13:19:56.996Z",
+    "rewriteAdapter": "codex",
+    "promptTemplate": "prompts/linux-lens-newsletter-ko.md"
+  }
+}

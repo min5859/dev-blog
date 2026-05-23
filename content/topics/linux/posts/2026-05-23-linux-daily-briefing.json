@@ -1,0 +1,140 @@
+{
+  "id": "2026-05-23-linux-daily-briefing",
+  "topic": "linux",
+  "title": "2026-05-23 안정 커널 대량 백포트 — 리눅스 개발",
+  "date": "2026-05-23",
+  "headline": "안정 커널에 네트워크·입출력·가상화 관련 수정이 대량 반영됐습니다. 배포 단계 점검이 필요합니다.",
+  "summary": "오늘의 핵심은 Linux 7.0.10 stable에 네트워크 버퍼 처리, 파일 시스템 보조 경로, 그래픽 메모리, 입출력 주소 변환 관련 수정이 대량 백포트된 점입니다. 별도로 HSR 프레임 처리의 범위 밖 접근 수정, 블록 계층 NUMA 타입 정리, 대형 장치 메모리 초기화 최적화 시리즈가 검토되고 있습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "Linux 7.0.10 stable",
+      "priority": "중",
+      "verifyLink": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.0.10",
+      "if": "stable 7.0 계열을 배포한다면",
+      "do": "네트워크·입출력 백포트 누락을 확인하세요",
+      "verify": "changelog에서 skbuff, netfs, iommu, UAF 키워드로 grep하세요"
+    },
+    {
+      "title": "HSR supervision frame 범위 밖 접근 수정",
+      "priority": "상",
+      "verifyLink": "https://lore.kernel.org/lkml/20260523130330.61880-1-luka.gejak@linux.dev/",
+      "if": "HSR 네트워크 경로를 운용한다면",
+      "do": "짧은 supervision frame 처리 방식을 점검하세요",
+      "verify": "패치의 pskb_may_pull 길이 검사를 기존 코드와 대조하세요"
+    },
+    {
+      "title": "블록 계층 NUMA 노드 타입 정리",
+      "priority": "중",
+      "verifyLink": "https://lore.kernel.org/lkml/20260523125210.272274-1-mateusz.nowicki@posteo.net/",
+      "if": "블록 장치 초기화 경로를 건드린다면",
+      "do": "init_request 콜백 인자 타입 변경을 반영하세요",
+      "verify": "diff에서 blk_mq_ops 구현체의 numa_node 타입을 확인하세요"
+    },
+    {
+      "title": "장치 메모리 초기화 helper 추가",
+      "priority": "중",
+      "verifyLink": "https://lore.kernel.org/lkml/177953825217.3959652.5821431794861471690.b4-review@b4/",
+      "if": "ZONE_DEVICE나 메모리 hotplug를 다룬다면",
+      "do": "section bit 설정 helper 적용 범위를 확인하세요",
+      "verify": "스레드에서 set_page_section_from_pfn 호출 위치를 따라가세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "- Linux 7.1-rc4 mainline\n  · 영향: 메인라인 회귀 확인 구간입니다. 자기 서브시스템의 머지 윈도우 변경이 이 후보에서 새 회귀를 만들었는지 확인할 시점입니다.\n  · 확인: https://git.kernel.org/torvalds/h/v7.1-rc4\n\n- Linux 7.0.10 stable\n  · 영향: 이번 stable에는 netfs 초기화 값, skbuff shared-frag 전파, eventfs 목록 처리, 그래픽 메모리 UAF, iommu ATS와 PASID reset 경로 등 시스템 영향 수정이 다수 백포트되었습니다.\n  · 확인: https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.0.10\n\n- Linux 5.10.257 longterm\n  · 영향: 장기 지원 5.10 계열에는 skbuff shared-frag 표시 보존 관련 네트워크 코어 수정 2건만 백포트되었습니다.\n  · 확인: https://git.kernel.org/stable/h/v5.10.257"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- HSR supervision frame 범위 밖 접근 수정\n  · 영향: 잘린 HSR supervision frame에서 TLV 헤더 전체를 선형화하지 않고 접근할 수 있던 경로를 pskb_may_pull 길이 검사 확대로 막습니다.\n  · 확인: https://lore.kernel.org/lkml/20260523130330.61880-1-luka.gejak@linux.dev/"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "- 블록 계층 NUMA 노드 타입 정리\n  · 영향: blk_mq_hw_ctx와 blk_mq_ops::init_request의 numa_node를 unsigned int에서 int로 바꿔 NUMA_NO_NODE 값이 UINT_MAX로 해석되어 NVMe descriptor pool 범위를 벗어나는 경로를 막습니다.\n  · 확인: https://lore.kernel.org/lkml/20260523125210.272274-1-mateusz.nowicki@posteo.net/\n\n- 장치 메모리 초기화 helper 추가\n  · 영향: ZONE_DEVICE 대형 범위 초기화에서 PFN으로 section bit를 갱신하는 공통 helper를 도입하는 7개 패치 시리즈이며, Andrew Morton이 속도 개선 취지를 긍정적으로 반응했습니다.\n  · 확인: https://lore.kernel.org/lkml/177953825217.3959652.5821431794861471690.b4-review@b4/"
+    },
+    {
+      "heading": "기타",
+      "body": "국부 드라이버/플랫폼 패치는 본문에서 제외했습니다. stmmac RX DMA 정리 패치는 단일 네트워크 드라이버 오류 처리 경로에 가까우므로 해당 드라이버를 쓰는 경우에만 원문을 확인하세요."
+    }
+  ],
+  "confidence": {
+    "level": "AI 초안",
+    "note": "candidateBodies의 commit message와 백포트 제목 목록을 기준으로 재작성했습니다. 본문 게시 전 원문 링크에서 실제 적용 범위와 후속 댓글을 확인해야 합니다."
+  },
+  "sources": [
+    {
+      "title": "Linux 7.1-rc4 mainline",
+      "url": "https://git.kernel.org/torvalds/h/v7.1-rc4",
+      "note": "kernel.org · kernel-release"
+    },
+    {
+      "title": "Linux 7.0.10 stable",
+      "url": "https://git.kernel.org/stable/h/v7.0.10",
+      "note": "kernel.org · kernel-release"
+    },
+    {
+      "title": "Linux next-20260522 linux-next",
+      "url": "https://git.kernel.org/next/linux-next/h/next-20260522",
+      "note": "kernel.org · kernel-release"
+    },
+    {
+      "title": "block: switch numa_node to int in blk_mq_hw_ctx and init_request",
+      "url": "https://lore.kernel.org/lkml/20260523125210.272274-1-mateusz.nowicki@posteo.net/",
+      "note": "lore.kernel.org/lkml · patch-discussion"
+    },
+    {
+      "title": "net: hsr: fix potential OOB access in supervision frame handling",
+      "url": "https://lore.kernel.org/lkml/20260523130330.61880-1-luka.gejak@linux.dev/",
+      "note": "lore.kernel.org/lkml · patch-discussion"
+    },
+    {
+      "title": "net: stmmac: fix RX DMA leak on TX alloc failure",
+      "url": "https://lore.kernel.org/lkml/20260523121708.564-1-dev.taqnialabs@gmail.com/",
+      "note": "lore.kernel.org/lkml · patch-discussion"
+    },
+    {
+      "title": "mm: add a set_page_section_from_pfn() helper",
+      "url": "https://lore.kernel.org/lkml/177953825217.3959652.5821431794861471690.b4-review@b4/",
+      "note": "lore.kernel.org/lkml · patch-discussion"
+    },
+    {
+      "title": "Linux 5.10.257 longterm",
+      "url": "https://git.kernel.org/stable/h/v5.10.257",
+      "note": "kernel.org · kernel-release"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-23T13:05:52.289Z",
+    "sourceRecordCount": 34,
+    "candidateCount": 8,
+    "generator": "scripts/draft-linux.mjs",
+    "candidateIds": [
+      "kernel-org:mainline:7.1-rc4",
+      "kernel-org:stable:7.0.10",
+      "kernel-org:linux-next:next-20260522",
+      "lore-lkml:urn:uuid:35acbda3-af87-6046-7954-4b243c0cef15",
+      "lore-lkml:urn:uuid:35e62be1-86e8-4928-7bef-10ea55fd52cb",
+      "lore-lkml:urn:uuid:4bd6f6ca-3deb-c924-0875-e63e3ae2dd48",
+      "lore-lkml:urn:uuid:eeb03a46-f564-16da-a289-3ea5c3a6603b",
+      "kernel-org:longterm:5.10.257"
+    ],
+    "bucketCounts": {
+      "releases": 4,
+      "regressions": 1,
+      "patches": 3,
+      "otherSignals": 0
+    },
+    "subsystems": [
+      "스토리지/파일시스템",
+      "네트워크",
+      "메모리 관리"
+    ],
+    "rewrittenAt": "2026-05-23T13:06:01.425Z",
+    "rewriteAdapter": "codex",
+    "promptTemplate": "prompts/linux-newsletter-ko.md"
+  }
+}
