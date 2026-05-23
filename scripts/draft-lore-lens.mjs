@@ -21,15 +21,12 @@ import {
 } from './draft-linux.mjs';
 
 const root = process.cwd();
-const topic = process.argv[2] || process.env.TOPIC;
-if (!topic) {
-  console.error('Usage: node scripts/draft-lore-lens.mjs <topicId>');
-  process.exit(1);
-}
+const topic = process.argv[2] || process.env.TOPIC || null;
+const topicPathPart = topic || '__missing_topic__';
 
-const pipelinePath = path.join(root, 'content', 'topics', topic, 'pipeline.json');
-const inputPath = path.join(root, 'data', 'normalized', topic, 'source-records-latest.json');
-const generatedDir = path.join(root, 'data', 'generated', topic);
+const pipelinePath = path.join(root, 'content', 'topics', topicPathPart, 'pipeline.json');
+const inputPath = path.join(root, 'data', 'normalized', topicPathPart, 'source-records-latest.json');
+const generatedDir = path.join(root, 'data', 'generated', topicPathPart);
 const generatedAt = new Date().toISOString();
 const todayKst = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date());
 const runDate = process.env.NEWSLETTER_DATE || todayKst();
@@ -42,6 +39,47 @@ function applyTemplate(template, variables) {
   return String(template).replace(/\{\{(\w+)\}\}/g, (_, key) => variables[key] ?? '');
 }
 
+function patternMatchesAny(patterns = [], value = '') {
+  return patterns.some((pattern) => new RegExp(pattern, 'i').test(value));
+}
+
+function recordSearchText(record) {
+  return [
+    record.title,
+    record.summary,
+    record.kind,
+    record.sourceId,
+    record.source,
+    record.metadata?.excerpt,
+    record.metadata?.loreList,
+  ].filter(Boolean).join('\n');
+}
+
+function isReleaseRelevantForLens(record, pipeline = {}) {
+  if (record.sourceId !== 'kernel-org-releases') return true;
+  if (pipeline.includeAllKernelOrgReleases === true) return true;
+  const allowed = new Set([
+    ...(Array.isArray(pipeline.releaseMonikers) ? pipeline.releaseMonikers : []),
+    ...(Array.isArray(pipeline.highlightReleaseMonikers) ? pipeline.highlightReleaseMonikers : []),
+  ]);
+  return allowed.size > 0 && allowed.has(record.metadata?.moniker);
+}
+
+function isRelevantToLens(record, pipeline = {}) {
+  if (!isReleaseRelevantForLens(record, pipeline)) return false;
+  if (record.sourceId === 'kernel-org-releases') return true;
+
+  const text = recordSearchText(record);
+  const includePatterns = Array.isArray(pipeline.relevanceIncludePatterns) ? pipeline.relevanceIncludePatterns : [];
+  const excludePatterns = Array.isArray(pipeline.relevanceExcludePatterns) ? pipeline.relevanceExcludePatterns : [];
+  const hasIncludeRules = includePatterns.length > 0;
+  const includeHit = !hasIncludeRules || patternMatchesAny(includePatterns, text);
+  const excludeHit = excludePatterns.length > 0 && patternMatchesAny(excludePatterns, text);
+
+  if (excludeHit && !isRegressionSignal(record)) return false;
+  return includeHit || isRegressionSignal(record);
+}
+
 function isBroadImpactLens(record) {
   if (record.sourceId === 'kernel-org-releases') return true;
   if (isRegressionSignal(record)) return true;
@@ -50,12 +88,12 @@ function isBroadImpactLens(record) {
   return false;
 }
 
-function pickCandidatesLens(records) {
+function pickCandidatesLens(records, pipeline = {}) {
   const nowMs = Date.now();
   const scored = records.map(scoreRecord);
   const merged = mergePatchSeries(scored);
   const fresh = merged.filter((record) => !isStaleReply(record, nowMs));
-  const broad = fresh.filter(isBroadImpactLens);
+  const broad = fresh.filter((record) => isRelevantToLens(record, pipeline)).filter(isBroadImpactLens);
   broad.sort((a, b) => b.score - a.score || String(b.observedDate).localeCompare(String(a.observedDate)));
 
   const official = broad.filter((record) => record.sourceId === 'kernel-org-releases').slice(0, 4);
@@ -185,6 +223,10 @@ function toPostDraftLens(candidates, sourceData, pipeline, candidateBodies = [])
 }
 
 async function main() {
+  if (!topic) {
+    console.error('Usage: node scripts/draft-lore-lens.mjs <topicId>');
+    process.exit(1);
+  }
   const pipeline = await readJson(pipelinePath);
   if (pipeline.topic && pipeline.topic !== topic) {
     throw new Error(`${path.relative(root, pipelinePath)}: topic must match folder (${topic})`);
@@ -199,7 +241,7 @@ async function main() {
   }
 
   const postId = `${runDate}-${pipeline.postIdSuffix}`;
-  const rawCandidates = pickCandidatesLens(sourceData.records);
+  const rawCandidates = pickCandidatesLens(sourceData.records, pipeline);
   const seriesHistory = await loadRecentSeriesHistory(generatedDir, runDate);
   const candidates = annotateWithHistory(rawCandidates, seriesHistory);
   const candidateBodies = await enrichWithBodies(candidates);
@@ -236,4 +278,4 @@ if (isMainModule) {
   });
 }
 
-export { pickCandidatesLens, toPostDraftLens, applyTemplate };
+export { pickCandidatesLens, toPostDraftLens, applyTemplate, isRelevantToLens, isReleaseRelevantForLens };
