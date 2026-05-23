@@ -1,17 +1,18 @@
 import { spawn } from 'node:child_process';
-import { mkdir, mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 /**
- * AI_ADAPTER: template | claude | cursor (별칭 cursor-agent → cursor)
+ * AI_ADAPTER: template | claude | codex | cursor (별칭 cursor-agent → cursor)
  * Claude: CLAUDE_BIN, CLAUDE_ARGS (기본 `-p`), stdin으로 프롬프트 전달
+ * Codex: `codex exec -` (stdin) + `-o` 임시 파일로 출력 수집
  * Cursor CLI: CURSOR_AGENT_BIN (기본 `agent`), CURSOR_AGENT_EXTRA_ARGS — 프롬프트는 임시 파일 + file 경로 안내
  *
  * 기본 어댑터는 아래 DEFAULT_AI_ADAPTER 한 곳에서만 바꾼다.
  * 모든 ai-rewrite-*.mjs / run-daily-*.mjs 는 이 상수를 통해 default를 받는다.
  */
-export const DEFAULT_AI_ADAPTER = 'cursor';
+export const DEFAULT_AI_ADAPTER = 'codex';
 
 export function normalizeDailyRewriteAdapter(raw) {
   const v = typeof raw === 'string' ? raw.trim() : '';
@@ -95,6 +96,33 @@ async function runCursorAgentFilePrompt(prompt) {
   }
 }
 
+async function runCodexExec(prompt) {
+  const dir = await mkdtemp(path.join(tmpdir(), 'dev-blog-codex-'));
+  const outFile = path.join(dir, 'output.md');
+  const model = process.env.CODEX_MODEL || '';
+  try {
+    const cmd = ['codex', 'exec', '-', '-o', outFile, '--ephemeral'];
+    if (model) cmd.push('-m', model);
+    const output = await new Promise((resolve, reject) => {
+      const child = spawn(cmd[0], cmd.slice(1), { stdio: ['pipe', 'pipe', 'pipe'] });
+      let stderr = '';
+      child.stderr.on('data', (chunk) => { stderr += chunk; });
+      child.on('error', reject);
+      child.on('close', (code) => {
+        if (code !== 0) {
+          reject(new Error(`codex exited with ${code}: ${stderr}`));
+          return;
+        }
+        readFile(outFile, 'utf8').then(resolve).catch(reject);
+      });
+      child.stdin.end(prompt);
+    });
+    return output.trim();
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
 /**
  * @returns {Promise<string|null>} 원시 stdout 텍스트; template이면 null
  */
@@ -102,8 +130,9 @@ export async function runAiAdapterPrompt(prompt, { defaultAdapter = DEFAULT_AI_A
   const adapter = resolveAiAdapter(defaultAdapter);
   if (adapter === 'template') return null;
   if (adapter === 'claude') return runClaudeStdin(prompt);
+  if (adapter === 'codex') return runCodexExec(prompt);
   if (adapter === 'cursor') return runCursorAgentFilePrompt(prompt);
-  throw new Error(`Unsupported AI_ADAPTER: ${adapter}. Use template, claude, or cursor.`);
+  throw new Error(`Unsupported AI_ADAPTER: ${adapter}. Use template, claude, codex, or cursor.`);
 }
 
 /**

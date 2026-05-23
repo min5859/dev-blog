@@ -18,6 +18,7 @@ const rewriteAdapter = normalizeDailyRewriteAdapter(process.env.DAILY_REWRITE_AD
 const rewriteScriptMap = {
   template: 'rewrite:linux',
   claude: 'rewrite:linux:claude',
+  codex: 'rewrite:linux:codex',
   cursor: 'rewrite:linux:cursor',
 };
 const rewriteScript = rewriteScriptMap[rewriteAdapter] || rewriteScriptMap[DEFAULT_AI_ADAPTER];

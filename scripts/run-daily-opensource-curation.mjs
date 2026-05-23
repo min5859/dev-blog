@@ -18,6 +18,7 @@ const rewriteAdapter = normalizeDailyRewriteAdapter(process.env.DAILY_REWRITE_AD
 const rewriteScriptMap = {
   template: 'rewrite:opensource-curation',
   claude: 'rewrite:opensource-curation:claude',
+  codex: 'rewrite:opensource-curation:codex',
   cursor: 'rewrite:opensource-curation:cursor',
 };
 const rewriteScript = rewriteScriptMap[rewriteAdapter] || rewriteScriptMap[DEFAULT_AI_ADAPTER];

@@ -18,6 +18,7 @@ const rewriteAdapter = normalizeDailyRewriteAdapter(process.env.DAILY_REWRITE_AD
 const rewriteScriptMap = {
   template: 'rewrite:android',
   claude: 'rewrite:android:claude',
+  codex: 'rewrite:android:codex',
   cursor: 'rewrite:android:cursor',
 };
 const rewriteScript = rewriteScriptMap[rewriteAdapter] || rewriteScriptMap[DEFAULT_AI_ADAPTER];
