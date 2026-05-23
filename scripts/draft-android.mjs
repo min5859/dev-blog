@@ -152,10 +152,22 @@ function actionFor(record) {
   return '자기 서브시스템 경로가 영향받는지 commit 본문에서 확인하세요.';
 }
 
+function impactTypeFor(record) {
+  const text = `${record.title || ''}\n${record.summary || ''}\n${record.metadata?.bodyExcerpt || ''}`.toLowerCase();
+  if (/\bcve\b|security|vuln|overflow|oob|use-after-free|\buaf\b/.test(text)) return 'security';
+  if (isRegressionSignal(record)) return 'regression';
+  if (record.kind === 'ack-backport') return 'backport';
+  if (/\babi\b|\bapi\b|gki|interface|callback|symbol|uapi/.test(text)) return 'api-abi';
+  if (/build|kbuild|clang|gcc|rust|compiler/.test(text)) return 'build';
+  if (/performance|latency|throughput|slow|fast|optimi[sz]/.test(text)) return 'performance';
+  return 'runtime';
+}
+
 function highlightOf(record) {
   return {
     title: stripPrefix(record.title),
     priority: priorityFor(record),
+    impactType: impactTypeFor(record),
     verifyLink: record.url || '없음',
     action: actionFor(record),
   };
@@ -297,6 +309,7 @@ export {
   bucketBySubsystem,
   stripPrefix,
   highlightOf,
+  impactTypeFor,
   subsystemPatterns,
   broadSubsystems,
 };

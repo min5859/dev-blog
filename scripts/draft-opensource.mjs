@@ -100,6 +100,7 @@ function highlightOf(record) {
   return {
     title: record.metadata?.fullName || record.title,
     priority: priorityFor(record),
+    impactType: 'project',
     verifyLink: record.url || '없음',
     action: actionFor(record),
   };

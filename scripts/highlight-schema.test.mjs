@@ -1,12 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { PRIORITY_VALUES, hasFlatAction, hasStructuredAction, validateHighlight, validateHighlights } from './lib/highlight-schema.mjs';
+import { IMPACT_TYPE_VALUES, PRIORITY_VALUES, hasFlatAction, hasStructuredAction, validateHighlight, validateHighlights } from './lib/highlight-schema.mjs';
 
-const baseFlat = { title: 'X', priority: '상', verifyLink: 'https://x', action: '본문 확인' };
+const baseFlat = { title: 'X', priority: '상', impactType: 'runtime', verifyLink: 'https://x', action: '본문 확인' };
 const baseStructured = {
   title: 'Y',
   priority: '중',
+  impactType: 'api-abi',
   verifyLink: 'https://y',
   if: '독자가 …이라면',
   do: '…해 보세요',
@@ -15,6 +16,13 @@ const baseStructured = {
 
 test('PRIORITY_VALUES에는 상·중·하만 포함된다', () => {
   assert.deepEqual([...PRIORITY_VALUES].sort(), ['상', '중', '하'].sort());
+});
+
+test('IMPACT_TYPE_VALUES는 개발자 영향 분류만 포함한다', () => {
+  assert.deepEqual(
+    [...IMPACT_TYPE_VALUES].sort(),
+    ['api-abi', 'backport', 'build', 'performance', 'project', 'regression', 'release', 'runtime', 'security'].sort(),
+  );
 });
 
 test('flat action 형식은 통과', () => {
@@ -26,13 +34,18 @@ test('if/do/verify 형식은 통과', () => {
 });
 
 test('action도 if/do/verify도 없으면 throw', () => {
-  const broken = { title: 'Z', priority: '상', verifyLink: 'https://z' };
+  const broken = { title: 'Z', priority: '상', impactType: 'runtime', verifyLink: 'https://z' };
   assert.throws(() => validateHighlight(broken, 2), /requires either action or all of if\/do\/verify/);
 });
 
 test('priority가 상/중/하 외면 throw', () => {
   const bad = { ...baseFlat, priority: 'High' };
   assert.throws(() => validateHighlight(bad, 0), /priority must be 상\/중\/하/);
+});
+
+test('impactType이 허용 목록 밖이면 throw', () => {
+  const bad = { ...baseFlat, impactType: 'misc' };
+  assert.throws(() => validateHighlight(bad, 0), /impactType must be one of/);
 });
 
 test('필수 필드 누락은 키 이름까지 알려준다', () => {
@@ -53,7 +66,7 @@ test('ctx가 주어지면 에러 메시지에 prefix가 붙는다', () => {
 });
 
 test('if/do/verify 일부만 있으면 throw (셋 다 필요)', () => {
-  const partial = { title: 'P', priority: '상', verifyLink: 'https://p', if: '…', do: '…' };
+  const partial = { title: 'P', priority: '상', impactType: 'runtime', verifyLink: 'https://p', if: '…', do: '…' };
   assert.throws(() => validateHighlight(partial, 0), /requires either action or all of if\/do\/verify/);
 });
 

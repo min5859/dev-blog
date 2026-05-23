@@ -33,6 +33,7 @@
     - `상`: mainline 릴리스, 회귀, CVE, 보안, 머지 윈도우 신호
     - `중`: stable·longterm 릴리스, 시스템 전반 패치 시리즈
     - `하`: linux-next 스냅샷, 단순 응답, 영향 범위 미확정
+  - `impactType` — `security`/`regression`/`build`/`runtime`/`api-abi`/`backport`/`performance`/`release` 중 하나.
   - `verifyLink` — changelog/스레드/diff URL. 모르면 문자열 `"없음"`.
   - `action` — 행동 지침 한 줄. **반드시 다음 두 요소를 모두 포함**합니다.
     1. **조건절**: "…를 사용/운용한다면" 또는 "…경로를 건드리는 코드라면" 처럼 *어떤 독자에게* 해당하는지 명시.
@@ -78,7 +79,7 @@
   "summary": "...",
   "tags": ["리눅스", "커널"],
   "highlights": [
-    { "title": "...", "priority": "상", "verifyLink": "https://...", "action": "..." }
+    { "title": "...", "priority": "상", "impactType": "regression", "verifyLink": "https://...", "action": "..." }
   ],
   "sections": [
     { "heading": "릴리스/로드맵", "body": "..." },

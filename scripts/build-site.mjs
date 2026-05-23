@@ -166,6 +166,17 @@ function annotateTextChunk(text, terms, seen, startIdx = 0) {
 }
 
 const PRIORITY_ORDER = ['상', '중', '하'];
+const IMPACT_TYPE_LABELS = new Map([
+  ['security', '보안'],
+  ['regression', '회귀'],
+  ['build', '빌드'],
+  ['runtime', '런타임'],
+  ['api-abi', 'API/ABI'],
+  ['backport', '백포트'],
+  ['performance', '성능'],
+  ['release', '릴리스'],
+  ['project', '프로젝트'],
+]);
 
 function topPriority(highlights) {
   if (!Array.isArray(highlights) || !highlights.length) return null;
@@ -173,6 +184,10 @@ function topPriority(highlights) {
     if (highlights.some((highlight) => highlight?.priority === level)) return level;
   }
   return null;
+}
+
+function impactTypesOf(highlights = []) {
+  return [...new Set((highlights || []).map((h) => h?.impactType).filter(Boolean))];
 }
 
 const SOURCE_KIND_LABELS = new Map([
@@ -456,7 +471,7 @@ function renderHighlights(highlights = []) {
   </dl>`
       : `<p class="highlight-action">${escapeHtml(item.action || '')}${verifyLink}</p>`;
     return `<li class="highlight-item">
-  <div class="highlight-head"><span class="priority priority-${escapeHtml(item.priority)}">${escapeHtml(item.priority)}</span><span class="highlight-title">${markupTechnical(escapeHtml(item.title))}</span></div>
+  <div class="highlight-head"><span class="priority priority-${escapeHtml(item.priority)}">${escapeHtml(item.priority)}</span>${item.impactType ? `<span class="impact-type impact-type-${escapeHtml(item.impactType)}">${escapeHtml(IMPACT_TYPE_LABELS.get(item.impactType) || item.impactType)}</span>` : ''}<span class="highlight-title">${markupTechnical(escapeHtml(item.title))}</span></div>
   ${body}
 </li>`;
   }).join('\n')}</ul>`;
@@ -678,6 +693,7 @@ abbr.glossary-term { text-decoration: underline dotted var(--muted); text-underl
 .priority-상 { background: #fde2e2; color: #8a1f1f; }
 .priority-중 { background: #fff1c5; color: #6b4f00; }
 .priority-하 { background: #e2eaf6; color: #2b3850; }
+.impact-type { display: inline-flex; align-items: center; justify-content: center; padding: 2px 8px; border-radius: 4px; font-size: .74rem; font-weight: 700; letter-spacing: .02em; background: var(--surface-alt); border: 1px solid var(--border); color: var(--muted); }
 @media (prefers-color-scheme: dark) {
   .priority-상 { background: #4b1f1f; color: #ffd6d6; }
   .priority-중 { background: #4a3b00; color: #ffe7a3; }
@@ -936,6 +952,7 @@ ${feedItems}
     tags: post.tags || [],
     subsystems: post.draftMetadata?.subsystems || [],
     priority: topPriority(post.highlights),
+    impactTypes: impactTypesOf(post.highlights),
     url: link(`/posts/${post.id}.html`),
   })), null, 2));
 

@@ -539,10 +539,26 @@ function actionFor(record) {
   return '스레드의 후속 응답을 모니터링해 실제 설계 논의인지 단순 응답인지 분류하세요.';
 }
 
+function impactTypeFor(record) {
+  const text = `${record.title || ''}\n${record.commitMessage || ''}`.toLowerCase();
+  if (record.sourceId === 'kernel-org-releases') {
+    const moniker = record.metadata?.moniker;
+    if (moniker === 'stable' || moniker === 'longterm') return 'backport';
+    return 'release';
+  }
+  if (/\bcve\b|security|vuln|overflow|oob|use-after-free|\buaf\b/.test(text)) return 'security';
+  if (isRegressionSignal(record)) return 'regression';
+  if (/\babi\b|\bapi\b|interface|callback|struct |symbol|syscall|ioctl|uapi/.test(text)) return 'api-abi';
+  if (/kbuild|compiler|clang|gcc|rust|linker|build/.test(text)) return 'build';
+  if (/performance|latency|throughput|slow|fast path|speed|optimi[sz]/.test(text)) return 'performance';
+  return 'runtime';
+}
+
 function highlightOf(record) {
   return {
     title: stripPatchPrefix(record.title),
     priority: priorityFor(record),
+    impactType: impactTypeFor(record),
     verifyLink: verifyLinkFor(record),
     action: actionFor(record),
   };
@@ -719,5 +735,6 @@ export {
   parseAtomThreadEntries,
   pickCandidates,
   highlightOf,
+  impactTypeFor,
   subsystemPatterns,
 };

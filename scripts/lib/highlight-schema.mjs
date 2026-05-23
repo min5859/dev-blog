@@ -5,6 +5,17 @@
  */
 
 export const PRIORITY_VALUES = new Set(['상', '중', '하']);
+export const IMPACT_TYPE_VALUES = new Set([
+  'security',
+  'regression',
+  'build',
+  'runtime',
+  'api-abi',
+  'backport',
+  'performance',
+  'release',
+  'project',
+]);
 
 const STRUCTURED_KEYS = ['if', 'do', 'verify'];
 
@@ -27,7 +38,7 @@ export function validateHighlight(highlight, index, ctx = '') {
   if (!highlight || typeof highlight !== 'object') {
     throw new Error(`${where} must be an object`);
   }
-  for (const key of ['title', 'priority', 'verifyLink']) {
+  for (const key of ['title', 'priority', 'verifyLink', 'impactType']) {
     if (typeof highlight[key] !== 'string' || !highlight[key]) {
       throw new Error(`${where}.${key} required`);
     }
@@ -37,6 +48,9 @@ export function validateHighlight(highlight, index, ctx = '') {
   }
   if (!PRIORITY_VALUES.has(highlight.priority)) {
     throw new Error(`${where}.priority must be 상/중/하 (got ${highlight.priority})`);
+  }
+  if (!IMPACT_TYPE_VALUES.has(highlight.impactType)) {
+    throw new Error(`${where}.impactType must be one of ${[...IMPACT_TYPE_VALUES].join(', ')} (got ${highlight.impactType})`);
   }
 }
 

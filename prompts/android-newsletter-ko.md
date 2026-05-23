@@ -29,6 +29,7 @@
     - `상`: 회귀·CVE·보안, ANDROID 전용 GKI/ABI 영향 패치, mainline merge 단계 이슈.
     - `중`: ACK FROMGIT/FROMLIST/BACKPORT 중 시스템 영향이 분명한 항목.
     - `하`: merge commit, ABI 변경 없는 정리.
+  - `impactType` — `security`/`regression`/`build`/`runtime`/`api-abi`/`backport`/`performance` 중 하나.
   - `verifyLink` — gitiles commit URL.
   - `action` — Android 소프트웨어 담당자 관점 행동 지침 ("자기 vendor module이 X에 의존한다면…").
 
@@ -68,7 +69,7 @@
   "summary": "...",
   "tags": ["android", "커널", "ack"],
   "highlights": [
-    { "title": "...", "priority": "상", "verifyLink": "https://...", "action": "..." }
+    { "title": "...", "priority": "상", "impactType": "api-abi", "verifyLink": "https://...", "action": "..." }
   ],
   "sections": [
     { "heading": "회귀·보안 신호", "body": "..." },
@@ -117,6 +118,7 @@
   {
     "title": "...",
     "priority": "상",
+    "impactType": "api-abi",
     "verifyLink": "https://...",
     "if": "vendor module이 ashmem 경로에 의존한다면",
     "do": "패치 이후 버퍼 크기 가정이 바뀐 지점을 점검하세요",

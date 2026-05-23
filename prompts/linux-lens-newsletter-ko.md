@@ -23,6 +23,7 @@
 
 - 최대 4개. 우선순위는 상 1~2 / 중 2 / 하 0~1 을 목표로 합니다.
 - `priority`: `상`/`중`/`하` — 렌즈 주제에 맞게 판단 (보안/회귀/ABI는 상 후보).
+- `impactType` — `security`/`regression`/`build`/`runtime`/`api-abi`/`backport`/`performance`/`release` 중 하나. 보안·회귀·ABI·빌드·백포트 성격을 구분합니다.
 - `verifyLink` — 스레드 URL. 없으면 `"없음"`.
 - **kernel.org 릴리스(mainline RC, stable, longterm)는 입력 draft 의 `highlights` 에 이미 들어 있을 때만 인용합니다.** draft 가 release 를 highlights 에서 제외했다면 출력 highlights 에도 추가하지 마세요. 릴리스 정보는 항상 "릴리스/로드맵" 섹션에서 다룹니다.
 
@@ -81,6 +82,7 @@
   {
     "title": "...",
     "priority": "상",
+    "impactType": "api-abi",
     "verifyLink": "https://...",
     "if": "GCC 백엔드로 KCFI 를 실험하는 빌드라면",
     "do": "v10 대비 변경점과 KSPP 트래커 요약을 읽어 두세요",

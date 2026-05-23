@@ -31,6 +31,7 @@ GitHub Search API + Hacker News frontpage에서 모은 데이터를 입력으로
     - `상`: HN frontpage hit, 또는 30일 내 신규인데 영향력 큰 프로젝트.
     - `중`: 60일 내 신규 + 별 1k+, 또는 별 5k+ 활발 프로젝트 중 *오늘 의미 있는 변화*가 있는 항목.
     - `하`: 별 많은 long-tail giants 중 단순 정기 업데이트.
+  - `impactType` — 항상 `project`.
   - `verifyLink` — repo URL.
   - `action` — *읽는 사람이 무엇을 하면 좋은지* 한 줄. "README 훑어 X와 비교", "1주 더 별 추세 보고 도입 결정" 같은 식.
 
@@ -68,7 +69,7 @@ GitHub Search API + Hacker News frontpage에서 모은 데이터를 입력으로
   "summary": "...",
   "tags": ["opensource", "github", "trending"],
   "highlights": [
-    { "title": "owner/repo", "priority": "상", "verifyLink": "https://github.com/...", "action": "..." }
+    { "title": "owner/repo", "priority": "상", "impactType": "project", "verifyLink": "https://github.com/...", "action": "..." }
   ],
   "sections": [
     { "heading": "지금 화제 (HN frontpage)", "body": "..." },
@@ -114,6 +115,7 @@ GitHub Search API + Hacker News frontpage에서 모은 데이터를 입력으로
   {
     "title": "owner/repo",
     "priority": "상",
+    "impactType": "project",
     "verifyLink": "https://github.com/...",
     "if": "팀의 프런트엔드 빌드가 이 패키지에 의존한다면",
     "do": "HN 스레드에서 공급망 이슈의 핵심을 먼저 확인하세요",

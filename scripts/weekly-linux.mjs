@@ -173,6 +173,7 @@ function templateWeekly(dailies, meta) {
     const out = {
       title: h.title,
       priority: PRIORITY_VALUES.has(h.priority) ? h.priority : '중',
+      impactType: h.impactType || 'release',
       verifyLink: h.verifyLink || '없음',
     };
     const hasStructured = ['if', 'do', 'verify'].every((k) => typeof h[k] === 'string' && h[k]);
@@ -196,6 +197,7 @@ function templateWeekly(dailies, meta) {
     highlights: top.length ? top.map(ensureHighlight) : [{
       title: '이번 주 highlights가 없습니다',
       priority: '하',
+      impactType: 'release',
       verifyLink: '없음',
       action: '일일 브리핑 본문을 직접 확인하세요.',
     }],

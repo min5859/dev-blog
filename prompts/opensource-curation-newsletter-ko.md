@@ -23,7 +23,7 @@
 ## highlights
 
 - 최대 4개. `상`은 점수가 높거나 분석이 있고 팀 영향이 큰 레포, `중`은 참고 가치, `하`는 긴 꼬리 인기 레포.
-- 각 항목: `title`(owner/repo), `priority` (`상`/`중`/`하`), `verifyLink`, `action`(다음에 할 일 한 줄).
+- 각 항목: `title`(owner/repo), `priority` (`상`/`중`/`하`), `impactType`(항상 `project`), `verifyLink`, `action`(다음에 할 일 한 줄).
 
 ## sections
 
@@ -49,7 +49,7 @@
   "summary": "...",
   "tags": ["opensource-curation", "github", "opensource"],
   "highlights": [
-    { "title": "owner/repo", "priority": "상", "verifyLink": "https://github.com/...", "action": "..." }
+    { "title": "owner/repo", "priority": "상", "impactType": "project", "verifyLink": "https://github.com/...", "action": "..." }
   ],
   "sections": [
     { "heading": "이번 주 선정 (큐레이션)", "body": "..." },
@@ -94,6 +94,7 @@
   {
     "title": "owner/repo",
     "priority": "상",
+    "impactType": "project",
     "verifyLink": "https://github.com/...",
     "if": "팀이 에이전트 도구 도입을 검토 중이라면",
     "do": "Quick Start 와 라이선스를 README 원문에서 직접 읽으세요",
