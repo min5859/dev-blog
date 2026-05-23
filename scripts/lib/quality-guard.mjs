@@ -111,18 +111,57 @@ function findImplausibleStarCounts(fields) {
   return hits;
 }
 
+function collectUrlsFromValue(value, urls = new Set()) {
+  if (typeof value === 'string') {
+    for (const match of value.matchAll(/https?:\/\/[^\s<>"')\]]+/g)) {
+      urls.add(match[0].replace(/[.,;:]+$/, ''));
+    }
+  } else if (Array.isArray(value)) {
+    for (const item of value) collectUrlsFromValue(item, urls);
+  } else if (value && typeof value === 'object') {
+    for (const item of Object.values(value)) collectUrlsFromValue(item, urls);
+  }
+  return urls;
+}
+
+function findUngroundedUrls(post, draft) {
+  if (!draft) return [];
+  const evidenceUrls = collectUrlsFromValue(draft);
+  const hits = [];
+  const fields = gatherTextFields(post);
+  for (const [where, text] of fields) {
+    for (const url of collectUrlsFromValue(text)) {
+      if (!evidenceUrls.has(url)) hits.push(`${where}: ${url}`);
+    }
+  }
+  for (const [i, source] of (post.sources || []).entries()) {
+    if (source?.url && source.url !== '없음' && !evidenceUrls.has(source.url)) {
+      hits.push(`sources[${i}].url: ${source.url}`);
+    }
+  }
+  for (const [i, highlight] of (post.highlights || []).entries()) {
+    const url = highlight?.verifyLink;
+    if (url && url !== '없음' && !evidenceUrls.has(url)) {
+      hits.push(`highlights[${i}].verifyLink: ${url}`);
+    }
+  }
+  return [...new Set(hits)];
+}
+
 /**
  * @param {object} post 검증할 rewritten post
  * @param {object} [opts]
  * @param {boolean} [opts.strict=true] true 면 critical 위반시 throw, false 면 warnings 만 모은다.
+ * @param {object} [opts.draft] rewrite 입력 draft. 출력 URL이 draft 안의 근거 URL에서만 왔는지 확인한다.
  * @returns {{ critical: string[], warnings: string[] }}
  */
-export function auditPostQuality(post, { strict = true } = {}) {
+export function auditPostQuality(post, { strict = true, draft = null } = {}) {
   const fields = gatherTextFields(post);
   const critical = [];
   const warnings = [];
 
   critical.push(...findForeignCjk(fields).map((h) => `non-Korean CJK chars in ${h}`));
+  critical.push(...findUngroundedUrls(post, draft).map((h) => `ungrounded URL in ${h}`));
   warnings.push(...findFutureVersions(fields).map((h) => `future-looking version: ${h}`));
   warnings.push(...findTruncatedLoreIds(fields).map((h) => `possibly truncated lore id: ${h}`));
   warnings.push(...findImplausibleStarCounts(fields).map((h) => `${h}`));

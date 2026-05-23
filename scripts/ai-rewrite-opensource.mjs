@@ -86,7 +86,7 @@ async function main() {
   }
   const rewritten = withAuditMetadata(aiResult ? aiResult.post : templateRewrite(draft));
   validatePost(rewritten);
-  auditPostQuality(rewritten);
+  auditPostQuality(rewritten, { draft });
 
   await writeFile(path.join(generatedDir, `rewritten-${postId}.json`), JSON.stringify(rewritten, null, 2));
   await writeFile(path.join(generatedDir, 'rewritten-latest.json'), JSON.stringify(rewritten, null, 2));

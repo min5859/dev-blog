@@ -141,7 +141,7 @@ async function main() {
     adapter,
   );
   validatePost(rewritten);
-  auditPostQuality(rewritten);
+  auditPostQuality(rewritten, { draft });
 
   const aiOutput = path.join(generatedDir, `rewritten-${postId}.json`);
   const aiLatest = path.join(generatedDir, 'rewritten-latest.json');
