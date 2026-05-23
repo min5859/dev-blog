@@ -465,11 +465,12 @@ function renderHighlights(highlights = []) {
     const hasStructured = item.if || item.do || item.verify;
     const body = hasStructured
       ? `<dl class="highlight-action-struct">
+    ${item.affectedAudience ? `<dt>대상</dt><dd>${escapeHtml(item.affectedAudience)}</dd>` : ''}
     ${item.if ? `<dt>해당 독자</dt><dd>${escapeHtml(item.if)}</dd>` : ''}
     ${item.do ? `<dt>무엇을</dt><dd>${escapeHtml(item.do)}</dd>` : ''}
     ${item.verify ? `<dt>어떻게 검증</dt><dd>${escapeHtml(item.verify)}${verifyLink}</dd>` : ''}
   </dl>`
-      : `<p class="highlight-action">${escapeHtml(item.action || '')}${verifyLink}</p>`;
+      : `<p class="highlight-action">${item.affectedAudience ? `<span class="highlight-audience">${escapeHtml(item.affectedAudience)}</span> ` : ''}${escapeHtml(item.action || '')}${verifyLink}</p>`;
     return `<li class="highlight-item">
   <div class="highlight-head"><span class="priority priority-${escapeHtml(item.priority)}">${escapeHtml(item.priority)}</span>${item.impactType ? `<span class="impact-type impact-type-${escapeHtml(item.impactType)}">${escapeHtml(IMPACT_TYPE_LABELS.get(item.impactType) || item.impactType)}</span>` : ''}<span class="highlight-title">${markupTechnical(escapeHtml(item.title))}</span></div>
   ${body}
@@ -682,6 +683,7 @@ p { margin: 8px 0; }
 .highlight-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; flex-wrap: wrap; }
 .highlight-title { font-weight: 600; }
 .highlight-action { margin: 0; color: var(--muted); font-size: .92rem; }
+.highlight-audience { color: var(--text); font-weight: 600; }
 .highlight-action-struct { margin: 8px 0 0; display: grid; grid-template-columns: minmax(96px, max-content) 1fr; column-gap: 10px; row-gap: 4px; font-size: .92rem; }
 .highlight-action-struct dt { color: var(--muted); font-size: .78rem; letter-spacing: 0.04em; text-transform: uppercase; align-self: start; padding-top: 2px; }
 .highlight-action-struct dd { margin: 0; color: var(--text); }
@@ -953,6 +955,7 @@ ${feedItems}
     subsystems: post.draftMetadata?.subsystems || [],
     priority: topPriority(post.highlights),
     impactTypes: impactTypesOf(post.highlights),
+    audiences: [...new Set((post.highlights || []).map((h) => h.affectedAudience).filter(Boolean))],
     url: link(`/posts/${post.id}.html`),
   })), null, 2));
 

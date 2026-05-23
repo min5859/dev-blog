@@ -152,6 +152,16 @@ function actionFor(record) {
   return '자기 서브시스템 경로가 영향받는지 commit 본문에서 확인하세요.';
 }
 
+function affectedAudienceFor(record) {
+  if (isRegressionSignal(record)) return 'ACK 회귀 대응 담당자';
+  if (record.kind === 'ack-android') return 'Android GKI·vendor 모듈 담당자';
+  if (record.kind === 'ack-backport') return 'ACK 백포트 추적 담당자';
+  if (record.kind === 'ack-fromlist') return 'ACK 선반영 패치 추적 담당자';
+  const subsystems = broadSubsystemsOf(record);
+  if (subsystems.length) return `${subsystems.join(', ')} 담당 개발자`;
+  return 'Android 커널 통합 담당자';
+}
+
 function impactTypeFor(record) {
   const text = `${record.title || ''}\n${record.summary || ''}\n${record.metadata?.bodyExcerpt || ''}`.toLowerCase();
   if (/\bcve\b|security|vuln|overflow|oob|use-after-free|\buaf\b/.test(text)) return 'security';
@@ -168,6 +178,7 @@ function highlightOf(record) {
     title: stripPrefix(record.title),
     priority: priorityFor(record),
     impactType: impactTypeFor(record),
+    affectedAudience: affectedAudienceFor(record),
     verifyLink: record.url || '없음',
     action: actionFor(record),
   };
@@ -310,6 +321,7 @@ export {
   stripPrefix,
   highlightOf,
   impactTypeFor,
+  affectedAudienceFor,
   subsystemPatterns,
   broadSubsystems,
 };

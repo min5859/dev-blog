@@ -26,7 +26,7 @@
   "summary": "...",
   "tags": ["리눅스", "커널", "주간"],
   "highlights": [
-    { "title": "...", "priority": "상", "impactType": "release", "verifyLink": "https://...", "action": "..." }
+    { "title": "...", "priority": "상", "impactType": "release", "affectedAudience": "주간 브리핑 독자", "verifyLink": "https://...", "action": "..." }
   ],
   "sections": [
     { "heading": "이번 주 릴리스", "body": "..." },

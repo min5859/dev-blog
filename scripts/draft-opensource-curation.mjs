@@ -95,6 +95,7 @@ function highlightOf(record) {
     title: record.metadata?.fullName || record.title,
     priority: priorityFor(record),
     impactType: 'project',
+    affectedAudience: record.metadata?.language ? `${record.metadata.language} 도입 검토자` : '오픈소스 도입 검토자',
     verifyLink: record.url || '없음',
     action: actionFor(record),
   };

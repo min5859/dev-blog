@@ -3,11 +3,12 @@ import assert from 'node:assert/strict';
 
 import { IMPACT_TYPE_VALUES, PRIORITY_VALUES, hasFlatAction, hasStructuredAction, validateHighlight, validateHighlights } from './lib/highlight-schema.mjs';
 
-const baseFlat = { title: 'X', priority: '상', impactType: 'runtime', verifyLink: 'https://x', action: '본문 확인' };
+const baseFlat = { title: 'X', priority: '상', impactType: 'runtime', affectedAudience: '런타임 담당자', verifyLink: 'https://x', action: '본문 확인' };
 const baseStructured = {
   title: 'Y',
   priority: '중',
   impactType: 'api-abi',
+  affectedAudience: 'ABI 담당자',
   verifyLink: 'https://y',
   if: '독자가 …이라면',
   do: '…해 보세요',
@@ -34,7 +35,7 @@ test('if/do/verify 형식은 통과', () => {
 });
 
 test('action도 if/do/verify도 없으면 throw', () => {
-  const broken = { title: 'Z', priority: '상', impactType: 'runtime', verifyLink: 'https://z' };
+  const broken = { title: 'Z', priority: '상', impactType: 'runtime', affectedAudience: '런타임 담당자', verifyLink: 'https://z' };
   assert.throws(() => validateHighlight(broken, 2), /requires either action or all of if\/do\/verify/);
 });
 
@@ -66,7 +67,7 @@ test('ctx가 주어지면 에러 메시지에 prefix가 붙는다', () => {
 });
 
 test('if/do/verify 일부만 있으면 throw (셋 다 필요)', () => {
-  const partial = { title: 'P', priority: '상', impactType: 'runtime', verifyLink: 'https://p', if: '…', do: '…' };
+  const partial = { title: 'P', priority: '상', impactType: 'runtime', affectedAudience: '런타임 담당자', verifyLink: 'https://p', if: '…', do: '…' };
   assert.throws(() => validateHighlight(partial, 0), /requires either action or all of if\/do\/verify/);
 });
 

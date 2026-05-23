@@ -38,7 +38,7 @@ export function validateHighlight(highlight, index, ctx = '') {
   if (!highlight || typeof highlight !== 'object') {
     throw new Error(`${where} must be an object`);
   }
-  for (const key of ['title', 'priority', 'verifyLink', 'impactType']) {
+  for (const key of ['title', 'priority', 'verifyLink', 'impactType', 'affectedAudience']) {
     if (typeof highlight[key] !== 'string' || !highlight[key]) {
       throw new Error(`${where}.${key} required`);
     }

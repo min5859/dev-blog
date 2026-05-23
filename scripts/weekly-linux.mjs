@@ -174,6 +174,7 @@ function templateWeekly(dailies, meta) {
       title: h.title,
       priority: PRIORITY_VALUES.has(h.priority) ? h.priority : '중',
       impactType: h.impactType || 'release',
+      affectedAudience: h.affectedAudience || h.if || '주간 브리핑 독자',
       verifyLink: h.verifyLink || '없음',
     };
     const hasStructured = ['if', 'do', 'verify'].every((k) => typeof h[k] === 'string' && h[k]);

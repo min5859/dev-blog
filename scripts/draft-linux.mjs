@@ -539,6 +539,21 @@ function actionFor(record) {
   return '스레드의 후속 응답을 모니터링해 실제 설계 논의인지 단순 응답인지 분류하세요.';
 }
 
+function affectedAudienceFor(record) {
+  if (record.sourceId === 'kernel-org-releases') {
+    const moniker = record.metadata?.moniker;
+    if (moniker === 'stable') return 'stable 커널 배포 담당자';
+    if (moniker === 'longterm') return 'longterm 커널 유지보수 담당자';
+    if (moniker === 'mainline') return 'mainline 추적 커널 개발자';
+    if (moniker === 'linux-next') return 'linux-next 통합 테스트 담당자';
+    return '커널 릴리스 추적 담당자';
+  }
+  if (isRegressionSignal(record)) return '회귀 영향 가능 서브시스템 담당자';
+  const subsystems = broadSubsystemsOf(record);
+  if (subsystems.length) return `${subsystems.join(', ')} 담당 개발자`;
+  return '관련 커널 서브시스템 담당자';
+}
+
 function impactTypeFor(record) {
   const text = `${record.title || ''}\n${record.commitMessage || ''}`.toLowerCase();
   if (record.sourceId === 'kernel-org-releases') {
@@ -559,6 +574,7 @@ function highlightOf(record) {
     title: stripPatchPrefix(record.title),
     priority: priorityFor(record),
     impactType: impactTypeFor(record),
+    affectedAudience: affectedAudienceFor(record),
     verifyLink: verifyLinkFor(record),
     action: actionFor(record),
   };
@@ -736,5 +752,6 @@ export {
   pickCandidates,
   highlightOf,
   impactTypeFor,
+  affectedAudienceFor,
   subsystemPatterns,
 };
