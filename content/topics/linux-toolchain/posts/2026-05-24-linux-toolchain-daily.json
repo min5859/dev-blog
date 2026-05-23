@@ -1,0 +1,137 @@
+{
+  "id": "2026-05-24-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-05-24 정적 점검 확대 — 커널 도구체인·Rust",
+  "headline": "Kconfig와 장치 트리 예제를 빌드 단계에서 더 엄격히 걸러내는 제안이 나왔습니다.",
+  "date": "2026-05-24",
+  "summary": "오늘 이 렌즈의 핵심은 Kconfig 미정의 심볼과 장치 트리 예제 스타일을 정적 도구로 잡으려는 kbuild 쪽 흐름입니다. Rust 쪽에서는 Binder의 불필요한 동기화 비용을 줄이는 제안과 컴파일 시점 단언 정리가 함께 올라왔습니다.",
+  "tags": [
+    "도구체인",
+    "LLVM",
+    "kbuild",
+    "Rust"
+  ],
+  "highlights": [
+    {
+      "title": "Kconfig 미정의 심볼을 빌드 타깃으로 검사",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "Kconfig와 서브시스템 빌드 규칙 담당자",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20260521204435.534773-1-andrew.jones@linux.dev/",
+      "if": "Kconfig 선택식과 의존식을 자주 고친다면 우선 대상으로 보세요",
+      "do": "새 make 타깃이 자기 트리의 미정의 심볼을 에러로 만드는지 확인하세요",
+      "verify": "스레드의 제외 파일 형식과 종료 코드를 로컬 빌드 로그와 대조하세요"
+    },
+    {
+      "title": "장치 트리 예제 스타일 검사 자동화",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "장치 트리 바인딩과 kbuild 검증 담당자",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/cover.1779472837.git.daniel@makrotopia.org/",
+      "if": "바인딩 예제나 장치 트리 소스를 리뷰한다면 우선 읽어 보세요",
+      "do": "완화 모드와 엄격 모드가 기존 검증 흐름에 들어가는 위치를 확인하세요",
+      "verify": "dt_binding_check_one 연결 방식과 규칙 목록을 패치 본문에서 대조하세요"
+    },
+    {
+      "title": "Rust Binder의 스레드 해제 동기화 비용 축소",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "Rust Binder와 안드로이드 커널 성능 담당자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260523-upgrade-poll-v4-0-f5b4c747eac2@google.com/",
+      "if": "Rust Binder에서 epoll 사용 경로를 검증한다면 우선 보세요",
+      "do": "별도 할당과 지연 해제 전략이 수명 규칙을 깨지 않는지 확인하세요",
+      "verify": "v4 스레드에서 synchronize_rcu 제거 범위를 코드 차이로 대조하세요"
+    },
+    {
+      "title": "Rust 단언 매크로를 더 이른 컴파일 단계로 이동",
+      "priority": "하",
+      "impactType": "build",
+      "affectedAudience": "Rust-for-Linux 바인딩과 린트 담당자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260523122759.30317-1-mo@sdhn.cc/",
+      "if": "타입 매개변수 기반 단언을 다루는 Rust 코드를 고친다면 참고하세요",
+      "do": "build_assert에서 const_assert로 바뀌는 조건이 런타임 값과 무관한지 확인하세요",
+      "verify": "klint 제안 링크와 패치의 무기능 변경 설명을 함께 대조하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이 렌즈는 lore 메일링 리스트 중심입니다. 오늘 입력에는 kernel.org 릴리스 항목이 없으므로 mainline, stable, longterm 릴리스 요약은 포함하지 않습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- drm/msm 성능 카운터 설정 ioctl\n· 영향: 전역 카운터 수집은 perfmon_capable 권한으로 제한하고, 로컬 카운터 예약은 명령 스트림 범위로 허용하는 새 사용자 공간 인터페이스입니다. v9 변경에는 사용자 복사 경로의 스택 손상과 누출, fifo 크기 넘침, 에러 경로 누출 같은 보안성 수정이 포함되어 있습니다.\n· 확인: Adreno 성능 카운터 사용자 공간 도구나 Mesa 쪽 병합 요청을 따라가는 개발자라면 PERFCNTR_CONFIG 권한 경계와 중복 그룹 차단 규칙을 스레드 및 연결된 Mesa 병합 요청에서 대조하세요.\n\n- OMAP4 저전력 진입 경로의 CFI 타입 메타데이터 보강\n· 영향: CONFIG_CFI 사용 시 어셈블리 루틴에 기대 타입 메타데이터가 없어 저전력 진입에서 트랩될 수 있는 경로를 SYM_TYPED_FUNC_START로 보강하는 단일 아키텍처 수정입니다.\n· 확인: ARM OMAP4와 CFI 조합을 유지하는 트리라면 omap_pm_ops.finish_suspend가 가리키는 어셈블리 심볼의 타입 주석을 패치와 자기 브랜치에서 대조하세요."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "- Kconfig 미정의 심볼 정적 검사기\n· 영향: select, depends on, default 같은 표현식에서 참조되지만 config 또는 menuconfig로 정의되지 않은 심볼을 make kconfig-sym-check로 찾고, 새 dangling 심볼은 제외 파일에 없으면 실패로 처리하는 제안입니다. 대문자 N, Y, M을 tristate 값처럼 쓰는 경우도 경고합니다.\n· 확인: 대규모 서브시스템 Kconfig를 유지한다면 KCONFIG_SYM_CHECK_EXCLUDES 형식, 종료 코드, 기존 버그 보고 링크를 읽고 자기 트리의 허용 목록 운용 방식과 맞는지 검증하세요.\n\n- 장치 트리 스타일 검사 자동화\n· 영향: YAML 바인딩 예제와 .dts, .dtsi, .dtso 파일을 대상으로 scripts/dtc/dt-check-style을 추가하고, 현재 트리에 경고를 만들지 않는 완화 모드와 새 제출물용 엄격 모드를 나눕니다. 후속으로 checkpatch.pl과 연결될 수 있는 구조입니다.\n· 확인: 장치 트리 바인딩 리뷰를 맡는다면 dt_binding_check_one 실행 경로, 병렬 처리 옵션, 완화 모드 규칙이 기존 CI 시간을 얼마나 바꾸는지 로컬 make dt_binding_check에서 확인하세요.\n\n- Rust Binder의 RCU 동기화 축소\n· 영향: 대부분의 프로세스가 epoll을 쓰지 않는다는 전제에서, RCU가 필요한 값을 별도 할당으로 분리하고 epoll 사용 시에만 업그레이드해 매 스레드 해제마다 synchronize_rcu를 호출하지 않도록 하는 성능 개선 제안입니다.\n· 확인: Rust Binder를 평가하는 안드로이드 커널 개발자라면 epoll 사용 프로세스와 미사용 프로세스의 수명 관리 차이를 v4 패치와 자기 테스트 시나리오에서 대조하세요.\n\n- Rust 컴파일 시점 단언 정리\n· 영향: 타입 매개변수나 const generic에만 의존하는 단언을 build_assert! 대신 const_assert!로 바꿔 더 이른 컴파일 단계에서 실패하도록 정리합니다. 기능 변화는 의도하지 않은 패치입니다.\n· 확인: Rust 바인딩에서 컴파일 시점 검사를 추가하는 개발자라면 commit 560a7a9b9 이후 const_assert! 사용 가능 범위와 klint 제안이 자기 코드 스타일에 맞는지 확인하세요."
+    },
+    {
+      "heading": "기타",
+      "body": "- drm/msm 성능 카운터 ioctl은 보안성 수정이 포함되어 있지만 GPU 드라이버 사용자 공간 인터페이스 성격이 강하므로 도구체인 렌즈에서는 보조 신호로 다뤘습니다.\n· 영향: Mesa, IGT, Adreno 성능 분석 도구와 맞물리는 인터페이스 변경입니다.\n· 확인: 해당 드라이버를 직접 다루는 팀이라면 링크된 wiki, Mesa 병합 요청, IGT 테스트 브랜치를 함께 읽고 권한 분리와 카운터 예약 충돌 규칙을 확인하세요.\n\n- OMAP4 CFI 타입 주석은 LLVM과 KCFI 관점에서는 의미가 있지만 단일 플랫폼 수정입니다.\n· 영향: CFI 사용 시 저전력 진입 트랩을 피하는 런타임 안정성 보강입니다.\n· 확인: OMAP4가 제품 또는 검증 범위에 있을 때만 해당 패치를 자기 설정의 CONFIG_CFI 재현 로그와 대조하세요."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "AI가 원문 후보와 메타데이터를 요약했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/msm: Add PERFCNTR_CONFIG ioctl",
+      "url": "https://lore.kernel.org/llvm/20260522173349.55491-1-robin.clark@oss.qualcomm.com/",
+      "note": "lore.kernel.org/llvm · patch-discussion"
+    },
+    {
+      "title": "rust: replace `build_assert!` with `const_assert!`",
+      "url": "https://lore.kernel.org/rust-for-linux/20260523122759.30317-1-mo@sdhn.cc/",
+      "note": "lore.kernel.org/rust-for-linux · patch-discussion"
+    },
+    {
+      "title": "Avoid synchronize_rcu() for every thread drop in Rust Binder",
+      "url": "https://lore.kernel.org/rust-for-linux/20260523-upgrade-poll-v4-0-f5b4c747eac2@google.com/",
+      "note": "lore.kernel.org/rust-for-linux · patch-discussion"
+    },
+    {
+      "title": "ARM: OMAP2+: Add CFI type for omap4_finish_suspend",
+      "url": "https://lore.kernel.org/llvm/20260522233036.12277-1-bavishimithil@gmail.com/",
+      "note": "lore.kernel.org/llvm · patch-discussion"
+    },
+    {
+      "title": "dt-bindings: automated coding style check for DTS examples",
+      "url": "https://lore.kernel.org/linux-kbuild/cover.1779472837.git.daniel@makrotopia.org/",
+      "note": "lore.kernel.org/linux-kbuild · patch-discussion"
+    },
+    {
+      "title": "kconfig: add kconfig-sym-check static checker",
+      "url": "https://lore.kernel.org/linux-kbuild/20260521204435.534773-1-andrew.jones@linux.dev/",
+      "note": "lore.kernel.org/linux-kbuild · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-23T22:09:46.080Z",
+    "sourceRecordCount": 75,
+    "candidateCount": 6,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "lore-llvm:urn:uuid:f0e80875-e358-e214-1ec2-75b2e17a68c6",
+      "lore-rust-for-linux:urn:uuid:1295f8ff-1724-5b70-de01-65ed1f0ace0e",
+      "lore-rust-for-linux:urn:uuid:7b37b6de-79e0-1ca7-0cc2-c739cad9d373",
+      "lore-llvm:urn:uuid:ab9fd2f2-dc98-e9bf-b41a-8a10d4eee654",
+      "lore-linux-kbuild:urn:uuid:ebfa923a-4e3d-1165-64e9-5ad9d3b3e478",
+      "lore-linux-kbuild:urn:uuid:29b16db6-2719-2051-19af-bac06380131b"
+    ],
+    "bucketCounts": {
+      "releases": 0,
+      "regressions": 0,
+      "patches": 6,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 6,
+    "signalLevel": "high",
+    "subsystems": [],
+    "lensPipeline": "linux-toolchain",
+    "rewrittenAt": "2026-05-23T22:09:52.073Z",
+    "rewriteAdapter": "codex",
+    "promptTemplate": "prompts/linux-lens-newsletter-ko.md"
+  }
+}
