@@ -30,7 +30,8 @@ export function resolveAiAdapter(defaultValue = DEFAULT_AI_ADAPTER) {
 
 function runClaudeStdin(prompt) {
   const command = process.env.CLAUDE_BIN || 'claude';
-  const args = (process.env.CLAUDE_ARGS || '-p').split(/\s+/).filter(Boolean);
+  const model = process.env.CLAUDE_MODEL || 'sonnet';
+  const args = (process.env.CLAUDE_ARGS || `-p --model ${model} --output-format text`).split(/\s+/).filter(Boolean);
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'] });
     let stdout = '';
