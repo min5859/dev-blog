@@ -1,0 +1,141 @@
+{
+  "id": "2026-05-25-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-05-25 전원관리 대기 수정 — 관측성·실시간(eBPF·RT)",
+  "headline": "실시간 커널에서 전원관리 대기와 참조 계수 경합을 줄이는 수정이 이어졌습니다.",
+  "date": "2026-05-25",
+  "summary": "오늘 이 렌즈의 핵심은 PREEMPT_RT에서 전원관리 completion 사용과 L2TP 참조 계수 경합을 바로잡는 회귀성 수정입니다. BPF 쪽에서는 arena kfunc 문서화와 중복 kfunc 등록 거부처럼 개발자 계약을 더 명확히 하는 변화가 보입니다.",
+  "tags": [
+    "eBPF",
+    "verifier",
+    "tracing",
+    "PREEMPT_RT",
+    "실시간"
+  ],
+  "highlights": [
+    {
+      "title": "전원관리 초기화에서 실시간 커널 경고와 대기 정지를 함께 피하도록 completion 사용 계약을 조정합니다.",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "PREEMPT_RT 전원관리 검증 담당자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260523022314.2657232-1-xujiakai24@mails.ucas.ac.cn/",
+      "if": "실시간 커널에서 장치 초기화를 검증하는지 확인하세요.",
+      "do": "complete_all 변경과 no_pm 조기 반환을 함께 검토하세요.",
+      "verify": "스레드 원문과 자기 suspend 경로의 dpm_wait 호출을 대조하세요."
+    },
+    {
+      "title": "L2TP ifname 조회가 해제 중인 세션 참조를 다시 올릴 수 있는 경합을 막습니다.",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "PREEMPT_RT 네트워크 경합 분석 담당자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260523023423.2568972-1-michael.bommarito@gmail.com/",
+      "if": "L2TP 세션 조회를 쓰는 실시간 네트워크라면 확인하세요.",
+      "do": "ifname getter가 refcount_inc_not_zero로 맞춰졌는지 확인하세요.",
+      "verify": "net/l2tp의 다른 getter 패턴과 패치 diff를 대조하세요."
+    },
+    {
+      "title": "lockdep selftest가 PREEMPT_RT 전용 태스크 상태를 복원해 후속 테스트 오염을 줄입니다.",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "lockdep와 PREEMPT_RT 테스트 담당자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260523185123.17482-1-kmehltretter@gmail.com/",
+      "if": "PREEMPT_RT lockdep selftest를 돌리는지 확인하세요.",
+      "do": "migration_disabled와 sched_rt_mutex 복원 지점을 확인하세요.",
+      "verify": "CONFIG_SMP 양쪽 QEMU 부팅 로그에서 경고 재현 여부를 확인하세요."
+    },
+    {
+      "title": "BPF arena page kfunc의 인자 범위와 sleepable 문맥, 오류 반환 계약을 문서로 노출합니다.",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "BPF kfunc와 arena 사용자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260524114243.259916-1-find.dhiraj@gmail.com/",
+      "if": "BPF arena page kfunc를 호출한다면 확인하세요.",
+      "do": "문서화된 인자 범위와 오류 반환을 호출부와 맞추세요.",
+      "verify": "Documentation/bpf/kfuncs.rst 추가 절과 arena.c를 대조하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "- 리스트 중심 관측성·실시간 렌즈\n  · 영향: 오늘 입력에는 kernel.org 릴리스 항목이 없고, bpf 및 linux-rt-devel 스레드의 패치 신호만 포함되어 있습니다.\n  · 확인: 릴리스 흐름은 별도 리눅스 개발 브리핑에서 확인하세요."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- 전원관리 sleep 초기화의 completion 사용 변경\n  · 영향: PREEMPT_RT에서 atomic 문맥의 complete_all 경고를 피하려는 수정이지만, no_pm 장치가 suspend 단계 사이에서 completion 토큰을 소모해 대기 정지로 이어질 수 있어 dpm_wait 조기 반환을 함께 넣습니다.\n  · 확인: https://lore.kernel.org/linux-rt-devel/20260523022314.2657232-1-xujiakai24@mails.ucas.ac.cn/\n\n- L2TP ifname 기반 세션 조회의 참조 계수 경합\n  · 영향: PREEMPT_RT에서는 local_bh_disable 아래에서도 선점 창이 현실적이므로, refcount가 이미 0이 된 세션을 되살리는 경로를 refcount_inc_not_zero로 막습니다.\n  · 확인: https://lore.kernel.org/linux-rt-devel/20260523023423.2568972-1-michael.bommarito@gmail.com/\n\n- memcg isolated CPU의 cached charge 플러시 상태 고착\n  · 영향: isolated CPU에 drain work를 넣지 못한 뒤 FLUSHING_CACHED_CHARGE 비트가 남아 이후 drain_all_stock 재시도가 건너뛰어지는 문제를, work 미큐잉 시 비트를 지우는 방식으로 최소 수정합니다.\n  · 확인: https://lore.kernel.org/linux-rt-devel/20260522071601.21065-1-hui.zhu@linux.dev/"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "- BPF arena page kfunc 문서화\n  · 영향: bpf_arena_alloc_pages, bpf_arena_free_pages, bpf_arena_reserve_pages의 유효 인자 범위, sleepable 전용 문맥, 오류 반환이 문서화되어 BPF kfunc ABI의 사용 계약을 코드 밖에서도 확인할 수 있게 됩니다.\n  · 확인: https://lore.kernel.org/bpf/20260524114243.259916-1-find.dhiraj@gmail.com/\n\n- lockdep selftest의 PREEMPT_RT 상태 복원\n  · 영향: 깨진 락 패턴을 일부러 실행하는 selftest 뒤에 migration_disabled와 sched_rt_mutex 상태가 남아 다음 테스트에서 경고나 panic으로 번지는 문제를 dotest cleanup 경로에서 복구합니다.\n  · 확인: https://lore.kernel.org/linux-rt-devel/20260523185123.17482-1-kmehltretter@gmail.com/\n\n- BPF kfunc 중복 등록 거부\n  · 영향: 모듈 kfunc 이름이 이미 vmlinux나 다른 모듈에 등록된 kfunc와 겹칠 때, libbpf 실행 시점의 불명확한 타입 불일치 대신 등록 단계에서 더 직접적인 오류를 내도록 합니다.\n  · 확인: https://lore.kernel.org/bpf/20260524082944.10625-1-chensong_2000@126.com/"
+    },
+    {
+      "heading": "기타",
+      "body": "- 국부 드라이버보다 RT와 BPF 계약 변화 위주로 선별\n  · 영향: 오늘 후보는 모두 리스트 렌즈와 직접 관련된 BPF kfunc, PREEMPT_RT selftest, 전원관리 대기, 네트워크 참조 계수, memcg isolated CPU 경합 신호입니다.\n  · 확인: 각 항목의 lore 링크에서 후속 리뷰와 maintainer 응답을 확인하세요."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "AI가 원문 후보와 메타데이터를 요약했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "bpf: Add kernel-doc for arena page kfuncs",
+      "url": "https://lore.kernel.org/bpf/20260524114243.259916-1-find.dhiraj@gmail.com/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "lockdep/selftests: Restore PREEMPT_RT task state",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260523185123.17482-1-kmehltretter@gmail.com/",
+      "note": "lore.kernel.org/linux-rt-devel · patch-discussion"
+    },
+    {
+      "title": "kernel/bpf/btf.c: reject to register duplicated kfunc",
+      "url": "https://lore.kernel.org/bpf/20260524082944.10625-1-chensong_2000@126.com/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "PM: sleep: Use complete() in device_pm_sleep_init() and skip no_pm devices in dpm_wait()",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260523022314.2657232-1-xujiakai24@mails.ucas.ac.cn/",
+      "note": "lore.kernel.org/linux-rt-devel · patch-discussion"
+    },
+    {
+      "title": "l2tp: use refcount_inc_not_zero in l2tp_session_get_by_ifname",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260523023423.2568972-1-michael.bommarito@gmail.com/",
+      "note": "lore.kernel.org/linux-rt-devel · patch-discussion"
+    },
+    {
+      "title": "mm/memcontrol: Avoid stuck FLUSHING_CACHED_CHARGE on isolated CPU",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260522071601.21065-1-hui.zhu@linux.dev/",
+      "note": "lore.kernel.org/linux-rt-devel · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-24T18:13:29.695Z",
+    "sourceRecordCount": 50,
+    "candidateCount": 6,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "lore-bpf:urn:uuid:94088c47-136a-5209-ea38-3b621d229f8a",
+      "lore-linux-rt-devel:urn:uuid:6d9787f5-4d36-369c-91d3-5e2b1cb853a6",
+      "lore-bpf:urn:uuid:a59e6fc2-dce8-e30e-f30a-85de8133f1b2",
+      "lore-linux-rt-devel:urn:uuid:6db02dc2-3df4-e914-7dfc-b99746317180",
+      "lore-linux-rt-devel:urn:uuid:a941182d-3f80-2eb5-fb9e-224d33c070a9",
+      "lore-linux-rt-devel:urn:uuid:7f463565-d088-679e-1cce-5f7ba83c9d3c"
+    ],
+    "bucketCounts": {
+      "releases": 0,
+      "regressions": 3,
+      "patches": 3,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 6,
+    "signalLevel": "high",
+    "subsystems": [
+      "메모리 관리",
+      "스케줄러/실시간"
+    ],
+    "lensPipeline": "linux-perf-rt",
+    "rewrittenAt": "2026-05-24T18:13:38.296Z",
+    "rewriteAdapter": "codex",
+    "promptTemplate": "prompts/linux-lens-newsletter-ko.md"
+  }
+}

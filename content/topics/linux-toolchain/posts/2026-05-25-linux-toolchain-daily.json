@@ -1,0 +1,139 @@
+{
+  "id": "2026-05-25-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-05-25 러스트 블록 정리 수정 — 커널 도구체인·Rust",
+  "date": "2026-05-25",
+  "headline": "러스트 블록 실패 경로와 커널 설정 진단이 빌드 계약을 더 엄격하게 만듭니다.",
+  "summary": "오늘의 핵심은 Rust 블록 장치 생성 실패 경로에서 임시 디스크와 큐 데이터를 먼저 정리하도록 고치는 회귀성 수정입니다. 그 다음 신호는 Kconfig 미정의 심볼 검사와 입력값 변경 경고처럼 설정 계약을 자동화하려는 kbuild 쪽 변화입니다.",
+  "tags": [
+    "도구체인",
+    "LLVM",
+    "kbuild",
+    "Rust"
+  ],
+  "highlights": [
+    {
+      "title": "Rust 블록 장치 생성 실패 시 임시 디스크 정리 순서 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Rust 블록 계층과 스토리지 드라이버 담당자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/b6411cc055080c984a67bfad72fd683aa84b8e13.1779596478.git.royenheart@gmail.com/",
+      "if": "Rust 블록 큐를 쓰는 드라이버라면 확인하세요",
+      "do": "생성 실패 경로의 디스크와 큐 정리 순서를 대조하세요",
+      "verify": "원문 패치의 Fixes 줄과 실패 반환 경로 diff를 확인하세요"
+    },
+    {
+      "title": "Kconfig 참조 심볼의 미정의 상태를 정적 검사로 잡는 명령 추가",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "Kconfig와 서브시스템 설정 유지보수자",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20260521204435.534773-1-andrew.jones@linux.dev/",
+      "if": "새 Kconfig 심볼을 추가하는 트리라면 확인하세요",
+      "do": "미정의 참조가 오류로 바뀌는 검사 흐름을 읽어 두세요",
+      "verify": "스레드의 make kconfig-sym-check 사용 예와 제외 파일 형식을 확인하세요"
+    },
+    {
+      "title": "Kconfig 입력값이 의존성이나 범위로 바뀔 때 선택 경고 추가",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "커널 설정 도구와 배포판 설정 담당자",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20260521022824.38591-1-pengpeng@iscas.ac.cn/",
+      "if": "자동 설정 생성이나 defconfig를 관리한다면 확인하세요",
+      "do": "새 환경 변수로 경고가 켜지는 조건을 검토하세요",
+      "verify": "원문에서 olddefconfig와 savedefconfig 테스트 설명을 확인하세요"
+    },
+    {
+      "title": "DTS 예제와 소스 스타일 검사를 빌드 도구로 자동화",
+      "priority": "하",
+      "impactType": "build",
+      "affectedAudience": "디바이스 트리 바인딩 작성자와 리뷰어",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/cover.1779472837.git.daniel@makrotopia.org/",
+      "if": "바인딩 예제나 DTS 파일을 자주 리뷰한다면 확인하세요",
+      "do": "완화 모드와 엄격 모드가 경고 정책을 어떻게 나누는지 보세요",
+      "verify": "커버레터의 dt_binding_check_one 연결과 strict 규칙 목록을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이 렌즈는 lore.kernel.org의 rust-for-linux와 linux-kbuild 리스트 중심입니다. 오늘 입력에는 kernel.org 릴리스 항목이 없어 릴리스 후보나 안정판 백포트 요약은 추가하지 않습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- Rust 블록 장치 생성 실패 정리 경로 수정\n  · 영향: GenDiskBuilder::build()가 __blk_mq_alloc_disk() 이후 실패할 때 임시 gendisk와 큐 데이터가 늦게 정리되던 경로를 먼저 해제하도록 바꾸는 회귀성 수정입니다.\n  · 확인: https://lore.kernel.org/rust-for-linux/b6411cc055080c984a67bfad72fd683aa84b8e13.1779596478.git.royenheart@gmail.com/"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "- Kconfig 미정의 심볼 정적 검사 추가\n  · 영향: select, depends on, default 같은 표현식에서 참조하지만 config나 menuconfig로 정의하지 않은 심볼을 찾아 새 미정의 참조를 오류로 만들고, 필요한 경우 제외 파일로 관리하는 빌드 계약을 제안합니다.\n  · 확인: https://lore.kernel.org/linux-kbuild/20260521204435.534773-1-andrew.jones@linux.dev/\n- Kconfig 입력값 변경 경고 선택 기능\n  · 영향: 사용자가 넣은 .config 값이 의존성이나 범위 처리 뒤 다른 최종값으로 바뀌는 경우를 KCONFIG_WARN_CHANGED_INPUT으로 드러내며, 기본 동작은 유지합니다.\n  · 확인: https://lore.kernel.org/linux-kbuild/20260521022824.38591-1-pengpeng@iscas.ac.cn/\n- DTS 스타일 검사 도구 제안\n  · 영향: YAML 바인딩 예제와 DTS 계열 파일의 공백, 들여쓰기, 속성 순서, 줄 길이 같은 리뷰 반복 항목을 스크립트와 규칙 레지스트리로 옮기려는 kbuild 성격의 변화입니다.\n  · 확인: https://lore.kernel.org/linux-kbuild/cover.1779472837.git.daniel@makrotopia.org/\n- Rust build_assert를 const_assert로 교체\n  · 영향: 타입 매개변수나 const generic만 의존하는 Rust 어설션을 더 이른 컴파일 단계에서 잡을 수 있는 const_assert로 옮기며, 기능 변화는 의도하지 않았다고 설명합니다.\n  · 확인: https://lore.kernel.org/rust-for-linux/20260523122759.30317-1-mo@sdhn.cc/"
+    },
+    {
+      "heading": "기타",
+      "body": "- Rust Binder의 불필요한 synchronize_rcu() 호출 줄이기 제안\n  · 영향: epoll을 쓰지 않는 대부분의 프로세스에서 RCU 동기화를 피하도록 별도 할당과 kfree_rcu() 기반 업그레이드 전략을 제안한 성능 성격의 Rust Binder 논의입니다.\n  · 확인: https://lore.kernel.org/rust-for-linux/20260523-upgrade-poll-v4-0-f5b4c747eac2@google.com/"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "AI가 원문 후보와 메타데이터를 요약했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "rust: block: fix GenDiskBuilder failure cleanup",
+      "url": "https://lore.kernel.org/rust-for-linux/b6411cc055080c984a67bfad72fd683aa84b8e13.1779596478.git.royenheart@gmail.com/",
+      "note": "lore.kernel.org/rust-for-linux · patch-discussion"
+    },
+    {
+      "title": "rust: replace `build_assert!` with `const_assert!`",
+      "url": "https://lore.kernel.org/rust-for-linux/20260523122759.30317-1-mo@sdhn.cc/",
+      "note": "lore.kernel.org/rust-for-linux · patch-discussion"
+    },
+    {
+      "title": "Avoid synchronize_rcu() for every thread drop in Rust Binder",
+      "url": "https://lore.kernel.org/rust-for-linux/20260523-upgrade-poll-v4-0-f5b4c747eac2@google.com/",
+      "note": "lore.kernel.org/rust-for-linux · patch-discussion"
+    },
+    {
+      "title": "dt-bindings: automated coding style check for DTS examples",
+      "url": "https://lore.kernel.org/linux-kbuild/cover.1779472837.git.daniel@makrotopia.org/",
+      "note": "lore.kernel.org/linux-kbuild · patch-discussion"
+    },
+    {
+      "title": "kconfig: add kconfig-sym-check static checker",
+      "url": "https://lore.kernel.org/linux-kbuild/20260521204435.534773-1-andrew.jones@linux.dev/",
+      "note": "lore.kernel.org/linux-kbuild · patch-discussion"
+    },
+    {
+      "title": "kconfig: add optional warnings for changed input values",
+      "url": "https://lore.kernel.org/linux-kbuild/20260521022824.38591-1-pengpeng@iscas.ac.cn/",
+      "note": "lore.kernel.org/linux-kbuild · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-24T18:11:09.038Z",
+    "sourceRecordCount": 75,
+    "candidateCount": 6,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "lore-rust-for-linux:urn:uuid:b7672085-4bad-4318-b7a0-0ac57097385d",
+      "lore-rust-for-linux:urn:uuid:1295f8ff-1724-5b70-de01-65ed1f0ace0e",
+      "lore-rust-for-linux:urn:uuid:7b37b6de-79e0-1ca7-0cc2-c739cad9d373",
+      "lore-linux-kbuild:urn:uuid:ebfa923a-4e3d-1165-64e9-5ad9d3b3e478",
+      "lore-linux-kbuild:urn:uuid:29b16db6-2719-2051-19af-bac06380131b",
+      "lore-linux-kbuild:urn:uuid:b6bd7c28-e320-028d-3325-62b04df711da"
+    ],
+    "bucketCounts": {
+      "releases": 0,
+      "regressions": 1,
+      "patches": 5,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 6,
+    "signalLevel": "high",
+    "subsystems": [
+      "스토리지/파일시스템"
+    ],
+    "lensPipeline": "linux-toolchain",
+    "rewrittenAt": "2026-05-24T18:11:16.877Z",
+    "rewriteAdapter": "codex",
+    "promptTemplate": "prompts/linux-lens-newsletter-ko.md"
+  }
+}
