@@ -1,0 +1,148 @@
+{
+  "id": "2026-05-26-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-05-26 해제 경로 패닉 방지 — 관측성·실시간(eBPF·RT)",
+  "date": "2026-05-26",
+  "headline": "MANA 해제 경로와 BPF 오프로딩 되돌림, RT 블록 완료 경로가 함께 논의됐습니다.",
+  "summary": "오늘은 MANA 드라이버의 attach 실패 뒤 teardown 패닉 방지와 BPF 오프로딩 rollback 재귀 차단이 회귀 신호의 중심입니다. PREEMPT_RT 관점에서는 block bio 완료를 task context로 미루는 새 인프라의 locking 계약을 원문 기준으로 따라봐야 합니다.",
+  "tags": [
+    "eBPF",
+    "verifier",
+    "tracing",
+    "PREEMPT_RT",
+    "실시간"
+  ],
+  "highlights": [
+    {
+      "title": "MANA attach 실패 뒤 teardown 경로에 NULL guard 추가",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Azure MANA 네트워크 드라이버 담당자",
+      "verifyLink": "https://lore.kernel.org/bpf/ahQBzTUrhzvsy22C@linuxonhyperv3.guj3yctzbm1etfxqx2vob5hsef.xx.internal.cloudapp.net/",
+      "if": "MANA 기반 Azure NIC 경로가 있다면 이 항목을 우선 확인하세요",
+      "do": "부분 attach 실패 뒤 detach와 queue 해제 순서를 코드에서 추적하세요",
+      "verify": "링크의 v3 diff와 fixes tag 검증 로그를 자기 트리와 대조하세요"
+    },
+    {
+      "title": "cls_bpf offload rollback 재귀 차단 방향에 maintainer 의견 추가",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "BPF tc offload 및 net scheduler 담당자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260525110303.4121f19b@kernel.org/",
+      "if": "tc BPF offload 실패 복구 경로를 다룬다면 이 스레드를 확인하세요",
+      "do": "rollback 플래그가 error path 전체가 아니라 재호출만 막는지 확인하세요",
+      "verify": "Jakub Kicinski 의견과 -next 반영 전 diff 흐름을 대조하세요"
+    },
+    {
+      "title": "block bio 완료를 task context로 미루는 새 경로의 RT locking 논의",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "PREEMPT_RT 및 block layer 담당자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/ahPdDtu3vXfNpb__@infradead.org/",
+      "if": "BIO 완료를 atomic context에서 다루는 블록 경로라면 확인하세요",
+      "do": "BIO_COMPLETE_IN_TASK와 local_lock 사용 조건을 코드에서 추적하세요",
+      "verify": "Christoph Hellwig 답변과 RT maintainer 질문 지점을 대조하세요"
+    },
+    {
+      "title": "BPF LWT UDP tunnel encapsulation에서 transport header 갱신",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "BPF LWT 및 NIC checksum offload 담당자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260525142650.2569-2-leon.hwang@linux.dev/",
+      "if": "BPF LWT encap과 NIC checksum offload를 함께 쓴다면 확인하세요",
+      "do": "UDP encapsulation 뒤 skb transport header 갱신 여부를 검증하세요",
+      "verify": "링크의 fixes 대상과 드라이버 offload 재현 조건을 대조하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이 렌즈는 lore.kernel.org의 bpf 및 linux-rt-devel 리스트 중심입니다. 오늘 입력에는 kernel.org 릴리스 항목이 없으므로 mainline RC, stable, longterm 릴리스 요약은 포함하지 않습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- MANA attach 실패 뒤 teardown 경로의 NULL 역참조 방지\n  · 영향: queue allocation 중간 실패 뒤 apc->rxqs 또는 apc->tx_qp가 이미 해제된 상태에서도 remove, MTU 변경 복구, 내부 error path가 같은 teardown helper를 다시 부를 수 있어 panic으로 이어질 수 있습니다.\n  · 확인: https://lore.kernel.org/bpf/ahQBzTUrhzvsy22C@linuxonhyperv3.guj3yctzbm1etfxqx2vob5hsef.xx.internal.cloudapp.net/\n\n- BPF LWT UDP tunnel encapsulation 뒤 transport header 갱신\n  · 영향: bpf_lwt_push_ip_encap()가 UDP tunnel packet의 transport header를 갱신하지 않으면 ice 같은 드라이버의 checksum offload가 낡은 위치를 사용해 packet drop을 만들 수 있습니다.\n  · 확인: https://lore.kernel.org/bpf/20260525142650.2569-2-leon.hwang@linux.dev/"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "- cls_bpf offload rollback 재귀 차단\n  · 영향: offload rollback 중 cls_bpf_offload_cmd()가 다시 호출되는 구조를 막되, maintainer는 error path 전체를 gate하지 말고 재호출 지점만 제한하는 형태가 더 명확하다고 봤습니다.\n  · 확인: https://lore.kernel.org/bpf/20260525110303.4121f19b@kernel.org/\n\n- block task-context bio completion infrastructure\n  · 영향: BIO 완료를 task context로 미루는 인프라가 논의 중이며, PREEMPT_RT에서는 atomic context에서 local_lock_irqsave()가 sleepable lock으로 이어질 수 있는지 여부가 핵심 검토 지점입니다.\n  · 확인: https://lore.kernel.org/linux-rt-devel/ahPdDtu3vXfNpb__@infradead.org/\n\n- PREEMPT_RT lockdep selftest 상태 복구\n  · 영향: 전날부터 추적된 2패치 시리즈로, selftest가 고의로 깨진 locking pattern을 실행한 뒤 migration_disabled와 sched_rt_mutex 상태를 복구해 뒤따르는 panic이나 warning을 막습니다.\n  · 확인: https://lore.kernel.org/linux-rt-devel/20260523185123.17482-1-kmehltretter@gmail.com/"
+    },
+    {
+      "heading": "기타",
+      "body": "- RISC-V Ssqosid 및 CBQRI resctrl RFC\n  · 영향: linux-rt-devel에 걸린 긴 RFC지만 오늘 렌즈의 직접 신호는 RT latency나 BPF가 아니라 RISC-V QoS, resctrl, ACPI RQSC 통합 설계입니다.\n  · 확인: https://lore.kernel.org/linux-rt-devel/20260524-ssqosid-cbqri-rqsc-v7-0-v5-0-78d3a7ba9dbe@kernel.org/"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "AI가 원문 후보와 메타데이터를 요약했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "net: mana: Add NULL guards in teardown path to prevent panic on attach failure",
+      "url": "https://lore.kernel.org/bpf/ahQBzTUrhzvsy22C@linuxonhyperv3.guj3yctzbm1etfxqx2vob5hsef.xx.internal.cloudapp.net/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "net/sched: cls_bpf: prevent unbounded recursion in offload rollback",
+      "url": "https://lore.kernel.org/bpf/20260525110303.4121f19b@kernel.org/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "block: add task-context bio completion infrastructure",
+      "url": "https://lore.kernel.org/linux-rt-devel/ahPdDtu3vXfNpb__@infradead.org/",
+      "note": "lore.kernel.org/linux-rt-devel · patch-discussion"
+    },
+    {
+      "title": "net: mana: Fix NULL dereferences during teardown after attach failure",
+      "url": "https://lore.kernel.org/bpf/20260525081129.1230035-1-dipayanroy@linux.microsoft.com/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "riscv: add Ssqosid and CBQRI resctrl support",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260524-ssqosid-cbqri-rqsc-v7-0-v5-0-78d3a7ba9dbe@kernel.org/",
+      "note": "lore.kernel.org/linux-rt-devel · patch-discussion"
+    },
+    {
+      "title": "lockdep/selftests: Restore PREEMPT_RT task state",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260523185123.17482-1-kmehltretter@gmail.com/",
+      "note": "lore.kernel.org/linux-rt-devel · patch-discussion"
+    },
+    {
+      "title": "bpf: Update transport_header when encapsulating UDP tunnel in lwt",
+      "url": "https://lore.kernel.org/bpf/20260525142650.2569-2-leon.hwang@linux.dev/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-25T18:14:29.960Z",
+    "sourceRecordCount": 50,
+    "candidateCount": 7,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "lore-bpf:urn:uuid:5ddc1a78-8952-1983-f9a6-6e80700c7c9e",
+      "lore-bpf:urn:uuid:1a4b84ed-b767-fc77-9fb4-fea81ecd9f87",
+      "lore-linux-rt-devel:urn:uuid:6d12e182-832d-4286-b823-4aa9242e207b",
+      "lore-bpf:urn:uuid:4454db72-e8ec-be4d-bc6d-8984a539b642",
+      "lore-linux-rt-devel:urn:uuid:188e0732-9909-687d-a3ab-a0ba77dc8dfd",
+      "lore-linux-rt-devel:urn:uuid:6d9787f5-4d36-369c-91d3-5e2b1cb853a6",
+      "lore-bpf:urn:uuid:70c0b128-0871-f4c5-4f5d-14ae7995c9f7"
+    ],
+    "bucketCounts": {
+      "releases": 0,
+      "regressions": 2,
+      "patches": 5,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 7,
+    "signalLevel": "high",
+    "subsystems": [
+      "네트워크",
+      "스케줄러/실시간",
+      "스토리지/파일시스템"
+    ],
+    "lensPipeline": "linux-perf-rt",
+    "rewrittenAt": "2026-05-25T18:14:39.135Z",
+    "rewriteAdapter": "codex",
+    "promptTemplate": "prompts/linux-lens-newsletter-ko.md"
+  }
+}

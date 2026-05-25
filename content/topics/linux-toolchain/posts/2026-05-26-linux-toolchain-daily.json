@@ -1,0 +1,137 @@
+{
+  "id": "2026-05-26-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-05-26 구성 검사 도입 — 커널 도구체인·Rust",
+  "date": "2026-05-26",
+  "headline": "커널 구성과 장치 트리 예제를 빌드 단계에서 더 엄격히 검사하려는 흐름이 이어졌습니다.",
+  "summary": "오늘 이 렌즈의 핵심은 Kconfig 미정의 심볼과 장치 트리 예제 스타일을 자동 검사해 리뷰 부담을 줄이려는 kbuild 쪽 변화입니다. Rust 쪽에서는 SRCU 추상화가 별도 API로 제안됐고, genksyms 가속 제안은 실제 빌드 시간 이득을 먼저 입증하라는 리뷰 신호가 나왔습니다.",
+  "tags": [
+    "도구체인",
+    "LLVM",
+    "kbuild",
+    "Rust"
+  ],
+  "highlights": [
+    {
+      "title": "Kconfig 미정의 심볼 정적 검사 도입",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "Kconfig와 빌드 검증 담당자",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20260521204435.534773-1-andrew.jones@linux.dev/",
+      "if": "Kconfig 변경을 자주 병합하는 트리라면 적용 여부를 확인하세요",
+      "do": "새 make 대상과 제외 파일 운용 방식을 빌드 절차에 맞춰 보세요",
+      "verify": "스레드의 명령 예시와 자기 트리의 미정의 심볼 목록을 대조하세요"
+    },
+    {
+      "title": "장치 트리 예제 스타일 자동 검사 제안",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "Devicetree 바인딩과 CI 담당자",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/cover.1779472837.git.daniel@makrotopia.org/",
+      "if": "장치 트리 바인딩 검사를 CI에 넣는 팀이라면 영향 범위를 확인하세요",
+      "do": "완화 모드와 엄격 모드의 경고 정책을 리뷰 기준과 맞춰 보세요",
+      "verify": "dt_binding_check_one 연결 방식과 현재 트리 무경고 조건을 확인하세요"
+    },
+    {
+      "title": "Rust SRCU 추상화 별도 제안",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust 커널 동기화 API 담당자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260525175706.124910-1-work@onurozkan.dev/",
+      "if": "Rust 드라이버에서 리셋과 해제를 직렬화한다면 API 계약을 확인하세요",
+      "do": "Guard 누수와 cleanup_srcu_struct 안전성 설명을 먼저 읽어 보세요",
+      "verify": "v3 이후 변경점과 CONFIG_TINY_SRCU 헬퍼 처리를 대조하세요"
+    },
+    {
+      "title": "genksyms CRC 가속은 근거 요구",
+      "priority": "하",
+      "impactType": "performance",
+      "affectedAudience": "모듈 버전과 kbuild 성능 담당자",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/5d1b8b13-d590-497d-9185-609494135348@suse.com/",
+      "if": "genksyms 성능 개선을 검토 중이라면 병목 여부를 확인하세요",
+      "do": "CRC 계산이 전체 커널 빌드 시간에 주는 비중을 측정하세요",
+      "verify": "리뷰의 gendwarfksyms 비교 요구와 자기 측정 결과를 대조하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "- 리스트 중심 렌즈\n· 영향: 오늘 입력에는 kernel.org mainline, stable, longterm 릴리스 항목이 없습니다. 이 렌즈는 llvm, linux-kbuild, rust-for-linux 메일 흐름에서 빌드 도구와 Rust API 변화를 추립니다.\n· 확인: 릴리스 판단이 필요하면 별도 리눅스 개발 렌즈의 kernel.org 항목과 이 목록의 kbuild 변경을 함께 대조하세요."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- 명시적 회귀·보안 신호 없음\n· 영향: 입력 후보에는 보안 수정이나 회귀 보고로 분류된 항목이 없습니다. 다만 Kconfig 정적 검사는 미정의 심볼을 새 오류로 만들 수 있어 CI 실패 양상이 바뀔 수 있습니다.\n· 확인: Kconfig를 자주 고치는 트리라면 https://lore.kernel.org/linux-kbuild/20260521204435.534773-1-andrew.jones@linux.dev/ 의 제외 파일 방식과 자기 CI의 실패 처리 정책을 비교하세요."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "- Kconfig 심볼 정적 검사\n· 영향: select, depends on, default 같은 표현식에서 참조하지만 실제 config나 menuconfig로 정의되지 않은 심볼을 찾는 make kconfig-sym-check 대상이 제안됐습니다. 새 누락 심볼은 제외 파일에 없으면 오류로 처리되고, 대문자 N/Y/M 사용은 경고로 잡습니다.\n· 확인: Kconfig 품질 게이트를 운영한다면 https://lore.kernel.org/linux-kbuild/20260521204435.534773-1-andrew.jones@linux.dev/ 의 명령 형식과 자기 트리의 알려진 예외 목록을 맞춰 보세요.\n\n- 장치 트리 예제 스타일 검사 도구\n· 영향: YAML 바인딩 안의 DTS 예제와 .dts 계열 파일을 검사하는 Python 도구가 제안됐습니다. 기본 완화 모드는 현재 트리에서 새 경고를 내지 않는 조건으로 dt_binding_check_one에 연결되고, 엄격 모드는 후속 checkpatch 연동을 염두에 둡니다.\n· 확인: Devicetree 리뷰나 CI를 담당한다면 https://lore.kernel.org/linux-kbuild/cover.1779472837.git.daniel@makrotopia.org/ 에서 완화 규칙과 엄격 규칙의 차이를 자기 제출 규칙과 대조하세요.\n\n- Rust SRCU API\n· 영향: Tyr 리셋 인프라에서 리셋 민감 하드웨어 접근을 리셋·해제 경로와 직렬화하려는 요구를 분리해 Rust SRCU 추상화로 제안했습니다. 최신 변경에는 CONFIG_TINY_SRCU 대응 헬퍼, 안전성 불변식 설명, Guard 누수와 정리 경로 정리가 포함됩니다.\n· 확인: Rust 커널 코드에서 SRCU read-side guard를 오래 보관하는 설계를 검토한다면 https://lore.kernel.org/rust-for-linux/20260525175706.124910-1-work@onurozkan.dev/ 의 v1부터 v3 이후 변경 이유를 자기 API 사용 방식과 대조하세요.\n\n- genksyms CRC32 가속 논의\n· 영향: arm64 하드웨어 CRC32를 genksyms에 직접 넣자는 제안에는 실제 genksyms 실행 시간과 전체 커널 빌드 시간 개선을 먼저 보여 달라는 리뷰가 붙었습니다. 리뷰에서는 여러 배포판이 gendwarfksyms로 옮겨 간 점과 zlib 기반 경로도 비교 대상으로 언급됐습니다.\n· 확인: 모듈 버전 심볼 계산 성능을 손보려면 https://lore.kernel.org/linux-kbuild/5d1b8b13-d590-497d-9185-609494135348@suse.com/ 와 https://lore.kernel.org/linux-kbuild/c135351a-d7cc-467b-a0c0-bea735fe850a@suse.com/ 의 측정 요구를 기준으로 genksyms와 gendwarfksyms 양쪽을 재보세요."
+    },
+    {
+      "heading": "기타",
+      "body": "- nova-core VBIOS let-else 정리\n· 영향: Rust nova-core 드라이버의 Vbios::new에서 중첩 분기를 줄여 성공 경로를 밖으로 옮기는 가독성 개선입니다. 도구체인 렌즈 관점에서는 Rust 언어 사용 패턴 신호지만, 인터페이스 계약 변화로 보기는 어렵습니다.\n· 확인: 해당 GPU Rust 드라이버를 따라가는 경우에만 https://lore.kernel.org/rust-for-linux/20260525-fix-vbios-v5-17-e5e455251537@nvidia.com/ 의 패치가 자기 경고 정책이나 스타일 기준과 맞는지 확인하세요."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "AI가 원문 후보와 메타데이터를 요약했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "gpu: nova-core: vbios: use let-else in Vbios::new",
+      "url": "https://lore.kernel.org/rust-for-linux/20260525-fix-vbios-v5-17-e5e455251537@nvidia.com/",
+      "note": "lore.kernel.org/rust-for-linux · patch-discussion"
+    },
+    {
+      "title": "rust: add SRCU abstraction",
+      "url": "https://lore.kernel.org/rust-for-linux/20260525175706.124910-1-work@onurozkan.dev/",
+      "note": "lore.kernel.org/rust-for-linux · patch-discussion"
+    },
+    {
+      "title": "dt-bindings: automated coding style check for DTS examples",
+      "url": "https://lore.kernel.org/linux-kbuild/cover.1779472837.git.daniel@makrotopia.org/",
+      "note": "lore.kernel.org/linux-kbuild · patch-discussion"
+    },
+    {
+      "title": "kconfig: add kconfig-sym-check static checker",
+      "url": "https://lore.kernel.org/linux-kbuild/20260521204435.534773-1-andrew.jones@linux.dev/",
+      "note": "lore.kernel.org/linux-kbuild · patch-discussion"
+    },
+    {
+      "title": "genksyms: Support arm64 CRC32 hardware acceleration",
+      "url": "https://lore.kernel.org/linux-kbuild/5d1b8b13-d590-497d-9185-609494135348@suse.com/",
+      "note": "lore.kernel.org/linux-kbuild · patch-discussion"
+    },
+    {
+      "title": "genksyms: Support arm64 CRC32 hardware acceleration1~",
+      "url": "https://lore.kernel.org/linux-kbuild/c135351a-d7cc-467b-a0c0-bea735fe850a@suse.com/",
+      "note": "lore.kernel.org/linux-kbuild · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-25T18:11:40.288Z",
+    "sourceRecordCount": 75,
+    "candidateCount": 6,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "lore-rust-for-linux:urn:uuid:4f5d30e8-0526-d1d2-bbb0-1334718efe49",
+      "lore-rust-for-linux:urn:uuid:7a9480a7-6a71-9d4c-cb07-6305c0f475e4",
+      "lore-linux-kbuild:urn:uuid:ebfa923a-4e3d-1165-64e9-5ad9d3b3e478",
+      "lore-linux-kbuild:urn:uuid:29b16db6-2719-2051-19af-bac06380131b",
+      "lore-linux-kbuild:urn:uuid:0fca1393-f477-41da-f66b-a74bacbddb89",
+      "lore-linux-kbuild:urn:uuid:73da3e3e-6d05-2afc-2fff-bec152b5117c"
+    ],
+    "bucketCounts": {
+      "releases": 0,
+      "regressions": 0,
+      "patches": 6,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 6,
+    "signalLevel": "high",
+    "subsystems": [],
+    "lensPipeline": "linux-toolchain",
+    "rewrittenAt": "2026-05-25T18:11:52.503Z",
+    "rewriteAdapter": "codex",
+    "promptTemplate": "prompts/linux-lens-newsletter-ko.md"
+  }
+}
