@@ -1,0 +1,141 @@
+{
+  "id": "2026-05-27-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-05-27 경로 검증 논의 — 관측성·실시간(eBPF·RT)",
+  "headline": "패킷 경로 도우미가 더 넓은 호출 지점에서 안전한지 검토가 이어졌습니다.",
+  "date": "2026-05-27",
+  "summary": "오늘 이 렌즈의 핵심은 BPF 쪽으로 노출되는 IPv4 응답 경로 도우미가 이른 패킷 처리 지점에서도 안전한지 묻는 검토입니다. arm64 선점 상태 처리와 PPS 실시간 성능 개선도 스케줄러·실시간 담당자가 함께 볼 만한 변화입니다.",
+  "tags": [
+    "eBPF",
+    "verifier",
+    "tracing",
+    "PREEMPT_RT",
+    "실시간"
+  ],
+  "highlights": [
+    {
+      "title": "IPv4 응답 경로 도우미의 패킷 헤더 접근 검증 필요성이 제기됨",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF 네트워크 프로그램 검증 담당자",
+      "verifyLink": "https://lore.kernel.org/bpf/e05eecf46884c32961a01faff14a72c8382f2a3083999cb88158a1958ffd83d1@mail.kernel.org/",
+      "if": "초기 패킷 훅에서 BPF 를 쓰는 환경이라면",
+      "do": "헤더 선형화와 장치 포인터 가정을 코드 경로별로 보세요",
+      "verify": "스레드의 지적 위치와 자기 훅의 skb 상태를 대조하세요"
+    },
+    {
+      "title": "seccomp 엄격 모드와 필터 모드 병행 적용 제안",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "컨테이너 보안 정책 담당자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260526-seccomp-combined-v1-0-304b1cc3ad24@hill-daniel.co.uk/",
+      "if": "컨테이너 안에서 seccomp 엄격 모드를 요구한다면",
+      "do": "내부 결합 모드가 기존 필터 적용 순서를 바꾸는지 보세요",
+      "verify": "스레드와 moby 이슈 링크를 정책 재현 사례와 대조하세요"
+    },
+    {
+      "title": "arm64 선점 재스케줄 비트 분리 사용 제안",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "스케줄러/실시간 담당 개발자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260526152148.30514-12-boqun@kernel.org/",
+      "if": "arm64 실시간 지연을 추적하는 팀이라면",
+      "do": "NMI 경로의 per-CPU 접근 감소 효과를 검토하세요",
+      "verify": "패치의 선점 카운트 비트 가정을 자기 설정과 대조하세요"
+    },
+    {
+      "title": "PPS 경로의 PREEMPT_RT 성능 개선 재전송",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "PPS와 실시간 성능 검증 담당자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/cover.1779733602.git.calvin@wbinvd.org/",
+      "if": "PPS 타임스탬프를 RT 커널에서 쓴다면",
+      "do": "v6 기준 변경과 이전 버전 링크를 함께 보세요",
+      "verify": "자기 RT 브랜치의 PPS 지연 측정값과 비교하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이 렌즈는 lore.kernel.org의 bpf와 linux-rt-devel 리스트 중심입니다. 오늘 입력에는 kernel.org 릴리스 항목이 없어 릴리스 요약은 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- IPv4 응답 경로 도우미의 패킷 헤더 접근 검증 필요성이 제기됨\n  · 영향: netfilter 쪽 함수를 공통 IPv4 경로로 옮겨 BPF kfunc 호출 가능성이 넓어지면서, 이른 훅에서 IPv4 헤더가 아직 선형화되지 않았거나 skb->dev가 없을 수 있다는 검토가 나왔습니다.\n  · 확인: https://lore.kernel.org/bpf/e05eecf46884c32961a01faff14a72c8382f2a3083999cb88158a1958ffd83d1@mail.kernel.org/\n\n- seccomp 엄격 모드와 필터 모드 병행 적용 제안\n  · 영향: 현재는 seccomp 초기화 뒤 다른 모드로 전환하기 어렵지만, 제안은 내부 결합 모드를 두어 컨테이너 기본 필터와 애플리케이션의 엄격 모드 요구를 함께 처리하려 합니다.\n  · 확인: https://lore.kernel.org/bpf/20260526-seccomp-combined-v1-0-304b1cc3ad24@hill-daniel.co.uk/"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "- arm64 선점 재스케줄 비트 분리 사용 제안\n  · 영향: arm64가 이미 64비트 선점 카운트를 쓰고 재스케줄 필요 비트를 별도 32비트 영역에 두므로, NMI 중첩 표현 여유를 바탕으로 per-CPU 변수와 NMI 경로 명령을 줄이려는 패치입니다.\n  · 확인: https://lore.kernel.org/bpf/20260526152148.30514-12-boqun@kernel.org/\n\n- PPS 경로의 PREEMPT_RT 성능 개선 재전송\n  · 영향: v6 시리즈로 재전송된 PPS 실시간 성능 개선 묶음이며, 작성자는 이전 버전 링크를 덧붙이고 주석의 문자 인코딩 문제만 정리했다고 설명합니다.\n  · 확인: https://lore.kernel.org/linux-rt-devel/cover.1779733602.git.calvin@wbinvd.org/\n\n- BPF에서 ICMP 도달 불가 메시지를 보낼 수 있는 kfunc 제안\n  · 영향: cgroup_skb와 tc 프로그램이 동서 트래픽을 능동적으로 거부하도록 ICMP 제어 메시지를 보내는 인터페이스를 추가하려는 v7 제안이며, 중복 호출과 통과 반환 시의 혼란 가능성도 명시되어 있습니다.\n  · 확인: https://lore.kernel.org/bpf/20260526153708.279717-1-mahe.tardy@gmail.com/"
+    },
+    {
+      "heading": "기타",
+      "body": "- RISC-V CBQRI 용량 제어기 지원은 linux-rt-devel에 다시 보였지만 특정 플랫폼 장치 성격이 강하고 2026-05-26에 이미 관측된 항목이므로 여기서는 보조 신호로만 둡니다.\n  · 영향: 펌웨어 발견 계층이 제어기 정보를 넘기고 드라이버가 cpumask와 캐시 분할 관련 값을 정리하는 방향입니다.\n  · 확인: https://lore.kernel.org/linux-rt-devel/20260524-ssqosid-cbqri-rqsc-v7-0-v5-7-78d3a7ba9dbe@kernel.org/"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "AI가 원문 후보와 메타데이터를 요약했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "arm64: sched/preempt: Enable HAS_SEPARATE_PREEMPT_RESCHED_BITS",
+      "url": "https://lore.kernel.org/bpf/20260526152148.30514-12-boqun@kernel.org/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "pps: improve PREEMPT_RT performance",
+      "url": "https://lore.kernel.org/linux-rt-devel/cover.1779733602.git.calvin@wbinvd.org/",
+      "note": "lore.kernel.org/linux-rt-devel · patch-discussion"
+    },
+    {
+      "title": "seccomp: Allow using `SECCOMP_MODE_STRICT` with `SECCOMP_MODE_FILTER`",
+      "url": "https://lore.kernel.org/bpf/20260526-seccomp-combined-v1-0-304b1cc3ad24@hill-daniel.co.uk/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "bpf: add icmp_send kfunc",
+      "url": "https://lore.kernel.org/bpf/20260526153708.279717-1-mahe.tardy@gmail.com/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "riscv_cbqri: Add capacity controller probe and allocation device ops",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260524-ssqosid-cbqri-rqsc-v7-0-v5-7-78d3a7ba9dbe@kernel.org/",
+      "note": "lore.kernel.org/linux-rt-devel · patch-discussion"
+    },
+    {
+      "title": "net: move netfilter nf_reject_fill_skb_dst to core ipv4",
+      "url": "https://lore.kernel.org/bpf/e05eecf46884c32961a01faff14a72c8382f2a3083999cb88158a1958ffd83d1@mail.kernel.org/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-26T18:15:24.094Z",
+    "sourceRecordCount": 50,
+    "candidateCount": 6,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "lore-bpf:urn:uuid:dce060f4-fbba-f96e-e98a-d8e5caaa0b6c",
+      "lore-linux-rt-devel:urn:uuid:78c16e2f-7181-9eb5-4536-54205e059d69",
+      "lore-bpf:urn:uuid:025d0ea8-2a3a-b8bc-ce08-b4cf55345fe8",
+      "lore-bpf:urn:uuid:d0b9d3ff-c471-9a69-805f-d81cbf73717c",
+      "lore-linux-rt-devel:urn:uuid:379b0117-d9ba-7f17-e3b6-3f32b70e94ae",
+      "lore-bpf:urn:uuid:3d062da5-6130-c534-252b-830b185512c3"
+    ],
+    "bucketCounts": {
+      "releases": 0,
+      "regressions": 0,
+      "patches": 6,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 6,
+    "signalLevel": "high",
+    "subsystems": [
+      "스케줄러/실시간",
+      "네트워크"
+    ],
+    "lensPipeline": "linux-perf-rt",
+    "rewrittenAt": "2026-05-26T18:15:43.706Z",
+    "rewriteAdapter": "codex",
+    "promptTemplate": "prompts/linux-lens-newsletter-ko.md"
+  }
+}

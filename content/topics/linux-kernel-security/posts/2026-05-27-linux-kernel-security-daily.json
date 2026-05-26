@@ -1,0 +1,151 @@
+{
+  "id": "2026-05-27-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-05-27 페이지키 보호 논의 — 커널 보안·하드닝",
+  "headline": "커널 메모리 쓰기면을 줄이기 위한 페이지키 보호와 선형 매핑 제거 논의가 이어졌습니다.",
+  "date": "2026-05-27",
+  "summary": "오늘 이 렌즈의 핵심은 arm64 커널 데이터 영역의 예측 가능한 쓰기 별칭을 없애려는 패치와, 커널 내부 보호키 추상화인 kpkeys의 인터페이스 논의입니다. 안정 릴리스 쪽에서는 네트워크 버퍼 공유 조각 표식 보존, 그래픽 드라이버 경쟁, 입출력 메모리 관리 수정이 백포트 신호로 보입니다.",
+  "tags": [
+    "보안",
+    "하드닝",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "arm64 커널 데이터 선형 별칭 제거",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "arm64 보안 하드닝 담당자",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20260526175846.2694125-17-ardb+git@google.com/",
+      "if": "arm64 커널 주소 노출을 위협 모델에 넣는다면",
+      "do": "데이터와 비초기화 영역의 선형 쓰기 별칭 제거 흐름을 읽으세요",
+      "verify": "v5 이후 변경 목록과 페이지 속성 안전성 설명을 스레드에서 확인하세요"
+    },
+    {
+      "title": "kpkeys로 초기 페이지 테이블 보호",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "arm64 메모리 보호 담당자",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20260526-kpkeys-v8-20-eaaacdacc67c@arm.com/",
+      "if": "arm64에서 보호키 기반 하드닝을 검토한다면",
+      "do": "커널 이미지 매핑용 페이지 테이블에 적용되는 보호키 범위를 보세요",
+      "verify": "init_pg_dir 선형 매핑 처리와 다른 정적 페이지 테이블 예외를 원문에서 확인하세요"
+    },
+    {
+      "title": "kpkeys 공통 인터페이스 검토",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "메모리 관리과 아키텍처 포팅 담당자",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/CAD++jLnURXzgAgkWCcYX0dLOLqHQw+gn96V1dzDa_0Aoi3430Q@mail.gmail.com/",
+      "if": "아키텍처별 보호키 구현을 붙일 계획이라면",
+      "do": "공통 머리글의 컨텍스트 설정과 복구 함수 계약을 검토하세요",
+      "verify": "arch_kpkeys_set_context 계열 함수와 컨텍스트 할당 필요성 논의를 확인하세요"
+    },
+    {
+      "title": "mmc 테스트 정리 경로의 카운터 보정",
+      "priority": "하",
+      "impactType": "regression",
+      "affectedAudience": "mmc 테스트와 counted_by 검증 담당자",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/CA+V-a8szZoKSb1SszB_0pGW+jU+8mUVJrL-uiTZ844DQ=ZB9qg@mail.gmail.com/",
+      "if": "mmc_test 실패 정리 경로를 재현할 수 있다면",
+      "do": "할당된 배열 원소 수와 정리 루프의 일치 여부를 보세요",
+      "verify": "실패 로그의 null 포인터 해제 경로와 mem->cnt 변경 위치를 대조하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "- Linux 7.0.10 stable\n  · 영향: 백포트 1145건이 포함된 안정 릴리스입니다. 입력 후보 기준으로 netfs 미초기화 변수, skbuff 공유 조각 표식 전달, SMB AES-256 키 유도, drm xe dma-buf 경쟁, iommu PASID 재설정 경로 수정이 눈에 띕니다.\n  · 확인: https://git.kernel.org/stable/h/v7.0.10\n\n- Linux 5.10.257 longterm\n  · 영향: skbuff 조각 전달과 병합 경로에서 공유 조각 표식을 보존하는 네트워크 백포트 2건입니다.\n  · 확인: https://git.kernel.org/stable/h/v5.10.257\n\n- Linux 5.15.208 longterm\n  · 영향: 5.10 계열과 같은 skbuff 공유 조각 표식 보존 백포트가 들어간 장기 지원 릴리스입니다.\n  · 확인: https://git.kernel.org/stable/h/v5.15.208\n\n- Linux 6.1.174 longterm\n  · 영향: 장기 지원 계열에서도 skbuff 공유 조각 표식 보존 수정 2건이 반영됐습니다.\n  · 확인: https://git.kernel.org/stable/h/v6.1.174"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- arm64: Unmap linear alias of kernel data/bss\n  · 영향: 일부 부트로더가 커널을 램 시작점에 배치하는 환경에서, 예측 가능한 선형 매핑이 커널 데이터와 비초기화 영역의 쓰기 별칭으로 남는 문제를 줄이려는 하드닝입니다.\n  · 확인: https://lore.kernel.org/linux-hardening/20260526175846.2694125-17-ardb+git@google.com/\n\n- mmc: mmc_test: Fix counter tracking in mmc_test_alloc_mem()\n  · 영향: flexible array의 실제 초기화 개수와 정리 루프가 어긋나 실패 정리 중 커널 패닉으로 이어질 수 있는 테스트 경로 수정입니다. 보안 하드닝 자체보다는 counted_by 검증과 정리 계약 측면의 신호입니다.\n  · 확인: https://lore.kernel.org/linux-hardening/CA+V-a8szZoKSb1SszB_0pGW+jU+8mUVJrL-uiTZ844DQ=ZB9qg@mail.gmail.com/"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "- arm64: kpkeys: Protect init_pg_dir\n  · 영향: kpkeys 기반 하드닝이 켜졌을 때 커널 이미지를 매핑하는 초기 페이지 디렉터리의 선형 매핑에도 적절한 보호키를 설정해 페이지 테이블 쓰기면을 좁히려는 변경입니다.\n  · 확인: https://lore.kernel.org/linux-hardening/20260526-kpkeys-v8-20-eaaacdacc67c@arm.com/\n\n- mm: Introduce kpkeys\n  · 영향: 커널 내부에서 보호키 레지스터를 설정하고 복구하는 공통 인터페이스와 가드 매크로를 제안합니다. 리뷰에서는 아키텍처마다 보호키 표현과 예약 키가 다를 때 하드코딩된 컨텍스트 상수가 충분한지 질문이 나왔습니다.\n  · 확인: https://lore.kernel.org/linux-hardening/CAD++jLnURXzgAgkWCcYX0dLOLqHQw+gn96V1dzDa_0Aoi3430Q@mail.gmail.com/"
+    },
+    {
+      "heading": "기타",
+      "body": "- iio: frequency: ad9910: show channel priority in debugfs\n  · 영향: debugfs에 주파수, 위상, 진폭 소스 채널을 노출하는 드라이버 가시성 논의입니다. 보안 렌즈의 핵심 신호는 아니므로 하드닝 판단에서는 낮은 우선순위입니다.\n  · 확인: https://lore.kernel.org/linux-hardening/fuitiyrpt5calptts43egdyggz6xa7xl5racf74pogpextfrrr@mavfidgywg4o/"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "AI가 원문 후보와 메타데이터를 요약했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Linux 7.0.10 stable",
+      "url": "https://git.kernel.org/stable/h/v7.0.10",
+      "note": "kernel.org · kernel-release"
+    },
+    {
+      "title": "arm64: Unmap linear alias of kernel data/bss",
+      "url": "https://lore.kernel.org/linux-hardening/20260526175846.2694125-17-ardb+git@google.com/",
+      "note": "lore.kernel.org/linux-hardening · patch-discussion"
+    },
+    {
+      "title": "arm64: kpkeys: Protect init_pg_dir",
+      "url": "https://lore.kernel.org/linux-hardening/20260526-kpkeys-v8-20-eaaacdacc67c@arm.com/",
+      "note": "lore.kernel.org/linux-hardening · patch-discussion"
+    },
+    {
+      "title": "mm: Introduce kpkeys",
+      "url": "https://lore.kernel.org/linux-hardening/CAD++jLnURXzgAgkWCcYX0dLOLqHQw+gn96V1dzDa_0Aoi3430Q@mail.gmail.com/",
+      "note": "lore.kernel.org/linux-hardening · patch-discussion"
+    },
+    {
+      "title": "Linux 5.10.257 longterm",
+      "url": "https://git.kernel.org/stable/h/v5.10.257",
+      "note": "kernel.org · kernel-release"
+    },
+    {
+      "title": "Linux 5.15.208 longterm",
+      "url": "https://git.kernel.org/stable/h/v5.15.208",
+      "note": "kernel.org · kernel-release"
+    },
+    {
+      "title": "Linux 6.1.174 longterm",
+      "url": "https://git.kernel.org/stable/h/v6.1.174",
+      "note": "kernel.org · kernel-release"
+    },
+    {
+      "title": "mmc: mmc_test: Fix counter tracking in mmc_test_alloc_mem()",
+      "url": "https://lore.kernel.org/linux-hardening/CA+V-a8szZoKSb1SszB_0pGW+jU+8mUVJrL-uiTZ844DQ=ZB9qg@mail.gmail.com/",
+      "note": "lore.kernel.org/linux-hardening · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-26T18:09:42.629Z",
+    "sourceRecordCount": 34,
+    "candidateCount": 9,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "kernel-org:stable:7.0.10",
+      "lore-linux-hardening:urn:uuid:aa81c3c8-71d2-ecbd-7916-1977042c05a3",
+      "lore-linux-hardening:urn:uuid:ae5adfe3-4ba3-0624-a686-aa58fe0f6285",
+      "lore-linux-hardening:urn:uuid:b07202a1-fab7-c213-dfd4-c191d23f5b42",
+      "kernel-org:longterm:5.10.257",
+      "kernel-org:longterm:5.15.208",
+      "kernel-org:longterm:6.1.174",
+      "lore-linux-hardening:urn:uuid:4383183b-1c64-c4a3-527f-49402459472a",
+      "lore-linux-hardening:urn:uuid:4e4feb44-38e1-686d-a451-f42c64a52372"
+    ],
+    "bucketCounts": {
+      "releases": 4,
+      "regressions": 0,
+      "patches": 5,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 5,
+    "signalLevel": "high",
+    "subsystems": [
+      "메모리 관리"
+    ],
+    "lensPipeline": "linux-kernel-security",
+    "rewrittenAt": "2026-05-26T18:09:51.541Z",
+    "rewriteAdapter": "codex",
+    "promptTemplate": "prompts/linux-lens-newsletter-ko.md"
+  }
+}
