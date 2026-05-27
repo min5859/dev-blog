@@ -1,0 +1,137 @@
+{
+  "id": "2026-05-28-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-05-28 Rust 빌드 경계 논의 — 커널 도구체인·Rust",
+  "headline": "Rust 커널 모듈 경계와 인터럽트 상태 표현, Kconfig 검사가 함께 논의됐습니다.",
+  "date": "2026-05-28",
+  "summary": "오늘은 Rust 커널 코드가 기존 C 빌드·동기화 규칙과 만나는 지점이 가장 큰 신호입니다. Nova의 Rust 모듈 간 호출 우회안, Rust 인터럽트 비활성화 표현, Kconfig 정적 검사, 빌드 시 부트 설정 반영을 후속 검토 대상으로 보세요.",
+  "tags": [
+    "도구체인",
+    "LLVM",
+    "kbuild",
+    "Rust"
+  ],
+  "highlights": [
+    {
+      "title": "Rust 인터럽트 비활성화와 선점 카운트 표현 조정",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust 동기화와 선점 경로 담당자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260527161844.GG3102624@noisy.programming.kicks-ass.net/",
+      "if": "Rust 락이나 선점 상태를 다룬다면 확인하세요",
+      "do": "새 이름과 기존 선점 카운트 호출 계약을 대조하세요",
+      "verify": "링크된 스레드에서 Peter Zijlstra 응답을 확인하세요"
+    },
+    {
+      "title": "Nova Rust 모듈 간 호출을 위한 임시 빌드 우회안",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "Rust 모듈과 그래픽 드라이버 빌드 담당자",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20260527-nova-exports-v2-0-06de4c556d55@nvidia.com/",
+      "if": "Rust 모듈 간 심볼 호출을 준비한다면 확인하세요",
+      "do": "modpost 긴 심볼 실패와 메타데이터 생성 방식을 살피세요",
+      "verify": "Nova 스레드의 패치 1과 내 모듈 로드 로그를 대조하세요"
+    },
+    {
+      "title": "정의되지 않은 Kconfig 심볼을 잡는 정적 검사 추가",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "Kconfig와 지속 통합 담당자",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20260527142703.107110-1-andrew.jones@linux.dev/",
+      "if": "새 Kconfig 심볼을 자주 추가한다면 확인하세요",
+      "do": "make kconfig-sym-check 도입 시 오류 기준을 정하세요",
+      "verify": "v3 이후 변경과 제외 파일 형식을 스레드에서 확인하세요"
+    },
+    {
+      "title": "빌드 시점 bootconfig 값을 초기 명령줄에 반영",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "부트 설정과 초기 파라미터 담당자",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20260527-bootconfig_using_tools-v1-0-b6906a86e7d5@debian.org/",
+      "if": "내장 bootconfig로 초기 옵션을 주입한다면 확인하세요",
+      "do": "kernel 하위 트리의 명령줄 변환 순서를 검토하세요",
+      "verify": "setup_arch 전후 boot_command_line 동작을 스레드와 비교하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이 렌즈는 lore 리스트 중심입니다. 오늘 입력에는 kernel.org 릴리스 항목이 없으므로 릴리스 자체보다 kbuild와 Rust 통합 논의를 우선해 보세요."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "회귀·보안 신호로 분류할 항목은 없습니다.\n\n- Rust 인터럽트 비활성화와 선점 카운트 표현 조정\n· 영향: Rust 쪽 SpinLockIrq와 인터럽트 비활성화 표현이 기존 preempt_count 호출 계약을 바꾸지 않고 내부 구현 차이로 남길 수 있는지 논의 중입니다. Peter Zijlstra는 새 이름에 이견을 냈고, NMI 경로 경고 가능성도 언급했습니다.\n· 확인: Rust 동기화 계층을 만지는 개발자라면 https://lore.kernel.org/rust-for-linux/20260527161844.GG3102624@noisy.programming.kicks-ass.net/ 에서 명명, NMI 경고, 기존 preempt_count 호출부 영향 여부를 확인하세요."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "- Nova Rust 모듈 간 호출을 위한 임시 빌드 우회안\n· 영향: nova-drm이 nova-core로 호출하기 위해 Rust 빌드 시스템의 정식 지원 전에 로컬 메타데이터와 exported symbol 목록을 생성하는 방향입니다. 긴 Rust 심볼이 modpost 내부 버퍼 한계를 건드려 늦은 실패를 만들 수 있어, 별도 오류 보고 패치도 포함됩니다.\n· 확인: Rust 모듈 간 호출이나 modpost 검사를 건드리는 개발자라면 https://lore.kernel.org/linux-kbuild/20260527-nova-exports-v2-0-06de4c556d55@nvidia.com/ 에서 심볼 길이 실패 처리와 모듈 로드 시 해석 경로를 자기 트리와 비교하세요.\n\n- 정의되지 않은 Kconfig 심볼을 잡는 정적 검사 추가\n· 영향: make kconfig-sym-check가 select, depends on, default 등에서 참조되지만 정의되지 않은 Kconfig 심볼을 오류로 보고하고, 제외 파일로 기존 예외를 관리하는 흐름을 제안합니다. 이 항목은 2026-05-26에 v3로 이미 관측된 뒤 이어진 버전입니다.\n· 확인: Kconfig 변경을 지속 통합에 넣는 팀이라면 https://lore.kernel.org/linux-kbuild/20260527142703.107110-1-andrew.jones@linux.dev/ 에서 제외 파일 형식과 새 dangling symbol 오류 기준을 확인하세요.\n\n- 빌드 시점 bootconfig 값을 초기 명령줄에 반영\n· 영향: 이미 들어간 사용자 공간 도구 조각을 바탕으로, embedded bootconfig의 kernel 하위 트리를 빌드 시 평탄한 명령줄로 만들어 parse_early_param 전에 boot_command_line에 앞에 붙이는 제안입니다. 크기 초과는 부팅 중단 대신 로그 후 기존 명령줄을 유지하는 방향입니다.\n· 확인: early_param이나 CONFIG_CMDLINE 대체 경로에 의존하는 환경이라면 https://lore.kernel.org/linux-kbuild/20260527-bootconfig_using_tools-v1-0-b6906a86e7d5@debian.org/ 에서 setup_arch 순서와 overflow 처리 조건을 재현 설정으로 검증하세요."
+    },
+    {
+      "heading": "기타",
+      "body": "- TAGS에서 구조체 멤버를 제외하는 etags 옵션 제안\n· 영향: make TAGS가 구조체 멤버까지 잡아 함수 탐색을 흐리는 문제를 줄이기 위해 etags --no-members를 TAGS 생성 경로에 넣자는 제안입니다. Peter Zijlstra는 멤버 태그도 자주 쓰며, 에디터가 kind 필드를 기준으로 함수와 멤버를 구분하는 편이 낫다는 의견을 냈습니다.\n· 확인: Emacs TAGS 생성 흐름을 쓰는 개발자라면 https://lore.kernel.org/linux-kbuild/20260527162914.GH3102624@noisy.programming.kicks-ass.net/ 와 https://lore.kernel.org/linux-kbuild/20260527121144.08a1f676@fedora/ 에서 --no-members 적용 범위가 자기 탐색 방식에 맞는지 확인하세요."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "AI가 원문 후보와 메타데이터를 요약했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "scripts: Have make TAGS not include structure members",
+      "url": "https://lore.kernel.org/linux-kbuild/20260527162914.GH3102624@noisy.programming.kicks-ass.net/",
+      "note": "lore.kernel.org/linux-kbuild · patch-discussion"
+    },
+    {
+      "title": "Refcounted interrupt disable and SpinLockIrq for rust (Part 1)",
+      "url": "https://lore.kernel.org/rust-for-linux/20260527161844.GG3102624@noisy.programming.kicks-ass.net/",
+      "note": "lore.kernel.org/rust-for-linux · patch-discussion"
+    },
+    {
+      "title": "gpu: drm: nova: enable calling into nova-core",
+      "url": "https://lore.kernel.org/linux-kbuild/20260527-nova-exports-v2-0-06de4c556d55@nvidia.com/",
+      "note": "lore.kernel.org/linux-kbuild · patch-discussion"
+    },
+    {
+      "title": "kconfig: add kconfig-sym-check static checker",
+      "url": "https://lore.kernel.org/linux-kbuild/20260527142703.107110-1-andrew.jones@linux.dev/",
+      "note": "lore.kernel.org/linux-kbuild · patch-discussion"
+    },
+    {
+      "title": "scripts: Have make TAGS not include structure members",
+      "url": "https://lore.kernel.org/linux-kbuild/20260527121144.08a1f676@fedora/",
+      "note": "lore.kernel.org/linux-kbuild · patch-discussion"
+    },
+    {
+      "title": "bootconfig: embed kernel.* cmdline at build time",
+      "url": "https://lore.kernel.org/linux-kbuild/20260527-bootconfig_using_tools-v1-0-b6906a86e7d5@debian.org/",
+      "note": "lore.kernel.org/linux-kbuild · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-27T18:11:52.990Z",
+    "sourceRecordCount": 75,
+    "candidateCount": 6,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "lore-linux-kbuild:urn:uuid:f8543e98-8e0d-1a25-ac1f-4161af6093fe",
+      "lore-rust-for-linux:urn:uuid:250da0e9-219e-3018-8ca9-d4eaa5e1352d",
+      "lore-linux-kbuild:urn:uuid:831496cb-dbf2-d5b4-8fe5-9b8ec6de2613",
+      "lore-linux-kbuild:urn:uuid:87e68460-bd1a-dcc2-1201-24a5eefbea56",
+      "lore-linux-kbuild:urn:uuid:d829f9bb-ef04-670e-5658-a3ba312543e8",
+      "lore-linux-kbuild:urn:uuid:2f16360e-1fa7-976c-124a-f59bd1c75898"
+    ],
+    "bucketCounts": {
+      "releases": 0,
+      "regressions": 0,
+      "patches": 6,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 6,
+    "signalLevel": "high",
+    "subsystems": [],
+    "lensPipeline": "linux-toolchain",
+    "rewrittenAt": "2026-05-27T18:12:01.072Z",
+    "rewriteAdapter": "codex",
+    "promptTemplate": "prompts/linux-lens-newsletter-ko.md"
+  }
+}

@@ -1,0 +1,141 @@
+{
+  "id": "2026-05-28-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-05-28 문맥 검증 강화 — 관측성·실시간(eBPF·RT)",
+  "date": "2026-05-28",
+  "headline": "실시간 커널에서 제한 포인터 출력의 잠금 문맥 검증을 강화하는 논의가 핵심입니다.",
+  "summary": "오늘은 제한 포인터 출력이 실시간 커널에서 잠금 문맥을 어길 수 있는 경로를 lockdep으로 잡자는 논의가 가장 직접적인 신호입니다. 그 다음으로 Rust 인터럽트 비활성화 계약, PPS 실시간 성능 개선, veth 전송 완료 모음 설정이 후속 검토 대상입니다.",
+  "tags": [
+    "eBPF",
+    "verifier",
+    "tracing",
+    "PREEMPT_RT",
+    "실시간"
+  ],
+  "highlights": [
+    {
+      "title": "제한 포인터 출력에 잠금 문맥 검증 추가",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "PREEMPT_RT와 printk 경로 검증 담당자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/ahcP_G9bD9M1_JrC@pathway.suse.cz/",
+      "if": "실시간 커널에서 제한 포인터 출력을 쓰는 코드라면 확인하세요",
+      "do": "원자 문맥 호출이 새 lockdep 검증에 걸릴 수 있는지 확인하세요",
+      "verify": "스레드의 fake lockdep map 우려와 자기 printk 경로를 대조하세요"
+    },
+    {
+      "title": "Rust용 인터럽트 비활성화 계약 재검토",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust for Linux와 선점 카운트 담당자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260527161844.GG3102624@noisy.programming.kicks-ass.net/",
+      "if": "Rust 락 추상화나 선점 카운트 구현을 다룬다면 확인하세요",
+      "do": "기존 preempt_count 인터페이스 유지 전제를 검토하세요",
+      "verify": "Peter Zijlstra 응답의 명명 반대와 경고 제안을 확인하세요"
+    },
+    {
+      "title": "PPS 실시간 성능 개선 시리즈 재추적",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "PPS와 PREEMPT_RT 성능 검증 담당자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/cover.1779733602.git.calvin@wbinvd.org/",
+      "if": "PPS를 실시간 지연 측정이나 동기화에 쓴다면 확인하세요",
+      "do": "v6 시리즈가 자기 기준 커널과 맞는지 확인하세요",
+      "verify": "커버레터의 7.1-rc5 기준과 이전 버전 링크를 확인하세요"
+    },
+    {
+      "title": "veth 전송 완료 모음 설정 추가",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "가상 네트워크와 큐잉 지연 튜닝 담당자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260527135418.1166665-6-hawk@kernel.org/",
+      "if": "veth 지연이나 큐 재시도를 튜닝한다면 확인하세요",
+      "do": "tx-usecs 기본값과 비활성화 동작을 실험에 넣으세요",
+      "verify": "ethtool 설정 예시와 DQL 제한 설명을 원문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이 렌즈는 리스트 중심입니다. 오늘 입력에는 mainline, stable, longterm 릴리스 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- 제한 포인터 출력에 잠금 문맥 검증 추가\n  · 영향: 제한 포인터 출력은 보안 하위 시스템을 거치며 spinlock을 잡을 수 있고, PREEMPT_RT에서는 그 경로가 잠들 수 있어 원자 문맥 사용을 lockdep으로 조기에 드러내려는 패치입니다.\n  · 확인: https://lore.kernel.org/linux-rt-devel/ahcP_G9bD9M1_JrC@pathway.suse.cz/"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "- Rust용 인터럽트 비활성화 계약 재검토\n  · 영향: 64비트 선점 카운트 구현을 내부 세부사항으로 두고 기존 preempt_count 인터페이스를 유지하자는 방향에 대해, Peter Zijlstra가 새 이름에 반대하면서도 local_interrupt_disable 경로의 nmi 경고 가능성을 언급했습니다.\n  · 확인: https://lore.kernel.org/bpf/20260527161844.GG3102624@noisy.programming.kicks-ass.net/\n\n- PPS 실시간 성능 개선 시리즈 재추적\n  · 영향: 2026-05-27부터 본 시리즈의 v6가 7.1-rc5 기준으로 다시 제출되었고, 기존 작업을 이어받아 패치 전달과 이전 버전 링크 정리가 진행 중입니다.\n  · 확인: https://lore.kernel.org/linux-rt-devel/cover.1779733602.git.calvin@wbinvd.org/\n\n- veth 전송 완료 모음 설정 추가\n  · 영향: 패킷마다 BQL 완료를 처리해 NAPI 예약과 qdisc 재시도가 늘어나는 문제를 줄이기 위해, ethtool tx-usecs로 시간 기준 완료 모음을 조정하는 경로가 제안되었습니다.\n  · 확인: https://lore.kernel.org/bpf/20260527135418.1166665-6-hawk@kernel.org/"
+    },
+    {
+      "heading": "기타",
+      "body": "- kmem_cache_alloc_bulk 반환 규약 문서화와 호출부 정리\n  · 영향: 반환값 규약이 직관적이지 않다는 지적에서 출발한 메모리 할당 정리로, bpf 테스트 경로도 diffstat에 포함되지만 이 렌즈에서는 주변 신호입니다.\n  · 확인: https://lore.kernel.org/bpf/20260527140724.GA13256@lst.de/\n\n- bootconfig의 kernel.* 명령줄 빌드 시점 삽입\n  · 영향: 내장 bootconfig의 kernel 하위 트리를 빌드 시점에 평평한 명령줄로 만들어 early_param 처리 전에 보이게 하는 제안입니다.\n  · 확인: https://lore.kernel.org/bpf/20260527-bootconfig_using_tools-v1-0-b6906a86e7d5@debian.org/"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "AI가 원문 후보와 메타데이터를 요약했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Refcounted interrupt disable and SpinLockIrq for rust (Part 1)",
+      "url": "https://lore.kernel.org/bpf/20260527161844.GG3102624@noisy.programming.kicks-ass.net/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "lib/vsprintf: Validate spinlock context during restricted pointer formatting",
+      "url": "https://lore.kernel.org/linux-rt-devel/ahcP_G9bD9M1_JrC@pathway.suse.cz/",
+      "note": "lore.kernel.org/linux-rt-devel · patch-discussion"
+    },
+    {
+      "title": "pps: improve PREEMPT_RT performance",
+      "url": "https://lore.kernel.org/linux-rt-devel/cover.1779733602.git.calvin@wbinvd.org/",
+      "note": "lore.kernel.org/linux-rt-devel · patch-discussion"
+    },
+    {
+      "title": "mm/slab: improve kmem_cache_alloc_bulk",
+      "url": "https://lore.kernel.org/bpf/20260527140724.GA13256@lst.de/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "bootconfig: embed kernel.* cmdline at build time",
+      "url": "https://lore.kernel.org/bpf/20260527-bootconfig_using_tools-v1-0-b6906a86e7d5@debian.org/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "veth: time-based BQL completion coalescing via ethtool tx-usecs",
+      "url": "https://lore.kernel.org/bpf/20260527135418.1166665-6-hawk@kernel.org/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-27T18:14:28.776Z",
+    "sourceRecordCount": 50,
+    "candidateCount": 6,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "lore-bpf:urn:uuid:250da0e9-219e-3018-8ca9-d4eaa5e1352d",
+      "lore-linux-rt-devel:urn:uuid:62b161cc-2079-0f25-cdb9-aec59d6311bb",
+      "lore-linux-rt-devel:urn:uuid:78c16e2f-7181-9eb5-4536-54205e059d69",
+      "lore-bpf:urn:uuid:de8bc788-b61d-a1cd-24e1-e33e0750288a",
+      "lore-bpf:urn:uuid:2f16360e-1fa7-976c-124a-f59bd1c75898",
+      "lore-bpf:urn:uuid:697e3fbc-f144-2597-8f0a-9caa7b60a54c"
+    ],
+    "bucketCounts": {
+      "releases": 0,
+      "regressions": 0,
+      "patches": 6,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 6,
+    "signalLevel": "high",
+    "subsystems": [
+      "스케줄러/실시간",
+      "메모리 관리"
+    ],
+    "lensPipeline": "linux-perf-rt",
+    "rewrittenAt": "2026-05-27T18:14:35.942Z",
+    "rewriteAdapter": "codex",
+    "promptTemplate": "prompts/linux-lens-newsletter-ko.md"
+  }
+}
