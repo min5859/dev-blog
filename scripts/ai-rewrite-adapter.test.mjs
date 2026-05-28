@@ -146,3 +146,58 @@ test('parseNewsletterJsonFromAiOutput tolerates trailing text after newsletter J
   const out = parseNewsletterJsonFromAiOutput(noisy);
   assert.equal(out.id, 'q');
 });
+
+test('parseNewsletterJsonFromAiOutput skips malformed draft JSON before final newsletter JSON', () => {
+  const newsletter = {
+    id: 'final',
+    topic: 'linux',
+    title: 't',
+    date: '2026-05-23',
+    summary: 's',
+    sections: [{ heading: 'a', body: 'b' }],
+    sources: [{ title: 'u', url: 'https://u', note: 'n' }],
+    highlights: [{ title: 'h', priority: '상', verifyLink: '없음', action: 'a' }],
+  };
+  const wrapped = JSON.stringify({
+    type: 'result',
+    subtype: 'success',
+    is_error: false,
+    result: [
+      '초안 작성 중입니다.',
+      '{"id":"broken","topic":"linux","sections":[{"heading":"a","body":"unterminated"',
+      '최종 JSON만 출력합니다.',
+      JSON.stringify(newsletter),
+    ].join('\n'),
+  });
+  const out = parseNewsletterJsonFromAiOutput(wrapped);
+  assert.equal(out.id, 'final');
+});
+
+test('runAiAdapterAndParse retries when parsed post fails validation', async () => {
+  const failureDir = await mkdtemp(path.join(tmpdir(), 'dev-blog-rewrite-failure-'));
+  try {
+    const bad = { id: 'bad', topic: 'linux' };
+    const good = { id: 'good', topic: 'linux' };
+    let call = 0;
+    const runner = async () => {
+      call += 1;
+      return JSON.stringify(call === 1 ? bad : good);
+    };
+    const result = await runAiAdapterAndParse('prompt', {
+      runner,
+      logLabel: 'validator-retry',
+      failureDir,
+      postValidator: (post) => {
+        if (post.id === 'bad') throw new Error('bad post');
+      },
+    });
+    assert.equal(result.post.id, 'good');
+    assert.equal(call, 2);
+    const dumped = await readdir(failureDir);
+    assert.equal(dumped.length, 1);
+    const body = await readFile(path.join(failureDir, dumped[0]), 'utf8');
+    assert.match(body, /bad post/);
+  } finally {
+    await rm(failureDir, { recursive: true, force: true });
+  }
+});

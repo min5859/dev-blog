@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 import { resolveAiAdapter, runAiAdapterAndParse } from './lib/ai-rewrite-adapter.mjs';
+import { auditPostQuality } from './lib/quality-guard.mjs';
 import { PRIORITY_VALUES, validateHighlight } from './lib/highlight-schema.mjs';
 
 const root = process.cwd();
@@ -266,7 +267,14 @@ async function main() {
   await writeFile(path.join(generatedDir, `weekly-prompt-${meta.id}.md`), prompt);
   await writeFile(path.join(generatedDir, 'weekly-prompt-latest.md'), prompt);
 
-  const aiResult = await runAiAdapterAndParse(prompt, { defaultAdapter: 'cursor', logLabel: 'weekly-linux' });
+  const aiResult = await runAiAdapterAndParse(prompt, {
+    defaultAdapter: 'cursor',
+    logLabel: 'weekly-linux',
+    postValidator: (candidate) => {
+      validateWeekly(candidate, meta);
+      auditPostQuality(candidate, { draft: inputPayload });
+    },
+  });
   if (aiResult) {
     await writeFile(path.join(generatedDir, `weekly-stdout-${meta.id}.txt`), aiResult.raw);
     await writeFile(path.join(generatedDir, 'weekly-stdout-latest.txt'), aiResult.raw);

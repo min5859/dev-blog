@@ -102,7 +102,13 @@ async function main() {
   await writeFile(path.join(generatedDir, `rewrite-prompt-${runDate}.md`), prompt);
   await writeFile(path.join(generatedDir, 'rewrite-prompt-latest.md'), prompt);
 
-  const aiResult = await runAiAdapterAndParse(prompt, { logLabel: 'opensource-curation' });
+  const aiResult = await runAiAdapterAndParse(prompt, {
+    logLabel: 'opensource-curation',
+    postValidator: (post) => {
+      validatePost(post);
+      auditPostQuality(post, { draft });
+    },
+  });
   if (aiResult) {
     await writeFile(path.join(generatedDir, `rewrite-stdout-${runDate}.txt`), aiResult.raw);
     await writeFile(path.join(generatedDir, 'rewrite-stdout-latest.txt'), aiResult.raw);

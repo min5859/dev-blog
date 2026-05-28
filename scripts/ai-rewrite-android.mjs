@@ -81,7 +81,13 @@ async function main() {
   await writeFile(promptOutput, prompt);
   await writeFile(promptLatest, prompt);
 
-  const aiResult = await runAiAdapterAndParse(prompt, { logLabel: 'android' });
+  const aiResult = await runAiAdapterAndParse(prompt, {
+    logLabel: 'android',
+    postValidator: (post) => {
+      validatePost(post);
+      auditPostQuality(post, { draft });
+    },
+  });
   if (aiResult) {
     await writeFile(path.join(generatedDir, `rewrite-stdout-${runDate}.txt`), aiResult.raw);
     await writeFile(path.join(generatedDir, 'rewrite-stdout-latest.txt'), aiResult.raw);

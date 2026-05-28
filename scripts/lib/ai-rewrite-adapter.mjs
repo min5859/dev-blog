@@ -150,6 +150,7 @@ export async function runAiAdapterAndParse(prompt, options = {}) {
     maxAttempts = 2,
     failureDir,
     runner = runAiAdapterPrompt,
+    postValidator = null,
   } = options;
   let lastError = null;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
@@ -157,6 +158,7 @@ export async function runAiAdapterAndParse(prompt, options = {}) {
     if (raw === null) return null;
     try {
       const post = parseNewsletterJsonFromAiOutput(raw);
+      if (postValidator) postValidator(post);
       return { raw, post };
     } catch (err) {
       lastError = err;
@@ -252,7 +254,8 @@ function unwrapResultEnvelope(value) {
     const parsed = tryJsonParse(fenced[1].trim());
     if (parsed) return parsed;
   }
-  for (const candidate of collectJsonValues(resultText)) {
+  const candidates = collectJsonValues(resultText).filter(looksLikeNewsletter);
+  for (const candidate of candidates.toReversed()) {
     if (looksLikeNewsletter(candidate)) return candidate;
   }
   return null;
@@ -275,11 +278,14 @@ function collectJsonValues(text) {
     const start = text.indexOf('{', i);
     if (start < 0) break;
     const end = findMatchingBrace(text, start);
-    if (end < 0) break;
+    if (end < 0) {
+      i = start + 1;
+      continue;
+    }
     const slice = text.slice(start, end + 1);
     const parsed = tryJsonParse(slice);
     if (parsed) values.push(parsed);
-    i = end + 1;
+    i = parsed ? end + 1 : start + 1;
   }
   return values;
 }
