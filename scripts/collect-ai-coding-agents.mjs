@@ -45,7 +45,9 @@ function decodeXml(value = '') {
 }
 
 function stripTags(value = '') {
-  return decodeXml(value.replaceAll(/<[^>]+>/g, ' ')).replaceAll(/\s+/g, ' ').trim();
+  // Decode XML entities first (e.g. Atom feeds encode HTML as &lt;h2&gt;),
+  // then strip the resulting HTML tags.
+  return decodeXml(value).replaceAll(/<[^>]+>/g, ' ').replaceAll(/\s+/g, ' ').trim();
 }
 
 function firstMatch(block, pattern) {
@@ -69,7 +71,7 @@ function parseAtomEntries(xml) {
       title: decodeXml(firstMatch(entry, /<title\b[^>]*>([\s\S]*?)<\/title>/) || ''),
       updated: firstMatch(entry, /<updated>([\s\S]*?)<\/updated>/),
       url: decodeXml(firstMatch(entry, /<link\b[^>]*href="([^"]+)"[^>]*\/>/) || firstMatch(entry, /<link>([\s\S]*?)<\/link>/) || ''),
-      excerpt: stripTags(content || summary || '').slice(0, 700),
+      excerpt: stripTags(content || summary || '').slice(0, 2000),
     };
   });
 }
@@ -88,7 +90,7 @@ function parseRssItems(xml) {
       title: decodeXml(cdataTitle || plainTitle || ''),
       pubDate: firstMatch(item, /<pubDate>([\s\S]*?)<\/pubDate>/),
       url: decodeXml(firstMatch(item, /<link>([\s\S]*?)<\/link>/) || ''),
-      excerpt: stripTags(rawContent).slice(0, 700),
+      excerpt: stripTags(rawContent).slice(0, 2000),
     };
   });
 }
@@ -161,6 +163,28 @@ async function collectRss(source) {
   return { sourceId: source.id, records };
 }
 
+function extractTopComments(children = [], maxComments = 3) {
+  const comments = [];
+  for (const child of children) {
+    if (!child.text || child.deleted || child.dead) continue;
+    const text = stripTags(child.text || '').slice(0, 300);
+    if (text.length < 20) continue;
+    comments.push(`[${child.author}] ${text}`);
+    if (comments.length >= maxComments) break;
+  }
+  return comments;
+}
+
+async function enrichHnItem(objectID) {
+  try {
+    const item = await fetchJson(`https://hn.algolia.com/api/v1/items/${objectID}`);
+    const topComments = extractTopComments(item.children || []);
+    return topComments;
+  } catch {
+    return [];
+  }
+}
+
 async function collectHnAlgoliaSearch(source) {
   const queries = source.queries || [];
   const hitsPerQuery = source.hitsPerQuery || 8;
@@ -183,6 +207,7 @@ async function collectHnAlgoliaSearch(source) {
       if (!itemUrl) continue;
       const observedDate = parseDateToIso(hit.created_at) || runId;
       records.push({
+        objectID: hit.objectID,
         id: `hn:${hit.objectID}`,
         topic,
         source: 'hn.algolia.com',
@@ -195,7 +220,7 @@ async function collectHnAlgoliaSearch(source) {
         url: itemUrl,
         publishedAt: hit.created_at || null,
         tags: [topic, 'hn', source.id],
-        body: `HN 스토리: "${hit.title}". ${hit.points || 0}점, 댓글 ${hit.num_comments || 0}개. 검색 키워드: "${query}". URL: ${itemUrl}`,
+        body: '',
         metadata: {
           points: hit.points || 0,
           numComments: hit.num_comments || 0,
@@ -207,11 +232,32 @@ async function collectHnAlgoliaSearch(source) {
     }
   }
 
-  const limited = records.slice(0, source.limit || 20);
+  // 상위 N개만 댓글 enrichment (점수순)
+  const sorted = records.sort((a, b) => (b.metadata.points || 0) - (a.metadata.points || 0));
+  const limited = sorted.slice(0, source.limit || 20);
+  const enrichLimit = source.enrichLimit || 5;
+
+  for (let i = 0; i < Math.min(enrichLimit, limited.length); i++) {
+    const r = limited[i];
+    const topComments = await enrichHnItem(r.objectID);
+    const commentBlock = topComments.length
+      ? `\n상위 댓글:\n${topComments.map((c) => `  - ${c}`).join('\n')}`
+      : '';
+    r.body = `HN 스토리: "${r.title}" (${r.metadata.points}점, 댓글 ${r.metadata.numComments}개). 원문: ${r.url}${commentBlock}`;
+  }
+  // enrichment 안 된 나머지
+  for (let i = enrichLimit; i < limited.length; i++) {
+    const r = limited[i];
+    r.body = `HN 스토리: "${r.title}" (${r.metadata.points}점, 댓글 ${r.metadata.numComments}개). 원문: ${r.url}`;
+  }
+
+  // objectID는 내부용, 출력에서 제거
+  limited.forEach((r) => delete r.objectID);
+
   const rawPayload = { collectedAt, queries, records: limited };
   await writeFile(path.join(rawDir, `${source.id}-${runId}.json`), JSON.stringify(rawPayload, null, 2));
   await writeFile(path.join(rawDir, `${source.id}-latest.json`), JSON.stringify(rawPayload, null, 2));
-  console.log(`  ${source.id}: ${limited.length} hn stories (${queries.length} queries)`);
+  console.log(`  ${source.id}: ${limited.length} hn stories (${queries.length} queries, ${enrichLimit} enriched)`);
   return { sourceId: source.id, records: limited };
 }
 
