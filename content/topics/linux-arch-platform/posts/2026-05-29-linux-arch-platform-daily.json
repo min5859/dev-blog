@@ -1,0 +1,136 @@
+{
+  "id": "2026-05-29-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-05-29 라이브패치 언와인딩 — 아키텍처·플랫폼",
+  "headline": "오늘은 라이브패치 안전 적용을 위한 스택 추적과 함수 추적 보정 논의가 핵심입니다.",
+  "date": "2026-05-29",
+  "summary": "오늘 아키텍처·플랫폼 렌즈의 핵심은 RISC-V에서 라이브패치가 신뢰할 수 있는 스택 추적과 함수 추적 테이블을 함께 요구한다는 점입니다. 그 다음 신호는 ARM64 보호 KVM의 SVE 상태 저장 구조 단순화와 RISC-V CPU 기능 노출 계약 정리입니다.",
+  "tags": [
+    "ARM64",
+    "RISC-V",
+    "아키텍처"
+  ],
+  "highlights": [
+    {
+      "title": "RISC-V build-time mcount 정렬이 patchable ftrace 위치를 잘못 거르는 문제 보정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "RISC-V ftrace·livepatch 담당자",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260528092153.3dde1f75@fedora/",
+      "if": "RISC-V에서 동적 ftrace나 라이브패치를 쓴다면",
+      "do": "mcount 정렬이 함수 시작 전 패치 지점을 허용하는지 확인하세요",
+      "verify": "링크의 sorttable 변경과 부팅 ftrace selftest 로그를 대조하세요"
+    },
+    {
+      "title": "RISC-V livepatch용 reliable stack unwinding 시리즈",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "RISC-V livepatch·스택 추적 담당자",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260528082310.1994388-1-wanghan@linux.alibaba.com/",
+      "if": "RISC-V 라이브패치 전환 안정성을 검증한다면",
+      "do": "예외·태스크 진입·인터럽트 경계의 unwind 메타데이터를 확인하세요",
+      "verify": "v2 커버레터의 변경 목록과 자기 트리의 frame record 가정을 대조하세요"
+    },
+    {
+      "title": "RISC-V Zic64b 확장을 CPU 기능 테이블과 사용자 노출 경로에 추가",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "RISC-V 플랫폼·펌웨어 인터페이스 담당자",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260528141630.2741710-1-qingwei.hu@bytedance.com/",
+      "if": "펌웨어가 64바이트 캐시 블록 정보를 광고한다면",
+      "do": "ISA 문자열과 CBO 블록 크기 검증 조건을 확인하세요",
+      "verify": "스레드의 cpufeature 표 추가와 /proc/cpuinfo 노출 경로를 대조하세요"
+    },
+    {
+      "title": "ARM64 보호 KVM에서 SVE 상태 저장 구조 제거",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "ARM64 KVM·SVE 상태 관리 담당자",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260528165446.701944-5-mark.rutland@arm.com/",
+      "if": "보호 KVM의 호스트 벡터 상태 저장을 만진다면",
+      "do": "ZCR_EL1과 FPSR·FPCR 저장 위치 변경을 확인하세요",
+      "verify": "패치의 cpu_sve_state 제거 diff 와 hyp save·restore 호출부를 대조하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이 렌즈는 ARM·RISC-V 메일링 리스트 중심입니다. 오늘 입력에는 kernel.org 릴리스 항목이 없어 메인라인 타이밍은 별도 리눅스 개발 토픽에서 확인하는 편이 맞습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- RISC-V ftrace 테이블 손실 보정\n· 영향: RISC-V가 build-time mcount 정렬을 사용한 뒤, 함수 심볼보다 앞에 놓이는 patchable ftrace 지점이 잘못 무효 처리되어 동적 ftrace와 라이브패치 사용자가 callsite를 잃을 수 있습니다.\n· 확인: RISC-V ftrace 또는 라이브패치 검증 담당자는 https://lore.kernel.org/linux-riscv/20260528092153.3dde1f75@fedora/ 의 sorttable 변경과 CONFIG_FTRACE_STARTUP_TEST 로그를 자기 빌드 결과와 대조하세요."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "- RISC-V reliable stack unwinding 추가 시리즈\n· 영향: 라이브패치가 안전하게 전환 가능한 태스크를 판단하려면 arch_stack_walk_reliable(), 엄격한 스택 경계 검사, 예외·태스크 진입·인터럽트 경계 메타데이터, ftrace·perf·mcount 경로의 frame record 가정 정렬이 함께 필요하다는 설계입니다.\n· 확인: RISC-V 라이브패치 담당자는 https://lore.kernel.org/linux-riscv/20260528082310.1994388-1-wanghan@linux.alibaba.com/ 의 v2 변경 목록에서 sorttable 선행 수정과 unwinder 패치가 자기 브랜치 적용 순서와 맞는지 확인하세요.\n\n- RISC-V Zic64b CPU 기능 노출\n· 영향: 펌웨어가 64바이트 캐시 블록 크기를 광고할 때 이를 ISA 확장 ID와 cpufeature 테이블에 반영해 /proc/cpuinfo에 노출하되, 존재하는 CBO 블록 크기만 64바이트 제약으로 검증하는 계약입니다.\n· 확인: RISC-V 플랫폼 담당자는 https://lore.kernel.org/linux-riscv/20260528141630.2741710-1-qingwei.hu@bytedance.com/ 의 테이블 추가와 펌웨어에서 전달되는 CBO 크기 경로를 함께 확인하세요.\n\n- ARM64 보호 KVM SVE 상태 구조 단순화\n· 영향: 별도 cpu_sve_state 컨테이너를 제거하고 ZCR_EL1은 kvm_cpu_context의 sys_regs에, FPSR·FPCR은 user_fpsimd_state 관례에 맞춰 다루도록 정리해 이후 SVE 레지스터 상태를 불투명 타입으로 감싸기 쉬워집니다.\n· 확인: ARM64 KVM 담당자는 https://lore.kernel.org/linux-arm-kernel/20260528165446.701944-5-mark.rutland@arm.com/ 의 저장 위치 변경이 hyp 코드의 __sve_save_state와 __sve_restore_state 호출 가정과 맞는지 확인하세요."
+    },
+    {
+      "heading": "기타",
+      "body": "- Banana Pi BPI-CM6 compatible 추가\n· 영향: SpacemiT K1 기반 CM6 모듈과 IO 보드 조합을 devicetree binding에 추가하는 보드 식별자 성격의 변경입니다.\n· 확인: 해당 보드를 지원하는 플랫폼 담당자는 https://lore.kernel.org/linux-riscv/20260528-bpi-cm6-v2-1-d0eb3f236cea@pigmoral.tech/ 에서 compatible 문자열과 외부 인터페이스 설명이 보드 DTS와 맞는지 확인하세요.\n\n- Airoha AN7581 사운드 드라이버 시리즈\n· 영향: AN7581 AFE와 WM8960 조합의 binding, Kconfig, regmap irq 보조 경로, AFE·machine driver를 추가하는 단일 SoC 오디오 지원입니다.\n· 확인: 해당 플랫폼 오디오를 다루는 담당자는 https://lore.kernel.org/linux-arm-kernel/20260528174840.28644-1-ansuelsmth@gmail.com/ 의 v3 변경점에서 ETDM 수정, duplex 지원, YAML schema 변경만 선별해 확인하세요."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "AI가 원문 후보와 메타데이터를 요약했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "scripts/sorttable: Handle RISC-V patchable ftrace entries",
+      "url": "https://lore.kernel.org/linux-riscv/20260528092153.3dde1f75@fedora/",
+      "note": "lore.kernel.org/linux-riscv · patch-discussion"
+    },
+    {
+      "title": "riscv: cpufeature: Add Zic64b ISA extension support",
+      "url": "https://lore.kernel.org/linux-riscv/20260528141630.2741710-1-qingwei.hu@bytedance.com/",
+      "note": "lore.kernel.org/linux-riscv · patch-discussion"
+    },
+    {
+      "title": "KVM: arm64: pkvm: Remove struct cpu_sve_state",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260528165446.701944-5-mark.rutland@arm.com/",
+      "note": "lore.kernel.org/linux-arm-kernel · patch-discussion"
+    },
+    {
+      "title": "dt-bindings: riscv: spacemit: Add Banana Pi BPI-CM6 compatible",
+      "url": "https://lore.kernel.org/linux-riscv/20260528-bpi-cm6-v2-1-d0eb3f236cea@pigmoral.tech/",
+      "note": "lore.kernel.org/linux-riscv · patch-discussion"
+    },
+    {
+      "title": "riscv: Add reliable stack unwinding for livepatch",
+      "url": "https://lore.kernel.org/linux-riscv/20260528082310.1994388-1-wanghan@linux.alibaba.com/",
+      "note": "lore.kernel.org/linux-riscv · patch-discussion"
+    },
+    {
+      "title": "ASoC: Add support for Airoha AN7581",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260528174840.28644-1-ansuelsmth@gmail.com/",
+      "note": "lore.kernel.org/linux-arm-kernel · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-28T18:15:11.310Z",
+    "sourceRecordCount": 50,
+    "candidateCount": 6,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "lore-linux-riscv:urn:uuid:3f8b2dbe-37af-e937-762e-657a44a35dfa",
+      "lore-linux-riscv:urn:uuid:50e15e5d-1abd-7ea4-a5fd-2a25a61a55d2",
+      "lore-linux-arm-kernel:urn:uuid:a03e3475-5873-e4a6-0bca-33569c234ceb",
+      "lore-linux-riscv:urn:uuid:1a0db97b-8573-b0d0-643d-d19b4f1d80b3",
+      "lore-linux-riscv:urn:uuid:5f1602ed-7acf-0c4f-3bf1-62a81d73014e",
+      "lore-linux-arm-kernel:urn:uuid:ceef93f1-ebf8-8b9d-e739-f6a869b1386a"
+    ],
+    "bucketCounts": {
+      "releases": 0,
+      "regressions": 0,
+      "patches": 6,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 6,
+    "signalLevel": "high",
+    "subsystems": [],
+    "lensPipeline": "linux-arch-platform",
+    "rewrittenAt": "2026-05-28T18:15:17.994Z",
+    "rewriteAdapter": "codex",
+    "promptTemplate": "prompts/linux-lens-newsletter-ko.md"
+  }
+}

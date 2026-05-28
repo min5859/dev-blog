@@ -1,0 +1,146 @@
+{
+  "id": "2026-05-29-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-05-29 인터럽트 전달 수정 — 관측성·실시간(eBPF·RT)",
+  "headline": "강제 스레드 인터럽트에서 하위 인터럽트 계약 위반과 BPF 경계 검사가 함께 논의됐습니다.",
+  "date": "2026-05-29",
+  "summary": "오늘 이 렌즈의 핵심은 PREEMPT_RT 같은 강제 스레드 인터럽트 환경에서 i915 하위 인터럽트 전달이 기대한 실행 문맥을 깨뜨릴 수 있다는 수정 제안입니다. BPF 쪽에서는 verifier 크기 검증, syscall writeback 크기 계약, 가변 해시맵 제안이 함께 올라와 검증 계약과 사용자 공간 ABI를 같이 봐야 합니다.",
+  "tags": [
+    "eBPF",
+    "verifier",
+    "tracing",
+    "PREEMPT_RT",
+    "실시간"
+  ],
+  "highlights": [
+    {
+      "title": "i915 LPE 오디오 하위 인터럽트를 안전한 전달 helper로 바꾸는 PREEMPT_RT 회귀 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "PREEMPT_RT 및 i915 인터럽트 경로 검증 담당자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260528154551.3708290-1-runyu.xiao@seu.edu.cn/",
+      "if": "강제 스레드 IRQ 구성을 검증한다면",
+      "do": "generic_handle_irq_safe 전환이 같은 전달 패턴에 필요한지 확인하세요",
+      "verify": "스레드의 재현 설명과 Fixes 커밋 경로를 자기 트리 diff로 확인하세요"
+    },
+    {
+      "title": "BPF 전역 subprog 인자의 과대 크기를 verifier에서 거부하는 보강",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF verifier 및 BTF 인자 검증 담당자",
+      "verifyLink": "https://lore.kernel.org/bpf/691a2da2-9aa0-4e93-b80f-81ab8c4d3a93@linux.dev/",
+      "if": "BTF 기반 전역 subprog 인자를 다룬다면",
+      "do": "signed access-size API 앞단의 크기 거부 조건을 확인하세요",
+      "verify": "메일의 oversized BTF 예제와 추가 selftest 의도를 대조하세요"
+    },
+    {
+      "title": "BPF syscall writeback을 호출자가 넘긴 크기와 맞추자는 ABI 논의",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "BPF 사용자 공간 도구 및 syscall ABI 담당자",
+      "verifyLink": "https://lore.kernel.org/bpf/CAKD1Yr32VMefwq7Bo6_hmhFrDVsttNFwZJZcaXS4P-ACOwWobw@mail.gmail.com/",
+      "if": "bpf syscall attr 버퍼를 직접 만든다면",
+      "do": "커널이 caller-declared size를 존중해야 한다는 논점을 확인하세요",
+      "verify": "스레드에서 union bpf_attr 크기 증가와 writeback 범위를 확인하세요"
+    },
+    {
+      "title": "PPS 경로의 PREEMPT_RT 성능 개선 v6 패치가 재게시됨",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "PREEMPT_RT 성능 및 시간 동기화 경로 담당자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/cover.1779733602.git.calvin@wbinvd.org/",
+      "if": "PPS를 RT 커널에서 성능 검증한다면",
+      "do": "v6가 7.1-rc5 기반으로 재게시된 범위를 확인하세요",
+      "verify": "커버레터의 이전 버전 링크와 3개 패치 변경 설명을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "- 이 렌즈는 리스트 중심\n  · 영향: 오늘 입력에는 kernel.org mainline, stable, longterm 릴리스 항목이 없습니다. bpf와 linux-rt-devel의 패치 및 회귀 신호만 다룹니다.\n  · 확인: 없음"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- i915 LPE 오디오 하위 IRQ 전달 문맥 수정\n  · 영향: i915 부모 IRQ가 PREEMPT_RT 또는 강제 스레드 환경에서 threaded context로 돌 때, generic_handle_irq()로 전달된 하위 top half가 로컬 IRQ 비활성 문맥이라는 계약을 만족하지 못할 수 있어 generic_handle_irq_safe()로 바꾸자는 제안입니다.\n  · 확인: https://lore.kernel.org/linux-rt-devel/20260528154551.3708290-1-runyu.xiao@seu.edu.cn/\n\n- BPF 전역 subprog 인자의 과대 BTF 크기 거부\n  · 영향: BTF가 매우 큰 pointee 크기를 만들고 verifier 내부의 signed 크기 처리와 stack pointer negation이 결합되면 작은 caller stack slot을 큰 callee memory region처럼 통과시킬 수 있어, 표현 불가능한 크기를 미리 거부하고 regression test를 추가합니다.\n  · 확인: https://lore.kernel.org/bpf/691a2da2-9aa0-4e93-b80f-81ab8c4d3a93@linux.dev/\n\n- bpf-next unsigned bound checking 회귀 보고\n  · 영향: verifier가 특정 비교 순서에서 unsigned 하한을 1로 좁히지 못해 zero-sized read 가능성을 남기는 사례가 보고됐고, 실패 조건은 selftest의 조건문 순서와 verifier range propagation 변화에 연결됩니다.\n  · 확인: https://lore.kernel.org/bpf/CAA-VZPnGxmnF3BkukQm5ZNQ4M3FkO9stbAEPWo4jv0qCL9OdkQ@mail.gmail.com/"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "- PPS PREEMPT_RT 성능 개선 v6\n  · 영향: PPS 성능 개선 3개 패치가 7.1-rc5 기반으로 다시 올라왔고, 작성자가 이전 버전 lore 링크를 변경 설명 옆에 붙여 리뷰 이력을 따라가기 쉽게 했습니다.\n  · 확인: https://lore.kernel.org/linux-rt-devel/cover.1779733602.git.calvin@wbinvd.org/\n\n- BPF 가변 해시맵 타입 제안\n  · 영향: 새 BPF_MAP_TYPE_RHASH는 rhashtable을 감싸 fixed bucket 방식의 메모리 과다 할당과 runtime 부하 변화 문제를 줄이려는 제안이며, max_entries는 bucket 수가 아니라 hard limit로 쓰이고 iteration은 동시 resize와 update에서 best-effort 계약을 가집니다.\n  · 확인: https://lore.kernel.org/bpf/20260528-rhash-v5-0-7205191b6c57@meta.com/\n\n- arm64 BPF JIT stack argument 테스트 보강\n  · 영향: arm64 JIT의 stack argument 저장 경로에서 불필요한 MOV를 정리하고 주석을 명확히 하며, selftest가 x0부터 x7까지만 쓰는 구간을 넘어 실제 native stack 인자를 건드리도록 인자 수를 늘립니다.\n  · 확인: https://lore.kernel.org/bpf/20260528161750.1900674-1-puranjay@kernel.org/\n\n- BPF syscall writeback 크기 계약 논의\n  · 영향: 사용자 공간이 넘긴 bpf_attr 크기보다 커널이 더 많이 writeback하면 커널 업그레이드로 stack corruption이 생길 수 있다는 ABI 우려가 제기됐고, syscall의 size 인자를 커널이 어디까지 존중해야 하는지가 쟁점입니다.\n  · 확인: https://lore.kernel.org/bpf/CAKD1Yr32VMefwq7Bo6_hmhFrDVsttNFwZJZcaXS4P-ACOwWobw@mail.gmail.com/"
+    },
+    {
+      "heading": "기타",
+      "body": "- 국부적 드라이버 수정과 리스트 외 토론\n  · 영향: i915 LPE 오디오 건은 회귀 신호로 올렸지만 Baytrail 또는 Cherrytrail 실기 검증은 아직 없다고 설명되어 있어, 플랫폼 소유자가 아니면 같은 helper 계약 패턴만 추적하면 됩니다.\n  · 확인: https://lore.kernel.org/linux-rt-devel/20260528154551.3708290-1-runyu.xiao@seu.edu.cn/"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "AI가 원문 후보와 메타데이터를 요약했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "bpf, arm64: Stack argument fixes",
+      "url": "https://lore.kernel.org/bpf/20260528161750.1900674-1-puranjay@kernel.org/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "pps: improve PREEMPT_RT performance",
+      "url": "https://lore.kernel.org/linux-rt-devel/cover.1779733602.git.calvin@wbinvd.org/",
+      "note": "lore.kernel.org/linux-rt-devel · patch-discussion"
+    },
+    {
+      "title": "bpf: Introduce resizable hash map",
+      "url": "https://lore.kernel.org/bpf/20260528-rhash-v5-0-7205191b6c57@meta.com/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "drm/i915/audio: use generic_handle_irq_safe() for LPE audio irq",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260528154551.3708290-1-runyu.xiao@seu.edu.cn/",
+      "note": "lore.kernel.org/linux-rt-devel · patch-discussion"
+    },
+    {
+      "title": "bpf: reject overlarge global subprog argument sizes",
+      "url": "https://lore.kernel.org/bpf/691a2da2-9aa0-4e93-b80f-81ab8c4d3a93@linux.dev/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "bpf: align syscall writeback behavior with caller-declared size",
+      "url": "https://lore.kernel.org/bpf/CAKD1Yr32VMefwq7Bo6_hmhFrDVsttNFwZJZcaXS4P-ACOwWobw@mail.gmail.com/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "bpf-next verifier regression on unsigned bound checking",
+      "url": "https://lore.kernel.org/bpf/CAA-VZPnGxmnF3BkukQm5ZNQ4M3FkO9stbAEPWo4jv0qCL9OdkQ@mail.gmail.com/",
+      "note": "lore.kernel.org/bpf · mail-reply"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-28T18:13:53.873Z",
+    "sourceRecordCount": 50,
+    "candidateCount": 7,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "lore-bpf:urn:uuid:0431206b-9bbb-a450-6495-8c5cf83b640e",
+      "lore-linux-rt-devel:urn:uuid:78c16e2f-7181-9eb5-4536-54205e059d69",
+      "lore-bpf:urn:uuid:e85cf75f-ef35-54f9-0004-242ae2af9ca3",
+      "lore-linux-rt-devel:urn:uuid:f2c25b23-713c-94c4-8845-20248dd56746",
+      "lore-bpf:urn:uuid:318ee011-2306-0e4f-8531-1e25e6d80492",
+      "lore-bpf:urn:uuid:25795b95-6081-4a41-d22a-49cb7dcae348",
+      "lore-bpf:urn:uuid:2e27b1f6-4b75-4c7f-def8-0f6e1f52f25a"
+    ],
+    "bucketCounts": {
+      "releases": 0,
+      "regressions": 3,
+      "patches": 4,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 7,
+    "signalLevel": "high",
+    "subsystems": [
+      "스케줄러/실시간"
+    ],
+    "lensPipeline": "linux-perf-rt",
+    "rewrittenAt": "2026-05-28T18:14:01.066Z",
+    "rewriteAdapter": "codex",
+    "promptTemplate": "prompts/linux-lens-newsletter-ko.md"
+  }
+}

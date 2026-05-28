@@ -1,0 +1,155 @@
+{
+  "id": "2026-05-29-linux-distro-stable-daily",
+  "topic": "linux-distro-stable",
+  "title": "2026-05-29 안정 커널 회귀 점검 — 스테이블·배포 롱텀",
+  "date": "2026-05-29",
+  "headline": "스테이블 후보에서 교착, 범위 초과 쓰기, 길이 넘침, 경로 전환 실패가 함께 올라왔습니다.",
+  "summary": "오늘은 스테이블·롱텀 적용 전 회귀 위험을 먼저 봐야 하는 날입니다. 특히 보안 변환, 입력 장치, 공유 버퍼, 스토리지 다중 경로를 쓰는 배포 커널은 원문 패치와 자기 백포트 트리를 함께 대조해야 합니다.",
+  "tags": [
+    "stable",
+    "longterm",
+    "백포트"
+  ],
+  "highlights": [
+    {
+      "title": "보안 변환 터널 종료 경로의 타이머 취소 순서가 교착을 만들 수 있어 잠금 밖에서 취소하도록 바뀝니다.",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "네트워크 보안 경로 백포트 담당자",
+      "verifyLink": "https://lore.kernel.org/stable/20260528160318.2631699-1-tristan@talencesecurity.com/",
+      "if": "보안 변환 터널 모드를 쓰는 커널이라면 확인하세요",
+      "do": "종료 경로의 타이머 취소와 잠금 순서를 대조하세요",
+      "verify": "원문 diff에서 취소가 잠금 획득 전으로 이동했는지 확인하세요"
+    },
+    {
+      "title": "와콤 입력 큐가 빈 버퍼에서 오래된 길이를 읽어 범위 밖 쓰기로 이어질 수 있어 빈 큐 처리가 보강됩니다.",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "입력 장치와 데스크톱 커널 유지보수자",
+      "verifyLink": "https://lore.kernel.org/stable/20260528175945.2987781-1-jinmo44.yang@gmail.com/",
+      "if": "와콤 입력 드라이버를 배포 커널에 싣는다면 확인하세요",
+      "do": "빈 큐 건너뛰기 조건과 삽입 실패 처리를 반영하세요",
+      "verify": "원문에서 kfifo_is_empty 조건과 kfifo_in 반환값 검사를 확인하세요"
+    },
+    {
+      "title": "공유 버퍼의 물리 벡터 변환에서 4기가바이트 초과 길이가 잘릴 수 있어 길이 계산 타입이 넓어집니다.",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "그래픽·가속기와 공유 버퍼 담당자",
+      "verifyLink": "https://lore.kernel.org/stable/20260528160004.2452461-1-xuehaohu@google.com/",
+      "if": "대용량 장치 메모리와 피어 직접 전송을 쓴다면 확인하세요",
+      "do": "길이 누적 타입과 항목 수 상한 검사를 백포트하세요",
+      "verify": "원문 diff에서 mapped_len과 항목 수 검사가 넓어졌는지 확인하세요"
+    },
+    {
+      "title": "스토리지 다중 경로에서 경로별 장치로 다시 보낸 입출력이 용량 검사에 막혀 장애 전환되지 않을 수 있습니다.",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "엔브이엠이 다중 경로 운영자와 배포 커널 담당자",
+      "verifyLink": "https://lore.kernel.org/stable/DS0PR19MB76963295FC34844B413479F9FD092@DS0PR19MB7696.namprd19.prod.outlook.com/",
+      "if": "엔브이엠이 다중 경로 장애 전환을 검증한다면 확인하세요",
+      "do": "경로별 장치 재지정 뒤 플래그 설정 방식을 비교하세요",
+      "verify": "원문과 maintainer 의견에서 대체 호출 논의를 함께 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "- Linux 7.0.10 stable\n  · 영향: 총 1145건 규모의 안정 커널 백포트이며, 네트워크 조각 표시 보존, 세션 키 기반 파일 공유 암호화 키 도출, 이벤트 파일 시스템 정리, 그래픽 메모리와 입출력 메모리 관리 수정, 입출력 장치 그룹 재설정 관련 수정이 앞쪽에 보입니다.\n  · 확인: https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.0.10\n\n- Linux 5.10.257 longterm\n  · 영향: 네트워크 버퍼 조각 전달과 병합 과정에서 공유 조각 표시를 보존하는 두 건만 포함된 작은 롱텀 갱신입니다.\n  · 확인: https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.257\n\n- Linux 5.15.208 longterm\n  · 영향: 5.10 계열과 같은 네트워크 버퍼 공유 조각 표시 보존 두 건이 백포트된 롱텀 갱신입니다.\n  · 확인: https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.208\n\n- Linux 6.1.174 longterm\n  · 영향: 네트워크 버퍼 조각 전달과 병합의 공유 조각 표시 보존만 반영된 롱텀 갱신입니다.\n  · 확인: https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.1.174"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- xfrm: iptfs: fix ABBA deadlock in iptfs_destroy_state()\n  · 영향: 보안 변환 터널 상태 해제 중 타이머 취소를 잠금 안에서 호출해 다른 시피유의 타이머 콜백과 순환 대기를 만들 수 있어, 타이머 취소를 잠금 획득 전으로 옮기는 변경입니다.\n  · 확인: https://lore.kernel.org/stable/20260528160318.2631699-1-tristan@talencesecurity.com/\n\n- HID: wacom: fix slab-out-of-bounds write in wacom_wac_queue_insert\n  · 영향: 와콤 입력 보고서 큐가 빈 상태에서 오래된 길이 값을 읽고 내부 위치를 잘못 전진시켜 256바이트 버퍼 밖으로 복사할 수 있어, 빈 큐 조건과 삽입 실패 처리를 추가합니다.\n  · 확인: https://lore.kernel.org/stable/20260528175945.2987781-1-jinmo44.yang@gmail.com/\n\n- dma-buf: Fix silent overflow for phys vec to sgt\n  · 영향: 4기가바이트를 넘는 장치 메모리 직접 전송 경로에서 누적 길이가 32비트 값으로 잘려 잘못된 산포 수집 항목이 만들어질 수 있어, 길이와 항목 수 계산 타입과 상한 검사를 보강합니다.\n  · 확인: https://lore.kernel.org/stable/20260528160004.2452461-1-xuehaohu@google.com/\n\n- serial: qcom_geni: Fix RX DMA stall when SE_DMA_RX_LEN_IN is zero\n  · 영향: 수신 길이가 0일 때 수신 직접 메모리 접근 버퍼를 다시 준비하지 않아 이후 입력이 멈출 수 있어, 데이터 처리는 건너뛰더라도 재준비 경로는 유지합니다.\n  · 확인: https://lore.kernel.org/stable/20260528-serial-rx-0-byte-fix-v2-1-b4195cfe342f@oss.qualcomm.com/\n\n- net: shaper: use kfree_rcu() in net_shaper_flush()\n  · 영향: 네트워크 셰이퍼 조회자가 읽기 쪽 임계 구역에서 객체를 들고 있는 동안 삭제 경로가 즉시 해제할 수 있어, 지연 해제로 바꾸는 사용 후 해제 방지 패치입니다.\n  · 확인: https://lore.kernel.org/stable/20260528160845.2636043-1-tristan@talencesecurity.com/\n\n- [Intel-wired-lan] [PATCH net] i40e: fix netdev leak in i40e_vsi_setup() error paths\n  · 영향: 인텔 유선랜 드라이버의 장치 등록 전 실패 경로에서 네트워크 장치 할당이 해제되지 않는 누수를 고치는 패치이며, 런타임 장비 검증은 원문 기준으로 수행되지 않았습니다.\n  · 확인: https://lore.kernel.org/stable/eb74ae1c-3027-42f5-ad5b-a6f2c2cd6a98@onemain.com/"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "- nvme-multipath: set BIO_REMAPPED on bios remapped to per-path namespace disks\n  · 영향: 다중 경로 헤드에서 경로별 이름공간 장치로 재지정된 입출력이 용량 0으로 바뀐 경로별 디스크의 끝 검사에 막혀 다른 경로로 장애 전환되지 못하는 문제를 줄이기 위해 재지정 표시를 다시 세웁니다. Maintainer 의견에서는 직접 검사 생략 호출을 쓸 수 있는지도 논의되어, 백포트 전 최종 합의 흐름을 확인해야 합니다.\n  · 확인: https://lore.kernel.org/stable/DS0PR19MB76963295FC34844B413479F9FD092@DS0PR19MB7696.namprd19.prod.outlook.com/"
+    },
+    {
+      "heading": "기타",
+      "body": "- 인텔 i40e 누수 패치는 특정 어댑터 장비 없이 빌드 검증만 언급되어 있으므로, 해당 하드웨어를 운영하는 배포판은 오류 경로 재현이나 드라이버 언로드 반복 시험으로 보강 검증하는 편이 좋습니다.\n  · 확인: https://lore.kernel.org/stable/eb74ae1c-3027-42f5-ad5b-a6f2c2cd6a98@onemain.com/"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "AI가 원문 후보와 메타데이터를 요약했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Linux 7.0.10 stable",
+      "url": "https://git.kernel.org/stable/h/v7.0.10",
+      "note": "kernel.org · kernel-release"
+    },
+    {
+      "title": "xfrm: iptfs: fix ABBA deadlock in iptfs_destroy_state()",
+      "url": "https://lore.kernel.org/stable/20260528160318.2631699-1-tristan@talencesecurity.com/",
+      "note": "lore.kernel.org/stable · patch-discussion"
+    },
+    {
+      "title": "HID: wacom: fix slab-out-of-bounds write in wacom_wac_queue_insert",
+      "url": "https://lore.kernel.org/stable/20260528175945.2987781-1-jinmo44.yang@gmail.com/",
+      "note": "lore.kernel.org/stable · patch-discussion"
+    },
+    {
+      "title": "nvme-multipath: set BIO_REMAPPED on bios remapped to per-path namespace disks",
+      "url": "https://lore.kernel.org/stable/DS0PR19MB76963295FC34844B413479F9FD092@DS0PR19MB7696.namprd19.prod.outlook.com/",
+      "note": "lore.kernel.org/stable · patch-discussion"
+    },
+    {
+      "title": "dma-buf: Fix silent overflow for phys vec to sgt",
+      "url": "https://lore.kernel.org/stable/20260528160004.2452461-1-xuehaohu@google.com/",
+      "note": "lore.kernel.org/stable · patch-discussion"
+    },
+    {
+      "title": "serial: qcom_geni: Fix RX DMA stall when SE_DMA_RX_LEN_IN is zero",
+      "url": "https://lore.kernel.org/stable/20260528-serial-rx-0-byte-fix-v2-1-b4195cfe342f@oss.qualcomm.com/",
+      "note": "lore.kernel.org/stable · patch-discussion"
+    },
+    {
+      "title": "net: shaper: use kfree_rcu() in net_shaper_flush()",
+      "url": "https://lore.kernel.org/stable/20260528160845.2636043-1-tristan@talencesecurity.com/",
+      "note": "lore.kernel.org/stable · patch-discussion"
+    },
+    {
+      "title": "[Intel-wired-lan] [PATCH net] i40e: fix netdev leak in i40e_vsi_setup() error paths",
+      "url": "https://lore.kernel.org/stable/eb74ae1c-3027-42f5-ad5b-a6f2c2cd6a98@onemain.com/",
+      "note": "lore.kernel.org/stable · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-28T18:12:33.753Z",
+    "sourceRecordCount": 34,
+    "candidateCount": 11,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "kernel-org:stable:7.0.10",
+      "lore-stable:urn:uuid:7afa903a-f176-232a-ab8e-7820e8589cfb",
+      "lore-stable:urn:uuid:7f67c6c5-ca6d-4017-b023-73af7d05f559",
+      "lore-stable:urn:uuid:beaab49a-45c5-238b-5542-66ee184469b4",
+      "lore-stable:urn:uuid:21897d18-c9b6-370d-0e28-1015e273b019",
+      "lore-stable:urn:uuid:5ca3abbc-0c5a-064e-d98c-ef958218c6a0",
+      "lore-stable:urn:uuid:24919712-94e1-5269-2729-6e6cf9fcfdf6",
+      "lore-stable:urn:uuid:a72e5296-23ef-7497-4517-59fab92975a1",
+      "kernel-org:longterm:5.10.257",
+      "kernel-org:longterm:5.15.208",
+      "kernel-org:longterm:6.1.174"
+    ],
+    "bucketCounts": {
+      "releases": 4,
+      "regressions": 6,
+      "patches": 1,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 7,
+    "signalLevel": "high",
+    "subsystems": [
+      "메모리 관리",
+      "스토리지/파일시스템",
+      "네트워크"
+    ],
+    "lensPipeline": "linux-distro-stable",
+    "rewrittenAt": "2026-05-28T18:12:41.939Z",
+    "rewriteAdapter": "codex",
+    "promptTemplate": "prompts/linux-lens-newsletter-ko.md"
+  }
+}
