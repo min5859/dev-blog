@@ -1,0 +1,72 @@
+import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+
+import { validateHighlight } from './lib/highlight-schema.mjs';
+import { markPublishOk } from './lib/write-status.mjs';
+
+const root = process.cwd();
+const topic = 'ai-coding-agents';
+const todayKst = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date());
+const runDate = process.env.NEWSLETTER_DATE || todayKst();
+const postId = `${runDate}-ai-coding-agents-daily`;
+const generatedDir = path.join(root, 'data', 'generated', topic);
+const contentPostsDir = path.join(root, 'content', 'topics', topic, 'posts');
+const sourcePath = process.env.PUBLISH_SOURCE || path.join(generatedDir, 'rewritten-latest.json');
+const fallbackSourcePath = path.join(generatedDir, 'draft-latest.json');
+const draftReferencePath = path.join(generatedDir, 'draft-latest.json');
+const outputPath = path.join(contentPostsDir, `${postId}.json`);
+
+async function readJsonWithFallback(primary, fallback) {
+  try { return JSON.parse(await readFile(primary, 'utf8')); }
+  catch (e) { try { return JSON.parse(await readFile(fallback, 'utf8')); } catch { throw e; } }
+}
+
+async function tryReadJson(file) {
+  try { return JSON.parse(await readFile(file, 'utf8')); } catch { return null; }
+}
+
+function assertImmutableAgainstDraft(post, draft) {
+  if (!draft) return;
+  for (const key of ['id', 'topic', 'date']) {
+    if (post[key] !== draft[key]) {
+      throw new Error(`publish candidate ${key} (${post[key]}) does not match source draft ${key} (${draft[key]})`);
+    }
+  }
+}
+
+function validatePost(post) {
+  for (const key of ['id', 'topic', 'title', 'date', 'summary', 'sections', 'sources', 'highlights']) {
+    if (!post[key]) throw new Error(`publish candidate missing ${key}`);
+  }
+  if (post.topic !== topic) throw new Error(`publish candidate topic must be ${topic}`);
+  if (post.date !== runDate) throw new Error(`publish candidate date ${post.date} does not match NEWSLETTER_DATE ${runDate}`);
+  if (!Array.isArray(post.sections) || post.sections.length === 0) throw new Error('publish candidate requires sections[]');
+  if (!Array.isArray(post.sources) || post.sources.length === 0) throw new Error('publish candidate requires sources[]');
+  if (!Array.isArray(post.highlights) || post.highlights.length === 0) throw new Error('publish candidate requires highlights[]');
+  post.highlights.forEach((h, i) => validateHighlight(h, i));
+}
+
+const REQUIRED_DISCLAIMER = '본 브리핑의 설명은 GitHub 릴리스 노트·공식 블로그·Hacker News 신호에서 AI가 요약한 것입니다. 구체 명령어·플래그·옵션은 도입 전 반드시 원문으로 확인하세요.';
+
+function ensureDisclaimer(post) {
+  const existing = post.confidence && typeof post.confidence === 'object' ? post.confidence : {};
+  const note = typeof existing.note === 'string' ? existing.note : '';
+  if (note.includes(REQUIRED_DISCLAIMER)) return post;
+  const merged = note ? `${note} ${REQUIRED_DISCLAIMER}` : REQUIRED_DISCLAIMER;
+  return { ...post, confidence: { level: '자동 생성', note: merged } };
+}
+
+async function main() {
+  let post = await readJsonWithFallback(sourcePath, fallbackSourcePath);
+  validatePost(post);
+  assertImmutableAgainstDraft(post, await tryReadJson(draftReferencePath));
+  post = ensureDisclaimer(post);
+
+  await mkdir(contentPostsDir, { recursive: true });
+  await writeFile(outputPath, JSON.stringify(post, null, 2));
+  await copyFile(outputPath, path.join(generatedDir, `published-${postId}.json`));
+  await markPublishOk({ topic, runDate, logDir: path.join(root, 'logs', 'daily'), publishedPath: path.relative(root, outputPath) });
+  console.log(`Published ai-coding-agents: ${path.relative(root, outputPath)}`);
+}
+
+main().catch((error) => { console.error(error); process.exit(1); });
