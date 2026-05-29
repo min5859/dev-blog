@@ -1,0 +1,141 @@
+{
+  "id": "2026-05-30-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-05-30 로더 실패 처리 보강 — 관측성·실시간(eBPF·RT)",
+  "headline": "로더 생성 실패 뒤 바이트 변환을 건너뛰고, 잠들 수 있는 관측성 경로의 잠금 경고를 줄입니다.",
+  "date": "2026-05-30",
+  "summary": "오늘은 libbpf의 교차 엔디언 로더 생성 실패 처리와 잠들 수 있는 BPF 프로그램의 LPM 트라이 조회 경고가 이 렌즈의 핵심입니다. 다음 신호는 재전송 시간초과 뒤 로컬 다중 경로를 다시 고르는 TCP 변경과 실시간 커널을 위한 인터럽트 처리 분리입니다.",
+  "tags": [
+    "eBPF",
+    "verifier",
+    "tracing",
+    "PREEMPT_RT",
+    "실시간"
+  ],
+  "highlights": [
+    {
+      "title": "libbpf 로더 생성 실패 뒤 바이트 변환을 건너뜀",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "libbpf와 교차 엔디언 빌드 담당자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260529162829.315921-1-daniel@iogearbox.net/",
+      "if": "교차 엔디언 경량 스켈레톤을 만든다면",
+      "do": "생성 실패 뒤 변환 경로가 실행되지 않는지 확인하세요",
+      "verify": "해당 패치의 Fixes 대상과 실패 재현 로그를 대조하세요"
+    },
+    {
+      "title": "잠들 수 있는 BPF 프로그램에서 LPM 트라이 조회 허용",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "BPF LSM과 맵 조회 경로 담당자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260529174233.2954240-1-vlad.wing@gmail.com/",
+      "if": "잠들 수 있는 보안 훅에서 트라이 맵을 본다면",
+      "do": "조회 경로가 통합 잠금 검사 도우미를 쓰는지 확인하세요",
+      "verify": "디버그 커널의 잠금 경고와 lpm_trie 변경을 대조하세요"
+    },
+    {
+      "title": "재전송 시간초과 뒤 로컬 다중 경로를 다시 선택",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "TCP와 다중 경로 라우팅 담당자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260529160136.1010064-1-ntspring@meta.com/",
+      "if": "IPv6 로컬 다중 경로 TCP를 운영한다면",
+      "do": "경로 캐시 무효화와 해시 전달 조건을 확인하세요",
+      "verify": "패치 1, 2의 재전송 및 싱크ookie 자체 시험을 확인하세요"
+    },
+    {
+      "title": "실시간 커널을 위해 i.MX 메일박스 인터럽트 처리 분리",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "PREEMPT_RT와 원격 처리 담당자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260529-imx_mbox_rproc-v1-1-b8ffc36e11e5@linutronix.de/",
+      "if": "i.MX 메일박스를 실시간 커널에서 쓴다면",
+      "do": "주 처리기와 스레드 처리기 분리 흐름을 확인하세요",
+      "verify": "콜백이 선점 가능한 문맥으로 이동하는지 diff로 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이 렌즈는 lore.kernel.org의 bpf 및 linux-rt-devel 리스트 중심입니다. 오늘 입력에는 mainline, stable, longterm 릴리스 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- libbpf 로더 생성 실패 뒤 바이트 변환을 건너뜀\n  · 영향: 교차 엔디언 대상의 경량 스켈레톤 생성이 실패한 뒤에도 프로그램 명령, 함수 정보, 줄 정보, CO-RE 재배치 블롭을 제자리 변환하려던 경로를 막습니다. 실패 오프셋이 0으로 돌아와 비어 있거나 오래된 버퍼를 건드릴 수 있는 회귀 방지 성격입니다.\n  · 확인: https://lore.kernel.org/bpf/20260529162829.315921-1-daniel@iogearbox.net/\n\n- 잠들 수 있는 BPF 프로그램에서 LPM 트라이 조회 허용\n  · 영향: sleepable LSM 훅에서 LPM 트라이 맵을 조회할 때 기존 검사가 BH 또는 일반 RCU 보유만 인정해 디버그 커널에서 잠금 경고를 냈습니다. 본문은 메모리 해제 위험은 아니라고 설명하며, 다른 맵과 같은 bpf_rcu_lock_held() 규칙으로 맞춥니다.\n  · 확인: https://lore.kernel.org/bpf/20260529174233.2954240-1-vlad.wing@gmail.com/"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "- TCP 재전송 뒤 로컬 다중 경로 재선택\n  · 영향: 재전송 시간초과, 패킷 손실 균형화, 가짜 재전송 이벤트에서 소켓 전송 해시를 다시 뽑아도 IPv6 다중 경로 선택에는 반영되지 않던 문제를 고칩니다. 경로 캐시를 비우고 새 라우트 조회 때 해시를 넘기되, 흐름 키 기반 정책은 덮어쓰지 않습니다.\n  · 확인: https://lore.kernel.org/bpf/20260529160136.1010064-1-ntspring@meta.com/\n\n- VxLAN 캡슐화 자체 시험 추가\n  · 영향: bpf_lwt_push_encap()로 VxLAN을 씌울 때 전송 헤더 위치가 맞게 설정되는지 IPv4와 IPv6 시험을 추가합니다. 수정 전에는 예상 전송 헤더 오프셋과 실제 값이 달라 실패하도록 설계된 회귀 시험입니다.\n  · 확인: https://lore.kernel.org/bpf/20260529151351.69911-5-leon.hwang@linux.dev/\n\n- 실시간 커널을 위한 i.MX 메일박스 인터럽트 처리 분리\n  · 영향: 메일박스 인터럽트 처리를 주 처리기와 스레드 처리기로 나누고, 콜백 실행을 선점 가능한 문맥으로 옮기는 준비 단계입니다. PREEMPT_RT에서 긴 작업을 하드 인터럽트 문맥에 묶어 두지 않기 위한 변화입니다.\n  · 확인: https://lore.kernel.org/linux-rt-devel/20260529-imx_mbox_rproc-v1-1-b8ffc36e11e5@linutronix.de/"
+    },
+    {
+      "heading": "기타",
+      "body": "- MANA 네트워크 드라이버의 전체 쪽 수신 버퍼 플래그\n  · 영향: 일부 4K 쪽 크기 ARM64 환경에서 높은 연결 수 처리량 회귀를 피하려고 page_pool 조각 경로를 우회하는 ethtool 사설 플래그를 추가하는 논의입니다. Jakub Kicinski는 fixes 의존성이 있으면 net-next로 넘어올 때까지 기다리고, 아니면 재기반 뒤 다시 올리라고 안내했습니다.\n  · 확인: https://lore.kernel.org/bpf/20260529105739.5fc5fdf5@kernel.org/"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "AI가 원문 후보와 메타데이터를 요약했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "net: mana: force full-page RX buffers via ethtool private flag",
+      "url": "https://lore.kernel.org/bpf/20260529105739.5fc5fdf5@kernel.org/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "libbpf: Skip endianness swap when loader generation failed",
+      "url": "https://lore.kernel.org/bpf/20260529162829.315921-1-daniel@iogearbox.net/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "tcp: rehash onto different local ECMP path on retransmit timeout",
+      "url": "https://lore.kernel.org/bpf/20260529160136.1010064-1-ntspring@meta.com/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "bpf, lpm_trie: Allow lookups from sleepable BPF programs",
+      "url": "https://lore.kernel.org/bpf/20260529174233.2954240-1-vlad.wing@gmail.com/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "selftests/bpf: Add tests to verify the fix of encapsulating VxLAN in lwt",
+      "url": "https://lore.kernel.org/bpf/20260529151351.69911-5-leon.hwang@linux.dev/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "mailbox: imx: Start splitting the IRQ handler in primary and threaded handler",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260529-imx_mbox_rproc-v1-1-b8ffc36e11e5@linutronix.de/",
+      "note": "lore.kernel.org/linux-rt-devel · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-29T18:14:34.995Z",
+    "sourceRecordCount": 50,
+    "candidateCount": 6,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "lore-bpf:urn:uuid:8a82bcd2-7b59-323c-be93-f48c2e28fec2",
+      "lore-bpf:urn:uuid:9108304e-e51f-9c78-9405-5da40686fdce",
+      "lore-bpf:urn:uuid:2a76f6af-53d6-c5f3-c46d-acc3d2ebc74a",
+      "lore-bpf:urn:uuid:87abf872-3d52-09e2-c862-65dcd7942d11",
+      "lore-bpf:urn:uuid:bcb907ab-7d04-de92-41e3-35d3cc76b4e2",
+      "lore-linux-rt-devel:urn:uuid:e780e3e8-a4c1-29d8-a384-b852170226ba"
+    ],
+    "bucketCounts": {
+      "releases": 0,
+      "regressions": 2,
+      "patches": 4,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 6,
+    "signalLevel": "high",
+    "subsystems": [
+      "네트워크",
+      "메모리 관리"
+    ],
+    "lensPipeline": "linux-perf-rt",
+    "rewrittenAt": "2026-05-29T18:14:49.144Z",
+    "rewriteAdapter": "codex",
+    "promptTemplate": "prompts/linux-lens-newsletter-ko.md"
+  }
+}

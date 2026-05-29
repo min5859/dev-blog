@@ -1,0 +1,137 @@
+{
+  "id": "2026-05-30-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-05-30 Rust 지원 확대 — 커널 도구체인·Rust",
+  "date": "2026-05-30",
+  "headline": "Rust 커널 지원이 새 아키텍처, 동기화 추상화, 빌드 플래그로 넓어졌습니다.",
+  "summary": "오늘 이 렌즈의 핵심은 Rust 커널 지원이 s390, SRCU, hw_random, arm64 언와인드 빌드 경로로 확장되고 있다는 점입니다. Nova 드라이버 쪽에서는 Rust 모듈 간 호출을 위해 임시 빌드 우회책이 제안되어, kbuild와 모듈 심볼 처리 계약을 함께 봐야 합니다.",
+  "tags": [
+    "도구체인",
+    "LLVM",
+    "kbuild",
+    "Rust"
+  ],
+  "highlights": [
+    {
+      "title": "s390 Rust 지원과 아키텍처 연결 코드 추가",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "s390 및 Rust 커널 빌드 담당자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260529145752.1209016-1-japo@linux.ibm.com/",
+      "if": "s390에서 Rust 커널을 켜려는 빌드라면",
+      "do": "필요한 어셈블리 연결과 도구 버전 조건을 확인하세요",
+      "verify": "해당 시리즈 diff와 arch-support 문서 변경을 대조하세요"
+    },
+    {
+      "title": "Nova Rust 모듈 간 호출을 위한 빌드 우회책",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "Rust kbuild 및 DRM 드라이버 담당자",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20260530-nova-exports-v3-0-1202aa339ef7@nvidia.com/",
+      "if": "Rust 모듈 간 호출을 준비하는 드라이버라면",
+      "do": "임시 메타데이터 생성과 심볼 내보내기 방식을 검토하세요",
+      "verify": "nova-core와 nova-drm 빌드 로그에서 심볼 해석을 확인하세요"
+    },
+    {
+      "title": "Rust SRCU 추상화 추가 제안",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust 동기화 추상화와 RCU 사용자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/b4f6d3e8-3a08-409e-89ae-ba5d612bae30@paulmck-laptop/",
+      "if": "Rust 코드에서 sleepable RCU가 필요하다면",
+      "do": "가드 기반 읽기 구역과 정리 순서 계약을 읽어 두세요",
+      "verify": "Paul McKenney 응답과 rcutorture 언급을 함께 확인하세요"
+    },
+    {
+      "title": "arm64 Rust 언와인드 플래그 조정",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "arm64 Rust 빌드 및 LLVM 담당자",
+      "verifyLink": "https://lore.kernel.org/llvm/ahmtnD9hD1uc9FFU@arm.com/",
+      "if": "arm64에서 Rust와 언와인드 테이블을 쓰면",
+      "do": "Kconfig 대신 Makefile 버전 조건이 맞는지 보세요",
+      "verify": "Rust 트리 적용 흐름과 KBUILD_RUSTFLAGS 변경을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이 렌즈는 오늘 kernel.org 릴리스 항목 없이 lore 리스트 중심입니다. mainline 또는 stable 릴리스 흐름은 별도 리눅스 개발 렌즈에서 보는 것이 맞습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- s390 Rust 지원 시리즈에서 테스트 중 발견된 문제 수정\n· 영향: s390 Rust 활성화 과정에서 bindgen 표현 충돌, memchr 매크로 확장, atomic helper의 KASAN stack-out-of-bounds 수정이 함께 제안되었습니다.\n· 확인: s390 Rust 빌드를 평가한다면 https://lore.kernel.org/rust-for-linux/20260529145752.1209016-1-japo@linux.ibm.com/ 의 변경 이력과 KASAN 수정 패치를 자기 테스트 설정과 대조하세요."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "- s390을 Rust 가능 아키텍처로 연결\n· 영향: WARN/BUG, static branch, bindgen opaque 처리, min-tool-version 조정, CONFIG_EXPOLINE 문서화가 묶여 s390에서 일반 Rust 커널 기반을 사용할 수 있게 하는 방향입니다.\n· 확인: s390 CI나 배포 커널 빌드를 운영한다면 https://lore.kernel.org/rust-for-linux/20260529145752.1209016-1-japo@linux.ibm.com/ 에서 rustc 1.96.0-beta.7 테스트 조건과 -Zpacked-stack 요구를 확인하세요.\n\n- Nova DRM의 Rust 모듈 간 호출 우회책\n· 영향: nova-drm이 nova-core를 호출할 수 있도록 Nova 지역 메타데이터와 내보낸 심볼 목록을 만들며, 긴 Rust 심볼 때문에 modpost 한계도 같이 드러났습니다.\n· 확인: Rust 드라이버를 여러 모듈로 나누는 트리라면 https://lore.kernel.org/linux-kbuild/20260530-nova-exports-v3-0-1202aa339ef7@nvidia.com/ 에서 임시 우회가 일반 kbuild 계약으로 퍼질 가능성을 추적하세요.\n\n- Rust SRCU 추상화\n· 영향: C의 srcu_struct를 감싸는 Rust API가 추가되어 읽기 구역을 가드로 다루고, PinnedDrop에서 synchronize_srcu, srcu_barrier, cleanup_srcu_struct 순서를 명시합니다.\n· 확인: Rust 드라이버에서 reset 또는 teardown 경로와 읽기 쪽 접근을 직렬화한다면 https://lore.kernel.org/rust-for-linux/b4f6d3e8-3a08-409e-89ae-ba5d612bae30@paulmck-laptop/ 와 maintainer 응답의 rcutorture 결과를 확인하세요.\n\n- arm64 Rust 언와인드 테이블 플래그\n· 영향: CONFIG_UNWIND_TABLES일 때 rustc 버전에 따라 LLVM 모듈 플래그를 KBUILD_RUSTFLAGS로 주는 방향이며, 별도 Kconfig 추가는 피하는 흐름입니다.\n· 확인: arm64 Rust 커널을 빌드한다면 https://lore.kernel.org/llvm/ahmtnD9hD1uc9FFU@arm.com/ 에서 Catalin Marinas의 적용 요청과 rustc-min-version 조건을 확인하세요."
+    },
+    {
+      "heading": "기타",
+      "body": "- Rust PWM 초기화의 unsafe 제거\n· 영향: pwm_ops를 core::mem::zeroed 대신 pin_init::zeroed로 초기화해 Zeroable trait 경계 안에서 처리하려는 단일 서브시스템 정리입니다.\n· 확인: Rust PWM 추상화를 쓰거나 리뷰한다면 https://lore.kernel.org/rust-for-linux/20260529153821.126823-1-laniel_francis@privacyrequired.com/ 에서 모든 필드가 Zeroable이라는 전제를 확인하세요.\n\n- hw_random Rust 바인딩 추가\n· 영향: hw_random 서브시스템용 Rust 추상화가 제안되었고, 이를 쓰는 virtio-rng Rust 드라이버는 별도 시리즈로 예고되었습니다.\n· 확인: 랜덤 장치 드라이버를 Rust로 옮기는 작업이라면 https://lore.kernel.org/rust-for-linux/20260529-rust-hw_random-virtio-rng-v1-0-b3153dd90311@pitsidianak.is/ 에서 virtio 추상화 의존성을 함께 추적하세요."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "AI가 원문 후보와 메타데이터를 요약했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "rust: sync: add SRCU abstraction",
+      "url": "https://lore.kernel.org/rust-for-linux/b4f6d3e8-3a08-409e-89ae-ba5d612bae30@paulmck-laptop/",
+      "note": "lore.kernel.org/rust-for-linux · patch-discussion"
+    },
+    {
+      "title": "gpu: drm: nova: enable calling into nova-core",
+      "url": "https://lore.kernel.org/linux-kbuild/20260530-nova-exports-v3-0-1202aa339ef7@nvidia.com/",
+      "note": "lore.kernel.org/linux-kbuild · patch-discussion"
+    },
+    {
+      "title": "rust: arm64: set uwtable llvm module flag for CONFIG_UNWIND_TABLES",
+      "url": "https://lore.kernel.org/llvm/ahmtnD9hD1uc9FFU@arm.com/",
+      "note": "lore.kernel.org/llvm · patch-discussion"
+    },
+    {
+      "title": "rust: pwm: use pin_init::zeroed() to initialize pwm_ops",
+      "url": "https://lore.kernel.org/rust-for-linux/20260529153821.126823-1-laniel_francis@privacyrequired.com/",
+      "note": "lore.kernel.org/rust-for-linux · patch-discussion"
+    },
+    {
+      "title": "s390: Enable Rust support and add required arch glue",
+      "url": "https://lore.kernel.org/rust-for-linux/20260529145752.1209016-1-japo@linux.ibm.com/",
+      "note": "lore.kernel.org/rust-for-linux · patch-discussion"
+    },
+    {
+      "title": "Add hw_random Rust bindings",
+      "url": "https://lore.kernel.org/rust-for-linux/20260529-rust-hw_random-virtio-rng-v1-0-b3153dd90311@pitsidianak.is/",
+      "note": "lore.kernel.org/rust-for-linux · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-29T18:12:12.005Z",
+    "sourceRecordCount": 75,
+    "candidateCount": 6,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "lore-rust-for-linux:urn:uuid:401b97b5-e432-21bb-980c-d6ef909099eb",
+      "lore-linux-kbuild:urn:uuid:6741f3c7-99b3-aaeb-d456-fd5b5dd267a1",
+      "lore-llvm:urn:uuid:5d3425b5-5c96-c54a-086c-f11950082282",
+      "lore-rust-for-linux:urn:uuid:0c4888be-f747-3a31-135b-b51ef513a2fc",
+      "lore-rust-for-linux:urn:uuid:2ab3dca7-2b48-f444-1f1f-b97f0fd963bf",
+      "lore-rust-for-linux:urn:uuid:a21e06ec-a1dd-31bf-ffa0-4a44acf7ca30"
+    ],
+    "bucketCounts": {
+      "releases": 0,
+      "regressions": 0,
+      "patches": 6,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 6,
+    "signalLevel": "high",
+    "subsystems": [],
+    "lensPipeline": "linux-toolchain",
+    "rewrittenAt": "2026-05-29T18:12:20.532Z",
+    "rewriteAdapter": "codex",
+    "promptTemplate": "prompts/linux-lens-newsletter-ko.md"
+  }
+}
