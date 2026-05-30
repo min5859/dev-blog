@@ -1,0 +1,141 @@
+{
+  "id": "2026-05-31-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-05-31 반환값 검증 강화 — 관측성·실시간(eBPF·RT)",
+  "headline": "비피에프 반환값 검증과 사용자 공유 메타데이터 경합이 핵심 위험으로 올라왔습니다.",
+  "date": "2026-05-31",
+  "summary": "오늘 이 렌즈에서 가장 중요한 신호는 비피에프 프로그램이 커널 훅 반환값에 양수를 넣어 커널 경로의 오류 처리 계약을 깨는 문제입니다. 에이에프 엑스디피 송신 메타데이터 경합과 비피에프 아레나 할당 경로의 포인터 노출 지적도 함께 후속 패치 여부를 봐야 합니다.",
+  "tags": [
+    "eBPF",
+    "verifier",
+    "tracing",
+    "PREEMPT_RT",
+    "실시간"
+  ],
+  "highlights": [
+    {
+      "title": "비피에프 반환값 도우미가 양수 반환을 막도록 검증을 추가합니다",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "비피에프 verifier와 cgroup hook 담당자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260530101239.590395-2-xukuohai@huaweicloud.com/",
+      "if": "cgroup 비피에프 훅을 운용한다면",
+      "do": "양수 반환을 쓰는 프로그램을 grep해 새 범위 제한과 대조하세요",
+      "verify": "패치 스레드의 verifier 변경과 selftests 추가분을 함께 보세요"
+    },
+    {
+      "title": "에이에프 엑스디피 송신 메타데이터 경합을 지역 복사로 막습니다",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "AF_XDP와 네트워크 송신 경로 담당자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260530042630.80626-1-kerneljasonxing@gmail.com/",
+      "if": "AF_XDP 송신 오프로딩을 쓴다면",
+      "do": "csum 필드 읽기 지점을 찾아 검증값과 사용값이 같은지 diff로 대조하세요",
+      "verify": "원문 스레드의 Fixes 태그와 닫힌 보고 링크를 따라가세요"
+    },
+    {
+      "title": "비피에프 아레나용 잠금 없는 slab 할당 경로에 포인터 노출 지적이 붙었습니다",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "BPF arena와 slab 할당 경로 담당자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260530022028.035F51F00893@smtp.kernel.org/",
+      "if": "SLAB_BPF_ARENA 경로를 검토한다면",
+      "do": "freepointer 초기화 조건과 slab post hook 생략 지점을 코드로 대조하세요",
+      "verify": "스레드의 AI 리뷰 지적과 후속 응답 여부를 함께 추적하세요"
+    },
+    {
+      "title": "로컬 다중 경로 재해시 selftest 패치가 clang 빌드 오류를 받았습니다",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "net-next selftests와 TCP 빌드 담당자",
+      "verifyLink": "https://lore.kernel.org/bpf/202605301121.q28WSYib-lkp@intel.com/",
+      "if": "net-next에서 해당 selftest를 들고 있다면",
+      "do": "tcp_synq_overflow 선언 가시성을 재현 설정으로 빌드해 비교하세요",
+      "verify": "0일 빌드 로봇의 config와 reproduce 링크로 재현하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이 렌즈는 오늘 kernel.org 릴리스 항목 없이 lore.kernel.org의 bpf와 linux-rt-devel 리스트 신호만 다룹니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- 비피에프 반환값 도우미 인자 검증 추가\n  · 영향: cgroup 비피에프 프로그램이 양수 반환값을 설정하면 커널 호출 경로가 오류 처리를 건너뛰어 널 포인터나 잘못된 포인터 역참조로 이어질 수 있어, verifier에서 스칼라와 허용 범위를 강제하는 방향입니다.\n  · 확인: https://lore.kernel.org/bpf/20260530101239.590395-2-xukuohai@huaweicloud.com/\n\n- 에이에프 엑스디피 송신 메타데이터 경합 수정\n  · 영향: 사용자 공간이 공유 메모리의 체크섬 시작·오프셋 값을 검증 뒤 다시 바꾸는 경합을 막기 위해, 한 번 읽은 지역 복사본을 검증과 실제 skb 설정에 같이 쓰도록 바꿉니다.\n  · 확인: https://lore.kernel.org/bpf/20260530042630.80626-1-kerneljasonxing@gmail.com/\n\n- 비피에프 아레나 slab 할당 경로의 포인터 노출 가능성 지적\n  · 영향: 잠금 없는 아레나 할당 헬퍼가 slab post hook을 건너뛰는 설계에서 freepointer 초기화 조건이 충분한지에 대한 높은 등급 리뷰 지적이 붙었습니다.\n  · 확인: https://lore.kernel.org/bpf/20260530022028.035F51F00893@smtp.kernel.org/"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "- 비피에프 반환값 검증 시리즈\n  · 영향: BPF_LSM_CGROUP은 LSM hook별 반환 범위를 따르고, 다른 cgroup 프로그램 타입은 커널 관례에 맞춰 음수 errno 또는 0으로 제한하는 selftests 포함 시리즈입니다.\n  · 확인: https://lore.kernel.org/bpf/20260530101239.590395-1-xukuohai@huaweicloud.com/\n\n- 로컬 다중 경로 재해시 selftest 빌드 오류\n  · 영향: net-next 기반 clang 빌드에서 tcp_synq_overflow 선언 누락 오류가 보고되어, selftest 자체보다 TCP 헤더 가시성 변화가 먼저 정리돼야 합니다.\n  · 확인: https://lore.kernel.org/bpf/202605301121.q28WSYib-lkp@intel.com/\n\n- i.MX mailbox 인터럽트 핸들러 분리\n  · 영향: PREEMPT_RT 관점에서는 콜백을 선점 가능한 스레드 문맥으로 옮기기 위한 준비지만, 현재는 특정 드라이버의 TX 처리 이동에 가까운 신호입니다.\n  · 확인: https://lore.kernel.org/linux-rt-devel/20260529-imx_mbox_rproc-v1-1-b8ffc36e11e5@linutronix.de/"
+    },
+    {
+      "heading": "기타",
+      "body": "- i.MX mailbox 패치는 전날에도 관측된 항목이므로, PREEMPT_RT 공통 계약 변화로 확장되는 후속 논의가 나오기 전까지는 플랫폼 드라이버 변경으로 낮게 추적합니다.\n  · 영향: 현재 입력 범위에서는 일반 RT ABI나 스케줄러 정책 변화로 볼 근거는 없습니다.\n  · 확인: https://lore.kernel.org/linux-rt-devel/20260529-imx_mbox_rproc-v1-1-b8ffc36e11e5@linutronix.de/"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "AI가 원문 후보와 메타데이터를 요약했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "xsk: cache csum_start/csum_offset to fix TOCTOU in xsk_skb_metadata()",
+      "url": "https://lore.kernel.org/bpf/20260530042630.80626-1-kerneljasonxing@gmail.com/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "bpf: Add validation for bpf_set_retval argument",
+      "url": "https://lore.kernel.org/bpf/20260530101239.590395-2-xukuohai@huaweicloud.com/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "Add validation for bpf_set_retval helper",
+      "url": "https://lore.kernel.org/bpf/20260530101239.590395-1-xukuohai@huaweicloud.com/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "mailbox: imx: Start splitting the IRQ handler in primary and threaded handler",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260529-imx_mbox_rproc-v1-1-b8ffc36e11e5@linutronix.de/",
+      "note": "lore.kernel.org/linux-rt-devel · patch-discussion"
+    },
+    {
+      "title": "slab: Introduce kmem_cache_alloc_arena_nolock and kfree_arena_nolock",
+      "url": "https://lore.kernel.org/bpf/20260530022028.035F51F00893@smtp.kernel.org/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "selftests: net: add local ECMP rehash test",
+      "url": "https://lore.kernel.org/bpf/202605301121.q28WSYib-lkp@intel.com/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-30T18:15:27.701Z",
+    "sourceRecordCount": 50,
+    "candidateCount": 6,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "lore-bpf:urn:uuid:b440e1d0-9299-83f1-c193-5b5556863998",
+      "lore-bpf:urn:uuid:27949540-ff1e-02f4-c457-16f19c829d25",
+      "lore-bpf:urn:uuid:369db90a-ab89-1dcc-2c64-5c6c41629e18",
+      "lore-linux-rt-devel:urn:uuid:e780e3e8-a4c1-29d8-a384-b852170226ba",
+      "lore-bpf:urn:uuid:1e8ce571-014f-ef67-b268-d61686e1410e",
+      "lore-bpf:urn:uuid:88c3dffa-28a9-c43d-704d-7a775eedab48"
+    ],
+    "bucketCounts": {
+      "releases": 0,
+      "regressions": 2,
+      "patches": 4,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 6,
+    "signalLevel": "high",
+    "subsystems": [
+      "메모리 관리",
+      "네트워크"
+    ],
+    "lensPipeline": "linux-perf-rt",
+    "rewrittenAt": "2026-05-30T18:15:34.107Z",
+    "rewriteAdapter": "codex",
+    "promptTemplate": "prompts/linux-lens-newsletter-ko.md"
+  }
+}
