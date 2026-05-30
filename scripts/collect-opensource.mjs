@@ -1,5 +1,7 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+
+import { readJson } from './lib/collect-utils.mjs';
 
 const root = process.cwd();
 const topic = 'opensource';
@@ -10,10 +12,6 @@ const collectedAt = new Date().toISOString();
 const runId = collectedAt.slice(0, 10);
 
 const USER_AGENT = 'dev-blog-collector/0.1 (+opensource trending)';
-
-async function readJson(file) {
-  return JSON.parse(await readFile(file, 'utf8'));
-}
 
 async function fetchJson(url, accept = 'application/json') {
   const response = await fetch(url, {

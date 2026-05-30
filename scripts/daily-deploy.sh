@@ -67,7 +67,7 @@ if git diff --cached --name-only | grep -q '^content/'; then
   if [ "$(TZ=Asia/Seoul date +%u)" = "1" ]; then
     MSG="daily + weekly briefing: ${DATE_KST}"
   else
-    MSG="daily: ${DATE_KST} Linux briefing"
+    MSG="daily: ${DATE_KST} briefing"
   fi
 else
   MSG="ops: ${DATE_KST} pipeline status update (no new content)"

@@ -1,5 +1,7 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+
+import { readJson } from './lib/collect-utils.mjs';
 
 const root = process.cwd();
 const topic = 'android';
@@ -10,10 +12,6 @@ const collectedAt = new Date().toISOString();
 const runId = collectedAt.slice(0, 10);
 
 const ANDROID_PREFIX_PATTERN = /^(ANDROID|FROMGIT|FROMLIST|BACKPORT|UPSTREAM):/;
-
-async function readJson(file) {
-  return JSON.parse(await readFile(file, 'utf8'));
-}
 
 function sourceById(config, sourceId) {
   const source = config.sources.find((entry) => entry.id === sourceId && entry.enabled !== false);
