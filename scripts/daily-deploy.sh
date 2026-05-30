@@ -35,6 +35,10 @@ if ! "${NPM_BIN}" run daily:opensource-curation:publish; then
   echo "opensource-curation daily run failed; continuing"
 fi
 
+if ! "${NPM_BIN}" run daily:ai-coding-agents:publish; then
+  echo "ai-coding-agents daily run failed; continuing"
+fi
+
 # 6 Linux lens topics. Iterate per-topic so one bad lens doesn't sink the rest;
 # run-all-kernel-lenses bails on the first failure, which is why we don't use it here.
 for LENS in linux-kernel-security linux-toolchain linux-distro-stable linux-perf-rt linux-arch-platform linux-gpu-ai; do
