@@ -1,0 +1,140 @@
+{
+  "id": "2026-06-01-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-06-01 인터럽트 경고 수정 — 관측성·실시간(eBPF·RT)",
+  "headline": "실시간 커널에서 오디오 인터럽트 전달 경고를 막는 수정이 다시 올라왔습니다.",
+  "date": "2026-06-01",
+  "summary": "오늘 이 렌즈의 핵심은 threaded interrupt 환경에서 i915 LPE 오디오 하위 인터럽트를 안전한 helper로 전달하도록 고친 회귀성 수정입니다. 그 다음 신호는 BPF arena의 scratch PTE 재할당 실패 수정과 bpftool/tools 빌드 feature check 캐시 개선입니다.",
+  "tags": [
+    "eBPF",
+    "verifier",
+    "tracing",
+    "PREEMPT_RT",
+    "실시간"
+  ],
+  "highlights": [
+    {
+      "title": "i915 LPE 오디오 하위 인터럽트 전달을 안전 helper로 전환",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "PREEMPT_RT와 i915 오디오 경로 검증 담당자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260531153108.1448185-1-runyu.xiao@seu.edu.cn/",
+      "if": "threaded interrupt 환경의 i915 경로를 검증한다면",
+      "do": "LPE audio forwarding 호출을 generic_handle_irq_safe 전환 diff와 대조하세요",
+      "verify": "v2 스레드의 재현 harness 설명과 자기 트리의 호출 경로를 비교하세요"
+    },
+    {
+      "title": "BPF arena 재할당 실패를 막도록 scratch PTE 덮어쓰기",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "BPF arena와 verifier 담당자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260531165852.555930-1-tj@kernel.org/",
+      "if": "BPF arena allocation 실패를 추적한다면",
+      "do": "apply_range_set_cb의 populated PTE 처리와 재시도 실패 경로를 diff로 비교하세요",
+      "verify": "스레드의 commit message에서 scratch page 설치 뒤 재할당 시나리오를 따라가세요"
+    },
+    {
+      "title": "tools feature check 성공 결과를 파일로 남겨 반복 실행 방지",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "커널 tools와 BPF 빌드 시간 분석 담당자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260531010924.525824-1-irogers@google.com/",
+      "if": "incremental build에서 BPF feature check 비용을 본다면",
+      "do": "test-clang-bpf-co-re와 skeletons check가 $@를 touch하는지 패치를 대조하세요",
+      "verify": "tools/build/feature/Makefile 변경 뒤 sub-make 재실행 로그를 비교하세요"
+    },
+    {
+      "title": "bpftool bootstrap에서 불필요한 feature test 제외",
+      "priority": "하",
+      "impactType": "build",
+      "affectedAudience": "perf와 bpftool bootstrap 빌드 담당자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260531010750.525160-1-irogers@google.com/",
+      "if": "perf 빌드가 bpftool bootstrap을 자주 호출한다면",
+      "do": "bootstrap target에서 llvm과 disassembler feature test가 빠지는지 Makefile을 비교하세요",
+      "verify": "패치 적용 전후 Kbuild 시작 구간의 sub-make 호출 수를 로그로 대조하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이 렌즈는 lore.kernel.org의 bpf와 linux-rt-devel 리스트 중심입니다. 오늘 입력에는 mainline, stable, longterm 릴리스 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- i915 LPE 오디오 하위 인터럽트 전달을 generic_handle_irq_safe로 변경\n  · 영향: PREEMPT_RT나 forced-threading 설정에서 parent interrupt가 threaded context로 실행될 때 child handler가 local interrupt enabled 상태로 진입하는 경고를 막는 회귀성 수정입니다. v1 이후 다시 올라온 v2이며, 실제 Baytrail 또는 Cherrytrail 장비 검증은 없고 QEMU harness 기반 재현 근거가 제시됐습니다.\n  · 확인: https://lore.kernel.org/linux-rt-devel/20260531153108.1448185-1-runyu.xiao@seu.edu.cn/"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "- BPF arena allocation에서 scratch PTE를 실제 page로 덮어쓰기\n  · 영향: fault recovery가 unallocated arena 주소에 scratch page를 설치한 뒤, 같은 위치를 bpf_arena_alloc_pages가 다시 할당할 때 -EBUSY로 영구 실패하던 경로를 완화합니다.\n  · 확인: https://lore.kernel.org/bpf/20260531165852.555930-1-tj@kernel.org/\n\n- tools build feature check가 성공 target file을 생성하도록 수정\n  · 영향: test-clang-bpf-co-re와 test-bpftool-skeletons 결과가 디스크에 남지 않아 incremental build나 sub-make 평가 때마다 Clang BPF backend와 bpftool check가 반복 실행되던 빌드 비용을 줄입니다.\n  · 확인: https://lore.kernel.org/bpf/20260531010924.525824-1-irogers@google.com/\n\n- bpftool bootstrap에서 비필수 feature test 제외\n  · 영향: perf build가 bpftool bootstrap을 호출할 때 llvm, libcap, libbfd, disassembler 관련 feature check를 불필요하게 평가하던 부분을 줄여 Kbuild 시작 오버헤드를 낮추려는 변경입니다.\n  · 확인: https://lore.kernel.org/bpf/20260531010750.525160-1-irogers@google.com/"
+    },
+    {
+      "heading": "기타",
+      "body": "- real-time 문서의 sched(7) 중복 표기 제거\n  · 영향: man page reference가 일반 텍스트와 hyperlink로 두 번 나오던 문서 중복을 줄이는 정리성 패치입니다.\n  · 확인: https://lore.kernel.org/linux-rt-devel/20260531141823.4118954-1-costa.shul@redhat.com/\n\n- BPF arena invalid node id selftest 추가\n  · 영향: invalid 또는 offline NUMA node id가 arena_alloc_pages에서 실패하는지 verifier_arena test로 고정해, 기존 validation 변경의 회귀를 잡기 위한 테스트 보강입니다.\n  · 확인: https://lore.kernel.org/bpf/20260531135234.233421-1-random6.xyz@gmail.com/"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "AI가 원문 후보와 메타데이터를 요약했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "docs: real-time: Fix duplicated sched(7) text",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260531141823.4118954-1-costa.shul@redhat.com/",
+      "note": "lore.kernel.org/linux-rt-devel · patch-discussion"
+    },
+    {
+      "title": "drm/i915/audio: use generic_handle_irq_safe() for LPE audio irq",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260531153108.1448185-1-runyu.xiao@seu.edu.cn/",
+      "note": "lore.kernel.org/linux-rt-devel · patch-discussion"
+    },
+    {
+      "title": "bpf: Overwrite scratch PTE when allocating arena pages",
+      "url": "https://lore.kernel.org/bpf/20260531165852.555930-1-tj@kernel.org/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "bpftool build: Restrict feature tests during bootstrap compilation",
+      "url": "https://lore.kernel.org/bpf/20260531010750.525160-1-irogers@google.com/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "tools build: Fix feature checks to touch target files on success",
+      "url": "https://lore.kernel.org/bpf/20260531010924.525824-1-irogers@google.com/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "selftests/bpf: Add arena invalid node id test",
+      "url": "https://lore.kernel.org/bpf/20260531135234.233421-1-random6.xyz@gmail.com/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-31T18:14:07.064Z",
+    "sourceRecordCount": 50,
+    "candidateCount": 6,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "lore-linux-rt-devel:urn:uuid:557cc9d5-47f8-ce84-55e9-b8b20c4ed5c5",
+      "lore-linux-rt-devel:urn:uuid:da461272-ee9b-9a18-62e4-cae60321f30c",
+      "lore-bpf:urn:uuid:09a5954b-2278-c252-1669-4980a8aa2f67",
+      "lore-bpf:urn:uuid:7a949aa2-8d3e-807a-047f-4b33f03dc7e4",
+      "lore-bpf:urn:uuid:83d69bda-e341-e406-b5d1-807760d10c4c",
+      "lore-bpf:urn:uuid:b805b1bf-7f4c-90b4-1ce0-22908599f021"
+    ],
+    "bucketCounts": {
+      "releases": 0,
+      "regressions": 1,
+      "patches": 5,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 6,
+    "signalLevel": "high",
+    "subsystems": [
+      "스케줄러/실시간"
+    ],
+    "lensPipeline": "linux-perf-rt",
+    "rewrittenAt": "2026-05-31T18:14:13.929Z",
+    "rewriteAdapter": "codex",
+    "promptTemplate": "prompts/linux-lens-newsletter-ko.md"
+  }
+}

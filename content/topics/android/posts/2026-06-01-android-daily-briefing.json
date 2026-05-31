@@ -1,0 +1,155 @@
+{
+  "id": "2026-06-01-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-06-01 wrapfd 매핑 보정 — Android 커널",
+  "headline": "wrapfd의 dmabuf 매핑 위치 오류가 고쳐졌습니다. 해당 기능을 쓰는 ACK 라인은 즉시 확인이 필요합니다.",
+  "date": "2026-06-01",
+  "summary": "오늘 가장 중요한 변화는 wrapfd로 dmabuf를 매핑할 때 사용자 요청 오프셋이 사라져 잘못된 위치에 매핑되던 회귀 수정입니다. 이어서 프록시 실행 스케줄러의 작업큐 지연 경쟁 조건과 GKI 설정 의존성 정리가 함께 들어왔습니다.",
+  "tags": [
+    "android",
+    "커널",
+    "ack"
+  ],
+  "highlights": [
+    {
+      "title": "drivers/wrapfd: Fix mmap offset forwarding for dmabuf",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "wrapfd와 dmabuf 경로를 쓰는 Android 커널 담당자",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/a9d1116a330867eabebfd1e9367d8a74aabb8561",
+      "if": "wrapfd로 dmabuf를 매핑한다면 확인하세요",
+      "do": "사용자 요청 오프셋이 보존되는지 점검하세요",
+      "verify": "링크된 커밋과 mmap 테스트 경로를 함께 확인하세요"
+    },
+    {
+      "title": "wrapfd: remove unnecessary USAGE_BLOCKED state",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "wrapfd 메모리 로딩 경로를 관리하는 ACK 담당자",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/bc7f053a91a65b668e699537ed641109d7f7ccb0",
+      "if": "wrapfd 버퍼 로딩을 쓰고 있다면 확인하세요",
+      "do": "매핑된 버퍼로 로딩하는 동작을 재검증하세요",
+      "verify": "링크된 커밋의 버그 설명과 회귀 테스트를 확인하세요"
+    },
+    {
+      "title": "sched: proxy-exec: Close race causing workqueue work being delayed",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "프록시 실행 스케줄러와 작업큐 지연을 보는 커널 담당자",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/b5d6bd9d8749f09b6c37d9fa63562b82a3822bda",
+      "if": "프록시 실행 스택을 평가한다면 확인하세요",
+      "do": "작업큐 지연과 잠김 재현 시나리오를 점검하세요",
+      "verify": "링크된 커밋에서 작업큐 경쟁 조건 설명을 확인하세요"
+    },
+    {
+      "title": "gki_defconfig: enable CONFIG_MUX_CORE",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "GKI 설정과 오디오 모듈 의존성을 관리하는 빌드 담당자",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/6def194518a37f09e2c1380aeb9e68a1216a0911",
+      "if": "오디오 vendor module이 MUX 코어에 의존한다면 확인하세요",
+      "do": "GKI 설정 변경 뒤 모듈 의존성 빌드를 점검하세요",
+      "verify": "링크된 커밋과 defconfig 빌드 결과를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- drivers/wrapfd: Fix mmap offset forwarding for dmabuf (a9d1116 · android16-6.12)\n  · 영향: wrapfd가 dmabuf를 매핑할 때 사용자 요청 오프셋을 잃어 잘못된 위치에 매핑되던 회귀를 바로잡습니다.\n  · 확인: https://android.googlesource.com/kernel/common/+/a9d1116a330867eabebfd1e9367d8a74aabb8561\n\n- wrapfd: remove unnecessary USAGE_BLOCKED state (bc7f053 · android16-6.12)\n  · 영향: wrapfd 사용 추적을 별도 차단 상태 대신 카운터로 처리해, 매핑된 버퍼로 로딩이 막히던 문제를 고칩니다.\n  · 확인: https://android.googlesource.com/kernel/common/+/bc7f053a91a65b668e699537ed641109d7f7ccb0\n\n- sched: proxy-exec: Close race causing workqueue work being delayed (b5d6bd9 · android16-6.12)\n  · 영향: 프록시 실행 스케줄러에서 작업큐 작업이 지연되거나 잠김으로 이어질 수 있는 경쟁 조건을 줄입니다.\n  · 확인: https://android.googlesource.com/kernel/common/+/b5d6bd9d8749f09b6c37d9fa63562b82a3822bda\n\n- fs: incfs: Annotate inode locked locks to avoid lockdep warning (07a9c0c · android-mainline)\n  · 영향: 증분 파일시스템이 내부 inode와 backing inode를 함께 잠글 때 잘못된 잠김 경고가 나오지 않도록 잠금 계층을 표시합니다.\n  · 확인: https://android.googlesource.com/kernel/common/+/07a9c0c00b86eeb34ba9b99bef9387a4dfb8e983"
+    },
+    {
+      "heading": "ACK 전용 변경",
+      "body": "메모리와 dmabuf\n- drivers/wrapfd: Fix mmap offset forwarding for dmabuf (a9d1116 · android16-6.12)\n  · 영향: Android 전용 wrapfd dmabuf 지원에서 매핑 오프셋 전달 오류를 수정해 사용자 공간 매핑 위치가 의도와 맞게 됩니다.\n  · 확인: https://android.googlesource.com/kernel/common/+/a9d1116a330867eabebfd1e9367d8a74aabb8561\n\n- wrapfd: remove unnecessary USAGE_BLOCKED state (bc7f053 · android16-6.12)\n  · 영향: wrapfd의 사용 차단 로직을 줄여 매핑된 버퍼에 대한 합법적인 로딩 흐름이 막히지 않게 합니다.\n  · 확인: https://android.googlesource.com/kernel/common/+/bc7f053a91a65b668e699537ed641109d7f7ccb0\n\n스케줄러와 작업큐\n- sched: proxy-exec: Close race causing workqueue work being delayed (b5d6bd9 · android16-6.12)\n  · 영향: 프록시 실행이 켜진 ACK 계열에서 작업큐와 동기화 경로가 맞물릴 때 지연되는 위험을 낮춥니다.\n  · 확인: https://android.googlesource.com/kernel/common/+/b5d6bd9d8749f09b6c37d9fa63562b82a3822bda\n\nGKI와 빌드 설정\n- GKI: disable sha3_kunit module (3462192 · android-mainline)\n  · 영향: 비보안 모드 커널에서 SHA3 라이브러리가 더 이상 자동으로 들어오지 않아 깨지던 KUnit 모듈 기대값을 정리합니다.\n  · 확인: https://android.googlesource.com/kernel/common/+/346219273d61131cc9cea964904b0027be95ca6f\n\n- gki_defconfig: enable CONFIG_MUX_CORE (6def194 · android-mainline)\n  · 영향: 여러 오디오 드라이버가 의존하는 멀티플렉서 코어를 GKI에 기본 포함해 vendor module 빌드 의존성을 맞춥니다.\n  · 확인: https://android.googlesource.com/kernel/common/+/6def194518a37f09e2c1380aeb9e68a1216a0911\n\n테스트 빌드\n- kleaf: add more sources for kselftests (554477e · android-mainline)\n  · 영향: 메모리 selftest가 새 보조 헤더를 요구하면서 깨지던 Bazel 기반 테스트 빌드 입력을 보강합니다.\n  · 확인: https://android.googlesource.com/kernel/common/+/554477e658c862dfc54b28a65fb7b35bc93bd8cd"
+    },
+    {
+      "heading": "추적 브랜치",
+      "body": "- android16-6.12: wrapfd dmabuf 회귀 수정과 프록시 실행 스케줄러 작업큐 지연 수정이 들어왔고, 가장 최근 commit은 a9d1116a3308입니다.\n- android-mainline: GKI 설정, KUnit 모듈 기대값, selftest 빌드 입력, 파일시스템 잠금 경고 정리가 진행됐고, 가장 최근 commit은 554477e658c8입니다."
+    },
+    {
+      "heading": "기타",
+      "body": "단일 vendor 또는 hardware 성격의 rockpi4, Tegra 설정 패치는 본문에서 제외했습니다. 자기 디바이스 키워드로 ACK git log에서 직접 확인하세요."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "AI가 원문 후보와 메타데이터를 요약했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drivers/wrapfd: Fix mmap offset forwarding for dmabuf",
+      "url": "https://android.googlesource.com/kernel/common/+/a9d1116a330867eabebfd1e9367d8a74aabb8561",
+      "note": "android.googlesource.com · ack-android · a9d1116a3308"
+    },
+    {
+      "title": "kleaf: add more sources for kselftests",
+      "url": "https://android.googlesource.com/kernel/common/+/554477e658c862dfc54b28a65fb7b35bc93bd8cd",
+      "note": "android.googlesource.com · ack-android · 554477e658c8"
+    },
+    {
+      "title": "rockpi4: add tegra124-cpufreq module",
+      "url": "https://android.googlesource.com/kernel/common/+/2770affca4e4fc8b3ce86d795af5c2c650cf8506",
+      "note": "android.googlesource.com · ack-android · 2770affca4e4"
+    },
+    {
+      "title": "GKI: disable sha3_kunit module",
+      "url": "https://android.googlesource.com/kernel/common/+/346219273d61131cc9cea964904b0027be95ca6f",
+      "note": "android.googlesource.com · ack-android · 346219273d61"
+    },
+    {
+      "title": "wrapfd: remove unnecessary USAGE_BLOCKED state",
+      "url": "https://android.googlesource.com/kernel/common/+/bc7f053a91a65b668e699537ed641109d7f7ccb0",
+      "note": "android.googlesource.com · ack-android · bc7f053a91a6"
+    },
+    {
+      "title": "sched: proxy-exec: Close race causing workqueue work being delayed",
+      "url": "https://android.googlesource.com/kernel/common/+/b5d6bd9d8749f09b6c37d9fa63562b82a3822bda",
+      "note": "android.googlesource.com · ack-android · b5d6bd9d8749"
+    },
+    {
+      "title": "gki_defconfig: drop ARCH_TEGRA_234_SOC",
+      "url": "https://android.googlesource.com/kernel/common/+/573838fbfb2e0853a08ea68fef0017de6a62f08f",
+      "note": "android.googlesource.com · ack-android · 573838fbfb2e"
+    },
+    {
+      "title": "fs: incfs: Annotate inode locked locks to avoid lockdep warning",
+      "url": "https://android.googlesource.com/kernel/common/+/07a9c0c00b86eeb34ba9b99bef9387a4dfb8e983",
+      "note": "android.googlesource.com · ack-android · 07a9c0c00b86"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-31T18:01:13.177Z",
+    "sourceRecordCount": 160,
+    "candidateCount": 11,
+    "generator": "scripts/draft-android.mjs",
+    "candidateIds": [
+      "ack-android16-6.12:a9d1116a330867eabebfd1e9367d8a74aabb8561",
+      "ack-android-mainline:554477e658c862dfc54b28a65fb7b35bc93bd8cd",
+      "ack-android-mainline:2770affca4e4fc8b3ce86d795af5c2c650cf8506",
+      "ack-android-mainline:346219273d61131cc9cea964904b0027be95ca6f",
+      "ack-android16-6.12:bc7f053a91a65b668e699537ed641109d7f7ccb0",
+      "ack-android16-6.12:b5d6bd9d8749f09b6c37d9fa63562b82a3822bda",
+      "ack-android-mainline:573838fbfb2e0853a08ea68fef0017de6a62f08f",
+      "ack-android-mainline:07a9c0c00b86eeb34ba9b99bef9387a4dfb8e983",
+      "ack-android-mainline:6def194518a37f09e2c1380aeb9e68a1216a0911",
+      "ack-android-mainline:0554f3864456438ad72f50bb9925f9412d5bf373",
+      "ack-android-mainline:9a4f6c6b9255f7b4ecf6b8084004d54d4edb225c"
+    ],
+    "bucketCounts": {
+      "regressions": 9,
+      "ackPatches": 0
+    },
+    "subsystems": [
+      "메모리/dmabuf",
+      "스케줄러/EAS",
+      "GKI/모듈 ABI",
+      "파일시스템/스토리지"
+    ],
+    "branches": [
+      "android16-6.12",
+      "android-mainline"
+    ],
+    "rewrittenAt": "2026-05-31T18:01:13.370Z",
+    "rewriteAdapter": "codex",
+    "promptTemplate": "prompts/android-newsletter-ko.md"
+  }
+}

@@ -1,0 +1,143 @@
+{
+  "id": "2026-06-01-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-06-01 바인더 참조수정 — 커널 도구체인·Rust",
+  "date": "2026-06-01",
+  "headline": "Rust 바인더의 32비트 참조 계산 오류와 빌드 기능 검사 낭비가 함께 드러났습니다.",
+  "summary": "오늘 가장 중요한 신호는 Rust 바인더가 32비트 커널에서 오프셋 배열을 잘못 걸어 참조 계정을 과소 감소시킬 수 있다는 수정입니다. 그 다음으로는 Rust SRCU 추상화의 소멸 계약 논의와 bpftool 기능 검사 캐시 수정이 도구체인 렌즈에서 볼 만합니다.",
+  "tags": [
+    "도구체인",
+    "LLVM",
+    "kbuild",
+    "Rust"
+  ],
+  "highlights": [
+    {
+      "title": "Rust 바인더 오프셋 정리 폭 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Rust 바인더와 32비트 커널 검증 담당자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/ahw3tFhLz9bMMJAO@v4bel/",
+      "if": "32비트에서 Rust 바인더를 시험한다면",
+      "do": "오프셋 배열 순회 폭을 u64 기준으로 패치하세요",
+      "verify": "스레드의 Fixes 줄과 refcount underflow 로그를 대조하세요"
+    },
+    {
+      "title": "Rust SRCU 소멸 계약 논의",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust 동기화 추상화와 드라이버 API 설계자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/4c03540b-8a80-46a5-98b3-dc16ee160cfe@paulmck-laptop/",
+      "if": "Rust에서 SRCU 래퍼를 쓰려 한다면",
+      "do": "누수 guard와 drop 순서 가정을 자기 API와 대조하세요",
+      "verify": "Paul McKenney 리뷰와 rcutorture 언급을 원문에서 읽으세요"
+    },
+    {
+      "title": "bpftool 부트스트랩 기능 검사 축소",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "perf와 bpftool 빌드 시간 관리 담당자",
+      "verifyLink": "https://lore.kernel.org/llvm/20260531010750.525160-1-irogers@google.com/",
+      "if": "perf 빌드에서 bpftool bootstrap을 돈다면",
+      "do": "불필요한 LLVM과 디스어셈블러 검사를 diff로 빼세요",
+      "verify": "bootstrap 대상의 feature sub-make 호출 수를 빌드 로그로 비교하세요"
+    },
+    {
+      "title": "도구 기능 검사 결과 캐시 수정",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "증분 빌드와 도구 빌드 성능 담당자",
+      "verifyLink": "https://lore.kernel.org/llvm/20260531010924.525824-1-irogers@google.com/",
+      "if": "증분 빌드마다 BPF 기능 검사가 반복된다면",
+      "do": "성공 시 target 파일을 touch하는 Makefile 변경을 적용하세요",
+      "verify": "두 번째 make에서 clang BPF 검사가 재실행되는지 로그로 보세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이 렌즈는 lore.kernel.org의 도구체인, kbuild, Rust 리스트 중심입니다. 오늘 입력에는 kernel.org 릴리스 항목이 없어 mainline, stable, longterm 릴리스 요약은 포함하지 않습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- Rust 바인더의 32비트 오프셋 배열 정리 오류\n  · 영향: binder_size_t가 u64인 배열을 usize 폭으로 순회해 32비트 커널에서 같은 객체를 반복 정리하고 참조 계정을 과소 감소시킬 수 있습니다.\n  · 확인: https://lore.kernel.org/rust-for-linux/ahw3tFhLz9bMMJAO@v4bel/\n\n- Rust SRCU 추상화의 소멸 순서와 누수 guard 처리\n  · 영향: Rust drop 이후 srcu_struct 수명, 콜백 배리어, 활성 reader 처리 계약이 API 설계의 핵심 쟁점으로 남아 있습니다.\n  · 확인: https://lore.kernel.org/rust-for-linux/4c03540b-8a80-46a5-98b3-dc16ee160cfe@paulmck-laptop/"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "- bpftool bootstrap의 기능 검사 제한\n  · 영향: bootstrap 대상은 최소 AST 파싱과 C 코드 생성만 필요하므로 LLVM, libcap, libbfd, 디스어셈블러 검사를 제외해 Kbuild 시작 비용을 줄입니다.\n  · 확인: https://lore.kernel.org/llvm/20260531010750.525160-1-irogers@google.com/\n\n- tools/build 기능 검사 target 파일 생성 수정\n  · 영향: test-clang-bpf-co-re.bin과 test-bpftool-skeletons.bin이 성공해도 결과 파일을 만들지 않아 증분 빌드마다 검사가 반복되던 문제를 touch $@로 고칩니다.\n  · 확인: https://lore.kernel.org/llvm/20260531010924.525824-1-irogers@google.com/\n\n- Rust 빌드 산출물 cleanup 대상 추가\n  · 영향: rustc가 긴 타입 이름 오류에서 만드는 *.long-type-*.txt 파일을 clean 대상에 넣어 소스 트리 오염을 줄입니다.\n  · 확인: https://lore.kernel.org/linux-kbuild/20260530184944.10459-1-contact@jkam.dev/"
+    },
+    {
+      "heading": "기타",
+      "body": "- Synology Microp Rust 드라이버 v14\n  · 영향: NAS 마이크로컨트롤러의 LED 제어를 시작점으로 올렸고, 남은 기능에는 hwmon, input, sysoff Rust 추상화가 더 필요하다고 설명합니다.\n  · 확인: https://lore.kernel.org/rust-for-linux/20260531-synology_microp_initial-v14-0-1377d425b24b@posteo.de/\n\n- Rust 매크로 const expect 변경 스레드\n  · 영향: 입력 후보 본문 기준으로는 작성자 정보 정리와 checkpatch 조언이 중심이어서 오늘의 회귀 신호로 부풀리기 어렵습니다.\n  · 확인: https://lore.kernel.org/rust-for-linux/357ce503-cc2d-43ae-8f58-ea3b980f5780@gmail.com/"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "AI가 원문 후보와 메타데이터를 요약했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "rust: sync: add SRCU abstraction",
+      "url": "https://lore.kernel.org/rust-for-linux/4c03540b-8a80-46a5-98b3-dc16ee160cfe@paulmck-laptop/",
+      "note": "lore.kernel.org/rust-for-linux · patch-discussion"
+    },
+    {
+      "title": "Introduce Synology Microp driver",
+      "url": "https://lore.kernel.org/rust-for-linux/20260531-synology_microp_initial-v14-0-1377d425b24b@posteo.de/",
+      "note": "lore.kernel.org/rust-for-linux · patch-discussion"
+    },
+    {
+      "title": "rust: macros: Replace match + panic in const context with const expect",
+      "url": "https://lore.kernel.org/rust-for-linux/357ce503-cc2d-43ae-8f58-ea3b980f5780@gmail.com/",
+      "note": "lore.kernel.org/rust-for-linux · patch-discussion"
+    },
+    {
+      "title": "bpftool build: Restrict feature tests during bootstrap compilation",
+      "url": "https://lore.kernel.org/llvm/20260531010750.525160-1-irogers@google.com/",
+      "note": "lore.kernel.org/llvm · patch-discussion"
+    },
+    {
+      "title": "tools build: Fix feature checks to touch target files on success",
+      "url": "https://lore.kernel.org/llvm/20260531010924.525824-1-irogers@google.com/",
+      "note": "lore.kernel.org/llvm · patch-discussion"
+    },
+    {
+      "title": "rust_binder: use a u64 stride when cleaning up the offsets array",
+      "url": "https://lore.kernel.org/rust-for-linux/ahw3tFhLz9bMMJAO@v4bel/",
+      "note": "lore.kernel.org/rust-for-linux · patch-discussion"
+    },
+    {
+      "title": "kbuild: rust: make `*.long-type-*.txt` a target for cleanup",
+      "url": "https://lore.kernel.org/linux-kbuild/20260530184944.10459-1-contact@jkam.dev/",
+      "note": "lore.kernel.org/linux-kbuild · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-05-31T18:11:33.587Z",
+    "sourceRecordCount": 75,
+    "candidateCount": 7,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "lore-rust-for-linux:urn:uuid:092fca67-ce10-64cb-ce18-c0d4d8318e96",
+      "lore-rust-for-linux:urn:uuid:c624db70-18f5-ceae-8b1e-32306272fa63",
+      "lore-rust-for-linux:urn:uuid:7695a054-334d-b3e3-a0dc-5810b4b541de",
+      "lore-llvm:urn:uuid:7a949aa2-8d3e-807a-047f-4b33f03dc7e4",
+      "lore-llvm:urn:uuid:83d69bda-e341-e406-b5d1-807760d10c4c",
+      "lore-rust-for-linux:urn:uuid:4fb66e1c-601b-4719-0612-e8fe74ac48d6",
+      "lore-linux-kbuild:urn:uuid:4253cc95-e98f-1d20-02a6-84650c62e166"
+    ],
+    "bucketCounts": {
+      "releases": 0,
+      "regressions": 2,
+      "patches": 5,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 7,
+    "signalLevel": "high",
+    "subsystems": [],
+    "lensPipeline": "linux-toolchain",
+    "rewrittenAt": "2026-05-31T18:11:41.358Z",
+    "rewriteAdapter": "codex",
+    "promptTemplate": "prompts/linux-lens-newsletter-ko.md"
+  }
+}
