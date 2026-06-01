@@ -1,0 +1,139 @@
+{
+  "id": "2026-06-02-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-06-02 s390 Rust 지원 확대 — 커널 도구체인·Rust",
+  "headline": "s390이 Rust 지원 아키텍처로 올라서며 바인딩, 어셈블리 접점, 도구 버전 조건이 바뀝니다.",
+  "date": "2026-06-02",
+  "summary": "오늘 이 렌즈의 핵심은 s390에서 Rust 커널 코드를 빌드하기 위한 아키텍처 접점과 도구 버전 조건이 구체화된 점입니다. 동시에 bpftool과 tools 빌드의 기능 검사가 매 빌드마다 반복되는 문제를 줄이는 패치가 이어져, 증분 빌드 비용을 보는 팀은 함께 추적할 만합니다.",
+  "tags": [
+    "도구체인",
+    "LLVM",
+    "kbuild",
+    "Rust"
+  ],
+  "highlights": [
+    {
+      "title": "s390 Rust 지원을 위한 아키텍처 접점 추가",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "s390 및 Rust for Linux 담당자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260601174625.2910233-1-japo@linux.ibm.com/",
+      "if": "s390에서 Rust 커널 빌드를 준비한다면",
+      "do": "어셈블리 매크로와 bindgen 불투명 타입 목록을 자기 트리와 diff로 비교하세요",
+      "verify": "스레드의 6개 패치 범위와 rustc 최소 버전 조건을 대조하세요"
+    },
+    {
+      "title": "tools 기능 검사 결과 파일 생성 누락 수정",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "커널 tools 및 증분 빌드 담당자",
+      "verifyLink": "https://lore.kernel.org/llvm/20260531010924.525824-1-irogers@google.com/",
+      "if": "tools 빌드 시간이 반복적으로 늘어난다면",
+      "do": "test-clang-bpf-co-re와 bpftool 기능 검사 산출물 생성을 추적하세요",
+      "verify": "증분 빌드에서 같은 기능 검사가 다시 실행되는지 로그로 비교하세요"
+    },
+    {
+      "title": "bpftool bootstrap의 불필요한 기능 검사 제한",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "perf 및 bpftool 빌드 담당자",
+      "verifyLink": "https://lore.kernel.org/llvm/20260531010750.525160-1-irogers@google.com/",
+      "if": "perf가 bpftool bootstrap을 호출한다면",
+      "do": "bootstrap 대상에서 LLVM과 disassembler 기능 검사가 빠지는지 Makefile을 대조하세요",
+      "verify": "Kbuild 시작 구간의 하위 make 호출 수를 패치 전후 로그로 비교하세요"
+    },
+    {
+      "title": "krealloc 반환값 처리 방식 재검토",
+      "priority": "하",
+      "impactType": "regression",
+      "affectedAudience": "드라이버 메모리 오류 수정 담당자",
+      "verifyLink": "https://lore.kernel.org/llvm/20260531195515.99623-1-grandmaster@al2klimov.de/",
+      "if": "드라이버에서 krealloc을 직접 대입한다면",
+      "do": "반환값을 임시 변수에 받는 패턴으로 바뀌었는지 grep해 비교하세요",
+      "verify": "vc4 스레드와 후속 krealloc_array 제안을 함께 읽어 적용 방식을 고르세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이 렌즈는 리스트 중심입니다. 오늘 입력에는 kernel.org 릴리스 항목이 없으므로 mainline, stable, longterm 릴리스 흐름은 별도 리눅스 개발 토픽에서 확인하는 편이 맞습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- s390 Rust 지원 시리즈 안의 KASAN stack out of bounds 수정\n  · 영향: s390 원자 연산 헬퍼와 Rust 지원 준비 과정에서 발견된 런타임 검증 문제를 함께 고칩니다.\n  · 확인: https://lore.kernel.org/rust-for-linux/20260601174625.2910233-1-japo@linux.ibm.com/\n\n- vc4와 tegra EMC의 krealloc 실패 처리 누락\n  · 영향: krealloc 실패 시 기존 포인터를 잃어 메모리가 누수될 수 있어, 같은 직접 대입 패턴을 쓰는 드라이버는 국소 회귀 후보입니다.\n  · 확인: https://lore.kernel.org/llvm/20260531195515.99623-1-grandmaster@al2klimov.de/ / https://lore.kernel.org/llvm/20260531195313.99447-1-grandmaster@al2klimov.de/"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "- s390: Rust 지원 활성화와 아키텍처 glue 추가\n  · 영향: s390을 Rust 가능 64비트 아키텍처로 연결하고, WARN과 BUG 보고, static branch, bindgen 레이아웃 충돌 회피, memchr 래퍼, 도구 최소 버전 조건을 한 시리즈로 묶었습니다.\n  · 확인: https://lore.kernel.org/rust-for-linux/20260601174625.2910233-1-japo@linux.ibm.com/\n\n- tools build: 성공한 기능 검사도 대상 파일을 만들도록 수정\n  · 영향: test-clang-bpf-co-re와 test-bpftool-skeletons 검사 결과가 디스크에 남지 않아 매 하위 make 또는 증분 빌드마다 다시 실행되던 문제를 줄입니다.\n  · 확인: https://lore.kernel.org/llvm/20260531010924.525824-1-irogers@google.com/\n\n- bpftool build: bootstrap 컴파일 중 기능 검사 제한\n  · 영향: bootstrap bpftool은 최소 AST 파싱과 C 코드 생성만 필요하므로 LLVM, libcap, libbfd, disassembler 관련 검사를 빼서 Kbuild 시작 오버헤드를 줄입니다.\n  · 확인: https://lore.kernel.org/llvm/20260531010750.525160-1-irogers@google.com/"
+    },
+    {
+      "heading": "기타",
+      "body": "- drm/vc4 후속 코멘트\n  · 영향: 단순히 임시 변수로 krealloc 결과를 받는 수정에서 더 나아가 krealloc_array 사용 가능성이 제기되어, 오버플로 방어까지 포함한 API 선택 논의로 이어질 수 있습니다.\n  · 확인: https://lore.kernel.org/llvm/e1edeadb7c161580a5cd5c7e642dc1b28db8ee86.camel@perches.com/\n\n- tegra124 EMC krealloc 누수 수정\n  · 영향: 단일 플랫폼 클럭 드라이버의 메모리 누수 수정으로, 도구체인 렌즈에서는 공통 패턴 확인 신호로만 다루는 것이 적절합니다.\n  · 확인: https://lore.kernel.org/llvm/20260531195313.99447-1-grandmaster@al2klimov.de/"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "AI가 원문 후보와 메타데이터를 요약했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/vc4: fix krealloc() memory leak",
+      "url": "https://lore.kernel.org/llvm/20260531195515.99623-1-grandmaster@al2klimov.de/",
+      "note": "lore.kernel.org/llvm · patch-discussion"
+    },
+    {
+      "title": "clk: tegra: tegra124-emc: fix krealloc() memory leak",
+      "url": "https://lore.kernel.org/llvm/20260531195313.99447-1-grandmaster@al2klimov.de/",
+      "note": "lore.kernel.org/llvm · patch-discussion"
+    },
+    {
+      "title": "drm/vc4: fix krealloc() memory leak",
+      "url": "https://lore.kernel.org/llvm/e1edeadb7c161580a5cd5c7e642dc1b28db8ee86.camel@perches.com/",
+      "note": "lore.kernel.org/llvm · patch-discussion"
+    },
+    {
+      "title": "s390: Enable Rust support and add required arch glue",
+      "url": "https://lore.kernel.org/rust-for-linux/20260601174625.2910233-1-japo@linux.ibm.com/",
+      "note": "lore.kernel.org/rust-for-linux · patch-discussion"
+    },
+    {
+      "title": "bpftool build: Restrict feature tests during bootstrap compilation",
+      "url": "https://lore.kernel.org/llvm/20260531010750.525160-1-irogers@google.com/",
+      "note": "lore.kernel.org/llvm · patch-discussion"
+    },
+    {
+      "title": "tools build: Fix feature checks to touch target files on success",
+      "url": "https://lore.kernel.org/llvm/20260531010924.525824-1-irogers@google.com/",
+      "note": "lore.kernel.org/llvm · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-06-01T18:12:58.842Z",
+    "sourceRecordCount": 75,
+    "candidateCount": 6,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "lore-llvm:urn:uuid:ed8fb91e-425e-24c6-a54b-bb534235f983",
+      "lore-llvm:urn:uuid:ae77e1c3-a99b-64aa-8abe-bfe355a2752f",
+      "lore-llvm:urn:uuid:e82cd38e-4273-a362-d71c-63cc5d59e757",
+      "lore-rust-for-linux:urn:uuid:b6a134b4-aeed-4f9a-d000-88c0a6524a1f",
+      "lore-llvm:urn:uuid:7a949aa2-8d3e-807a-047f-4b33f03dc7e4",
+      "lore-llvm:urn:uuid:83d69bda-e341-e406-b5d1-807760d10c4c"
+    ],
+    "bucketCounts": {
+      "releases": 0,
+      "regressions": 2,
+      "patches": 4,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 6,
+    "signalLevel": "high",
+    "subsystems": [
+      "메모리 관리"
+    ],
+    "lensPipeline": "linux-toolchain",
+    "rewrittenAt": "2026-06-01T18:13:06.922Z",
+    "rewriteAdapter": "codex",
+    "promptTemplate": "prompts/linux-lens-newsletter-ko.md"
+  }
+}

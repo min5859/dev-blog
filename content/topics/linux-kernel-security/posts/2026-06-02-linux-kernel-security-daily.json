@@ -1,0 +1,152 @@
+{
+  "id": "2026-06-02-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-06-02 pstore 백포트 — 커널 보안·하드닝",
+  "date": "2026-06-02",
+  "headline": "pstore 안정 백포트와 arm64 초기 매핑 정리가 하드닝 렌즈의 핵심입니다.",
+  "summary": "오늘은 pstorefs 레코드가 남은 상태에서 모듈형 pstore 백엔드를 내릴 때 생기는 참조 카운트 경고를 d_invalidate()로 정리하는 안정 백포트가 가장 직접적인 회귀 신호입니다. 그 다음으로 arm64 초기 메모리 매핑과 KFENCE 풀 매핑에서 기존 페이지 테이블 속성과 실행 금지 속성을 더 명확히 보존하려는 흐름을 봐야 합니다.",
+  "tags": [
+    "보안",
+    "하드닝",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "pstore 백엔드 해제 경로의 dentry 참조 정리",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "pstore와 안정 커널 백포트 담당자",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20260530160244.141751549@linuxfoundation.org/",
+      "if": "모듈형 pstore 백엔드를 쓰는 안정 커널이라면",
+      "do": "d_drop과 dput 조합을 d_invalidate 경로와 diff로 비교하세요",
+      "verify": "5.15 안정 리뷰 스레드의 upstream commit 본문과 경고 로그를 대조하세요"
+    },
+    {
+      "title": "arm64 DRAM 매핑에서 기존 비연속 설명자 보존",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "arm64 메모리 관리와 하드닝 담당자",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20260529150150.1670604-22-ardb+git@google.com/",
+      "if": "arm64 선형 매핑이나 초기 페이지 테이블을 만진다면",
+      "do": "연속 힌트 단위 매핑이 기존 비연속 비트를 덮는지 grep하세요",
+      "verify": "해당 패치의 map_mem 흐름과 자기 트리의 설명자 생성 코드를 비교하세요"
+    },
+    {
+      "title": "arm64 fixmap과 KASAN 페이지 테이블 배치 논의",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "arm64 링크 스크립트와 이미지 크기 담당자",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/69488547-cf2a-4aa0-bca7-0cb65aa01914@arm.com/",
+      "if": "arm64 커널 이미지 배치나 링크 스크립트를 고친다면",
+      "do": ".bss..pgdir 이름 변경 뒤 섹션 종류가 NOBITS인지 readelf로 대조하세요",
+      "verify": "두 스레드의 NOLOAD 논의와 v8 재작성 예고를 함께 읽으세요"
+    },
+    {
+      "title": "arm64 KFENCE 초기 풀 매핑 단순화",
+      "priority": "하",
+      "impactType": "runtime",
+      "affectedAudience": "arm64 KFENCE와 메모리 하드닝 검증 담당자",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/502eadae-089f-41cb-a871-9ad6b8169e0d@arm.com/",
+      "if": "arm64에서 KFENCE 조기 초기화를 켠다면",
+      "do": "NOMAP 표시 제거 뒤 page 단위 매핑과 실행 금지 플래그를 diff로 보세요",
+      "verify": "패치 본문의 __map_memblock 인자와 부팅 로그의 KFENCE 초기화를 대조하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "- Linux 7.0.11 stable\n  · 영향: 안정 커널에 462건이 백포트됐고, 보안 렌즈에서는 keys RCU 구간 누락, block use-after-free, ksmbd 파일 수명, tap 정보 노출, mana 배열 범위 검사가 우선 확인 대상입니다.\n  · 확인: https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.0.11\n\n- Linux 5.10.258 longterm\n  · 영향: 장기 지원 커널에 580건이 백포트됐고, gpio 사용자 인터페이스 속성 검증, net tls scatterlist 처리, tracing 이름 잘림 처리, lan78xx double free가 눈에 띕니다.\n  · 확인: https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.258\n\n- Linux 5.15.209 longterm\n  · 영향: 장기 지원 커널에 757건이 백포트됐고, mana 범위 검사와 이중 fetch, bridge use-after-free 가능성, RDMA cleanup 수명, gpio 사용자 인터페이스 검증을 묶어 봐야 합니다.\n  · 확인: https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.209\n\n- Linux 6.1.175 longterm\n  · 영향: 장기 지원 커널에 952건이 백포트됐고, keys RCU 구간, mana 범위 검사, bridge use-after-free 가능성, spi resource leak 같은 안정성 패치가 포함됩니다.\n  · 확인: https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.1.175"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- pstore: inode: Only d_invalidate() is needed\n  · 영향: pstorefs에 레코드가 남은 상태에서 모듈형 pstore 백엔드를 내리면 dput() 이중 감소 경고가 날 수 있어, 안정 백포트에서는 d_drop()/dput() 대신 d_invalidate()만 쓰는 계약 변화가 핵심입니다.\n  · 확인: https://lore.kernel.org/linux-hardening/20260530160244.141751549@linuxfoundation.org/"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "- arm64: mm: Preserve non-contiguous descriptors when mapping DRAM\n  · 영향: DRAM을 연속 힌트 단위로 매핑할 때 이미 유효한 비연속 설명자가 있으면 전체 영역의 연속 비트를 세우지 않도록 해, 이후 선형 별칭 매핑 단순화의 전제 조건을 만듭니다.\n  · 확인: https://lore.kernel.org/linux-hardening/20260529150150.1670604-22-ardb+git@google.com/\n\n- arm64: Move fixmap and kasan page tables to end of kernel image\n  · 영향: fixmap과 KASAN 페이지 테이블을 커널 이미지 뒤쪽으로 옮기는 과정에서 .pgdir.bss를 NOLOAD로 둘지, .bss..pgdir처럼 이름을 바꿔 NOBITS 섹션으로 만들지 논의가 진행 중입니다.\n  · 확인: https://lore.kernel.org/linux-hardening/69488547-cf2a-4aa0-bca7-0cb65aa01914@arm.com/\n\n- arm64: Move fixmap and kasan page tables to end of kernel image\n  · 영향: 후속 답변에서 작성자가 v8에서 섹션 이름을 .bss..pgdir로 바꾸겠다고 했으므로, 현재 패치 형태가 최종 계약이라고 보기보다 링크 스크립트 재정리 신호로 봐야 합니다.\n  · 확인: https://lore.kernel.org/linux-hardening/a371089f-0d01-45d6-84bc-1fe0d78ebd85@app.fastmail.com/\n\n- arm64: kfence: Avoid NOMAP tricks when mapping the early pool\n  · 영향: KFENCE 조기 풀을 memblock NOMAP 임시 표시로 우회하지 않고 page 단위로 먼저 매핑하며, NO_EXEC_MAPPINGS까지 더해 중간 페이지 테이블의 실행 금지 속성을 분명히 합니다.\n  · 확인: https://lore.kernel.org/linux-hardening/502eadae-089f-41cb-a871-9ad6b8169e0d@arm.com/"
+    },
+    {
+      "heading": "기타",
+      "body": "- sh: Drop cache flush of the zero page at boot\n  · 영향: empty_zero_page가 BSS로 옮겨진 뒤 남아 있던 SuperH 부팅 시 zero page cache flush 제거 논의로, 하드닝 렌즈에서는 아키텍처 정리 항목에 가깝습니다.\n  · 확인: https://lore.kernel.org/linux-hardening/CAMuHMdXp0qp38vHJTDFMrY-AUDXPSJtc5Dds_qu58FSeS_242w@mail.gmail.com/"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "AI가 원문 후보와 메타데이터를 요약했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Linux 7.0.11 stable",
+      "url": "https://git.kernel.org/stable/h/v7.0.11",
+      "note": "kernel.org · kernel-release"
+    },
+    {
+      "title": "pstore: inode: Only d_invalidate() is needed",
+      "url": "https://lore.kernel.org/linux-hardening/20260530160244.141751549@linuxfoundation.org/",
+      "note": "lore.kernel.org/linux-hardening · patch-discussion"
+    },
+    {
+      "title": "arm64: mm: Preserve non-contiguous descriptors when mapping DRAM",
+      "url": "https://lore.kernel.org/linux-hardening/20260529150150.1670604-22-ardb+git@google.com/",
+      "note": "lore.kernel.org/linux-hardening · patch-discussion"
+    },
+    {
+      "title": "arm64: Move fixmap and kasan page tables to end of kernel image",
+      "url": "https://lore.kernel.org/linux-hardening/69488547-cf2a-4aa0-bca7-0cb65aa01914@arm.com/",
+      "note": "lore.kernel.org/linux-hardening · patch-discussion"
+    },
+    {
+      "title": "arm64: Move fixmap and kasan page tables to end of kernel image",
+      "url": "https://lore.kernel.org/linux-hardening/a371089f-0d01-45d6-84bc-1fe0d78ebd85@app.fastmail.com/",
+      "note": "lore.kernel.org/linux-hardening · patch-discussion"
+    },
+    {
+      "title": "arm64: kfence: Avoid NOMAP tricks when mapping the early pool",
+      "url": "https://lore.kernel.org/linux-hardening/502eadae-089f-41cb-a871-9ad6b8169e0d@arm.com/",
+      "note": "lore.kernel.org/linux-hardening · patch-discussion"
+    },
+    {
+      "title": "sh: Drop cache flush of the zero page at boot",
+      "url": "https://lore.kernel.org/linux-hardening/CAMuHMdXp0qp38vHJTDFMrY-AUDXPSJtc5Dds_qu58FSeS_242w@mail.gmail.com/",
+      "note": "lore.kernel.org/linux-hardening · patch-discussion"
+    },
+    {
+      "title": "Linux 5.10.258 longterm",
+      "url": "https://git.kernel.org/stable/h/v5.10.258",
+      "note": "kernel.org · kernel-release"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-06-01T18:10:37.618Z",
+    "sourceRecordCount": 34,
+    "candidateCount": 10,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "kernel-org:stable:7.0.11",
+      "lore-linux-hardening:urn:uuid:d0938ec6-4c2e-54b4-88ee-7f77ad926c42",
+      "lore-linux-hardening:urn:uuid:924b29f9-a14c-eb7b-6a52-7715b2215c9b",
+      "lore-linux-hardening:urn:uuid:63b4753f-de6f-09e2-d561-4a5c337d90d8",
+      "lore-linux-hardening:urn:uuid:ae098886-d841-bf71-2f25-30bf8b298456",
+      "lore-linux-hardening:urn:uuid:adb01f61-4a87-a30c-8d3c-e3a63f348f9c",
+      "lore-linux-hardening:urn:uuid:cfcf6dbb-d67d-f96a-49a0-f6ddce917c60",
+      "kernel-org:longterm:5.10.258",
+      "kernel-org:longterm:5.15.209",
+      "kernel-org:longterm:6.1.175"
+    ],
+    "bucketCounts": {
+      "releases": 4,
+      "regressions": 1,
+      "patches": 5,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 6,
+    "signalLevel": "high",
+    "subsystems": [
+      "메모리 관리"
+    ],
+    "lensPipeline": "linux-kernel-security",
+    "rewrittenAt": "2026-06-01T18:10:49.168Z",
+    "rewriteAdapter": "codex",
+    "promptTemplate": "prompts/linux-lens-newsletter-ko.md"
+  }
+}

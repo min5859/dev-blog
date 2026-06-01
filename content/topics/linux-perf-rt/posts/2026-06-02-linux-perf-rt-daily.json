@@ -1,0 +1,141 @@
+{
+  "id": "2026-06-02-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-06-02 실시간 잠금 회귀 — 관측성·실시간(eBPF·RT)",
+  "date": "2026-06-02",
+  "headline": "실시간 커널에서 잠들 수 있는 경로와 인터럽트 전달 계약 위반이 함께 올라왔습니다.",
+  "summary": "오늘은 PREEMPT_RT에서 잠들 수 있는 호출을 잘못 감싼 MPTCP 경로와, 스레드화된 인터럽트 문맥에서 하위 인터럽트를 전달하는 i915 경로가 핵심입니다. 보드 한정 irqchip 패치와 gve 제어 평면 정리는 후속 검토 신호로만 보는 편이 좋습니다.",
+  "tags": [
+    "eBPF",
+    "verifier",
+    "tracing",
+    "PREEMPT_RT",
+    "실시간"
+  ],
+  "highlights": [
+    {
+      "title": "MPTCP 전력 관리 타이머 정리가 PREEMPT_RT에서 잠들 수 있는 RCU 구간을 벗어납니다.",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "PREEMPT_RT 네트워크 회귀 담당자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260601-net-mptcp-misc-fixes-7-1-rc7-v1-9-a5ae7791754b@kernel.org/",
+      "if": "MPTCP와 PREEMPT_RT를 함께 쓰는 트리라면",
+      "do": "타이머 정리 호출이 RCU 읽기 구간 밖으로 빠졌는지 diff로 대조하세요",
+      "verify": "패치 9와 v5.10 이후 자기 백포트 후보를 함께 비교하세요"
+    },
+    {
+      "title": "i915 LPE 오디오 인터럽트 전달이 스레드화된 부모 인터럽트에서도 로컬 인터럽트 비활성 문맥을 보장합니다.",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "PREEMPT_RT 그래픽 인터럽트 담당자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260531153108.1448185-1-runyu.xiao@seu.edu.cn/",
+      "if": "i915 LPE 오디오 경로를 검증한다면",
+      "do": "generic_handle_irq 호출 지점을 safe 헬퍼 사용 여부로 grep하세요",
+      "verify": "스레드의 재현 하네스 설명과 자기 경고 로그를 대조하세요"
+    },
+    {
+      "title": "MSM8x60 웨이크업 irqchip v2가 PREEMPT_RT에서 잠들 수 있는 regmap 사용을 직접 입출력으로 바꿉니다.",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "실시간 irqchip 검토자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/cover.1780195817.git.github.com@herrie.org/",
+      "if": "해당 퀄컴 계열 보드 irqchip을 다룬다면",
+      "do": "mask와 wake 콜백에서 잠들 수 있는 regmap 호출을 grep하세요",
+      "verify": "v2 변경 목록의 해제 순서와 wake 콜백 구현을 비교하세요"
+    },
+    {
+      "title": "gve 드라이버가 새 제어 평면을 넣기 전 초기화와 복구 경로를 연산 구조체로 분리합니다.",
+      "priority": "하",
+      "impactType": "api-abi",
+      "affectedAudience": "gve 드라이버와 데이터센터 네트워크 담당자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260601175437.3767283-1-hramamurthy@google.com/",
+      "if": "gve AdminQ 경로를 유지보수한다면",
+      "do": "초기화와 재설정 경로가 새 연산 구조체로 이동했는지 diff로 비교하세요",
+      "verify": "15개 패치의 gve_main.c 변경과 후속 MailboxQ 브랜치를 대조하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이 렌즈는 lore.kernel.org의 bpf와 linux-rt-devel 리스트 중심입니다. 오늘 입력에는 kernel.org mainline, stable, longterm 릴리스 항목이 없어 릴리스 요약은 추가하지 않습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- MPTCP 전력 관리 타이머 정리\n  · 영향: sk_stop_timer_sync가 PREEMPT_RT에서 잠들 수 있어 RCU 읽기 임계 구역 안에서 호출하면 lockdep 경고가 날 수 있으며, 패치는 타이머 참조만 RCU 안에서 잡고 실제 정리는 밖에서 하도록 바꿉니다.\n  · 확인: https://lore.kernel.org/linux-rt-devel/20260601-net-mptcp-misc-fixes-7-1-rc7-v1-9-a5ae7791754b@kernel.org/\n\n- i915 LPE 오디오 하위 인터럽트 전달\n  · 영향: 부모 인터럽트가 스레드 문맥에서 실행될 때 generic_handle_irq가 하위 top half의 인터럽트 비활성 계약을 깨뜨릴 수 있어, safe 헬퍼로 전달 문맥을 보정합니다.\n  · 확인: https://lore.kernel.org/linux-rt-devel/20260531153108.1448185-1-runyu.xiao@seu.edu.cn/"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "- MPTCP v7.1-rc7 기타 수정 묶음\n  · 영향: 같은 시리즈는 다중 reader wakeup, checksum 재전송 루프, 수신 윈도우 경쟁, userspace PM underflow, timestamping 오류 보고, TCP_MAXSEG 적용, PREEMPT_RT lockdep 경고, read_sock count 처리까지 여러 버전대 백포트 후보를 묶습니다.\n  · 확인: https://lore.kernel.org/linux-rt-devel/20260601-net-mptcp-misc-fixes-7-1-rc7-v1-0-a5ae7791754b@kernel.org/\n\n- 실시간 문서 중복 문구 정리\n  · 영향: sched(7) 참조가 일반 텍스트와 링크로 중복되어 있던 문서 노이즈를 제거하는 낮은 위험도의 문서 패치입니다.\n  · 확인: https://lore.kernel.org/linux-rt-devel/20260531141823.4118954-1-costa.shul@redhat.com/\n\n- gve 제어 평면 준비 리팩터링\n  · 영향: 새 MailboxQ 제어 평면을 넣기 전에 AdminQ 초기화, 해제, 재설정, 복구 경로를 공통 연산 구조체로 옮기는 준비 작업입니다.\n  · 확인: https://lore.kernel.org/bpf/20260601175437.3767283-1-hramamurthy@google.com/"
+    },
+    {
+      "heading": "기타",
+      "body": "- MSM8x60 MPM 웨이크업 irqchip v2\n  · 영향: 특정 퀄컴 계열 보드 패치지만, PREEMPT_RT에서 irq_desc raw spinlock 아래 잠들 수 있는 regmap을 피하고 직접 입출력으로 바꾼 점은 irqchip 검토자에게 참고 가치가 있습니다.\n  · 확인: https://lore.kernel.org/linux-rt-devel/cover.1780195817.git.github.com@herrie.org/"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "AI가 원문 후보와 메타데이터를 요약했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "mptcp: pm: avoid sleeping while holding rcu_read_lock",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260601-net-mptcp-misc-fixes-7-1-rc7-v1-9-a5ae7791754b@kernel.org/",
+      "note": "lore.kernel.org/linux-rt-devel · patch-discussion"
+    },
+    {
+      "title": "docs: real-time: Fix duplicated sched(7) text",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260531141823.4118954-1-costa.shul@redhat.com/",
+      "note": "lore.kernel.org/linux-rt-devel · patch-discussion"
+    },
+    {
+      "title": "drm/i915/audio: use generic_handle_irq_safe() for LPE audio irq",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260531153108.1448185-1-runyu.xiao@seu.edu.cn/",
+      "note": "lore.kernel.org/linux-rt-devel · patch-discussion"
+    },
+    {
+      "title": "gve: AdminQ mode related refactors",
+      "url": "https://lore.kernel.org/bpf/20260601175437.3767283-1-hramamurthy@google.com/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "mptcp: misc fixes for v7.1-rc7",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260601-net-mptcp-misc-fixes-7-1-rc7-v1-0-a5ae7791754b@kernel.org/",
+      "note": "lore.kernel.org/linux-rt-devel · patch-discussion"
+    },
+    {
+      "title": "irqchip: add MSM8x60 MPM wakeup interrupt controller",
+      "url": "https://lore.kernel.org/linux-rt-devel/cover.1780195817.git.github.com@herrie.org/",
+      "note": "lore.kernel.org/linux-rt-devel · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-06-01T18:15:28.441Z",
+    "sourceRecordCount": 50,
+    "candidateCount": 6,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "lore-linux-rt-devel:urn:uuid:773ff04f-160e-89e9-8780-99ffe11336c5",
+      "lore-linux-rt-devel:urn:uuid:557cc9d5-47f8-ce84-55e9-b8b20c4ed5c5",
+      "lore-linux-rt-devel:urn:uuid:da461272-ee9b-9a18-62e4-cae60321f30c",
+      "lore-bpf:urn:uuid:7244b5a4-c949-cf10-195f-6f36ed7bc813",
+      "lore-linux-rt-devel:urn:uuid:b0412739-6263-d18b-f0f8-7470b135e469",
+      "lore-linux-rt-devel:urn:uuid:4ab7a4bf-6a96-c794-3e84-61cffdd87873"
+    ],
+    "bucketCounts": {
+      "releases": 0,
+      "regressions": 2,
+      "patches": 4,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 6,
+    "signalLevel": "high",
+    "subsystems": [
+      "전력 관리",
+      "스케줄러/실시간"
+    ],
+    "lensPipeline": "linux-perf-rt",
+    "rewrittenAt": "2026-06-01T18:15:36.230Z",
+    "rewriteAdapter": "codex",
+    "promptTemplate": "prompts/linux-lens-newsletter-ko.md"
+  }
+}

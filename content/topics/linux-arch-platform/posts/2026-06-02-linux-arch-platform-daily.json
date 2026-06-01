@@ -1,0 +1,138 @@
+{
+  "id": "2026-06-02-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-06-02 대형 폴리오 재읽기 조정 — 아키텍처·플랫폼",
+  "headline": "아키텍처 렌즈에서는 메모리 재읽기와 RISC-V 가상화 상태 노출 수정이 핵심입니다.",
+  "date": "2026-06-02",
+  "summary": "오늘은 arm64 대형 페이지 구성에서 강제 재읽기가 더 큰 폴리오를 요청하도록 바꾸는 메모리 변경과, RISC-V KVM의 펌웨어 기능 상태 노출 버그 수정이 가장 중요합니다. RISC-V ftrace 정렬 스크립트와 powerpc crash kexec 공통화는 각 아키텍처별 빌드·런타임 경로를 가진 팀이 후속 버전을 봐야 할 신호입니다.",
+  "tags": [
+    "ARM64",
+    "RISC-V",
+    "아키텍처"
+  ],
+  "highlights": [
+    {
+      "title": "RISC-V KVM의 펌웨어 기능 상태 노출과 자체 시험 보강",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "RISC-V KVM 유지보수자와 가상화 검증 담당자",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260601-kvm-get_reg_list-v2-v5-0-415d08a2813b@sifive.com/",
+      "if": "RISC-V 게스트 기능을 조정하는 가상화 스택이라면",
+      "do": "KVM_SET_ONE_REG 이후 CSR dirty 표시와 기능 캐시 갱신 흐름을 diff로 대조하세요",
+      "verify": "v5 스레드의 1~3번 패치와 get-reg-list 자체 시험 변경을 함께 재현하세요"
+    },
+    {
+      "title": "arm64 16K·64K 페이지에서 강제 대형 폴리오 재읽기 허용",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "arm64 메모리 관리와 파일 시스템 성능 담당자",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/yoma5mzdqkkcgjnq3qawaeytjx6cjmk7etzxnmkk53mov46sub@ldzkwojakaxs/",
+      "if": "arm64 큰 기본 페이지와 VM_HUGEPAGE를 쓰는 환경이라면",
+      "do": "force_thp_readahead 경로가 mapping_max_folio_order() 한계로 요청되는지 추적하세요",
+      "verify": "mm/filemap.c 변경과 16K·64K 페이지 구성의 readahead 크기를 비교하세요"
+    },
+    {
+      "title": "RISC-V ftrace 항목 정렬에서 arm64 전용 보정과 공통 위치 규칙 분리",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "RISC-V ftrace와 빌드 도구 경로 담당자",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260601095746.70c01d24@fedora/",
+      "if": "RISC-V에서 patchable ftrace를 켜는 빌드라면",
+      "do": "sorttable.c의 RISC-V case가 arm64 RELA 보정을 상속하지 않는지 diff로 비교하세요",
+      "verify": "Steven Rostedt의 v3 요청 스레드와 MCOUNT_SORT_ENABLED 빌드 로그를 대조하세요"
+    },
+    {
+      "title": "powerpc crash kexec 제외 범위를 공통 헬퍼로 재사용",
+      "priority": "하",
+      "impactType": "api-abi",
+      "affectedAudience": "powerpc crash kexec와 kdump 유지보수자",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260601094805.2928614-21-ruanjinjie@huawei.com/",
+      "if": "powerpc crash kernel 메모리 제외 경로를 다루는 트리라면",
+      "do": "arch_crash_exclude_mem_range() 기본 구현과 powerpc guarded 구현의 호출 순서를 비교하세요",
+      "verify": "crashk_res와 crashk_cma 제외 범위가 기존 결과와 같은지 kdump 부팅으로 검증하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이 렌즈는 리스트 중심입니다. 오늘 입력에는 kernel.org 메인라인, 안정, 장기 지원 릴리스 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- RISC-V KVM 펌웨어 기능 상태 노출 수정\n  · 영향: 사용자 공간이 KVM_SET_ONE_REG로 ISA 확장이나 펌웨어 기능 값을 바꾼 뒤 CSR dirty 표시가 빠지거나 기능 지원 캐시가 오래된 상태로 남아, 게스트가 비활성화된 기능에 접근할 수 있는 런타임 불일치를 줄입니다.\n  · 확인: https://lore.kernel.org/linux-riscv/20260601-kvm-get_reg_list-v2-v5-0-415d08a2813b@sifive.com/"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "- mm: force_thp_readahead가 매핑의 최대 폴리오 크기를 쓰도록 조정\n  · 영향: arm64 16K·64K 기본 페이지처럼 HPAGE_PMD_ORDER가 page cache 한계를 넘는 구성에서도 VM_HUGEPAGE 매핑이 기본 페이지 재읽기로 떨어지지 않고, 2MB 상한 안에서 큰 폴리오 재읽기를 요청할 수 있습니다.\n  · 확인: https://lore.kernel.org/linux-arm-kernel/yoma5mzdqkkcgjnq3qawaeytjx6cjmk7etzxnmkk53mov46sub@ldzkwojakaxs/\n- scripts/sorttable: RISC-V patchable ftrace 항목 처리\n  · 영향: RISC-V도 함수 앞 patchable entry 배치를 고려하되, arm64 전용 RELA 기반 weak-function 보정과 섞여 보이지 않도록 case 주석과 흐름을 분리하자는 유지보수자 피드백이 붙었습니다.\n  · 확인: https://lore.kernel.org/linux-riscv/20260601095746.70c01d24@fedora/\n- powerpc/kexec_file: crash 메모리 제외 범위 공통화\n  · 영향: powerpc의 crashk_res와 crashk_cma 제외 처리가 generic crash_exclude_core_ranges() 헬퍼를 재사용하도록 바뀌며, 아키텍처별 arch_crash_exclude_mem_range() 훅 계약이 생깁니다.\n  · 확인: https://lore.kernel.org/linux-riscv/20260601094805.2928614-21-ruanjinjie@huawei.com/"
+    },
+    {
+      "heading": "기타",
+      "body": "- arm64 Rockchip Vicharak Axon 보드 지원\n  · 영향: RK3588 기반 단일 보드의 장치 트리와 바인딩 추가이며, v5에서는 HDMI sound probe deferral을 줄이기 위해 i2s5_8ch와 i2s6_8ch를 켜는 보드 범위 변경입니다.\n  · 확인: https://lore.kernel.org/linux-arm-kernel/20260601162143.170030-1-hrushirajg23@gmail.com/\n- SpacemiT reset controller MAINTAINERS 항목 추가\n  · 영향: drivers/reset/spacemit/ 공통 코드와 K1·K3 reset 드라이버의 소유권을 broad reset 항목과 RISC-V SpacemiT 포괄 항목에서 전용 유지보수 항목으로 좁힙니다.\n  · 확인: https://lore.kernel.org/linux-riscv/20260601-b4-spacemit-reset-maintainers-v1-1-1ab3014e9a35@gmail.com/"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "AI가 원문 후보와 메타데이터를 요약했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "scripts/sorttable: Handle RISC-V patchable ftrace entries",
+      "url": "https://lore.kernel.org/linux-riscv/20260601095746.70c01d24@fedora/",
+      "note": "lore.kernel.org/linux-riscv · patch-discussion"
+    },
+    {
+      "title": "arm64: dts: rockchip: add Vicharak Axon board support",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260601162143.170030-1-hrushirajg23@gmail.com/",
+      "note": "lore.kernel.org/linux-arm-kernel · patch-discussion"
+    },
+    {
+      "title": "KVM: riscv: Fix stale FWFT feature exposure and enhance selftests",
+      "url": "https://lore.kernel.org/linux-riscv/20260601-kvm-get_reg_list-v2-v5-0-415d08a2813b@sifive.com/",
+      "note": "lore.kernel.org/linux-riscv · patch-discussion"
+    },
+    {
+      "title": "powerpc/kexec_file: Use crash_exclude_core_ranges() helper",
+      "url": "https://lore.kernel.org/linux-riscv/20260601094805.2928614-21-ruanjinjie@huawei.com/",
+      "note": "lore.kernel.org/linux-riscv · patch-discussion"
+    },
+    {
+      "title": "MAINTAINERS: add entry for SpacemiT reset controller driver",
+      "url": "https://lore.kernel.org/linux-riscv/20260601-b4-spacemit-reset-maintainers-v1-1-1ab3014e9a35@gmail.com/",
+      "note": "lore.kernel.org/linux-riscv · patch-discussion"
+    },
+    {
+      "title": "mm: use mapping_max_folio_order() for force_thp_readahead order",
+      "url": "https://lore.kernel.org/linux-arm-kernel/yoma5mzdqkkcgjnq3qawaeytjx6cjmk7etzxnmkk53mov46sub@ldzkwojakaxs/",
+      "note": "lore.kernel.org/linux-arm-kernel · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-06-01T18:16:39.727Z",
+    "sourceRecordCount": 50,
+    "candidateCount": 6,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "lore-linux-riscv:urn:uuid:90304a78-bf7c-bb2a-1f2a-433b405f6258",
+      "lore-linux-arm-kernel:urn:uuid:5d87327e-00d9-b39e-0a3a-6bd718721744",
+      "lore-linux-riscv:urn:uuid:397675c0-5b95-1e0f-f475-c82f377e0dd5",
+      "lore-linux-riscv:urn:uuid:41388e40-9bd8-e2cc-3451-885d11bec684",
+      "lore-linux-riscv:urn:uuid:7b63d3cc-82c9-0419-2729-1a7c100ed445",
+      "lore-linux-arm-kernel:urn:uuid:2bc472b3-ffa8-c86c-1e19-557b8905cf75"
+    ],
+    "bucketCounts": {
+      "releases": 0,
+      "regressions": 0,
+      "patches": 6,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 6,
+    "signalLevel": "high",
+    "subsystems": [
+      "메모리 관리"
+    ],
+    "lensPipeline": "linux-arch-platform",
+    "rewrittenAt": "2026-06-01T18:16:49.969Z",
+    "rewriteAdapter": "codex",
+    "promptTemplate": "prompts/linux-lens-newsletter-ko.md"
+  }
+}
