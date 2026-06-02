@@ -1,0 +1,155 @@
+{
+  "id": "2026-06-03-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-06-03 보안트리 빌드 충돌 — 관측성·실시간(eBPF·RT)",
+  "headline": "보안 트리의 새 보안 모듈이 BPF 내부 인터페이스 변경과 충돌해 빌드가 깨졌습니다.",
+  "date": "2026-06-03",
+  "summary": "오늘 이 렌즈의 최우선 신호는 보안 트리의 새 보안 모듈과 BPF 맵 해시 인터페이스 정리가 충돌해 linux-next 빌드가 깨진 일입니다. 그다음은 BPF 검증기 회귀 테스트의 빌드 실패, 네트워크 XDP 수신 버퍼 수정, 실시간 PPS 성능 패치의 충돌 가능성입니다.",
+  "tags": [
+    "eBPF",
+    "verifier",
+    "tracing",
+    "PREEMPT_RT",
+    "실시간"
+  ],
+  "highlights": [
+    {
+      "title": "보안 트리와 BPF 맵 해시 인터페이스가 충돌해 linux-next 빌드가 실패했습니다.",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "BPF 보안 연동 담당자",
+      "verifyLink": "https://lore.kernel.org/bpf/f7892d83-64cb-460f-87c8-ebc7fb4476f4@iogearbox.net/",
+      "if": "BPF 맵 해시나 보안 모듈을 함께 만진다면",
+      "do": "map_get_hash 호출부와 인자 수 변경을 자기 트리에서 grep해 대조하세요",
+      "verify": "linux-next 실패 로그와 두 커밋의 상호작용을 스레드에서 비교하세요"
+    },
+    {
+      "title": "BPF kfunc 암묵 인자 주입 회귀 테스트가 검증기 빌드 오류를 드러냈습니다.",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "BPF verifier 담당자",
+      "verifyLink": "https://lore.kernel.org/bpf/202606021934.SXop4khA-lkp@intel.com/",
+      "if": "kfunc 인자 검증 코드를 추적 중이라면",
+      "do": "reg_arg_name과 argno 사용 위치를 v4 패치 기준으로 diff해 고치세요",
+      "verify": "0day 재현 설정의 x86_64 kexec 빌드 로그와 비교하세요"
+    },
+    {
+      "title": "mvpp2 드라이버의 XDP 수신 버퍼 처리가 리뷰 과정에서 함께 정리되고 있습니다.",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "XDP 네트워크 드라이버 담당자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260602164635.62517-1-mail@tk154.de/",
+      "if": "mvpp2에서 XDP 통과 경로를 운용한다면",
+      "do": "수신 버퍼 재사용과 XDP 통과 처리를 v2 시리즈와 diff로 비교하세요",
+      "verify": "스레드의 v2 커버레터와 각 패치별 리뷰를 따라가세요"
+    },
+    {
+      "title": "PPS의 실시간 성능 개선 v7은 capture_clear 제거 패치와 충돌 가능성이 있습니다.",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "PREEMPT_RT 검증 담당자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/cover.1780359378.git.calvin@wbinvd.org/",
+      "if": "PPS와 실시간 커널 지연을 함께 검증한다면",
+      "do": "v7 시리즈와 capture_clear 제거 패치의 충돌 지점을 diff로 푸세요",
+      "verify": "linux-rt-devel 커버레터의 충돌 언급과 후속 재전송을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이 렌즈는 lore.kernel.org의 BPF와 linux-rt-devel 리스트 중심입니다. 오늘 입력에는 mainline, stable, longterm 릴리스 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- 보안 트리의 새 보안 모듈이 BPF 맵 해시 내부 인터페이스 정리와 맞물려 linux-next x86_64 allmodconfig 빌드를 깨뜨렸습니다.\n  · 영향: BPF 내부 API 변경이 보안 모듈 호출 계약까지 건드린 빌드 회귀입니다.\n  · 확인: https://lore.kernel.org/bpf/f7892d83-64cb-460f-87c8-ebc7fb4476f4@iogearbox.net/\n\n- BPF kfunc 암묵 인자 주입 회귀 테스트 패치에서 reg_arg_name과 argno가 선언되지 않아 clang W=1 빌드가 실패했습니다.\n  · 영향: 검증기 회귀 방지 테스트 자체가 빌드 계약을 깨뜨려 패치 재전송이 필요해 보입니다.\n  · 확인: https://lore.kernel.org/bpf/202606021934.SXop4khA-lkp@intel.com/\n\n- bpftool의 flow dissector 조회는 close 이후 errno를 읽던 흐름을 libbpf 반환 오류 코드 기준으로 바꾸려 합니다.\n  · 영향: 오래된 커널에서 -EINVAL을 비치명 호환 경로로 처리하는 판단이 더 안정적이 됩니다.\n  · 확인: https://lore.kernel.org/bpf/20260602170350.261035-1-random6.xyz@gmail.com/\n\n- bpf_for_each_reg_in_vstate_mask 매크로는 쓰이지 않는 스택 변수 경고를 숨기기 위해 명시적 캐스팅을 추가합니다.\n  · 영향: clang W=1 경고 정리 성격이며 런타임 의미 변화는 제한적으로 보입니다.\n  · 확인: https://lore.kernel.org/bpf/20260602175204.624401-1-ameryhung@gmail.com/"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "- mvpp2 XDP 수신 버퍼 처리 v2는 기존 XDP 통과 수정에 더해 리뷰에서 발견된 관련 수신 및 XDP 버퍼 처리 문제를 함께 고칩니다.\n  · 영향: 해당 드라이버에서 XDP 통과 경로의 버퍼 수명과 재사용 계약이 바뀔 수 있습니다.\n  · 확인: https://lore.kernel.org/bpf/20260602164635.62517-1-mail@tk154.de/\n\n- TCP 재전송 시간초과와 경로 재해싱 패치는 소켓 전송 해시를 바꾼 뒤 캐시된 경로를 버리고 IPv6 ECMP 선택에 새 해시를 전달하려 합니다.\n  · 영향: 기본 계층 3 다중 경로 정책에서 재전송 이후 다른 로컬 경로 선택이 실제로 일어나도록 라우팅 계약을 조정합니다.\n  · 확인: https://lore.kernel.org/bpf/20260602181428.2318919-2-ntspring@meta.com/\n\n- PPS 실시간 성능 개선 v7은 전달자가 기존 capture_clear 제거 패치와의 충돌을 언급했습니다.\n  · 영향: PREEMPT_RT 지연 개선을 노리는 패치지만 같은 코드 경로의 정리 패치와 병합 순서 조율이 필요합니다.\n  · 확인: https://lore.kernel.org/linux-rt-devel/cover.1780359378.git.calvin@wbinvd.org/"
+    },
+    {
+      "heading": "기타",
+      "body": "- RISC-V Ssqosid와 CBQRI resctrl RFC는 새 자원 타입, 컨트롤러 연동, ACPI 발견 경로를 제안하지만 오늘 렌즈에서는 아키텍처와 resctrl 확장 신호로만 다룹니다.\n  · 영향: 실시간보다는 플랫폼별 자원 제어와 관측 가능한 대역폭 관리 인터페이스 변화에 가깝습니다.\n  · 확인: https://lore.kernel.org/linux-rt-devel/20260601-ssqosid-cbqri-rqsc-v7-0-v6-0-baf00f50028a@kernel.org/"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "AI가 원문 후보와 메타데이터를 요약했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "selftests/bpf: Add regression test for kfunc implicit arg injection",
+      "url": "https://lore.kernel.org/bpf/202606021934.SXop4khA-lkp@intel.com/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "net: mvpp2: fix XDP RX buffer handling",
+      "url": "https://lore.kernel.org/bpf/20260602164635.62517-1-mail@tk154.de/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "tcp: rehash onto different local ECMP path on retransmit timeout",
+      "url": "https://lore.kernel.org/bpf/20260602181428.2318919-2-ntspring@meta.com/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "pps: improve PREEMPT_RT performance",
+      "url": "https://lore.kernel.org/linux-rt-devel/cover.1780359378.git.calvin@wbinvd.org/",
+      "note": "lore.kernel.org/linux-rt-devel · patch-discussion"
+    },
+    {
+      "title": "riscv: add Ssqosid and CBQRI resctrl support",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260601-ssqosid-cbqri-rqsc-v7-0-v6-0-baf00f50028a@kernel.org/",
+      "note": "lore.kernel.org/linux-rt-devel · patch-discussion"
+    },
+    {
+      "title": "bpftool: Use libbpf error code for flow dissector query",
+      "url": "https://lore.kernel.org/bpf/20260602170350.261035-1-random6.xyz@gmail.com/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "bpf: Silence unused-but-set-variable warning in bpf_for_each_reg_in_vstate_mask",
+      "url": "https://lore.kernel.org/bpf/20260602175204.624401-1-ameryhung@gmail.com/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "linux-next: build failure after merge of the security tree",
+      "url": "https://lore.kernel.org/bpf/f7892d83-64cb-460f-87c8-ebc7fb4476f4@iogearbox.net/",
+      "note": "lore.kernel.org/bpf · mail-reply"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-06-02T18:17:21.199Z",
+    "sourceRecordCount": 50,
+    "candidateCount": 9,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "lore-bpf:urn:uuid:5ad37e2e-efc6-cd42-9fc3-cf38d4bf637a",
+      "lore-bpf:urn:uuid:2904cfea-c57b-835a-f071-8653b0fffa7f",
+      "lore-bpf:urn:uuid:8c02b2cc-7753-e2fb-3f5f-c4ee9635869d",
+      "lore-linux-rt-devel:urn:uuid:d0484c27-ec8b-0560-03b2-bb1af4955423",
+      "lore-linux-rt-devel:urn:uuid:0dfb2d5d-eaa6-1ae8-6472-e934e81a191b",
+      "lore-bpf:urn:uuid:7f5cc744-e4fe-5147-91fb-cc7d7718ebef",
+      "lore-bpf:urn:uuid:46bcaad4-2e03-5a70-e219-464d4c821e6e",
+      "lore-bpf:urn:uuid:08ffeb0b-1bf3-6317-4635-334917f2990f",
+      "lore-bpf:urn:uuid:f1ff6701-f4f6-cac1-a4f3-05d345bbb977"
+    ],
+    "bucketCounts": {
+      "releases": 0,
+      "regressions": 4,
+      "patches": 5,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 9,
+    "signalLevel": "high",
+    "subsystems": [
+      "네트워크",
+      "스케줄러/실시간",
+      "보안"
+    ],
+    "lensPipeline": "linux-perf-rt",
+    "rewrittenAt": "2026-06-02T18:17:36.251Z",
+    "rewriteAdapter": "codex",
+    "promptTemplate": "prompts/linux-lens-newsletter-ko.md"
+  }
+}

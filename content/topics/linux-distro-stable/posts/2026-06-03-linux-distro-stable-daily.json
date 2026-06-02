@@ -1,0 +1,154 @@
+{
+  "id": "2026-06-03-linux-distro-stable-daily",
+  "topic": "linux-distro-stable",
+  "title": "2026-06-03 교착 회귀 백포트 — 스테이블·배포 롱텀",
+  "date": "2026-06-03",
+  "headline": "교착, 실행 권한, 전력 회귀 후보가 스테이블 백포트 판단 대상으로 올라왔습니다.",
+  "summary": "오늘 스테이블 렌즈의 핵심은 네트워크 보안 경로의 교착 제거와 가상화 실행 권한 보정처럼 배포 커널 백포트 판단이 필요한 회귀 후보입니다. 장기 지원 릴리스에는 키, 네트워크, 블록, 그래픽, 입출력 경로 수정이 대량으로 묶였으므로 배포판별 적용 정책과 함께 확인해야 합니다.",
+  "tags": [
+    "stable",
+    "longterm",
+    "백포트"
+  ],
+  "highlights": [
+    {
+      "title": "xfrm IP 터널 상태 제거 교착 제거",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "IP 보안 터널 백포트 담당자",
+      "verifyLink": "https://lore.kernel.org/stable/178042060186.32887.17301018074622852112@talencesecurity.com/",
+      "if": "iptfs 상태 제거 경로를 백포트한다면",
+      "do": "drop_timer 취소 주변 잠금 제거가 자기 트리에 맞는지 diff로 대조하세요",
+      "verify": "스레드의 v2 설명과 대상 stable 브랜치의 destructor 경로를 비교하세요"
+    },
+    {
+      "title": "arm64 중첩 가상화 실행 권한 보정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "arm64 KVM 검증 담당자",
+      "verifyLink": "https://lore.kernel.org/stable/20260602165901.52800-2-oupton@kernel.org/",
+      "if": "arm64 중첩 가상화를 제공하는 커널이라면",
+      "do": "XN 비트 조작이 실행 권한을 잘못 열지 않는지 패치를 적용해 재현하세요",
+      "verify": "링크된 2개 패치 시리즈와 자기 브랜치의 shadow stage-2 처리를 대조하세요"
+    },
+    {
+      "title": "인텔 비코어 성능 카운터 전력 회귀 완화",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "x86 성능 계측 담당자",
+      "verifyLink": "https://lore.kernel.org/stable/20260602144908.263680-5-zide.chen@intel.com/",
+      "if": "Alder Lake 계열 비코어 perf를 쓰는 환경이라면",
+      "do": "전역 제어 레지스터 설정 시점이 enable_box로 늦춰졌는지 diff로 비교하세요",
+      "verify": "7개 패치 시리즈와 perf 이벤트 미사용 상태의 전력 로그를 함께 보세요"
+    },
+    {
+      "title": "하이퍼브이 네트워크 전송 고메모리 접근 수정",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "Hyper-V 32비트 게스트 운영자",
+      "verifyLink": "https://lore.kernel.org/stable/20260602155210.90987-1-leontyevanton1995@gmail.com/",
+      "if": "32비트 HIGHMEM 게스트에서 netvsc를 쓴다면",
+      "do": "phys_to_virt 사용 위치가 kmap_local_page 경로로 바뀌었는지 grep하세요",
+      "verify": "링크된 패치와 NFS 송신 skb fragment 재현 로그를 대조하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "- Linux 7.0.11 stable\n  · 영향: 총 462건 백포트입니다. 키 조회의 RCU 구간 누락, 블록 zone 자원 해제 뒤 사용, ksmbd durable reconnect 파일 수명, io_uring 오류 전달, 네트워크 정보 누출과 배열 범위 검사가 함께 들어갔습니다.\n  · 확인: https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.0.11\n\n- Linux 5.10.258 longterm\n  · 영향: 총 580건 백포트입니다. lan78xx double free, gpio 사용자 공간 설정 검증, net tls 산포 목록 처리, tracing 이름 절단 처리, pmbus adm1266 방어적 검사가 묶였습니다.\n  · 확인: https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.258\n\n- Linux 5.15.209 longterm\n  · 영향: 총 757건 백포트입니다. mana 배열 범위 검사, bridge multicast use-after-free, RDMA cleanup use-after-free, net tls 산포 목록 수정, ath11k 오류 경로 누수 수정이 포함됩니다.\n  · 확인: https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.209\n\n- Linux 6.1.175 longterm\n  · 영향: 총 952건 백포트입니다. 키 조회 RCU, mana DMA 메시지 double-fetch, bridge multicast, RDMA cleanup, ath11k 수신과 재시작 경로 수정이 함께 들어갔습니다.\n  · 확인: https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.1.175"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- xfrm iptfs 상태 제거 교착 수정\n  · 영향: 상태 refcount가 0이 된 destructor에서 timer cancel이 이미 직렬화를 제공하므로 빈 lock/unlock 쌍을 제거하는 방향입니다.\n  · 확인: https://lore.kernel.org/stable/178042060186.32887.17301018074622852112@talencesecurity.com/\n\n- arm64 KVM 중첩 가상화 실행 권한 수정\n  · 영향: 이미 추출된 XN 값을 잘못된 마스크로 다시 준비해 실행 권한이 무조건 허용될 수 있는 경로를 올바른 비트 조작으로 고칩니다.\n  · 확인: https://lore.kernel.org/stable/20260602165901.52800-2-oupton@kernel.org/\n\n- arm64 KVM page table walk SRCU 보호 추가\n  · 영향: fault injection과 AT emulation의 page table walk가 memslots를 읽거나 access flag를 갱신하므로 kvm->srcu read lock 범위 안에서 실행되도록 보정합니다.\n  · 확인: https://lore.kernel.org/stable/ah7_BAAzHggzdZeI@v4bel/\n\n- Meteor Lake ALC287 스피커 pop 회귀 조사\n  · 영향: 이전 fix가 효과가 없다는 재현 로그가 나왔고, 동일 SSID 안에서도 증상이 갈릴 수 있어 모델 조건부 적용 가능성이 논의됩니다.\n  · 확인: https://lore.kernel.org/stable/87wlwgygyf.wl-tiwai@suse.de/"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "- 인텔 비코어 PMON enable 지연\n  · 영향: 일부 Raptor Cove CPU에서 드라이버 초기화만으로 전역 PMON을 켜면 perf 이벤트가 없어도 전력 사용이 늘 수 있어, 실제 box 사용 시점으로 레지스터 프로그래밍을 늦춥니다.\n  · 확인: https://lore.kernel.org/stable/20260602144908.263680-5-zide.chen@intel.com/\n\n- Hyper-V netvsc HIGHMEM 전송 경로 수정\n  · 영향: 32비트 HIGHMEM 게스트에서 skb fragment PFN을 phys_to_virt로 직접 변환하면 direct map 밖 주소로 memcpy fault가 날 수 있어 kmap_local_page로 페이지를 임시 매핑합니다.\n  · 확인: https://lore.kernel.org/stable/20260602155210.90987-1-leontyevanton1995@gmail.com/\n\n- v3d indirect CSD zero workgroup 처리\n  · 영향: 런타임에 workgroup count가 0이 될 수 있는 indirect dispatch에서 가상 주소 누수와 불필요한 하드웨어 제출을 막는 방향입니다.\n  · 확인: https://lore.kernel.org/stable/20260602-v3d-fix-indirect-csd-v4-0-654309e32bc0@igalia.com/"
+    },
+    {
+      "heading": "기타",
+      "body": "- driver core device_lock 제안은 최신 릴리스 후보 재시험 요청\n  · 영향: Greg KH가 6.18.21 기준 분석은 오래된 상태라며 최근 변경이 반영된 7.1-rc에서 다시 시험하라고 답했습니다.\n  · 확인: https://lore.kernel.org/stable/2026060209-virtual-sabotage-bbd1@gregkh/\n\n- 국부 GPU 드라이버 이슈는 배포판에서 Broadcom VideoCore 경로를 켜는 경우에만 우선순위를 올리면 됩니다.\n  · 영향: 일반 스테이블 추적자는 릴리스 백포트와 회귀 스레드를 먼저 보아도 됩니다.\n  · 확인: https://lore.kernel.org/stable/20260602-v3d-fix-indirect-csd-v4-0-654309e32bc0@igalia.com/"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "AI가 원문 후보와 메타데이터를 요약했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Linux 7.0.11 stable",
+      "url": "https://git.kernel.org/stable/h/v7.0.11",
+      "note": "kernel.org · kernel-release"
+    },
+    {
+      "title": "xfrm: iptfs: fix ABBA deadlock in iptfs_destroy_state()",
+      "url": "https://lore.kernel.org/stable/178042060186.32887.17301018074622852112@talencesecurity.com/",
+      "note": "lore.kernel.org/stable · patch-discussion"
+    },
+    {
+      "title": "drm/v3d: Fix indirect CSD jobs with zeroed workgroups",
+      "url": "https://lore.kernel.org/stable/20260602-v3d-fix-indirect-csd-v4-0-654309e32bc0@igalia.com/",
+      "note": "lore.kernel.org/stable · patch-discussion"
+    },
+    {
+      "title": "perf/x86/intel/uncore: Defer ADL global PMON enable to enable_box()",
+      "url": "https://lore.kernel.org/stable/20260602144908.263680-5-zide.chen@intel.com/",
+      "note": "lore.kernel.org/stable · patch-discussion"
+    },
+    {
+      "title": "KVM: arm64: nv: Fix handling of XN[0] when !FEAT_XNX",
+      "url": "https://lore.kernel.org/stable/20260602165901.52800-2-oupton@kernel.org/",
+      "note": "lore.kernel.org/stable · patch-discussion"
+    },
+    {
+      "title": "driver core: enforce device_lock for driver_match_device()",
+      "url": "https://lore.kernel.org/stable/2026060209-virtual-sabotage-bbd1@gregkh/",
+      "note": "lore.kernel.org/stable · patch-discussion"
+    },
+    {
+      "title": "KVM: arm64: Take the SRCU lock for page table walks in fault injection and AT emulation",
+      "url": "https://lore.kernel.org/stable/ah7_BAAzHggzdZeI@v4bel/",
+      "note": "lore.kernel.org/stable · patch-discussion"
+    },
+    {
+      "title": "hv_netvsc: use kmap_local_page in netvsc_copy_to_send_buf",
+      "url": "https://lore.kernel.org/stable/20260602155210.90987-1-leontyevanton1995@gmail.com/",
+      "note": "lore.kernel.org/stable · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-06-02T18:14:39.813Z",
+    "sourceRecordCount": 34,
+    "candidateCount": 12,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "kernel-org:stable:7.0.11",
+      "lore-stable:urn:uuid:df59be80-9211-65ff-0d56-55900f9d8e2d",
+      "lore-stable:urn:uuid:23668abe-da53-08a6-d865-637c4e96aa19",
+      "lore-stable:urn:uuid:c2b2a7eb-fc6e-6c28-6f7f-97939097dba0",
+      "lore-stable:urn:uuid:c4a7f67c-5be5-8568-f176-06a2b309a6d9",
+      "lore-stable:urn:uuid:e2c19384-1d31-51d8-decc-fb2893b28c12",
+      "lore-stable:urn:uuid:ab55ab5e-17ca-df2c-cd1c-a072afba3295",
+      "lore-stable:urn:uuid:263692b9-4de0-00b5-3342-1e7b4fcaaad4",
+      "kernel-org:longterm:5.10.258",
+      "kernel-org:longterm:5.15.209",
+      "kernel-org:longterm:6.1.175",
+      "lore-stable:urn:uuid:d05df60b-a2d3-8757-7cdd-dce852c443e5"
+    ],
+    "bucketCounts": {
+      "releases": 4,
+      "regressions": 6,
+      "patches": 2,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 8,
+    "signalLevel": "high",
+    "subsystems": [
+      "메모리 관리"
+    ],
+    "lensPipeline": "linux-distro-stable",
+    "rewrittenAt": "2026-06-02T18:14:50.302Z",
+    "rewriteAdapter": "codex",
+    "promptTemplate": "prompts/linux-lens-newsletter-ko.md"
+  }
+}

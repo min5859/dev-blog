@@ -1,0 +1,143 @@
+{
+  "id": "2026-06-03-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-06-03 빌드 경고 계약 정리 — 커널 도구체인·Rust",
+  "date": "2026-06-03",
+  "headline": "새 컴파일러 경고와 Rust 의존성 추가가 빌드 계약을 흔드는 날입니다.",
+  "summary": "오늘은 BPF 검증기 회귀 테스트의 빌드 실패, clang 형식 경고 회피용 출력 헬퍼, Rust 쪽 외부 크레이트 도입 논의가 도구체인 렌즈의 핵심입니다. GCC 15 초기화 의미 변화에 맞춰 BPF tools 빌드 플래그 전달 경로도 별도로 추적해야 합니다.",
+  "tags": [
+    "도구체인",
+    "LLVM",
+    "kbuild",
+    "Rust"
+  ],
+  "highlights": [
+    {
+      "title": "BPF kfunc 회귀 테스트가 clang 빌드에서 실패",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "BPF verifier 및 selftests 담당자",
+      "verifyLink": "https://lore.kernel.org/llvm/202606021934.SXop4khA-lkp@intel.com/",
+      "if": "BPF kfunc 인자 검증을 만지는 트리라면",
+      "do": "reg_arg_name과 argno 참조가 정의 범위 안에 있는지 diff로 대조하세요",
+      "verify": "0일 빌드 로그의 x86_64-kexec 설정과 재현 명령을 따라 비교하세요"
+    },
+    {
+      "title": "tracing 형식 경고 회피용 __vsnprintf 헬퍼 제안",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "tracing 및 공용 printf 계열 헬퍼 담당자",
+      "verifyLink": "https://lore.kernel.org/llvm/20260602150904.2258624-1-arnd@kernel.org/",
+      "if": "tracing 헤더의 형식 경고를 관리한다면",
+      "do": "__vsnprintf 도입부에 필요한 주석과 호출 전환 범위를 패치로 대조하세요",
+      "verify": "Steven Rostedt 응답 스레드에서 주석 요구가 반영됐는지 확인하세요"
+    },
+    {
+      "title": "Rust kbuild에 zerocopy 크레이트 도입 제안",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "Rust for Linux 및 kbuild 담당자",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20260602172920.30342-1-ojeda@kernel.org/",
+      "if": "커널 Rust 외부 크레이트 정책을 검토한다면",
+      "do": "zerocopy 추가 커밋과 kbuild 준비 커밋을 분리해 의존성 목록에 반영하세요",
+      "verify": "cover letter의 KRUSTFLAGS 예시와 procmacro 변경 커밋 순서를 대조하세요"
+    },
+    {
+      "title": "BPF tools 빌드에 추가 플래그 전달 보강",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "BPF tools 및 컴파일러 경고 정책 담당자",
+      "verifyLink": "https://lore.kernel.org/llvm/20260602-tools_build_fix_zero_init_bpf_only-v2-0-c76e5250ea1c@arm.com/",
+      "if": "GCC 15로 BPF tools를 빌드한다면",
+      "do": "EXTRA_CFLAGS와 HOST_EXTRACFLAGS가 BPF 빌드에 붙는지 로그로 대조하세요",
+      "verify": "패치의 bpf-ci 링크와 공통 tools 변경 스레드를 함께 비교하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이 렌즈는 lore.kernel.org의 도구체인·kbuild·Rust 리스트 중심입니다. 오늘 입력에는 kernel.org 릴리스 항목이 없으므로 mainline, stable, longterm 릴리스 평가는 포함하지 않습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- BPF kfunc implicit arg 회귀 테스트 빌드 실패\n  · 영향: 0일 빌드가 bpf/master 기반 clang 20.1.8 W=1 구성에서 reg_arg_name 미선언과 argno 미정의 오류를 보고했습니다. 회귀 테스트 자체가 검증기 수정과 함께 들어가려면 오류 경로의 변수 범위가 먼저 정리돼야 합니다.\n  · 확인: https://lore.kernel.org/llvm/202606021934.SXop4khA-lkp@intel.com/\n\n- RDMA rdmavt 이름 설정 헬퍼 open-code 제안\n  · 영향: clang의 -Wmissing-format-attribute 경고를 피하려고 rvt_set_ibdev_name 추상화를 제거하고 hfi1의 남은 단일 사용처에 직접 이름 할당을 두는 변경입니다. qib 제거 이후 남은 사용자 수가 설계 근거입니다.\n  · 확인: https://lore.kernel.org/llvm/20260602140453.3542427-1-arnd@kernel.org/"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "- tracing의 __vsnprintf 헬퍼 추가\n  · 영향: gcc에서만 꺼두던 형식 속성 경고가 새 clang에서도 드러나자, tracing 헤더마다 예외를 흩뿌리지 않고 linux/sprintf.h에 주석이 필요한 별도 헬퍼를 두는 방향입니다. Steven Rostedt는 왜 필요한지 주석을 추가하라고 요청했습니다.\n  · 확인: https://lore.kernel.org/llvm/20260602150904.2258624-1-arnd@kernel.org/\n\n- Rust DRM GEM shmem 객체의 sg_table 접근자\n  · 영향: Rust 드라이버가 scatterlist 매핑을 얻을 수 있게 하되, 드라이버 unbind 시 매핑을 해제하도록 shmem::Object 안에 devres 자원을 둡니다. 명시적 unmap 제어는 아직 없고, 이는 현재 C 쪽 동작과 맞춘 제약으로 설명됩니다.\n  · 확인: https://lore.kernel.org/rust-for-linux/20260602172807.1051806-7-lyude@redhat.com/\n\n- Rust kbuild의 zerocopy 지원\n  · 영향: 안전한 바이트 변환 trait와 macro를 제공하는 zerocopy 및 zerocopy-derive 크레이트를 커널 Rust 빌드에 들이는 큰 시리즈입니다. kbuild의 per-target 환경 변수, procmacro 처리, clippy 생략 지원 같은 준비 변경이 함께 묶였습니다.\n  · 확인: https://lore.kernel.org/linux-kbuild/20260602172920.30342-1-ojeda@kernel.org/\n\n- BPF tools 빌드 플래그 전달 보강\n  · 영향: GCC 15에서 {0} 초기화가 union 전체 0 초기화를 보장하지 않는 문제를 완화하기 위해 BPF tools 빌드에 EXTRA_CFLAGS와 HOST_EXTRACFLAGS를 append합니다. 공통 tools 변경은 별도 스레드이고, BPF 관련 변경은 bpf tree 경로로 나뉩니다.\n  · 확인: https://lore.kernel.org/llvm/20260602-tools_build_fix_zero_init_bpf_only-v2-0-c76e5250ea1c@arm.com/"
+    },
+    {
+      "heading": "기타",
+      "body": "- 단일 드라이버 경고 정리 항목은 도구체인 정책 변화와 직접 연결될 때만 본문에 올렸습니다.\n  · 영향: 오늘 RDMA/hfi1 항목은 clang 형식 속성 경고와 직접 연결되어 포함했고, 순수 보드·칩셋 수준 수정은 별도 플랫폼 관심사가 아니면 생략 대상입니다.\n  · 확인: https://lore.kernel.org/llvm/20260602140453.3542427-1-arnd@kernel.org/"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "AI가 원문 후보와 메타데이터를 요약했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "selftests/bpf: Add regression test for kfunc implicit arg injection",
+      "url": "https://lore.kernel.org/llvm/202606021934.SXop4khA-lkp@intel.com/",
+      "note": "lore.kernel.org/llvm · patch-discussion"
+    },
+    {
+      "title": "tracing: work around -Wmissing-format-attribute warning",
+      "url": "https://lore.kernel.org/llvm/20260602114019.0b468183@gandalf.local.home/",
+      "note": "lore.kernel.org/llvm · patch-discussion"
+    },
+    {
+      "title": "rust: drm: gem: Introduce shmem::Object::sg_table()",
+      "url": "https://lore.kernel.org/rust-for-linux/20260602172807.1051806-7-lyude@redhat.com/",
+      "note": "lore.kernel.org/rust-for-linux · patch-discussion"
+    },
+    {
+      "title": "`zerocopy` support",
+      "url": "https://lore.kernel.org/linux-kbuild/20260602172920.30342-1-ojeda@kernel.org/",
+      "note": "lore.kernel.org/linux-kbuild · patch-discussion"
+    },
+    {
+      "title": "tools build: bpf: Append EXTRA_CFLAGS and HOST_EXTRACFLAGS",
+      "url": "https://lore.kernel.org/llvm/20260602-tools_build_fix_zero_init_bpf_only-v2-0-c76e5250ea1c@arm.com/",
+      "note": "lore.kernel.org/llvm · patch-discussion"
+    },
+    {
+      "title": "tracing: work around -Wmissing-format-attribute warning",
+      "url": "https://lore.kernel.org/llvm/20260602150904.2258624-1-arnd@kernel.org/",
+      "note": "lore.kernel.org/llvm · patch-discussion"
+    },
+    {
+      "title": "[v2] RDMA/hfi1, rdmavt: open-code rvt_set_ibdev_name()",
+      "url": "https://lore.kernel.org/llvm/20260602140453.3542427-1-arnd@kernel.org/",
+      "note": "lore.kernel.org/llvm · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-06-02T18:13:18.552Z",
+    "sourceRecordCount": 75,
+    "candidateCount": 7,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "lore-llvm:urn:uuid:5ad37e2e-efc6-cd42-9fc3-cf38d4bf637a",
+      "lore-llvm:urn:uuid:6600643f-9f42-ac69-3465-1ff96dea9398",
+      "lore-rust-for-linux:urn:uuid:712c0e65-b9e8-afc0-4931-6714ca2ba891",
+      "lore-linux-kbuild:urn:uuid:6fbc15e1-2911-a3eb-308a-965240f8f32a",
+      "lore-llvm:urn:uuid:357e8450-6810-3f9a-e25d-ca6f8b9ba31d",
+      "lore-llvm:urn:uuid:4d91b9e4-53d6-63f9-a150-b1371da03f3e",
+      "lore-llvm:urn:uuid:7ea2995e-662f-82fb-7dfd-260a79311fd5"
+    ],
+    "bucketCounts": {
+      "releases": 0,
+      "regressions": 2,
+      "patches": 5,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 7,
+    "signalLevel": "high",
+    "subsystems": [],
+    "lensPipeline": "linux-toolchain",
+    "rewrittenAt": "2026-06-02T18:13:32.226Z",
+    "rewriteAdapter": "codex",
+    "promptTemplate": "prompts/linux-lens-newsletter-ko.md"
+  }
+}
