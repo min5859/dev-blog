@@ -1,0 +1,155 @@
+{
+  "id": "2026-06-04-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-06-04 버퍼 매핑 회귀 — Android 커널",
+  "headline": "Android 커널에서 공유 버퍼를 잘못된 위치에 매핑하던 문제가 고쳐졌습니다. 배포 단계 확인 권장.",
+  "date": "2026-06-04",
+  "summary": "오늘 가장 중요한 신호는 Android 전용 wrapfd 공유 버퍼 경로에서 사용자 요청 오프셋이 전달되지 않아 잘못된 위치에 매핑되던 회귀 수정입니다. 그다음으로 f2fs cleancache 조건, GKI 네트워크 설정, 거대 페이지 카운터의 해제 후 접근 가능성도 함께 확인해야 합니다.",
+  "tags": [
+    "android",
+    "커널",
+    "ack"
+  ],
+  "highlights": [
+    {
+      "title": "drivers/wrapfd: Fix mmap offset forwarding for dmabuf",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "공유 버퍼와 wrapfd 경로를 쓰는 Android 커널 담당자",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/a9d1116a330867eabebfd1e9367d8a74aabb8561",
+      "if": "wrapfd로 공유 버퍼를 매핑한다면 확인하세요",
+      "do": "사용자 요청 오프셋이 보존되는지 테스트하세요",
+      "verify": "링크된 커밋과 mmap 오프셋 테스트 결과를 확인하세요"
+    },
+    {
+      "title": "f2fs: fix incorrect condition check for cleancache",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "f2fs 기반 저장소와 ACK 회귀 대응 담당자",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/66b8d2a9700a7cf3c1a5f4089bb4a93d1bcbc144",
+      "if": "f2fs와 cleancache를 함께 쓴다면 확인하세요",
+      "do": "페이지가 최신인지 보는 조건 변경을 점검하세요",
+      "verify": "링크된 커밋과 f2fs 읽기 경로 회귀 테스트를 확인하세요"
+    },
+    {
+      "title": "gki_defconfig: keep IPV6_SIT built-in",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "GKI 설정과 네트워크 모듈 의존성을 관리하는 담당자",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/6f6ad98c5b8bd71b830c8800b533d4452da5b98a",
+      "if": "터널 네트워크 기능에 의존한다면 확인하세요",
+      "do": "기능이 내장 빌드로 유지되는지 점검하세요",
+      "verify": "링크된 커밋과 GKI 설정 차이를 확인하세요"
+    },
+    {
+      "title": "mm/huge_memory: update file PUD counter before folio_put()",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "메모리 관리와 안정성 회귀를 추적하는 Android 커널 담당자",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/40990c87a26e371594475acdc560c93cfae308a1",
+      "if": "거대 페이지 분할 경로를 추적한다면 확인하세요",
+      "do": "참조 해제 전 카운터 갱신 순서를 점검하세요",
+      "verify": "링크된 커밋과 메모리 안정성 테스트를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- f2fs: fix incorrect condition check for cleancache (66b8d2a · android16-6.12)\n  · 영향: f2fs 단일 페이지 읽기에서 cleancache 조회 조건을 바로잡아 최신 상태가 아닌 페이지를 캐시에서 복구하도록 고칩니다.\n  · 확인: https://android.googlesource.com/kernel/common/+/66b8d2a9700a7cf3c1a5f4089bb4a93d1bcbc144\n\n- drivers/wrapfd: Fix mmap offset forwarding for dmabuf (a9d1116 · android16-6.12)\n  · 영향: wrapfd를 통해 공유 버퍼를 매핑할 때 사용자 요청 오프셋이 0으로 바뀌던 문제를 고쳐 잘못된 위치 매핑을 막습니다.\n  · 확인: https://android.googlesource.com/kernel/common/+/a9d1116a330867eabebfd1e9367d8a74aabb8561\n\n- wrapfd: remove unnecessary USAGE_BLOCKED state (bc7f053 · android16-6.12)\n  · 영향: wrapfd 사용 차단 상태를 카운터 기반 추적으로 대체해, 매핑된 버퍼로 적재가 막히던 회귀를 풀어줍니다.\n  · 확인: https://android.googlesource.com/kernel/common/+/bc7f053a91a65b668e699537ed641109d7f7ccb0\n\n- KVM: arm64: Support bidirectional branches in pKVM module relocation (d398eeb · android16-6.12)\n  · 영향: 보호 가상화 모듈 재배치가 앞뒤 양방향 분기를 모두 처리해 모듈 주소 배치 변화로 인한 로딩 실패를 줄입니다.\n  · 확인: https://android.googlesource.com/kernel/common/+/d398eeb1f23e1ac0aa5bd2d84efb4d19c0149477\n\n- KVM: iommu: Reject idmap domain in kvm_iommu_map_sg (ad34d15 · android16-6.12)\n  · 영향: 특별 취급해야 하는 동일 매핑 도메인으로 산포 목록 매핑이 들어가는 것을 거부해 격리 경계 오용을 막습니다.\n  · 확인: https://android.googlesource.com/kernel/common/+/ad34d15396568919a8ddd306ce2120e76d111b7c\n\n- mm/huge_memory: update file PUD counter before folio_put() (40990c8 · android-mainline)\n  · 영향: 거대 페이지 분할 중 마지막 참조 해제 뒤 해제된 folio 상태를 읽을 수 있는 순서를 바로잡습니다.\n  · 확인: https://android.googlesource.com/kernel/common/+/40990c87a26e371594475acdc560c93cfae308a1\n\n- mm/huge_memory: update file PMD counter before folio_put() (8d87805 · android-mainline)\n  · 영향: 중간 단계 거대 페이지 분할에서도 파일 메모리 카운터 갱신을 참조 해제 전에 수행해 해제 후 접근 위험을 줄입니다.\n  · 확인: https://android.googlesource.com/kernel/common/+/8d878059924f12c1bc24556a92ec56add74de3c8"
+    },
+    {
+      "heading": "ACK 전용 변경",
+      "body": "[메모리와 공유 버퍼]\n- drivers/wrapfd: Fix mmap offset forwarding for dmabuf (a9d1116 · android16-6.12)\n  · 영향: Android 전용 wrapfd 공유 버퍼 매핑에서 사용자 공간이 요청한 오프셋을 그대로 전달하도록 바뀝니다.\n  · 확인: https://android.googlesource.com/kernel/common/+/a9d1116a330867eabebfd1e9367d8a74aabb8561\n\n- wrapfd: remove unnecessary USAGE_BLOCKED state (bc7f053 · android16-6.12)\n  · 영향: wrapfd 사용 상태 추적이 단순해지고 매핑된 버퍼로의 적재 차단 회귀가 수정됩니다.\n  · 확인: https://android.googlesource.com/kernel/common/+/bc7f053a91a65b668e699537ed641109d7f7ccb0\n\n- selftests/wrapfd: Bracket accesses with DMA_BUF_IOCTL_SYNC (bc4bb78 · android16-6.12)\n  · 영향: wrapfd 자체 기능 변경은 아니지만 공유 버퍼 접근 전후 동기화를 테스트에 반영해 검증 신뢰도를 높입니다.\n  · 확인: https://android.googlesource.com/kernel/common/+/bc4bb78fc2d2638365c77e86eb63a9f5144c3a49\n\n[파일시스템과 저장소]\n- f2fs: fix incorrect condition check for cleancache (66b8d2a · android16-6.12)\n  · 영향: Android ACK에 남아 있는 cleancache 경로에서 f2fs 페이지 복구 조건이 수정됩니다.\n  · 확인: https://android.googlesource.com/kernel/common/+/66b8d2a9700a7cf3c1a5f4089bb4a93d1bcbc144\n\n- fuse-bpf: re-validate backing dentry in rmdir and unlink (8b70dc4 · android16-6.12)\n  · 영향: 삭제와 디렉터리 제거 빠른 경로에서 캐시된 backing dentry를 다시 검증해 병렬 삭제로 인한 파일시스템 메타데이터 손상을 막습니다.\n  · 확인: https://android.googlesource.com/kernel/common/+/8b70dc4403681c64dfbb65125fc2936cb25255cf\n\n[GKI와 네트워크 설정]\n- gki_defconfig: keep IPV6_SIT built-in (6f6ad98 · android-mainline)\n  · 영향: 상위 커널의 기본값 변화에도 GKI에서는 기존처럼 터널 기능을 내장으로 유지해 모듈화에 따른 동작 차이를 피합니다.\n  · 확인: https://android.googlesource.com/kernel/common/+/6f6ad98c5b8bd71b830c8800b533d4452da5b98a\n\n- gki_defconfig: KUNIT_DEBUGFS now enabled (a18a0e5 · android-mainline)\n  · 영향: 상위 커널에서 기본 활성화된 KUnit 디버그 파일시스템 설정에 맞춰 GKI 명시 설정을 정리합니다.\n  · 확인: https://android.googlesource.com/kernel/common/+/a18a0e5556ebf59e663136eb778d4d398997631b\n\n[가상화와 격리]\n- KVM: arm64: Support bidirectional branches in pKVM module relocation (d398eeb · android16-6.12)\n  · 영향: 보호 가상화 모듈 간 심볼 재배치가 주소 순서에 덜 의존하도록 바뀌어 모듈 로딩 안정성이 좋아집니다.\n  · 확인: https://android.googlesource.com/kernel/common/+/d398eeb1f23e1ac0aa5bd2d84efb4d19c0149477\n\n- KVM: iommu: Reject idmap domain in kvm_iommu_map_sg (ad34d15 · android16-6.12)\n  · 영향: 동일 매핑 도메인에 대한 잘못된 매핑 요청을 거부해 보호 가상화의 입출력 메모리 격리 규칙을 강화합니다.\n  · 확인: https://android.googlesource.com/kernel/common/+/ad34d15396568919a8ddd306ce2120e76d111b7c"
+    },
+    {
+      "heading": "추적 브랜치",
+      "body": "- android16-6.12: wrapfd, f2fs, fuse-bpf, pKVM, KVM IOMMU 쪽 Android 전용 회귀 수정이 집중적으로 들어왔습니다.\n- android-mainline: GKI 기본 설정 정리와 상위 커널 메모리 관리 수정 반영이 함께 진행됐습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "단일 vendor 또는 특정 hardware 전용 패치는 본문에 승격하지 않았습니다. 오늘 후보에서는 시스템 전반 영향이 있는 ACK, GKI, 파일시스템, 메모리, 가상화 항목만 다뤘습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "AI가 원문 후보와 메타데이터를 요약했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "f2fs: fix incorrect condition check for cleancache",
+      "url": "https://android.googlesource.com/kernel/common/+/66b8d2a9700a7cf3c1a5f4089bb4a93d1bcbc144",
+      "note": "android.googlesource.com · ack-android · 66b8d2a9700a"
+    },
+    {
+      "title": "drivers/wrapfd: Fix mmap offset forwarding for dmabuf",
+      "url": "https://android.googlesource.com/kernel/common/+/a9d1116a330867eabebfd1e9367d8a74aabb8561",
+      "note": "android.googlesource.com · ack-android · a9d1116a3308"
+    },
+    {
+      "title": "gki_defconfig: keep IPV6_SIT built-in",
+      "url": "https://android.googlesource.com/kernel/common/+/6f6ad98c5b8bd71b830c8800b533d4452da5b98a",
+      "note": "android.googlesource.com · ack-android · 6f6ad98c5b8b"
+    },
+    {
+      "title": "gki_defconfig: KUNIT_DEBUGFS now enabled",
+      "url": "https://android.googlesource.com/kernel/common/+/a18a0e5556ebf59e663136eb778d4d398997631b",
+      "note": "android.googlesource.com · ack-android · a18a0e5556eb"
+    },
+    {
+      "title": "wrapfd: remove unnecessary USAGE_BLOCKED state",
+      "url": "https://android.googlesource.com/kernel/common/+/bc7f053a91a65b668e699537ed641109d7f7ccb0",
+      "note": "android.googlesource.com · ack-android · bc7f053a91a6"
+    },
+    {
+      "title": "KVM: arm64: Support bidirectional branches in pKVM module relocation",
+      "url": "https://android.googlesource.com/kernel/common/+/d398eeb1f23e1ac0aa5bd2d84efb4d19c0149477",
+      "note": "android.googlesource.com · ack-android · d398eeb1f23e"
+    },
+    {
+      "title": "KVM: iommu: Reject idmap domain in kvm_iommu_map_sg",
+      "url": "https://android.googlesource.com/kernel/common/+/ad34d15396568919a8ddd306ce2120e76d111b7c",
+      "note": "android.googlesource.com · ack-android · ad34d1539656"
+    },
+    {
+      "title": "selftests/wrapfd: Bracket accesses with DMA_BUF_IOCTL_SYNC",
+      "url": "https://android.googlesource.com/kernel/common/+/bc4bb78fc2d2638365c77e86eb63a9f5144c3a49",
+      "note": "android.googlesource.com · ack-android · bc4bb78fc2d2"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-06-03T18:01:09.625Z",
+    "sourceRecordCount": 160,
+    "candidateCount": 11,
+    "generator": "scripts/draft-android.mjs",
+    "candidateIds": [
+      "ack-android16-6.12:66b8d2a9700a7cf3c1a5f4089bb4a93d1bcbc144",
+      "ack-android16-6.12:a9d1116a330867eabebfd1e9367d8a74aabb8561",
+      "ack-android-mainline:6f6ad98c5b8bd71b830c8800b533d4452da5b98a",
+      "ack-android-mainline:a18a0e5556ebf59e663136eb778d4d398997631b",
+      "ack-android16-6.12:bc7f053a91a65b668e699537ed641109d7f7ccb0",
+      "ack-android16-6.12:d398eeb1f23e1ac0aa5bd2d84efb4d19c0149477",
+      "ack-android16-6.12:ad34d15396568919a8ddd306ce2120e76d111b7c",
+      "ack-android16-6.12:bc4bb78fc2d2638365c77e86eb63a9f5144c3a49",
+      "ack-android16-6.12:8b70dc4403681c64dfbb65125fc2936cb25255cf",
+      "ack-android-mainline:40990c87a26e371594475acdc560c93cfae308a1",
+      "ack-android-mainline:8d878059924f12c1bc24556a92ec56add74de3c8"
+    ],
+    "bucketCounts": {
+      "regressions": 10,
+      "ackPatches": 1
+    },
+    "subsystems": [
+      "메모리/dmabuf",
+      "파일시스템/스토리지",
+      "GKI/모듈 ABI",
+      "네트워크/이더넷"
+    ],
+    "branches": [
+      "android16-6.12",
+      "android-mainline"
+    ],
+    "rewrittenAt": "2026-06-03T18:01:09.820Z",
+    "rewriteAdapter": "codex",
+    "promptTemplate": "prompts/android-newsletter-ko.md"
+  }
+}
