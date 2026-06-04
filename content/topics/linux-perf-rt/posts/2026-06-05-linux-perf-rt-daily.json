@@ -1,0 +1,138 @@
+{
+  "id": "2026-06-05-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-06-05 흐름키 경계 수정 — 관측성·실시간(eBPF·RT)",
+  "headline": "흐름 해석기 포인터 산술의 경계 검사가 보강되고 아레나 검증 테스트가 이어졌습니다.",
+  "date": "2026-06-05",
+  "summary": "오늘 가장 중요한 신호는 BPF 흐름 해석기 포인터의 상수 오프셋이 검증 경계를 우회할 수 있었던 문제를 개발 중인 7.1 후보군에서 바로잡는 패치입니다. 그다음으로는 BPF 아레나의 잠금 순서, 직접값 경계, 분할 해제와 복사 금지 동작을 selftest로 굳히는 흐름을 보시면 됩니다.",
+  "tags": [
+    "eBPF",
+    "verifier",
+    "tracing",
+    "PREEMPT_RT",
+    "실시간"
+  ],
+  "highlights": [
+    {
+      "title": "BPF 흐름 해석기 포인터 경계 검사가 상수 오프셋을 함께 접도록 수정됩니다.",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF 검증기와 흐름 해석기 담당자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260604180730.2518088-1-gnq25@mails.tsinghua.edu.cn/",
+      "if": "흐름 해석기 프로그램을 다루는 트리라면",
+      "do": "상수 포인터 산술이 경계 검사에 접히는지 패치와 diff로 비교하세요",
+      "verify": "스레드의 v2 본문과 verifier_flow_keys selftest 추가분을 대조하세요"
+    },
+    {
+      "title": "BPF 아레나 페이지 제거 경로가 mmap 잠금을 잡도록 bpf-next에 반영됐습니다.",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "BPF 아레나와 메모리 매핑 담당자",
+      "verifyLink": "https://lore.kernel.org/bpf/178059181241.2942053.15264975706579133260.git-patchwork-notify@kernel.org/",
+      "if": "아레나 mmap 경로를 백포트하거나 검증한다면",
+      "do": "arena 잠금 해제와 mmap 잠금 획득 순서를 커밋과 diff로 대조하세요",
+      "verify": "패치워크 알림의 bpf-next 커밋 링크에서 zap_pages 변경을 추적하세요"
+    },
+    {
+      "title": "BPF 아레나 직접값 접근의 끝 지점 거부 selftest가 논의 중입니다.",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "BPF selftest와 libbpf 재배치 담당자",
+      "verifyLink": "https://lore.kernel.org/bpf/33bdc65e1275627edd897b94dd6a4a6ed33b24b2614950d9bf89a7c267da19c0@mail.kernel.org/",
+      "if": "아레나 직접값 검증 테스트를 유지한다면",
+      "do": "raw 명령 테스트와 인라인 어셈블리 대안을 스레드 기준으로 비교하세요",
+      "verify": "메일 본문과 참조 응답의 libbpf 재배치 제약 설명을 대조하세요"
+    },
+    {
+      "title": "Retbleed call depth 설정에서 BPF 검증기 selftest 기대값을 완화하는 패치가 반영됐습니다.",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "BPF JIT selftest와 x86 검증 담당자",
+      "verifyLink": "https://lore.kernel.org/bpf/178059181541.2942053.15567465384217176140.git-patchwork-notify@kernel.org/",
+      "if": "Skylake 계열에서 verifier selftest를 돌린다면",
+      "do": "call depth 설정의 JIT 출력 비교 실패가 새 커밋으로 사라지는지 재실행하세요",
+      "verify": "패치워크 알림의 bpf-next 커밋과 자기 테스트 로그를 맞춰 보세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이 렌즈는 bpf와 linux-rt-devel 리스트 중심입니다. 오늘 입력에는 mainline, stable, longterm 릴리스 항목이 없으므로 릴리스 자체보다 bpf-next 반영 신호와 진행 중인 selftest 보강을 로드맵 단서로 보시면 됩니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- BPF 흐름 해석기 포인터의 상수 오프셋 경계 우회 수정\n· 영향: PTR_TO_FLOW_KEYS 레지스터에 더해진 상수 오프셋이 별도 필드에 남으면서 흐름키 구조체 밖 접근이 검증기를 통과할 수 있었고, 본문은 7.1 개발 후보군에서만 재현된 회귀로 설명합니다.\n· 확인: https://lore.kernel.org/bpf/20260604180730.2518088-1-gnq25@mails.tsinghua.edu.cn/ 에서 v2 본문, verifier.c 변경, 새 verifier_flow_keys selftest를 함께 대조하세요.\n\n- Retbleed call depth 설정에서 verifier JIT 출력 비교 완화\n· 영향: CONFIG_CALL_DEPTH_TRACKING과 retbleed=stuff 조합에서 JIT 명령 기대값이 달라져 verifier selftest가 빌드 검증 단계에서 실패할 수 있었고, bpf-next에 반영된 패치는 해당 계정을 테스트 비교에서 제외합니다.\n· 확인: https://lore.kernel.org/bpf/178059181541.2942053.15567465384217176140.git-patchwork-notify@kernel.org/ 의 bpf-next 커밋 링크와 실패 로그의 call depth 관련 줄을 대조하세요."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "- BPF 아레나 zap_pages 경로의 mmap 잠금 계약 보강\n· 영향: zap_vma_range 호출 전 소유 mm의 mmap_lock을 잡아야 하며, arena->lock 아래에서 바로 잡으면 반대 순서 잠금 문제가 생길 수 있어 lock을 놓고 mm을 다시 확인한 뒤 VMA를 재해석하는 방식으로 bpf-next에 반영됐습니다.\n· 확인: https://lore.kernel.org/bpf/178059181241.2942053.15264975706579133260.git-patchwork-notify@kernel.org/ 의 커밋 링크에서 zap_pages의 잠금 순서와 find_vma 재조회 흐름을 읽으세요.\n\n- BPF 아레나 직접값 끝 지점 거부 테스트 논의\n· 영향: 아레나 직접값 pseudo load에서 offset이 arena mmap 크기와 정확히 같을 때 거부해야 하는 경계를 selftest로 고정하려는 패치이며, C 수준 전역과 libbpf 재배치로는 해당 즉시값을 만들기 어려워 raw 명령 테스트를 쓰는 선택이 논의됩니다.\n· 확인: https://lore.kernel.org/bpf/33bdc65e1275627edd897b94dd6a4a6ed33b24b2614950d9bf89a7c267da19c0@mail.kernel.org/ 의 본문과 인라인 어셈블리 대안 응답을 비교하세요.\n\n- BPF 아레나 매핑 분할 해제와 fork 상속 거부 테스트\n· 영향: 아레나 VMA가 부분 munmap으로 분할되거나 fork로 상속되지 않아야 한다는 동작을 selftest로 확인하려는 패치이며, 리뷰는 커밋 번호 중심 설명을 줄이고 부분 해제와 fork 테스트를 분리하라고 요구합니다.\n· 확인: https://lore.kernel.org/bpf/DJ0F0WFEP78A.1VV9Z7T71JJX5@etsalapatis.com/ 에서 리뷰가 요구한 테스트 이름과 주석 정리 방향을 패치에 반영할지 판단하세요."
+    },
+    {
+      "heading": "기타",
+      "body": "- i.MX mailbox 채널 종료 플래그 추가\n· 영향: linux-rt-devel에 전일에도 관측된 항목으로, 종료 중인 채널에서 인터럽트 처리와 shutdown이 엇갈려 RX 이벤트가 다시 켜질 수 있는 창을 channel shutdown 플래그와 동일 잠금 직렬화로 막는 보드 드라이버 성격의 런타임 수정입니다.\n· 확인: https://lore.kernel.org/linux-rt-devel/20260603-imx_mbox_rproc-v2-1-a0059dc3b69a@linutronix.de/ 에서 imx_mu_xcr_clr_shut와 imx_mu_xcr_set_act 호출 순서를 자기 i.MX 원격 프로세서 경로와 비교하세요."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "AI가 원문 후보와 메타데이터를 요약했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "bpf, verifier: fix PTR_TO_FLOW_KEYS constant-offset OOB",
+      "url": "https://lore.kernel.org/bpf/20260604180730.2518088-1-gnq25@mails.tsinghua.edu.cn/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "mailbox: imx: Add a channel shutdown field",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260603-imx_mbox_rproc-v2-1-a0059dc3b69a@linutronix.de/",
+      "note": "lore.kernel.org/linux-rt-devel · patch-discussion"
+    },
+    {
+      "title": "bpf: Take mmap_lock in zap_pages()",
+      "url": "https://lore.kernel.org/bpf/178059181241.2942053.15264975706579133260.git-patchwork-notify@kernel.org/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "selftests/bpf: Add arena direct-value one-past-end reject test",
+      "url": "https://lore.kernel.org/bpf/33bdc65e1275627edd897b94dd6a4a6ed33b24b2614950d9bf89a7c267da19c0@mail.kernel.org/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "selftests/bpf: add test for arena vma split and fork rejection",
+      "url": "https://lore.kernel.org/bpf/DJ0F0WFEP78A.1VV9Z7T71JJX5@etsalapatis.com/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "selftests/bpf: ignore call depth accounting for retbleed in verifier tests",
+      "url": "https://lore.kernel.org/bpf/178059181541.2942053.15567465384217176140.git-patchwork-notify@kernel.org/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-06-04T18:16:09.709Z",
+    "sourceRecordCount": 50,
+    "candidateCount": 6,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "lore-bpf:urn:uuid:6628adf7-d123-7e3d-a891-fad3717d710b",
+      "lore-linux-rt-devel:urn:uuid:1c2149b8-21b6-2663-867e-c49621ef3927",
+      "lore-bpf:urn:uuid:23c4c7b8-f14f-5fdb-b16d-a8453600af85",
+      "lore-bpf:urn:uuid:351fc06b-23e9-00df-0f7e-e64a353dd967",
+      "lore-bpf:urn:uuid:673ff699-d9c9-77a1-79d4-f7e2381b9ea6",
+      "lore-bpf:urn:uuid:7e0b61a7-a4ad-8a94-5ba4-fe165ef78723"
+    ],
+    "bucketCounts": {
+      "releases": 0,
+      "regressions": 0,
+      "patches": 6,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 6,
+    "signalLevel": "high",
+    "subsystems": [],
+    "lensPipeline": "linux-perf-rt",
+    "rewrittenAt": "2026-06-04T18:16:17.238Z",
+    "rewriteAdapter": "codex",
+    "promptTemplate": "prompts/linux-lens-newsletter-ko.md"
+  }
+}
