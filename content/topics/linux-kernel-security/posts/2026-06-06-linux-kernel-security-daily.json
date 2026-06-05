@@ -1,0 +1,153 @@
+{
+  "id": "2026-06-06-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-06-06 소켓버퍼 격리 논의 — 커널 보안·하드닝",
+  "date": "2026-06-06",
+  "headline": "네트워크 소켓 버퍼 할당을 별도 버킷으로 나눠 악용 표면을 줄이는 논의가 이어졌습니다.",
+  "summary": "오늘 커널 보안·하드닝 렌즈의 핵심은 소켓 버퍼 데이터 영역을 별도 메모리 버킷에 격리해 사용자 공간 영향 할당이 다른 객체 재사용 공격에 쓰일 가능성을 낮추려는 논의입니다. 함께 올라온 안정 커널 백포트에는 키 관리, 블록, 네트워크, 파일 서버 경로의 수명·범위 검사가 포함되어 장기 지원 커널 운용자도 변경 목록을 좁혀 볼 만합니다.",
+  "tags": [
+    "보안",
+    "하드닝",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "소켓 버퍼 데이터 할당을 전용 메모리 버킷으로 격리",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "네트워크·하드닝 담당 개발자",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20260604185222.794ea329@kernel.org/",
+      "if": "소켓 버퍼 할당 경로를 다루는 트리라면",
+      "do": "alloc_skb 경로의 kmalloc 호출을 새 버킷 API 사용안과 diff로 비교하세요",
+      "verify": "Jakub Kicinski 응답 스레드에서 net 트리 적용 방향을 대조하세요"
+    },
+    {
+      "title": "NUMA 노드 지정 가능한 메모리 버킷 호출자 추적 API 추가",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "슬랩·메모리 할당 API 사용자",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/63ecf4a2-13a2-42d2-8990-e53e50ae9a65@kernel.org/",
+      "if": "kmem buckets API를 호출자 추적과 함께 쓴다면",
+      "do": "새 node 인자 매크로가 기존 NUMA_NO_NODE 호출을 보존하는지 diff로 대조하세요",
+      "verify": "include/linux/slab.h 변경과 net 적용 패치의 의존 순서를 함께 보세요"
+    },
+    {
+      "title": "Rust 빌드 범위를 위해 randstruct 기본값 조정",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "하드닝·Rust 커널 빌드 담당자",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20260605-rust-reverse-randstruct-dep-v2-1-93d38023b6f9@kernel.org/",
+      "if": "allmodconfig에서 Rust 커버리지를 보는 환경이라면",
+      "do": "RANDSTRUCT와 RUST Kconfig 조합을 자기 아키텍처 defconfig와 비교하세요",
+      "verify": "패치의 기본값 조건과 실제 allmodconfig 결과를 빌드 로그로 대조하세요"
+    },
+    {
+      "title": "장치 메모리 맵 초기화 고속화가 재논의됨",
+      "priority": "하",
+      "impactType": "performance",
+      "affectedAudience": "영구 메모리·DAX 검증 담당자",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20260605095243.45803-1-lizhe.67@bytedance.com/",
+      "if": "ZONE_DEVICE 온라인 지연을 추적 중이라면",
+      "do": "템플릿 복사 경로와 memcpy_streaming 배리어 위치를 자기 트리와 비교하세요",
+      "verify": "2026-06-04부터 이어진 8개 패치 흐름에서 성능 근거를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "- Linux 7.0.11 stable\n  · 영향: 키 조회 RCU 구간 누락, 블록 영역 해제 후 사용, ksmbd 파일 수명, tap 주소 조회 정보 노출, 네트워크 수신 인덱스 범위 검사가 백포트 목록에 포함되었습니다.\n  · 확인: https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.0.11\n\n- Linux 5.10.258 longterm\n  · 영향: lan78xx 인터럽트 버퍼 중복 해제, GPIO 사용자 API 속성 초기화 검사, tracing 이름 절단 처리, TLS 평문 scatter-gather 체인 처리가 포함되었습니다.\n  · 확인: https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.258\n\n- Linux 5.15.209 longterm\n  · 영향: 네트워크 수신 인덱스 범위 검사, 브리지 포트 제거 후 사용 가능성, RDMA 정리 경로 수명, TLS 체인 처리가 장기 지원 커널에 들어갔습니다.\n  · 확인: https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.209\n\n- Linux 6.1.175 longterm\n  · 영향: 키 조회 RCU 구간, 네트워크 수신 인덱스, 브리지 멀티캐스트 수명, RDMA 정리 경로, SPI 자원 누수 수정이 포함되었습니다.\n  · 확인: https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.1.175"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- 소켓 버퍼 데이터 영역을 별도 메모리 버킷으로 격리\n  · 영향: alloc_skb에서 만들어지는 가변 크기 데이터 영역은 사용자 공간 입력의 영향을 받을 수 있어, 같은 kmalloc 슬랩의 해제된 객체를 덮는 공격 재료가 될 수 있다는 문제의식에서 CONFIG_SLAB_BUCKETS 사용 시 전용 버킷을 쓰는 방향이 논의됐습니다.\n  · 확인: https://lore.kernel.org/linux-hardening/20260604185222.794ea329@kernel.org/\n\n- 안정 커널 백포트의 보안성 수정 묶음\n  · 영향: 7.0.11, 6.1.175, 5.15.209, 5.10.258 목록에는 키 관리, 네트워크, 브리지, RDMA, GPIO 사용자 API처럼 수명·범위·초기화 계약을 바로잡는 수정이 여럿 포함됐습니다.\n  · 확인: https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.1.175"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "- kmem buckets API에 NUMA 노드 지정 호출자 추적 변형 추가\n  · 영향: 소켓 버퍼 격리 패치가 노드 지정 할당을 필요로 하면서, 기존 kmem_buckets_alloc_track_caller를 NUMA_NO_NODE 래퍼로 유지하고 새 kmem_buckets_alloc_node_track_caller 매크로를 추가하는 인터페이스 변경이 제안됐습니다.\n  · 확인: https://lore.kernel.org/linux-hardening/63ecf4a2-13a2-42d2-8990-e53e50ae9a65@kernel.org/\n\n- Rust 지원 아키텍처에서 randstruct 기본 활성화를 낮추는 Kconfig 조정\n  · 영향: randstruct가 Rust를 막아 allmodconfig의 Rust 빌드 커버리지가 사라지는 문제를 줄이기 위해, 사용 가능한 Rust 도구체인과 아키텍처 지원이 있을 때 randstruct 기본값을 끄는 우회가 제안됐습니다.\n  · 확인: https://lore.kernel.org/linux-hardening/20260605-rust-reverse-randstruct-dep-v2-1-93d38023b6f9@kernel.org/\n\n- ZONE_DEVICE memmap 초기화의 템플릿 복사 고속화\n  · 영향: fsdax, devdax, nd_pmem, dax_pmem 같은 장치 온라인·재바인드 경로에서 struct page 초기화 반복 비용을 줄이기 위해 템플릿 기반 복사와 memcpy_streaming 인터페이스를 도입하는 8개 패치 흐름이 전날부터 이어졌습니다.\n  · 확인: https://lore.kernel.org/linux-hardening/20260605095243.45803-1-lizhe.67@bytedance.com/"
+    },
+    {
+      "heading": "기타",
+      "body": "- 네트워크 트리 적용 경로 논의\n  · 영향: 소켓 버퍼 격리의 본 변경이 net 코드에 걸쳐 있어 어느 트리로 보낼지에 대한 유지보수자 관점의 분류가 함께 나왔습니다.\n  · 확인: https://lore.kernel.org/linux-hardening/63ecf4a2-13a2-42d2-8990-e53e50ae9a65@kernel.org/\n\n- 중복 소켓 버퍼 응답 스레드\n  · 영향: 같은 2개 패치 시리즈에 대한 후속 응답은 핵심 변경을 새로 만들기보다 검토 흐름을 보강하므로, 소켓 버퍼 격리 항목으로 묶어 추적하는 편이 적절합니다.\n  · 확인: https://lore.kernel.org/linux-hardening/0198cf7c-ba09-47e9-abc3-dd230c1183dc@kernel.org/"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "AI가 원문 후보와 메타데이터를 요약했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Linux 7.0.11 stable",
+      "url": "https://git.kernel.org/stable/h/v7.0.11",
+      "note": "kernel.org · kernel-release"
+    },
+    {
+      "title": "net: skb: isolate skb data area allocations into a separate bucket",
+      "url": "https://lore.kernel.org/linux-hardening/CANn89iK_4g-2_U41CGYNdmBLCXyOARGdAakj26eigDhaL8hkCA@mail.gmail.com/",
+      "note": "lore.kernel.org/linux-hardening · patch-discussion"
+    },
+    {
+      "title": "net: skb: isolate skb data area allocations into a separate bucket",
+      "url": "https://lore.kernel.org/linux-hardening/20260604185222.794ea329@kernel.org/",
+      "note": "lore.kernel.org/linux-hardening · patch-discussion"
+    },
+    {
+      "title": "hardening: Default randstruct off with rust for better allmodconfig support",
+      "url": "https://lore.kernel.org/linux-hardening/20260605-rust-reverse-randstruct-dep-v2-1-93d38023b6f9@kernel.org/",
+      "note": "lore.kernel.org/linux-hardening · patch-discussion"
+    },
+    {
+      "title": "mm: speed up ZONE_DEVICE memmap initialization",
+      "url": "https://lore.kernel.org/linux-hardening/20260605095243.45803-1-lizhe.67@bytedance.com/",
+      "note": "lore.kernel.org/linux-hardening · patch-discussion"
+    },
+    {
+      "title": "mm/slab: add a node-track-caller variant for kmem buckets allocation",
+      "url": "https://lore.kernel.org/linux-hardening/63ecf4a2-13a2-42d2-8990-e53e50ae9a65@kernel.org/",
+      "note": "lore.kernel.org/linux-hardening · patch-discussion"
+    },
+    {
+      "title": "net: skb: isolate skb data area allocations into a separate bucket",
+      "url": "https://lore.kernel.org/linux-hardening/0198cf7c-ba09-47e9-abc3-dd230c1183dc@kernel.org/",
+      "note": "lore.kernel.org/linux-hardening · patch-discussion"
+    },
+    {
+      "title": "Linux 5.10.258 longterm",
+      "url": "https://git.kernel.org/stable/h/v5.10.258",
+      "note": "kernel.org · kernel-release"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-06-05T18:06:10.269Z",
+    "sourceRecordCount": 34,
+    "candidateCount": 10,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "kernel-org:stable:7.0.11",
+      "lore-linux-hardening:urn:uuid:3d03c618-0eb5-696c-51c1-22970c59a72d",
+      "lore-linux-hardening:urn:uuid:9c248c10-e319-5ff1-9f68-2dd6eb8db2b4",
+      "lore-linux-hardening:urn:uuid:294b62d6-49e2-e29d-979c-8a0412ee0692",
+      "lore-linux-hardening:urn:uuid:3f3e2b95-54b4-8210-be98-47bf35a0976a",
+      "lore-linux-hardening:urn:uuid:592a4b8f-397f-66e0-c5a9-0b2146e6f60d",
+      "lore-linux-hardening:urn:uuid:fb4bc61a-4823-1fe5-5ee5-fea045265aff",
+      "kernel-org:longterm:5.10.258",
+      "kernel-org:longterm:5.15.209",
+      "kernel-org:longterm:6.1.175"
+    ],
+    "bucketCounts": {
+      "releases": 4,
+      "regressions": 0,
+      "patches": 6,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 6,
+    "signalLevel": "high",
+    "subsystems": [
+      "네트워크",
+      "메모리 관리"
+    ],
+    "lensPipeline": "linux-kernel-security",
+    "rewrittenAt": "2026-06-05T18:06:19.770Z",
+    "rewriteAdapter": "codex",
+    "promptTemplate": "prompts/linux-lens-newsletter-ko.md"
+  }
+}

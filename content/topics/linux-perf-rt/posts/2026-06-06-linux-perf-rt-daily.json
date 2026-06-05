@@ -1,0 +1,142 @@
+{
+  "id": "2026-06-06-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-06-06 실시간 지연 회귀 — 관측성·실시간(eBPF·RT)",
+  "headline": "실시간 작업 수명 보장 패치 뒤 실행 지연 보고가 이어졌습니다.",
+  "date": "2026-06-06",
+  "summary": "오늘 가장 중요한 신호는 PREEMPT_RT의 irq_work 사용 후 해제 방지 패치가 MIPS execve 경로에서 큰 지연으로 관측됐다는 보고입니다. 그 다음으로는 BPF 정보 조회 구조체의 꼬리 패딩 검증이 사용자 공간 계약을 더 엄격하게 만들 수 있다는 점을 봐야 합니다.",
+  "tags": [
+    "eBPF",
+    "verifier",
+    "tracing",
+    "PREEMPT_RT",
+    "실시간"
+  ],
+  "highlights": [
+    {
+      "title": "PREEMPT_RT irq_work 수명 보장 패치 뒤 MIPS 실행 지연 보고",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "PREEMPT_RT 검증 담당자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/52db48708d5a7fbcd146745c4288e567424c909a.camel@xry111.site/",
+      "if": "PREEMPT_RT와 MIPS를 함께 검증한다면",
+      "do": "해당 패치 전후로 execve 반복 시간을 bisect 결과와 대조하세요",
+      "verify": "보고 스레드의 재현 코드와 sched_mm_cid_exit 언급을 함께 보세요"
+    },
+    {
+      "title": "BPF 정보 조회 구조체의 꼬리 패딩을 영으로 검사",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "BPF 사용자 공간 도구 담당자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260605155249.20772-1-leon.hwang@linux.dev/",
+      "if": "BPF 정보 조회 호출을 직접 구성한다면",
+      "do": "bpf_map_info와 bpf_prog_info 버퍼의 남는 바이트 초기화를 grep하세요",
+      "verify": "패치의 selftests 추가분과 자기 도구의 속성 크기 처리를 비교하세요"
+    },
+    {
+      "title": "x86 BPF JIT의 메모리 검사 패치에서 빌드 경고 보고",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "BPF JIT와 빌드 검증 담당자",
+      "verifyLink": "https://lore.kernel.org/bpf/DJ18H1FKONSJ.QNJHYMX6AW6B@bootlin.com/",
+      "if": "x86 BPF JIT 변경을 빌드 검증한다면",
+      "do": "case 라벨 바로 뒤 선언을 블록 안으로 옮긴 수정안을 적용하세요",
+      "verify": "스레드의 컴파일 오류 위치를 자기 빌드 로그와 대조하세요"
+    },
+    {
+      "title": "mvpp2 XDP 수신 버퍼 처리 수정이 재제출",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "XDP 네트워크 드라이버 담당자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260605154457.163304-1-mail@tk154.de/",
+      "if": "mvpp2 하드웨어에서 XDP를 쓴다면",
+      "do": "수신 버퍼 처리 변경을 xdp.py selftest 결과와 함께 대조하세요",
+      "verify": "v4 커버레터의 XDP_PASS 유지와 추가 버퍼 수정 범위를 보세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이 렌즈는 리스트 중심입니다. 오늘 입력에는 mainline, stable, longterm 릴리스 항목이 없어 릴리스 일정 판단은 포함하지 않습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- irq_work: PREEMPT_RT에서 irq_work_single 사용 후 해제를 막는 RCU 대기 보강 뒤 MIPS execve 반복 실행이 크게 느려졌다는 보고가 나왔고, 후속 응답은 sched_mm_cid_exit 경로 확인을 요청했습니다.\n  · 영향: PREEMPT_RT의 안전성 수정이 실행 경로 지연으로 이어질 수 있어 회귀 분석과 백포트 판단이 분리되어야 합니다.\n  · 확인: https://lore.kernel.org/linux-rt-devel/52db48708d5a7fbcd146745c4288e567424c909a.camel@xry111.site/\n\n- bpf, x86: x86 BPF JIT 코드에 메모리 검사 코드를 넣는 패치에서 case 라벨 뒤 선언으로 인한 컴파일 실패가 보고됐고, 작성자는 다음 버전에 수정 반영을 예고했습니다.\n  · 영향: 런타임 의미보다 빌드 호환성 신호가 우선이며, JIT 패치 검증 트리에서는 경고를 오류로 처리하는 빌드를 같이 봐야 합니다.\n  · 확인: https://lore.kernel.org/bpf/DJ18H1FKONSJ.QNJHYMX6AW6B@bootlin.com/"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "- bpf: BPF_OBJ_GET_INFO_BY_FD로 map과 prog 정보를 받을 때 구조체 끝 패딩 바이트가 영인지 검사하고, uapi 구조체와 selftests를 함께 갱신하는 3개 패치가 제안됐습니다.\n  · 영향: 사용자 공간 도구가 구조체 버퍼를 느슨하게 초기화하던 경우 새 검증에서 거부될 수 있는 api-abi 변화입니다.\n  · 확인: https://lore.kernel.org/bpf/20260605155249.20772-1-leon.hwang@linux.dev/\n\n- net: mvpp2 XDP_PASS 수정은 유지하면서 리뷰 중 발견된 수신 버퍼 처리 문제를 함께 고친 v4 시리즈가 올라왔고, mvpp2 하드웨어에서 xdp.py selftest로 검증됐습니다.\n  · 영향: BPF 프로그램 자체 변경은 아니지만 XDP 수신 경로의 버퍼 소유권과 반환 동작에 영향을 줍니다.\n  · 확인: https://lore.kernel.org/bpf/20260605154457.163304-1-mail@tk154.de/"
+    },
+    {
+      "heading": "기타",
+      "body": "- net: pcs-xpcs-regmap 시리즈는 페이지 경계에 맞지 않는 메모리 매핑 MDIO 창을 regmap으로 다루기 위한 XPCS 등록 보조 경로를 추가합니다.\n  · 영향: 특정 DesignWare XPCS 통합 방식과 이더넷 브리지 보드에 가까운 플랫폼 이슈라 이 렌즈에서는 추적 우선순위를 낮게 둡니다.\n  · 확인: https://lore.kernel.org/bpf/566af63b-05a9-43f8-94e9-19af737c848a@bootlin.com/"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "AI가 원문 후보와 메타데이터를 요약했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "net: mvpp2: fix XDP RX buffer handling",
+      "url": "https://lore.kernel.org/bpf/20260605154457.163304-1-mail@tk154.de/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "net: pcs: pcs-xpcs-regmap: support XPCS memory-mapped MDIO bus via regmap",
+      "url": "https://lore.kernel.org/bpf/566af63b-05a9-43f8-94e9-19af737c848a@bootlin.com/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "bpf: Check tail zero of bpf_map_info and bpf_prog_info",
+      "url": "https://lore.kernel.org/bpf/20260605155249.20772-1-leon.hwang@linux.dev/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "irq_work: Fix use-after-free in irq_work_single on PREEMPT_RT",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260605104530.LDbF5MDD@linutronix.de/",
+      "note": "lore.kernel.org/linux-rt-devel · patch-discussion"
+    },
+    {
+      "title": "irq_work: Fix use-after-free in irq_work_single on PREEMPT_RT",
+      "url": "https://lore.kernel.org/linux-rt-devel/52db48708d5a7fbcd146745c4288e567424c909a.camel@xry111.site/",
+      "note": "lore.kernel.org/linux-rt-devel · patch-discussion"
+    },
+    {
+      "title": "bpf, x86: emit KASAN checks into x86 JITed programs",
+      "url": "https://lore.kernel.org/bpf/DJ18H1FKONSJ.QNJHYMX6AW6B@bootlin.com/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-06-05T18:12:47.368Z",
+    "sourceRecordCount": 50,
+    "candidateCount": 6,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "lore-bpf:urn:uuid:fb3414b4-b439-7235-5c6c-0f00e9d4e6e7",
+      "lore-bpf:urn:uuid:c2c4b252-dc1b-5157-7f84-35890ae7b74a",
+      "lore-bpf:urn:uuid:844b0253-1c82-5fa7-73a2-5ce8d70990e8",
+      "lore-linux-rt-devel:urn:uuid:1855e66a-8b8d-71ff-055b-5bfa3813f7c6",
+      "lore-linux-rt-devel:urn:uuid:4e14a684-e110-4a85-9a37-5f3f5c4fb8a0",
+      "lore-bpf:urn:uuid:9cb757d3-9da4-869c-d46d-fab6fa384534"
+    ],
+    "bucketCounts": {
+      "releases": 0,
+      "regressions": 1,
+      "patches": 5,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 6,
+    "signalLevel": "high",
+    "subsystems": [
+      "네트워크",
+      "메모리 관리",
+      "스케줄러/실시간"
+    ],
+    "lensPipeline": "linux-perf-rt",
+    "rewrittenAt": "2026-06-05T18:12:55.363Z",
+    "rewriteAdapter": "codex",
+    "promptTemplate": "prompts/linux-lens-newsletter-ko.md"
+  }
+}
