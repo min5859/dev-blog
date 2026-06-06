@@ -59,6 +59,30 @@ test('confidence=low entry 는 priority 가 상이 되지 않는다', () => {
   assert.notEqual(low.priority, '상');
 });
 
+test('evidence.quote 가 있으면 본문에 blockquote 로 노출된다 (A)', () => {
+  const dq = {
+    topic: 'linux', date: '2026-06-06',
+    entries: [{ candidateId: 'q', title: 'qt', whatChanged: 'w', whyItMatters: 'y', affectedAudience: 'a', impactType: 'security', confidence: 'high', evidence: [{ claim: 'c', url: 'https://q', kind: 'commit', quote: '원문 발췌 문장입니다' }] }],
+  };
+  const p = dossierToPost(dq, { postId: 'x', date: '2026-06-06' });
+  const body = p.sections.map((s) => s.body).join('\n');
+  assert.match(body, /^> 원문 발췌 문장입니다/m);
+});
+
+test('seenBefore entry 는 라벨이 붙고 신규가 highlights 상단에 온다 (D)', () => {
+  const dq = {
+    topic: 'linux', date: '2026-06-06',
+    entries: [
+      { candidateId: 'old', title: 'old item', whatChanged: 'w', whyItMatters: 'y', affectedAudience: 'a', impactType: 'security', confidence: 'high', evidence: [ev('https://old')], seenBefore: true },
+      { candidateId: 'new', title: 'new item', whatChanged: 'w', whyItMatters: 'y', affectedAudience: 'a', impactType: 'release', confidence: 'high', evidence: [ev('https://new', 'changelog')] },
+    ],
+  };
+  const p = dossierToPost(dq, { postId: 'x', date: '2026-06-06' });
+  assert.equal(p.highlights[0].title, 'new item'); // 신규 우선 (security 보다 앞)
+  const body = p.sections.map((s) => s.body).join('\n');
+  assert.match(body, /이어 추적/); // seenBefore 라벨
+});
+
 test('빈 분류 섹션은 안내 문구로 채운다', () => {
   const minimal = dossierToPost({ topic: 'linux', date: '2026-06-06', entries: [dossier.entries[1]] }, { postId: 'x', date: '2026-06-06' });
   assert.match(minimal.sections.find((s) => s.heading === '릴리스/로드맵').body, /해당 항목이 없습니다/);
