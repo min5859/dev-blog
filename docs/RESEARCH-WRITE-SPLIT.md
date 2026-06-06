@@ -194,6 +194,11 @@ Determinism / audit:
 - **seenBefore (D)**: each entry is marked `seenBefore` when its candidateId
   appeared in yesterday's `research-<date-1>.json`, so the writer emphasizes
   change over repetition.
+- **Weekly rollup (E)**: `collectWeeklyDossier` merges the last 7 daily
+  dossiers (dedup by candidateId, newest wins), ranks by confidence+severity,
+  and keeps the top N → a weekly dossier that `dossierToPost` renders (with
+  evidence quotes intact). `npm run weekly-rollup:linux`. Separate artifact
+  from the legacy `weekly:linux` (which is daily-post + RSS based).
 
 ## 5. Tradeoffs
 
