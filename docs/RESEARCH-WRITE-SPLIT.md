@@ -1,0 +1,214 @@
+# Research / Write Agent Split — Design
+
+## Purpose
+
+Durable design doc for splitting the single AI rewrite stage into two
+distinct agents:
+
+1. a **research agent** that does judgment-driven investigation with tools,
+2. a **write agent** that turns the research dossier into the newsletter post.
+
+Goal: raise the *qualitative* depth of post content — more verified signal,
+fewer shallow rephrasings, lower hallucination risk.
+
+Read `docs/ARCHITECTURE.md` and `docs/IMPROVEMENT-PLAN.md` first. This doc
+follows the same Step + exit-criteria convention so work is reviewable in
+small increments.
+
+## Status
+
+- Current step: **design review (no code yet)**
+- Last touched: 2026-06-06
+
+## 1. Where the quality ceiling actually is
+
+The pipeline today is `collect → draft → rewrite(AI) → publish`.
+
+Contrary to a first read, the depth ceiling is **not** the 700-char Atom
+excerpt from `collect-linux.mjs`. The `draft` stage already performs a
+**deterministic research layer** on the selected candidates
+(`scripts/draft-linux.mjs`):
+
+- `fetchLoreBody` → fetches the lore `/raw` mbox and extracts up to 2400
+  chars of commit message (`extractCommitMessage`).
+- `fetchMaintainerThreadComments` → fetches the thread `t.atom` and pulls
+  excerpts from known maintainers (`KNOWN_MAINTAINERS`).
+- `fetchChangelog` → fetches the kernel.org changelog and summarizes
+  backported commit subjects (`summarizeChangelog`).
+
+So `draft` = candidate selection (scoring, patch-series merge, subsystem
+bucketing) **plus** a fixed enrichment pass. `rewrite` = a single,
+**tool-less** AI transform (`ai-rewrite-adapter.mjs`: `claude -p
+--output-format text`, `codex exec`) that polishes what `draft` handed it.
+
+The real limits:
+
+1. **Research is regex-fixed, not reasoned.** The pipeline fetches the same
+   three things every time. It never decides "this patch cites a `Fixes:`
+   hash — pull that commit too" or "this looks like a known CVE — confirm
+   it." Fetching without judgment.
+2. **The write step has no tools.** It cannot follow a link, confirm a
+   claim, or disambiguate. It can only rephrase the draft, which is why the
+   prompt (`prompts/linux-newsletter-ko.md`) has to fight hallucination so
+   hard.
+3. **No secondary analysis sources.** Only lore + kernel.org. No LWN,
+   Phoronix, Git commit ranges, or CVE databases — the sources that carry
+   *interpretation*, not just raw events.
+
+## 2. Proposed shape
+
+Insert a research stage between candidate selection and writing:
+
+```
+collect → draft(select)  →  research(AI + tools)  →  write(AI)  → publish
+                            │  produces dossier   │  consumes    │
+                            └─ data/generated/.../ └─ dossier     │
+                               research-latest.json   only        │
+```
+
+- **draft** loses its `enrichWithBodies` responsibility (or keeps it as a
+  cheap fallback) and focuses on deterministic candidate *selection* — the
+  part that should stay reproducible and testable.
+- **research agent** takes the selected candidates and, per candidate,
+  decides what to investigate. It runs through an adapter that grants
+  **read-only tool access** (web fetch / WebSearch / bounded shell for
+  `git`), gathers evidence, and emits a structured **dossier** with explicit
+  source attribution per claim.
+- **write agent** consumes the dossier *only*. Its prompt forbids any claim
+  not backed by a dossier entry. Because facts are pre-verified, the writer
+  can focus on tone, structure, and the action triples (`if`/`do`/`verify`)
+  already defined in the prompt.
+
+### Why this beats "just fetch more in draft"
+
+Fetching more deterministically still can't decide *what* is worth fetching
+for a given item. The judgment — "this regression references commit X,
+confirm whether it landed in stable" — is exactly what an agent does well
+and a regex cannot. Splitting also keeps each AI call's context focused:
+research reasons over raw material; writing reasons over verified facts.
+
+## 3. Dossier schema (draft)
+
+The contract between the two agents. One entry per selected candidate.
+`research-latest.json`:
+
+```json
+{
+  "topic": "linux",
+  "date": "YYYY-MM-DD",
+  "generatedAt": "ISO-8601",
+  "adapter": "claude",
+  "entries": [
+    {
+      "candidateId": "lore-lkml:...",
+      "title": "...",
+      "whatChanged": "one or two sentences, factual",
+      "whyItMatters": "system-wide impact in plain Korean",
+      "affectedAudience": "stable 커널 배포 담당자",
+      "impactType": "regression",
+      "confidence": "high | medium | low",
+      "evidence": [
+        { "claim": "...", "url": "https://...", "kind": "commit|thread|changelog|cve|article", "quote": "<=200 chars verbatim" }
+      ],
+      "openQuestions": ["unresolved item the writer must not assert"]
+    }
+  ],
+  "droppedCandidates": [ { "candidateId": "...", "reason": "..." } ]
+}
+```
+
+Hard rules carried into both prompts:
+
+- Every `whatChanged` / `whyItMatters` claim must trace to an `evidence`
+  entry with a real URL. No URL → it goes in `openQuestions`, not the body.
+- `quote` is verbatim and short — it is the writer's grounding anchor.
+- The writer may rephrase but may **not** introduce facts absent from
+  `evidence`.
+
+## 4. Adapter changes
+
+`ai-rewrite-adapter.mjs` today runs closed prompts. The research agent needs
+tool access; the write agent stays closed (and safer for it).
+
+- Add a research-capable invocation. For Claude:
+  `claude -p --allowedTools "WebFetch WebSearch Bash(git log:*)" ...` with an
+  explicit, **read-only** tool allowlist and a network/time budget.
+- Keep the write call exactly as the current closed transform.
+- Codex/Cursor research variants are out of scope for the PoC; gate research
+  behind the `claude` adapter first (`AI_ADAPTER=claude`).
+
+Determinism / audit:
+
+- Persist `research-prompt-<date>.md`, `research-stdout-<date>.txt`, and
+  `research-<date>.json` next to the existing rewrite artifacts under
+  `data/generated/linux/`, mirroring the current snapshot+latest pattern.
+- External fetches are non-deterministic; the dossier *is* the reproducible
+  snapshot. A re-run of `write` against a frozen dossier must be stable.
+
+## 5. Tradeoffs
+
+- **Cost/latency**: per-item fetch + two AI passes instead of one. Bounded by
+  the existing 4-highlight / ~8-candidate cap, so this stays small.
+- **Tool risk**: granting fetch/shell to an agent. Mitigated by a read-only
+  allowlist, no write tools, and a network budget. Never grant publish.
+- **Provider lock**: research needs a tool-capable CLI; `template`/`codex`
+  paths keep working via the deterministic fallback (see Step 2).
+- **Failure mode**: if research yields nothing for an item, the writer must
+  degrade gracefully to the deterministic draft body, never fabricate.
+
+## 6. Implementation steps (PoC: linux topic only)
+
+### Step 1 — Dossier schema + validator
+- [ ] Add `scripts/lib/dossier-schema.mjs` with `validateDossier(d)` and
+      per-entry checks (every claim has an evidence URL).
+- [ ] Unit test `scripts/dossier-schema.test.mjs` (valid, missing-URL,
+      empty-evidence cases).
+- Exit: `npm test` passes; validator rejects a claim with no evidence URL.
+
+### Step 2 — Research stage (claude adapter, fallback-safe)
+- [ ] `scripts/research-linux.mjs`: input = `candidates-latest.json`, output
+      = `research-latest.json`. Under `AI_ADAPTER=claude` run the
+      tool-enabled prompt; otherwise emit a deterministic dossier built from
+      the existing `enrichWithBodies` output (so `template`/`codex` still run
+      end-to-end).
+- [ ] `prompts/linux-research-ko.md`: investigation instructions + dossier
+      JSON contract + read-only tool guidance.
+- Exit: `AI_ADAPTER=template npm run research:linux` produces a schema-valid
+      dossier offline; `AI_ADAPTER=claude` version enriches with tool fetches.
+
+### Step 3 — Write stage consumes dossier
+- [ ] `prompts/linux-newsletter-ko.md`: switch input from `{{DRAFT_JSON}}` to
+      `{{DOSSIER_JSON}}`; add the "no claim without evidence" rule; keep the
+      existing title/headline/`if`/`do`/`verify` schema.
+- [ ] `scripts/ai-rewrite-linux.mjs`: read `research-latest.json`, fall back
+      to `draft-latest.json` when absent (back-compat).
+- Exit: `template` and `claude` writers emit identical post schema;
+      `validatePost` + `auditPostQuality` still pass.
+
+### Step 4 — Wire into daily pipeline + before/after
+- [ ] `scripts/run-daily-linux.mjs` (+ `lib/run-daily-pipeline.mjs`): insert
+      `research` between `draft` and `rewrite`.
+- [ ] Capture a before/after of one real day's post for quality review.
+- Exit: `npm run daily:linux` runs `collect → draft → research → rewrite →
+      build`; reviewer confirms the after-post carries verified evidence the
+      before-post lacked.
+
+## 7. Decisions (2026-06-06)
+
+1. **Research tools** — `WebFetch` + `WebSearch` + `Bash(git log:*)`, all
+   read-only. Maximize investigative depth; no write tools, ever.
+2. **Secondary sources** — do NOT add LWN/Phoronix as collectors for the
+   PoC. Prove the quality lift with lore+kernel.org + agent reasoning first.
+   (`WebSearch` is still allowed, so the agent may reach a secondary page
+   ad hoc when an item demands it — just not as a standing collector.)
+3. **`enrichWithBodies`** — keep it in `draft` as the offline/`template`
+   fallback (Step 2 emits a deterministic dossier from its output). Decided,
+   not deferred.
+4. **Network/time budget** — to be fixed during Step 2 implementation.
+
+## Out of scope
+
+- Multi-topic rollout (android, opensource, lens, ai-coding-agents) — only
+  after the linux PoC proves a quality lift.
+- Replacing the regex Atom parser.
+- API-billed providers (AGENTS.md prefers subscription CLIs).
