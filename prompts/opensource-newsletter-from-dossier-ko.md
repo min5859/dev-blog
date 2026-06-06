@@ -44,11 +44,18 @@
 - 각 section body 항목:
 
 ```
-- {title}
-  · 무엇: {whatChanged 한 줄}
-  · 영향: {whyItMatters 한 줄}
-  · 확인: {evidence url}
+**{title}**
+
+{whatChanged 한 줄}
+
+영향: {whyItMatters 한 줄}
+
+> {evidence 의 quote 를 그대로 인용 — 있으면 반드시 노출}
+
+[원문 확인]({evidence url})
 ```
+
+- `quote` 가 있으면 **반드시 `>` blockquote 로 원문 발췌를 노출**합니다. 없으면 생략합니다.
 
 해당 분류에 entry 가 없으면 그 섹션은 "이번 수집에서 해당 항목이 없습니다." 한 줄.
 

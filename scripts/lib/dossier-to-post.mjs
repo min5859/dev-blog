@@ -50,13 +50,21 @@ function entryToHighlight(entry) {
   };
 }
 
+// A: dossier 의 evidence.quote(원문 발췌)를 blockquote 로 노출 → 독자가 근거를 바로 확인.
+// build-site 가 body 를 marked 로 렌더하고 blockquote CSS 가 있으므로 markdown `>` 면 충분.
+function firstQuote(entry) {
+  return (entry.evidence || []).map((x) => x.quote).find((q) => typeof q === 'string' && q.trim());
+}
+
 function sectionBody(entries) {
   if (!entries.length) return '이번 수집에서 해당 항목이 없습니다.';
   return entries.map((e) => {
     const url = firstUrl(e);
-    const lines = [`- ${e.title}`, `  · 무엇: ${oneLine(e.whatChanged)}`, `  · 영향: ${oneLine(e.whyItMatters)}`];
-    if (url !== '없음') lines.push(`  · 확인: ${url}`);
-    return lines.join('\n');
+    const quote = firstQuote(e);
+    const parts = [`**${e.title}**`, '', oneLine(e.whatChanged), '', `영향: ${oneLine(e.whyItMatters)}`];
+    if (quote) parts.push('', `> ${oneLine(quote, 200)}`);
+    if (url !== '없음') parts.push('', `[원문 확인](${url})`);
+    return parts.join('\n');
   }).join('\n\n');
 }
 
