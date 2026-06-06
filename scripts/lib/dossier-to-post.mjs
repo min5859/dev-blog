@@ -61,7 +61,8 @@ function sectionBody(entries) {
   return entries.map((e) => {
     const url = firstUrl(e);
     const quote = firstQuote(e);
-    const parts = [`**${e.title}**`, '', oneLine(e.whatChanged), '', `영향: ${oneLine(e.whyItMatters)}`];
+    const tag = e.seenBefore ? ' _(이어 추적)_' : '';
+    const parts = [`**${e.title}**${tag}`, '', oneLine(e.whatChanged), '', `영향: ${oneLine(e.whyItMatters)}`];
     if (quote) parts.push('', `> ${oneLine(quote, 200)}`);
     if (url !== '없음') parts.push('', `[원문 확인](${url})`);
     return parts.join('\n');
@@ -95,8 +96,10 @@ export function dossierToPost(dossier, { postId, date, topic = 'linux', titleSuf
     return { heading, body: sectionBody(bucket) };
   });
 
+  // D: 신규(seenBefore 아님) 우선, 그다음 severity 순.
   const highlights = [...entries]
-    .sort((a, b) => (SEVERITY_RANK[a.impactType] ?? 3) - (SEVERITY_RANK[b.impactType] ?? 3))
+    .sort((a, b) => ((a.seenBefore ? 1 : 0) - (b.seenBefore ? 1 : 0))
+      || ((SEVERITY_RANK[a.impactType] ?? 3) - (SEVERITY_RANK[b.impactType] ?? 3)))
     .slice(0, 4)
     .map(entryToHighlight);
 

@@ -12,6 +12,7 @@
 - 모든 `verifyLink`·`sources[].url` 은 dossier `evidence[].url` 에서 그대로 가져옵니다.
 - `openQuestions` 는 단정하지 말고 생략하거나 "확인 필요"로만 적습니다.
 - `confidence`=low 면 추정 표현으로 약하게. 한국어 본문에 한자·가나 금지.
+- entry 에 `seenBefore: true` 가 있으면 **어제도 다룬 항목**입니다 — 변화/진척만 한 줄로, 없으면 생략. 신규 항목을 상단 우선.
 
 ## 출력 스키마
 

@@ -88,6 +88,23 @@ export function normalizeDossier(dossier) {
   return dossier;
 }
 
+// D: 어제 dossier 의 candidateId 집합. 첫날/부재 시 빈 Set 으로 graceful.
+function previousDate(runDate) {
+  const d = new Date(`${runDate}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
+async function loadSeenCandidateIds(generatedDir, runDate) {
+  try {
+    const prev = previousDate(runDate);
+    const data = JSON.parse(await readFile(path.join(generatedDir, `research-${prev}.json`), 'utf8'));
+    return new Set((data.entries || []).map((e) => e.candidateId));
+  } catch {
+    return new Set();
+  }
+}
+
 /**
  * @param {object} cfg
  * @param {string} cfg.topic
@@ -140,6 +157,14 @@ export async function runResearch(cfg) {
     }
     dossier = { topic, date: runDate, generatedAt, adapter, entries, droppedCandidates };
   }
+
+  // D: 어제도 다룬 candidate 는 seenBefore 마킹 → write 가 변화/진척만 강조.
+  const seen = await loadSeenCandidateIds(generatedDir, runDate);
+  let seenCount = 0;
+  for (const entry of dossier.entries) {
+    if (seen.has(entry.candidateId)) { entry.seenBefore = true; seenCount += 1; }
+  }
+  dossier.seenBeforeCount = seenCount;
 
   validateDossier(dossier, `research-${topic}`);
 
