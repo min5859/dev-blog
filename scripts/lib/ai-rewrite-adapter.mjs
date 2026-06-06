@@ -76,7 +76,8 @@ function runClaudeStdin(prompt) {
  */
 function runClaudeResearch(prompt) {
   const command = process.env.CLAUDE_BIN || 'claude';
-  const model = process.env.CLAUDE_MODEL || 'sonnet';
+  // B: research 는 write 와 다른 모델을 쓸 수 있다(조사=상위모델, 작문=경량). 미설정 시 기존 단일 모델.
+  const model = process.env.CLAUDE_RESEARCH_MODEL || process.env.CLAUDE_MODEL || 'sonnet';
   const tools = (process.env.CLAUDE_RESEARCH_TOOLS || 'WebFetch,WebSearch,Bash(git log:*)')
     .split(',')
     .map((t) => t.trim())
@@ -94,7 +95,7 @@ function runClaudeResearch(prompt) {
  */
 async function runCursorResearch(prompt) {
   const command = process.env.CURSOR_AGENT_BIN || 'agent';
-  const model = process.env.CURSOR_MODEL || 'claude-4.6-sonnet-medium';
+  const model = process.env.CURSOR_RESEARCH_MODEL || process.env.CURSOR_MODEL || 'claude-4.6-sonnet-medium';
   const extra = (process.env.CURSOR_AGENT_EXTRA_ARGS || '').split(/\s+/).filter(Boolean);
   const timeoutMs = Number(process.env.CLAUDE_RESEARCH_TIMEOUT_MS ?? 600000);
   const dir = await mkdtemp(path.join(tmpdir(), 'dev-blog-research-'));
@@ -126,7 +127,7 @@ async function runCursorResearch(prompt) {
 export async function runResearchAdapterPrompt(prompt, { defaultAdapter = DEFAULT_AI_ADAPTER } = {}) {
   const adapter = resolveAiAdapter(defaultAdapter);
   if (adapter === 'claude') return runClaudeResearch(prompt);
-  if (adapter === 'codex') return runCodexExec(prompt);
+  if (adapter === 'codex') return runCodexExec(prompt, { model: process.env.CODEX_RESEARCH_MODEL || process.env.CODEX_MODEL || '' });
   if (adapter === 'cursor') return runCursorResearch(prompt);
   return null;
 }
@@ -175,10 +176,9 @@ async function runCursorAgentFilePrompt(prompt) {
   }
 }
 
-async function runCodexExec(prompt) {
+async function runCodexExec(prompt, { model = process.env.CODEX_MODEL || '' } = {}) {
   const dir = await mkdtemp(path.join(tmpdir(), 'dev-blog-codex-'));
   const outFile = path.join(dir, 'output.md');
-  const model = process.env.CODEX_MODEL || '';
   try {
     const cmd = ['codex', 'exec', '-', '-o', outFile, '--ephemeral'];
     if (model) cmd.push('-m', model);
