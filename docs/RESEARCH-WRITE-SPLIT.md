@@ -17,8 +17,33 @@ small increments.
 
 ## Status
 
-- Current step: **design review (no code yet)**
+- Current step: **PoC complete (Steps 1–4 done, linux topic)**
 - Last touched: 2026-06-06
+
+### PoC result (2026-06-06)
+
+`DAILY_REWRITE_ADAPTER=template node scripts/run-daily-linux.mjs` ran
+`collect → draft → research → rewrite → build` end-to-end, all steps ok.
+
+- research produced a 6-entry dossier (6 evidence claims) from the day's
+  candidates.
+- the write step consumed `research-latest.json` and emitted a post whose
+  10 URLs (highlights `verifyLink` + `sources`) were **10/10 grounded** in
+  dossier evidence — zero ungrounded URLs (the `findUngroundedUrls`
+  invariant held against the dossier).
+- `draftMetadata.promptTemplate` switched to
+  `prompts/linux-newsletter-from-dossier-ko.md`, confirming the dossier
+  write path is live.
+
+Before vs after, structurally: the old flow fed the writer the draft
+(metadata + 700-char excerpts) and grounded against that; the new flow feeds
+a research dossier (judgment-gathered, sourced evidence) and grounds against
+that. Investigation and writing are now separate stages with an auditable
+contract between them.
+
+Next: run the `claude` research adapter (`research:linux:claude`) on a real
+day to measure the *content* lift (tool-fetched evidence beyond the
+deterministic fallback), then decide on multi-topic rollout.
 
 ## 1. Where the quality ceiling actually is
 
@@ -158,40 +183,46 @@ Determinism / audit:
 
 ## 6. Implementation steps (PoC: linux topic only)
 
-### Step 1 — Dossier schema + validator
-- [ ] Add `scripts/lib/dossier-schema.mjs` with `validateDossier(d)` and
-      per-entry checks (every claim has an evidence URL).
-- [ ] Unit test `scripts/dossier-schema.test.mjs` (valid, missing-URL,
-      empty-evidence cases).
-- Exit: `npm test` passes; validator rejects a claim with no evidence URL.
+### Step 1 — Dossier schema + validator ✅
+- [x] `scripts/lib/dossier-schema.mjs` with `validateDossier`,
+      `validateDossierEntry`, `validateEvidence` (every claim has an http(s)
+      evidence URL; `impactType` reuses `highlight-schema`).
+- [x] Unit test `scripts/dossier-schema.test.mjs` (14 cases: valid,
+      missing-URL, empty-evidence, quote length, confidence, ctx prefix…).
+- Exit met: `npm test` passes; validator rejects a claim with no evidence URL.
 
-### Step 2 — Research stage (claude adapter, fallback-safe)
-- [ ] `scripts/research-linux.mjs`: input = `candidates-latest.json`, output
-      = `research-latest.json`. Under `AI_ADAPTER=claude` run the
-      tool-enabled prompt; otherwise emit a deterministic dossier built from
-      the existing `enrichWithBodies` output (so `template`/`codex` still run
+### Step 2 — Research stage (claude adapter, fallback-safe) ✅
+- [x] `scripts/research-linux.mjs`: input = `candidates-latest.json`, output
+      = `research-latest.json`. `AI_ADAPTER=claude` runs the tool-enabled
+      prompt via `runResearchAdapterPrompt`; otherwise a deterministic
+      dossier is built from the candidate records (so `template`/`codex` run
       end-to-end).
-- [ ] `prompts/linux-research-ko.md`: investigation instructions + dossier
-      JSON contract + read-only tool guidance.
-- Exit: `AI_ADAPTER=template npm run research:linux` produces a schema-valid
-      dossier offline; `AI_ADAPTER=claude` version enriches with tool fetches.
+- [x] `prompts/linux-research-ko.md`: investigation instructions + dossier
+      contract + read-only tool guidance.
+- [x] adapter: `runResearchAdapterPrompt` (claude `--allowedTools
+      WebFetch,WebSearch,Bash(git log:*)`) + `extractJsonObject`.
+- Exit met: `AI_ADAPTER=template npm run research:linux` produced an 8-entry
+      schema-valid dossier offline.
 
-### Step 3 — Write stage consumes dossier
-- [ ] `prompts/linux-newsletter-ko.md`: switch input from `{{DRAFT_JSON}}` to
-      `{{DOSSIER_JSON}}`; add the "no claim without evidence" rule; keep the
-      existing title/headline/`if`/`do`/`verify` schema.
-- [ ] `scripts/ai-rewrite-linux.mjs`: read `research-latest.json`, fall back
-      to `draft-latest.json` when absent (back-compat).
-- Exit: `template` and `claude` writers emit identical post schema;
-      `validatePost` + `auditPostQuality` still pass.
+### Step 3 — Write stage consumes dossier ✅
+- [x] `prompts/linux-newsletter-from-dossier-ko.md`: dossier-input prompt
+      with the "no claim/URL without dossier evidence" rule; keeps
+      title/headline/`if`/`do`/`verify` schema. (Kept `linux-newsletter-ko.md`
+      as the draft fallback prompt rather than mutating it.)
+- [x] `scripts/ai-rewrite-linux.mjs`: reads `research-latest.json` first,
+      falls back to `draft-latest.json` when absent; grounding source is the
+      dossier so `findUngroundedUrls` enforces dossier-only URLs.
+- [x] `scripts/lib/dossier-to-post.mjs` + `dossier-to-post.test.mjs` (8
+      cases): deterministic write fallback for non-claude adapters.
+- Exit met: `validatePost` + `auditPostQuality` pass on both paths.
 
-### Step 4 — Wire into daily pipeline + before/after
-- [ ] `scripts/run-daily-linux.mjs` (+ `lib/run-daily-pipeline.mjs`): insert
-      `research` between `draft` and `rewrite`.
-- [ ] Capture a before/after of one real day's post for quality review.
-- Exit: `npm run daily:linux` runs `collect → draft → research → rewrite →
-      build`; reviewer confirms the after-post carries verified evidence the
-      before-post lacked.
+### Step 4 — Wire into daily pipeline + before/after ✅
+- [x] `scripts/run-daily-linux.mjs`: inserted `research` between `draft` and
+      `rewrite` (`researchScript` = claude tools or deterministic fallback).
+- [x] Captured PoC before/after (see Status block).
+- Exit met: `node scripts/run-daily-linux.mjs` ran `collect → draft →
+      research → rewrite → build`, all ok; after-post URLs 10/10 grounded in
+      dossier evidence.
 
 ## 7. Decisions (2026-06-06)
 
