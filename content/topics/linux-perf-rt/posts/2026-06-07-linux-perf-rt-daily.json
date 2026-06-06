@@ -1,0 +1,146 @@
+{
+  "id": "2026-06-07-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-06-07 특수 필드 해제 교착 논의 — 관측성·실시간(eBPF·RT)",
+  "date": "2026-06-07",
+  "headline": "인터럽트 중 특수 필드 해제가 교착을 만들 수 있다는 검증 논의가 이어졌습니다.",
+  "summary": "오늘 가장 중요한 신호는 추적 프로그램에서 특수 필드를 해제할 때 교착이 생길 수 있다는 보고와 재현입니다. 그 다음으로는 아레나 페이지 설치의 아키텍처별 장벽 차이, 해시 테이블 문서 빌드 경고, 다중 추적 연결 테스트 보강을 함께 보셔야 합니다.",
+  "tags": [
+    "eBPF",
+    "verifier",
+    "tracing",
+    "PREEMPT_RT",
+    "실시간"
+  ],
+  "highlights": [
+    {
+      "title": "특수 필드 해제가 인터럽트 중 교착을 만들 수 있음",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "BPF 객체 수명주기 담당자",
+      "verifyLink": "https://lore.kernel.org/bpf/aiRG9nsbRi2cO3XT@zenbox/",
+      "if": "추적 프로그램에서 커널 포인터를 다룬다면",
+      "do": "객체 해제 경로가 인터럽트 중 소멸자를 부르는지 grep하세요",
+      "verify": "원문 재현 시나리오와 자기 트리의 해제 호출 순서를 대조하세요"
+    },
+    {
+      "title": "아레나 페이지 설치에서 아키텍처별 장벽 차이가 제기됨",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "BPF 메모리 관리 담당자",
+      "verifyLink": "https://lore.kernel.org/bpf/aiRFcz78QTZdIHHB@arm.com/",
+      "if": "arm64에서 BPF 아레나를 검증한다면",
+      "do": "pte 갱신 경로에 완료 장벽이 들어가는지 diff로 비교하세요",
+      "verify": "Catalin Marinas의 답장과 관련 fixup 제안을 기준으로 보세요"
+    },
+    {
+      "title": "해시 테이블 새 순회 도움 함수의 문서 빌드 경고 수정",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "공용 라이브러리 빌드 담당자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260606-rhash_fixes_1-v1-1-932ab036e6bc@meta.com/",
+      "if": "문서 경고를 오류로 다루는 빌드라면",
+      "do": "rhashtable_next_key 문서 위치 변경을 자기 경고 로그와 대조하세요",
+      "verify": "kernel test robot 보고 링크와 Fixes 대상 커밋을 함께 보세요"
+    },
+    {
+      "title": "다중 추적 연결의 성능과 실패 경로 테스트가 보강됨",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "BPF 추적 도구 개발자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260606123955.345967-29-jolsa@kernel.org/",
+      "if": "대량 추적 연결 기능을 쓰는 도구라면",
+      "do": "새 벤치마크와 실패 테스트를 자기 테스트 묶음에 반영하세요",
+      "verify": "패치의 attach와 detach 시간 출력 형식을 기준으로 회귀를 비교하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이 렌즈는 리스트 중심입니다. 오늘 입력에는 mainline, stable, longterm 릴리스 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "- 특수 필드 해제가 인터럽트 중 교착을 만들 수 있음\n  · 영향: 추적 프로그램이 맵에서 객체를 꺼낸 뒤 버리면서 task_struct 포인터 소멸자를 호출하면, 복구 경로 없이 교착으로 이어질 수 있다는 재현이 제시됐습니다.\n  · 확인: https://lore.kernel.org/bpf/aiRG9nsbRi2cO3XT@zenbox/\n\n- 해시 테이블 순회 도움 함수의 문서 빌드 경고 수정\n  · 영향: 새 rhashtable_next_key API의 커널 문서 인자 설명 위치가 맞지 않아 빌드 경고가 났고, 문서를 구현 파일 쪽으로 옮기는 수정입니다.\n  · 확인: https://lore.kernel.org/bpf/20260606-rhash_fixes_1-v1-1-932ab036e6bc@meta.com/"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "- 아레나 페이지 설치의 원자적 PTE 교체 논의\n  · 영향: x86에서는 오래된 scratch page 변환이 남아도 무해하다는 설명이 있었지만, arm64에서는 무효화 뒤 장벽 처리 차이로 접근이 다시 fault 될 수 있어 ptep_try_set 경로 보강이 제안됐습니다.\n  · 확인: https://lore.kernel.org/bpf/aiRFcz78QTZdIHHB@arm.com/\n\n- 다중 추적 연결 벤치마크 추가\n  · 영향: 허용된 추적 함수 대부분에 붙고 떼는 시간을 측정하는 selftests가 추가되어, 대량 attach 성능 회귀를 숫자로 비교할 수 있게 됩니다.\n  · 확인: https://lore.kernel.org/bpf/20260606123955.345967-29-jolsa@kernel.org/\n\n- libbpf BTF 정리 함수 추가\n  · 영향: 뒤따르는 변경에서 BTF 객체 정리를 재사용할 수 있도록 bpf_object_cleanup_btf 함수가 추가됩니다.\n  · 확인: https://lore.kernel.org/bpf/20260606123955.345967-18-jolsa@kernel.org/\n\n- 다중 추적 연결 실패 테스트 추가\n  · 영향: tracing multi link attach 실패 경로를 selftests로 고정해, 허용되지 않는 연결이 조용히 통과하는 회귀를 잡기 쉬워집니다.\n  · 확인: https://lore.kernel.org/bpf/20260606123955.345967-27-jolsa@kernel.org/"
+    },
+    {
+      "heading": "기타",
+      "body": "- mvpp2 수신 버퍼 동기화 오프셋 수정 논의\n  · 영향: 하드웨어가 headroom 뒤에 패킷을 쓰는데 CPU 동기화가 버퍼 시작점부터 이뤄져 꼬리 영역을 놓칠 수 있다는 네트워크 드라이버 이슈입니다. 이 렌즈에서는 BPF와 만나는 XDP 조정 뒤 오류 경로 질문만 한 줄로 추적합니다.\n  · 확인: https://lore.kernel.org/bpf/20260606154534.812B61F00898@smtp.kernel.org/"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "AI가 원문 후보와 메타데이터를 요약했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "bpf: fix deadlock in special field destruction in NMI",
+      "url": "https://lore.kernel.org/bpf/aiRG9nsbRi2cO3XT@zenbox/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "bpf: Replace scratch PTE atomically when allocating arena pages",
+      "url": "https://lore.kernel.org/bpf/aiRFcz78QTZdIHHB@arm.com/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "rhashtable: Fix rhashtable_next_key() build warnings",
+      "url": "https://lore.kernel.org/bpf/20260606-rhash_fixes_1-v1-1-932ab036e6bc@meta.com/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "net: mvpp2: sync RX data at the hardware packet offset",
+      "url": "https://lore.kernel.org/bpf/20260606154534.812B61F00898@smtp.kernel.org/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "[PATCHv8 bpf-next 28/29] selftests/bpf: Add tracing multi attach benchmark test",
+      "url": "https://lore.kernel.org/bpf/20260606123955.345967-29-jolsa@kernel.org/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "[PATCHv8 bpf-next 17/29] libbpf: Add bpf_object_cleanup_btf function",
+      "url": "https://lore.kernel.org/bpf/20260606123955.345967-18-jolsa@kernel.org/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    },
+    {
+      "title": "[PATCHv8 bpf-next 26/29] selftests/bpf: Add tracing multi attach fails test",
+      "url": "https://lore.kernel.org/bpf/20260606123955.345967-27-jolsa@kernel.org/",
+      "note": "lore.kernel.org/bpf · patch-discussion"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-06-06T18:21:14.006Z",
+    "sourceRecordCount": 50,
+    "candidateCount": 7,
+    "generator": "scripts/draft-lore-lens.mjs",
+    "candidateIds": [
+      "lore-bpf:urn:uuid:498006b2-5533-64a0-ed84-752cfab5641f",
+      "lore-bpf:urn:uuid:f05ca54b-ecfd-66db-7f61-7c849c690ef0",
+      "lore-bpf:urn:uuid:8702f69b-50b9-44e0-2db8-8a2bbfc59181",
+      "lore-bpf:urn:uuid:38c781d6-8ff8-1210-5037-5c48e6470bad",
+      "lore-bpf:urn:uuid:11ab716e-f128-cf51-070f-fea8f7de3026",
+      "lore-bpf:urn:uuid:2f4338fb-3e2a-74e3-7e2b-ede440dbfd71",
+      "lore-bpf:urn:uuid:3104e34b-54e2-e05f-24de-c156e9b3d3c3"
+    ],
+    "bucketCounts": {
+      "releases": 0,
+      "regressions": 2,
+      "patches": 5,
+      "otherSignals": 0
+    },
+    "lensSignalCount": 7,
+    "signalLevel": "high",
+    "subsystems": [
+      "네트워크"
+    ],
+    "lensPipeline": "linux-perf-rt",
+    "rewrittenAt": "2026-06-06T18:21:25.468Z",
+    "rewriteAdapter": "codex",
+    "promptTemplate": "prompts/linux-lens-newsletter-ko.md"
+  }
+}
