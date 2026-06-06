@@ -250,9 +250,31 @@ Determinism / audit:
    wall-clock timeout (default 10 min, `CLAUDE_RESEARCH_TIMEOUT_MS`, 0 =
    unbounded); SIGTERM + fail-loud on timeout. See §4.
 
+## Multi-topic generalization (2026-06-06)
+
+After the linux PoC, research was extracted into a topic-agnostic runner and
+applied to a second topic to prove extensibility:
+
+- `scripts/lib/research-runner.mjs` — topic-agnostic `runResearch(cfg)`.
+  The claude/codex/cursor tool paths use only slim candidate fields +
+  per-topic prompt (topic-independent). The deterministic fallback uses a
+  generic entry builder (no topic helpers); a topic may inject a richer
+  `entryBuilder` for better fallback quality (linux does, via
+  `affectedAudienceFor`/`impactTypeFor`/`broadSubsystemsOf`).
+- `dossierToPost` parameterized with `{topic, titleSuffix, tags}`.
+- Applied to **opensource**: `research-opensource.mjs` (generic builder) +
+  `opensource-research-ko.md` + `opensource-newsletter-from-dossier-ko.md` +
+  `ai-rewrite-opensource.mjs` (dossier-first) + research step in
+  `run-daily-opensource.mjs`. Verified: 14-entry dossier → write,
+  grounding 12/12, title/tags topic-correct.
+
+Remaining topics (android, lens, ai-coding-agents) follow the same recipe:
+add two prompts + a thin `research-<topic>.mjs` + dossier-first write +
+pipeline wiring.
+
 ## Out of scope
 
-- Multi-topic rollout (android, opensource, lens, ai-coding-agents) — only
-  after the linux PoC proves a quality lift.
+- Remaining-topic rollout (android, lens, ai-coding-agents) — same recipe,
+  deferred.
 - Replacing the regex Atom parser.
 - API-billed providers (AGENTS.md prefers subscription CLIs).

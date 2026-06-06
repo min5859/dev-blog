@@ -65,9 +65,12 @@ function sectionBody(entries) {
  * @param {object} opts
  * @param {string} opts.postId
  * @param {string} opts.date
+ * @param {string} [opts.topic='linux']
+ * @param {string} [opts.titleSuffix='커널 개발 브리핑'] title 끝에 붙는 토픽 라벨
+ * @param {string[]} [opts.tags=['리눅스','커널']]
  * @returns {object} newsletter post
  */
-export function dossierToPost(dossier, { postId, date }) {
+export function dossierToPost(dossier, { postId, date, topic = 'linux', titleSuffix = '커널 개발 브리핑', tags = ['리눅스', '커널'] }) {
   const entries = Array.isArray(dossier.entries) ? dossier.entries : [];
 
   const grouped = new Map(SECTION_ORDER.map((h) => [h, []]));
@@ -106,12 +109,12 @@ export function dossierToPost(dossier, { postId, date }) {
 
   return {
     id: postId,
-    topic: 'linux',
-    title: `${date} 커널 개발 브리핑`,
+    topic,
+    title: `${date} ${titleSuffix}`,
     headline,
     date,
     summary: `오늘의 핵심: 릴리스 ${counts.releases}건, 회귀·보안 ${counts.regressions}건, 핵심 변경 ${counts.patches}건. 리서치 dossier 의 출처를 근거로 정리했습니다.`,
-    tags: ['리눅스', '커널'],
+    tags,
     highlights,
     sections,
     confidence: {

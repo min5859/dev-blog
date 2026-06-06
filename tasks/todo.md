@@ -10,7 +10,7 @@
 - [ ] template fallback 보존 확인, 테스트
 - [ ] 커밋
 
-## 3. 멀티토픽 확장 후 커밋
+## 3. 멀티토픽 확장 후 커밋 ✅
 - [ ] research 를 토픽-범용 lib(research-runner.mjs)로 추출: claude 경로는 토픽 무관, deterministic 은 generic 빌더
 - [ ] dossier-to-post 섹션 매핑 파라미터화
 - [ ] 1개 추가 토픽(opensource)에 적용 + 테스트

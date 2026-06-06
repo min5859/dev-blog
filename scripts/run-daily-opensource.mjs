@@ -12,12 +12,15 @@ const rewriteScript = {
   cursor: 'rewrite:opensource:cursor',
 }[rewriteAdapter] || `rewrite:opensource:${DEFAULT_AI_ADAPTER}`;
 
+const researchScript = rewriteAdapter === 'claude' ? 'research:opensource:claude' : 'research:opensource';
+
 const steps = [
-  ['collect', 'npm', ['run', 'collect:opensource']],
-  ['draft',   'npm', ['run', 'draft:opensource']],
-  ['rewrite', 'npm', ['run', rewriteScript]],
+  ['collect',  'npm', ['run', 'collect:opensource']],
+  ['draft',    'npm', ['run', 'draft:opensource']],
+  ['research', 'npm', ['run', researchScript]],
+  ['rewrite',  'npm', ['run', rewriteScript]],
   ...(shouldPublish ? [['publish', 'npm', ['run', 'publish:opensource']]] : []),
-  ['build',   'npm', ['run', 'build']],
+  ['build',    'npm', ['run', 'build']],
 ];
 
 runPipeline({ topic: 'opensource', logTitle: 'Opensource trending pipeline', steps, runDate, extraStatus: { publishEnabled: shouldPublish } });
