@@ -105,6 +105,49 @@ async function loadSeenCandidateIds(generatedDir, runDate) {
   }
 }
 
+// C: 교차검증 — evidence.url 을 재fetch 해 quote 원문 실재(부분일치)를 확인.
+// best-effort: 검증 실패는 차단이 아니라 confidence 강등 + openQuestions 로 남긴다.
+const CONFIDENCE_DOWNGRADE = { high: 'medium', medium: 'low', low: 'low' };
+
+function normalizeForMatch(s) {
+  return String(s || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').toLowerCase();
+}
+
+async function urlContainsQuote(url, quote, timeoutMs) {
+  try {
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(timeoutMs),
+      headers: { 'user-agent': 'dev-blog-verify/0.1 (+evidence cross-check)' },
+    });
+    if (!res.ok) return false;
+    const hay = normalizeForMatch(await res.text());
+    const needle = normalizeForMatch(quote).slice(0, 40);
+    return needle.length >= 12 && hay.includes(needle);
+  } catch {
+    return false;
+  }
+}
+
+export async function verifyDossier(dossier, { perUrlTimeoutMs = 15000 } = {}) {
+  let downgraded = 0;
+  for (const entry of dossier.entries || []) {
+    const quoted = (entry.evidence || []).filter((ev) => typeof ev.quote === 'string' && ev.quote.trim());
+    if (!quoted.length) continue;
+    let anyVerified = false;
+    for (const ev of quoted) {
+      ev.verified = await urlContainsQuote(ev.url, ev.quote, perUrlTimeoutMs);
+      if (ev.verified) anyVerified = true;
+    }
+    if (!anyVerified) {
+      entry.confidence = CONFIDENCE_DOWNGRADE[entry.confidence] || 'low';
+      entry.openQuestions = [...(entry.openQuestions || []), '원문에서 인용(quote) 검증 실패 — 본문 단정 금지'];
+      downgraded += 1;
+    }
+  }
+  dossier.verifiedDowngradeCount = downgraded;
+  return dossier;
+}
+
 /**
  * @param {object} cfg
  * @param {string} cfg.topic
@@ -165,6 +208,11 @@ export async function runResearch(cfg) {
     if (seen.has(entry.candidateId)) { entry.seenBefore = true; seenCount += 1; }
   }
   dossier.seenBeforeCount = seenCount;
+
+  // C: 교차검증 (RESEARCH_VERIFY=0 으로 끌 수 있음). deterministic dossier 는 candidate url 기반이라 skip.
+  if (process.env.RESEARCH_VERIFY !== '0' && raw) {
+    await verifyDossier(dossier, { perUrlTimeoutMs: Number(process.env.RESEARCH_VERIFY_TIMEOUT_MS ?? 15000) });
+  }
 
   validateDossier(dossier, `research-${topic}`);
 

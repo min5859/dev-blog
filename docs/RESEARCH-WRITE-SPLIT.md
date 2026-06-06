@@ -184,6 +184,16 @@ Determinism / audit:
   timeout — default 10 min, `CLAUDE_RESEARCH_TIMEOUT_MS` overrides (0 =
   unbounded). On timeout the child is SIGTERM'd and the run fails loudly
   rather than hanging.
+- **Cross-check (C)**: after a tool-research dossier is built, `verifyDossier`
+  re-fetches each `evidence.url` and confirms the `quote` actually appears
+  (normalized substring). If an entry's quoted evidence is all unverifiable,
+  its `confidence` is downgraded and an openQuestion is appended — best-effort
+  (failure downgrades, never blocks). Toggle `RESEARCH_VERIFY=0`,
+  per-URL timeout `RESEARCH_VERIFY_TIMEOUT_MS` (default 15s). Skipped for the
+  deterministic fallback (its evidence is just the candidate URL).
+- **seenBefore (D)**: each entry is marked `seenBefore` when its candidateId
+  appeared in yesterday's `research-<date-1>.json`, so the writer emphasizes
+  change over repetition.
 
 ## 5. Tradeoffs
 
