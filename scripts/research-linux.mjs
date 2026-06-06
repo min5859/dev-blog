@@ -96,6 +96,18 @@ function buildDeterministicDossier(candidates) {
   return { topic, date: runDate, generatedAt, adapter, entries, droppedCandidates };
 }
 
+// 모델이 evidence.quote 를 200자보다 길게 줄 수 있다. validator 가 거부하기 전에 잘라 normalize.
+function normalizeDossier(dossier) {
+  for (const entry of dossier.entries || []) {
+    for (const ev of entry.evidence || []) {
+      if (typeof ev.quote === 'string' && ev.quote.length > 200) {
+        ev.quote = ev.quote.slice(0, 200);
+      }
+    }
+  }
+  return dossier;
+}
+
 function buildPrompt(template, candidates) {
   return template
     .replaceAll('{{RUN_DATE}}', runDate)
@@ -117,14 +129,17 @@ async function main() {
   await writeFile(path.join(generatedDir, 'research-prompt-latest.md'), prompt);
 
   let dossier;
-  const raw = await runResearchAdapterPrompt(prompt);
+  // RESEARCH_RAW_PATH 가 있으면 이전 어댑터 stdout 을 재파싱(재호출 없이 복구/디버깅).
+  const raw = process.env.RESEARCH_RAW_PATH
+    ? await readFile(process.env.RESEARCH_RAW_PATH, 'utf8')
+    : await runResearchAdapterPrompt(prompt);
   if (raw) {
     await writeFile(path.join(generatedDir, `research-stdout-${runDate}.txt`), raw);
     await writeFile(path.join(generatedDir, 'research-stdout-latest.txt'), raw);
     const parsed = extractJsonObject(raw, (v) => v && Array.isArray(v.entries));
     if (!parsed) throw new Error('research adapter output did not contain a dossier JSON with entries[]');
-    // 불변 필드는 입력 기준으로 고정 (모델이 바꿔도 무시)
-    dossier = { ...parsed, topic, date: runDate, generatedAt, adapter };
+    // 불변 필드는 입력 기준으로 고정 (모델이 바꿔도 무시) + 모델이 길게 준 quote 는 잘라 normalize
+    dossier = normalizeDossier({ ...parsed, topic, date: runDate, generatedAt, adapter });
   } else {
     dossier = buildDeterministicDossier(candidates);
   }
