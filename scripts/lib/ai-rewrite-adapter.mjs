@@ -28,19 +28,30 @@ export function resolveAiAdapter(defaultValue = DEFAULT_AI_ADAPTER) {
   return raw;
 }
 
-function spawnCollectingStdout(command, args, prompt) {
+function spawnCollectingStdout(command, args, prompt, { timeoutMs } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'] });
     let stdout = '';
     let stderr = '';
+    let timer = null;
+    if (timeoutMs && timeoutMs > 0) {
+      timer = setTimeout(() => {
+        child.kill('SIGTERM');
+        reject(new Error(`${command} timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
+    }
     child.stdout.on('data', (chunk) => {
       stdout += chunk;
     });
     child.stderr.on('data', (chunk) => {
       stderr += chunk;
     });
-    child.on('error', reject);
+    child.on('error', (error) => {
+      if (timer) clearTimeout(timer);
+      reject(error);
+    });
     child.on('close', (code) => {
+      if (timer) clearTimeout(timer);
       if (code !== 0) {
         reject(new Error(`${command} exited with ${code}: ${stderr}`));
         return;
@@ -71,7 +82,10 @@ function runClaudeResearch(prompt) {
     .map((t) => t.trim())
     .filter(Boolean);
   const args = ['-p', '--model', model, '--output-format', 'text', '--allowedTools', ...tools];
-  return spawnCollectingStdout(command, args, prompt);
+  // §7 결정 #4: tool-enabled 호출은 무한정 hang 할 수 있으므로 wall-clock budget 을 건다.
+  // 기본 10분, CLAUDE_RESEARCH_TIMEOUT_MS 로 조정(0 이면 무제한).
+  const timeoutMs = Number(process.env.CLAUDE_RESEARCH_TIMEOUT_MS ?? 600000);
+  return spawnCollectingStdout(command, args, prompt, { timeoutMs });
 }
 
 /**

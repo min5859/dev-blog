@@ -169,6 +169,14 @@ Determinism / audit:
   `data/generated/linux/`, mirroring the current snapshot+latest pattern.
 - External fetches are non-deterministic; the dossier *is* the reproducible
   snapshot. A re-run of `write` against a frozen dossier must be stable.
+- `RESEARCH_RAW_PATH=<stdout file>` re-parses a previous adapter stdout
+  without re-calling the model (recovery/debugging).
+- `normalizeDossier` trims any `evidence.quote` over 200 chars before
+  validation, so a chatty model doesn't fail an otherwise-good dossier.
+- **Time budget (decision #4)**: `runClaudeResearch` runs under a wall-clock
+  timeout — default 10 min, `CLAUDE_RESEARCH_TIMEOUT_MS` overrides (0 =
+  unbounded). On timeout the child is SIGTERM'd and the run fails loudly
+  rather than hanging.
 
 ## 5. Tradeoffs
 
@@ -235,7 +243,9 @@ Determinism / audit:
 3. **`enrichWithBodies`** — keep it in `draft` as the offline/`template`
    fallback (Step 2 emits a deterministic dossier from its output). Decided,
    not deferred.
-4. **Network/time budget** — to be fixed during Step 2 implementation.
+4. **Network/time budget** — resolved: `runClaudeResearch` runs under a
+   wall-clock timeout (default 10 min, `CLAUDE_RESEARCH_TIMEOUT_MS`, 0 =
+   unbounded); SIGTERM + fail-loud on timeout. See §4.
 
 ## Out of scope
 
