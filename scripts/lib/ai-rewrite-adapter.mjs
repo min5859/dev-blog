@@ -89,14 +89,45 @@ function runClaudeResearch(prompt) {
 }
 
 /**
- * Research 단계 어댑터. PoC 에서는 tool-capable claude 만 실제 조사를 수행하고,
- * template/codex/cursor 는 null 을 반환해 호출부가 deterministic dossier fallback 으로
- * 떨어지게 한다.
+ * Research 전용 Cursor 호출. rewrite 의 `--mode=ask`(읽기 질의) 대신 `--force`(도구 허용)로
+ * 능동 조사를 시킨다. wall-clock budget 으로 hang 방지(claude 와 동일 정책).
+ */
+async function runCursorResearch(prompt) {
+  const command = process.env.CURSOR_AGENT_BIN || 'agent';
+  const model = process.env.CURSOR_MODEL || 'claude-4.6-sonnet-medium';
+  const extra = (process.env.CURSOR_AGENT_EXTRA_ARGS || '').split(/\s+/).filter(Boolean);
+  const timeoutMs = Number(process.env.CLAUDE_RESEARCH_TIMEOUT_MS ?? 600000);
+  const dir = await mkdtemp(path.join(tmpdir(), 'dev-blog-research-'));
+  const promptFile = path.join(dir, 'prompt.md');
+  try {
+    await writeFile(promptFile, prompt, 'utf8');
+    const userMessage = [
+      'Read the file at the absolute path below. It contains research instructions and candidate JSON.',
+      'Use your available tools (web fetch/search) to investigate, then reply with a single valid dossier JSON object only.',
+      'No markdown code fences, no commentary before or after the JSON.',
+      '',
+      `File: ${promptFile}`,
+    ].join('\n');
+    const args = ['-p', '--model', model, '--output-format', 'json', '--force', ...extra, userMessage];
+    return await spawnCollectingStdout(command, args, '', { timeoutMs });
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+/**
+ * Research 단계 어댑터. tool-capable 어댑터(claude/codex/cursor)는 실제 조사를 수행하고,
+ * template 은 null 을 반환해 호출부가 deterministic dossier fallback 으로 떨어지게 한다.
+ * - claude: read-only 도구 allowlist
+ * - codex : codex exec 의 샌드박스 도구
+ * - cursor: --force 도구 허용 모드
  * @returns {Promise<string|null>}
  */
 export async function runResearchAdapterPrompt(prompt, { defaultAdapter = DEFAULT_AI_ADAPTER } = {}) {
   const adapter = resolveAiAdapter(defaultAdapter);
   if (adapter === 'claude') return runClaudeResearch(prompt);
+  if (adapter === 'codex') return runCodexExec(prompt);
+  if (adapter === 'cursor') return runCursorResearch(prompt);
   return null;
 }
 

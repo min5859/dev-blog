@@ -5,7 +5,7 @@
 - [ ] _INDEX.md 작성, .bkit 상태 갱신
 - [ ] 커밋
 
-## 2. codex/cursor research 분기 후 커밋
+## 2. codex/cursor research 분기 후 커밋 ✅
 - [ ] runResearchAdapterPrompt 에 codex/cursor 분기 추가 (claude 외에도 도구 조사 시도)
 - [ ] template fallback 보존 확인, 테스트
 - [ ] 커밋

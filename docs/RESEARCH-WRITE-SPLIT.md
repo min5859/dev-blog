@@ -159,8 +159,11 @@ tool access; the write agent stays closed (and safer for it).
   `claude -p --allowedTools "WebFetch WebSearch Bash(git log:*)" ...` with an
   explicit, **read-only** tool allowlist and a network/time budget.
 - Keep the write call exactly as the current closed transform.
-- Codex/Cursor research variants are out of scope for the PoC; gate research
-  behind the `claude` adapter first (`AI_ADAPTER=claude`).
+- Research adapters (all tool-capable; `template` → deterministic fallback):
+  - `claude` — read-only `--allowedTools WebFetch,WebSearch,Bash(git log:*)`
+  - `codex` — `codex exec` sandbox tools
+  - `cursor` — `--force` tool mode (vs `--mode=ask` for the closed rewrite)
+  - all three share the `CLAUDE_RESEARCH_TIMEOUT_MS` wall-clock budget.
 
 Determinism / audit:
 
