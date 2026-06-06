@@ -1,21 +1,30 @@
-# Todo — research/write 후속 4종
+# Todo — content-quality-enhancements (PDCA #2)
 
-## 1. PDCA archive 후 커밋 ✅
-- [ ] docs/archive/2026-06/research-write-split/ 에 analysis·report 이동 (설계 문서는 살아있는 스펙으로 docs/ 유지)
-- [ ] _INDEX.md 작성, .bkit 상태 갱신
+Plan: docs/01-plan/features/content-quality-enhancements.plan.md
+구현 순서: B → A → D → C → E. 각 단계 독립 커밋.
+
+## B. research/write 모델 분리
+- [ ] CLAUDE_RESEARCH_MODEL (+ CODEX/CURSOR) 추가, write 는 기존 모델 유지
+- [ ] 문서화, 커밋
+
+## A. 원문 인용 노출
+- [ ] dossierToPost 가 evidence.quote 를 blockquote 로, write 프롬프트도 인용 지시
+- [ ] build-site blockquote 렌더 확인
 - [ ] 커밋
 
-## 2. codex/cursor research 분기 후 커밋 ✅
-- [ ] runResearchAdapterPrompt 에 codex/cursor 분기 추가 (claude 외에도 도구 조사 시도)
-- [ ] template fallback 보존 확인, 테스트
+## D. 어제 대비 변화만
+- [ ] research-runner 가 어제 dossier 로드 → 동일 candidateId 에 seenBefore 표시
+- [ ] write 가 변화 중심 강조
 - [ ] 커밋
 
-## 3. 멀티토픽 확장 후 커밋 ✅
-- [ ] research 를 토픽-범용 lib(research-runner.mjs)로 추출: claude 경로는 토픽 무관, deterministic 은 generic 빌더
-- [ ] dossier-to-post 섹션 매핑 파라미터화
-- [ ] 1개 추가 토픽(opensource)에 적용 + 테스트
+## C. dossier 교차검증
+- [ ] research-runner verify: evidence.url 재fetch → quote 부분일치 확인, 실패 시 confidence 강등 + openQuestions
 - [ ] 커밋
 
-## 4. 오늘 날짜 적용 + preview
-- [ ] linux claude research+write 실제 운영 → publish → build
-- [ ] 로컬 serve 로 사용자가 http://localhost:4321 에서 확인
+## E. 주간 롤업
+- [ ] 최근 7일 dossier 모아 핵심만 재작성 (weekly write)
+- [ ] 커밋
+
+---
+## 이전 사이클 (research-write-split, 완료·archived)
+1~4 ✅ + claude/codex/cursor 웹검색 검증 + extractJsonObject 버그수정
