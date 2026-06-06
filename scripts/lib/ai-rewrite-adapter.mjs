@@ -318,16 +318,17 @@ export function extractJsonObject(text, predicate = () => true) {
   const single = tryJsonParse(trimmed);
   if (single) {
     if (isResultEnvelope(single)) {
-      const inner = tryJsonParse(single.result.trim());
-      if (inner && predicate(inner)) return inner;
+      // result 가 순수 JSON 이거나 "설명 텍스트 + JSON" 혼합일 수 있으므로 재귀 추출.
+      const inner = extractJsonObject(single.result, predicate);
+      if (inner) return inner;
     } else if (predicate(single)) {
       return single;
     }
   }
   for (const value of collectJsonValues(trimmed)) {
     if (isResultEnvelope(value)) {
-      const inner = tryJsonParse(value.result.trim());
-      if (inner && predicate(inner)) return inner;
+      const inner = extractJsonObject(value.result, predicate);
+      if (inner) return inner;
     } else if (predicate(value)) {
       return value;
     }
