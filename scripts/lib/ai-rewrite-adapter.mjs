@@ -28,10 +28,7 @@ export function resolveAiAdapter(defaultValue = DEFAULT_AI_ADAPTER) {
   return raw;
 }
 
-function runClaudeStdin(prompt) {
-  const command = process.env.CLAUDE_BIN || 'claude';
-  const model = process.env.CLAUDE_MODEL || 'sonnet';
-  const args = (process.env.CLAUDE_ARGS || `-p --model ${model} --output-format text`).split(/\s+/).filter(Boolean);
+function spawnCollectingStdout(command, args, prompt) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'] });
     let stdout = '';
@@ -52,6 +49,41 @@ function runClaudeStdin(prompt) {
     });
     child.stdin.end(prompt);
   });
+}
+
+function runClaudeStdin(prompt) {
+  const command = process.env.CLAUDE_BIN || 'claude';
+  const model = process.env.CLAUDE_MODEL || 'sonnet';
+  const args = (process.env.CLAUDE_ARGS || `-p --model ${model} --output-format text`).split(/\s+/).filter(Boolean);
+  return spawnCollectingStdout(command, args, prompt);
+}
+
+/**
+ * Research 전용 Claude 호출. 닫힌 rewrite 와 달리 read-only 도구 allowlist 를 부여한다.
+ * 도구 이름에 공백이 들어갈 수 있으므로(`Bash(git log:*)`) 콤마 구분 후 개별 인자로 넘긴다.
+ * 설계: docs/RESEARCH-WRITE-SPLIT.md §4
+ */
+function runClaudeResearch(prompt) {
+  const command = process.env.CLAUDE_BIN || 'claude';
+  const model = process.env.CLAUDE_MODEL || 'sonnet';
+  const tools = (process.env.CLAUDE_RESEARCH_TOOLS || 'WebFetch,WebSearch,Bash(git log:*)')
+    .split(',')
+    .map((t) => t.trim())
+    .filter(Boolean);
+  const args = ['-p', '--model', model, '--output-format', 'text', '--allowedTools', ...tools];
+  return spawnCollectingStdout(command, args, prompt);
+}
+
+/**
+ * Research 단계 어댑터. PoC 에서는 tool-capable claude 만 실제 조사를 수행하고,
+ * template/codex/cursor 는 null 을 반환해 호출부가 deterministic dossier fallback 으로
+ * 떨어지게 한다.
+ * @returns {Promise<string|null>}
+ */
+export async function runResearchAdapterPrompt(prompt, { defaultAdapter = DEFAULT_AI_ADAPTER } = {}) {
+  const adapter = resolveAiAdapter(defaultAdapter);
+  if (adapter === 'claude') return runClaudeResearch(prompt);
+  return null;
 }
 
 async function runCursorAgentFilePrompt(prompt) {
@@ -229,6 +261,38 @@ export function parseNewsletterJsonFromAiOutput(text) {
   }
 
   throw new Error('AI response did not contain JSON');
+}
+
+/**
+ * 임의의 AI stdout 에서 predicate 를 만족하는 JSON 객체를 추출한다 (newsletter 가 아닌
+ * dossier 등 다른 스키마용). 순수 JSON → result 봉투 → 본문 내 균형 객체 → 코드펜스 순으로 시도.
+ */
+export function extractJsonObject(text, predicate = () => true) {
+  const trimmed = String(text || '').trim();
+  if (!trimmed) return null;
+  const single = tryJsonParse(trimmed);
+  if (single) {
+    if (isResultEnvelope(single)) {
+      const inner = tryJsonParse(single.result.trim());
+      if (inner && predicate(inner)) return inner;
+    } else if (predicate(single)) {
+      return single;
+    }
+  }
+  for (const value of collectJsonValues(trimmed)) {
+    if (isResultEnvelope(value)) {
+      const inner = tryJsonParse(value.result.trim());
+      if (inner && predicate(inner)) return inner;
+    } else if (predicate(value)) {
+      return value;
+    }
+  }
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fenced) {
+    const parsed = tryJsonParse(fenced[1].trim());
+    if (parsed && predicate(parsed)) return parsed;
+  }
+  return null;
 }
 
 function tryJsonParse(text) {
