@@ -146,6 +146,26 @@
 | 2차 소스 evidence (claude) | — | LWN 5 / CVE 2 | 기존 0 → 돌파 |
 | write URL grounding | 100% | 10/10 | ✅ |
 
+### 5.3 BEFORE/AFTER 정량 비교 (2026-06-06, write 엔진 고정)
+
+> 같은 하루 candidates로 write 엔진(template)을 고정하고 입력만 바꿔 "조사 단계의 효과"를 격리.
+> BEFORE = draft(700자 excerpt + commit) 입력 / AFTER = claude 도구 조사 dossier 입력.
+
+| 지표 | BEFORE (draft) | AFTER (claude 조사) |
+|------|:--------------:|:-------------------:|
+| 본문 글자 수 | 1,343 | **2,866** (≈2.1배) |
+| 2차 분석 소스 (LWN/Phoronix) | 0 | **2** |
+| CVE 언급 | 0 | **4** |
+| 출처 종류 | lore/kernel.org (1차) | **article(LWN)/changelog/thread** |
+| 출처 수 | 7 | 4 (국부 패치 2건 자율 제외 + 압축) |
+
+**해석**: AFTER의 출처 *수*는 오히려 적지만(질적 선별), 본문 정보 밀도는 2배, 2차 분석 소스·CVE가 0→다수로 등장.
+동일 7.0.11 stable 항목 본문 대조:
+- BEFORE: `안정 커널 사용 환경 (공개일 2026-06-01)` — 메타데이터 한 줄.
+- AFTER: `462건 백포트, 501개 파일/6371줄 수정, security/keys RCU 픽스, tap_ioctl 정보 누수 차단, Greg KH "전 사용자 업그레이드 권고"` + LWN 출처.
+
+조사 단계가 실제로 검증된 심층 정보를 본문에 추가한다는 가설이 정량으로 확인됨.
+
 ### 5.2 Resolved Issues
 
 | Issue | Resolution | Result |
