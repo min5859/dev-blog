@@ -1,30 +1,28 @@
-# Todo — content-quality-enhancements (PDCA #2)
+# Todo — topic-dossier-first-rollout (PDCA #3)
 
-Plan: docs/01-plan/features/content-quality-enhancements.plan.md
-구현 순서: B → A → D → C → E. 각 단계 독립 커밋.
+Plan: docs/01-plan/features/topic-dossier-first-rollout.plan.md
+순서: write-runner → linux/opensource 리팩터 → android → ai-coding-agents → opensource-curation → lore-lens. 각 단계 커밋.
 
-## B. research/write 모델 분리 ✅
-- [ ] CLAUDE_RESEARCH_MODEL (+ CODEX/CURSOR) 추가, write 는 기존 모델 유지
-- [ ] 문서화, 커밋
+## 1. write-runner 추출 + linux/opensource 리팩터
+- [ ] scripts/lib/write-runner.mjs (dossier 우선 입력 + AI/fallback + validate + audit + 저장)
+- [ ] ai-rewrite-linux/opensource 를 runner 사용으로 전환 (산출 동일)
+- [ ] 테스트, 커밋
 
-## A. 원문 인용 노출 ✅
-- [ ] dossierToPost 가 evidence.quote 를 blockquote 로, write 프롬프트도 인용 지시
-- [ ] build-site blockquote 렌더 확인
+## 2. android dossier-first
+- [ ] research-android.mjs + 프롬프트 2 + ai-rewrite dossier + run-daily research + scripts
 - [ ] 커밋
 
-## D. 어제 대비 변화만 ✅
-- [ ] research-runner 가 어제 dossier 로드 → 동일 candidateId 에 seenBefore 표시
-- [ ] write 가 변화 중심 강조
-- [ ] 커밋
+## 3. ai-coding-agents dossier-first
+- [ ] 동일 레시피, 커밋
 
-## C. dossier 교차검증 ✅
-- [ ] research-runner verify: evidence.url 재fetch → quote 부분일치 확인, 실패 시 confidence 강등 + openQuestions
-- [ ] 커밋
+## 4. opensource-curation dossier-first
+- [ ] 동일 레시피, 커밋
 
-## E. 주간 롤업 ✅
-- [ ] 최근 7일 dossier 모아 핵심만 재작성 (weekly write)
+## 5. lore-lens dossier-first (topic 인자형)
+- [ ] research-lore-lens.mjs <topic> + 렌즈 공용 프롬프트 2 + ai-rewrite/run-daily 배선
 - [ ] 커밋
 
 ---
-## 이전 사이클 (research-write-split, 완료·archived)
-1~4 ✅ + claude/codex/cursor 웹검색 검증 + extractJsonObject 버그수정
+## 이전 사이클 (완료)
+- research-write-split (PDCA #1, archived)
+- content-quality-enhancements A~E (PDCA #2)
