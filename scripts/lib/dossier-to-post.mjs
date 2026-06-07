@@ -20,8 +20,16 @@ const SECTION_BY_IMPACT = {
 };
 const SEVERITY_RANK = { security: 0, regression: 0, release: 1, backport: 2, 'api-abi': 2 };
 
+// 한국어 본문 안전화: deterministic dossier 의 whatChanged/quote 는 원문(영어+한자/가나, 외부 url)을
+// 담을 수 있다. 본문 삽입 전에 raw URL(정식 링크는 [원문 확인] 으로 별도)과 한자·가나를 제거한다
+// → quality-guard 의 ungrounded-URL / non-Korean-CJK 가드를 통과한다.
 function oneLine(text, max = 160) {
-  return String(text || '').replace(/\s+/g, ' ').trim().slice(0, max);
+  return String(text || '')
+    .replace(/https?:\/\/\S+/g, '')
+    .replace(/[぀-ヿ㐀-䶿一-鿿]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, max);
 }
 
 function firstUrl(entry) {
@@ -52,8 +60,12 @@ function entryToHighlight(entry) {
 
 // A: dossier 의 evidence.quote(원문 발췌)를 blockquote 로 노출 → 독자가 근거를 바로 확인.
 // build-site 가 body 를 marked 로 렌더하고 blockquote CSS 가 있으므로 markdown `>` 면 충분.
+// 인용문은 원문 발췌라 외국어가 섞일 수 있다. oneLine 으로 url·한자·가나를 제거한 뒤
+// 너무 짧아지면(의미 손실) 인용을 생략한다.
 function firstQuote(entry) {
-  return (entry.evidence || []).map((x) => x.quote).find((q) => typeof q === 'string' && q.trim());
+  const raw = (entry.evidence || []).map((x) => x.quote).find((q) => typeof q === 'string' && q.trim());
+  const cleaned = oneLine(raw, 200);
+  return cleaned.length >= 10 ? cleaned : '';
 }
 
 function sectionBody(entries) {

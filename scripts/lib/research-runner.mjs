@@ -44,7 +44,7 @@ function evidenceKindOf(record) {
 // 토픽 무관 deterministic entry. 풍부한 토픽은 entryBuilder 주입으로 대체.
 function genericEntry(record, { defaultAudience }) {
   const title = stripCommonPrefix(record.title);
-  const commit = String(record.commitMessage || '').trim();
+  const commit = String(record.commitMessage || record.body || '').trim();
   const firstPara = commit ? commit.split(/\n\n/)[0].replace(/\s+/g, ' ').trim().slice(0, 280) : '';
   const impactType = IMPACT_TYPE_VALUES.has(record.impactType) ? record.impactType : genericImpactType(record);
   const whatChanged = firstPara || `${title} — 메타데이터 기준 후보입니다. 구체 변경은 원문에서 확인이 필요합니다.`;
@@ -75,7 +75,7 @@ function slimCandidate(record) {
     kind: record.kind,
     observedDate: record.observedDate,
     matchedSubsystems: record.matchedSubsystems || [],
-    commitMessage: record.commitMessage || '',
+    commitMessage: record.commitMessage || record.body || '',
   };
 }
 
@@ -164,9 +164,12 @@ export async function verifyDossier(dossier, { perUrlTimeoutMs = 15000 } = {}) {
 export async function runResearch(cfg) {
   const { topic, runDate, generatedDir, candidatesPath, promptTemplatePath, adapter, generatedAt, defaultAudience, entryBuilder } = cfg;
 
+  // 토픽별 candidates 저장 구조 차이 흡수: 배열 직접 또는 { candidates: [...] }.
   const candidatesData = JSON.parse(await readFile(candidatesPath, 'utf8'));
-  const candidates = Array.isArray(candidatesData.candidates) ? candidatesData.candidates : [];
-  if (!candidates.length) throw new Error(`${path.relative(root, candidatesPath)} has no candidates[]`);
+  const candidates = Array.isArray(candidatesData)
+    ? candidatesData
+    : Array.isArray(candidatesData.candidates) ? candidatesData.candidates : [];
+  if (!candidates.length) throw new Error(`${path.relative(root, candidatesPath)} has no candidates`);
 
   await mkdir(generatedDir, { recursive: true });
 

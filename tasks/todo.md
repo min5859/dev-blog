@@ -12,7 +12,7 @@ Plan: docs/01-plan/features/topic-dossier-first-rollout.plan.md
 - [ ] research-android.mjs + 프롬프트 2 + ai-rewrite dossier + run-daily research + scripts
 - [ ] 커밋
 
-## 3. ai-coding-agents dossier-first
+## 3. ai-coding-agents dossier-first ✅
 - [ ] 동일 레시피, 커밋
 
 ## 4. opensource-curation dossier-first

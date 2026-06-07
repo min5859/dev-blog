@@ -12,12 +12,15 @@ const rewriteScript = {
   cursor: 'rewrite:ai-coding-agents:cursor',
 }[rewriteAdapter] || `rewrite:ai-coding-agents:${DEFAULT_AI_ADAPTER}`;
 
+const researchScript = rewriteAdapter === 'claude' ? 'research:ai-coding-agents:claude' : 'research:ai-coding-agents';
+
 const steps = [
-  ['collect', 'npm', ['run', 'collect:ai-coding-agents']],
-  ['draft',   'npm', ['run', 'draft:ai-coding-agents']],
-  ['rewrite', 'npm', ['run', rewriteScript]],
+  ['collect',  'npm', ['run', 'collect:ai-coding-agents']],
+  ['draft',    'npm', ['run', 'draft:ai-coding-agents']],
+  ['research', 'npm', ['run', researchScript]],
+  ['rewrite',  'npm', ['run', rewriteScript]],
   ...(shouldPublish ? [['publish', 'npm', ['run', 'publish:ai-coding-agents']]] : []),
-  ['build',   'npm', ['run', 'build']],
+  ['build',    'npm', ['run', 'build']],
 ];
 
 runPipeline({ topic: 'ai-coding-agents', logTitle: 'AI 코딩 에이전트 파이프라인', steps, runDate, extraStatus: { publishEnabled: shouldPublish } });
