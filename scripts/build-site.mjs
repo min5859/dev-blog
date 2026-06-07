@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { marked } from 'marked';
 
@@ -867,12 +867,21 @@ async function build() {
   await mkdir(path.join(publicDir, 'topics'), { recursive: true });
   await mkdir(path.join(publicDir, 'posts'), { recursive: true });
   await mkdir(path.join(publicDir, 'tags'), { recursive: true });
+  // 원본 정적 자산(독립 HTML 등) 그대로 복사: content/static/** → public/static/**
+  // 빌드가 public/ 을 매번 비우므로, 소실되지 않도록 content/static 에 두고 여기서 복사한다.
+  try {
+    await cp(path.join(root, 'content', 'static'), path.join(publicDir, 'static'), { recursive: true });
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err;
+  }
   await writeStyles();
 
+  const featuredPosts = posts.filter((post) => post.featured);
   const home = renderLayout({
     title: siteTitle,
     buildStamp,
     body: `${renderHomeHead()}
+${featuredPosts.length ? `<section class="featured"><h2>주목</h2><div class="grid">${featuredPosts.map(renderPostCard).join('\n')}</div></section>` : ''}
 ${renderPipelineStatus(pipelineStatus)}
 ${renderReleaseStatus(releaseStatus)}
 <section><h2>주제</h2><div class="grid">${topics.map((topic) => `<article class="card"><h3><a href="${link(`/topics/${topic.slug}.html`)}">${escapeHtml(topic.title)}</a></h3><p>${escapeHtml(topic.description)}</p><p class="meta">${topic.posts.length}개 글</p></article>`).join('\n')}</div></section>`,

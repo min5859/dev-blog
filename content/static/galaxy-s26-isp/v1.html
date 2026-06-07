@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>갤럭시 S26 ISP 드라이버 분석 · Qualcomm vs Exynos</title>
+<style>
+  :root{
+    --qc:#c8102e;        /* Qualcomm red */
+    --qc-bg:#fdeaec;
+    --qc-line:#e78894;
+    --ex:#1428a0;        /* Samsung blue */
+    --ex-bg:#e9ecf8;
+    --ex-line:#8a98d8;
+    --ink:#1d2433;
+    --muted:#5b6577;
+    --line:#dfe3ea;
+    --bg:#f6f7f9;
+    --card:#ffffff;
+    --code:#0b1021;
+    --accent:#0f9d6b;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+    color:var(--ink);background:var(--bg);line-height:1.7;-webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1080px;margin:0 auto;padding:0 20px}
+  header.hero{
+    background:linear-gradient(135deg,#11131a,#1f2740 60%,#2a1f33);color:#fff;padding:56px 0 48px;
+  }
+  header.hero .wrap{max-width:1080px}
+  .eyebrow{letter-spacing:.18em;font-size:12px;text-transform:uppercase;color:#9fb0d8;font-weight:700}
+  h1{font-size:34px;line-height:1.25;margin:10px 0 12px;font-weight:800}
+  .sub{color:#c7cede;font-size:16px;max-width:760px}
+  .chips{margin-top:22px;display:flex;flex-wrap:wrap;gap:10px}
+  .chip{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);padding:7px 13px;border-radius:999px;font-size:13px;color:#e7ecf7}
+  .chip b{color:#fff}
+
+  nav.toc{
+    position:sticky;top:0;z-index:20;background:rgba(255,255,255,.92);backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--line);
+  }
+  nav.toc .wrap{display:flex;gap:6px;flex-wrap:wrap;padding:10px 20px}
+  nav.toc a{font-size:13px;color:var(--muted);text-decoration:none;padding:6px 11px;border-radius:8px;font-weight:600}
+  nav.toc a:hover{background:var(--bg);color:var(--ink)}
+
+  section{padding:44px 0;border-bottom:1px solid var(--line)}
+  h2{font-size:25px;margin:0 0 6px;font-weight:800;display:flex;align-items:center;gap:10px}
+  h2 .num{font-size:14px;background:var(--ink);color:#fff;width:28px;height:28px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto}
+  .lead{color:var(--muted);margin:0 0 22px;font-size:15.5px}
+  h3{font-size:18px;margin:26px 0 10px;font-weight:700}
+
+  /* two-column compare */
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:780px){.cols{grid-template-columns:1fr}}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 18px 20px;box-shadow:0 1px 2px rgba(20,30,60,.04)}
+  .panel.qc{border-top:4px solid var(--qc)}
+  .panel.ex{border-top:4px solid var(--ex)}
+  .badge{display:inline-flex;align-items:center;gap:7px;font-weight:800;font-size:13px;padding:4px 11px;border-radius:999px;margin-bottom:6px}
+  .badge.qc{background:var(--qc-bg);color:var(--qc)}
+  .badge.ex{background:var(--ex-bg);color:var(--ex)}
+  .panel .model{font-size:12.5px;color:var(--muted);margin-bottom:12px}
+
+  /* block diagram */
+  .diagram{display:flex;flex-direction:column;align-items:stretch;gap:0;margin:6px 0 4px}
+  .blk{
+    border:1.5px solid var(--line);border-radius:10px;padding:10px 12px;background:#fbfcfe;text-align:center;
+    font-size:13.5px;font-weight:600;color:var(--ink);position:relative;
+  }
+  .blk small{display:block;font-weight:500;color:var(--muted);font-size:11.5px;margin-top:2px}
+  .blk.q{background:var(--qc-bg);border-color:var(--qc-line)}
+  .blk.e{background:var(--ex-bg);border-color:var(--ex-line)}
+  .blk.fw{background:#fff6e6;border-color:#e8c879;border-style:dashed}
+  .blk.hw{background:#eaf6ef;border-color:#9bd3b4}
+  .blk.user{background:#eef0f4;border-color:#cdd3df}
+  .arrow{height:26px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:13px}
+  .arrow::before{content:"▼";font-size:11px}
+  .arrow.lbl{font-size:11px;font-weight:600}
+  .arrow.lbl::before{content:"▼  ";font-size:9px;margin-right:4px}
+  .split{display:flex;gap:8px}
+  .split .blk{flex:1}
+  .firmware-box{border:2px dashed #e0a93b;border-radius:12px;padding:8px;background:#fffaf0;margin:0}
+  .firmware-box .tag{font-size:11px;font-weight:800;color:#b3791a;text-align:center;margin-bottom:6px;letter-spacing:.04em}
+
+  /* key-point callout */
+  .callout{border-radius:12px;padding:16px 18px;margin:20px 0;font-size:15px;border:1px solid var(--line);background:var(--card)}
+  .callout.key{border-left:5px solid var(--accent);background:#f0faf5}
+  .callout b{color:var(--ink)}
+  .callout .t{font-weight:800;color:var(--accent);font-size:13px;letter-spacing:.04em;margin-bottom:4px}
+
+  /* table */
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:14px;background:var(--card);border-radius:12px;overflow:hidden;border:1px solid var(--line)}
+  th,td{padding:11px 14px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+  th{background:#f0f2f6;font-weight:700;font-size:13px}
+  th.qc{color:var(--qc)} th.ex{color:var(--ex)}
+  tr:last-child td{border-bottom:none}
+  td.axis{font-weight:700;color:var(--muted);width:22%}
+  code{background:#eef0f4;padding:1.5px 6px;border-radius:5px;font-size:12.5px;font-family:"SF Mono",Menlo,Consolas,monospace;color:#324}
+  .file{color:var(--qc);font-size:11.5px}
+  .panel.ex .file{color:var(--ex)}
+
+  ul.clean{margin:8px 0;padding-left:18px}
+  ul.clean li{margin:6px 0}
+  .pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;background:#eef0f4;color:var(--muted)}
+  .vs{display:flex;align-items:center;justify-content:center;font-weight:800;color:var(--muted);font-size:13px}
+  footer{padding:30px 0 60px;color:var(--muted);font-size:13px;text-align:center}
+  .disclaimer{background:#fff8e6;border:1px solid #ecd28f;border-radius:10px;padding:12px 16px;font-size:13px;color:#7a5a12;margin-top:18px}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="eyebrow">Galaxy S26 · Camera ISP Kernel Driver</div>
+    <h1>퀄컴 vs 엑시노스 ISP 디바이스 드라이버 분석</h1>
+    <p class="sub">같은 갤럭시 S26인데 칩셋에 따라 카메라 ISP 커널 드라이버가 완전히 다른 두 코드베이스입니다.
+    실제 삼성 오픈소스 커널 코드를 풀어 데이터 흐름과 설계 철학의 차이를 정리했습니다.</p>
+    <div class="chips">
+      <span class="chip"><b>Qualcomm</b> · SM-S948U/N · Snapdragon <b>canoe</b> · cam_isp</span>
+      <span class="chip"><b>Exynos</b> · SM-S942N/S947N · <b>erd9965</b> · Pablo</span>
+      <span class="chip">kernel-6.12 · Android 16</span>
+    </div>
+  </div>
+</header>
+
+<nav class="toc">
+  <div class="wrap">
+    <a href="#overview">개요</a>
+    <a href="#flow">데이터 흐름</a>
+    <a href="#diff">핵심 차이</a>
+    <a href="#t1">① 프레임 복구</a>
+    <a href="#t2">② 설정 적용</a>
+    <a href="#t3">③ 진화 방향</a>
+    <a href="#summary">종합</a>
+  </div>
+</nav>
+
+<!-- OVERVIEW -->
+<section id="overview">
+  <div class="wrap">
+    <h2><span class="num">0</span> 무엇을 분석했나</h2>
+    <p class="lead">삼성 오픈소스(opensource.samsung.com)에서 받은 S26 커널 4종. 칩에 따라 카메라 드라이버 자체가 다릅니다.</p>
+    <table>
+      <tr><th>모델</th><th>칩셋</th><th>ISP 드라이버</th><th>코드 경로</th></tr>
+      <tr><td><b>SM-S948U / S948N</b><br><span class="pill">S26 Ultra</span></td><td>Snapdragon <code>canoe</code></td><td>Qualcomm <b>cam_isp</b></td><td><code>vendor/qcom/opensource/camera-kernel</code></td></tr>
+      <tr><td><b>SM-S942N / S947N</b></td><td>Exynos <code>erd9965</code></td><td>Samsung <b>Pablo</b> (구 FIMC-IS)</td><td><code>exynos/external-modules/camera/camera</code></td></tr>
+    </table>
+    <div class="callout key">
+      <div class="t">한 줄 요약</div>
+      <b>Qualcomm</b>은 “커널 = 레지스터 명령 컴파일러, 알고리즘 = 유저스페이스”,
+      <b>Exynos</b>는 “커널 = 펌웨어 심부름꾼, 알고리즘 = on-chip 펌웨어”. 이 한 줄에서 모든 차이가 갈립니다.
+    </div>
+  </div>
+</section>
+
+<!-- DATA FLOW -->
+<section id="flow">
+  <div class="wrap">
+    <h2><span class="num">1</span> 데이터 흐름 한눈에 보기</h2>
+    <p class="lead">“요청이 들어와서 → 설정이 하드웨어에 적용되고 → 프레임이 완성되는” 전체 경로를 양쪽 나란히 비교합니다.</p>
+    <div class="cols">
+
+      <!-- QUALCOMM FLOW -->
+      <div class="panel qc">
+        <span class="badge qc">● QUALCOMM cam_isp</span>
+        <div class="model">SM-S948U Ultra · Snapdragon canoe</div>
+        <div class="diagram">
+          <div class="blk user">유저스페이스 CamX / HAL<small>packet + blob (프레임별 설정)</small></div>
+          <div class="arrow lbl">ioctl</div>
+          <div class="blk q">cam_isp_context<small>상태머신 SOF→APPLIED→EPOCH</small></div>
+          <div class="arrow lbl">apply_req → hw_config()</div>
+          <div class="blk q">cam_ife_hw_mgr<small>패킷을 CDM 명령 리스트로 번역</small></div>
+          <div class="arrow lbl">cam_cdm_submit_bls()</div>
+          <div class="blk hw">CDM (DMA 엔진)<small>레지스터에 일괄 write</small></div>
+          <div class="arrow"></div>
+          <div class="blk hw">CSID</div>
+          <div class="arrow"></div>
+          <div class="split">
+            <div class="blk hw">SFE<small>센서 전단</small></div>
+            <div class="blk hw">IFE<small>픽셀 처리</small></div>
+          </div>
+          <div class="arrow"></div>
+          <div class="blk hw">BUS_WR → DDR 메모리</div>
+        </div>
+        <div class="callout" style="margin:14px 0 0;font-size:13.5px">
+          🔑 <b>3A(AE·AWB·AF)는 커널에 없음.</b> HW가 통계만 뽑고 실제 연산은
+          <b>유저스페이스 CamX</b>가 수행 → 다시 packet으로 내려보냄.
+        </div>
+      </div>
+
+      <!-- EXYNOS FLOW -->
+      <div class="panel ex">
+        <span class="badge ex">● EXYNOS Pablo</span>
+        <div class="model">SM-S942N · Exynos erd9965</div>
+        <div class="diagram">
+          <div class="blk user">유저스페이스 Camera HAL<small>V4L2 QBUF + camera2_shot</small></div>
+          <div class="arrow lbl">shot</div>
+          <div class="blk e">is-groupmgr<small>그룹 체인 SS0→BYRP→RGBP→YUVP→MCS</small></div>
+          <div class="arrow lbl">is_group_shot()</div>
+          <div class="blk e">is-hw-control<small>shot_callback → DDK 펌웨어 호출</small></div>
+          <div class="arrow lbl">send_msg_shot() · mailbox</div>
+          <div class="firmware-box">
+            <div class="tag">⚙ ICPU (독립 코프로세서) + 펌웨어</div>
+            <div class="blk fw">RTA — 3A 알고리즘<small>AE · AWB · AF 연산</small></div>
+            <div class="arrow"></div>
+            <div class="blk fw">DDK — 레지스터 프로그래밍</div>
+          </div>
+          <div class="arrow lbl">FRAME_START</div>
+          <div class="split">
+            <div class="blk hw">BYRP</div><div class="blk hw">RGBP</div><div class="blk hw">MCS</div>
+          </div>
+          <div class="arrow lbl">FRAME_END → get_meta()</div>
+          <div class="blk hw">DDR 메모리 → DQBUF</div>
+        </div>
+        <div class="callout" style="margin:14px 0 0;font-size:13.5px">
+          🔑 <b>3A는 ICPU 펌웨어 RTA가 연산.</b> 커널은 mailbox로 통계를 넘기고
+          결과를 받아올 뿐 — 커널·유저 둘 다 가벼움.
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- KEY DIFF -->
+<section id="diff">
+  <div class="wrap">
+    <h2><span class="num">2</span> 핵심 차이 (코드로 검증)</h2>
+    <p class="lead">실제 두 커널 소스를 대조해 확인한 차이입니다.</p>
+    <table>
+      <tr><th>관점</th><th class="qc">Qualcomm cam_isp</th><th class="ex">Exynos Pablo</th></tr>
+      <tr><td class="axis">커널의 역할</td><td>얇은 <b>명령 번역기</b> (packet→CDM)</td><td><b>그룹 오케스트레이터</b> (groupmgr/ischain)</td></tr>
+      <tr><td class="axis">3A 연산 위치</td><td><b>유저스페이스 CamX</b></td><td><b>ICPU 펌웨어 RTA</b> (커널·유저 아님)</td></tr>
+      <tr><td class="axis">HW 설정 적용 주체</td><td><b>CDM</b> (레지스터 명령 DMA 엔진)</td><td><b>DDK 펌웨어</b> (공유메모리 읽어 프로그래밍)</td></tr>
+      <tr><td class="axis">프레임 단위</td><td><code>packet</code> + <code>blob</code></td><td><code>camera2_shot</code> + DVA</td></tr>
+      <tr><td class="axis">AP↔처리부 통신</td><td>메모리맵 레지스터 + CDM submit (동기)</td><td><b>mailbox 메시지</b> (비동기)</td></tr>
+      <tr><td class="axis">멀티디바이스 동기화</td><td><b>별도 모듈 CRM</b> + 버블 복구</td><td>groupmgr 내장 (semaphore+atomic)</td></tr>
+      <tr><td class="axis">신형 전처리</td><td><b>SFE</b> 추가 (센서 전단 분리)</td><td><b>ICPU</b> 도입 (3A 코프로세서 오프로드)</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- TOPIC 1 -->
+<section id="t1">
+  <div class="wrap">
+    <h2><span class="num">3</span> 프레임 펑크 복구: 살린다 vs 버린다</h2>
+    <p class="lead">“프레임이 제때 처리되지 않음”이라는 같은 상황을 정반대 철학으로 다룹니다.</p>
+    <div class="cols">
+      <div class="panel qc">
+        <span class="badge qc">QUALCOMM · 버블(Bubble)</span>
+        <h3 style="margin-top:8px">재적용 지향 — 요청을 살려낸다</h3>
+        <div class="diagram">
+          <div class="blk q">EPOCH에서 요청 못 넣음<small>처리 지연 감지</small></div>
+          <div class="arrow"></div>
+          <div class="blk q">BUBBLE 진입<small>reapply_type = REAPPLY_IO</small></div>
+          <div class="arrow lbl">buf_done</div>
+          <div class="blk q">요청을 pending_req_list로 되돌림<small>"Move active request to pending [bubble recovery]"</small></div>
+          <div class="arrow lbl">다음 프레임</div>
+          <div class="blk hw">재적용 (한 프레임 늦게라도 살림)</div>
+        </div>
+        <ul class="clean" style="font-size:13px;margin-top:10px">
+          <li><code>process_bubble</code> atomic + <code>recovery_req_id</code>로 복구 추적</li>
+          <li>CRM에 <code>CRM_KMD_WARN_INTERNAL_RECOVERY</code> 통보</li>
+          <li class="file">cam_isp_context.c:2119, :4440, :4762</li>
+        </ul>
+      </div>
+      <div class="panel ex">
+        <span class="badge ex">EXYNOS · NDONE</span>
+        <h3 style="margin-top:8px">Drop 지향 — 버리고 다음으로</h3>
+        <div class="diagram">
+          <div class="blk e">frame_ndone 호출<small>done_type = LATE/DROP/TIMEOUT</small></div>
+          <div class="arrow lbl">그룹 체인 전체 순회</div>
+          <div class="blk e">모든 HW IP에 에러 전파<small>is_hardware_frame_ndone()</small></div>
+          <div class="arrow"></div>
+          <div class="blk e">프레임 정리 FS_COMPLETE→FS_HW_FREE</div>
+          <div class="arrow lbl">앱에 알림</div>
+          <div class="blk hw">VB2_BUF_STATE_ERROR 반환 (재적용 없음)</div>
+        </div>
+        <ul class="clean" style="font-size:13px;margin-top:10px">
+          <li>ICPU shot 실패도 로그만 찍고 다음 프레임 진행</li>
+          <li>버블 같은 되돌리기 개념 자체가 없음</li>
+          <li class="file">is-hw-control.c:3038, :2829, :1088</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout">
+      <b>트레이드오프</b> — Qualcomm: 프레임 복구율↑ 대신 지연·상태관리 복잡도↑.
+      Exynos: 지연↓·흐름 단순 대신 프레임 손실 수용 (3A가 ICPU에 있어 커널이 복구를 덜 신경 써도 됨).
+    </div>
+  </div>
+</section>
+
+<!-- TOPIC 2 -->
+<section id="t2">
+  <div class="wrap">
+    <h2><span class="num">4</span> 설정 적용: 커널이 직접 vs 펌웨어에게 위임</h2>
+    <p class="lead">두 드라이버의 가장 본질적인 차이. “레지스터를 누가 쓰느냐”입니다.</p>
+    <div class="cols">
+
+      <div class="panel qc">
+        <span class="badge qc">QUALCOMM</span>
+        <h3 style="margin-top:8px">커널이 레지스터 명령을 직접 만든다</h3>
+        <div class="diagram">
+          <div class="blk user">유저 packet (cmd_desc, io_cfg)</div>
+          <div class="arrow"></div>
+          <div class="blk q">add_change_base<small>"이 IP base에 쓴다"</small></div>
+          <div class="arrow"></div>
+          <div class="blk q">add_command_buffers<small>IQ/IOCFG 버퍼 등록</small></div>
+          <div class="arrow"></div>
+          <div class="blk q">add_io_buffers<small>DDR IOVA → (주소,값) 쌍 인코딩</small></div>
+          <div class="arrow"></div>
+          <div class="blk q">add_reg_update<small>프레임 경계 적용 신호</small></div>
+          <div class="arrow lbl">hw_update_entries[]</div>
+          <div class="blk hw">CDM DMA가 순회하며 레지스터 일괄 write</div>
+        </div>
+        <div class="callout key" style="margin:12px 0 0;font-size:13px">
+          <div class="t">결정적 포인트</div>
+          레지스터 프로그래밍 로직이 <b>커널 소스(.c)에 전부 노출</b>된다. 분석 가능.
+          <div class="file" style="margin-top:6px">cam_isp_packet_parser.c · cam_vfe_bus_ver3.c:4011</div>
+        </div>
+      </div>
+
+      <div class="panel ex">
+        <span class="badge ex">EXYNOS</span>
+        <h3 style="margin-top:8px">커널은 파라미터만 채우고 펌웨어를 부른다</h3>
+        <div class="diagram">
+          <div class="blk user">camera2_shot + 파라미터</div>
+          <div class="arrow"></div>
+          <div class="blk e">is_region 공유메모리 채우기<small>IP별 파라미터 구조체</small></div>
+          <div class="arrow lbl">pmap 비트맵 ("바뀐 것만")</div>
+          <div class="blk e">CALL_LIBOP(set_param / shot)<small>FPSIMD 감싸 펌웨어 함수 호출</small></div>
+          <div class="arrow lbl">함수 호출</div>
+          <div class="firmware-box">
+            <div class="tag">⚙ DDK 펌웨어 (.so 바이너리)</div>
+            <div class="blk fw">pmap 확인 → 레지스터 프로그래밍</div>
+          </div>
+          <div class="arrow"></div>
+          <div class="blk hw">HW IP 레지스터 적용</div>
+        </div>
+        <div class="callout" style="margin:12px 0 0;font-size:13px;background:#fff6e6;border-color:#e8c879">
+          <div class="t" style="color:#b3791a">결정적 포인트</div>
+          레지스터 로직은 커널에 <b>없고 DDK 바이너리(.so)에 은닉</b>. 커널 소스만으론 추적 불가.
+          <div class="file" style="margin-top:6px;color:var(--ex)">is-interface-ddk.h:145 · is-hw-3aa.c:710 · is-param.h:598</div>
+        </div>
+      </div>
+
+    </div>
+    <table>
+      <tr><th>항목</th><th class="qc">Qualcomm</th><th class="ex">Exynos</th></tr>
+      <tr><td class="axis">레지스터 write 주체</td><td>커널이 명령 생성 → <b>CDM DMA</b></td><td><b>DDK 펌웨어</b> 함수</td></tr>
+      <tr><td class="axis">커널이 보는 것</td><td>레지스터 주소·값 쌍 전부</td><td>파라미터 구조체 + 함수 호출만</td></tr>
+      <tr><td class="axis">소스 가시성</td><td><b>.c에 다 노출</b></td><td><b>.so에 은닉</b></td></tr>
+      <tr><td class="axis">가능한 이유</td><td>CDM 하드웨어 존재</td><td>IS 칩에 DDK 펌웨어 내장</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- TOPIC 3 -->
+<section id="t3">
+  <div class="wrap">
+    <h2><span class="num">5</span> 최신 진화 방향: SFE vs ICPU</h2>
+    <p class="lead">두 회사가 최신 칩에서 “추가한 블록”의 의미가 서로 다릅니다.</p>
+    <div class="cols">
+      <div class="panel qc">
+        <span class="badge qc">QUALCOMM · SFE</span>
+        <h3 style="margin-top:8px">데이터 경로를 분화</h3>
+        <p style="font-size:14px;color:var(--muted)">Sensor Front End — 센서 전단 픽셀 처리(sHDR·Fast-shutter·베이어 전처리)를 IFE에서 떼어냄.</p>
+        <div class="diagram">
+          <div class="blk hw">센서 → CSID</div>
+          <div class="arrow"></div>
+          <div class="split">
+            <div class="blk q">SFE</div><div class="blk q">IFE</div><div class="blk q">SFE→IFE</div>
+          </div>
+          <div class="arrow"></div>
+          <div class="blk hw">DDR</div>
+        </div>
+        <p style="font-size:13px;margin-top:8px"><b>방향성:</b> 이미지 <b>데이터 파이프라인을 더 잘게 쪼개</b> 멀티프레임 HDR·고속 센서를 효율 처리. 제어는 여전히 커널+CamX.</p>
+      </div>
+      <div class="panel ex">
+        <span class="badge ex">EXYNOS · ICPU</span>
+        <h3 style="margin-top:8px">제어 지능을 오프로드</h3>
+        <p style="font-size:14px;color:var(--muted)">Image Control Processing Unit — 3A 연산을 전용 코프로세서 펌웨어(RTA)로 완전히 이관.</p>
+        <div class="diagram">
+          <div class="blk e">커널 (shot 전달만)</div>
+          <div class="arrow lbl">mailbox 비동기</div>
+          <div class="firmware-box">
+            <div class="tag">⚙ ICPU 코프로세서</div>
+            <div class="blk fw">RTA — AE/AWB/AF 연산</div>
+          </div>
+          <div class="arrow"></div>
+          <div class="blk hw">결과 → HW 적용</div>
+        </div>
+        <p style="font-size:13px;margin-top:8px"><b>방향성:</b> <b>제어/알고리즘 지능을 전용 칩으로 내려</b> AP·커널 부하↓, 실시간 결정성↑.</p>
+      </div>
+    </div>
+    <div class="callout key">
+      <div class="t">방향성 요약</div>
+      Qualcomm은 <b>“데이터 경로(SFE)를 분화”</b>, Exynos는 <b>“제어 지능(ICPU/RTA)을 펌웨어로 오프로드”</b>.
+      같은 ISP 진화지만 Qualcomm은 <b>픽셀 흐름 최적화</b>, Exynos는 <b>연산 위치 재배치</b>에 무게를 둡니다.
+    </div>
+  </div>
+</section>
+
+<!-- SUMMARY -->
+<section id="summary">
+  <div class="wrap">
+    <h2><span class="num">6</span> 종합 한 장</h2>
+    <table>
+      <tr><th>축</th><th class="qc">Qualcomm cam_isp</th><th class="ex">Exynos Pablo</th></tr>
+      <tr><td class="axis">커널 성격</td><td>레지스터 명령 컴파일러 + 동기화기</td><td>펌웨어 오케스트레이터</td></tr>
+      <tr><td class="axis">3A 위치</td><td>유저스페이스 CamX</td><td>ICPU 펌웨어 RTA</td></tr>
+      <tr><td class="axis">설정 적용</td><td>CDM DMA (커널이 명령 생성)</td><td>DDK 함수 호출 (펌웨어가 적용)</td></tr>
+      <tr><td class="axis">프레임 펑크</td><td>버블 재적용 (살림)</td><td>NDONE drop (버림)</td></tr>
+      <tr><td class="axis">최신 진화</td><td>SFE — 데이터 경로 분화</td><td>ICPU — 제어 지능 오프로드</td></tr>
+      <tr><td class="axis">분석 난이도</td><td>커널 소스로 거의 추적 가능</td><td>핵심이 .so에 숨어 추적 한계</td></tr>
+    </table>
+    <div class="disclaimer">
+      ⚠️ <b>분석 근거</b> · Qualcomm·Exynos 양쪽 모두 삼성 오픈소스에서 받은 실제 S26 커널 코드(<code>extracted/qcom_s948u/</code>, <code>extracted/exynos_s942n/</code>)를 직접 읽어 작성했습니다.
+      단, Exynos의 3A/레지스터 핵심 로직은 DDK/RTA 펌웨어 바이너리(.so) 안에 있어 커널 소스로는 인터페이스까지만 확인 가능합니다.
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">Galaxy S26 Camera ISP Driver Analysis · Qualcomm cam_isp vs Exynos Pablo · 코드 근거 기반 정리</div>
+</footer>
+
+</body>
+</html>
