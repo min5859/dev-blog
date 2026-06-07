@@ -876,15 +876,15 @@ async function build() {
   }
   await writeStyles();
 
-  const featuredPosts = posts.filter((post) => post.featured);
+  // featured 토픽을 그리드 맨 앞에 배치 (나머지는 기존 제목순 유지)
+  const homeTopics = topics.slice().sort((a, b) => (b.featured ? 1 : 0) - (a.featured ? 1 : 0));
   const home = renderLayout({
     title: siteTitle,
     buildStamp,
     body: `${renderHomeHead()}
-${featuredPosts.length ? `<section class="featured"><h2>주목</h2><div class="grid">${featuredPosts.map(renderPostCard).join('\n')}</div></section>` : ''}
 ${renderPipelineStatus(pipelineStatus)}
 ${renderReleaseStatus(releaseStatus)}
-<section><h2>주제</h2><div class="grid">${topics.map((topic) => `<article class="card"><h3><a href="${link(`/topics/${topic.slug}.html`)}">${escapeHtml(topic.title)}</a></h3><p>${escapeHtml(topic.description)}</p><p class="meta">${topic.posts.length}개 글</p></article>`).join('\n')}</div></section>`,
+<section><h2>주제</h2><div class="grid">${homeTopics.map((topic) => `<article class="card"><h3><a href="${link(`/topics/${topic.slug}.html`)}">${escapeHtml(topic.title)}</a></h3><p>${escapeHtml(topic.description)}</p><p class="meta">${topic.posts.length}개 글</p></article>`).join('\n')}</div></section>`,
   });
   await writeFile(path.join(publicDir, 'index.html'), home);
 
