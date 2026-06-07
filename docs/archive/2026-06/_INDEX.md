@@ -3,6 +3,14 @@
 | Feature | Cycle | Match Rate | Archived | Documents |
 |---------|:-----:|:----------:|----------|-----------|
 | research-write-split | #1 | 99.2% | 2026-06-06 | [analysis](research-write-split/research-write-split.analysis.md) · [report](research-write-split/research-write-split.report.md) |
+| content-quality-enhancements | #2 | 98% | 2026-06-07 | [plan](content-quality-enhancements/content-quality-enhancements.plan.md) · [analysis](content-quality-enhancements/content-quality-enhancements.analysis.md) · [report](content-quality-enhancements/content-quality-enhancements.report.md) |
+| topic-dossier-first-rollout | #3 | 94% | 2026-06-07 | [plan](topic-dossier-first-rollout/topic-dossier-first-rollout.plan.md) · [analysis](topic-dossier-first-rollout/topic-dossier-first-rollout.analysis.md) · [report](topic-dossier-first-rollout/topic-dossier-first-rollout.report.md) |
+
+## content-quality-enhancements (#2)
+원문 인용(A)·모델 분리(B)·교차검증(C)·변화 중심(D)·주간 롤업(E). dossier 자산을 콘텐츠 품질로 전환.
+
+## topic-dossier-first-rollout (#3)
+write-runner 공통화 + 전 토픽(android/ai-coding-agents/opensource-curation/lore-lens 7렌즈) dossier-first 확장.
 
 ## research-write-split
 
