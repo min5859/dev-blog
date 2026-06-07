@@ -1,11 +1,7 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-import { resolveAiAdapter, runAiAdapterAndParse } from './lib/ai-rewrite-adapter.mjs';
-import { auditPostQuality } from './lib/quality-guard.mjs';
-import { validateHighlight } from './lib/highlight-schema.mjs';
-import { validateDossier } from './lib/dossier-schema.mjs';
-import { dossierToPost } from './lib/dossier-to-post.mjs';
+import { resolveAiAdapter } from './lib/ai-rewrite-adapter.mjs';
+import { runWrite } from './lib/write-runner.mjs';
 
 const root = process.cwd();
 const topic = 'opensource';
@@ -13,48 +9,9 @@ const todayKst = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul'
 const runDate = process.env.NEWSLETTER_DATE || todayKst();
 const postId = `${runDate}-opensource-trending`;
 const generatedDir = path.join(root, 'data', 'generated', topic);
-const dossierPath = process.env.DOSSIER_PATH || path.join(generatedDir, 'research-latest.json');
-const draftPath = process.env.DRAFT_PATH || path.join(generatedDir, 'draft-latest.json');
-const fallbackDraftPath = path.join(root, 'content', 'topics', topic, 'posts', `${postId}.json`);
-const draftPromptTemplatePath = path.join(root, 'prompts', 'opensource-newsletter-ko.md');
-const dossierPromptTemplatePath = path.join(root, 'prompts', 'opensource-newsletter-from-dossier-ko.md');
 const adapter = resolveAiAdapter();
-const generatedAt = new Date().toISOString();
 
-async function readText(file) { return readFile(file, 'utf8'); }
-
-async function readJsonWithFallback(primary, fallback) {
-  try { return JSON.parse(await readText(primary)); }
-  catch (primaryError) {
-    try { return JSON.parse(await readText(fallback)); }
-    catch { throw primaryError; }
-  }
-}
-
-function buildPrompt(template, draft) { return template.replace('{{DRAFT_JSON}}', JSON.stringify(draft, null, 2)); }
-
-function buildDossierPrompt(template, dossier) {
-  return template
-    .replaceAll('{{RUN_DATE}}', runDate)
-    .replaceAll('{{POST_ID}}', postId)
-    .replace('{{DOSSIER_JSON}}', JSON.stringify(dossier, null, 2));
-}
-
-// Design Ref: docs/RESEARCH-WRITE-SPLIT.md §2 — dossier 우선 입력, 없으면 draft 폴백.
-async function loadWriteInput() {
-  try {
-    const dossier = JSON.parse(await readText(dossierPath));
-    if (dossier && Array.isArray(dossier.entries) && dossier.entries.length) {
-      validateDossier(dossier, 'ai-rewrite-opensource');
-      return { mode: 'dossier', dossier, grounding: dossier, promptPath: dossierPromptTemplatePath };
-    }
-  } catch {
-    // dossier 없음/손상 → draft 폴백
-  }
-  const draft = await readJsonWithFallback(draftPath, fallbackDraftPath);
-  return { mode: 'draft', draft, grounding: draft, promptPath: draftPromptTemplatePath };
-}
-
+// opensource 고유 draft fallback
 function templateRewrite(draft) {
   const sectionByHeading = new Map(draft.sections.map((s) => [s.heading, s.body]));
   const buckets = draft.draftMetadata?.bucketCounts || {};
@@ -74,61 +31,20 @@ function templateRewrite(draft) {
   };
 }
 
-function withAuditMetadata(post, promptPath) {
-  return {
-    ...post,
-    draftMetadata: {
-      ...post.draftMetadata,
-      rewrittenAt: generatedAt,
-      rewriteAdapter: adapter,
-      promptTemplate: path.relative(root, promptPath),
-    },
-  };
-}
-
-function validatePost(post) {
-  for (const key of ['id', 'topic', 'title', 'date', 'summary', 'sections', 'sources', 'highlights']) {
-    if (!post[key]) throw new Error(`rewritten post missing ${key}`);
-  }
-  if (!Array.isArray(post.sections) || post.sections.length < 2) throw new Error('rewritten post requires at least two sections');
-  if (!Array.isArray(post.sources) || post.sources.length === 0) throw new Error('rewritten post requires sources');
-  if (!Array.isArray(post.highlights) || post.highlights.length === 0) throw new Error('rewritten post requires highlights');
-  post.highlights.forEach((h, i) => validateHighlight(h, i));
-}
-
-async function main() {
-  const input = await loadWriteInput();
-  const template = await readText(input.promptPath);
-  const prompt = input.mode === 'dossier'
-    ? buildDossierPrompt(template, input.dossier)
-    : buildPrompt(template, input.draft);
-  const grounding = input.grounding;
-
-  await mkdir(generatedDir, { recursive: true });
-  await writeFile(path.join(generatedDir, `rewrite-prompt-${runDate}.md`), prompt);
-  await writeFile(path.join(generatedDir, 'rewrite-prompt-latest.md'), prompt);
-
-  const aiResult = await runAiAdapterAndParse(prompt, {
-    logLabel: 'opensource',
-    postValidator: (post) => {
-      validatePost(post);
-      auditPostQuality(post, { draft: grounding });
-    },
-  });
-  if (aiResult) {
-    await writeFile(path.join(generatedDir, `rewrite-stdout-${runDate}.txt`), aiResult.raw);
-    await writeFile(path.join(generatedDir, 'rewrite-stdout-latest.txt'), aiResult.raw);
-  }
-  const fallbackPost = input.mode === 'dossier'
-    ? dossierToPost(input.dossier, { postId, date: runDate, topic, titleSuffix: '오픈소스 트렌드', tags: ['오픈소스', 'GitHub'] })
-    : templateRewrite(input.draft);
-  const rewritten = withAuditMetadata(aiResult ? aiResult.post : fallbackPost, input.promptPath);
-  validatePost(rewritten);
-  auditPostQuality(rewritten, { draft: grounding });
-
-  await writeFile(path.join(generatedDir, `rewritten-${postId}.json`), JSON.stringify(rewritten, null, 2));
-  await writeFile(path.join(generatedDir, 'rewritten-latest.json'), JSON.stringify(rewritten, null, 2));
-  console.log(`Rewrote opensource trending with ${adapter} adapter; wrote data/generated/${topic}/rewritten-${postId}.json`);
-}
-
-main().catch((error) => { console.error(error); process.exit(1); });
+runWrite({
+  topic,
+  postId,
+  runDate,
+  generatedDir,
+  dossierPath: process.env.DOSSIER_PATH || path.join(generatedDir, 'research-latest.json'),
+  draftPath: process.env.DRAFT_PATH || path.join(generatedDir, 'draft-latest.json'),
+  fallbackDraftPath: path.join(root, 'content', 'topics', topic, 'posts', `${postId}.json`),
+  draftPromptPath: path.join(root, 'prompts', 'opensource-newsletter-ko.md'),
+  dossierPromptPath: path.join(root, 'prompts', 'opensource-newsletter-from-dossier-ko.md'),
+  dossierMeta: { titleSuffix: '오픈소스 트렌드', tags: ['오픈소스', 'GitHub'] },
+  templateRewrite,
+  adapter,
+  logLabel: 'opensource',
+})
+  .then((r) => console.log(`Rewrote opensource trending with ${adapter} adapter; mode=${r.mode}; wrote data/generated/${topic}/rewritten-${postId}.json`))
+  .catch((error) => { console.error(error); process.exit(1); });

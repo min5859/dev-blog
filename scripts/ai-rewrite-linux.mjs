@@ -1,11 +1,7 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-import { resolveAiAdapter, runAiAdapterAndParse } from './lib/ai-rewrite-adapter.mjs';
-import { auditPostQuality } from './lib/quality-guard.mjs';
-import { validateHighlight } from './lib/highlight-schema.mjs';
-import { validateDossier } from './lib/dossier-schema.mjs';
-import { dossierToPost } from './lib/dossier-to-post.mjs';
+import { resolveAiAdapter } from './lib/ai-rewrite-adapter.mjs';
+import { runWrite } from './lib/write-runner.mjs';
 
 const root = process.cwd();
 const topic = 'linux';
@@ -13,158 +9,45 @@ const todayKst = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul'
 const runDate = process.env.NEWSLETTER_DATE || todayKst();
 const postId = `${runDate}-linux-daily-briefing`;
 const generatedDir = path.join(root, 'data', 'generated', topic);
-const dossierPath = process.env.DOSSIER_PATH || path.join(generatedDir, 'research-latest.json');
-const draftPath = process.env.DRAFT_PATH || path.join(generatedDir, 'draft-latest.json');
-const fallbackDraftPath = path.join(root, 'content', 'topics', topic, 'posts', `${postId}.json`);
-const draftPromptTemplatePath = path.join(root, 'prompts', 'linux-newsletter-ko.md');
-const dossierPromptTemplatePath = path.join(root, 'prompts', 'linux-newsletter-from-dossier-ko.md');
 const adapter = resolveAiAdapter();
-const generatedAt = new Date().toISOString();
 
-async function readText(file) {
-  return readFile(file, 'utf8');
-}
-
-async function readJsonWithFallback(primary, fallback) {
-  try {
-    return JSON.parse(await readText(primary));
-  } catch (primaryError) {
-    try {
-      return JSON.parse(await readText(fallback));
-    } catch {
-      throw primaryError;
-    }
-  }
-}
-
-function buildPrompt(template, draft) {
-  return template.replace('{{DRAFT_JSON}}', JSON.stringify(draft, null, 2));
-}
-
-function buildDossierPrompt(template, dossier) {
-  return template
-    .replaceAll('{{RUN_DATE}}', runDate)
-    .replaceAll('{{POST_ID}}', postId)
-    .replace('{{DOSSIER_JSON}}', JSON.stringify(dossier, null, 2));
-}
-
-// Design Ref: docs/RESEARCH-WRITE-SPLIT.md §2 — write 단계는 research dossier 를 우선
-// 입력으로 받고(grounding 근거도 dossier), 없으면 기존 draft 흐름으로 폴백한다(back-compat).
-async function loadWriteInput() {
-  try {
-    const dossier = JSON.parse(await readText(dossierPath));
-    if (dossier && Array.isArray(dossier.entries) && dossier.entries.length) {
-      validateDossier(dossier, 'ai-rewrite-linux');
-      return { mode: 'dossier', dossier, grounding: dossier, promptPath: dossierPromptTemplatePath };
-    }
-  } catch {
-    // dossier 없음/손상 → draft 폴백
-  }
-  const draft = await readJsonWithFallback(draftPath, fallbackDraftPath);
-  return { mode: 'draft', draft, grounding: draft, promptPath: draftPromptTemplatePath };
-}
-
+// linux 고유 draft fallback (dossier 없을 때만 사용)
 function templateRewrite(draft) {
   const sectionByHeading = new Map(draft.sections.map((section) => [section.heading, section.body]));
   const buckets = draft.draftMetadata?.bucketCounts || {};
-
   return {
     ...draft,
     title: `${draft.date} 커널 개발 브리핑`,
     summary: `오늘의 핵심: 릴리스 ${buckets.releases ?? 0}건, 회귀·보안 ${buckets.regressions ?? 0}건, 시스템 영향 패치 ${buckets.patches ?? 0}건. 국부 드라이버/플랫폼 패치는 본문에서 제외했습니다.`,
     highlights: draft.highlights,
     sections: [
-      {
-        heading: '릴리스/로드맵',
-        body: sectionByHeading.get('릴리스/로드맵') || '이번 수집에서 신규 릴리스가 없습니다.',
-      },
-      {
-        heading: '회귀·보안 신호',
-        body: sectionByHeading.get('회귀·보안 신호') || '회귀·보안 신호로 분류된 항목이 없습니다.',
-      },
-      {
-        heading: '핵심 변경',
-        body: sectionByHeading.get('핵심 변경') || '이번 수집에서 시스템 전반에 영향을 줄 변경이 분류되지 않았습니다.',
-      },
-      {
-        heading: '기타',
-        body: sectionByHeading.get('기타') || '국부 드라이버/플랫폼 패치는 본문에서 제외했습니다.',
-      },
+      { heading: '릴리스/로드맵', body: sectionByHeading.get('릴리스/로드맵') || '이번 수집에서 신규 릴리스가 없습니다.' },
+      { heading: '회귀·보안 신호', body: sectionByHeading.get('회귀·보안 신호') || '회귀·보안 신호로 분류된 항목이 없습니다.' },
+      { heading: '핵심 변경', body: sectionByHeading.get('핵심 변경') || '이번 수집에서 시스템 전반에 영향을 줄 변경이 분류되지 않았습니다.' },
+      { heading: '기타', body: sectionByHeading.get('기타') || '국부 드라이버/플랫폼 패치는 본문에서 제외했습니다.' },
     ],
     confidence: {
       level: '자동 생성',
       note: 'AI가 원문 후보와 메타데이터를 요약했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요.',
     },
-    draftMetadata: {
-      ...draft.draftMetadata,
-    },
+    draftMetadata: { ...draft.draftMetadata },
   };
 }
 
-function withAuditMetadata(post, promptPath) {
-  return {
-    ...post,
-    draftMetadata: {
-      ...post.draftMetadata,
-      rewrittenAt: generatedAt,
-      rewriteAdapter: adapter,
-      promptTemplate: path.relative(root, promptPath),
-    },
-  };
-}
-
-function validatePost(post) {
-  for (const key of ['id', 'topic', 'title', 'date', 'summary', 'sections', 'sources', 'highlights']) {
-    if (!post[key]) throw new Error(`rewritten post missing ${key}`);
-  }
-  if (!Array.isArray(post.sections) || post.sections.length < 2) throw new Error('rewritten post requires at least two sections');
-  if (!Array.isArray(post.sources) || post.sources.length === 0) throw new Error('rewritten post requires sources');
-  if (!Array.isArray(post.highlights) || post.highlights.length === 0) throw new Error('rewritten post requires highlights');
-  post.highlights.forEach(validateHighlight);
-}
-
-async function main() {
-  const input = await loadWriteInput();
-  const template = await readText(input.promptPath);
-  const prompt = input.mode === 'dossier'
-    ? buildDossierPrompt(template, input.dossier)
-    : buildPrompt(template, input.draft);
-  const grounding = input.grounding;
-
-  await mkdir(generatedDir, { recursive: true });
-
-  const promptOutput = path.join(generatedDir, `rewrite-prompt-${runDate}.md`);
-  const promptLatest = path.join(generatedDir, 'rewrite-prompt-latest.md');
-  await writeFile(promptOutput, prompt);
-  await writeFile(promptLatest, prompt);
-
-  const aiResult = await runAiAdapterAndParse(prompt, {
-    logLabel: 'linux',
-    postValidator: (post) => {
-      validatePost(post);
-      auditPostQuality(post, { draft: grounding });
-    },
-  });
-  if (aiResult) {
-    await writeFile(path.join(generatedDir, `rewrite-stdout-${runDate}.txt`), aiResult.raw);
-    await writeFile(path.join(generatedDir, 'rewrite-stdout-latest.txt'), aiResult.raw);
-  }
-  const fallbackPost = input.mode === 'dossier'
-    ? dossierToPost(input.dossier, { postId, date: runDate })
-    : templateRewrite(input.draft);
-  const rewritten = withAuditMetadata(aiResult ? aiResult.post : fallbackPost, input.promptPath);
-  validatePost(rewritten);
-  auditPostQuality(rewritten, { draft: grounding });
-
-  const aiOutput = path.join(generatedDir, `rewritten-${postId}.json`);
-  const aiLatest = path.join(generatedDir, 'rewritten-latest.json');
-  await writeFile(aiOutput, JSON.stringify(rewritten, null, 2));
-  await writeFile(aiLatest, JSON.stringify(rewritten, null, 2));
-
-  console.log(`Rewrote Linux newsletter with ${adapter} adapter; wrote ${path.relative(root, aiOutput)}`);
-}
-
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+runWrite({
+  topic,
+  postId,
+  runDate,
+  generatedDir,
+  dossierPath: process.env.DOSSIER_PATH || path.join(generatedDir, 'research-latest.json'),
+  draftPath: process.env.DRAFT_PATH || path.join(generatedDir, 'draft-latest.json'),
+  fallbackDraftPath: path.join(root, 'content', 'topics', topic, 'posts', `${postId}.json`),
+  draftPromptPath: path.join(root, 'prompts', 'linux-newsletter-ko.md'),
+  dossierPromptPath: path.join(root, 'prompts', 'linux-newsletter-from-dossier-ko.md'),
+  dossierMeta: { titleSuffix: '커널 개발 브리핑', tags: ['리눅스', '커널'] },
+  templateRewrite,
+  adapter,
+  logLabel: 'linux',
+})
+  .then((r) => console.log(`Rewrote Linux newsletter with ${adapter} adapter; mode=${r.mode}; wrote data/generated/${topic}/rewritten-${postId}.json`))
+  .catch((error) => { console.error(error); process.exit(1); });
