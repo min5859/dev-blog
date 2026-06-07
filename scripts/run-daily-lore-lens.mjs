@@ -13,11 +13,12 @@ const shouldPublish = process.env.PUBLISH_DAILY === '1';
 const rewriteAdapter = normalizeDailyRewriteAdapter(process.env.DAILY_REWRITE_ADAPTER);
 
 const steps = [
-  ['collect', 'node', ['scripts/collect-lore-lens.mjs', topic]],
-  ['draft',   'node', ['scripts/draft-lore-lens.mjs', topic]],
-  ['rewrite', 'node', ['scripts/ai-rewrite-lore-lens.mjs', topic], { AI_ADAPTER: rewriteAdapter }],
+  ['collect',  'node', ['scripts/collect-lore-lens.mjs', topic]],
+  ['draft',    'node', ['scripts/draft-lore-lens.mjs', topic]],
+  ['research', 'node', ['scripts/research-lore-lens.mjs', topic], { AI_ADAPTER: rewriteAdapter }],
+  ['rewrite',  'node', ['scripts/ai-rewrite-lore-lens.mjs', topic], { AI_ADAPTER: rewriteAdapter }],
   ...(shouldPublish ? [['publish', 'node', ['scripts/publish-lore-lens.mjs', topic]]] : []),
-  ['build',   'npm',  ['run', 'build']],
+  ['build',    'npm',  ['run', 'build']],
 ];
 
 runPipeline({

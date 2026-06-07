@@ -1,10 +1,9 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { applyTemplate } from './draft-lore-lens.mjs';
-import { resolveAiAdapter, runAiAdapterAndParse } from './lib/ai-rewrite-adapter.mjs';
-import { auditPostQuality } from './lib/quality-guard.mjs';
-import { validateHighlight } from './lib/highlight-schema.mjs';
+import { resolveAiAdapter } from './lib/ai-rewrite-adapter.mjs';
+import { runWrite } from './lib/write-runner.mjs';
 
 const root = process.cwd();
 const topic = process.argv[2] || process.env.TOPIC;
@@ -13,151 +12,55 @@ if (!topic) {
   process.exit(1);
 }
 
-const pipelinePath = path.join(root, 'content', 'topics', topic, 'pipeline.json');
 const todayKst = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date());
 const runDate = process.env.NEWSLETTER_DATE || todayKst();
 
-async function readJson(file) {
-  return JSON.parse(await readFile(file, 'utf8'));
-}
-
-async function readText(file) {
-  return readFile(file, 'utf8');
-}
-
-async function readJsonWithFallback(primary, fallback) {
-  try {
-    return JSON.parse(await readText(primary));
-  } catch (primaryError) {
-    try {
-      return JSON.parse(await readText(fallback));
-    } catch {
-      throw primaryError;
-    }
-  }
-}
-
-function buildPrompt(template, draft) {
-  return template.replace('{{DRAFT_JSON}}', JSON.stringify(draft, null, 2));
-}
-
-function templateRewrite(draft, pipeline) {
-  const adapterName = resolveAiAdapter();
-  const sectionByHeading = new Map(draft.sections.map((section) => [section.heading, section.body]));
-  const buckets = draft.draftMetadata?.bucketCounts || {};
-  const titleTemplate = pipeline.rewriteTitleTemplate || '{{date}} 커널 렌즈 브리핑';
-
-  return {
-    ...draft,
-    title: applyTemplate(titleTemplate, { date: draft.date }),
-    summary: `오늘의 핵심: 릴리스 ${buckets.releases ?? 0}건, 회귀·보안 ${buckets.regressions ?? 0}건, 시스템 영향 패치 ${buckets.patches ?? 0}건.`,
-    highlights: draft.highlights,
-    sections: [
-      {
-        heading: '릴리스/로드맵',
-        body: sectionByHeading.get('릴리스/로드맵') || '이번 수집에서 신규 릴리스가 없습니다.',
-      },
-      {
-        heading: '회귀·보안 신호',
-        body: sectionByHeading.get('회귀·보안 신호') || '회귀·보안 신호로 분류된 항목이 없습니다.',
-      },
-      {
-        heading: '핵심 변경',
-        body: sectionByHeading.get('핵심 변경') || '이번 수집에서 우선 순위가 높은 패치가 분류되지 않았습니다.',
-      },
-      {
-        heading: '기타',
-        body: sectionByHeading.get('기타') || '추가 신호가 없습니다.',
-      },
-    ],
-    confidence: {
-      level: '자동 생성',
-      note: 'AI가 원문 후보와 메타데이터를 요약했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요.',
-    },
-    draftMetadata: {
-      ...draft.draftMetadata,
-    },
-  };
-}
-
-function validatePost(post) {
-  for (const key of ['id', 'topic', 'title', 'date', 'summary', 'sections', 'sources', 'highlights']) {
-    if (!post[key]) throw new Error(`rewritten post missing ${key}`);
-  }
-  if (!Array.isArray(post.sections) || post.sections.length < 2) throw new Error('rewritten post requires at least two sections');
-  if (!Array.isArray(post.sources) || post.sources.length === 0) throw new Error('rewritten post requires sources');
-  if (!Array.isArray(post.highlights) || post.highlights.length === 0) throw new Error('rewritten post requires highlights');
-  post.highlights.forEach(validateHighlight);
-}
-
-function withAuditMetadata(post, pipeline, promptTemplatePath, generatedAt, adapterName) {
-  return {
-    ...post,
-    draftMetadata: {
-      ...post.draftMetadata,
-      rewrittenAt: generatedAt,
-      rewriteAdapter: adapterName,
-      promptTemplate: path.relative(root, promptTemplatePath),
-      lensPipeline: pipeline.pipelineName || topic,
-    },
-  };
-}
-
 async function main() {
   const adapter = resolveAiAdapter();
-  const pipeline = await readJson(pipelinePath);
-  if (!pipeline.postIdSuffix) {
-    throw new Error(`${path.relative(root, pipelinePath)}: postIdSuffix required`);
-  }
+  const pipeline = JSON.parse(await readFile(path.join(root, 'content', 'topics', topic, 'pipeline.json'), 'utf8'));
+  if (!pipeline.postIdSuffix) throw new Error(`content/topics/${topic}/pipeline.json: postIdSuffix required`);
 
   const postId = `${runDate}-${pipeline.postIdSuffix}`;
   const generatedDir = path.join(root, 'data', 'generated', topic);
-  const draftPath = process.env.DRAFT_PATH || path.join(generatedDir, 'draft-latest.json');
-  const fallbackDraftPath = path.join(root, 'content', 'topics', topic, 'posts', `${postId}.json`);
-  const promptTemplatePath = path.join(root, 'prompts', 'linux-lens-newsletter-ko.md');
-  const generatedAt = new Date().toISOString();
+  const titleTemplate = pipeline.rewriteTitleTemplate || '{{date}} 커널 렌즈 브리핑';
+  const titleSuffix = applyTemplate(titleTemplate, { date: '' }).replace(/\s+/g, ' ').trim() || '커널 렌즈 브리핑';
 
-  const draft = await readJsonWithFallback(draftPath, fallbackDraftPath);
-  const template = await readText(promptTemplatePath);
-  const prompt = buildPrompt(template, draft);
-
-  await mkdir(generatedDir, { recursive: true });
-
-  const promptOutput = path.join(generatedDir, `rewrite-prompt-${runDate}.md`);
-  const promptLatest = path.join(generatedDir, 'rewrite-prompt-latest.md');
-  await writeFile(promptOutput, prompt);
-  await writeFile(promptLatest, prompt);
-
-  const aiResult = await runAiAdapterAndParse(prompt, {
-    logLabel: topic,
-    postValidator: (post) => {
-      validatePost(post);
-      auditPostQuality(post, { draft });
-    },
-  });
-  if (aiResult) {
-    await writeFile(path.join(generatedDir, `rewrite-stdout-${runDate}.txt`), aiResult.raw);
-    await writeFile(path.join(generatedDir, 'rewrite-stdout-latest.txt'), aiResult.raw);
+  // lens 고유 draft fallback (pipeline 의 title 템플릿 사용)
+  function templateRewrite(draft) {
+    const sectionByHeading = new Map(draft.sections.map((section) => [section.heading, section.body]));
+    const buckets = draft.draftMetadata?.bucketCounts || {};
+    return {
+      ...draft,
+      title: applyTemplate(titleTemplate, { date: draft.date }),
+      summary: `오늘의 핵심: 릴리스 ${buckets.releases ?? 0}건, 회귀·보안 ${buckets.regressions ?? 0}건, 시스템 영향 패치 ${buckets.patches ?? 0}건.`,
+      highlights: draft.highlights,
+      sections: [
+        { heading: '릴리스/로드맵', body: sectionByHeading.get('릴리스/로드맵') || '이번 수집에서 신규 릴리스가 없습니다.' },
+        { heading: '회귀·보안 신호', body: sectionByHeading.get('회귀·보안 신호') || '회귀·보안 신호로 분류된 항목이 없습니다.' },
+        { heading: '핵심 변경', body: sectionByHeading.get('핵심 변경') || '이번 수집에서 우선 순위가 높은 패치가 분류되지 않았습니다.' },
+        { heading: '기타', body: sectionByHeading.get('기타') || '추가 신호가 없습니다.' },
+      ],
+      confidence: { level: '자동 생성', note: 'AI가 원문 후보와 메타데이터를 요약했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요.' },
+      draftMetadata: { ...draft.draftMetadata, lensPipeline: pipeline.pipelineName || topic },
+    };
   }
-  const rewritten = withAuditMetadata(
-    aiResult ? aiResult.post : templateRewrite(draft, pipeline),
-    pipeline,
-    promptTemplatePath,
-    generatedAt,
+
+  const { mode } = await runWrite({
+    topic,
+    postId,
+    runDate,
+    generatedDir,
+    dossierPath: process.env.DOSSIER_PATH || path.join(generatedDir, 'research-latest.json'),
+    draftPath: process.env.DRAFT_PATH || path.join(generatedDir, 'draft-latest.json'),
+    fallbackDraftPath: path.join(root, 'content', 'topics', topic, 'posts', `${postId}.json`),
+    draftPromptPath: path.join(root, 'prompts', 'linux-lens-newsletter-ko.md'),
+    dossierPromptPath: path.join(root, 'prompts', 'linux-lens-newsletter-from-dossier-ko.md'),
+    dossierMeta: { titleSuffix, tags: pipeline.tags || ['리눅스', '커널'] },
+    templateRewrite,
     adapter,
-  );
-  validatePost(rewritten);
-  auditPostQuality(rewritten, { draft });
-
-  const aiOutput = path.join(generatedDir, `rewritten-${postId}.json`);
-  const aiLatest = path.join(generatedDir, 'rewritten-latest.json');
-  await writeFile(aiOutput, JSON.stringify(rewritten, null, 2));
-  await writeFile(aiLatest, JSON.stringify(rewritten, null, 2));
-
-  console.log(`[${topic}] Rewrote newsletter with ${adapter} adapter; wrote ${path.relative(root, aiOutput)}`);
+    logLabel: topic,
+  });
+  console.log(`[${topic}] Rewrote lens newsletter with ${adapter} adapter; mode=${mode}; wrote data/generated/${topic}/rewritten-${postId}.json`);
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+main().catch((error) => { console.error(error); process.exit(1); });
