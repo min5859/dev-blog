@@ -4,6 +4,7 @@ import path from 'node:path';
 import { collectWeeklyDossier } from './lib/weekly-rollup.mjs';
 import { validateDossier } from './lib/dossier-schema.mjs';
 import { dossierToPost } from './lib/dossier-to-post.mjs';
+import { validatePost } from './lib/write-runner.mjs';
 
 // E(멀티토픽): 토픽 인자로 최근 7일 dossier 를 모아 주간 롤업 post 를 만든다.
 // collectWeeklyDossier 는 토픽 범용이므로 토픽 메타(title/tags/sectionPlan)만 주입한다.
@@ -52,7 +53,21 @@ async function main() {
   await writeFile(path.join(generatedDir, `weekly-rollup-${endDate}.json`), JSON.stringify({ dossier, post }, null, 2));
   await writeFile(path.join(generatedDir, 'weekly-rollup-latest.json'), JSON.stringify({ dossier, post }, null, 2));
 
-  console.log(`[${topic}] weekly rollup over ${dossier.rollup.daysCovered}/${days} day(s); ${dossier.entries.length} key entr(ies) from ${dossier.rollup.candidatePool} pooled; wrote weekly-rollup-latest.json`);
+  let publishedNote = '';
+  // PUBLISH_WEEKLY=1: post 를 content/ 로 발행(draft 대조 없이 assertPost 동급 검증). entries 0 이면 skip.
+  if (process.env.PUBLISH_WEEKLY === '1') {
+    if (!dossier.entries.length) {
+      publishedNote = '; publish skipped (no entries)';
+    } else {
+      validatePost(post, `weekly-rollup-${topic}`);
+      const contentDir = path.join(root, 'content', 'topics', topic, 'posts');
+      await mkdir(contentDir, { recursive: true });
+      await writeFile(path.join(contentDir, `${postId}.json`), JSON.stringify(post, null, 2));
+      publishedNote = `; published → content/topics/${topic}/posts/${postId}.json`;
+    }
+  }
+
+  console.log(`[${topic}] weekly rollup over ${dossier.rollup.daysCovered}/${days} day(s); ${dossier.entries.length} key entr(ies) from ${dossier.rollup.candidatePool} pooled${publishedNote}`);
 }
 
 main().catch((error) => { console.error(error); process.exit(1); });

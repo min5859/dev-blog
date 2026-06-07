@@ -2,7 +2,7 @@
 
 Plan: docs/01-plan/features/weekly-rollup-automation.plan.md
 
-## 1. weekly-rollup 발행 경로
+## 1. weekly-rollup 발행 경로 ✅
 - [ ] weekly-rollup.mjs PUBLISH_WEEKLY=1 → content/topics/{topic}/posts/ 발행 + assertPost 동급 검증
 - [ ] build 렌더 호환 확인, 커밋
 
