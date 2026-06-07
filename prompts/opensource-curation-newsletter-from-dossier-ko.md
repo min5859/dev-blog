@@ -22,9 +22,7 @@
   "tags": ["opensource-curation", "github", "opensource"],
   "highlights": [ { "title": "...", "priority": "상|중|하", "impactType": "<dossier>", "affectedAudience": "<dossier>", "verifyLink": "<evidence url>", "if": "...", "do": "...", "verify": "..." } ],
   "sections": [
-    { "heading": "릴리스/로드맵", "body": "..." },
-    { "heading": "회귀·보안 신호", "body": "..." },
-    { "heading": "핵심 변경", "body": "..." },
+    { "heading": "이번 주 선정 (큐레이션)", "body": "..." },
     { "heading": "기타", "body": "..." }
   ],
   "confidence": { "level": "자동 생성", "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요." },
@@ -33,7 +31,7 @@
 ```
 규칙:
 - highlights 최대 4개, if/do/verify 모두 행동 지침 어미.
-- sections 고정 4개, impactType 분류(release→릴리스/로드맵, security·regression→회귀·보안 신호, 그 외→핵심 변경, 없으면 기타).
+- sections 2개: 선정 레포는 모두 "이번 주 선정 (큐레이션)" 에 모으고, 큐레이션 외 부가 항목만 "기타" 에 둡니다.
 - 각 항목 형식:
 ```
 **{title}**

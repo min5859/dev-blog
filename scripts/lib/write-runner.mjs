@@ -108,7 +108,11 @@ export async function runWrite(cfg) {
   }
 
   const fallbackPost = input.mode === 'dossier'
-    ? dossierToPost(input.dossier, { postId, date: runDate, topic, titleSuffix: dossierMeta.titleSuffix, tags: dossierMeta.tags })
+    ? dossierToPost(input.dossier, {
+      postId, date: runDate, topic,
+      titleSuffix: dossierMeta.titleSuffix, tags: dossierMeta.tags,
+      sectionOrder: dossierMeta.sectionOrder, sectionByImpact: dossierMeta.sectionByImpact, emptyOtherText: dossierMeta.emptyOtherText,
+    })
     : templateRewrite(input.draft);
   const base = aiResult ? aiResult.post : fallbackPost;
   const post = {

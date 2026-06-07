@@ -91,19 +91,24 @@ function sectionBody(entries) {
  * @param {string[]} [opts.tags=['리눅스','커널']]
  * @returns {object} newsletter post
  */
-export function dossierToPost(dossier, { postId, date, topic = 'linux', titleSuffix = '커널 개발 브리핑', tags = ['리눅스', '커널'] }) {
+export function dossierToPost(dossier, {
+  postId, date, topic = 'linux', titleSuffix = '커널 개발 브리핑', tags = ['리눅스', '커널'],
+  sectionOrder = SECTION_ORDER, sectionByImpact = SECTION_BY_IMPACT,
+  emptyOtherText = '국부 드라이버/플랫폼 패치는 본문에서 제외했습니다. 자기 영역 키워드로 lore.kernel.org에서 직접 검색하세요.',
+}) {
   const entries = Array.isArray(dossier.entries) ? dossier.entries : [];
+  const fallbackHeading = sectionOrder[sectionOrder.length - 1];
 
-  const grouped = new Map(SECTION_ORDER.map((h) => [h, []]));
+  const grouped = new Map(sectionOrder.map((h) => [h, []]));
   for (const entry of entries) {
-    const heading = SECTION_BY_IMPACT[entry.impactType] || '기타';
-    grouped.get(heading).push(entry);
+    const heading = sectionByImpact[entry.impactType] || fallbackHeading;
+    (grouped.get(heading) || grouped.get(fallbackHeading)).push(entry);
   }
 
-  const sections = SECTION_ORDER.map((heading) => {
+  const sections = sectionOrder.map((heading) => {
     const bucket = grouped.get(heading);
-    if (heading === '기타' && bucket.length === 0) {
-      return { heading, body: '국부 드라이버/플랫폼 패치는 본문에서 제외했습니다. 자기 영역 키워드로 lore.kernel.org에서 직접 검색하세요.' };
+    if (heading === fallbackHeading && bucket.length === 0) {
+      return { heading, body: emptyOtherText };
     }
     return { heading, body: sectionBody(bucket) };
   });
@@ -120,15 +125,13 @@ export function dossierToPost(dossier, { postId, date, topic = 'linux', titleSuf
     .filter((s) => s.url !== '없음')
     .slice(0, 8);
 
-  const counts = {
-    releases: grouped.get('릴리스/로드맵').length,
-    regressions: grouped.get('회귀·보안 신호').length,
-    patches: grouped.get('핵심 변경').length,
-  };
+  // sectionOrder 기반 generic 카운트(토픽별 섹션 이름 그대로 사용).
+  const bucketCounts = Object.fromEntries(sectionOrder.map((h) => [h, (grouped.get(h) || []).length]));
+  const summaryParts = sectionOrder.slice(0, 3).map((h) => `${h} ${(grouped.get(h) || []).length}건`);
   const top = highlights[0];
   const headline = top
     ? oneLine(`${top.affectedAudience} 주목: ${top.title}`, 80)
-    : '오늘 수집된 시스템 영향 항목이 없습니다.';
+    : '오늘 수집된 항목이 없습니다.';
 
   return {
     id: postId,
@@ -136,7 +139,7 @@ export function dossierToPost(dossier, { postId, date, topic = 'linux', titleSuf
     title: `${date} ${titleSuffix}`,
     headline,
     date,
-    summary: `오늘의 핵심: 릴리스 ${counts.releases}건, 회귀·보안 ${counts.regressions}건, 핵심 변경 ${counts.patches}건. 리서치 dossier 의 출처를 근거로 정리했습니다.`,
+    summary: `오늘의 핵심: ${summaryParts.join(', ')}. 리서치 dossier 의 출처를 근거로 정리했습니다.`,
     tags,
     highlights,
     sections,
@@ -147,7 +150,7 @@ export function dossierToPost(dossier, { postId, date, topic = 'linux', titleSuf
     sources,
     draftMetadata: {
       source: 'research-dossier',
-      bucketCounts: counts,
+      bucketCounts,
       entryCount: entries.length,
     },
   };

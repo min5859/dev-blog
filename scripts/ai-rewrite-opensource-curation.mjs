@@ -6,6 +6,9 @@ import { runWrite } from './lib/write-runner.mjs';
 const root = process.cwd();
 const topic = 'opensource-curation';
 const PICK_HEADING = '이번 주 선정 (큐레이션)';
+// 큐레이션은 impactType 무관하게 선정 레포를 한 섹션에 모은다(linux 4섹션 대신 큐레이션 정체성 유지).
+const CURATION_IMPACTS = ['security', 'regression', 'build', 'runtime', 'api-abi', 'backport', 'performance', 'release', 'project'];
+const CURATION_SECTION_BY_IMPACT = Object.fromEntries(CURATION_IMPACTS.map((k) => [k, PICK_HEADING]));
 const todayKst = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date());
 const runDate = process.env.NEWSLETTER_DATE || todayKst();
 const postId = `${runDate}-opensource-curation`;
@@ -43,7 +46,13 @@ runWrite({
   fallbackDraftPath: path.join(root, 'content', 'topics', topic, 'posts', `${postId}.json`),
   draftPromptPath: path.join(root, 'prompts', 'opensource-curation-newsletter-ko.md'),
   dossierPromptPath: path.join(root, 'prompts', 'opensource-curation-newsletter-from-dossier-ko.md'),
-  dossierMeta: { titleSuffix: '오픈소스 큐레이션', tags: ['opensource-curation', 'github', 'opensource'] },
+  dossierMeta: {
+    titleSuffix: '오픈소스 큐레이션',
+    tags: ['opensource-curation', 'github', 'opensource'],
+    sectionOrder: [PICK_HEADING, '기타'],
+    sectionByImpact: CURATION_SECTION_BY_IMPACT,
+    emptyOtherText: '큐레이션 선정 외 추가 항목은 없습니다.',
+  },
   templateRewrite,
   adapter,
   logLabel: 'opensource-curation',
