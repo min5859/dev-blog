@@ -1,16 +1,15 @@
-# Todo — weekly-rollout-and-quality (PDCA #4)
+# Todo — weekly-rollup-automation (PDCA #5)
 
-Plan: docs/01-plan/features/weekly-rollout-and-quality.plan.md
+Plan: docs/01-plan/features/weekly-rollup-automation.plan.md
 
-## 1. weekly-rollup 토픽 인자형 일반화 ✅
-- [ ] scripts/weekly-rollup.mjs <topic> + 토픽 메타 맵(titleSuffix/tags/sectionPlan)
-- [ ] weekly-rollup-linux.mjs 호환, npm scripts weekly-rollup:<topic>
-- [ ] 전 토픽 weekly post 검증, 커밋
+## 1. weekly-rollup 발행 경로
+- [ ] weekly-rollup.mjs PUBLISH_WEEKLY=1 → content/topics/{topic}/posts/ 발행 + assertPost 동급 검증
+- [ ] build 렌더 호환 확인, 커밋
 
-## 2. 전 토픽 claude 실운영 정량화 ✅
-- [ ] 토픽별 AI_ADAPTER=claude research 실운영 (lens 대표 1)
-- [ ] before(template/draft) 대비 2차 소스·인용·정보밀도 측정
-- [ ] docs/03-analysis 측정 리포트, 커밋
+## 2. 일괄 스크립트 + 스케줄 통합
+- [ ] scripts/run-weekly-all.mjs (전 토픽 + lens) + npm weekly-rollup:all
+- [ ] daily-deploy.sh 월요일 블록에 run-weekly-all 추가
+- [ ] 커밋
 
 ---
-## 완료 (archived): #1 research-write-split, #2 content-quality, #3 topic-rollout
+## 완료: #1~#4 (archived/완료)
