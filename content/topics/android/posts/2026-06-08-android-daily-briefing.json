@@ -1,0 +1,134 @@
+{
+  "id": "2026-06-08-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-06-08 pKVM IOMMU 보안 하드닝 — Android 커널",
+  "headline": "ACK 16-6.12에 pKVM IOMMU idmap 거부 하드닝과 fuse-bpf stale dentry 이중 삭제 회귀 수정이 머지됐다.",
+  "date": "2026-06-08",
+  "summary": "오늘 수집은 신규 항목 없이 전일 확인된 9개 항목이 그대로 유지됐다. 보안·회귀 신호로 pKVM IOMMU idmap 거부, fuse-bpf 이중 삭제, f2fs cleancache 조건 오류, geneve UDP 체크섬 회귀가 핵심이다.",
+  "tags": [
+    "안드로이드",
+    "커널",
+    "ACK",
+    "pKVM",
+    "fuse-bpf",
+    "f2fs",
+    "보안",
+    "회귀"
+  ],
+  "highlights": [
+    {
+      "title": "pKVM IOMMU: idmap 도메인 map_sg 거부 추가",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "pKVM IOMMU 사용 벤더 트리 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/ad34d15396568919a8ddd306ce2120e76d111b7c",
+      "if": "pKVM IOMMU를 사용하는 벤더 트리를 관리한다면",
+      "do": "ad34d153 커밋을 벤더 트리에 cherry-pick하고 kvm_iommu_map_sg 호출 경로를 점검하세요",
+      "verify": "idmap 도메인으로 map_sg 호출 시 거부 경로가 실제로 동작하는지 단위 테스트로 확인하세요"
+    },
+    {
+      "title": "fuse-bpf: stale backing dentry 이중 삭제 회귀",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "fuse-bpf/passthrough 사용 벤더·ACK 배포 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/8b70dc4403681c64dfbb65125fc2936cb25255cf",
+      "if": "fuse-bpf passthrough 경로를 사용하는 트리를 운영한다면",
+      "do": "8b70dc44 커밋 적용 여부를 확인하고, 운영 로그에서 f2fs SBI_NEED_FSCK 경고 발생 이력을 점검하세요",
+      "verify": "rmdir/unlink 병렬 경합 시나리오에서 메타데이터 손상 경고가 재현되지 않는지 확인하세요"
+    },
+    {
+      "title": "f2fs cleancache 조건 오류 수정",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "f2fs+cleancache 유지 ACK 배포 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/66b8d2a9700a7cf3c1a5f4089bb4a93d1bcbc144",
+      "if": "ACK 16-6.12에서 cleancache를 유지하는 배포를 관리한다면",
+      "do": "66b8d2a9 커밋을 적용해 f2fs_read_single_page의 cleancache 조건을 바로잡으세요",
+      "verify": "up-to-date 페이지가 cleancache에서 잘못 갱신되는 상황이 재현되지 않는지 확인하세요"
+    },
+    {
+      "title": "geneve: GRO hint UDP 체크섬 보정 길이 오류",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "geneve/터널 네트워킹 사용 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/1231623fd3b5aa6b41cce799ffb0d82e10914be4",
+      "if": "geneve 터널을 사용하는 네트워크 경로를 운영한다면",
+      "do": "1231623f 커밋 적용 여부를 확인하고, geneve 디캡 구간에서 패킷 드롭 현상을 점검하세요",
+      "verify": "GRO hint RX 경로에서 UDP 체크섬 보정 후 패킷 손실 없이 정상 처리되는지 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ANDROID: KVM: iommu: Reject idmap domain in kvm_iommu_map_sg**\n\nkvm_iommu_map_sg에서 identity mapping(idmap) 도메인을 map_sg 대상으로 받지 않고 거부하도록 추가됐다.\n\n영향: idmap 도메인 허용 시 pKVM IOMMU 보호 가정을 깨뜨릴 수 있으며, KVM_IOMMU_DOMAIN_IDMAP_ID 접근 제한(ddb4101bc0ab) 후속 하드닝이다.\n\n> \"The identity mapping domain is a special domain and should not be the target of map_sg operations. Any attempt to map into this domain should be rejected. ... Fixes: ddb4101bc0ab\"\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/ad34d15396568919a8ddd306ce2120e76d111b7c)\n\n---\n\n**ANDROID: fuse-bpf: re-validate backing dentry in rmdir and unlink**\n\n캐시된 backing dentry를 재검증 없이 vfs_rmdir/vfs_unlink하던 것을, 부모 inode lock 하에 lookup_one_len로 재검증하고 불일치 시 -ENOENT로 안전 중단하도록 변경됐다.\n\n영향: 병렬 스레드가 backing 파일을 직접 삭제하면 stale dentry로 이중 삭제가 발생해 f2fs 등에서 메타데이터 손상 경고를 유발할 수 있는 것으로 추정된다. ※ 인용 검증 미완료 — 원문 직접 확인 필요. CVE 트래킹 번호(Bug: 514907255 외)도 미확인.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/8b70dc4403681c64dfbb65125fc2936cb25255cf)\n\n---\n\n**ANDROID: f2fs: fix incorrect condition check for cleancache**\n\nf2fs_read_single_page()의 cleancache 조회 조건을 수정해, page가 up-to-date가 아닐 때만 cleancache에서 페이지를 가져오도록 바로잡았다.\n\n영향: cleancache 제거 revert(b23efcdb7b44)로 들어온 회귀로, 잘못된 조건이면 stale 페이지를 cleancache에서 잘못 끌어와 데이터 정합성 문제로 이어질 수 있다.\n\n> \"There is an incorrect condition check in the f2fs_read_single_page(). ... Fixes: b23efcdb7b44 (\\\"ANDROID: Revert \\\"mm: remove cleancache\\\"\\\")\"\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/66b8d2a9700a7cf3c1a5f4089bb4a93d1bcbc144)\n\n---\n\n**geneve: fix length used in GRO hint UDP checksum adjustment**\n\ngeneve_post_decap_hint에서 UDP 체크섬 보정에 IP 길이 offset(nested_nh_offset) 대신 UDP 길이 offset(nested_tp_offset)을 쓰도록 수정됐다.\n\n영향: GRO hint RX 경로(fd0dd796576e) 도입 회귀로, 잘못된 길이로 체크섬을 보정하면 geneve 디캡 패킷 드롭/오류를 유발한다.\n\n> \"the length used for adjusting the UDP checksum should be 'skb->len - gro_hint->nested_tp_offset' (UDP length) instead of 'skb->len - gro_hint->nested_nh_offset' (IP length). Fixes: fd0dd796576e\"\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/1231623fd3b5aa6b41cce799ffb0d82e10914be4)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**ANDROID: drivers/wrapfd: Fix mmap offset forwarding for dmabuf**\n\nwrapfd로 dmabuf를 mmap할 때 dma_buf_mmap()이 항상 pgoff 0으로 호출되던 것을, 사용자가 지정한 pgoff를 전달하도록 수정됐다.\n\n영향: 사용자 요청 offset이 무시돼 잘못된 위치에 매핑이 생성되던 런타임 버그로, wrapfd dmabuf 지원(957af3d3cc3d) 도입분의 회귀다.\n\n> \"dma_buf_mmap() is always invoked with pgoff 0, even if it's not what the user requested. This leads to creating mappings at the wrong offsets. ... Fixes: 957af3d3cc3d\"\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/a9d1116a330867eabebfd1e9367d8a74aabb8561)\n\n---\n\n**ANDROID: KVM: arm64: Support bidirectional branches in pKVM module relocation**\n\npKVM 모듈 심볼 재배치가 backward branch(exporter가 낮은 주소 가정)만 지원하던 것을, 양/음 offset 모두 허용해 forward/backward 분기를 지원하도록 변경됐다.\n\n영향: 전용 hyp VA space 도입(c42c886c1098)으로 exporter가 importer보다 높은 주소에 올 수 있게 되면서 기존 가정이 깨져 재배치가 실패할 수 있던 회귀를 수정했다. pKVM 모듈을 로드하는 벤더 hypervisor 모듈에 직접 영향.\n\n> \"The pKVM module symbol relocation was limited to backward branches. ... Allow both positive and negative offsets during relocation ... Fixes: c42c886c1098 (\\\"ANDROID: KVM: arm64: Dedicated hyp VA space\\\")\"\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/d398eeb1f23e1ac0aa5bd2d84efb4d19c0149477)\n\n---\n\n**ANDROID: fuse-bpf: tests: add regression and validation tests**\n\nCONFIG_FUSE_BPF 하에 4개 테스트(canonical_path 빈 응답 경계, 동시 create_excl VFS lock-drop, mount 권한 gating, stacking depth 한계) 추가 및 legacy revalidate 테스트 1개가 deprecate됐다.\n\n영향: fuse-bpf 락킹/스택 한계/마운트 권한/canonical path를 자동 검증해 rmdir/unlink 류 결함 재발을 방지한다. fuse-bpf 변경을 캐리하는 트리의 검증 기준이 됨.\n\n> \"Add a comprehensive suite of four regression and validation tests to verify FUSE-BPF kernel locking, stacking limits, mounting privileges, and canonical path validations under CONFIG_FUSE_BPF\"\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/ebfd5e9b1ca6c242f5eba9976801a2175e863a5b)\n\n---\n\n**ANDROID: mm: Update GKI symbol list for override_exec_folio_order hook**\n\noverride_exec_folio_order VM_EXEC folio order override 훅의 tracepoint/traceiter 심볼 2개를 GKI 심볼 리스트에 추가했다.\n\n영향: SoC/OEM 동적 로더블 모듈이 VM_EXEC folio order 훅에 attach하려면 이 심볼 export가 필요하며, KMI(모듈 ABI) 표면이 확장되므로 GKI ABI 관리 담당이 추적해야 한다.\n\n> \"Add __tracepoint_android_vh_override_exec_folio_order and __traceiter_android_vh_override_exec_folio_order to the GKI symbol list. These symbols are required by SoC/OEM dynamic loadable modules\"\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/10095be57552d4b8e1a4726dd0958d9d41c5c7a1)\n\n---\n\n**Merge tag 'erofs-for-7.1-rc7-fixes'** (ack-android-mainline)\n\nmainline erofs 7.1-rc7 fixes 태그 머지: compressed I/O와 unmount 경합 시 sbi->sync_decompress 관련 수정, 다중 알고리즘 이미지를 잘못 거부하던 z_erofs_map_sanity_check 회귀 수정이 포함된 것으로 추정된다. ※ 인용 검증 미완료 — 머지 메시지 원문 직접 확인 필요. 각 fix의 개별 upstream 커밋 해시도 미확정.\n\n영향: erofs는 Android read-only 파티션에 널리 쓰이며, ack-android-mainline을 추종하는 트리의 backport 후보로 중요도가 높다.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/2b389a573b76f4e3e1e17654eeaced3eb48c2972)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ANDROID: KVM: iommu: Reject idmap domain in kvm_iommu_map_sg",
+      "url": "https://android.googlesource.com/kernel/common/+/ad34d15396568919a8ddd306ce2120e76d111b7c",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: fuse-bpf: re-validate backing dentry in rmdir and unlink",
+      "url": "https://android.googlesource.com/kernel/common/+/8b70dc4403681c64dfbb65125fc2936cb25255cf",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: f2fs: fix incorrect condition check for cleancache",
+      "url": "https://android.googlesource.com/kernel/common/+/66b8d2a9700a7cf3c1a5f4089bb4a93d1bcbc144",
+      "note": "commit"
+    },
+    {
+      "title": "geneve: fix length used in GRO hint UDP checksum adjustment",
+      "url": "https://android.googlesource.com/kernel/common/+/1231623fd3b5aa6b41cce799ffb0d82e10914be4",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: drivers/wrapfd: Fix mmap offset forwarding for dmabuf",
+      "url": "https://android.googlesource.com/kernel/common/+/a9d1116a330867eabebfd1e9367d8a74aabb8561",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: KVM: arm64: Support bidirectional branches in pKVM module relocation",
+      "url": "https://android.googlesource.com/kernel/common/+/d398eeb1f23e1ac0aa5bd2d84efb4d19c0149477",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: fuse-bpf: tests: add regression and validation tests",
+      "url": "https://android.googlesource.com/kernel/common/+/ebfd5e9b1ca6c242f5eba9976801a2175e863a5b",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: mm: Update GKI symbol list for override_exec_folio_order hook",
+      "url": "https://android.googlesource.com/kernel/common/+/10095be57552d4b8e1a4726dd0958d9d41c5c7a1",
+      "note": "commit"
+    },
+    {
+      "title": "Merge tag 'erofs-for-7.1-rc7-fixes'",
+      "url": "https://android.googlesource.com/kernel/common/+/2b389a573b76f4e3e1e17654eeaced3eb48c2972",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-07T18:11:36.816Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/android-newsletter-from-dossier-ko.md"
+  }
+}

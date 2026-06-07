@@ -1,0 +1,107 @@
+{
+  "id": "2026-06-08-linux-perf-rt-weekly-rollup",
+  "topic": "linux-perf-rt",
+  "title": "2026-06-08 주간 요약",
+  "headline": "BPF verifier 유지보수 담당 및 map-in-map(ARRAY_OF_MAPS) 사용자 주목: Keep dynamic inner arra",
+  "date": "2026-06-08",
+  "summary": "오늘의 핵심: 릴리스/로드맵 0건, 회귀·보안 신호 2건, 핵심 변경 2건. 리서치 dossier 의 출처를 근거로 정리했습니다.",
+  "tags": [
+    "주간"
+  ],
+  "highlights": [
+    {
+      "title": "Keep dynamic inner array lookups nullable",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF verifier 유지보수 담당 및 map-in-map(ARRAY_OF_MAPS) 사용자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260607-f01-v2-v2-0-da48453146e8@mails.tsinghua.edu.cn/",
+      "if": "BPF verifier 유지보수 담당 및 map-in-map(ARRAY_OF_MAPS) 사용자라면",
+      "do": "ARRAY_OF_MAPS가 BPF_F_INNER_MAP 템플릿 배열을 inner map으로 쓸 때, verifier는 템플릿의 max_entri",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/bpf/20260607-f01-v2-v2-0-da48453146e8@mails.tsinghua.edu.cn/"
+    },
+    {
+      "title": "net: lan966x: restore RX state on reload failure",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Microchip lan966x 네트워크 드라이버 및 XDP 사용자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260607145747.1494514-1-lgs201920130244@gmail.com/",
+      "if": "Microchip lan966x 네트워크 드라이버 및 XDP 사용자라면",
+      "do": "lan966x_fdma_reload()의 MTU 재설정 실패 롤백 경로가 rx->page_order, rx->max_mtu와 각 포트 XDP R",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/bpf/20260607145747.1494514-1-lgs201920130244@gmail.com/"
+    },
+    {
+      "title": "bpf: backport scalar not-equal tracking fixes",
+      "priority": "중",
+      "impactType": "backport",
+      "affectedAudience": "6.6 stable 커널 유지보수 담당 및 Rust eBPF/verifier 사용자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260607170959.823755-1-jt26wzz@gmail.com/",
+      "if": "6.6 stable 커널 유지보수 담당 및 Rust eBPF/verifier 사용자라면",
+      "do": "verifier scalar range-tracking 수정 2건을 6.6.y로 backport하고 selftest를 추가합니다. JNE 분기 ",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/bpf/20260607170959.823755-1-jt26wzz@gmail.com/"
+    },
+    {
+      "title": "bpf: fix deadlock in special field destruction in NMI",
+      "priority": "하",
+      "impactType": "runtime",
+      "affectedAudience": "BPF core(verifier/메모리 해제) 유지보수 담당 및 tp_btf/NMI tracing 프로그램 작성자",
+      "verifyLink": "https://lore.kernel.org/bpf/aiWFGUQRP-VCtlNr@zenbox/",
+      "if": "BPF core(verifier/메모리 해제) 유지보수 담당 및 tp_btf/NMI tracing 프로그램 작성자라면",
+      "do": "kptr 등 special field를 NMI 컨텍스트에서 즉시 해제(eager free)하려다 발생하는 deadlock을 막으려는 패치지만, ",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/bpf/aiWFGUQRP-VCtlNr@zenbox/"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**Keep dynamic inner array lookups nullable**\n\nARRAY_OF_MAPS가 BPF_F_INNER_MAP 템플릿 배열을 inner map으로 쓸 때, verifier는 템플릿의 max_entries로 상수-키 lookup의 nullness를 제거하지만 런타임은 교체된 concrete inner array의 max_entries를 사용합\n\n영향: BPF 프로그램에서 검사 없이 NULL을 역참조해 커널 NULL deref를 트리거할 수 있어 verifier soundness/보안 문제입니다. 수정 후에는 invalid map_value_or_null access로 reject됩니다.\n\n> The verifier can therefore accept an unchecked dereference even though the runtime helper returns NULL.\n\n[원문 확인](https://lore.kernel.org/bpf/20260607-f01-v2-v2-0-da48453146e8@mails.tsinghua.edu.cn/)\n\n**net: lan966x: restore RX state on reload failure**\n\nlan966x_fdma_reload()의 MTU 재설정 실패 롤백 경로가 rx->page_order, rx->max_mtu와 각 포트 XDP RXQ의 page pool mem-model 등록을 복원하지 않던 문제를 v2에서 저장·복원하도록 수정합니다. Fixes: 59c3d55a946c\n\n영향: jumbo MTU 재설정 실패 후 XDP 경로가 새 page_order에서 유도한 frame size를 광고하지만 실제 RX 페이지는 옛 할당분이라, xdp_init_buff()가 복원된 RX 페이지보다 큰 frame size로 호출되는 메모리 불일치가 생깁니다. XDP를 쓰는 lan9\n\n> For example, after a failed reload to a jumbo MTU, xdp_init_buff() may be called with a frame size larger than the restored RX pages.\n\n[원문 확인](https://lore.kernel.org/bpf/20260607145747.1494514-1-lgs201920130244@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**bpf: backport scalar not-equal tracking fixes**\n\nverifier scalar range-tracking 수정 2건을 6.6.y로 backport하고 selftest를 추가합니다. JNE 분기 edge에서 not-equal 사실을 보존하지 못해, scalar id로 연결된 두 스칼라(r0/r7)가 불가능한 경로에서 0으로 좁혀지고 캐시\n\n영향: verifier는 프로그램을 통과시키지만 런타임에서 분기 결과가 틀리게 나오는 silent한 오동작이라 디버깅이 매우 어렵습니다. 6.6 stable을 쓰는 사용자, 특히 helper 호출 주변에서 scalar가 쉽게 link되는 Rust-generated eBPF 사용자에게 직접 영향\n\n> The program is accepted by the verifier but then reports the wrong branch outcome at runtime.\n\n[원문 확인](https://lore.kernel.org/bpf/20260607170959.823755-1-jt26wzz@gmail.com/)\n\n**bpf: fix deadlock in special field destruction in NMI**\n\nkptr 등 special field를 NMI 컨텍스트에서 즉시 해제(eager free)하려다 발생하는 deadlock을 막으려는 패치지만, 리뷰 결과 맵에서 분리된 bpf_obj(예: task_struct kptr 보유)를 NMI에서 bpf_obj_drop 할 때는 해당 패치로도 막\n\n영향: tp_btf/nmi_handler 프로그램은 항상 in_nmi 상태(irqs_disabled)라 그 안에서 임의 kptr destructor를 호출하면 락 재진입으로 deadlock이 납니다. tracing/observability용 BPF를 작성하는 사용자와 verifier·런타임 유\n\n> Because tp_btf/nmi_handler is always in_nmi and hence irqs_disabled, in the code before this patch the task_struct dtor will be invoked and cause a deadlock.\n\n[원문 확인](https://lore.kernel.org/bpf/aiWFGUQRP-VCtlNr@zenbox/)"
+    },
+    {
+      "heading": "기타",
+      "body": "국부 드라이버/플랫폼 패치는 본문에서 제외했습니다. 자기 영역 키워드로 lore.kernel.org에서 직접 검색하세요."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Keep dynamic inner array lookups nullable",
+      "url": "https://lore.kernel.org/bpf/20260607-f01-v2-v2-0-da48453146e8@mails.tsinghua.edu.cn/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: backport scalar not-equal tracking fixes",
+      "url": "https://lore.kernel.org/bpf/20260607170959.823755-1-jt26wzz@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "net: lan966x: restore RX state on reload failure",
+      "url": "https://lore.kernel.org/bpf/20260607145747.1494514-1-lgs201920130244@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: fix deadlock in special field destruction in NMI",
+      "url": "https://lore.kernel.org/bpf/aiWFGUQRP-VCtlNr@zenbox/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "source": "research-dossier",
+    "bucketCounts": {
+      "릴리스/로드맵": 0,
+      "회귀·보안 신호": 2,
+      "핵심 변경": 2,
+      "기타": 0
+    },
+    "entryCount": 4
+  }
+}

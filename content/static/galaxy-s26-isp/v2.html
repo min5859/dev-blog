@@ -362,8 +362,8 @@ val = (cfg-&gt;height &lt;&lt; 16) | cfg-&gt;width;
    <span class="f">is_fpsimd_put_func</span>(); ret; })</pre>
         </div>
         <div class="callout fw" style="margin:10px 0 0;font-size:12.5px">
-          <div class="t">결정적 포인트</div>레지스터 로직은 커널에 <b>없고 DDK 바이너리(.bin)에 은닉</b>. 커널 소스만으론 추적 불가.
-          <div class="file ex" style="margin-top:5px">is-interface-ddk.h · is-hw-3aa.c · is-param.h</div>
+          <div class="t">결정적 포인트 (하이브리드)</div><b>전부</b> 펌웨어에 숨는 건 아님 — 크기·DMA·코어 같은 <b>구조 레지스터는 커널이 직접</b> 프로그래밍(<code>rgbp_hw_s_core</code>, <code>is_hw_rgbp_s_size_regs</code>, <code>__is_hw_rgbp_set_rdma</code>)하고, <b>튜닝·IQ 레지스터만</b> DDK <code>lib_shot</code> + RTA <code>set_rta_regs</code>(.bin)로 채워진다. 포맷·스트라이프·DMA·크기 버그는 커널에서 추적 가능.
+          <div class="file ex" style="margin-top:5px">is-hw-rgbp.c:1118/1130 · is-interface-ddk.h · is-param.h</div>
         </div>
       </div>
     </div>
@@ -371,8 +371,8 @@ val = (cfg-&gt;height &lt;&lt; 16) | cfg-&gt;width;
       <tr><th>항목</th><th class="qc">Qualcomm</th><th class="ex">Exynos</th></tr>
       <tr><td class="axis">레지스터 write 주체</td><td>커널이 명령 생성 → <b>CDM DMA</b></td><td><b>DDK 펌웨어</b> 함수</td></tr>
       <tr><td class="axis">커널이 보는 것</td><td>레지스터 주소·값 쌍 전부</td><td>파라미터 구조체 + 함수 호출만</td></tr>
-      <tr><td class="axis">소스 가시성</td><td><b>.c에 다 노출</b></td><td><b>.bin에 은닉</b></td></tr>
-      <tr><td class="axis">가능한 이유</td><td>CDM 하드웨어 존재</td><td>IS 칩에 DDK 펌웨어 내장</td></tr>
+      <tr><td class="axis">소스 가시성</td><td><b>.c에 다 노출</b></td><td>구조·DMA·크기 레지스터는 <b>.c에 노출</b>, 튜닝·IQ만 <b>.bin</b></td></tr>
+      <tr><td class="axis">가능한 이유</td><td>CDM 하드웨어 존재</td><td>IS 칩에 DDK/RTA 펌웨어 내장</td></tr>
     </table>
   </div>
 </section>
@@ -608,25 +608,37 @@ reg_val_pair[1] |= (csid_hw-&gt;rx_cfg.mup &lt;&lt; mup_shift); <span class="c">
         <h4>CSTAT — 3A 통계 추출</h4>
         <p style="font-size:13px;color:var(--muted)">센서 raw에서 AE/AWB/AF용 통계(PRE/AE/AWB thumb, RGBY 히스토그램, CDAF)를 뽑아 ICPU RTA로 전달. 이게 3A 연산의 입력.</p>
         <div class="code">
-          <div class="fname">is-hw-api-cstat-v4_20.c <span class="tg">:96-100</span></div>
-<pre>[IS_CSTAT_<span class="hl">AE_THUMB</span>]  = { .w=65536, .bpp=8, .num=4 },
-[IS_CSTAT_<span class="hl">AWB_THUMB</span>] = { .w=65536, .bpp=8, .num=4 },
-[IS_CSTAT_<span class="hl">RGBY_HIST</span>] = { .w=16384, .bpp=8, .num=2 },
-[IS_CSTAT_<span class="hl">CDAF</span>] = { .w=211, .bpp=32 };  <span class="c">// AF용</span></pre>
+          <div class="fname">is-hw-api-cstat-v4_20.c <span class="tg">:96-102</span></div>
+<pre>[IS_CSTAT_<span class="hl">CDAF</span>]      = { .w=211,   .bpp=32, .num=1 },  <span class="c">// AF용</span>
+[IS_CSTAT_<span class="hl">PRE_THUMB</span>] = { .w=98304, .bpp=8, .num=CSAT_STAT_BUF_NUM },
+[IS_CSTAT_<span class="hl">AE_THUMB</span>]  = { .w=65536, .bpp=8, .num=CSAT_STAT_BUF_NUM },
+[IS_CSTAT_<span class="hl">AWB_THUMB</span>] = { .w=65536, .bpp=8, .num=CSAT_STAT_BUF_NUM },
+[IS_CSTAT_<span class="hl">RGBY_HIST</span>] = { .w=5120,  .bpp=8, .num=CSAT_STAT_BUF_NUM },
+[IS_CSTAT_<span class="hl">CDAF_MW</span>]   = { .w=13680, .bpp=8, .num=CSAT_STAT_BUF_NUM };</pre>
         </div>
       </div>
       <div class="panel ex">
-        <h4>각 IP — DDK shot + RTA 레지스터</h4>
-        <p style="font-size:13px;color:var(--muted)">모든 IP가 동일 패턴: <code>lib_shot</code>(DDK 펌웨어 연산) → <code>set_rta_regs</code>(RTA 결과를 레지스터에 로드). 예: RGBP는 CCM·감마, YUVP는 톤맵·CLAHE.</p>
+        <h4>각 IP — 커널 레지스터 + DDK + RTA (하이브리드)</h4>
+        <p style="font-size:13px;color:var(--muted)">한 shot 안에서 <b>세 주체</b>가 레지스터를 나눠 씁니다: 커널이 구조/크기/DMA, DDK가 연산, RTA가 튜닝/IQ.</p>
         <div class="code">
-          <div class="fname">is-hw-rgbp.c <span class="tg">:977-1130</span></div>
-<pre><span class="c">/* DDK 호출: 디모자이크·히스토그램 */</span>
-<span class="f">CALL_HW_HELPER_OPS</span>(hw_ip, <span class="hl">lib_shot</span>, ..., param_set);
-<span class="c">/* RTA 결과: CCM(색변환)·감마 레지스터 로드 */</span>
-<span class="f">CALL_HW_HELPER_OPS</span>(hw_ip, <span class="hl">set_rta_regs</span>, ..., frame, NULL);</pre>
+          <div class="fname">is-hw-rgbp.c <span class="tg">:1118-1140</span></div>
+<pre><span class="hl">rgbp_hw_s_core</span>(hw_ip-&gt;regs, ...);              <span class="c">// ① 커널: 코어 레지스터</span>
+<span class="f">CALL_HW_HELPER_OPS</span>(hw_ip, <span class="hl">lib_shot</span>, ..., param_set); <span class="c">// ② DDK: 디모자이크 연산</span>
+<span class="f">CALL_HW_HELPER_OPS</span>(hw_ip, <span class="hl">set_rta_regs</span>, ...);     <span class="c">// ③ RTA: CCM·감마(.bin)</span>
+<span class="hl">is_hw_rgbp_s_size_regs</span>(hw_ip, ...);           <span class="c">// ① 커널: 크기 레지스터</span>
+<span class="f">__is_hw_rgbp_set_rdma</span>(hw_ip, ...);             <span class="c">// ① 커널: DMA 주소</span></pre>
         </div>
       </div>
     </div>
+    <table style="margin-top:14px">
+      <tr><th>레지스터 종류 (Exynos)</th><th>소유 주체</th><th>코드/위치</th></tr>
+      <tr><td class="axis" style="color:var(--ex)">코어 enable·모드</td><td><b>커널</b></td><td><code>rgbp_hw_s_core</code> 등 <code>*_hw_s_core</code></td></tr>
+      <tr><td class="axis" style="color:var(--ex)">크기·crop·stripe</td><td><b>커널</b></td><td><code>is_hw_*_s_size_regs</code> / <code>set_size_regs</code></td></tr>
+      <tr><td class="axis" style="color:var(--ex)">DMA 주소 (RDMA/WDMA)</td><td><b>커널</b></td><td><code>__is_hw_*_set_rdma/_wdma</code> (36bit DVA)</td></tr>
+      <tr><td class="axis" style="color:var(--ex)">3A·디모자이크 등 연산</td><td><b>DDK 펌웨어</b></td><td><code>CALL_HW_HELPER_OPS(lib_shot)</code></td></tr>
+      <tr><td class="axis" style="color:var(--ex)">튜닝·IQ (CCM/감마/톤맵)</td><td><b>RTA 펌웨어</b></td><td><code>set_rta_regs</code> → block reg (.bin)</td></tr>
+    </table>
+    <div class="callout key" style="margin-top:12px"><div class="t">개발자 팁</div>포맷·스트라이프·DMA·크기·crop 버그는 <b>커널 소스로 추적 가능</b>(<code>is-hw-*.c</code>). 색감·노이즈·톤 등 화질 튜닝 이슈만 펌웨어(.bin) 영역이라 인터페이스(<code>set_param</code>/<code>set_ctrl</code>/<code>get_meta</code>)와 <code>pmap</code>·<code>is_region</code> 값으로 간접 확인합니다.</div>
     <table style="margin-top:14px">
       <tr><th>단계</th><th>역할</th><th>변환</th></tr>
       <tr><td class="axis" style="color:var(--ex)">CSTAT</td><td>통계 추출</td><td>Raw → AE/AWB/AF 히스토그램</td></tr>
@@ -700,11 +712,11 @@ reg_val_pair[1] |= (csid_hw-&gt;rx_cfg.mup &lt;&lt; mup_shift); <span class="c">
       <tr><td class="axis">프레임 펑크</td><td>버블 재적용 (살림)</td><td>NDONE drop (버림)</td></tr>
       <tr><td class="axis">파이프라인</td><td>CSID→SFE→IFE→DDR</td><td>CSTAT→BYRP→RGBP→MCFP→YUVP→MCS</td></tr>
       <tr><td class="axis">최신 진화</td><td>SFE — 데이터 경로 분화</td><td>ICPU — 제어 지능 오프로드</td></tr>
-      <tr><td class="axis">분석 난이도</td><td>커널 소스로 거의 추적 가능</td><td>핵심이 .bin 펌웨어에 숨어 추적 한계</td></tr>
+      <tr><td class="axis">분석 난이도</td><td>커널 소스로 거의 추적 가능</td><td>구조·DMA 레지스터는 커널 추적 가능, 3A·튜닝/IQ는 .bin 펌웨어</td></tr>
     </table>
     <div class="disclaimer">
       ⚠️ <b>분석 근거</b> · Qualcomm·Exynos 양쪽 모두 삼성 오픈소스에서 받은 실제 S26 커널 코드(<code>extracted/qcom_s948u/</code>, <code>extracted/exynos_s942n/</code>)를 직접 읽어 작성했습니다. 인용된 파일:라인은 실제 소스 기준입니다.
-      단, Exynos의 3A/레지스터 핵심 연산 로직은 DDK/RTA 펌웨어 바이너리(.bin) 안에 있어 커널 소스로는 인터페이스까지만 확인 가능합니다.
+      단, Exynos는 <b>하이브리드</b>입니다 — 구조·DMA·크기 레지스터는 커널(<code>is-hw-*.c</code>)에서 직접 프로그래밍되어 추적 가능하지만, 3A 연산과 튜닝·IQ 레지스터 값은 DDK/RTA 펌웨어 바이너리(.bin) 안에 있어 커널 소스로는 인터페이스까지만 확인 가능합니다.
     </div>
   </div>
 </section>

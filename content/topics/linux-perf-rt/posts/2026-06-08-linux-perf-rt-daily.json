@@ -1,0 +1,112 @@
+{
+  "id": "2026-06-08-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-06-08 BPF verifier NULL deref 수정 논의 — Linux Perf/RT",
+  "headline": "BPF verifier NULL deref 취약점 패치·scalar range-tracking 6.6 backport·NMI deadlock 해결 방향 논의",
+  "date": "2026-06-08",
+  "summary": "BPF verifier에서 map-in-map NULL deref를 허용하는 보안 결함이 수정되고, scalar range-tracking 오류 2건이 6.6.y로 backport됩니다. NMI 컨텍스트의 kptr deadlock은 irq_work 지연 해제 방향으로 재논의 중이며, lan966x XDP 경로의 RX 상태 복원 누락도 패치 대상에 올랐습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "BPF",
+    "verifier",
+    "XDP",
+    "backport"
+  ],
+  "highlights": [
+    {
+      "title": "BPF map-in-map NULL deref 허용 결함 수정",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF verifier 유지보수 담당 및 map-in-map(ARRAY_OF_MAPS) 사용자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260607-f01-v2-v2-0-da48453146e8@mails.tsinghua.edu.cn/",
+      "if": "ARRAY_OF_MAPS에 BPF_F_INNER_MAP 템플릿 배열을 inner map으로 사용하고 있다면",
+      "do": "패치 적용 여부를 확인하고 NULL 검사 없는 상수 키 lookup 코드를 점검하세요",
+      "verify": "수정 후 해당 BPF 프로그램이 invalid map_value_or_null access로 reject되는지 확인하세요"
+    },
+    {
+      "title": "BPF scalar not-equal tracking 수정 6.6.y backport",
+      "priority": "상",
+      "impactType": "backport",
+      "affectedAudience": "6.6 stable 커널 유지보수 담당 및 Rust eBPF/verifier 사용자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260607170959.823755-1-jt26wzz@gmail.com/",
+      "if": "6.6 stable 커널에서 Rust-generated eBPF 또는 helper 호출 주변에서 scalar를 비교하는 프로그램을 운용 중이라면",
+      "do": "6.6.y 업데이트 시 해당 backport 포함 여부를 확인하세요",
+      "verify": "verifier 통과 후 런타임 분기 결과가 예상과 일치하는지 selftest를 돌려 확인하세요"
+    },
+    {
+      "title": "NMI kptr deadlock — irq_work 지연 해제 재논의",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "BPF core(verifier/메모리 해제) 유지보수 담당 및 tp_btf/NMI tracing 프로그램 작성자",
+      "verifyLink": "https://lore.kernel.org/bpf/aiWFGUQRP-VCtlNr@zenbox/",
+      "if": "tp_btf 또는 NMI handler에서 task_struct kptr 등 복잡한 destructor를 가진 객체를 drop하는 BPF 프로그램을 작성 중이라면",
+      "do": "lore 스레드에서 irq_work 기반 해결안의 최종 합의 여부를 확인하세요",
+      "verify": "NMI 컨텍스트에서 임의 kptr destructor가 호출되지 않는지 deadlock 재현 여부를 점검하세요"
+    },
+    {
+      "title": "lan966x XDP RX 상태 복원 누락 수정",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "Microchip lan966x 네트워크 드라이버 및 XDP 사용자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260607145747.1494514-1-lgs201920130244@gmail.com/",
+      "if": "lan966x 드라이버에서 XDP를 사용하며 jumbo MTU 설정 변경을 시도하는 환경이라면",
+      "do": "v2 패치 적용 후 MTU 재설정 실패 시 RX 상태가 올바르게 복원되는지 확인하세요",
+      "verify": "실패한 reload 후 xdp_init_buff() 호출 시 frame size가 복원된 RX 페이지 크기를 초과하지 않는지 검증하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**Keep dynamic inner array lookups nullable**\n\nARRAY_OF_MAPS에 BPF_F_INNER_MAP 템플릿 배열을 inner map으로 사용할 때 verifier가 상수 키 lookup의 nullness를 잘못 제거해 NULL deref를 허용하던 결함을 수정하고, 해당 lookup을 nullable로 유지하도록 변경합니다.\n\n영향: 검사 없는 NULL deref로 커널 충돌을 트리거할 수 있어 verifier 건전성과 보안에 직접 영향이 있으며, 수정 후에는 해당 프로그램이 invalid map_value_or_null access로 reject됩니다.\n\n> \"The verifier can therefore accept an unchecked dereference even though the runtime helper returns NULL.\"\n\n[원문 확인](https://lore.kernel.org/bpf/20260607-f01-v2-v2-0-da48453146e8@mails.tsinghua.edu.cn/)\n\n---\n\n**net: lan966x: restore RX state on reload failure**\n\nlan966x_fdma_reload() MTU 재설정 실패 롤백 경로에서 rx->page_order, rx->max_mtu와 XDP RXQ page pool mem-model 등록을 복원하지 않던 문제를 v2에서 저장·복원하도록 수정합니다.\n\n영향: jumbo MTU 재설정 실패 후 xdp_init_buff()가 복원된 RX 페이지보다 큰 frame size로 호출되는 메모리 불일치가 발생합니다. netdev maintainer 최종 수용 여부는 확인 필요입니다.\n\n> \"after a failed reload to a jumbo MTU, xdp_init_buff() may be called with a frame size larger than the restored RX pages.\"\n\n[원문 확인](https://lore.kernel.org/bpf/20260607145747.1494514-1-lgs201920130244@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**bpf: fix deadlock in special field destruction in NMI**\n\nNMI 컨텍스트에서 kptr 등 special field를 즉시 해제(eager free)하려다 발생하는 deadlock 수정 패치가 제안됐으나, 리뷰에서 참조를 drop하지 않은 채 객체만 해제해 leak이 발생한다는 결론으로 흘렀고 irq_work를 통한 지연 해제 방향이 재논의 중입니다.\n\n영향: tp_btf/nmi_handler는 항상 in_nmi(irqs_disabled) 상태라 임의 kptr destructor 호출 시 락 재진입으로 deadlock이 발생하며, tracing/observability용 BPF 작성자가 직접 영향을 받습니다. 최종 합의 여부는 확인 필요입니다.\n\n> \"Because tp_btf/nmi_handler is always in_nmi and hence irqs_disabled, in the code before this patch the task_struct dtor will be invoked and cause a deadlock.\"\n\n[원문 확인](https://lore.kernel.org/bpf/aiWFGUQRP-VCtlNr@zenbox/)\n\n---\n\n**bpf: backport scalar not-equal tracking fixes**\n\nJNE 분기 edge에서 not-equal 사실을 보존하지 못해 연결된 두 스칼라가 불가능한 경로에서 0으로 좁혀지고 실제 success path가 prune되는 state-pruning 결함 수정 2건을 6.6.y로 backport하고 selftest를 추가합니다.\n\n영향: verifier를 통과하지만 런타임에서 분기 결과가 틀리게 나오는 silent 오동작으로, 6.6 stable 및 helper 호출 주변에서 scalar가 연결되는 Rust-generated eBPF 사용자에게 직접 영향이 있습니다. 6.1.y 등 다른 stable 버전의 backport 필요성은 확인 필요입니다.\n\n> \"The program is accepted by the verifier but then reports the wrong branch outcome at runtime.\"\n\n[원문 확인](https://lore.kernel.org/bpf/20260607170959.823755-1-jt26wzz@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "중",
+    "note": "리서치 dossier의 출처를 근거로 작성했습니다. NMI deadlock 최종 합의안, lan966x maintainer 결정, CVE 발급 여부, 추가 stable backport 대상 등 일부 항목은 Anubis 차단으로 확인되지 않았습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "bpf: fix deadlock in special field destruction in NMI",
+      "url": "https://lore.kernel.org/bpf/aiWFGUQRP-VCtlNr@zenbox/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: backport scalar not-equal tracking fixes",
+      "url": "https://lore.kernel.org/bpf/20260607170959.823755-1-jt26wzz@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Keep dynamic inner array lookups nullable",
+      "url": "https://lore.kernel.org/bpf/20260607-f01-v2-v2-0-da48453146e8@mails.tsinghua.edu.cn/",
+      "note": "thread"
+    },
+    {
+      "title": "net: lan966x: restore RX state on reload failure",
+      "url": "https://lore.kernel.org/bpf/20260607145747.1494514-1-lgs201920130244@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "lan966x ACK — code part review",
+      "url": "https://lore.kernel.org/bpf/CA+XhMqx+q53AwRekMD0T-92maOizqGFEgcBRCNvChWQ3JBAg2A@mail.gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-07T18:59:07.170Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,107 @@
+{
+  "id": "2026-06-08-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-06-08 arm64 VNCR 경쟁·RISC-V 격리 버그 — Arch/Platform",
+  "headline": "arm64 VNCR TLB 경쟁 조건 크래시·RISC-V KVM hugetlb 격리 버그 두 건 수정 패치 제출",
+  "date": "2026-06-08",
+  "summary": "arm64 FEAT_NV2/VNCR 중첩 가상화 호스트에서 VNCR TLB 무효화가 미할당 vCPU 포인터를 역참조해 크래시를 유발하는 회귀가 패치로 제출됐으며, RISC-V KVM에서는 hugetlb G-stage 블록의 memslot 범위 검사 누락으로 게스트 메모리 격리가 깨질 수 있는 버그 수정이 진행 중입니다. RISC-V IRQ 스택 할당 실패 즉시 패닉 전환 패치는 v7.2 큐에 합류했고, Svadu/Zicfiss/Zicfilp CFI 확장의 KVM 게스트 노출 시리즈(v3)가 리뷰 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "arm64",
+    "RISC-V",
+    "KVM",
+    "가상화"
+  ],
+  "highlights": [
+    {
+      "title": "arm64 VNCR TLB 경쟁 조건 — 외부 보안 연구자 보고",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "arm64 KVM / nested-virtualization maintainers and downstreams enabling FEAT_NV2/VNCR",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260607175745.297793-1-maz@kernel.org/",
+      "if": "arm64 NV(FEAT_NV2/VNCR) 게스트를 운영 중이라면",
+      "do": "maz@kernel.org 패치(kvm_for_each_vncr_tlb 헬퍼 도입)의 kvmarm/next 합류 여부를 확인하고 조기 백포트를 검토하세요.",
+      "verify": "kvmarm/next 브랜치에서 kvm_for_each_vncr_tlb 심볼 존재 여부를 git log로 확인하세요."
+    },
+    {
+      "title": "RISC-V KVM hugetlb G-stage 블록 — memslot 범위 이탈 위험",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "RISC-V KVM maintainers and hosts running hugetlb-backed VMs",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/CAK9=C2XGRgz+3c2Rf8bj8tPtAiCpHXrsm2sNC1b7qHt-5p6PZQ@mail.gmail.com/",
+      "if": "RISC-V KVM 호스트에서 hugetlb 백업 게스트를 운영 중이라면",
+      "do": "v2 패치 큐 합류 여부를 추적하고, 그때까지 정렬되지 않은 memslot 구성을 피하세요.",
+      "verify": "fault_supports_gstage_huge_mapping()에 매핑 크기 인수가 추가됐는지 패치 diff를 검토하세요."
+    },
+    {
+      "title": "RISC-V IRQ 스택 할당 실패 즉시 패닉 전환 — v7.2 큐 확정",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "RISC-V architecture maintainers and platform/boot integrators",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/773527c2-760d-60c6-23c3-0f1f60cc3fea@kernel.org/",
+      "if": "RISC-V 플랫폼에서 부팅 시 스택 할당 실패가 침묵하는 문제를 추적 중이라면",
+      "do": "v7.2 머지 윈도우에서 해당 패치 포함 여부를 확인하고 부트 로그에서 early panic 메시지를 점검하세요.",
+      "verify": "init_irq_stacks() 및 init_irq_scs()에 panic() 호출이 추가됐는지 소스 diff로 확인하세요."
+    },
+    {
+      "title": "RISC-V KVM Svadu/Zicfiss/Zicfilp FWFT 지원 — v3 리뷰 진행 중",
+      "priority": "하",
+      "impactType": "api-abi",
+      "affectedAudience": "RISC-V KVM maintainers and VMM/guest developers tracking CFI and FWFT virtualization",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260607081105.993908-1-inochiama@gmail.com/",
+      "if": "RISC-V KVM에서 CFI 확장을 게스트에 노출하는 일정을 계획 중이라면",
+      "do": "v3 리뷰 완료 및 uapi/asm/kvm.h 최종 변경 여부를 추적하고, ABI 안정화 전 VMM 통합을 보류하세요.",
+      "verify": "메인테이너 ack 또는 큐 공지가 RISC-V 메일링 리스트에 게시됐는지 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**arm64 KVM: VNCR TLB 경쟁 조건 수정 패치 제출**\n\nkvm_for_each_vncr_tlb() 헬퍼를 도입해 vCPU가 아직 온라인 상태가 아닐 때(의사 TLB 미할당) VNCR TLB 무효화 경로가 NULL 포인터를 역참조하는 경쟁 조건을 차단하고, kvm_invalidate_vncr_ipa()·kvm_invalidate_vncr_va() 양 경로를 이 헬퍼로 전환합니다.\n\n영향: arm64 FEAT_NV2/VNCR 기반 중첩 가상화 호스트에서 호스트 측 크래시 또는 메모리 오염을 유발할 수 있으며, 외부 보안 연구자(Hyunwoo Kim/imv4bel)가 보고했습니다.\n\n> \"VNCR TLB invalidation occurs from MMU notifiers or TLBI instructions, and either can race against a vcpu not being onlined yet (no pseudo-TLB allocated).\"\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260607175745.297793-1-maz@kernel.org/)\n\n---\n\n**RISC-V KVM: hugetlb G-stage 블록 매핑의 memslot 범위 검사 누락 수정**\n\nhugetlb 경로에 목표 매핑 크기를 fault_supports_gstage_huge_mapping()에 전달해 THP 경로가 이미 수행하던 memslot 포함 여부·GPA/HVA 오프셋 정렬 검사를 동일하게 적용합니다(v2, 리뷰어 ack 확보). PUD→PMD→PAGE_SIZE 폴백과 GFN 재정렬도 포함됩니다.\n\n영향: 정렬되지 않은 memslot이 있을 경우 PMD/PUD 크기 G-stage 블록이 슬롯 외부 메모리를 덮거나 잘못된 호스트 페이지를 매핑할 수 있어 게스트 메모리 격리가 깨질 수 있습니다(인용 검증 미완료, 추정).\n\n> \"an unaligned memslot could make KVM install a PMD or PUD sized G-stage block that covers memory outside the slot or maps the wrong host pages.\"\n\n[원문 확인](https://lore.kernel.org/linux-riscv/CAK9=C2XGRgz+3c2Rf8bj8tPtAiCpHXrsm2sNC1b7qHt-5p6PZQ@mail.gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**RISC-V: IRQ 핸들러 스택 할당 실패 시 즉시 패닉 — v7.2 큐 합류**\n\ninit_irq_stacks()와 init_irq_scs()에서 arch_alloc_vmap_stack 또는 scs_alloc이 NULL을 반환하면 panic()을 호출하도록 변경합니다. 기존에는 NULL 스택 포인터로 계속 진행해 이후 IRQ 진입 시 예측 불가한 폴트가 발생했습니다.\n\n영향: 부팅 초기 스택 할당 실패를 즉시 진단 가능한 패닉으로 전환해 RISC-V 플랫폼의 부트 경로 견고성을 높입니다.\n\n> \"init_irq_stacks() and init_irq_scs() may fail when arch_alloc_vmap_stack or scs_alloc return NULL, call panic() in this case.\"\n\n[원문 확인](https://lore.kernel.org/linux-riscv/773527c2-760d-60c6-23c3-0f1f60cc3fea@kernel.org/)\n\n---\n\n**RISC-V KVM: Svadu/Zicfiss/Zicfilp FWFT 지원 추가 — v3 리뷰 진행 중**\n\n8개 패치 시리즈(v3)로 Svadu(하드웨어 A/D 비트 갱신)·Zicfiss/Zicfilp(제어 흐름 무결성) 확장을 SBI FWFT 인터페이스를 통해 KVM 게스트에 노출합니다. SSP CSR 컨텍스트 저장/복원, 소프트웨어 점검 예외 위임, get-reg-list 셀프테스트 커버리지를 포함하며, v7.2 기반 시리즈 위에 적층됩니다.\n\n영향: RISC-V KVM의 one-reg UAPI 및 FWFT 인터페이스가 확장되나 v3 리뷰 중으로 메인테이너 ack 미확인 — ABI 최종 확정 전 VMM 통합 보류를 권장합니다.\n\n> \"adding the Svadu/Zicfiss/Zicfilp FWFT for the RISC-V KVM. And this patchset already passes the KVM unit test.\"\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260607081105.993908-1-inochiama@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "중",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. arm64 VNCR 패치와 RISC-V IRQ 스택 패닉 패치는 검증된 인용을 포함하나, RISC-V KVM hugetlb 버그와 Svadu/Zicfiss 시리즈는 인용 검증이 미완료(confidence: medium)입니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "KVM: arm64: Add kvm_for_each_vncr_tlb() helper",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260607175745.297793-1-maz@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM: riscv: Check hugetlb block mappings against memslot bounds",
+      "url": "https://lore.kernel.org/linux-riscv/CAK9=C2XGRgz+3c2Rf8bj8tPtAiCpHXrsm2sNC1b7qHt-5p6PZQ@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: panic if IRQ handler stacks cannot be allocated",
+      "url": "https://lore.kernel.org/linux-riscv/773527c2-760d-60c6-23c3-0f1f60cc3fea@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "RISC-V: KVM: Add Svadu/Zicfiss/Zicfilp FWFT support",
+      "url": "https://lore.kernel.org/linux-riscv/20260607081105.993908-1-inochiama@gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-07T19:04:34.509Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
