@@ -22,13 +22,16 @@ const upstreamSteps = skipUpstream ? [] : [
   ['analyze',  'node', [path.join(root, 'scripts', 'opensource-curation', 'analyze.mjs')]],
 ];
 
+const researchScript = rewriteAdapter === 'claude' ? 'research:opensource-curation:claude' : 'research:opensource-curation';
+
 const steps = [
   ...upstreamSteps,
-  ['collect', 'npm', ['run', 'collect:opensource-curation']],
-  ['draft',   'npm', ['run', 'draft:opensource-curation']],
-  ['rewrite', 'npm', ['run', rewriteScript]],
+  ['collect',  'npm', ['run', 'collect:opensource-curation']],
+  ['draft',    'npm', ['run', 'draft:opensource-curation']],
+  ['research', 'npm', ['run', researchScript]],
+  ['rewrite',  'npm', ['run', rewriteScript]],
   ...(shouldPublish ? [['publish', 'npm', ['run', 'publish:opensource-curation']]] : []),
-  ['build',   'npm', ['run', 'build']],
+  ['build',    'npm', ['run', 'build']],
 ];
 
 runPipeline({ topic: 'opensource-curation', logTitle: 'Opensource curation pipeline', steps, runDate, extraStatus: { publishEnabled: shouldPublish } });

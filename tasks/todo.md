@@ -15,7 +15,7 @@ Plan: docs/01-plan/features/topic-dossier-first-rollout.plan.md
 ## 3. ai-coding-agents dossier-first ✅
 - [ ] 동일 레시피, 커밋
 
-## 4. opensource-curation dossier-first
+## 4. opensource-curation dossier-first ✅
 - [ ] 동일 레시피, 커밋
 
 ## 5. lore-lens dossier-first (topic 인자형)
