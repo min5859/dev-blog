@@ -52,6 +52,10 @@ if [ "$(TZ=Asia/Seoul date +%u)" = "1" ]; then
   if ! "${NPM_BIN}" run weekly:linux:claude; then
     echo "weekly run failed; continuing with daily-only push"
   fi
+  # dossier 기반 전 토픽 weekly-rollup 생성+발행(best-effort, 일부 토픽 실패해도 계속).
+  if ! PUBLISH_WEEKLY=1 node scripts/run-weekly-all.mjs; then
+    echo "weekly-rollup-all failed; continuing"
+  fi
 fi
 
 # content/ 와 함께 logs/daily/*-latest-status.json 도 add — 모든 토픽이 실패해 content 변경이
