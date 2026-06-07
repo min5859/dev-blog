@@ -7,7 +7,7 @@ Plan: docs/01-plan/features/weekly-rollout-and-quality.plan.md
 - [ ] weekly-rollup-linux.mjs 호환, npm scripts weekly-rollup:<topic>
 - [ ] 전 토픽 weekly post 검증, 커밋
 
-## 2. 전 토픽 claude 실운영 정량화
+## 2. 전 토픽 claude 실운영 정량화 ✅
 - [ ] 토픽별 AI_ADAPTER=claude research 실운영 (lens 대표 1)
 - [ ] before(template/draft) 대비 2차 소스·인용·정보밀도 측정
 - [ ] docs/03-analysis 측정 리포트, 커밋
