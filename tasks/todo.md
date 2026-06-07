@@ -2,7 +2,7 @@
 
 Plan: docs/01-plan/features/weekly-rollout-and-quality.plan.md
 
-## 1. weekly-rollup 토픽 인자형 일반화
+## 1. weekly-rollup 토픽 인자형 일반화 ✅
 - [ ] scripts/weekly-rollup.mjs <topic> + 토픽 메타 맵(titleSuffix/tags/sectionPlan)
 - [ ] weekly-rollup-linux.mjs 호환, npm scripts weekly-rollup:<topic>
 - [ ] 전 토픽 weekly post 검증, 커밋
