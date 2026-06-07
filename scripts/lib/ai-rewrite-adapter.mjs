@@ -12,7 +12,7 @@ import path from 'node:path';
  * 기본 어댑터는 아래 DEFAULT_AI_ADAPTER 한 곳에서만 바꾼다.
  * 모든 ai-rewrite-*.mjs / run-daily-*.mjs 는 이 상수를 통해 default를 받는다.
  */
-export const DEFAULT_AI_ADAPTER = 'codex';
+export const DEFAULT_AI_ADAPTER = 'claude';
 
 export function normalizeDailyRewriteAdapter(raw) {
   const v = typeof raw === 'string' ? raw.trim() : '';
@@ -76,8 +76,9 @@ function runClaudeStdin(prompt) {
  */
 function runClaudeResearch(prompt) {
   const command = process.env.CLAUDE_BIN || 'claude';
-  // B: research 는 write 와 다른 모델을 쓸 수 있다(조사=상위모델, 작문=경량). 미설정 시 기존 단일 모델.
-  const model = process.env.CLAUDE_RESEARCH_MODEL || process.env.CLAUDE_MODEL || 'sonnet';
+  // B: research 는 깊은 조사·판단이라 기본 opus, write 는 작문이라 기본 sonnet 으로 분리.
+  // 각각 CLAUDE_RESEARCH_MODEL / CLAUDE_MODEL 로 독립 오버라이드.
+  const model = process.env.CLAUDE_RESEARCH_MODEL || 'opus';
   const tools = (process.env.CLAUDE_RESEARCH_TOOLS || 'WebFetch,WebSearch,Bash(git log:*)')
     .split(',')
     .map((t) => t.trim())

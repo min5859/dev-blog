@@ -164,10 +164,11 @@ tool access; the write agent stays closed (and safer for it).
   - `codex` — `codex exec` sandbox tools
   - `cursor` — `--force` tool mode (vs `--mode=ask` for the closed rewrite)
   - all three share the `CLAUDE_RESEARCH_TIMEOUT_MS` wall-clock budget.
-  - **Model split (B)**: research can use a heavier model than write via
-    `CLAUDE_RESEARCH_MODEL` / `CODEX_RESEARCH_MODEL` / `CURSOR_RESEARCH_MODEL`
-    (falls back to the write model `CLAUDE_MODEL`/… when unset). e.g.
-    `CLAUDE_RESEARCH_MODEL=opus CLAUDE_MODEL=sonnet` → deep research, light write.
+  - **Model split (B)**: research uses a heavier model than write by default.
+    Default adapter is now **claude**; claude research defaults to **opus**
+    (`CLAUDE_RESEARCH_MODEL` overrides), claude write defaults to **sonnet**
+    (`CLAUDE_MODEL` overrides). codex/cursor research models via
+    `CODEX_RESEARCH_MODEL` / `CURSOR_RESEARCH_MODEL`.
 
 Determinism / audit:
 
