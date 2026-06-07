@@ -12,12 +12,15 @@ const rewriteScript = {
   cursor: 'rewrite:android:cursor',
 }[rewriteAdapter] || `rewrite:android:${DEFAULT_AI_ADAPTER}`;
 
+const researchScript = rewriteAdapter === 'claude' ? 'research:android:claude' : 'research:android';
+
 const steps = [
-  ['collect', 'npm', ['run', 'collect:android']],
-  ['draft',   'npm', ['run', 'draft:android']],
-  ['rewrite', 'npm', ['run', rewriteScript]],
+  ['collect',  'npm', ['run', 'collect:android']],
+  ['draft',    'npm', ['run', 'draft:android']],
+  ['research', 'npm', ['run', researchScript]],
+  ['rewrite',  'npm', ['run', rewriteScript]],
   ...(shouldPublish ? [['publish', 'npm', ['run', 'publish:android']]] : []),
-  ['build',   'npm', ['run', 'build']],
+  ['build',    'npm', ['run', 'build']],
 ];
 
 runPipeline({ topic: 'android', logTitle: 'Android daily pipeline', steps, runDate, extraStatus: { publishEnabled: shouldPublish } });

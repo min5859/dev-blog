@@ -8,7 +8,7 @@ Plan: docs/01-plan/features/topic-dossier-first-rollout.plan.md
 - [ ] ai-rewrite-linux/opensource 를 runner 사용으로 전환 (산출 동일)
 - [ ] 테스트, 커밋
 
-## 2. android dossier-first
+## 2. android dossier-first ✅
 - [ ] research-android.mjs + 프롬프트 2 + ai-rewrite dossier + run-daily research + scripts
 - [ ] 커밋
 

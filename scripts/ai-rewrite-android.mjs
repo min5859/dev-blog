@@ -1,33 +1,15 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-import { resolveAiAdapter, runAiAdapterAndParse } from './lib/ai-rewrite-adapter.mjs';
-import { auditPostQuality } from './lib/quality-guard.mjs';
-import { validateHighlight } from './lib/highlight-schema.mjs';
+import { resolveAiAdapter } from './lib/ai-rewrite-adapter.mjs';
+import { runWrite } from './lib/write-runner.mjs';
 
 const root = process.cwd();
 const topic = 'android';
 const todayKst = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date());
 const runDate = process.env.NEWSLETTER_DATE || todayKst();
 const postId = `${runDate}-android-daily-briefing`;
-const draftPath = process.env.DRAFT_PATH || path.join(root, 'data', 'generated', topic, 'draft-latest.json');
-const fallbackDraftPath = path.join(root, 'content', 'topics', topic, 'posts', `${postId}.json`);
-const promptTemplatePath = path.join(root, 'prompts', 'android-newsletter-ko.md');
 const generatedDir = path.join(root, 'data', 'generated', topic);
 const adapter = resolveAiAdapter();
-const generatedAt = new Date().toISOString();
-
-async function readText(file) { return readFile(file, 'utf8'); }
-
-async function readJsonWithFallback(primary, fallback) {
-  try { return JSON.parse(await readText(primary)); }
-  catch (primaryError) {
-    try { return JSON.parse(await readText(fallback)); }
-    catch { throw primaryError; }
-  }
-}
-
-function buildPrompt(template, draft) { return template.replace('{{DRAFT_JSON}}', JSON.stringify(draft, null, 2)); }
 
 function templateRewrite(draft) {
   const sectionByHeading = new Map(draft.sections.map((section) => [section.heading, section.body]));
@@ -48,63 +30,20 @@ function templateRewrite(draft) {
   };
 }
 
-function withAuditMetadata(post) {
-  return {
-    ...post,
-    draftMetadata: {
-      ...post.draftMetadata,
-      rewrittenAt: generatedAt,
-      rewriteAdapter: adapter,
-      promptTemplate: path.relative(root, promptTemplatePath),
-    },
-  };
-}
-
-function validatePost(post) {
-  for (const key of ['id', 'topic', 'title', 'date', 'summary', 'sections', 'sources', 'highlights']) {
-    if (!post[key]) throw new Error(`rewritten post missing ${key}`);
-  }
-  if (!Array.isArray(post.sections) || post.sections.length < 2) throw new Error('rewritten post requires at least two sections');
-  if (!Array.isArray(post.sources) || post.sources.length === 0) throw new Error('rewritten post requires sources');
-  if (!Array.isArray(post.highlights) || post.highlights.length === 0) throw new Error('rewritten post requires highlights');
-  post.highlights.forEach(validateHighlight);
-}
-
-async function main() {
-  const draft = await readJsonWithFallback(draftPath, fallbackDraftPath);
-  const template = await readText(promptTemplatePath);
-  const prompt = buildPrompt(template, draft);
-
-  await mkdir(generatedDir, { recursive: true });
-  const promptOutput = path.join(generatedDir, `rewrite-prompt-${runDate}.md`);
-  const promptLatest = path.join(generatedDir, 'rewrite-prompt-latest.md');
-  await writeFile(promptOutput, prompt);
-  await writeFile(promptLatest, prompt);
-
-  const aiResult = await runAiAdapterAndParse(prompt, {
-    logLabel: 'android',
-    postValidator: (post) => {
-      validatePost(post);
-      auditPostQuality(post, { draft });
-    },
-  });
-  if (aiResult) {
-    await writeFile(path.join(generatedDir, `rewrite-stdout-${runDate}.txt`), aiResult.raw);
-    await writeFile(path.join(generatedDir, 'rewrite-stdout-latest.txt'), aiResult.raw);
-  }
-  const rewritten = withAuditMetadata(aiResult ? aiResult.post : templateRewrite(draft));
-  validatePost(rewritten);
-  auditPostQuality(rewritten, { draft });
-
-  const aiOutput = path.join(generatedDir, `rewritten-${postId}.json`);
-  const aiLatest = path.join(generatedDir, 'rewritten-latest.json');
-  await writeFile(aiOutput, JSON.stringify(rewritten, null, 2));
-  await writeFile(aiLatest, JSON.stringify(rewritten, null, 2));
-
-  console.log(`Rewrote Android newsletter with ${adapter} adapter; wrote ${path.relative(root, aiOutput)}`);
-}
-
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+runWrite({
+  topic,
+  postId,
+  runDate,
+  generatedDir,
+  dossierPath: process.env.DOSSIER_PATH || path.join(generatedDir, 'research-latest.json'),
+  draftPath: process.env.DRAFT_PATH || path.join(generatedDir, 'draft-latest.json'),
+  fallbackDraftPath: path.join(root, 'content', 'topics', topic, 'posts', `${postId}.json`),
+  draftPromptPath: path.join(root, 'prompts', 'android-newsletter-ko.md'),
+  dossierPromptPath: path.join(root, 'prompts', 'android-newsletter-from-dossier-ko.md'),
+  dossierMeta: { titleSuffix: 'Android 커널 개발 브리핑', tags: ['안드로이드', '커널'] },
+  templateRewrite,
+  adapter,
+  logLabel: 'android',
+})
+  .then((r) => console.log(`Rewrote Android briefing with ${adapter} adapter; mode=${r.mode}; wrote data/generated/${topic}/rewritten-${postId}.json`))
+  .catch((error) => { console.error(error); process.exit(1); });
