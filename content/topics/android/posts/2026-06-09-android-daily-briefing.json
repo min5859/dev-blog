@@ -1,0 +1,134 @@
+{
+  "id": "2026-06-09-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-06-09 AutoFDO·exec 훅 신설 — Android 커널",
+  "headline": "GKI exec folio order 벤더 훅 신설·AutoFDO 6.12.77 갱신, erofs UAF·IOMMU idmap 보안 패치 병행",
+  "date": "2026-06-09",
+  "summary": "오늘 android16-6.12 에 VM_EXEC folio order 를 런타임 조정하는 GKI 벤더 훅이 신설됐고, AutoFDO 프로파일이 6.12.77 로 갱신됐다. erofs UAF·KVM IOMMU idmap 보안 패치와 fuse-bpf·f2fs 회귀 수정도 함께 추적된다.",
+  "tags": [
+    "안드로이드",
+    "커널",
+    "GKI",
+    "pKVM",
+    "fuse-bpf",
+    "f2fs",
+    "erofs",
+    "AutoFDO"
+  ],
+  "highlights": [
+    {
+      "title": "KVM IOMMU: idmap 도메인 map_sg 거부 (보안)",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "pKVM/IOMMU 보안을 다루는 arm64 벤더",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/ad34d15396568919a8ddd306ce2120e76d111b7c",
+      "if": "pKVM IOMMU 패치를 벤더 트리에 포팅 중이라면",
+      "do": "kvm_iommu_map_sg() 에 idmap 도메인 거부 검증(ad34d15)이 포함됐는지 확인한다",
+      "verify": "idmap 도메인 대상 map_sg 호출이 -EINVAL 로 거부되는지 테스트한다"
+    },
+    {
+      "title": "fuse-bpf: rmdir/unlink stale dentry 이중 삭제 회귀",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "fuse-bpf backing passthrough 사용 벤더 (특히 f2fs backing)",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/8b70dc4403681c64dfbb65125fc2936cb25255cf",
+      "if": "fuse-bpf passthrough + f2fs backing 환경에서 SBI_NEED_FSCK 경고가 발생했다면",
+      "do": "8b70dc4 패치를 벤더 트리에 체리픽하여 rmdir/unlink 경로의 dentry 재검증 로직을 보강한다",
+      "verify": "병렬 backing 파일 삭제 시나리오에서 이중 삭제 및 메타데이터 손상 경고가 사라졌는지 확인한다"
+    },
+    {
+      "title": "신규: GKI VM_EXEC folio order 벤더 훅",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "메모리 단편화 튜닝을 하는 SoC/OEM 모듈 개발자",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/2630283811f8e2495b9882cfbf3dfc70bf351bc9",
+      "if": "저사양 기기에서 exec 페이지 page cache thrashing 문제가 있다면",
+      "do": "android_vh_override_exec_folio_order 훅 핸들러를 벤더 모듈에 등록하고, GKI 심볼 리스트(10095be)에 두 tracepoint 심볼이 포함됐는지 확인한다",
+      "verify": "단편화 환경에서 folio order 를 낮추면 thrashing 빈도가 줄어드는지 측정한다"
+    },
+    {
+      "title": "신규: AutoFDO 프로파일 6.12.77 갱신",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "GKI 성능·벤치마크를 추적하는 ACK 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/32c0cb29df7aa55fbaf9d82ad367918f582b265e",
+      "if": "GKI 빌드 성능 기준선이 변경됐는지 추적 중이라면",
+      "do": "32c0cb2 이후 GKI aarch64 빌드에서 AutoFDO 프로파일이 6.12.77 로 교체됐음을 벤치마크 기준 재설정에 반영한다",
+      "verify": "부팅·앱 실행·Binder 성능 수치를 이전 프로파일과 비교하고, 원문 커밋에서 보고된 수치를 재확인한다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**AutoFDO 프로파일 6.12.77 갱신**\n\nGKI aarch64 AutoFDO 프로파일을 Pixel 10(빌드 ab/15452434)에서 수집한 데이터로 6.12.77 기반으로 교체했다.\n\n영향: Pixel 8 환경에서 부팅 1.3%, 콜드 앱 실행 4.8%, Binder 계열 17~33% 성능 향상이 보고됐다. GKI 성능 베이스라인이 이동하므로 이 커밋 이후로 벤치마크 비교 기준을 재설정해야 한다.\n\n> \"ANDROID: Update AutoFDO profile to 6.12.77\"\n\n(주의: 구체 수치는 WebFetch 요약 기반 — 원문 커밋 메시지 재확인 권장)\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/32c0cb29df7aa55fbaf9d82ad367918f582b265e)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**erofs: sync_decompress UAF + multi-algorithm 이미지 오거부 (ack-android-mainline)**\n\nack-android-mainline 에 erofs 7.1-rc7 fixes 태그가 머지됐다. sbi->sync_decompress use-after-free 수정과 z_erofs_map_sanity_check() 의 multi-algorithm 이미지 오거부 회귀 수정이 포함된 것으로 전해진다.\n\n영향: erofs 는 Android system/벤더 파티션의 주력 read-only 압축 파일시스템이다. UAF 의 CVE 할당 여부는 현재 확인 필요 — 보안 패치 트래킹 시 원문을 직접 확인해야 한다.\n\n(인용 미검증 — 원문 커밋에서 직접 확인 필요)\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/2b389a573b76f4e3e1e17654eeaced3eb48c2972)\n\n---\n\n**KVM IOMMU: idmap 도메인 map_sg 거부**\n\nkvm_iommu_map_sg() 에 identity-mapping 도메인을 map_sg 대상으로 받지 않고 즉시 거부하는 검증을 추가했다.\n\n영향: 'Restrict access KVM_IOMMU_DOMAIN_IDMAP_ID'(ddb4101bc0ab)의 후속 보안 강화로, pKVM IOMMU 보호 우회 가능성을 차단한다.\n\n> \"The identity mapping domain is a special domain and should not be the target of map_sg operations. Any attempt to map into this domain should be rejected.\"\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/ad34d15396568919a8ddd306ce2120e76d111b7c)\n\n---\n\n**fuse-bpf: rmdir/unlink backing dentry 재검증 누락 수정**\n\nfuse_rmdir_backing/fuse_unlink_backing 의 fast path 가 캐시된 backing dentry 를 재검증 없이 삭제하던 경로를, 부모 inode lock 하에 lookup_one_len 으로 재검증하고 불일치 시 -ENOENT 로 안전 중단하도록 수정했다.\n\n영향: 병렬 스레드의 직접 삭제로 stale dentry 가 생긴 후 이중 삭제가 일어나 f2fs 에서 메타데이터 손상 경고(SBI_NEED_FSCK)가 발생하던 회귀를 막는다.\n\n> \"Calling vfs_rmdir/vfs_unlink on this stale dentry bypassed VFS safety checks, forcing the underlying filesystem (like f2fs) to attempt a double delete, triggering metadata corruption warnings\"\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/8b70dc4403681c64dfbb65125fc2936cb25255cf)\n\n---\n\n**f2fs: cleancache 조건 검사 수정**\n\nf2fs_read_single_page() 에서 페이지가 이미 up-to-date 인 경우에도 cleancache 값으로 덮어쓰던 조건 오류를 수정했다. cleancache 를 재활성화한 ANDROID revert(b23efcdb7b44) 의 후속 정정이다.\n\n영향: cleancache 활성 ACK 빌드의 f2fs 읽기 경로에서 이미 최신인 페이지를 잘못된 데이터로 덮어쓸 가능성이 제거된다.\n\n> \"There is an incorrect condition check in the f2fs_read_single_page(). To retrieve the page from cleancache, it is necessary to verify that the page is not up-to-date.\"\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/66b8d2a9700a7cf3c1a5f4089bb4a93d1bcbc144)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**신규: GKI VM_EXEC folio order 벤더 훅 (android_vh_override_exec_folio_order)**\n\nfile-backed VM_EXEC 매핑의 readahead miss 경로에 android_vh_override_exec_folio_order 벤더 훅을 신설했다. VMA 컨텍스트와 page order 포인터를 인자로 받아 런타임에 exec folio 할당 단위를 조정할 수 있다.\n\n영향: 메모리 단편화가 심한 저사양 기기에서 기본 64KB 연속 할당 요구로 인한 page cache thrashing 을 SoC/OEM 모듈이 동적으로 완화할 수 있다. GKI 심볼 리스트 갱신(10095be)과 쌍으로, 두 tracepoint 심볼이 모듈 attach 용으로 export 된다.\n\n> \"ANDROID: mm: Introduce GKI vendor hook to override VM_EXEC folio order\"\n\n(주의: 훅 세부 표현은 WebFetch 요약 기반 — 원문 재확인 권장)\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/2630283811f8e2495b9882cfbf3dfc70bf351bc9)\n\n---\n\n**pKVM: 모듈 재배치 전방 분기(양수 오프셋) 지원**\n\npKVM 모듈 심볼 재배치에서 음수 오프셋(후방)만 허용하던 제한을 제거하고 양수 오프셋(전방)도 허용하도록 변경했다.\n\n영향: 'Dedicated hyp VA space for pKVM modules'(c42c886c1098) 도입으로 exporter/importer 주소 순서 가정이 깨진 환경에서 모듈 간 심볼 relocation 실패가 해소된다.\n\n> \"Allow both positive and negative offsets during relocation to support both forward and backward branches between pKVM modules.\"\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/d398eeb1f23e1ac0aa5bd2d84efb4d19c0149477)"
+    },
+    {
+      "heading": "기타",
+      "body": "**fuse-bpf: 회귀·검증 셀프테스트 4종 추가, Test 30 폐기**\n\nCONFIG_FUSE_BPF 셀프테스트 4종(canonical path 빈 응답 경계, 동시 create VFS lock-drop, 비특권 마운트 게이팅, 스택 깊이 한계)을 추가하고 기존 Test 30(revalidate_handle_backing_fd)을 폐기했다.\n\n영향: 새 보안 마운트 게이팅·스태킹 깊이 규약 변화가 테스트 코드로 명문화됐다. fuse-bpf 벤더는 Test 30 이 더 이상 유효하지 않음을 확인해야 한다.\n\n> \"bpf_test_revalidate_handle_backing_fd (Test 30) Deprecated under new secure mount gating rules, rendering this legacy unsecure revalidation test invalid.\"\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/ebfd5e9b1ca6c242f5eba9976801a2175e863a5b)\n\n---\n\n**GKI 심볼 리스트: exec folio order 훅 tracepoint 2종 추가**\n\n__tracepoint_android_vh_override_exec_folio_order 와 __traceiter_android_vh_override_exec_folio_order 두 심볼을 GKI ABI 심볼 리스트(aarch64)에 추가했다. exec folio order 훅(2630283)과 동일 버그 트래킹 번호(516853839)의 쌍 커밋이다.\n\n영향: 이 심볼 없이는 벤더 모듈이 훅에 attach 할 수 없다.\n\n> \"Add __tracepoint_android_vh_override_exec_folio_order and __traceiter_android_vh_override_exec_folio_order to the GKI symbol list.\"\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/10095be57552d4b8e1a4726dd0958d9d41c5c7a1)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. erofs UAF 인용은 미검증이며, AutoFDO 성능 수치와 exec folio 훅 세부 표현은 WebFetch 요약 기반입니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ANDROID: f2fs: fix incorrect condition check for cleancache",
+      "url": "https://android.googlesource.com/kernel/common/+/66b8d2a9700a7cf3c1a5f4089bb4a93d1bcbc144",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: fuse-bpf: tests: add regression and validation tests",
+      "url": "https://android.googlesource.com/kernel/common/+/ebfd5e9b1ca6c242f5eba9976801a2175e863a5b",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: KVM: arm64: Support bidirectional branches in pKVM module relocation",
+      "url": "https://android.googlesource.com/kernel/common/+/d398eeb1f23e1ac0aa5bd2d84efb4d19c0149477",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: KVM: iommu: Reject idmap domain in kvm_iommu_map_sg",
+      "url": "https://android.googlesource.com/kernel/common/+/ad34d15396568919a8ddd306ce2120e76d111b7c",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: fuse-bpf: re-validate backing dentry in rmdir and unlink",
+      "url": "https://android.googlesource.com/kernel/common/+/8b70dc4403681c64dfbb65125fc2936cb25255cf",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: mm: Introduce GKI vendor hook to override VM_EXEC folio order",
+      "url": "https://android.googlesource.com/kernel/common/+/2630283811f8e2495b9882cfbf3dfc70bf351bc9",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: mm: Update GKI symbol list for override_exec_folio_order hook",
+      "url": "https://android.googlesource.com/kernel/common/+/10095be57552d4b8e1a4726dd0958d9d41c5c7a1",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: Update AutoFDO profile to 6.12.77",
+      "url": "https://android.googlesource.com/kernel/common/+/32c0cb29df7aa55fbaf9d82ad367918f582b265e",
+      "note": "commit"
+    },
+    {
+      "title": "Merge tag 'erofs-for-7.1-rc7-fixes' (ack-android-mainline)",
+      "url": "https://android.googlesource.com/kernel/common/+/2b389a573b76f4e3e1e17654eeaced3eb48c2972",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-08T18:10:10.491Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/android-newsletter-from-dossier-ko.md"
+  }
+}

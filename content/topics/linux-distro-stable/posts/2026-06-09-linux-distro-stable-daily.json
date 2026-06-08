@@ -1,0 +1,129 @@
+{
+  "id": "2026-06-09-linux-distro-stable-daily",
+  "topic": "linux-distro-stable",
+  "title": "2026-06-09 qcom-RNG 경합 제거·SWIOTLB 수정 — Linux Distro Stable",
+  "headline": "qcom-rng 동시 접근 RNG 결함 제거 패치와 Thunderbolt NVMe SWIOTLB 매핑 손상 회귀 수정이 stable 스레드에서 진행 중",
+  "date": "2026-06-09",
+  "summary": "qcom-rng가 두 인터페이스로 동일 레지스터에 락 없이 접근하는 RNG 정확성·보안 결함을 crypto_rng 경로 전체 제거로 해소하는 패치가 stable 스레드에 제출되었습니다. Thunderbolt 연결 NVMe의 SWIOTLB 경로에서 0 크기 iommu_map 호출이 매핑을 손상시켜 WARN_ON을 유발하는 회귀 수정도 함께 논의 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "stable",
+    "보안",
+    "qcom",
+    "iommu",
+    "swiotlb",
+    "crypto"
+  ],
+  "highlights": [
+    {
+      "title": "qcom-rng: crypto_rng 인터페이스 제거로 RNG 경합 원인 차단",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "Qualcomm 플랫폼/crypto·hwrng 서브시스템 유지보수 담당, 임베디드 보안 통합 담당",
+      "verifyLink": "https://lore.kernel.org/stable/5u2hogvqf273xuapkdeygsoqsncfhbexzcpwgsbddhgg4j7wmm@2t6gnzakxzi7/",
+      "if": "Qualcomm 플랫폼에서 crypto_rng와 hwrng 경로가 동시에 활성화된 시스템을 운영 중이라면",
+      "do": "이 패치 시리즈의 stable 머지 여부를 추적하고 키 생성 등 RNG 의존 상위 컴포넌트의 출력 품질을 점검하세요",
+      "verify": "qcom-rng 사용 시스템에서 /dev/hwrng 출력의 엔트로피 품질을 rngtest 등으로 검증하세요"
+    },
+    {
+      "title": "iommu/dma: SWIOTLB 0 길이 매핑 시도로 인한 매핑 손상 회귀 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "IOMMU/dma-mapping 서브시스템 및 Thunderbolt/NVMe 스토리지 통합 담당",
+      "verifyLink": "https://lore.kernel.org/stable/0-v1-8536728bc89f+469-swiotlb_warn_jgg@nvidia.com/",
+      "if": "Thunderbolt 연결 NVMe나 강제 SWIOTLB 환경에서 WARN_ON이 발생하고 있다면",
+      "do": "해당 수정 패치의 stable 백포트 상태를 추적하고 커널 로그의 WARN_ON 스택 트레이스를 보존하세요",
+      "verify": "smartctl 패스스루나 비정렬 DMA 요청 후 IOMMU 매핑 관련 WARN_ON이 사라지는지 확인하세요"
+    },
+    {
+      "title": "qcom-rng: hwrng 경로 클럭 미활성화 결함 수정 (추정)",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "Qualcomm hwrng 드라이버 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20260608175848.2045229-2-ebiggers@kernel.org/",
+      "if": "crypto_rng 제거 후 hwrng가 단독 인터페이스가 되는 시스템이라면",
+      "do": "클럭 수정 패치(2/2)가 crypto_rng 제거 패치(1/2)와 함께 쌍으로 적용되는지 확인하세요",
+      "verify": "hwrng 단독 경로에서 RNG 읽기 성공 여부와 클럭 관련 오류 로그 부재를 확인하세요"
+    },
+    {
+      "title": "7.0.11·6.1.175·5.15.209: keys RCU·mana OOB/TOCTOU·bridge UAF 백포트 지속",
+      "priority": "중",
+      "impactType": "backport",
+      "affectedAudience": "stable 커널 패키저 및 보안 패치 트래킹 담당",
+      "verifyLink": "https://git.kernel.org/stable/h/v6.1.175",
+      "if": "6.1 LTS 또는 5.15 LTS 기반 배포를 운영 중이라면",
+      "do": "keys RCU 누락·mana TOCTOU·bridge mcast UAF 수정이 포함된 해당 버전으로 업데이트 우선순위를 검토하세요",
+      "verify": "업데이트 후 커널 로그에 RCU stall·UAF 관련 WARN/BUG 메시지가 없는지 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.0.11 / 6.1.175 / 5.15.209 — 보안 백포트 누적 (어제에 이어 진행 중)**\n\n세 stable/LTS 릴리스 모두 security/keys RCU read section 누락 수정, net: mana rx_req_idx OOB 방지 및 hwc_msg_id TOCTOU double-fetch 수정, bridge mcast 포트 제거 시 use-after-free, RDMA/rtrs UAF 수정을 공유합니다. 5.15.209에는 net:tls chain-after-chain 및 sg_chain off-by-one 수정이 추가로 포함된 것으로 알려져 있습니다.\n\n영향: keys RCU·block UAF·스택 정보 누출·드라이버 OOB는 모두 권한 상승/정보 누출 후보로, 배포 패치 우선순위 판단의 직접 근거가 됩니다.\n\n> (주의: git.kernel.org 직접 fetch 차단으로 커밋 목록은 입력 dossier 기준이며, 인용 독립 검증 미완료 — 적용 전 원문 확인 권장)\n\n[7.0.11 원문 확인](https://git.kernel.org/stable/h/v7.0.11) · [6.1.175 원문 확인](https://git.kernel.org/stable/h/v6.1.175) · [5.15.209 원문 확인](https://git.kernel.org/stable/h/v5.15.209)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**crypto: qcom-rng — crypto_rng 인터페이스 제거**\n\nqcom-rng가 crypto_rng와 hwrng 두 경로로 동일 레지스터에 락 없이 접근하여 RNG 출력 반복·비랜덤 값이 생성될 수 있는 보안 결함을, crypto_rng 경로 전체(Kconfig 1줄·qcom-rng.c 약 140줄) 제거로 해소하는 패치가 stable 스레드에 제출되었습니다.\n\n영향: RNG 출력 품질 저하는 키 생성에 이를 사용하는 모든 상위 계층에 직접 영향하며, 다른 crypto_rng HW 드라이버들도 단계적으로 제거되는 방향임이 패치 설명에서 제시되었습니다.\n\n> \"qcom_rng_generate() synchronizes with itself but not with qcom_hwrng_read(). This results in potential repetition of output from the RNG, output of non-random values, etc.\"\n\n[원문 확인](https://lore.kernel.org/stable/5u2hogvqf273xuapkdeygsoqsncfhbexzcpwgsbddhgg4j7wmm@2t6gnzakxzi7/)\n\n---\n\n**iommu/dma: SWIOTLB 0 길이 영역 iommu_map 시도 방지**\n\n정렬된 페이지가 없어 중간 영역이 비는 경우 0 크기로 iommu_map()을 호출해 실패하고, 잘못된 지점에서 언와인드를 시작해 매핑을 손상시켜 파괴 시 WARN_ON을 유발하던 회귀를 수정하는 패치가 제출되었습니다. Thunderbolt 연결 NVMe처럼 강제 SWIOTLB 환경의 smartctl 패스스루에서 빈번히 재현된다고 보고되었습니다.\n\n영향: SWIOTLB 바운스 경로는 untrusted 디바이스 DMA 격리의 핵심 경로이며, 매핑 손상은 IOMMU 보호 무결성과 직결됩니다.\n\n> \"It then tries to do an error unwind and starts from the wrong spot corrupting the mapping so the eventual destruction triggers a WARN_ON.\"\n\n[원문 확인](https://lore.kernel.org/stable/0-v1-8536728bc89f+469-swiotlb_warn_jgg@nvidia.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**crypto: qcom-rng — hwrng 경로 클럭 활성화 누락 수정 (추정)**\n\nhwrng 지원 도입 커밋(f29cd5bb64c2) 이후 하드웨어 레지스터 접근 전에 클럭을 활성화하지 않던 결함을 수정하는 패치가 crypto_rng 제거 패치와 2-패치 시리즈로 함께 제출된 것으로 알려져 있습니다.\n\n영향: crypto_rng가 제거된 이후 hwrng가 단독 인터페이스가 되는 전제에서, 클럭 미활성 상태의 HW 접근은 잘못된 RNG 출력 또는 접근 실패로 이어질 수 있습니다.\n\n> (주의: confidence low — lore 직접 fetch 불가로 본문 독립 확인 미완료. 인용 검증 실패 — 단정 표현 삼가)\n\n[원문 확인](https://lore.kernel.org/stable/20260608175848.2045229-2-ebiggers@kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "crypto: qcom-rng - Remove crypto_rng interface (lore stable 스레드)",
+      "url": "https://lore.kernel.org/stable/5u2hogvqf273xuapkdeygsoqsncfhbexzcpwgsbddhgg4j7wmm@2t6gnzakxzi7/",
+      "note": "thread"
+    },
+    {
+      "title": "crypto: qcom-rng all-zeros/버퍼 미충전 버그 이력 (lkml stable 2022)",
+      "url": "https://lkml.kernel.org/stable/20220321133220.604619228@linuxfoundation.org/",
+      "note": "thread"
+    },
+    {
+      "title": "crypto: qcom-rng - Enable clock in hwrng case (lore stable 스레드)",
+      "url": "https://lore.kernel.org/stable/20260608175848.2045229-2-ebiggers@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "iommu/dma: SWIOTLB 0 길이 iommu_map 방지 패치 (lore stable)",
+      "url": "https://lore.kernel.org/stable/0-v1-8536728bc89f+469-swiotlb_warn_jgg@nvidia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "dma-iommu.c mainline (GitHub torvalds/linux)",
+      "url": "https://github.com/torvalds/linux/blob/master/drivers/iommu/dma-iommu.c",
+      "note": "commit"
+    },
+    {
+      "title": "Linux 7.0.11 stable 태그 (git.kernel.org)",
+      "url": "https://git.kernel.org/stable/h/v7.0.11",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 6.1.175 longterm 태그 (git.kernel.org)",
+      "url": "https://git.kernel.org/stable/h/v6.1.175",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 5.15.209 longterm 태그 (git.kernel.org)",
+      "url": "https://git.kernel.org/stable/h/v5.15.209",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-08T18:51:17.018Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
