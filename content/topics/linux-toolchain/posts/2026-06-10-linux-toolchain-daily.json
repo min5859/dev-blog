@@ -1,0 +1,116 @@
+{
+  "id": "2026-06-10-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-06-10 arm64 kCFI·BPF 동시 지원 해금 — 리눅스 툴체인",
+  "headline": "arm64 kCFI+BPF 트램폴린 동시 지원·Rust 배리어 확장·embedded bootconfig 빌드타임 cmdline 통합",
+  "date": "2026-06-10",
+  "summary": "arm64 클랭 kCFI 환경에서 BPF 트램폴린을 막던 CALL_OPS 의존이 제거되어 컴파일러 강화와 BPF 보안 모니터링을 동시에 운용할 수 있게 된다. Rust for Linux에 완전한 메모리 배리어 API가 추가되고 Nova GPU 드라이버의 실제 동시성 버그가 같은 시리즈에서 수정된다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "툴체인",
+    "arm64",
+    "Rust",
+    "kbuild",
+    "BPF",
+    "kCFI",
+    "ftrace",
+    "bootconfig"
+  ],
+  "highlights": [
+    {
+      "title": "arm64 CONFIG_CFI=y 환경에서 BPF 트램폴린 사용 가능",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "arm64 ftrace/BPF·clang kCFI 빌드를 함께 쓰는 커널 빌드 담당 및 BPF LSM 배포자",
+      "verifyLink": "https://lore.kernel.org/llvm/20260609-arm64-ftrace-direct-calls-v1-0-4a46f266697f@linux.dev/",
+      "if": "arm64에서 CONFIG_CFI=y와 BPF fentry/fexit/LSM 트램폴린을 함께 쓰는 커널을 빌드한다면",
+      "do": "이 패치 시리즈의 머지 여부를 확인하고, CALL_OPS 없이 DIRECT_CALLS가 활성화된 빌드 구성을 검증하라",
+      "verify": "register_fentry()가 -ENOTSUPP를 반환하지 않고 BPF 트램폴린이 정상 연결되는지, clang 빌드에서 ftrace.o 외 오브젝트가 바이트 동일한지 확인하라"
+    },
+    {
+      "title": "Rust for Linux 메모리 배리어 API 확장 및 Nova 동시성 버그 수정",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust for Linux 드라이버 작성자 및 Nova/GPU Rust 코드 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260609-rust-barrier-v2-0-30fcc48e1cd0@garyguo.net/",
+      "if": "Rust 드라이버에서 C 측과 동등한 메모리 배리어 의미론이 필요하거나 Nova 코드를 유지보수한다면",
+      "do": "mb/smp_mb/dma_mb(Ordering) API 도입 시리즈를 검토하고 patch 3의 Nova 동시성 버그 수정 내용을 확인하라",
+      "verify": "Ordering 열거형(Full/Read/Write)으로 배리어 종류가 정확히 구분되는지, Nova 버그 수정 이후 배리어 누락 경쟁 조건이 제거됐는지 검증하라"
+    },
+    {
+      "title": "embedded bootconfig kernel.* 키를 빌드타임에 cmdline에 prepend",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "embedded bootconfig/kbuild 및 부팅 초기 cmdline 구성을 다루는 빌드 담당",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20260609-bootconfig_using_tools-v4-0-73c463f03a97@debian.org/",
+      "if": "embedded bootconfig를 쓰면서 mem=/earlycon= 등 early_param 핸들러가 해당 값을 인식해야 한다면",
+      "do": "v4 시리즈를 확인하고 CONFIG_BOOT_CONFIG_EMBED_CMDLINE 활성화 후 .init.rodata에 cmdline이 삽입됐는지 점검하라",
+      "verify": "parse_early_param() 이전에 boot_command_line에 embedded 값이 앞에 붙었는지, 오버플로 시 부팅이 중단되지 않고 로그만 남기는지 확인하라"
+    },
+    {
+      "title": "x86 setup_arch()에서 embedded bootconfig cmdline을 parse_early_param 이전 반영",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "x86 setup/kbuild·Kconfig 유지보수 담당 및 embedded cmdline 구성자",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20260609103446.7d29679c90e834ff8e32c56d@kernel.org/",
+      "if": "x86 커널에서 ARCH_SUPPORTS_CMDLINE_FROM_BOOTCONFIG 의존 관계나 Kconfig gating 심볼 역할을 검토한다면",
+      "do": "ARCH_SUPPORTS_CMDLINE_FROM_BOOTCONFIG가 silent gating 심볼로만 쓰인다는 스레드 논의를 확인하고 다른 아키텍처 지원 여부를 주시하라",
+      "verify": "x86에서 \"bootconfig\" cmdline 또는 CONFIG_BOOT_CONFIG_FORCE 조건 하에 xbc_prepend_embedded_cmdline()이 올바르게 호출되는지 검증하라"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**arm64: ftrace: support DIRECT_CALLS without CALL_OPS**\n\nDYNAMIC_FTRACE_WITH_DIRECT_CALLS의 select 조건에서 DYNAMIC_FTRACE_WITH_CALL_OPS 의존을 제거하고, ftrace_modify_call()의 #ifdef를 확장해 CALL_OPS 없이도 빌드되도록 수정한다(patch 1은 무기능 변경, patch 2가 select 변경).\n\n영향: clang kCFI의 pre-function NOP 패딩이 CALL_OPS 패딩과 충돌해 상호배타적이었던 제약이 해소되며, CONFIG_CFI=y arm64 커널에서 BPF fentry/fexit·fmod_ret·BPF LSM 트램폴린을 사용할 수 있다.\n\n> \"a CONFIG_CFI=y arm64 kernel has no ftrace direct calls at all, so register_fentry() fails with -ENOTSUPP and no BPF trampoline can attach\"\n\n[원문 확인](https://lore.kernel.org/llvm/20260609-arm64-ftrace-direct-calls-v1-0-4a46f266697f@linux.dev/)\n\n---\n\n**rust: more memory barriers bindings**\n\n기존 smp 배리어 바인딩을 mandatory 배리어 및 DMA 배리어까지 확장해 mb(Ordering)/smp_mb(Ordering)/dma_mb(Ordering) API를 도입한다. Ordering은 Full/Read/Write이며, patch 3은 이 API의 첫 사용자로 Nova GPU 드라이버의 배리어 누락 동시성 버그를 수정한다.\n\n영향: Rust for Linux 드라이버가 C 측과 동등한 메모리 배리어 의미론을 안전한 래퍼로 사용할 수 있게 되며, Nova의 현존 동시성 버그가 같은 시리즈에서 함께 수정된다.\n\n> \"A user of these introduced API is included in patch 3, which is a concurrency bug that exists in Nova code today due to missing barriers.\"\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260609-rust-barrier-v2-0-30fcc48e1cd0@garyguo.net/)\n\n---\n\n**bootconfig: embed kernel.* cmdline at build time**\n\nembedded bootconfig의 kernel 서브트리를 빌드 타임에 평탄한 문자열로 렌더해 .init.rodata에 넣고, setup_arch()가 parse_early_param() 전에 boot_command_line 앞에 prepend한다. 오버플로는 패닉 대신 로그 후 무시하는 soft error로 처리한다.\n\n영향: early_param() 핸들러(mem=, earlycon= 등)가 런타임 bootconfig 파싱 없이 embedded 값을 인식하게 되어, embedded 사용자가 두 개의 cmdline 소스를 별도로 유지할 필요가 없어진다.\n\n> \"the embedded bootconfig is parsed at runtime, after parse_early_param() has already run, so early_param() handlers can't see embedded values.\"\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20260609-bootconfig_using_tools-v4-0-73c463f03a97@debian.org/)\n\n---\n\n**x86/setup: prepend embedded bootconfig cmdline before parse_early_param**\n\nsetup_arch()에서 CONFIG_CMDLINE 병합 직후, \"bootconfig\" cmdline이 존재하거나 CONFIG_BOOT_CONFIG_FORCE일 때 xbc_prepend_embedded_cmdline()을 호출해 embedded kernel.* 키를 parse_early_param() 이전에 반영한다. x86이 ARCH_SUPPORTS_CMDLINE_FROM_BOOTCONFIG를 select해 CONFIG_BOOT_CONFIG_EMBED_CMDLINE를 노출하며, 현재는 x86만 이 경로를 지원한다.\n\n영향: ARCH_SUPPORTS_CMDLINE_FROM_BOOTCONFIG가 C 코드에서 직접 읽히지 않는 silent gating 심볼(ARCH_SUPPORTS_CFI, ARCH_SUPPORTS_LTO_CLANG과 동일한 관용구)임을 스레드에서 확인했으며, x86 이외 아키텍처의 지원 여부는 확인 필요.\n\n> \"No C code reads ARCH_SUPPORTS_CMDLINE_FROM_BOOTCONFIG directly — it's a silent gating symbol, the same ARCH_SUPPORTS_* idiom as ARCH_SUPPORTS_CFI, ARCH_SUPPORTS_LTO_CLANG, etc.\"\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20260609103446.7d29679c90e834ff8e32c56d@kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "arm64: ftrace: support DIRECT_CALLS without CALL_OPS (cover letter v1)",
+      "url": "https://lore.kernel.org/llvm/20260609-arm64-ftrace-direct-calls-v1-0-4a46f266697f@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "arm64/ftrace: Add support for DYNAMIC_FTRACE_WITH_CALL_OPS (LWN 아카이브)",
+      "url": "https://lwn.net/Articles/919445/",
+      "note": "article"
+    },
+    {
+      "title": "rust: more memory barriers bindings v2 (cover letter)",
+      "url": "https://lore.kernel.org/rust-for-linux/20260609-rust-barrier-v2-0-30fcc48e1cd0@garyguo.net/",
+      "note": "thread"
+    },
+    {
+      "title": "bootconfig: embed kernel.* cmdline at build time v4 (cover letter)",
+      "url": "https://lore.kernel.org/linux-kbuild/20260609-bootconfig_using_tools-v4-0-73c463f03a97@debian.org/",
+      "note": "thread"
+    },
+    {
+      "title": "x86/setup embedded bootconfig prepend — Masami 스레드 응답",
+      "url": "https://lore.kernel.org/linux-kbuild/20260609103446.7d29679c90e834ff8e32c56d@kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-09T18:42:25.323Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

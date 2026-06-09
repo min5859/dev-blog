@@ -1,0 +1,111 @@
+{
+  "id": "2026-06-10-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-06-10 BPF sockmap 정수 오버플로 — Linux Perf/RT",
+  "headline": "BPF sockmap 경계 검사 우회·검증기 상태 오염 패치 lore 접수, VLAN uAPI 논의 진행 중",
+  "date": "2026-06-10",
+  "summary": "BPF sockmap의 u32 정수 오버플로로 인한 경계 검사 우회(메모리 손상) 패치와 BPF 검증기의 untrusted 메모리 scalar 추적 오류 패치가 lore에 새로 접수됐다. bpf_fib_lookup()의 신규 VLAN 플래그 uAPI는 QinQ 우회 우려로 논의 중이며, MIPS 재부팅 hang 수정(전일 보고)은 적용 여부가 미확인이다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "BPF",
+    "MIPS",
+    "보안"
+  ],
+  "highlights": [
+    {
+      "title": "bpf sockmap 정수 오버플로: 경계 검사 우회 패치 접수",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF sockmap/skmsg 및 net/core/filter 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260609183927.4021802-1-rhkrqnwk98@gmail.com/",
+      "if": "SK_MSG/sockmap 프로그램을 사용하는 커널 버전을 운영 중이라면",
+      "do": "Fixes: 7246d8ed4dcc를 포함한 패치가 stable 큐에 진입하는지 추적하고 해당 버전 적용 여부를 확인할 것",
+      "verify": "bpf_msg_pop_data()에서 last 계산이 u64로 수행되는지 코드 검토 후 확인"
+    },
+    {
+      "title": "BPF 검증기: untrusted 메모리 scalar 덧셈 stale 상태 오염 패치 제안",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF verifier(kernel/bpf/verifier.c) 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/DJ4Q75GQJ6MW.2TNULY7BLDWA0@etsalapatis.com/",
+      "if": "bpf_rdonly_cast()를 활용한 BPF 프로그램을 검증·배포 중이라면",
+      "do": "lore 스레드에서 거부(-EACCES) 대 복사 후 반환 중 최종 채택을 추적하고, 검증기 업데이트 후 프로그램 재검증을 준비할 것",
+      "verify": "scalar += untrusted PTR_TO_MEM 패턴 존재 여부를 코드베이스에서 검색 후 확인"
+    },
+    {
+      "title": "bpf_fib_lookup() VLAN uAPI: QinQ 우회 우려로 논의 중",
+      "priority": "하",
+      "impactType": "api-abi",
+      "affectedAudience": "BPF 네트워킹 헬퍼/uAPI 및 net/core/filter 유지보수, XDP 포워딩 사용자",
+      "verifyLink": "https://lore.kernel.org/bpf/d8b1da1af69842d46dd4a02216a183e8ba611a2af4ca07ed4c2c7957be4698cc@mail.kernel.org/",
+      "if": "XDP/TC BPF에서 VLAN 환경에 bpf_fib_lookup()을 사용 중이라면",
+      "do": "패치 최종 채택 전까지 QinQ 시나리오 적용을 보류하고 lore 논의 완료를 기다릴 것",
+      "verify": "QinQ 스택 구성에서 ifindex와 VLAN TCI 반환값 정합성을 실험 환경에서 테스트"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**bpf, sockmap: bpf_msg_pop_data() 경계 검사 정수 오버플로 수정**\n\nstart와 len이 u32 타입이어서 `u64 last = start + len` 계산이 32비트에서 먼저 평가·wrap된 후 저장되며, 경계 검사를 우회한 out-of-range 값이 scatterlist 오버런으로 이어져 빈 슬롯에 put_page()를 호출하는 버그가 보고됐다.\n\n영향: SK_MSG/sockmap 경로에서 KASAN general protection fault(null-ptr-deref)로 이어지는 메모리 손상 취약점으로, tcp_bpf_sendmsg 경로에서 트리거된다.\n\n> \"start and len are u32, so u64 last = start + len; evaluates start + len in 32-bit and wraps before storing it in last.\"\n\n[원문 확인](https://lore.kernel.org/bpf/20260609183927.4021802-1-rhkrqnwk98@gmail.com/)\n\n---\n\n**bpf: untrusted 메모리에서의 scalar 덧셈 검증기 상태 오염 수정 제안**\n\n`scalar += rdonly_untrusted_mem`이 adjust_ptr_min_max_vals()에서 scalar destination을 갱신하지 않고 early return하여 stale한 검증기 상태를 남기는 문제가 보고됐다. 거부(-EACCES) 또는 `*dst_reg = *ptr_reg; return 0` 복사 방식 중 최종 방향은 논의 중이다.\n\n영향: bpf_rdonly_cast() 도입(f2362a57aeff) 이후의 검증기 상태 오염 문제로, 검증기 정확성은 커널 공격면에 직결된다. (신뢰도: 중간 — 실제 악용 가능성 미확인)\n\n> \"The untrusted PTR_TO_MEM case returns there without updating the scalar destination, leaving stale verifier state.\"\n\n[원문 확인](https://lore.kernel.org/bpf/DJ4Q75GQJ6MW.2TNULY7BLDWA0@etsalapatis.com/)\n\n---\n\n**MIPS: stop_this_cpu() RCU 사망 보고 누락 (전일 보고 — 진척 미확인)**\n\n전일 보고된 MIPS reboot hang 수정 패치의 메인테이너 적용 및 stable backport 큐 진입 여부는 현재 미확인이다.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260608093729.12111-1-jelonek.jonas@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**bpf: bpf_fib_lookup() 헬퍼에 BPF_FIB_LOOKUP_VLAN 플래그 추가 (논의 중)**\n\nbpf_fib_lookup()에 신규 uAPI 플래그 BPF_FIB_LOOKUP_VLAN을 추가하고, VLAN 디바이스 해소를 통해 h_vlan_TCI/h_vlan_proto를 채우는 패치가 제안됐다. 리뷰에서 QinQ 구성 시 ifindex가 베이스 물리 디바이스로 설정되고 최상위 VLAN 태그만 반환되는 불일치 및 외부 VLAN 우회 가능성이 지적됐다.\n\n영향: include/uapi/linux/bpf.h에 새 플래그를 추가하는 uAPI/ABI 변경으로, XDP 포워딩 사용자와 BPF 네트워킹 헬퍼 유지보수 담당에게 직접 영향을 준다. (신뢰도: 낮음 — 인용 검증 미완료, 최종 채택 미정)\n\n> \"If the configuration is QinQ, wouldn't this set params->ifindex to the base physical device while only returning the topmost VLAN tag in params->h_vlan_TCI?\" (검증 미완료)\n\n[원문 확인](https://lore.kernel.org/bpf/d8b1da1af69842d46dd4a02216a183e8ba611a2af4ca07ed4c2c7957be4698cc@mail.kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "bpf, sockmap: fix integer overflow in bpf_msg_pop_data() bounds check",
+      "url": "https://lore.kernel.org/bpf/20260609183927.4021802-1-rhkrqnwk98@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf_msg_pop_data 도입 커밋 (Fixes 앵커 7246d8ed4dcc)",
+      "url": "https://github.com/torvalds/linux/commit/7246d8ed4dcce23f7509949a77be15fa9f0e3d28",
+      "note": "commit"
+    },
+    {
+      "title": "MIPS: smp: report dying CPU to RCU in stop_this_cpu()",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260608093729.12111-1-jelonek.jonas@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "irq_work: Fix use-after-free on PREEMPT_RT (Fixes 앵커 91840be8f710)",
+      "url": "https://github.com/torvalds/linux/commit/91840be8f710",
+      "note": "commit"
+    },
+    {
+      "title": "bpf: Reject scalar addition from untrusted memory",
+      "url": "https://lore.kernel.org/bpf/DJ4Q75GQJ6MW.2TNULY7BLDWA0@etsalapatis.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf_rdonly_cast() 도입 커밋 (Fixes 앵커 f2362a57aeff)",
+      "url": "https://github.com/torvalds/linux/commit/f2362a57aeff",
+      "note": "commit"
+    },
+    {
+      "title": "bpf: Add BPF_FIB_LOOKUP_VLAN flag — QinQ 리뷰 스레드",
+      "url": "https://lore.kernel.org/bpf/d8b1da1af69842d46dd4a02216a183e8ba611a2af4ca07ed4c2c7957be4698cc@mail.kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-09T18:54:43.762Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

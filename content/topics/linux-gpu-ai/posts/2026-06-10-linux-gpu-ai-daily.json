@@ -1,0 +1,123 @@
+{
+  "id": "2026-06-10-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-06-10 v3d 제출 원자성 확보 — Linux GPU·AI",
+  "headline": "v3d 스케줄러 12개 패치 mainline 적용 — syncobj 검증 강화 및 원자적 job 제출 보장",
+  "date": "2026-06-10",
+  "summary": "Maíra Canal의 v3d/vc4 스케줄러 리팩터링 12개 패치가 drm-misc 및 torvalds mainline에 적용돼 잘못된 syncobj 핸들 거부와 원자적 job 제출이 보장됩니다. vc4 셰이더 검증 경로의 krealloc 메모리 누수 수정도 drm-misc-fixes에 반영됐으며 stable 백포트 여부 확인이 필요합니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "GPU",
+    "DRM",
+    "v3d",
+    "vc4",
+    "Rust"
+  ],
+  "highlights": [
+    {
+      "title": "v3d 제출 경로 원자성 보장 및 syncobj 검증 강화 — mainline 적용",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "v3d/vc4 드라이버 유지보수 담당 및 Mesa v3d 사용자공간 개발자",
+      "verifyLink": "https://github.com/torvalds/linux/commit/66fc52ba7c3f36dcbd55bf19a788306147e2a318",
+      "if": "v3d ioctl에서 0이 아닌 잘못된 syncobj 핸들을 전달하던 userspace 코드가 있다면",
+      "do": "이제 -ENOENT가 반환되므로 해당 오류 처리 경로를 점검하고 Mesa v3d 코드의 syncobj 핸들 검증 로직을 재확인하세요",
+      "verify": "commit 66fc52ba7c3f와 7d64136e0f08을 torvalds 미러에서 확인하세요"
+    },
+    {
+      "title": "amdgpu DM writeback connector job queue 자원 누수 수정 (리뷰 진행 중)",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "amd/display(amdgpu DM) 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/23cc1a03-39a6-4cc3-86ca-0d7c914ee40d@Igalia.com/",
+      "if": "amdgpu DM writeback connector를 사용하는 시스템에서 모듈 언로드 경로를 테스트한다면",
+      "do": "drmm_writeback_connector_init() 전환 패치의 최종 병합 여부를 스레드에서 확인하고 job queue 정리 동작을 검증하세요",
+      "verify": "스레드의 'Ping @Dmitry' 이후 최신 응답을 확인해 병합 여부를 확정하세요"
+    },
+    {
+      "title": "vc4 셰이더 검증 경로 krealloc 메모리 누수 수정 — drm-misc-fixes 적용",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "vc4 드라이버 유지보수 담당 및 stable 백포트 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/08b3c484-f198-45eb-adc7-a0e27f5b66f7@igalia.com/",
+      "if": "vc4 기반 시스템에서 셰이더 컴파일 오류 경로가 반복 노출될 수 있는 환경이라면",
+      "do": "drm-misc-fixes 브랜치에서 커밋 해시를 확인하고 Cc: stable 태그 여부에 따라 백포트를 검토하세요",
+      "verify": "mainline 반영 커밋은 현재 미확인 상태이므로 torvalds 미러에서 직접 확인하세요"
+    },
+    {
+      "title": "Rust DRM GEM shmem DmaResvGuard 헬퍼 제안 (병합 미확정)",
+      "priority": "하",
+      "impactType": "project",
+      "affectedAudience": "Rust DRM 추상화 및 Rust 커널 드라이버 개발자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/8898fc261aded12d8adf4c5a74cc6bd830072f27.camel@redhat.com/",
+      "if": "Rust 기반 GPU 드라이버(Nova/Tyr 등)에서 GEM shmem dma_resv 락 관리가 필요하다면",
+      "do": "DmaResvGuard 패치 리뷰에 참여하고 #[inline(always)] vs #[inline] 어노테이션 지침 논의를 추적하세요",
+      "verify": "패치 병합 여부는 미확정이므로 스레드 최신 상태를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm/vc4: krealloc() 메모리 누수 수정**\n\nvc4 셰이더 검증의 require_uniform_address_uniform() 경로에서 krealloc() 실패 시 기존 포인터가 유실되던 누수 패턴을 임시 변수 + NULL 검사 방식으로 수정하고 krealloc_array()로 전환했습니다. drm-misc-fixes에 적용됐으며 mainline 커밋 해시는 현재 미확인 상태입니다.\n\n영향: 사용자 셰이더를 커널에서 직접 검증하는 vc4 특유의 경로에서 할당 실패가 누적될 경우 커널 메모리 누수로 이어지며, stable 백포트 대상 가능성이 있습니다(Cc: stable 여부 미확인).\n\n> \"Fixes: 6d45c81d229d (\\\"drm/vc4: Add support for branching in shader validation.\\\") ... Applied to drm/misc/kernel (drm-misc-fixes). - Maíra\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/08b3c484-f198-45eb-adc7-a0e27f5b66f7@igalia.com/)\n\n---\n\n**drm/amd/display: writeback connector 자원 누수 수정 (리뷰 진행 중)**\n\namdgpu DM의 writeback connector 초기화를 관리형 버전(drmm_writeback_connector_init(), drmm_plain_encoder_alloc())으로 전환해 모듈 언로드/디바이스 해제 시 job queue가 자동 정리되도록 합니다. Reviewed-by가 2건 붙었으나 'Ping @Dmitry' 이후 최종 병합은 미확정입니다.\n\n영향: writeback connector job queue 미정리로 인한 자원 누수가 닫히며 drmm 관리형 패턴 전환 선례가 됩니다.\n\n> \"The driver uses drm_writeback_connector_init() instead of its drmm counterpart, but it doesn't perform the job queue cleanup ... the drmm_writeback_connector_init() function ensures the proper cleanup\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/23cc1a03-39a6-4cc3-86ca-0d7c914ee40d@Igalia.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/v3d: 스케줄러·제출 경로 수정 및 리팩터링 — mainline 적용**\n\nMaíra Canal의 12개 패치 시리즈가 drm-misc와 torvalds mainline 양쪽에 적용됐습니다. 0이 아닌 미존재 syncobj 핸들을 -ENOENT로 거부하고, BO 예약 락을 ww_acquire_ctx 패턴에서 DRM exec로 이전하며, v3d_submit_jobs()에서 모든 job을 arm → 의존성 wire → push하는 원자적 제출을 보장합니다.\n\n영향: 기존에 0이 아닌 잘못된 syncobj 핸들을 묵살하던 ioctl 동작이 변경되므로 Mesa v3d 사용자공간 오류 처리 경로 점검이 필요합니다. 일부 job만 GPU에서 실행되던 비원자적 제출 버그가 닫힙니다.\n\n> \"Applied, thanks! ... [12/12] drm/v3d: Ensure atomic submissions in v3d_submit_jobs() commit: 7d64136e0f08c108434962d5a4c0c038c034caaa\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/178102809610.1132947.6398170765307850769.b4-ty@igalia.com/)\n\n---\n\n**drm/atomic: active·전이-active colorop state만 atomic 설정에 포함 (리뷰 중)**\n\nMelissa Wen의 패치가 drm_atomic_add_pipeline_colorops()를 도입해 atomic commit에 포함되는 colorop state를 현재 활성이거나 같은 commit에서 활성화/비활성화되는 pipeline 체인으로 제한할 것으로 추정됩니다. 스레드에 'Applied' 표시가 없어 병합 여부는 미확정입니다.\n\n영향: -EDEADLK/-ENOMEM 재시도 의미와 atomic 검사 범위가 바뀌므로 AMD/Intel 등 colorop 구현 드라이버 담당자가 추적해야 합니다.\n\n> \"adds all colorops in use by @plane to the atomic configuration ... Returns: 0 on success or can fail with -EDEADLK or -ENOMEM. When the error is EDEADLK then the w/w mutex code has detected a deadlock\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/0a0a4d13-9821-4a74-82f5-5309a1e168ca@Igalia.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "**Rust: drm/gem/shmem DmaResvGuard 헬퍼 추가 제안**\n\nLyude Paul의 패치가 GEM shmem 객체의 dma_resv 락을 Drop 핸들러로 자동 해제하는 Rust 헬퍼 타입 DmaResvGuard를 제안합니다. 커널에 WwMutex 바인딩이 생기면 대체될 임시 구현이며, AI 리뷰 봇(sashiko-bot)의 #[inline(always)] 지적이 환각인지 여부가 논의 중이고 병합 여부는 미확정입니다.\n\n영향: Rust 기반 GPU 드라이버가 의존할 DRM GEM shmem 락 관리 추상화의 기반 블록이 될 것으로 추정됩니다. AI 봇 리뷰 지침 공백이라는 부차적 논의도 함께 드러났습니다.\n\n> \"When this is dropped, the `dma_resv` lock is dropped as well. // TODO: This should be replace with a WwMutex equivalent once we have such bindings in the kernel.\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/8898fc261aded12d8adf4c5a74cc6bd830072f27.camel@redhat.com/)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/v3d: Scheduler and submission fixes — applied thread",
+      "url": "https://lore.kernel.org/dri-devel/178102809610.1132947.6398170765307850769.b4-ty@igalia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/v3d: Reject invalid syncobj handles in submit ioctls",
+      "url": "https://github.com/torvalds/linux/commit/66fc52ba7c3f36dcbd55bf19a788306147e2a318",
+      "note": "commit"
+    },
+    {
+      "title": "drm/v3d: Replace ww_acquire_ctx with DRM exec",
+      "url": "https://github.com/torvalds/linux/commit/e4a131d1851e217a0ebbd8632a705f6bb5a67672",
+      "note": "commit"
+    },
+    {
+      "title": "drm/vc4: fix krealloc() memory leak — applied thread",
+      "url": "https://lore.kernel.org/dri-devel/08b3c484-f198-45eb-adc7-a0e27f5b66f7@igalia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/atomic: only add states of active or transient active colorops",
+      "url": "https://lore.kernel.org/dri-devel/0a0a4d13-9821-4a74-82f5-5309a1e168ca@Igalia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/amd/display: use drmm_writeback_connector_init()",
+      "url": "https://lore.kernel.org/dri-devel/23cc1a03-39a6-4cc3-86ca-0d7c914ee40d@Igalia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: drm: gem: shmem: Add DmaResvGuard helper",
+      "url": "https://lore.kernel.org/dri-devel/8898fc261aded12d8adf4c5a74cc6bd830072f27.camel@redhat.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-09T19:06:56.594Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
