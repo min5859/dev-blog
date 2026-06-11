@@ -1,0 +1,99 @@
+{
+  "id": "2026-06-12-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-06-12 GPU vRAM 한도 강제화·패닉 수정 — Linux GPU/AI",
+  "headline": "dmem cgroup vRAM 한도 강제 회수 도입, amdgpu 초기화 경로 패닉 버그 수정 패치 제출",
+  "date": "2026-06-12",
+  "summary": "dmem cgroup 컨트롤러가 max 한도 초과 시 -EBUSY를 반환하고 동기적 회수를 시도하는 v6 패치가 제출됐습니다. amdgpu VRAM 관리자의 초기화 순서 버그로 인한 커널 패닉 수정 패치도 같은 시리즈에 포함됩니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "GPU",
+    "DRM",
+    "amdgpu",
+    "xe",
+    "Rust",
+    "cgroup"
+  ],
+  "highlights": [
+    {
+      "title": "dmem cgroup max 한도 의미론 변경",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "DRM/TTM 드라이버 관리자 및 xe·amdgpu GPU vRAM 파티셔닝 사용자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260611173301.17473-1-thomas.hellstrom@linux.intel.com/",
+      "if": "dmem cgroup max 값을 현재 사용량 이하로 설정하는 유저스페이스를 운용 중이라면",
+      "do": "쓰기가 성공으로 보이던 기존 동작이 -EBUSY 반환으로 바뀌므로 오류 처리 경로를 추가하고, 동기 회수 재시도(최대 16회) 완료 여부를 확인하도록 코드를 수정하세요.",
+      "verify": "패치 v6 커버 레터 원문과 drm-misc/drm-tip 트리 병합 여부를 확인하세요."
+    },
+    {
+      "title": "amdgpu VRAM 관리자 초기화 순서 버그 수정",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "amdgpu 및 TTM VRAM 관리자 유지보수 담당자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260611174513.F03BB1F00893@smtp.kernel.org/",
+      "if": "amdgpu 모듈 로드 시 cgroup 등록 실패 경로가 존재하는 커스텀 빌드나 테스트 환경이라면",
+      "do": "초기화 순서 수정 패치를 적용하고, gpu_buddy_init() 실패 경로의 free_trees 댕글링 포인터 문제가 별도로 수정됐는지 확인하세요.",
+      "verify": "오류 주입으로 모듈 로드 실패 경로에서 커널 패닉이 사라지는지 검증하세요."
+    },
+    {
+      "title": "Rust Mmio 뷰 타입 리팩터링 (v4)",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust-for-Linux 기여자 및 MMIO 추상화를 사용하는 Rust 드라이버 작성자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260611173108.5F6121F00893@smtp.kernel.org/",
+      "if": "MmioOwned 타입을 직접 사용하는 Rust 드라이버 코드를 작성 중이라면",
+      "do": "소유 의미론이 필요하지 않은 곳은 Mmio 뷰 타입으로 전환하고, MmioOwned I/O 구현이 Mmio에 위임하는 새 구조에 맞게 드라이버를 수정하세요.",
+      "verify": "rust-next 트리 병합 여부와 변환된 MmioOwned 사례 목록을 원문 diff에서 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**amdgpu VRAM 관리자 초기화 순서 버그 수정**\n\n`amdgpu_vram_mgr_init()`에서 `drmm_cgroup_register_region()`이 `INIT_LIST_HEAD()`와 `gpu_buddy_init()` 이전에 호출되어, 등록 실패 시 함수가 조기 반환되고 초기화를 건너뛰어 커널 패닉이 발생합니다.\n\n영향: 모듈 로드 오류 경로에서 커널 패닉 또는 잠재적 use-after-free가 발생할 수 있으며, 정상 테스트에서는 재현되지 않아 발견이 어렵습니다.\n\n> \"drmm_cgroup_register_region() is called before INIT_LIST_HEAD() and gpu_buddy_init() in amdgpu_vram_mgr_init(). If it fails, the function returns early and bypasses those initializations.\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260611174513.F03BB1F00893@smtp.kernel.org/)\n\n추가로, 자동 리뷰어는 `gpu_buddy_init()` 실패 시 `mgr->mm.free_trees`가 댕글링 포인터 또는 NULL 상태로 남아 teardown 중 `gpu_buddy_fini()`가 이를 역참조할 수 있다는 미수정 경로를 별도로 지적했습니다. 이 문제가 현재 시리즈에서 함께 해결됐는지는 확인 필요입니다.\n\n> \"If gpu_buddy_init() fails, it cleans up its partial allocations but leaves mgr->mm.free_trees as a dangling pointer or NULL.\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260611174513.F03BB1F00893@smtp.kernel.org/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**dmem cgroup max 한도 강제 회수 도입 (v6, 확인 필요)**\n\ndmem cgroup 컨트롤러에서 max 값을 현재 사용량보다 낮게 설정할 때 기존에는 조용히 실패했으나, v6 패치는 -EBUSY를 반환하고 디바이스 메모리를 동기적으로 회수해 한도를 맞추도록 변경하는 것으로 보입니다. 재시도 횟수는 DMEM_MAX_RECLAIM_RETRIES(16)으로 memcg와 동일하게 맞추고, xe와 amdgpu 드라이버에 TTM 회수 콜백을 연결합니다.\n\n영향: GPU vRAM을 cgroup으로 파티셔닝하는 유저스페이스는 max 쓰기 성공으로 보이던 동작이 -EBUSY 오류로 바뀌는 행동 변경에 반드시 대응해야 합니다.\n\n> \"When writing a \\\"max\\\" limit lower than the current usage, the existing code silently failed... returning -EBUSY on failure and also attempt to synchronously reclaim device memory to push the usage unde\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260611173301.17473-1-thomas.hellstrom@linux.intel.com/)\n\n참고: lore.kernel.org 접근 불가로 패치 내용은 커버 레터 인용 기반으로만 검증됐습니다. drm-misc/drm-tip 병합 여부와 회수 콜백 인터페이스의 정확한 시그니처는 원문에서 확인하세요.\n\n---\n\n**Rust `Mmio` 뷰 타입 리팩터링 (v4)**\n\n`Mmio`를 뷰(borrow) 타입으로 재구현하고, `RelaxedMmio`도 뷰 타입으로 전환합니다. `MmioOwned`의 I/O 구현은 `Mmio` 뷰 타입에 위임하도록 변경되며, 소유 의미론을 실제로 반영하지 않던 `MmioOwned` 문서 사례도 뷰 타입으로 변환됩니다.\n\n영향: MMIO 추상화를 사용하는 Rust 드라이버 작성자는 소유·빌림 모델이 명확해진 새 API에 맞게 코드를 조정해야 할 수 있습니다.\n\n> \"Implement `Mmio` as view type and convert `RelaxedMmio` to view type as well. I/O implementations of `MmioOwned` are changed to delegate to the `Mmio` view type.\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260611173108.5F6121F00893@smtp.kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "[PATCH v6 0/6] Add reclaim to the dmem cgroup controller",
+      "url": "https://lore.kernel.org/dri-devel/20260611173301.17473-1-thomas.hellstrom@linux.intel.com/",
+      "note": "thread"
+    },
+    {
+      "title": "DMEM cgroup vRAM Control — Phoronix",
+      "url": "https://www.phoronix.com/news/DMEM-cgroup-vRAM-Control",
+      "note": "article"
+    },
+    {
+      "title": "drm/amdgpu: Fix init ordering in amdgpu_vram_mgr_init()",
+      "url": "https://lore.kernel.org/dri-devel/20260611174513.F03BB1F00893@smtp.kernel.org/",
+      "note": "commit"
+    },
+    {
+      "title": "rust: io: implement `Mmio` as view type",
+      "url": "https://lore.kernel.org/dri-devel/20260611173108.5F6121F00893@smtp.kernel.org/",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-11T19:02:41.387Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

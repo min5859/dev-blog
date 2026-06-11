@@ -1,0 +1,130 @@
+{
+  "id": "2026-06-12-linux-distro-stable-daily",
+  "topic": "linux-distro-stable",
+  "title": "2026-06-12 NFC·WiFi OOB 패치 + XFS 크래시 — linux-distro-stable",
+  "headline": "NFC·WiFi OOB 경계 패치 및 XFS 6.6.y 백포트 크래시, amdgpu/vfio 회귀 수정이 stable 대기열에 등록",
+  "date": "2026-06-12",
+  "summary": "NFC NCI 2.x와 IEEE80211 MLE 파싱 경로에서 out-of-bounds 읽기를 유발하는 보안 결함 수정 2건이 stable 대기열에 진입했다. XFS 6.6.y 불완전 백포트로 인한 마운트 시점 크래시와 vfio-pci PM refcount 불균형 회귀도 함께 논의 중이다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "stable",
+    "보안",
+    "NFC",
+    "WiFi",
+    "XFS",
+    "amdgpu",
+    "vfio"
+  ],
+  "highlights": [
+    {
+      "title": "NFC NCI 2.x CORE_INIT_RSP OOB 읽기",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "NFC/NCI 스택 유지보수자, 가상 NCI 노출 환경 운영자",
+      "verifyLink": "https://lore.kernel.org/stable/20260611162718.2301552-1-yzjaurora@gmail.com/",
+      "if": "CONFIG_NFC_VIRTUAL_NCI 환경에서 NCI 2.x 모드가 활성화되어 있다면",
+      "do": "해당 패치가 사용 커널 stable 라인에 백포트됐는지 확인하고, 미적용 시 가상 NCI 인터페이스 노출을 제한할 것",
+      "verify": "패치 적용 후 nci_core_init_rsp_packet_v2()에서 skb 길이 검사가 정상 동작하는지 단위 테스트로 확인할 것"
+    },
+    {
+      "title": "IEEE80211 MLE common-info 길이 미검증",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "mac80211/cfg80211 및 무선 드라이버 유지보수자",
+      "verifyLink": "https://lore.kernel.org/stable/20260611173506.36838-2-enderaoelyther@gmail.com/",
+      "if": "Reconfiguration 또는 Priority Access MLE 타입 프레임을 파싱하는 환경이라면",
+      "do": "ieee80211_mle_size_ok() 확장 패치가 사용 커널에 포함됐는지 점검하고 무선 프레임 입력 경로를 재검토할 것",
+      "verify": "비정상 common-info 길이의 MLE 프레임을 주입해 크래시 없이 거부되는지 확인할 것"
+    },
+    {
+      "title": "XFS 6.6.y 불완전 백포트 — 마운트 시 KASAN null-ptr-deref",
+      "priority": "중",
+      "impactType": "backport",
+      "affectedAudience": "XFS 유지보수자, 6.6.y LTS 운영자",
+      "verifyLink": "https://lore.kernel.org/stable/aisAxyXVxf4wql2u@linuxonhyperv3.guj3yctzbm1etfxqx2vob5hsef.xx.internal.cloudapp.net/",
+      "if": "6.6.y LTS에서 XFS 파일시스템을 운용하며 로그 복구 경로를 사용하는 환경이라면",
+      "do": "누락된 커밋 4개의 백포트 여부를 6.6.y 변경 이력에서 확인하고, 미적용 상태면 upstream 스레드를 추적할 것",
+      "verify": "xfs/235 테스트를 실행해 xlog_recover_cancel_intents()에서 크래시가 재현되지 않음을 확인할 것"
+    },
+    {
+      "title": "vfio-pci disable_idle_d3 per-device latch 부재",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "vfio-pci 드라이버 및 PCI passthrough 환경 운영자",
+      "verifyLink": "https://lore.kernel.org/stable/20260611182528.4004073-2-alex.williamson@nvidia.com/",
+      "if": "PCI passthrough 환경에서 vfio-pci 런타임 PM이 활성화되어 있고 모듈 재로드가 발생하는 시나리오가 있다면",
+      "do": "c61302aa48f7 패치가 해당 stable 트리에 백포트됐는지 확인하고 PM get/put 불균형 증상을 dmesg로 점검할 것",
+      "verify": "모듈 재로드 후 /sys/bus/pci/.../power/runtime_status가 예상 상태를 유지하는지 확인할 것"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "7.0.12·6.18.35·6.12.93는 어제 수집에서 이미 다룬 항목으로, 이번 수집에서 추가 진척이나 신규 변화는 확인되지 않았습니다. git.kernel.org가 Anubis 차단으로 직접 검증이 불가능하므로 각 릴리스 changelog는 아래 링크에서 직접 확인하세요.\n\n[7.0.12 changelog](https://git.kernel.org/stable/h/v7.0.12) · [6.18.35 changelog](https://git.kernel.org/stable/h/v6.18.35) · [6.12.93 changelog](https://git.kernel.org/stable/h/v6.12.93)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**NFC NCI 2.x CORE_INIT_RSP OOB 읽기**\n\nnci_core_init_rsp_packet_v2()에 skb 경계 검사와 RF 인터페이스 엔트리별 extension 길이 검증이 추가되어 조작된 CORE_INIT_RSP가 skb 버퍼 끝을 넘어 ndev->supported_rf_interfaces[]로 복사되는 OOB 읽기를 차단합니다.\n\n영향: CONFIG_NFC_VIRTUAL_NCI를 통해 user space에서 NCI 2.x 응답을 주입할 수 있는 환경에서 악용 가능성이 있습니다.\n\n> \"a malformed CORE_INIT_RSP can advance the read pointer far past the end of the skb data buffer\"\n\n[원문 확인](https://lore.kernel.org/stable/20260611162718.2301552-1-yzjaurora@gmail.com/)\n\n---\n\n**IEEE80211 MLE common-info 길이 미검증**\n\nieee80211_mle_size_ok()가 Reconfiguration 및 Priority Access MLE에 대해서도 advertised common information length를 검증하도록 확장됐습니다. 기존 검증은 Basic·Probe Request·TDLS 타입에만 적용되어 있었습니다.\n\n영향: 무선 프레임은 원격 입력이므로, 조작된 MLE 프레임이 멀티링크 파싱 경로에서 경계 위반을 유발할 수 있었습니다.\n\n> \"Reconfiguration MLEs also skipped the length octet when calculating the minimum common size, and Priority Access MLEs skipped validation of the advertised common information length.\"\n\n[원문 확인](https://lore.kernel.org/stable/20260611173506.36838-2-enderaoelyther@gmail.com/)\n\n---\n\n**XFS 6.6.y 불완전 백포트 — 마운트 시 KASAN null-ptr-deref / GPF**\n\n\"xfs: log intent item recovery should reconstruct defer work state\" 시리즈(4개 커밋) 중 일부가 6.6.y에서 누락되어 xfs/235 테스트 마운트 시 xlog_recover_cancel_intents()에서 크래시가 발생합니다. 누락 커밋 백포트가 메일링 리스트에서 논의 중입니다. confidence=low이며 원문 직접 인용 검증에 실패했으므로 반드시 아래 링크에서 원문을 확인하세요.\n\n영향: 프로덕션에서 재현된 마운트 시점 크래시로 6.6.y LTS 운영자가 즉시 주의해야 합니다.\n\n> \"Incomplete backport of series 'xfs: log intent item recovery should reconstruct defer work state' leads to a kernel crash during the xfs/235 test execution on top of 6.6.y stable.\" (미검증 인용)\n\n[원문 확인](https://lore.kernel.org/stable/aisAxyXVxf4wql2u@linuxonhyperv3.guj3yctzbm1etfxqx2vob5hsef.xx.internal.cloudapp.net/)\n\n---\n\n**vfio-pci disable_idle_d3 per-device latch 부재 — PM refcount 불균형**\n\ndisable_idle_d3 플래그를 장치 초기화 시점에 vfio_pci_core_device 단위로 latch하여 모듈 재로드나 sysfs 변경으로 전역 값이 바뀌어도 기존 바인딩 장치의 PM get/put이 불균형해지는 창을 닫습니다.\n\n영향: Runtime PM 도입(7ab5e10eda02) 이후 PCI passthrough 환경에서 모듈 재로드 시 장치 상태 손상으로 이어질 수 있는 회귀입니다.\n\n> \"This introduces a window where PM operations can now become unbalanced.\"\n\n[원문 확인](https://lore.kernel.org/stable/20260611182528.4004073-2-alex.williamson@nvidia.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/amdgpu: amdgpu_vram_mgr_init() 초기화 순서 수정**\n\ndrmm_cgroup_register_region() 호출을 INIT_LIST_HEAD()와 gpu_buddy_init() 이후로 이동시켜, cgroup region 등록 실패 시 teardown 경로(amdgpu_vram_mgr_fini)가 zero-init 이전의 list_head와 미할당 free_trees를 NULL 역참조하지 않도록 했습니다.\n\n영향: adev->mman.initialized가 vram_mgr_init() 호출 전에 true로 설정되는 구조상, cgroup 등록 실패 경로에서 커널 패닉이 발생했습니다. TTM/cgroup 기반 eviction을 사용하는 amdgpu 환경에서 모듈 로드 안정성과 직결됩니다.\n\n> \"Both result in a kernel panic on the module load error path.\"\n\n[원문 확인](https://lore.kernel.org/stable/20260611173301.17473-2-thomas.hellstrom@linux.intel.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "medium",
+    "note": "NFC·WiFi·vfio·amdgpu 항목은 lore.kernel.org 스레드 직접 확인 기준 high. 릴리스(7.0.12/6.18.35/6.12.93)와 XFS 불완전 백포트 항목은 git.kernel.org Anubis 차단 및 quote 미검증으로 low. 리서치 dossier의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "nfc: nci: validate packet length when parsing NCI 2.x RF interfaces",
+      "url": "https://lore.kernel.org/stable/20260611162718.2301552-1-yzjaurora@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "wifi: ieee80211: validate MLE common info length",
+      "url": "https://lore.kernel.org/stable/20260611173506.36838-2-enderaoelyther@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/amdgpu: Fix init ordering in amdgpu_vram_mgr_init()",
+      "url": "https://lore.kernel.org/stable/20260611173301.17473-2-thomas.hellstrom@linux.intel.com/",
+      "note": "thread"
+    },
+    {
+      "title": "vfio/pci: Latch disable_idle_d3 per device",
+      "url": "https://lore.kernel.org/stable/20260611182528.4004073-2-alex.williamson@nvidia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "XFS 6.6.y 불완전 백포트 크래시 보고",
+      "url": "https://lore.kernel.org/stable/aisAxyXVxf4wql2u@linuxonhyperv3.guj3yctzbm1etfxqx2vob5hsef.xx.internal.cloudapp.net/",
+      "note": "thread"
+    },
+    {
+      "title": "Linux 7.0.12 changelog",
+      "url": "https://git.kernel.org/stable/h/v7.0.12",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 6.18.35 changelog",
+      "url": "https://git.kernel.org/stable/h/v6.18.35",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 6.12.93 changelog",
+      "url": "https://git.kernel.org/stable/h/v6.12.93",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-11T18:45:14.744Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

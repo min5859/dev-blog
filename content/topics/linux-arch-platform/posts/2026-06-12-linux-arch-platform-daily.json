@@ -1,0 +1,124 @@
+{
+  "id": "2026-06-12-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-06-12 LicheePi4a·Olympus 패치 동향 — Linux Arch/Platform",
+  "headline": "RISC-V 플랫폼 패치 4건 진행·NVIDIA Olympus arm64 메모리 순서 errata 배리어 설계 논의 본격화",
+  "date": "2026-06-12",
+  "summary": "LicheePi4a defconfig에 PCA953X GPIO 모듈 활성화가 riscv-config-for-next에 적용 완료됐으며, NVIDIA Olympus arm64 코어의 store/load 순서 errata 워크어라운드 배리어 배치 방식 논의가 진행 중이다. PolarFire SoC hwmon 드라이버 추가와 Qualcomm Shikra DT 바인딩 확장은 검토 중이며, x86 전용 병렬 bringup 제약을 Kconfig로 분리하는 패치도 제출됐다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "RISC-V",
+    "arm64",
+    "hwmon",
+    "디바이스트리",
+    "errata",
+    "defconfig"
+  ],
+  "highlights": [
+    {
+      "title": "LicheePi4a defconfig: PCA953X GPIO 모듈 활성화 적용 완료",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "RISC-V T-HEAD/LicheePi4a defconfig 사용자 및 RISC-V config 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/airfSHk5h%2Fu%2Fd2O%2F@x1/",
+      "if": "LicheePi4a에서 메인라인 RISC-V defconfig를 사용 중이고 WiFi가 probe되지 않는다면",
+      "do": "riscv-config-for-next 브랜치를 체크아웃하여 CONFIG_GPIO_PCA953X=m 적용을 확인한 뒤 WiFi pwrseq probe 동작을 테스트한다.",
+      "verify": "dmesg에서 pca953x 드라이버 probe 성공 메시지와 WiFi 인터페이스 활성화를 확인한다."
+    },
+    {
+      "title": "NVIDIA Olympus arm64 store/load 순서 errata 워크어라운드 설계 논의",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "arm64 / NVIDIA Olympus(Vera) 플랫폼 및 메모리 배리어 담당",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260611174954.GC1962447@nvidia.com/",
+      "if": "NVIDIA Olympus(Vera CPU) 기반 arm64 시스템에서 IO 메모리 접근 순서 이슈가 의심된다면",
+      "do": "해당 lore 스레드를 추적하여 dgh()→dmb 전환 워크어라운드의 최종 구현 형태와 공식 erratum 번호를 확인한다.",
+      "verify": "패치가 머지되면 memcpy-to-io 경로에서 배리어 동작을 검증하고 해당 erratum 번호로 errata workaround가 활성화되는지 확인한다."
+    },
+    {
+      "title": "PolarFire SoC hwmon 드라이버 신규 추가 (검토 중)",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "PolarFire SoC / RISC-V 플랫폼 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260611-blank-footprint-5504b819baec@spud/",
+      "if": "PolarFire SoC에서 다이 온도 및 전압 레일 모니터링이 필요하다면",
+      "do": "hwmon 메인테이너 리뷰 진행 상황을 lore에서 추적하고, 드라이버가 머지된 후 /sys/class/hwmon 경로에서 온도·전압 채널을 확인한다.",
+      "verify": "sensors 명령으로 온도·전압 값이 정상 출력되는지, 알람 비지원(erratum 제약) 동작이 예상과 일치하는지 확인한다."
+    },
+    {
+      "title": "CONFIG_PARALLEL_SMT_PRIMARY_FIRST: x86 전용 제약 Kconfig 분리",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "x86/arm64/RISC-V SMP 부팅(parallel bringup) 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260611133809.3854977-2-ruanjinjie@huawei.com/",
+      "if": "arm64 또는 RISC-V에서 병렬 CPU bringup 경로를 최적화하거나 관련 패치를 검토 중이라면",
+      "do": "시리즈 전체 범위를 확인하고 자신의 아키텍처가 CONFIG_PARALLEL_SMT_PRIMARY_FIRST를 select하는지 Kconfig 의존성을 점검한다.",
+      "verify": "병렬 bringup 경로에서 SMT 분기가 전처리기 단계에서 올바르게 우회되는지 부팅 로그와 objdump로 확인한다."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**NVIDIA Olympus arm64 store/load 순서 errata 워크어라운드 설계 논의**\n\nWill Deacon이 memcpy-to-io 루틴에서 dgh()를 해당 erratum 칩에 한해 dmb로 전환해 배리어를 루프 밖으로 이동하는 방안을 제안했으며, Jason은 dgh() 호출자는 WC(NORMAL-NC) 메모리를 전제로 하므로 Device 메모리에는 dgh()가 동작하지 않아 별도 배리어가 불필요하다고 반론했다.\n\n영향: NVIDIA Olympus(Vera CPU, Neoverse-V2 후속) 기반 arm64 시스템의 IO 메모리 접근 정합성에 직결되는 배리어 배치 방식 결정이다.\n\n> \"only callers that know they are using WC memory should be calling dgh() and in that case we know it is NORMAL-NC ... it doesn't do anything on the Device memory types?\"\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260611174954.GC1962447@nvidia.com/)\n\n*확인 필요: 이 후보는 리뷰 답신 스레드이며 워크어라운드 최종 구현 형태와 공식 erratum 번호는 아직 확정되지 않았습니다.*"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**LicheePi4a defconfig: PCA953X GPIO 모듈 활성화 (riscv-config-for-next 적용 완료)**\n\narch/riscv/configs/defconfig에 CONFIG_GPIO_PCA953X=m과 CONFIG_GPIO_PCA953X_IRQ=y를 추가하여 LicheePi4a 보드에서 WiFi pwrseq 드라이버가 정상 probe되도록 한다. Drew Fustini가 riscv-config-for-next 브랜치에 적용했음이 스레드에서 확인됐다.\n\n영향: T-HEAD/LicheePi4a 사용자가 별도 커널 설정 변경 없이 defconfig만으로 WiFi 전원 시퀀스를 동작시킬 수 있게 된다.\n\n> \"Enable PCA953X GPIO driver to properly probe Wifi pwrseq driver on LicheePi4a board.\"\n\n[원문 확인](https://lore.kernel.org/linux-riscv/airfSHk5h%2Fu%2Fd2O%2F@x1/)\n\n---\n\n**PolarFire SoC hwmon 드라이버 신규 추가 (hwmon 메인테이너 검토 중)**\n\nMicrochip PolarFire SoC의 다이 온도 및 1.05/1.8/2.5V 전압 레일 센서를 노출하는 신규 hwmon 드라이버를 추가한다. simple-mfd syscon의 자식이라 별도 DT 바인딩 없이 동작하며, 알람은 한 번 트리거되면 클리어 불가인 erratum 때문에 미지원이다. Conor Dooley(RISC-V/PolarFire 유지보수자) co-developed.\n\n영향: PolarFire SoC 추적 엔지니어에게 온도·전압 모니터링이 메인라인 hwmon으로 편입됨을 알리는 신호다.\n\n> \"The hardware supports alarms in theory, but there is an erratum that prevents clearing them once triggered, so no support is added for them.\"\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260611-blank-footprint-5504b819baec@spud/)\n\n---\n\n**CONFIG_PARALLEL_SMT_PRIMARY_FIRST: x86 전용 부팅 순서 제약 Kconfig 분리**\n\n병렬 CPU bringup 시 x86의 primary-SMT-first 제약을 CONFIG_PARALLEL_SMT_PRIMARY_FIRST Kconfig 심볼로 분리하여 arm64·RISC-V 등 다른 플랫폼의 병렬 bringup 경로에서 해당 SMT 분기를 전처리기 단계에서 우회한다. 이 패치는 linux-riscv 리스트에도 교차 게시됐다.\n\n영향: arm64·RISC-V 플랫폼에서 불필요한 x86 전용 마이크로코드 업데이트 제약이 제거되어 병렬 bringup 경로가 단순화된다.\n\n> \"This constraint is architecture-specific and unnecessary for other platforms like arm64. Introduce CONFIG_PARALLEL_SMT_PRIMARY_FIRST to decouple this constraint.\"\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260611133809.3854977-2-ruanjinjie@huawei.com/)\n\n*확인 필요: RISC-V가 이 옵션을 select/미select하는지와 머지 상태는 미확인.*\n\n---\n\n**Qualcomm Shikra ethqos DT 바인딩: qcom,shikra-ethqos compatible 추가 (추정, 검토 중)**\n\nQualcomm Shikra EMAC에 NOC 인터커넥트 voting용 클록 3개를 추가한 7-클록 구성과 qcom,shikra-ethqos compatible 문자열을 DT 바인딩에 확장한다. AXI 클록이 stmmac 코어와 드라이버 NOC bulk 배열에서 각각 참조되어 2회 등장하며 CCF refcounting으로 처리된다고 설명된다.\n\n영향: Shikra 플랫폼 이더넷 메인라인 지원을 위한 DT 바인딩 선행 작업으로, Qualcomm arm64 플랫폼·stmmac 담당에게 새 SoC 클록 토폴로지 표현 방식을 보여준다.\n\n*원문 직접 검증 실패(confidence=low) — 아래 링크에서 내용을 반드시 확인하세요.*\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260612-shikra_ethernet-v1-1-f0f4a1d19929@oss.qualcomm.com/)\n\n---\n\n**SpacemiT K1 PDMA 요청 번호 심볼릭 이름 적용 (v3, 검토 중)**\n\nk1-pdma.h 헤더를 추가하고 SPI3 dmas 속성의 하드코딩 번호를 K1_PDMA_SPI3_RX/TX 매크로로 치환한다. 요청 번호는 하드웨어 고정값이며 기능 변화 없이 DT 가독성·유지보수성만 개선된다.\n\n영향: K1 플랫폼 DT를 다루는 엔지니어가 하드웨어 매뉴얼 대조 없이 DMA 채널을 직관적으로 파악할 수 있게 된다. ABI 영향 없음.\n\n> \"Add a local DTS header, k1-pdma.h, that gives symbolic names to the K1 PDMA request numbers. ... Replace the hard-coded numbers in the SPI3 \\\"dmas\\\" property with the K1_PDMA_SPI3_RX/TX macros.\"\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260611-b4-k1-pdma-req-macros-v3-1-ae8416052571@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "hwmon: add a driver for the temp/voltage sensor on PolarFire SoC",
+      "url": "https://lore.kernel.org/linux-riscv/20260611-blank-footprint-5504b819baec@spud/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: dts: spacemit: Use symbolic PDMA request numbers on K1 (v3)",
+      "url": "https://lore.kernel.org/linux-riscv/20260611-b4-k1-pdma-req-macros-v3-1-ae8416052571@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "dt-bindings: net: qcom,ethqos: add qcom,shikra-ethqos compatible",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260612-shikra_ethernet-v1-1-f0f4a1d19929@oss.qualcomm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: defconfig: thead: enable PCA953X GPIO driver",
+      "url": "https://lore.kernel.org/linux-riscv/airfSHk5h%2Fu%2Fd2O%2F@x1/",
+      "note": "thread"
+    },
+    {
+      "title": "cpu/hotplug: Introduce CONFIG_PARALLEL_SMT_PRIMARY_FIRST",
+      "url": "https://lore.kernel.org/linux-riscv/20260611133809.3854977-2-ruanjinjie@huawei.com/",
+      "note": "thread"
+    },
+    {
+      "title": "arm64: errata: Workaround NVIDIA Olympus device store/load ordering erratum (review reply)",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260611174954.GC1962447@nvidia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "NVIDIA Olympus CPU Scheduling Model — Phoronix",
+      "url": "https://www.phoronix.com/news/NVIDIA-Olympus-Sched-Model",
+      "note": "article"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-11T18:57:59.851Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
