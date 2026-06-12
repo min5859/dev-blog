@@ -1,0 +1,112 @@
+{
+  "id": "2026-06-13-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-06-13 ThinLTO 섹션 태그 정정 — Linux 툴체인",
+  "headline": "Clang ThinLTO가 드러낸 net 섹션 불일치 11건 수정, Rust zerocopy·proc macro 도입 논의 병행",
+  "date": "2026-06-13",
+  "summary": "Clang 분산 ThinLTO 빌드에서 새로 노출된 net 서브시스템 섹션 불일치 경고 11건을 정정하는 패치가 제안됐습니다. Rust 커널에서는 zerocopy 크레이트 도입과 syn 기반 proc macro 채택 논의가 동시에 진행 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "툴체인",
+    "Rust",
+    "LLVM",
+    "ThinLTO"
+  ],
+  "highlights": [
+    {
+      "title": "net pernet_operations 섹션 태그 11건 정정",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "Clang/LLVM 커널 빌드·ThinLTO 추적자, net 서브시스템 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/llvm/20260612162257.896792-1-xur@google.com/",
+      "if": "Clang 분산 ThinLTO 환경에서 커널을 빌드한다면",
+      "do": "net pernet_operations 섹션 태그 패치를 적용해 modpost 경고를 해소하세요",
+      "verify": "빌드 로그에 tcp4_net_ops 등 net 심볼의 section mismatch 경고가 사라졌는지 확인하세요"
+    },
+    {
+      "title": "Rust zerocopy 크레이트 — uapi union 패딩 쟁점",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust for Linux 기여자, Binder/uapi ABI 추적자",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/2026061224-outhouse-widget-8a3a@gregkh/",
+      "if": "Rust 커널 코드에서 uapi 구조체를 바이트 변환해야 한다면",
+      "do": "zerocopy 스레드에서 Greg KH의 uapi 패딩 허용 답변을 직접 확인하세요",
+      "verify": "uapi 헤더 변경 허용 여부 결론이 스레드에 명시됐는지 확인하세요"
+    },
+    {
+      "title": "configfs_attrs! — syn proc macro 재구현 (v3)",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "Rust for Linux 기여자, configfs Rust 추상화 사용자, 커널 빌드 의존성 추적자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260612-configfs-syn-v3-1-3292fbc5cc32@gmail.com/",
+      "if": "커널 Rust 빌드 의존성에 syn 추가를 검토 중이라면",
+      "do": "v3 시리즈의 리뷰어 피드백을 스레드에서 직접 확인하세요",
+      "verify": "Reviewed-by 또는 Acked-by 와 rust-next 머지 여부를 lore에서 확인하세요"
+    },
+    {
+      "title": "nova-core: allow(non_snake_case) 제거",
+      "priority": "하",
+      "impactType": "build",
+      "affectedAudience": "Rust for Linux 기여자, nova-core 유지보수 담당, Rust lint 거동 추적자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260612123401.2684025-1-gary@kernel.org/",
+      "if": "pin-init [pin_]init! 매크로를 사용하는 Rust 드라이버를 유지보수한다면",
+      "do": "5423ef9d4db8 커밋이 포함된 트리라면 불필요해진 allow(non_snake_case) 제거를 검토하세요",
+      "verify": "5423ef9d4db8가 자신의 빌드 트리에 포함됐는지 먼저 확인하세요 (출처 검증 미완료, 추정)"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**net: .init/.exit 섹션 태그 정정 (11건)**\n\nClang 분산 ThinLTO 빌드에서 새로 드러난 tcp4/udp4/ndisc/igmp6 등 net pernet_operations 구조체(.data)가 *_init_net 함수(.init.text)를 참조하는 섹션 불일치 경고 11건을 __net_init 등의 올바른 태그로 정정하는 패치가 제안됐습니다.\n\n영향: 일반 GCC 빌드에서는 보이지 않던 경고가 ThinLTO 채택 시 기존 섹션 주석 누락을 새로 노출하는 전형적 패턴의 사례입니다.\n\n> \"Fix modpost warnings that have surfaced during Clang's distributed ThinLTO builds. WARNING: modpost: vmlinux: section mismatch ... tcp4_net_ops ... -> tcp4_proc_init_net (section: .init.text)\"\n\n[원문 확인](https://lore.kernel.org/llvm/20260612162257.896792-1-xur@google.com/)\n\n---\n\n**Rust zerocopy 크레이트 도입 논의**\n\nMiguel Ojeda의 zerocopy 지원 시리즈와 Alice Ryhl의 Binder 적용 시도에서, uapi union 내 handle 사용 시 발생하는 4바이트 패딩으로 IntoBytes 적용이 막히는 문제와 uapi 헤더에 패딩을 명시 추가해도 되는지가 핵심 쟁점으로 부상했습니다.\n\n영향: zerocopy는 수제 AsBytes+MaybeUninit::zeroed() 패턴을 대체할 수 있으나, uapi 패딩 정책은 ABI 호환과 직결됩니다. Greg KH 답변 내용은 확인 필요.\n\n> \"when the union contains a handle, there are 4 bytes of padding in the union ... One fix could be to update the uapi header by explicitly adding the padding ... It's not clear to me if changing the uap\"\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/2026061224-outhouse-widget-8a3a@gregkh/)\n\n---\n\n**configfs_attrs! — syn 기반 proc macro 재구현 (v3)**\n\n기존 선언적 configfs_attrs! 매크로를 syn 크레이트 기반 절차적 매크로로 재구현하고, 구 매크로를 전부 교체하며 MAINTAINERS에 신규 파일을 등록합니다.\n\n영향: 가독성·유지보수성 향상과 함께, 커널 Rust 빌드 의존성에 syn을 추가하는 방향성 선례가 됩니다. 리뷰어 반응 및 rust-next 머지 진척은 확인 필요.\n\n> \"Implement `configfs_attrs!` as a procedural macro using `syn`, this improves readability and maintainability. Remove the old macro and replace all uses with the new macro.\"\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260612-configfs-syn-v3-1-3292fbc5cc32@gmail.com/)\n\n---\n\n**nova-core: allow(non_snake_case) 제거**\n\npin-init이 [pin_]init! 내부에서 non_snake_case lint를 억제하는 커밋(5423ef9d4db8) 이후, nova-core의 불필요해진 #[allow(non_snake_case)] 주석들을 제거했습니다.\n\n영향: lint 거동 변경이 드라이버 측 allow 주석 정리를 가능케 한 연쇄 효과의 소규모 사례입니다. (출처 검증 미완료 — 추정)\n\n> \"Since commit 5423ef9d4db8 ... mere use of the non-snake-case identifiers would not cause the warning to be generated. Thus re[moved]\"\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260612123401.2684025-1-gary@kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "net: correcting section tags for .init and .exit data/functions",
+      "url": "https://lore.kernel.org/llvm/20260612162257.896792-1-xur@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "kbuild: distributed build support for Clang ThinLTO (v8)",
+      "url": "https://lkml.org/lkml/2026/3/30/1870",
+      "note": "thread"
+    },
+    {
+      "title": "Rust zerocopy 크레이트 — uapi union 패딩 논의",
+      "url": "https://lore.kernel.org/linux-kbuild/2026061224-outhouse-widget-8a3a@gregkh/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: add procedural macro for declaring configfs attributes (v3)",
+      "url": "https://lore.kernel.org/rust-for-linux/20260612-configfs-syn-v3-1-3292fbc5cc32@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "gpu: nova-core: remove #[allow(non_snake_case)]",
+      "url": "https://lore.kernel.org/rust-for-linux/20260612123401.2684025-1-gary@kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-12T18:45:33.313Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

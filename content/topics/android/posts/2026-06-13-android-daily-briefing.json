@@ -1,0 +1,137 @@
+{
+  "id": "2026-06-13-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-06-13 UFS 3종 체인·BBR 활성화 — Android 커널",
+  "headline": "android16-6.12에 UFS 런타임 PM 데드락·host_sem·NULL 크래시 3종 패치가 착지했고, GKI mainline defconfig에 BBR 혼잡 제어가 활성화됐습니다.",
+  "date": "2026-06-13",
+  "summary": "UFS 런타임 PM 관련 세 패치(데드락, host_sem 누수, NULL 크래시)는 반드시 묶음으로 백포트해야 하며 단독 적용 시 새로운 회귀를 유발합니다. ACK mainline에는 BBR TCP 활성화, RISC-V 수정 묶음 머지, build.config.constants 최상위 심볼릭 링크 삭제가 포함됐습니다.",
+  "tags": [
+    "안드로이드",
+    "커널",
+    "UFS",
+    "BBR",
+    "GKI",
+    "RISC-V"
+  ],
+  "highlights": [
+    {
+      "title": "UFS 3종 패치 체인 — 반드시 묶음 백포트 필요",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "ACK 배포 담당, UFS/스토리지 벤더 트리 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/7ef00d3457d8c9cee0915ee0edff247031c36e0c",
+      "if": "android16-6.12 기반 트리에 UFS가 포함돼 있다면,",
+      "do": "7ef00d34(데드락), 459c818f(host_sem 누수), a460b437(NULL 크래시) 세 커밋을 순서대로 묶음으로 백포트하십시오.",
+      "verify": "SM8750 또는 동등 플랫폼에서 부팅 완료 및 I/O hang 없음을 확인하십시오."
+    },
+    {
+      "title": "RISC-V CFI prctl 미지 플래그 EINVAL 거부",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "RISC-V 플랫폼/보안 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/15b4155138505669d3d43d7692459ee8ea2a86e7",
+      "if": "RISC-V CFI 정책을 prctl로 설정하는 코드가 있다면,",
+      "do": "PR_SET_CFI에 미지 비트를 전달하던 경로를 EINVAL 처리에 맞게 수정하십시오.",
+      "verify": "CFI selftest를 실행해 알 수 없는 플래그 입력 시 EINVAL이 반환되는지 확인하십시오."
+    },
+    {
+      "title": "GKI defconfig에 BBR TCP 혼잡 제어 활성화",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "ACK 배포 담당, 네트워크 스택/벤더 트리 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/05c6fbd18c50f80608fc7773e801bf1e636d6d58",
+      "if": "ACK mainline 기반 트리에서 BBR을 별도 패치로 추가해 왔다면,",
+      "do": "중복 패치를 제거하고, modules_private.bzl 변경 내용을 기반으로 GKI 모듈 패키징 및 ABI 검증을 수행하십시오.",
+      "verify": "setsockopt(TCP_CONGESTION, \"bbr\")로 BBR 선택이 가능한지, 기본값이 CUBIC으로 유지되는지 확인하십시오."
+    },
+    {
+      "title": "build.config.constants 최상위 심볼릭 링크 삭제",
+      "priority": "하",
+      "impactType": "build",
+      "affectedAudience": "ACK 빌드/벤더 빌드 스크립트 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/b4221e52ff0edf4d07a3c526292056bc878e96fc",
+      "if": "다운스트림·벤더 빌드 스크립트에서 build.config.constants를 수동으로 source하고 있다면,",
+      "do": "해당 source 라인을 제거하고 bazel/constants.scl 자동 로드 방식으로 마이그레이션하십시오.",
+      "verify": "마이그레이션 후 빌드가 정상 완료되고 constants 값이 올바르게 로드되는지 확인하십시오."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**RISC-V riscv-for-linux-7.1-rc8 머지**\n\nPaul Walmsley의 RISC-V fixes 태그가 android-mainline에 흡수됐습니다. CFI prctl EINVAL 거부, lib/checksum 성능 회귀(unaligned access 측정을 부팅 초기로 이동), binfmt_elf coredump 경고 수정 등 세 항목이 포함됩니다.\n\n영향: RISC-V 트리를 추적하는 팀은 이 세 회귀·보안 항목을 한 번에 수신합니다.\n\n> \"Fix the implementation of the CFI branch landing pad control prctl()s to return -EINVAL... Fix unaligned access performance testing to happen earlier in boot... Fix a binfmt_elf warning when dumping c\"\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/767622308a1d8b111038fca0059b964da1f6d9c4)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**UFS 런타임 PM 데드락·host_sem 누수·NULL 크래시 3종 체인**\n\nandroid16-6.12에 UFS 런타임 suspend 중 error handler 데드락 픽스(7ef00d34)가 백포트됐으나, 이 패치 자체가 host_sem 누수(459c818f)와 부팅 초기 NULL 크래시(a460b437)를 유발합니다. 세 커밋은 반드시 묶음으로 적용해야 합니다.\n\n영향: UFS는 Android 주 스토리지라 부팅 및 I/O hang으로 직결될 수 있으며, SM8750에서 테스트됐습니다.\n\n> \"Prevent the deadlock by checking pm_op_in_progress and performing a quick recovery... the error handler does not wait indefinitely for runtime PM to resume\"\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/7ef00d3457d8c9cee0915ee0edff247031c36e0c)\n\n---\n\n**RISC-V CFI prctl 미지 플래그 EINVAL 거부 (확인 필요)**\n\nprctl(PR_SET_CFI)가 PR_CFI_{ENABLE,DISABLE,LOCK} 이외의 알 수 없는 플래그를 EINVAL로 거부하도록 변경됐을 가능성이 있습니다(Fixes: 08ee1559052b). 원문 인용 검증이 완료되지 않아 단정을 피합니다.\n\n영향: RISC-V CFI 정책 설정 시 미지 비트가 조용히 무시돼 CFI 정책이 약화되는 상황을 방지하는 것으로 추정됩니다. 현재 Android RISC-V는 실험 단계라 즉각적인 광범위 영향은 제한적입니다.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/15b4155138505669d3d43d7692459ee8ea2a86e7)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**GKI defconfig에 BBR TCP 혼잡 제어 활성화 (arm64/x86)**\n\narm64/x86 gki_defconfig에 CONFIG_TCP_CONG_BBR이 추가됩니다. 기본 알고리즘은 CUBIC 유지. vivo 기여 cherry-pick. BBR이 내장(y)인지 모듈(m)인지는 defconfig 라인 직접 확인이 필요합니다.\n\n영향: ACK 소비자는 별도 패치 없이 setsockopt/sysctl로 BBR을 선택할 수 있습니다. modules_private.bzl도 변경돼 GKI 모듈 패키징 및 ABI 검증이 필요합니다.\n\n> \"Enable support for BBR (Bottleneck Bandwidth and RTT) TCP congestion control algorithm... Note this still maintains CUBIC as the default algorithm.\"\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/05c6fbd18c50f80608fc7773e801bf1e636d6d58)\n\n---\n\n**build.config.constants 최상위 심볼릭 링크 삭제 (mainline)**\n\nbuild.config.constants의 상수가 bazel/constants.scl로 이동·자동 로드되므로 최상위 심볼릭 링크가 삭제됩니다. mainline과 android16-6.12 간 정리 시점 차이는 확인이 필요합니다.\n\n영향: build.config.constants를 수동으로 source하던 다운스트림·벤더 빌드 스크립트가 깨질 수 있으며, 레거시 build.config 경로 의존 트리는 Bazel 기반으로 마이그레이션이 필요합니다.\n\n> \"The constants were moved to bazel/constants.scl and has been automatically loaded. It is not necessary to source build.config.constants manually. Delete the top-level symlink for simplicity.\"\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/b4221e52ff0edf4d07a3c526292056bc878e96fc)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ANDROID: GKI: enable CONFIG_TCP_CONG_BBR",
+      "url": "https://android.googlesource.com/kernel/common/+/05c6fbd18c50f80608fc7773e801bf1e636d6d58",
+      "note": "commit"
+    },
+    {
+      "title": "UPSTREAM: scsi: ufs: core: Fix runtime suspend error deadlock",
+      "url": "https://android.googlesource.com/kernel/common/+/7ef00d3457d8c9cee0915ee0edff247031c36e0c",
+      "note": "commit"
+    },
+    {
+      "title": "UPSTREAM: scsi: ufs: core: Fix error handler host_sem issue",
+      "url": "https://android.googlesource.com/kernel/common/+/459c818f8b5a562c34a27b915fae53792fa82a71",
+      "note": "commit"
+    },
+    {
+      "title": "UPSTREAM: scsi: ufs: core: Fix an error handler crash",
+      "url": "https://android.googlesource.com/kernel/common/+/a460b437af44c3317a57e637455ee891d0ee0352",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: gki: use 1.82.0.p2 rustc",
+      "url": "https://android.googlesource.com/kernel/common/+/3b4ccdd6098be7737ca151688915e9bd8fac3660",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: GKI: Enable crc_kunit and more crypto KUnit tests",
+      "url": "https://android.googlesource.com/kernel/common/+/6f25e0da2951c90af2d4c2b458eeee96a98427dc",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: Delete top-level build.config.constants.",
+      "url": "https://android.googlesource.com/kernel/common/+/b4221e52ff0edf4d07a3c526292056bc878e96fc",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: mm: fix cma_range_alloc retry logic",
+      "url": "https://android.googlesource.com/kernel/common/+/0bbc2226d2874465e33140ecef1804e69eac13ab",
+      "note": "commit"
+    },
+    {
+      "title": "riscv: cfi: reject unknown flags in PR_SET_CFI",
+      "url": "https://android.googlesource.com/kernel/common/+/15b4155138505669d3d43d7692459ee8ea2a86e7",
+      "note": "commit"
+    },
+    {
+      "title": "Merge tag 'riscv-for-linux-7.1-rc8'",
+      "url": "https://android.googlesource.com/kernel/common/+/767622308a1d8b111038fca0059b964da1f6d9c4",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-12T18:07:59.348Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/android-newsletter-from-dossier-ko.md"
+  }
+}
