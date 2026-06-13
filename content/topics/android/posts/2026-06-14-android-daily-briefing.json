@@ -1,0 +1,137 @@
+{
+  "id": "2026-06-14-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-06-14 Wonder 드라이버 GKI 편입 — Android 커널",
+  "headline": "Wonder Wi-Fi 가상 드라이버가 GKI 본체에 신규 합류, UFS 에러 핸들러 수정 3종은 반드시 묶음으로 적용해야 한다.",
+  "date": "2026-06-14",
+  "summary": "android-mainline 에 Wonder Wi-Fi 가상 드라이버(v3.6.5)가 처음 편입됐고, android16-6.12 에서는 UFS 런타임 서스펜드 데드락과 파생 회귀 2종이 3-패치 세트로 정리됐다. Rustc 1.82.0.p2 respin 이 arm KASAN 부팅 실패를 막으며, RISC-V CFI uABI 는 무효 플래그를 이제 EINVAL 로 거부한다.",
+  "tags": [
+    "안드로이드",
+    "커널",
+    "GKI",
+    "UFS",
+    "RISC-V",
+    "Rust"
+  ],
+  "highlights": [
+    {
+      "title": "UFS 에러 핸들러 수정 3종 — 반드시 묶음 적용",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "ACK android16-6.12 배포·UFS/스토리지 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/459c818f8b5a562c34a27b915fae53792fa82a71",
+      "if": "android16-6.12 에 UFS 에러 핸들러 패치 일부만 적용한 경우라면",
+      "do": "7ef00d3(데드락), 459c818(host_sem), a460b43(크래시) 세 커밋을 묶음으로 백포트 적용할 것",
+      "verify": "UFS 서스펜드 중 에러 주입 후 hang·세마포어 락업·크래시 없이 복구되는지 확인할 것"
+    },
+    {
+      "title": "Wonder Wi-Fi 가상 드라이버 GKI 본체 편입 (신규)",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "ACK 가상 디바이스 이미지·네트워크 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/8a7c7d3954c2839bb2f6ebe475648ec14b8a2c9f",
+      "if": "android-mainline 기반 가상 디바이스(Cuttlefish 계열) 이미지를 빌드한다면",
+      "do": "drivers/android/wonder/ 신설 파일 21종과 modules_private.bzl 변화를 다운스트림 빌드에 반영할 것",
+      "verify": "GKI 모듈 목록에 Wonder 드라이버가 포함됐는지 ABI 추적 도구로 확인할 것"
+    },
+    {
+      "title": "RISC-V PR_SET_CFI 무효 플래그 EINVAL 거부 (uABI 변경)",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "ACK RISC-V·보안/CFI 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/15b4155138505669d3d43d7692459ee8ea2a86e7",
+      "if": "RISC-V 타깃에서 prctl(PR_SET_CFI) 에 PR_CFI_{ENABLE,DISABLE,LOCK} 외 비트를 전달하는 userspace 코드가 있다면",
+      "do": "해당 코드를 찾아 허용된 플래그 값만 사용하도록 수정할 것",
+      "verify": "수정 후 prctl 호출이 EINVAL 없이 정상 반환되는지 확인할 것"
+    },
+    {
+      "title": "Rustc 1.82.0.p2 respin — arm KASAN 부팅 실패 수정",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "ACK 빌드/툴체인·Rust 드라이버 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/3b4ccdd6098be7737ca151688915e9bd8fac3660",
+      "if": "ACK Rust 드라이버를 arm 에서 KASAN 활성화 상태로 빌드·디버그한다면",
+      "do": "컴파일러를 1.82.0.p2 respin 으로 교체하고 빌드 환경을 재검증할 것",
+      "verify": "arm KASAN 빌드 후 부팅 성공 여부를 확인할 것"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**UFS 런타임 서스펜드 데드락 백포트 + 파생 회귀 2종 (android16-6.12)**\n\nandroid16-6.12 에 upstream f966e02(pm_op_in_progress 검사 + quick recovery 로 데드락 해소)를 백포트했으나, 해당 패치가 만든 새 return 경로에서 host_sem 미해제 회귀(459c818)와 SCSI 스캔 전 NULL wlun 포인터 크래시(a460b43)가 연달아 발견됐다. 두 후속 패치는 앞선 커밋을 Fixes 로 지목하므로 세 커밋은 체인으로 묶여 있다.\n\n영향: UFS 가 주 스토리지인 디바이스에서 서스펜드 중 stall·크래시를 회피하려면 3종 세트를 반드시 함께 백포트해야 하며, 일부만 적용하면 락업 위험이 남는다.\n\n> \"Fix the issue where host_sem is not released due to a new return path in commit f966e02ae521... Fixes: f966e02ae521\"\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/459c818f8b5a562c34a27b915fae53792fa82a71)\n\n---\n\n**RISC-V PR_SET_CFI — 무효 플래그 EINVAL 거부 (android-mainline, uABI 변경)**\n\nprctl(PR_SET_CFI) 가 PR_CFI_{ENABLE,DISABLE,LOCK} 외 비트를 조용히 무시하던 동작을 EINVAL 반환으로 변경했다. android-mainline 에 riscv-for-linux-7.1-rc8 머지로 유입됐으며, 커밋은 uABI 동작 변경임을 명시하면서도 올바른 플래그만 사용하면 깨지지 않는다고 설명한다.\n\n영향: 무효 플래그로 보안 설정이 적용된 것처럼 오인하던 사각지대가 제거된다. 추가 비트를 전달하던 userspace 는 이제 EINVAL 을 받으므로 대응이 필요하다.\n\n> \"Only PR_CFI_{ENABLE,DISABLE,LOCK} should be permitted. This changes the behavior of the uABI (fails previously acc\"\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/15b4155138505669d3d43d7692459ee8ea2a86e7)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Wonder Wi-Fi 가상 드라이버 GKI 편입 (신규, android-mainline)**\n\nandroid17-6.18 의 Wonder Wi-Fi 가상 디바이스 드라이버 v3.6.5 를 기반으로 drivers/android/wonder/ 를 신설하고 21개 파일을 추가했다. 후속 커밋(4a8e512)에서 arm64 gki_defconfig 와 modules_private.bzl 에 GKI 모듈로 활성화가 완료됐다.\n\n영향: 가상 디바이스(Cuttlefish 계열) 이미지를 빌드·검증하는 ACK 담당에게 새 코드 표면이 생기며, GKI 모듈 목록·ABI 가 확장되므로 다운스트림은 modules_private.bzl 변화를 추적해야 한다. android17-6.18 코드가 mainline 으로 역류하는 첫 사례이기도 하다. Wonder 드라이버가 Cuttlefish 외 실제 디바이스에도 쓰이는지는 확인 필요.\n\n> \"This adds the Wonder Wi-Fi virtual device driver to the Android Common Kernel as a GKI driver. It is based off of the android17-6.18 wonder driver at version 3.6.5.\"\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/8a7c7d3954c2839bb2f6ebe475648ec14b8a2c9f)\n\n---\n\n**ANDROID: GKI: BBR TCP 혼잡 제어 빌트인 활성화 (android-mainline)**\n\narm64/x86 gki_defconfig 에서 BBR 혼잡 제어 알고리즘을 빌트인(=y)으로 활성화했다. 기본 알고리즘은 CUBIC 유지.\n\n영향: 벤더가 별도 모듈 없이 sysctl(net.ipv4.tcp_congestion_control) 로 런타임에 BBR 로 전환할 수 있다. GKI ABI symbol list 에 대한 영향은 커밋 diff 단위로 추가 확인 필요.\n\n> \"Enable support for BBR (Bottleneck Bandwidth and RTT) TCP congestion control algorithm... Note this still maintains CUBIC as the default algorithm.\"\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/05c6fbd18c50f80608fc7773e801bf1e636d6d58)\n\n---\n\n**Rustc 1.82.0.p2 respin — arm KASAN 부팅 실패 해소 (android16-6.12)**\n\nuwtable 구현 버그로 arm KASAN 빌드 시 부팅 실패하던 문제를 수정한 rustc respin 으로 교체했다. build.config.constants 한 줄 변경.\n\n영향: Rust 드라이버를 arm 에서 KASAN 활성화 상태로 디버그하는 다운스트림은 동일 컴파일러 버전으로 맞춰야 KASAN 디버깅이 정상 동작한다.\n\n> \"This respin of the Rust compiler fixes an issue in the uwtable implementation that causes boot failures with KASAN on arm.\"\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/3b4ccdd6098be7737ca151688915e9bd8fac3660)"
+    },
+    {
+      "heading": "기타",
+      "body": "**GKI crc_kunit 및 crypto KUnit 테스트 활성화 (android-mainline)**\n\ngki_defconfig 에 이미 켜진 코드를 대상으로 crc_kunit 및 aes_cbc_macs/chacha20poly1305/ghash/nh crypto KUnit 테스트를 추가 활성화하고 tradefed config 를 갱신했다. 기능 변경 없음.\n\n영향: ACK 검증 파이프라인을 운영하는 팀은 새 KUnit 타깃을 CI 에 반영해 CRC·crypto 회귀 탐지 범위를 넓힐 수 있다.\n\n> \"Enable crc_kunit and some recently-added crypto tests. The code tested by these tests is already enabled in gki_defconfig.\"\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/6f25e0da2951c90af2d4c2b458eeee96a98427dc)\n\n---\n\n**build.config.constants 최상위 심링크 삭제 (android-mainline)**\n\n상수가 bazel/constants.scl 로 이동해 자동 로드되므로 최상위 build.config.constants 심링크를 삭제했다(go/keep-ack-clean).\n\n영향: build.config.constants 를 수동으로 source 하던 다운스트림 빌드 스크립트는 깨질 수 있어 bazel/constants.scl 자동 로드 방식으로 마이그레이션이 필요하다.\n\n> \"The constants were moved to bazel/constants.scl and has been automatically loaded. It is not necessary to source build.config.constants manually. Delete the top-level symlink for simplicity.\"\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/b4221e52ff0edf4d07a3c526292056bc878e96fc)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ANDROID: GKI: enable CONFIG_TCP_CONG_BBR",
+      "url": "https://android.googlesource.com/kernel/common/+/05c6fbd18c50f80608fc7773e801bf1e636d6d58",
+      "note": "commit"
+    },
+    {
+      "title": "UPSTREAM: scsi: ufs: core: Fix runtime suspend error deadlock",
+      "url": "https://android.googlesource.com/kernel/common/+/7ef00d3457d8c9cee0915ee0edff247031c36e0c",
+      "note": "commit"
+    },
+    {
+      "title": "UPSTREAM: scsi: ufs: core: Fix error handler host_sem issue",
+      "url": "https://android.googlesource.com/kernel/common/+/459c818f8b5a562c34a27b915fae53792fa82a71",
+      "note": "commit"
+    },
+    {
+      "title": "UPSTREAM: scsi: ufs: core: Fix an error handler crash",
+      "url": "https://android.googlesource.com/kernel/common/+/a460b437af44c3317a57e637455ee891d0ee0352",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: gki: use 1.82.0.p2 rustc",
+      "url": "https://android.googlesource.com/kernel/common/+/3b4ccdd6098be7737ca151688915e9bd8fac3660",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: Add Wonder driver to GKI",
+      "url": "https://android.googlesource.com/kernel/common/+/8a7c7d3954c2839bb2f6ebe475648ec14b8a2c9f",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: gki_defconfig: arm64: Enable the Wonder driver",
+      "url": "https://android.googlesource.com/kernel/common/+/4a8e51250625671e4a0175e18b4001cc03ac3971",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: GKI: Enable crc_kunit and more crypto KUnit tests",
+      "url": "https://android.googlesource.com/kernel/common/+/6f25e0da2951c90af2d4c2b458eeee96a98427dc",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: Delete top-level build.config.constants",
+      "url": "https://android.googlesource.com/kernel/common/+/b4221e52ff0edf4d07a3c526292056bc878e96fc",
+      "note": "commit"
+    },
+    {
+      "title": "riscv: cfi: reject unknown flags in PR_SET_CFI",
+      "url": "https://android.googlesource.com/kernel/common/+/15b4155138505669d3d43d7692459ee8ea2a86e7",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-13T18:08:41.127Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/android-newsletter-from-dossier-ko.md"
+  }
+}

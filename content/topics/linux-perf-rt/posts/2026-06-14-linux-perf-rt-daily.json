@@ -1,0 +1,113 @@
+{
+  "id": "2026-06-14-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-06-14 BPF 검증기 버그·콜프레임 2배 확장 — linux-perf-rt",
+  "headline": "BPF 검증기 stale 상태 버그 수정·콜 체인 한도 16프레임 상향·netkit egress 리다이렉트 확장 제안이 동시에 제출됐다.",
+  "date": "2026-06-14",
+  "summary": "BPF 메일링리스트에 검증기 상태 정합성 버그 수정, Rust-BPF 지원을 위한 콜 프레임 한도 상향, netkit 기반 egress 리다이렉트 확장 등 세 건의 패치가 제출됐다. 메인테이너 Jakub Kicinski는 busy-poll tx 확장과 유저스페이스 네트워킹 스택 통합 시도 두 건에 부정적 입장을 명시했다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "BPF",
+    "검증기",
+    "네트워크",
+    "Rust-BPF",
+    "netkit"
+  ],
+  "highlights": [
+    {
+      "title": "BPF 검증기 stale 상태 버그 수정 (v2)",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "BPF 검증기 유지보수 담당 및 bpf_rdonly_cast 기반 프로그램 작성자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260613-f01-03-scalar-add-bpf-next-v2-v2-1-ce07bec3f72b@mails.tsinghua.edu.cn/",
+      "if": "bpf_rdonly_cast()로 얻은 포인터와 스칼라 산술을 혼용하는 BPF 프로그램을 유지보수하고 있다면",
+      "do": "패치 v2를 확인하고 bpf-next 머지 여부를 추적하라",
+      "verify": "패치 적용 후 스칼라 add/sub 연산에서 검증기가 올바른 레지스터 타입을 유지하는지 selftest로 확인하라"
+    },
+    {
+      "title": "MAX_CALL_FRAMES 8→16 상향 (Alexei 제출)",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "BPF 검증기 유지보수 담당 및 Rust-BPF 툴체인 사용자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260613180755.29671-1-alexei.starovoitov@gmail.com/",
+      "if": "Rust로 작성된 BPF 프로그램이 깊은 호출 체인으로 검증기 거부를 받고 있다면",
+      "do": "제출자가 메인테이너(Alexei)인 점을 감안해 bpf-next 반영 일정을 주시하라",
+      "verify": "selftest 변경 범위와 MAX_BPF_STACK 누적 영향이 스레드에 공개되면 검증기 복잡도 영향을 검토하라"
+    },
+    {
+      "title": "bpf_redirect_peer egress 방향 확장 — netkit/Cilium",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "netkit/Cilium 기반 데이터패스 및 tc/netkit eBPF 프로그램 작성자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260613183424.1198073-1-jordan@jrife.io/",
+      "if": "netkit 위에서 proxy→workload ingress 리다이렉트 시 egress hook이 누락되는 문제를 우회 중이라면",
+      "do": "BPF_F_INGRESS 플래그 의미 변경을 패치 본문에서 확인하고 현재 우회 코드 대체 가능 여부를 검토하라",
+      "verify": "veth 지원 여부와 메인테이너 리뷰 반응을 lore 스레드에서 확인하라"
+    },
+    {
+      "title": "sk_tx_busy_loop() 제안 — 메인테이너 회의적 반응",
+      "priority": "하",
+      "impactType": "performance",
+      "affectedAudience": "네트워크 코어/busy-poll 유지보수 담당 및 virtio-net·저지연 소켓 사용자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260613112113.55d9313f@kernel.org/",
+      "if": "virtio-net 환경에서 tx NAPI busy-poll 부재로 지연 문제를 겪고 있다면",
+      "do": "시리즈 재제출 또는 대안(Tx NAPI를 busy-poll 대상으로 직접 등록)을 Kicinski 피드백 맥락에서 검토하라",
+      "verify": "이 문제가 virtio 고유 artifact인지 다른 NIC에서도 재현되는지 확인하라"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**BPF 검증기: untrusted 메모리 포인터 스칼라 덧셈 시 stale 상태 수정**\n\n`scalar += rdonly_untrusted_mem` 연산에서 untrusted PTR_TO_MEM 분기가 스칼라 목적 레지스터를 갱신하지 않고 조기 return 해, bpf_rdonly_cast() 기반 프로그램에 stale 검증기 상태가 잔존하던 버그를 수정한다. 이제 untrusted PTR_TO_MEM 케이스를 early return 이전에 처리하며, (스칼라 - 포인터) 및 미지원 포인터 ALU는 계속 거부된다.\n\n영향: 검증기 신뢰 경계를 다루는 BPF 프로그램에서 잠재적 안전성·우회 이슈로 이어질 수 있어, bpf_rdonly_cast 사용자는 우선 확인이 필요하다. Fixes 커밋(f2362a57aeff)의 실제 트리 존재 여부와 v2 머지 상태는 lore 접근 제한으로 독립 확인이 필요하다.\n\n> \"The untrusted PTR_TO_MEM case returns there without updating the scalar destination, leaving stale verifier state.\"\n\n[원문 확인](https://lore.kernel.org/bpf/20260613-f01-03-scalar-add-bpf-next-v2-v2-1-ce07bec3f72b@mails.tsinghua.edu.cn/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**BPF 콜 체인 한도 8→16 프레임 상향**\n\n검증기의 `MAX_CALL_FRAMES` 상수를 8에서 16으로 올려 Rust-BPF가 요구하는 깊은 호출 구조를 허용하고, 관련 selftest를 갱신한다.\n\n영향: 검증기가 허용하는 프로그램 범위가 직접 바뀌며, Rust-BPF 툴체인 사용자는 기존에 거부됐던 깊은 호출 체인 프로그램을 재시도할 수 있다. 제출자가 Alexei Starovoitov(BPF 메인테이너)라는 점은 채택 가능성 측면에서 유의미하다.\n\n> \"Bump MAX_CALL_FRAMES from 8 to 16 to allow deeper call chains that Rust-BPF requires and update selftests.\"\n\n[원문 확인](https://lore.kernel.org/bpf/20260613180755.29671-1-alexei.starovoitov@gmail.com/)\n\n---\n\n**bpf_redirect_peer egress 방향 확장 (netkit/Cilium)**\n\n`BPF_F_INGRESS` 플래그를 통해 skb를 대상 인터페이스 peer 디바이스의 egress 방향으로 내보내도록 bpf_redirect_peer를 확장하는 패치가 제출됐다. netkit에서 proxy→workload ingress 리다이렉트 시 peer 디바이스의 egress eBPF 프로그램이 누락되던 문제를 한 번의 peer-to-peer 리다이렉트로 해결하려는 제안이며, veth에도 적용 가능하다고 언급된다.\n\n영향: Cilium 류 데이터패스에서 transparent proxy/mTLS 구현 시 필요했던 중복 hook 우회 패턴을 제거할 수 있다. helper 시그니처·플래그 의미 변경 세부사항과 메인테이너 리뷰 반응은 lore 접근 제한으로 확인이 필요하다.\n\n> \"With netkit, an ingress redirection from proxy to workload skips eBPF programs that are meant to intercept traffic leaving the pod\"\n\n[원문 확인](https://lore.kernel.org/bpf/20260613183424.1198073-1-jordan@jrife.io/)\n\n---\n\n**sk_tx_busy_loop() 도입 제안 (RFC, 합의 전)**\n\nvirtio-net 등 tx NAPI를 쓰는 드라이버를 위해 tx NAPI를 별도로 스케줄하는 `sk_tx_busy_loop()`을 제안한다. 단, Jakub Kicinski가 코어에 tx polling 로직을 추가하는 접근에 회의적 입장을 표명하고 시리즈가 적용되지 않는다고 지적했다. 이 문제가 virtio 고유 artifact인지 다른 NIC에서도 재현되는지는 현재 미해결 상태다.\n\n영향: virtio-net 환경의 저지연 소켓 사용자에게 잠재적 개선이지만, 메인테이너 반대로 단기 반영 가능성은 낮다.\n\n> \"First, I thought the only difference with Tx NAPI is that it can't be busy polled.\"\n\n[원문 확인](https://lore.kernel.org/bpf/20260613112113.55d9313f@kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "**RX/TX 하드웨어 타임스탬프 proxy 통합 제안 — 메인테이너 nack 예고**\n\n유저스페이스 네트워킹 스택을 위해 virtual interface를 통해 skb RX/TX 하드웨어 타임스탬프를 proxy로 전달하는 통합이 제안됐으나, Jakub Kicinski가 재제출 시 nack을 달겠다며 명시적으로 부정적 입장을 밝혔다. 원문 인용은 검증 실패 상태이므로 단정은 금물이며, 시리즈 본문과 후속 응답은 lore 접근 제한으로 독립 확인이 필요하다.\n\n영향: netdev를 유저스페이스 네트워킹 스택 slow path로 취급하는 설계 방향에 메인테이너가 반대 신호를 보낸 거버넌스 사례로, 유사한 통합을 계획 중인 개발자는 접근 방향 재검토가 권고된다.\n\n[원문 확인](https://lore.kernel.org/bpf/20260613102041.55e3b50e@kernel.org/)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "bpf: Preserve untrusted memory pointer type on scalar add",
+      "url": "https://lore.kernel.org/bpf/20260613-f01-03-scalar-add-bpf-next-v2-v2-1-ce07bec3f72b@mails.tsinghua.edu.cn/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Raise maximum call chain depth to 16 frames",
+      "url": "https://lore.kernel.org/bpf/20260613180755.29671-1-alexei.starovoitov@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: bpf_redirect_peer egress redirection",
+      "url": "https://lore.kernel.org/bpf/20260613183424.1198073-1-jordan@jrife.io/",
+      "note": "thread"
+    },
+    {
+      "title": "net: busy-poll: introduce sk_tx_busy_loop()",
+      "url": "https://lore.kernel.org/bpf/20260613112113.55d9313f@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Support RX/TX HW timestamp proxy — Kicinski nack",
+      "url": "https://lore.kernel.org/bpf/20260613102041.55e3b50e@kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-13T18:53:40.194Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

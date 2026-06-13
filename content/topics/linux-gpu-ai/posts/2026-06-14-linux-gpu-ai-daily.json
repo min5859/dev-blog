@@ -1,0 +1,119 @@
+{
+  "id": "2026-06-14-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-06-14 Navi10 GPU hang 회귀 신호 — Linux GPU/AI",
+  "headline": "6.18.x에서 RX 5700 GPU reset 회귀 신고, udmabuf folio sg 병합이 DMA 제약 우회 위험 동시 제기",
+  "date": "2026-06-14",
+  "summary": "6.17.9→6.18.x 구간에서 Navi10(RX 5700) GPU reset 회귀가 bugzilla에 신고됐고 bisect 미완료 상태다. udmabuf의 folio 단위 sg 병합 패치는 DMA 매핑 효율을 높이지만 importer 장치의 max segment 제약 우회와 32비트 길이 오버플로 위험이 리뷰에서 지적됐다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "DRM",
+    "KMS",
+    "amdgpu",
+    "GPU",
+    "VRR",
+    "dma-buf"
+  ],
+  "highlights": [
+    {
+      "title": "amdgpu RX 5700 — 6.18.x 전 계열 GPU reset 회귀",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "amdgpu (Navi10/GFX10) 드라이버 및 회귀 추적 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/bug-221649-2300@https.bugzilla.kernel.org%2F/",
+      "if": "6.18.x 또는 7.0.x 커널에서 RX 5700(Navi10) 카드를 사용 중이라면",
+      "do": "6.17.9 또는 6.12.75-lts로 다운그레이드하고 bisect 결과를 bugzilla #221649에 제보할 것",
+      "verify": "dmesg에서 ring gfx/comp timeout 및 amdgpu_device_gpu_recover 호출 여부를 확인할 것"
+    },
+    {
+      "title": "udmabuf folio sg 병합 — 32비트 오버플로·IOMMU fault 위험",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "dma-buf/udmabuf 및 이를 import하는 GPU/네트워크 드라이버 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260613074618.9771E1F000E9@smtp.kernel.org/",
+      "if": "udmabuf를 import하는 드라이버가 dma_get_max_seg_size()로 세그먼트 크기를 제한하고 있다면",
+      "do": "be9ab332488f9 패치 적용 커널에서 해당 드라이버를 검증하고 세그먼트 분할 보정이 추가된 후속 리비전을 추적할 것",
+      "verify": "IOMMU 오류 및 DMA 매핑 실패 로그 유무를 커널 메시지에서 확인할 것"
+    },
+    {
+      "title": "DRM_MODE_MATCH_TIMINGS_VRR 플래그 신설",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "DRM/KMS 코어 및 디스플레이 드라이버 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/DS4PPFE901A304F20FE1D96BB66D67F3EE4E3192@DS4PPFE901A304F.namprd11.prod.outlook.com/",
+      "if": "drm_mode_match()로 VRR 모드를 비교하는 드라이버를 작성 또는 검토 중이라면",
+      "do": "DRM_MODE_MATCH_TIMINGS_VRR 플래그를 사용해 vsync 위치 요건을 명시적으로 표현할 것",
+      "verify": "시리즈 2~4/4의 드라이버 적용 범위와 플래그 이름 최종 확정 여부를 원문에서 확인할 것"
+    },
+    {
+      "title": "drm/sun4i reset 참조 카운트 누수 수정 — stable 백포트",
+      "priority": "중",
+      "impactType": "backport",
+      "affectedAudience": "drm/sun4i (Allwinner DRM) 및 stable 트리 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/p7BkDUOlT8udh62CkXD6NA@gmail.com/",
+      "if": "Allwinner A33 등 sun4i backend를 사용하는 보드를 관리하거나 stable 트리를 운영한다면",
+      "do": "Fixes: 440d2c7b127a 패치를 stable 큐에 포함시키고 해당 보드의 백포트 상태를 확인할 것",
+      "verify": "모듈 unbind 후 재probe 시 reset line이 정상 동작하는지 확인할 것"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**amdgpu RX 5700(Navi10) — 6.18.x GPU reset 회귀 의심**\n\nbugzilla #221649: 6.18.1-arch, 6.18.34-lts, 7.0.1-zen에서 게이밍 워크로드 중 ring gfx/comp timeout 및 GPU reset 발생. 6.17.9 및 6.12.75-lts에서는 미재현.\n\n영향: 보고자가 결함 RAM·패키지 재설치·fsck로 유저스페이스 및 하드웨어 요인을 배제해 커널 회귀 의심도가 높음. bisect 미완료로 원인 커밋 미식별 상태이며 amdgpu 개발자의 triage 응답이 없는 상황.\n\n> \"ring gfx timeouts, ring comp timeouts, GPU resets... tested kernels: 7.0.1-zen (bad), 6.18.34-lts (bad), 6.18.1-arch (bad)... rollbacks to 6.12.75-lts and 6.17.9 did not reproduce\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/bug-221649-2300@https.bugzilla.kernel.org%2F/)\n\n---\n\n**udmabuf folio sg 병합 — max segment 제약 우회 및 32비트 오버플로 위험**\n\ncommit be9ab332488f9가 udmabuf scatterlist 생성을 페이지 단위에서 folio 단위로 변경해 연속 페이지를 하나의 큰 sg 엔트리로 합침. 리뷰에서 합쳐진 세그먼트가 importer 장치의 dma_get_max_seg_size() 및 경계 한계를 준수하지 않고, 32비트 sg length 필드(UINT_MAX)를 오버플로할 수 있다는 경고가 제기됨.\n\n영향: udmabuf를 import하는 GPU 및 네트워크 드라이버에서 IOMMU fault 또는 DMA 오류 유발 가능성. 세그먼트 분할 보정 후속 리비전 추가 여부 미확인(신뢰도 중간).\n\n> \"Coalesced scatterlist entries bypass the importer device's maximum segment size and boundary limits, and can overflow the 32-bit scatterlist length field (UINT_MAX)\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260613074618.9771E1F000E9@smtp.kernel.org/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**DRM_MODE_MATCH_TIMINGS_VRR 플래그 신설 (drm/modes, 시리즈 1/4)**\n\nVille Syrjälä가 drm_mode_match()와 include/drm/drm_modes.h에 새 플래그를 추가. DRM_MODE_MATCH_TIMINGS와 동일하되 vsync 펄스가 vtotal 끝에 고정됨을 요구.\n\n영향: VRR 지원 KMS 드라이버가 vblank 길이만 다른 모드를 같은 모드의 변종으로 취급 가능해져 모드 리스트 중복 없이 가변 리프레시를 표현할 수 있게 됨. 리뷰어 Suraj Kandpal이 제안한 이름 변경(drm_mode_match_vrr_timings) 반영 여부 및 시리즈 2~4/4 드라이버 적용 범위는 확인 필요.\n\n> \"identical to DRM_MODE_MATCH_TIMINGS, except it requires the vsync pulse to remain anchored to the end of vtotal... VRR capable hardware can therefore treat matching modes as just variants of the same\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/DS4PPFE901A304F20FE1D96BB66D67F3EE4E3192@DS4PPFE901A304F.namprd11.prod.outlook.com/)\n\n---\n\n**drm/sun4i reset 참조 카운트 누수 수정 — stable 대상**\n\nWentao Liang 수정: clk_prepare_enable() 실패 경로에서 reset_control_assert() 없이 즉시 return해 deassert_count가 누수되던 버그를 기존 err_assert_reset 레이블 점프로 수정. Fixes: 440d2c7b127a, Cc: stable.\n\n영향: Allwinner A33 등 sun4i backend 사용 보드에서 모듈 unbind 및 재probe 시 reset 동작 오작동 방지. stable 백포트 대상 버그.\n\n> \"In the error path where clk_prepare_enable() fails, the function returns immediately without calling reset_control_assert(), leaking the reference count... Fixes: 440d2c7b127a\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/p7BkDUOlT8udh62CkXD6NA@gmail.com/)\n\n---\n\n**drm/v3d implicit sync 정책 재검토 — RPi GPU**\n\nMaíra Canal 패치: v3d가 implicit sync용 BO 연결을 마지막 job(CACHE_CLEAN)에만 걸던 것을 모든 job으로 확장 제안. Emma Anholt는 implicit sync 자체 폐지(NO_IMPLICIT 방향, MSM_SUBMIT_NO_IMPLICIT 유사)를 권고. v3d는 전역 페이지 테이블이 1개뿐이라 VM_BIND 도입이 어려워 NO_IMPLICIT이 현실적 대안으로 거론 중.\n\n영향: v3d UABI 및 Mesa v3d 유저스페이스의 동기화 정책에 영향. 머지 방향 미확정 상태.\n\n> \"you should be working toward dropping implicit sync entirely... at least you want something like MSM_SUBMIT_NO_IMPLICIT... lifetime management of the BO (which only needed the last use)\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/b1d177a4-02eb-4925-969f-952860045e56@igalia.com/)\n\n---\n\n**selftests/net ncdevmem: -b 옵션으로 rx-buf-size 설정 추가**\n\ncommit 912f8a02a43d: devmem TCP 셀프테스트 ncdevmem에 -b 옵션 추가. PAGE_SIZE 초과 요청 시 MFD_HUGETLB 기반 memfd로 전환. 커밋 메시지는 2MB 초과 거부를 명시하나 파서는 UINT32_MAX만 검사해 상한이 실제로 적용되지 않음.\n\n영향: devmem TCP zero-copy RX 대형 niov 테스트 인프라 확장. 2MB 상한 미적용이 udmabuf per-sg hugepage 제약과 어긋날 수 있어 후속 리비전 추적 필요(신뢰도 중간).\n\n> \"adds a -b option to ncdevmem to set a non-default rx-buf-size. When the requested size exceeds PAGE_SIZE, it switches to an MFD_HUGETLB backed memfd... it appears to only reject values greater than UI\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260613162821.C92F91F000E9@smtp.kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/modes: Add DRM_MODE_MATCH_TIMINGS_VRR",
+      "url": "https://lore.kernel.org/dri-devel/DS4PPFE901A304F20FE1D96BB66D67F3EE4E3192@DS4PPFE901A304F.namprd11.prod.outlook.com/",
+      "note": "thread"
+    },
+    {
+      "title": "udmabuf: emit one sg entry per pinned folio",
+      "url": "https://lore.kernel.org/dri-devel/20260613074618.9771E1F000E9@smtp.kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/sun4i: fix refcount leak in sun4i_backend_init_sat()",
+      "url": "https://lore.kernel.org/dri-devel/p7BkDUOlT8udh62CkXD6NA@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "amdgpu regression on RX 5700 (Navi10): bugzilla #221649",
+      "url": "https://lore.kernel.org/dri-devel/bug-221649-2300@https.bugzilla.kernel.org%2F/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/v3d: Associate BOs with every job — implicit sync 논의",
+      "url": "https://lore.kernel.org/dri-devel/b1d177a4-02eb-4925-969f-952860045e56@igalia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "selftests/net ncdevmem: add -b option to set rx-buf-size",
+      "url": "https://lore.kernel.org/dri-devel/20260613162821.C92F91F000E9@smtp.kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-13T19:04:47.770Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
