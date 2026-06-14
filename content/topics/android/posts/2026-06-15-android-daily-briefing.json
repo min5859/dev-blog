@@ -1,0 +1,131 @@
+{
+  "id": "2026-06-15-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-06-15 UFS 3-패치 세트 확정 — Android 커널",
+  "headline": "UFS runtime suspend 교착 3-패치 세트가 android16-6.12에 확정되어 반드시 묶음 적용이 필요합니다.",
+  "date": "2026-06-15",
+  "summary": "android16-6.12에서 UFS deadlock→host_sem→crash 순의 3-패치 세트가 낱개 적용 불가 묶음으로 확정되었습니다. mainline에서는 build.config.constants 심볼릭 링크가 삭제되어 out-of-tree 빌드 스크립트 수정이 필요합니다.",
+  "tags": [
+    "안드로이드",
+    "커널",
+    "UFS",
+    "빌드",
+    "회귀"
+  ],
+  "highlights": [
+    {
+      "title": "UFS runtime suspend 교착 3-패치 세트 — 반드시 함께 적용",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "UFS/스토리지 드라이버 담당, ACK 백포트 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/7ef00d3457d8c9cee0915ee0edff247031c36e0c",
+      "if": "android16-6.12에 UFS runtime suspend deadlock 패치(f966e02ae521)를 적용했거나 계획 중이라면",
+      "do": "7ef00d34(deadlock) → 459c818f(host_sem) → a460b437(crash) 세 커밋을 순서대로 함께 백포트하세요",
+      "verify": "SM8750 등 UFS 탑재 보드에서 runtime suspend 진입·복귀 시 교착, host_sem 미해제, 부팅 초기 NULL 역참조가 없는지 확인하세요"
+    },
+    {
+      "title": "build.config.constants 삭제 — out-of-tree 빌드 스크립트 수정 필요",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "ACK 빌드 시스템/벤더 빌드 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/b4221e52ff0edf4d07a3c526292056bc878e96fc",
+      "if": "out-of-tree 빌드 스크립트나 벤더 빌드 시스템에서 build.config.constants를 직접 source한다면",
+      "do": "해당 참조를 bazel/constants.scl 경유로 마이그레이션하세요",
+      "verify": "벤더 빌드가 오류 없이 완료되는지 확인하세요"
+    },
+    {
+      "title": "rustc 1.82.0.p2 respin — ARM+KASAN 부팅 실패 수정",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "ACK 빌드/툴체인 담당, Rust 드라이버 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/3b4ccdd6098be7737ca151688915e9bd8fac3660",
+      "if": "Rust 코드 포함 GKI 커널을 ARM+KASAN 구성으로 빌드한다면",
+      "do": "빌드 툴체인을 rustc 1.82.0.p2로 업데이트하세요",
+      "verify": "ARM+KASAN 구성 빌드 후 부팅이 정상 완료되는지 확인하세요"
+    },
+    {
+      "title": "Wonder Wi-Fi 가상 드라이버 arm64 GKI 모듈 포함",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "Wi-Fi/네트워크 드라이버 담당, GKI 모듈/ABI 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/8a7c7d3954c2839bb2f6ebe475648ec14b8a2c9f",
+      "if": "arm64 GKI ABI 모듈 목록 변경에 민감하거나 GKI 모듈을 검증한다면",
+      "do": "Wonder 드라이버 모듈이 ABI 표면에 추가된 것을 확인하고 modules_private.bzl 변경 내용을 검토하세요",
+      "verify": "arm64 GKI 빌드에 Wonder 모듈이 정상 포함되는지 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**UFS runtime suspend 교착 3-패치 세트 (android16-6.12)**\n\n세 커밋(7ef00d34 → 459c818f → a460b437)이 연쇄 회귀 수정 묶음으로 확정되었습니다. 첫 패치가 두 번째·세 번째 패치의 회귀 원인이 되므로 낱개 적용 시 host_sem 미해제 또는 부팅 초기 NULL 역참조 크래시가 발생합니다.\n\n영향: UFS runtime suspend 경로 전반의 안정성에 영향을 주며, SM8750에서 테스트가 확인됩니다.\n\n> Prevent the deadlock by checking pm_op_in_progress and performing a quick recovery... (cherry picked from commit f966e02ae52192928d544262ee7a68611e333031)\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/7ef00d3457d8c9cee0915ee0edff247031c36e0c)\n\n**host_sem 미해제 수정 (459c818f)** — 원문 인용 미검증, 추정\n\n첫 번째 패치의 새 return 경로에서 host_sem이 해제되지 않던 문제를 host_sem 획득 전 pm_op_in_progress 확인으로 수정한 것으로 보입니다. Dan Carpenter 보고.\n\n영향: f966e02ae521 회귀를 직접 잡는 후속 수정으로, 세트에서 생략 불가합니다.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/459c818f8b5a562c34a27b915fae53792fa82a71)\n\n**error handler 크래시 수정 (a460b437)** — 원문 인용 미검증, 추정\n\nSCSI 스캔 전 hba->ufs_device_wlun 포인터를 사용 전에 NULL 체크하도록 수정한 것으로 보입니다. SM8750 테스트 확인.\n\n영향: 선행 두 패치가 만든 부팅 초기 크래시 회귀를 잡는 세 번째 수정입니다.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/a460b437af44c3317a57e637455ee891d0ee0352)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**build.config.constants 삭제 (ACK mainline)**\n\n최상위 build.config.constants 심볼릭 링크를 삭제하고 상수를 bazel/constants.scl로 이전했습니다.\n\n영향: build.config.constants를 직접 source하던 out-of-tree 빌드 스크립트·벤더 빌드 시스템이 즉시 깨질 수 있습니다.\n\n> The constants were moved to bazel/constants.scl and has been automatically loaded. Bug: 448148817\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/b4221e52ff0edf4d07a3c526292056bc878e96fc)\n\n**rustc 1.82.0.p2 respin (android16-6.12)**\n\nARM+KASAN 구성에서 uwtable 구현 문제로 부팅 실패를 일으키던 Rust 컴파일러를 1.82.0.p2로 업데이트했습니다. 이전 핀 버전은 커밋 본문에 명시되지 않아 확인이 필요합니다.\n\n영향: Rust 코드 포함 GKI 커널을 ARM+KASAN으로 빌드하는 팀은 툴체인을 반드시 업데이트해야 합니다.\n\n> This respin of the Rust compiler fixes an issue in the uwtable implementation that causes boot failures with KASAN on arm. Bug: 517148969 Bug: 513032835\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/3b4ccdd6098be7737ca151688915e9bd8fac3660)\n\n**Wonder Wi-Fi 가상 드라이버 추가·활성화 (ACK mainline)**\n\nandroid17-6.18 기반 Wonder 드라이버 v3.6.5가 drivers/android/wonder/에 추가되고 arm64 gki_defconfig에서 GKI 모듈로 활성화되었습니다. 정확한 용도(가상화/CTS/에뮬레이터 등)는 확인 필요.\n\n영향: arm64 GKI 빌드의 ABI 표면이 늘어납니다.\n\n> This adds the Wonder Wi-Fi virtual device driver to the Android Common Kernel as a GKI driver. It is based off of the android17-6.18 wonder driver at version 3.6.5. Bug: 505327866\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/8a7c7d3954c2839bb2f6ebe475648ec14b8a2c9f)\n\n**CONFIG_TCP_CONG_BBR GKI 빌드 포함 (ACK mainline)**\n\nGKI defconfig(arm64/x86)에 BBR 혼잡제어 알고리즘을 추가했습니다. 기본값은 CUBIC 유지.\n\n영향: 벤더·디바이스가 별도 패치 없이 BBR을 선택적으로 활성화할 수 있게 됩니다.\n\n> Enable support for BBR (Bottleneck Bandwidth and RTT) TCP congestion control algorithm... Note this still maintains CUBIC as the default algorithm. Bug: 362198193\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/05c6fbd18c50f80608fc7773e801bf1e636d6d58)"
+    },
+    {
+      "heading": "기타",
+      "body": "**crc_kunit 및 crypto KUnit 테스트 활성화 (ACK mainline)**\n\ngki_defconfig와 tradefed config에서 crc_kunit 및 신규 crypto KUnit 테스트(aes_cbc_macs, chacha20poly1305, ghash, nh)를 활성화했습니다.\n\n영향: 기능 변화 없이 테스트 커버리지가 확대됩니다. CI/KUnit 파이프라인 담당은 tradefed 구성 변경을 반영해야 합니다.\n\n> Enable crc_kunit and some recently-added crypto tests. The code tested by these tests is already enabled in gki_defconfig. Bug: 486247481\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/6f25e0da2951c90af2d4c2b458eeee96a98427dc)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier의 출처를 근거로 작성했습니다. UFS host_sem(459c818f) 및 error handler crash(a460b437) 두 항목은 원문 인용 검증이 실패하여 추정 표현을 사용했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ANDROID: GKI: enable CONFIG_TCP_CONG_BBR",
+      "url": "https://android.googlesource.com/kernel/common/+/05c6fbd18c50f80608fc7773e801bf1e636d6d58",
+      "note": "commit"
+    },
+    {
+      "title": "UPSTREAM: scsi: ufs: core: Fix runtime suspend error deadlock",
+      "url": "https://android.googlesource.com/kernel/common/+/7ef00d3457d8c9cee0915ee0edff247031c36e0c",
+      "note": "commit"
+    },
+    {
+      "title": "UPSTREAM: scsi: ufs: core: Fix error handler host_sem issue",
+      "url": "https://android.googlesource.com/kernel/common/+/459c818f8b5a562c34a27b915fae53792fa82a71",
+      "note": "commit"
+    },
+    {
+      "title": "UPSTREAM: scsi: ufs: core: Fix an error handler crash",
+      "url": "https://android.googlesource.com/kernel/common/+/a460b437af44c3317a57e637455ee891d0ee0352",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: gki: use 1.82.0.p2 rustc",
+      "url": "https://android.googlesource.com/kernel/common/+/3b4ccdd6098be7737ca151688915e9bd8fac3660",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: Add Wonder driver to GKI",
+      "url": "https://android.googlesource.com/kernel/common/+/8a7c7d3954c2839bb2f6ebe475648ec14b8a2c9f",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: gki_defconfig: arm64: Enable the Wonder driver",
+      "url": "https://android.googlesource.com/kernel/common/+/4a8e51250625671e4a0175e18b4001cc03ac3971",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: GKI: Enable crc_kunit and more crypto KUnit tests",
+      "url": "https://android.googlesource.com/kernel/common/+/6f25e0da2951c90af2d4c2b458eeee96a98427dc",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: Delete top-level build.config.constants",
+      "url": "https://android.googlesource.com/kernel/common/+/b4221e52ff0edf4d07a3c526292056bc878e96fc",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-14T18:09:17.249Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/android-newsletter-from-dossier-ko.md"
+  }
+}

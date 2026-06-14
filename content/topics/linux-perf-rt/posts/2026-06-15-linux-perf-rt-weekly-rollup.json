@@ -1,0 +1,127 @@
+{
+  "id": "2026-06-15-linux-perf-rt-weekly-rollup",
+  "topic": "linux-perf-rt",
+  "title": "2026-06-15 주간 요약",
+  "headline": "net/smc 및 sockmap/BPF psock 유지보수 담당, 안정 커널 backport 담당 주목: net/smc: fix out-of-b",
+  "date": "2026-06-15",
+  "summary": "오늘의 핵심: 릴리스/로드맵 0건, 회귀·보안 신호 6건, 핵심 변경 2건. 리서치 dossier 의 출처를 근거로 정리했습니다.",
+  "tags": [
+    "주간"
+  ],
+  "highlights": [
+    {
+      "title": "net/smc: fix out-of-bounds read in smc_clcsock_data_ready()",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "net/smc 및 sockmap/BPF psock 유지보수 담당, 안정 커널 backport 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260614120931.4041687-1-rhkrqnwk98@gmail.com/",
+      "if": "net/smc 및 sockmap/BPF psock 유지보수 담당, 안정 커널 backport 담당라면",
+      "do": "패시브 오픈 자식 소켓이 listen 소켓의 smc_clcsock_data_ready() 콜백을 상속받지만 sk_clone_lock()이 SK_",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/bpf/20260614120931.4041687-1-rhkrqnwk98@gmail.com/"
+    },
+    {
+      "title": "bpf: Preserve untrusted memory pointer type on scalar add",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "BPF 검증기 유지보수 담당 및 bpf_rdonly_cast 기반 프로그램 작성자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260613-f01-03-scalar-add-bpf-next-v2-v2-1-ce07bec3f72b@mails.tsinghua.edu.cn/",
+      "if": "BPF 검증기 유지보수 담당 및 bpf_rdonly_cast 기반 프로그램 작성자라면",
+      "do": "BPF 검증기에서 `scalar += rdonly_untrusted_mem` 연산이 adjust_ptr_min_max_vals()에 포인터를 소",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/bpf/20260613-f01-03-scalar-add-bpf-next-v2-v2-1-ce07bec3f72b@mails.tsinghua.edu.cn/"
+    },
+    {
+      "title": "bpf, sockmap: Fix wrong rsge offset in bpf_msg_push_data()",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF sockmap/skmsg 유지보수 및 sk_msg 프로그램 사용자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260612130919.299124-3-jiayuan.chen@linux.dev/",
+      "if": "BPF sockmap/skmsg 유지보수 및 sk_msg 프로그램 사용자라면",
+      "do": "bpf_msg_push_data()가 스캐터리스트 원소를 head/tail로 분할할 때 tail의 페이지 offset을 원소 내 위치(start",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/bpf/20260612130919.299124-3-jiayuan.chen@linux.dev/"
+    },
+    {
+      "title": "MIPS: smp: report dying CPU to RCU in stop_this_cpu()",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "MIPS SMP/RCU 및 PREEMPT_RT, 임베디드 네트워크 SoC(OpenWrt) 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260608093729.12111-1-jelonek.jonas@gmail.com/",
+      "if": "MIPS SMP/RCU 및 PREEMPT_RT, 임베디드 네트워크 SoC(OpenWrt) 유지보수 담당라면",
+      "do": "smp_send_stop() 가 보조 CPU를 stop_this_cpu() 에 가두면서 set_cpu_online(false) 만 하고 RCU에",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/linux-rt-devel/20260608093729.12111-1-jelonek.jonas@gmail.com/"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**net/smc: fix out-of-bounds read in smc_clcsock_data_ready()**\n\n패시브 오픈 자식 소켓이 listen 소켓의 smc_clcsock_data_ready() 콜백을 상속받지만 sk_clone_lock()이 SK_USER_DATA_NOCOPY 태그 때문에 sk_user_data를 NULL로 비운다. accept 전 established 구간에서 cgrou\n\n영향: syzkaller가 재현한 KASAN slab-out-of-bounds로, 비특권 BPF cgroup sock_ops 경로에서 트리거 가능한 커널 OOB 읽기다. SMC를 빌드에 포함한 커널을 추적하는 보안/네트워크 유지보수 담당에게 직접적인 메모리 안전 회귀이며 backport 대상이\n\n> BUG: KASAN: slab-out-of-bounds in smc_clcsock_data_ready+0x84/0x200 net/smc/af_smc.c:2637 Read of size 8 at addr ffff8880013b8674 by task syz.6.12484/67930\n\n[원문 확인](https://lore.kernel.org/bpf/20260614120931.4041687-1-rhkrqnwk98@gmail.com/)\n\n**bpf: Preserve untrusted memory pointer type on scalar add**\n\nBPF 검증기에서 `scalar += rdonly_untrusted_mem` 연산이 adjust_ptr_min_max_vals()에 포인터를 소스 레지스터로 들고 들어올 때, untrusted PTR_TO_MEM 분기가 스칼라 목적 레지스터를 갱신하지 않고 조기 return 해 검증기 \n\n영향: 검증기 상태 정합성(state soundness) 버그로, bpf_rdonly_cast()로 얻은 read-only untrusted 메모리에 스칼라 산술을 섞을 때 잘못된 레지스터 상태가 남는다. 검증기 신뢰 경계를 다루는 사용자에게는 잠재적 안전성/우회 이슈로 직결되므로 주목 대상이\n\n> The untrusted PTR_TO_MEM case returns there without updating the scalar destination, leaving stale verifier state.\n\n[원문 확인](https://lore.kernel.org/bpf/20260613-f01-03-scalar-add-bpf-next-v2-v2-1-ce07bec3f72b@mails.tsinghua.edu.cn/)\n\n**bpf, sockmap: Fix wrong rsge offset in bpf_msg_push_data()**\n\nbpf_msg_push_data()가 스캐터리스트 원소를 head/tail로 분할할 때 tail의 페이지 offset을 원소 내 위치(start - offset)가 아니라 메시지 절대 바이트 오프셋(start)만큼 전진시켜, rsge.offset이 offset 바이트만큼 초과해 페이지 \n\n영향: sk_msg 프로그램 경로(tcp_bpf_send_verdict → sk_psock_msg_verdict)에서 도달 가능한 BPF sockmap 메모리 손상으로, KASAN이 bpf_msg_pull_data에서 slab-use-after-free로 보고합니다. sockmap/skmsg를\n\n> the tail's page offset is advanced by `start` (absolute message byte offset) instead of `start - offset` (byte position within the element). This makes rsge.offset overshoot by `offset` bytes\n\n[원문 확인](https://lore.kernel.org/bpf/20260612130919.299124-3-jiayuan.chen@linux.dev/)\n\n**MIPS: smp: report dying CPU to RCU in stop_this_cpu()**\n\nsmp_send_stop() 가 보조 CPU를 stop_this_cpu() 에 가두면서 set_cpu_online(false) 만 하고 RCU에는 알리지 않던 문제를 수정. 인터럽트 비활성화 후 rcutree_report_cpu_dead() 를 호출해 RCU가 정지된 CPU의 quies\n\n영향: commit 91840be8f710 이후 self-IPI 없는 아키텍처(MIPS 등 asm-generic 기본)에서 irq_work_sync() 가 synchronize_rcu() 를 호출하게 되어, 종료/리부트 경로의 grace period 가 영원히 완료되지 않고 리부트가 멈춘다. \n\n> Any irq_work_sync() issued in the reboot/shutdown path after smp_send_stop() then blocks on a grace period that can never complete, hanging the reboot\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260608093729.12111-1-jelonek.jonas@gmail.com/)\n\n**bpf, sockmap: fix integer overflow in bpf_msg_pop_data() bounds check**\n\nbpf_msg_pop_data()의 start/len이 u32라 `u64 last = start + len`가 32비트에서 계산돼 wrap되고, 그 결과 경계 검사(start >= offset + l || last > msg->sg.size)를 우회한 out-of-range start/\n\n영향: SK_MSG/sockmap 프로그램을 로드할 수 있는 경로에서 KASAN이 잡은 general protection fault(null-ptr-deref)로 이어지는 메모리 손상 취약점이다. tcp_bpf_sendmsg 경로에서 트리거되어 sockmap/skmsg를 추적하는 네트워킹·BP\n\n> start and len are u32, so u64 last = start + len; evaluates start + len in 32-bit and wraps before storing it in last.\n\n[원문 확인](https://lore.kernel.org/bpf/20260609183927.4021802-1-rhkrqnwk98@gmail.com/)\n\n**net: Validate protocol in skb_steal_sock() for BPF-assigned sockets**\n\nskb_steal_sock() now validates the assigned socket's protocol against the protocol the caller actually handles, rejecting mismatched sockets regardless of how t\n\n영향: A BPF program could assign a TCP reqsk (or any socket type) to a non-TCP skb, panicking the kernel when the skb hits the wrong L4 receive path. Moving the guard\n\n> bpf_sk_assign_tcp_reqsk() can assign a TCP reqsk to a non-TCP skb, causing a panic when the skb enters the wrong L4 receive path\n\n[원문 확인](https://lore.kernel.org/bpf/CAAVpQUDZoEVEX1kXok-29dzVHk=ZK_2MkZyZY8kRHCJCfAWVFg@mail.gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**bpf: Raise maximum call chain depth to 16 frames**\n\n검증기의 MAX_CALL_FRAMES 상수를 8에서 16으로 올려, 더 깊은 호출 체인을 허용하고 관련 selftest 를 갱신한다. 동기는 Rust-BPF 가 요구하는 깊은 콜 체인 지원이다.\n\n영향: 콜 프레임 한도는 검증기가 강제하는 핵심 제약으로, 한도 상향은 어떤 프로그램이 검증을 통과하는지를 직접 바꾼다. Rust 로 작성된 BPF 가 생성하는 깊은 호출 구조를 수용하려는 방향이라, Rust-BPF 툴체인/검증기 추적자에게 의미가 크다. 제출자가 Alexei Starovoit\n\n> Bump MAX_CALL_FRAMES from 8 to 16 to allow deeper call chains that Rust-BPF requires and update selftests.\n\n[원문 확인](https://lore.kernel.org/bpf/20260613180755.29671-1-alexei.starovoitov@gmail.com/)\n\n**bpf: bpf_redirect_peer egress redirection**\n\nbpf_redirect_peer 를 확장해, BPF_F_INGRESS 플래그가 주어지면 skb 를 대상 인터페이스의 peer 디바이스 egress 방향으로 내보내도록 한다. netkit 에서 proxy→workload 로의 ingress 리다이렉트가 netkit peer 디바이스에 붙은\n\n영향: Cilium 류 datapath 에서 transparent proxy/mTLS, 합성 트래픽 주입 같은 use case 가 netkit 위에서 동작하려면 peer 디바이스 egress hook 을 타야 한다. 현재는 같은 프로그램을 두 곳에 붙이는 hacky 우회가 필요한데, 이 확장은\n\n> the BPF_F_INGRESS flag tells bpf_redirect_peer to emit the skb in the egress direction of the target interface's peer device\n\n[원문 확인](https://lore.kernel.org/bpf/20260613183424.1198073-1-jordan@jrife.io/)"
+    },
+    {
+      "heading": "기타",
+      "body": "국부 드라이버/플랫폼 패치는 본문에서 제외했습니다. 자기 영역 키워드로 lore.kernel.org에서 직접 검색하세요."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "net/smc: fix out-of-bounds read in smc_clcsock_data_ready()",
+      "url": "https://lore.kernel.org/bpf/20260614120931.4041687-1-rhkrqnwk98@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Preserve untrusted memory pointer type on scalar add",
+      "url": "https://lore.kernel.org/bpf/20260613-f01-03-scalar-add-bpf-next-v2-v2-1-ce07bec3f72b@mails.tsinghua.edu.cn/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf, sockmap: Fix wrong rsge offset in bpf_msg_push_data()",
+      "url": "https://lore.kernel.org/bpf/20260612130919.299124-3-jiayuan.chen@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "MIPS: smp: report dying CPU to RCU in stop_this_cpu()",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260608093729.12111-1-jelonek.jonas@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf, sockmap: fix integer overflow in bpf_msg_pop_data() bounds check",
+      "url": "https://lore.kernel.org/bpf/20260609183927.4021802-1-rhkrqnwk98@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "net: Validate protocol in skb_steal_sock() for BPF-assigned sockets",
+      "url": "https://lore.kernel.org/bpf/CAAVpQUDZoEVEX1kXok-29dzVHk=ZK_2MkZyZY8kRHCJCfAWVFg@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Raise maximum call chain depth to 16 frames",
+      "url": "https://lore.kernel.org/bpf/20260613180755.29671-1-alexei.starovoitov@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: bpf_redirect_peer egress redirection",
+      "url": "https://lore.kernel.org/bpf/20260613183424.1198073-1-jordan@jrife.io/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "source": "research-dossier",
+    "bucketCounts": {
+      "릴리스/로드맵": 0,
+      "회귀·보안 신호": 6,
+      "핵심 변경": 2,
+      "기타": 0
+    },
+    "entryCount": 8
+  }
+}

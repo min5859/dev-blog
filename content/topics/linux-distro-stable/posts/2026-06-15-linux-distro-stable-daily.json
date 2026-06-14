@@ -1,0 +1,130 @@
+{
+  "id": "2026-06-15-linux-distro-stable-daily",
+  "topic": "linux-distro-stable",
+  "title": "2026-06-15 레거시 넷 스택 UAF 3건 — Linux Stable",
+  "headline": "appletalk·ATM br2684·cgroup cpuset 결함 4건 신규 제출, LTS 3종·stable 7.0.12 보안 백포트 병행",
+  "date": "2026-06-15",
+  "summary": "appletalk 수신 경로 UAF와 cgroup cpuset div/0이 lore 검증 상태로 stable 심사 중입니다. ATM br2684 OOB 읽기 2건도 동일 보고자 그룹에서 제출됐으나 Anubis 차단으로 원문 미확인 상태입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "stable",
+    "보안",
+    "UAF",
+    "appletalk",
+    "ATM",
+    "cgroup",
+    "LTS"
+  ],
+  "highlights": [
+    {
+      "title": "appletalk atalk_rcv() 소켓 UAF — 2.6.12-rc2부터 존재",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "net/appletalk 및 stable 트리 유지보수 담당, KASAN 기반 퍼징 추적자",
+      "verifyLink": "https://lore.kernel.org/stable/20260614095226.1210-1-zhaoyz24@mails.tsinghua.edu.cn/",
+      "if": "appletalk DDP 수신 경로가 활성화된 커널을 유지보수한다면",
+      "do": "lore 원문에서 패치 리뷰 상태와 stable 머지 여부를 확인하고 백포트 대상 버전 범위를 파악한다",
+      "verify": "KASAN 빌드에서 루프백 DDP 전달로 slab-use-after-free 미발생을 확인한다"
+    },
+    {
+      "title": "cgroup/cpuset mems 미설정 + RELATIVE_NODES + CPU hotplug → div/0",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "kernel/cgroup(cpuset) 및 mm/mempolicy 유지보수 담당, 컨테이너 런타임 운영자",
+      "verifyLink": "https://lore.kernel.org/stable/CA+0ovCgfHJHv5d1mzapWWvF-LhjppzDX8NPPLvCPZxPKg8RiYw@mail.gmail.com/",
+      "if": "비특권 사용자가 cgroup namespace에 접근 가능하고 CPU hotplug가 발생하는 환경이라면",
+      "do": "effective_mems 교체 패치 적용 여부를 확인하고 컨테이너 런타임의 cpuset.mems 설정 정책을 점검한다",
+      "verify": "mems 미설정 자식 cpuset에 MPOL_F_RELATIVE_NODES VMA를 붙인 태스크로 CPU hotplug를 유발해 커널 패닉이 없음을 확인한다"
+    },
+    {
+      "title": "ATM br2684 VC-MUX 짧은 프레임 OOB 읽기",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "net/atm(br2684) 유지보수 담당, ATM 브리징 사용 임베디드/레거시 환경 운영자",
+      "verifyLink": "https://lore.kernel.org/stable/20260614152746.308-1-zhaoyz24@mails.tsinghua.edu.cn/",
+      "if": "VC-MUX 모드로 ATM 브리징을 사용하는 환경을 운영한다면",
+      "do": "Anubis 차단 해소 후 lore 원문과 재현 조건을 확인하고 영향 버전 범위를 파악한다",
+      "verify": "skb->len이 0~1인 AAL5 PDU를 BR2684_ENCAPS_VC VCC에 주입해 OOB 접근이 없음을 확인한다"
+    },
+    {
+      "title": "ATM br2684 CONFIG_ATM_BR2684_IPFILTER iph->daddr OOB",
+      "priority": "하",
+      "impactType": "security",
+      "affectedAudience": "net/atm(br2684) 유지보수 담당, IP 필터링을 켠 ATM 브리징 환경 운영자",
+      "verifyLink": "https://lore.kernel.org/stable/20260614084027.1179-1-zhaoyz24@mails.tsinghua.edu.cn/",
+      "if": "CONFIG_ATM_BR2684_IPFILTER를 활성화한 ATM 브리징 환경을 운영한다면",
+      "do": "Anubis 차단 해소 후 원문을 확인하고 br2684 패치 2건 사이의 의존 순서를 파악한다",
+      "verify": "8바이트 LLC/SNAP LLC-routed PDU로 필터 경로를 통과시켜 OOB 접근이 없음을 확인한다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.0.12 stable (어제 이후 진척)**\n\n333건 백포트 중 rxrpc RESPONSE 패킷의 비선형 skb 접근 수정과 amdgpu GEM_OP GET_MAPPING_INFO num_entries 경계 검사 추가가 포함됐습니다.\n\n영향: rxrpc(AFS) 및 amdgpu 스택을 사용하는 7.0.x 추적 배포판에 즉시 해당합니다.\n\n> \"rxrpc: Fix RESPONSE packet verification to extract skb to a linear buffer\"\n\n[원문 확인](https://git.kernel.org/stable/h/v7.0.12)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**appletalk: atalk_rcv() 소켓 참조 누락 UAF**\n\natalk_search_socket()이 락 해제 후 참조 없이 소켓 포인터를 반환하던 결함을 sock_hold/put으로 수정하는 패치가 stable 심사 중입니다.\n\n영향: DDP 수신과 close()가 경쟁하면 slab-use-after-free가 발생하며 2.6.12-rc2까지 거슬러 올라가는 오래된 결함입니다.\n\n> \"it returns the matching socket after dropping the lock without taking a reference. atalk_rcv() then passes that pointer to sock_queue_rcv_skb().\"\n\n[원문 확인](https://lore.kernel.org/stable/20260614095226.1210-1-zhaoyz24@mails.tsinghua.edu.cn/)\n\n---\n\n**cgroup/cpuset: mems 미설정 자식 cpuset + RELATIVE_NODES + CPU hotplug → div/0**\n\ncpuset 리바인드 루틴이 비어있을 수 있는 cs->mems_allowed 대신 항상 유효한 cs->effective_mems를 넘기도록 수정합니다.\n\n영향: 비특권 사용자가 cgroup·mempolicy·hotplug 조합으로 로컬 DoS를 유발할 수 있습니다.\n\n> \"Creating a child cpuset where cpuset.mems is never set leads to a div/0 when a VMA mempolicy with MPOL_F_RELATIVE_NODES rebinds in response to a CPU hotplug event.\"\n\n[원문 확인](https://lore.kernel.org/stable/CA+0ovCgfHJHv5d1mzapWWvF-LhjppzDX8NPPLvCPZxPKg8RiYw@mail.gmail.com/)\n\n---\n\n**ATM br2684: VC-MUX 짧은 프레임 OOB 읽기** (원문 미확인 — 추정)\n\nBR2684_PAD_LEN 미만 프레임에 대해 패드 비교 전 길이 검사를 추가하는 패치가 제출됐습니다.\n\n영향: 길이 0~1의 AAL5 PDU가 VC-MUX VCC에 도달하면 유효 데이터 밖 바이트 읽기가 발생할 수 있습니다.\n\n> \"If skb->len is 0 or 1, the pad comparison reads beyond the valid skb data. When the bytes beyond skb->len compare as zero, the code then continues toward eth_type_trans()\"\n\n[원문 확인](https://lore.kernel.org/stable/20260614152746.308-1-zhaoyz24@mails.tsinghua.edu.cn/)\n\n---\n\n**ATM br2684: IP 필터 iph->daddr 헤더 길이 미검사 OOB** (원문 미확인 — 추정)\n\nCONFIG_ATM_BR2684_IPFILTER 활성 시 IPv4 헤더 전체 존재를 확인하지 않고 iph->daddr를 읽던 결함을 수정합니다.\n\n영향: ETH_P_IP로 표시된 부족한 PDU에서 데이터 밖 바이트로 pass/drop이 결정되거나 필터 우회가 발생할 수 있습니다.\n\n> \"treats skb->data as an IPv4 header whenever the packet protocol is ETH_P_IP and then reads iph->daddr. That read is not protected by a check that the pulled skb still contains a full IPv4 header.\"\n\n[원문 확인](https://lore.kernel.org/stable/20260614084027.1179-1-zhaoyz24@mails.tsinghua.edu.cn/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Linux 6.12.93 longterm (어제 이후 진척)**\n\n310건 백포트 중 memfd SEAL_WRITE 암시 시 writeable mapping 거부, iSCSI 타깃 CRC overread/double-free, thunderbolt property 재귀 깊이 제한이 포함됐습니다.\n\n영향: 6.12 LTS 사용자에게 memfd seal 우회와 iSCSI 원격 입력 처리 취약 표면이 닫힙니다.\n\n> \"memfd: deny writeable mappings when implying SEAL_WRITE\"\n\n[원문 확인](https://git.kernel.org/stable/h/v6.12.93)\n\n---\n\n**Linux 6.18.35 longterm (어제 이후 진척)**\n\n316건 백포트 중 USB serial(mct_u232·digi_acceleport·cypress_m8)의 small endpoint 메모리 손상 수정과 net devmem 비정렬 dma-buf bind 거부가 포함됐습니다.\n\n영향: 악성 USB serial 디바이스가 작은 엔드포인트로 메모리를 손상시키는 결함 다수가 닫혔으며 물리 USB 접근 위협 모델 환경에 특히 중요합니다.\n\n> \"USB: serial: mct_u232: fix memory corruption with small endpoint\"\n\n[원문 확인](https://git.kernel.org/stable/h/v6.18.35)\n\n---\n\n**Linux 5.10.258 longterm (어제 이후 진척)**\n\n580건 대규모 백포트 중 net/tls plain text SG chain-after-chain 방지 및 wrapped sk_msg ring off-by-one 수정, GPIO cdev uAPI v2 config 제로화 검사가 포함됐습니다.\n\n영향: 5.10 LTS 기반 임베디드/엔터프라이즈에서 TLS 오프로드 경로 메모리 안전 결함과 GPIO 입력 검증 누락이 닫힙니다.\n\n> \"net: tls: prevent chain-after-chain in plain text SG\"\n\n[원문 확인](https://git.kernel.org/stable/h/v5.10.258)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "medium",
+    "note": "리서치 dossier의 출처를 근거로 작성했습니다. appletalk·cgroup cpuset 패치는 lore 링크 검증 완료이나, ATM br2684 2건 및 LTS·stable 릴리스 항목은 Anubis 차단으로 원문 미확인 상태입니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "appletalk: Hold socket reference in atalk_rcv()",
+      "url": "https://lore.kernel.org/stable/20260614095226.1210-1-zhaoyz24@mails.tsinghua.edu.cn/",
+      "note": "thread"
+    },
+    {
+      "title": "atm: br2684: reject short VC-MUX bridged frames",
+      "url": "https://lore.kernel.org/stable/20260614152746.308-1-zhaoyz24@mails.tsinghua.edu.cn/",
+      "note": "thread"
+    },
+    {
+      "title": "atm: br2684: validate IP header length before filtering",
+      "url": "https://lore.kernel.org/stable/20260614084027.1179-1-zhaoyz24@mails.tsinghua.edu.cn/",
+      "note": "thread"
+    },
+    {
+      "title": "cgroup/cpuset: rebind mm mempolicy to effective_mems, not mems_allowed",
+      "url": "https://lore.kernel.org/stable/CA+0ovCgfHJHv5d1mzapWWvF-LhjppzDX8NPPLvCPZxPKg8RiYw@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Linux 7.0.12 stable changelog",
+      "url": "https://git.kernel.org/stable/h/v7.0.12",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 6.12.93 longterm changelog",
+      "url": "https://git.kernel.org/stable/h/v6.12.93",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 6.18.35 longterm changelog",
+      "url": "https://git.kernel.org/stable/h/v6.18.35",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 5.10.258 longterm changelog",
+      "url": "https://git.kernel.org/stable/h/v5.10.258",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-14T18:57:26.713Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
