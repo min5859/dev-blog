@@ -1,0 +1,94 @@
+{
+  "id": "2026-06-16-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-06-16 nova-core DMA·FSP 보안 패치 — Linux Toolchain",
+  "headline": "Rust GPU 드라이버 DMA 조기 해제·FSP 크기 무검증 수정, Rust Binder freeze 통계 누락까지 한꺼번에 보완",
+  "date": "2026-06-16",
+  "summary": "NVIDIA nova-core Rust 드라이버에서 GSP 부트 에러 시 DMA 영역 조기 해제와 FSP 메시지 크기 무검증 문제를 수정했다. Rust Binder는 freeze 관련 command/return code 통계 누락을 보완하며 C Binder와의 프로토콜 커버리지 격차를 좁혔다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "Rust",
+    "nova-core",
+    "Binder",
+    "GPU",
+    "보안",
+    "DMA"
+  ],
+  "highlights": [
+    {
+      "title": "FSP 수신 메시지 크기 무검증 취약점 수정",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "nova-core falcon/FSP 및 Rust 드라이버 입력 검증 추적 개발자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/DJ9SGEPBEHR0.R2JB1EQJQKT6@garyguo.net/",
+      "if": "nova-core FSP 수신 경로를 포함한 커널을 빌드하고 있다면",
+      "do": "blackwell-fixes-v1 시리즈를 확인하고 1024바이트 상한 검증 로직의 머지 상태를 추적한다",
+      "verify": "FSP 수신 경로에서 1024바이트 초과 메시지가 할당 전에 폐기되는지 diff로 확인한다"
+    },
+    {
+      "title": "GSP 부트 에러 경로 FMC DMA 영역 조기 해제 버그 수정",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "nova-core/Rust GPU 드라이버 및 Rust DMA 추상화 추적 개발자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260615-blackwell-fixes-v1-5-f2853e49ff7d@nvidia.com/",
+      "if": "nova-core 드라이버의 GSP 부트 실패 경로를 테스트하거나 Rust DMA 수명 패턴을 추적하고 있다면",
+      "do": "FmcBootArgs의 drop 순서가 boot unload guard 이후가 되도록 수정된 코드를 확인한다",
+      "verify": "에러 경로에서 GSP가 DMA 영역에 접근하는 동안 FmcBootArgs가 살아있는지 수명 추적으로 검증한다"
+    },
+    {
+      "title": "Rust Binder freeze 명령어 통계 누락 보완",
+      "priority": "하",
+      "impactType": "runtime",
+      "affectedAudience": "Rust Binder 구현 추적 개발자(드라이버/Android)",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260615174834.297-1-iganschel@gmail.com/",
+      "if": "Rust Binder 디버그 통계로 freeze 동작을 모니터링한다면",
+      "do": "freeze 관련 command/return code가 BC_COUNT/BR_COUNT 카운터와 이벤트 문자열 테이블에 추가됐는지 확인한다",
+      "verify": "C Binder와 Rust Binder의 stats 출력을 비교해 freeze 코드 집계가 일치하는지 검증한다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**FSP 수신 메시지 크기 무검증 취약점 수정**\n\nnova-core FSP 수신 메시지 코드가 장치가 보낸 크기를 검증 없이 그대로 할당하던 문제를, 1024바이트 초과 메시지는 불량으로 폐기하도록 상한을 설정해 수정했다.\n\n영향: 장치·펌웨어가 제어하는 길이를 무검증으로 할당에 넘기는 것은 Rust 드라이버에서도 동일하게 위험하며, 과대 할당과 신뢰 경계 위반으로 이어질 수 있다.\n\n> \"the FSP receive message code will try to allocate whatever was sent without checking it at all. But the actual size allowed is limited to 1024 anyway, so discard any messages over that size as bogus.\"\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/DJ9SGEPBEHR0.R2JB1EQJQKT6@garyguo.net/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**GSP 부트 에러 경로 FMC DMA 영역 조기 해제 버그 수정**\n\nnova-core GSP 부트 에러 경로에서 `FmcBootArgs`가 boot unload guard보다 먼저 drop되던 문제를 수정해, 언로드 완료까지 FMC 부트 파라미터 DMA 영역을 살려둔다.\n\n영향: Rust 소유권 모델이 DMA 수명과 어긋날 때 발생하는 전형적 함정으로, GSP가 여전히 접근 중인 메모리를 Rust drop이 먼저 해제하면 use-after-free로 이어질 수 있다.\n\n> \"if, for example `boot_fmc` fails, `FmcBootArgs` will be dropped before the boot unload guard. But until everything is unloaded, GSP may access this memory, so make sure it doesn't get deallocated.\"\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260615-blackwell-fixes-v1-5-f2853e49ff7d@nvidia.com/)\n\n---\n\n**Rust Binder freeze 명령어 통계 누락 보완**\n\nRust Binder 통계 코드가 BC_COUNT/BR_COUNT 카운터와 이벤트 문자열 테이블에 freeze 관련 command/return code를 포함하지 않던 것을, 해당 항목까지 집계·출력하도록 동기화했다.\n\n영향: C Binder와 Rust Binder 간 프로토콜 커버리지 격차를 메우는 패치로, Android Binder의 Rust 재구현 완성도를 추적하는 독자에게 직접적이다.\n\n> \"the Rust Binder statistics code was not updated to cover them. As a result, those commands and return codes are not accounted for or printed by the stats debug output.\"\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260615174834.297-1-iganschel@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "gpu: nova-core: gsp: keep FMC boot params DMA region alive during error",
+      "url": "https://lore.kernel.org/rust-for-linux/20260615-blackwell-fixes-v1-5-f2853e49ff7d@nvidia.com/",
+      "note": "commit"
+    },
+    {
+      "title": "gpu: nova-core: fsp: limit FSP receive message allocation size (Gary Guo review)",
+      "url": "https://lore.kernel.org/rust-for-linux/DJ9SGEPBEHR0.R2JB1EQJQKT6@garyguo.net/",
+      "note": "thread"
+    },
+    {
+      "title": "binder: synchronize Rust Binder stats with freeze commands",
+      "url": "https://lore.kernel.org/rust-for-linux/20260615174834.297-1-iganschel@gmail.com/",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-15T18:46:40.869Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

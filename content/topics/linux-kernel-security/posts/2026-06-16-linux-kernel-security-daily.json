@@ -1,0 +1,133 @@
+{
+  "id": "2026-06-16-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-06-16 SKB 격리 패치 slab 트리 진입 — linux-hardening",
+  "headline": "SKB 힙 격리 패치 slab 트리 진행, 7.0.12·LTS 3종서 iSCSI double-free·Thunderbolt OOB 수정 릴리스",
+  "date": "2026-06-16",
+  "summary": "Pedro Falcato의 SKB 데이터 영역 격리 시리즈 1번 패치가 slab 트리를 통한 병합 경로가 확정됐으며, stable 7.0.12와 LTS 6.18.35·6.12.93·5.10.258이 iSCSI double-free·memfd seal 우회 차단·Thunderbolt OOB read 등 보안 성격 수정을 포함해 출시됐습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "보안",
+    "stable",
+    "하드닝",
+    "SKB",
+    "iSCSI"
+  ],
+  "highlights": [
+    {
+      "title": "SKB 데이터 영역 전용 slab 격리 — 힙 스프레이 익스플로잇 표면 축소",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "네트워크 코어 및 slab/mm 유지보수, 커널 하드닝 추적자",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/ai_ObgbjlahfXs37@pedro-suse/",
+      "if": "커널 힙 하드닝 동향을 추적한다면",
+      "do": "다음 머지 윈도에서 slab 트리 PR에 1번 패치 포함 여부를 확인",
+      "verify": "lore 스레드에서 2번 패치(net-next) 재제출 시점 및 최종 라우팅 확인"
+    },
+    {
+      "title": "6.12.93 iSCSI double-free·memfd SEAL_WRITE 우회 차단 백포트",
+      "priority": "상",
+      "impactType": "backport",
+      "affectedAudience": "6.12 LTS 백포트 담당, iSCSI target·mm/memfd 유지보수",
+      "verifyLink": "https://git.kernel.org/stable/h/v6.12.93",
+      "if": "6.12 LTS 기반 배포를 운영한다면",
+      "do": "6.12.93으로 즉시 업그레이드 검토",
+      "verify": "iscsit_handle_text_cmd() double-free 및 memfd seal 패치의 CVE 매핑 추후 확인"
+    },
+    {
+      "title": "7.0.12 Thunderbolt 파서 OOB read·serial SysRq lockup 수정",
+      "priority": "중",
+      "impactType": "release",
+      "affectedAudience": "stable 7.0.x 배포·통합 담당, Thunderbolt/USB/serial 드라이버 유지보수",
+      "verifyLink": "https://www.linuxcompatible.org/story/linux-kernel-7012-fixes-thunderbolt-hangs-gpu-driver-bugs-and-serial-port-crashes/",
+      "if": "7.0.x stable 트리를 추적한다면",
+      "do": "7.0.12로 갱신 적용",
+      "verify": "악성 Thunderbolt 장치를 이용한 size_t 언더플로·OOB read 재현 경로 확인"
+    },
+    {
+      "title": "qcom,pas remoteproc thermal DT 바인딩 — per-SoC 드라이버 데이터 방식으로 수렴",
+      "priority": "하",
+      "impactType": "api-abi",
+      "affectedAudience": "remoteproc(qcom,pas)·thermal 프레임워크 및 DT 바인딩 유지보수",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/be9b10c2-7e16-4c83-bc59-82ec25495622@kernel.org/",
+      "if": "Qualcomm DSP cooling device 바인딩을 담당한다면",
+      "do": "tmd_names를 DT 프로퍼티 대신 qcom_pas_data에 인코딩하는 방향으로 패치 수정",
+      "verify": "Daniel Lezcano의 indexed cooling-cells 시리즈와의 thermal zone 연동 최종 확인"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.0.12 stable**\n\n333개 백포트 묶음. Thunderbolt 프로퍼티 파서에 재귀 깊이·디렉터리 길이 제한을 추가해 악성 장치 기반 size_t 언더플로·OOB read를 차단하고, USB SuperSpeed 루트 허브 wMaxPacketSize 수정, serial 8250/dw SysRq 디스패치 수정, KVM arm64 nested MMU race 수정을 포함.\n\n영향: stable 7.0.x를 추적하는 엔지니어는 즉시 갱신 대상이며, Thunderbolt/USB 접속 환경에서 악성 장치 벡터가 줄어듦.\n\n> The parser also rejects directory lengths under four bytes to stop size_t underflows that previously led to out-of-bounds reads.\n\n[원문 확인](https://www.linuxcompatible.org/story/linux-kernel-7012-fixes-thunderbolt-hangs-gpu-driver-bugs-and-serial-port-crashes/)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**net: SKB 데이터 영역 전용 slab 격리 (PATCH net-next v2)**\n\n Pedro Falcato의 2패치 시리즈 중 1번(slab 계층)은 slab 트리를 통한 병합 경로가 확정됐으며, 2번(net-next 적용)은 머지 윈도 종료로 재제출 예정.\n\n영향: 네트워크가 제어하는 SKB 버퍼를 일반 kmalloc 캐시에서 분리해 힙 스프레이·크로스캐시 UAF·오버플로 익스플로잇 표면을 줄이는 하드닝이며, 완전 적용 시 커널 힙 기반 공격 난도가 높아질 것으로 예상됩니다.\n\n> OK I'll take the first patch through the slab tree in the planned second next week's PR.\n\n[원문 확인](https://lore.kernel.org/linux-hardening/ai_ObgbjlahfXs37@pedro-suse/)\n\n---\n\n**6.12.93 iSCSI CRC overread·double-free 및 memfd SEAL_WRITE 우회 차단**\n\n6.12.93에 iscsit_handle_text_cmd()의 CRC overread·double-free와 memfd의 SEAL_WRITE 암시 시 쓰기 가능 매핑을 거부하는 수정이 백포트된 것으로 추정됩니다(git.kernel.org 직접 검증 불가).\n\n영향: 두 수정은 보안 성격으로, CVE 매핑이 현재 미확인 상태이므로 단정하지 않고 원문 확인을 권고합니다.\n\n[원문 확인](https://git.kernel.org/stable/h/v6.12.93)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**dt-bindings: remoteproc: qcom,pas — thermal TMD 바인딩 방식 수렴**\n\nqcom,pas remoteproc 바인딩에 cooling device 인덱스 매핑을 위한 tmd-names DT 프로퍼티를 추가하려 했으나, 메인테이너가 per-SoC 드라이버 데이터(qcom_pas_data의 tmd_names)로 인코딩하는 방향을 수용하는 방향으로 수렴한 것으로 보입니다.\n\n영향: Qualcomm DSP cooling device 등록 방식과 DT 바인딩 ABI 결정에 영향. firmware가 TMD 이름을 임의 순서로 반환하는 문제의 최종 해법은 후속 확인이 필요합니다.\n\n> Yes, assuming this is per SoC.\n\n[메인테이너 리뷰 확인](https://lore.kernel.org/linux-hardening/be9b10c2-7e16-4c83-bc59-82ec25495622@kernel.org/)\n\n---\n\n**Linux 6.18.35 LTS**\n\n316개 백포트. USB serial 3종(mct_u232·digi_acceleport·cypress_m8)의 소형 엔드포인트 메모리 손상 수정(보안 성격), Raptor Lake-E cpufreq 스케일링 팩터 보정 및 hybrid_get_cpu_type() 도입, net/sched act_mirred blockcast 재귀로 인한 스택 오버플로 수정이 포함된 것으로 추정됩니다.\n\n영향: 6.18 LTS 배포 담당자는 갱신 검토. USB serial 손상 수정은 악성 장치 기반 메모리 손상 벡터 성격이나 CVE 매핑 미확인.\n\n[원문 확인](https://git.kernel.org/stable/h/v6.18.35)\n\n---\n\n**Linux 5.10.258 LTS**\n\n580개 백포트. adm1266 PMBus 드라이버 강화 시리즈(짧은 block-read 거부, 경계 검사 추가로 OOB 방지)와 net/tls의 SG 체인 래핑 off-by-one 수정이 포함된 것으로 추정됩니다.\n\n영향: 가장 오래된 활성 LTS인 5.10 운영 환경 대상. 직접 검증 불가로 단정 금지.\n\n[원문 확인](https://git.kernel.org/stable/h/v5.10.258)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier의 출처를 근거로 작성했습니다. LTS 백포트 항목(6.18.35·6.12.93·5.10.258) 및 패치 스레드 일부는 git.kernel.org·lore.kernel.org Anubis 차단으로 직접 검증이 불가했으며 해당 수치·인용은 추정입니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Linux Kernel 7.0.12 — Thunderbolt/GPU/serial 수정 기사",
+      "url": "https://www.linuxcompatible.org/story/linux-kernel-7012-fixes-thunderbolt-hangs-gpu-driver-bugs-and-serial-port-crashes/",
+      "note": "article"
+    },
+    {
+      "title": "v7.0.12 태그 — kernel.org stable",
+      "url": "https://git.kernel.org/stable/h/v7.0.12",
+      "note": "changelog"
+    },
+    {
+      "title": "v6.18.35 태그 — kernel.org stable",
+      "url": "https://git.kernel.org/stable/h/v6.18.35",
+      "note": "changelog"
+    },
+    {
+      "title": "v6.12.93 태그 — kernel.org stable",
+      "url": "https://git.kernel.org/stable/h/v6.12.93",
+      "note": "changelog"
+    },
+    {
+      "title": "v5.10.258 태그 — kernel.org stable",
+      "url": "https://git.kernel.org/stable/h/v5.10.258",
+      "note": "changelog"
+    },
+    {
+      "title": "net: isolate SKB data area allocations — linux-hardening 스레드",
+      "url": "https://lore.kernel.org/linux-hardening/ai_ObgbjlahfXs37@pedro-suse/",
+      "note": "thread"
+    },
+    {
+      "title": "slab: Introduce dedicated bucket allocator",
+      "url": "https://www.mail-archive.com/linux-hardening@vger.kernel.org/msg03329.html",
+      "note": "article"
+    },
+    {
+      "title": "qcom,pas thermal TMD 바인딩 — 메인테이너 리뷰",
+      "url": "https://lore.kernel.org/linux-hardening/be9b10c2-7e16-4c83-bc59-82ec25495622@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "qcom,pas thermal TMD — tmd-names 필요성 설명",
+      "url": "https://lore.kernel.org/linux-hardening/ae43a691-4879-4bfa-8c7c-1be16945480c@oss.qualcomm.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-15T18:41:26.804Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

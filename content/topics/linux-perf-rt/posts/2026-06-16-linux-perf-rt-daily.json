@@ -1,0 +1,114 @@
+{
+  "id": "2026-06-16-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-06-16 BPF 7.2 풀 요청 착수 — linux-perf-rt",
+  "headline": "BPF 7.2 풀 요청: 검증기 심화·tracing_multi·arena 페이지폴트 복구가 핵심",
+  "date": "2026-06-16",
+  "summary": "Alexei Starovoitov가 Linux 7.1-rc5 위에 bpf-next-7.2 풀 요청을 제출했으며, 콜 체인 깊이 확대·cnum 경계 표현·tracing_multi 링크 등 검증기와 추적 레이어 전반이 개편됩니다. 동시에 skb dynptr 패킷 포인터 무효화 누락 보안 패치(v5)와 TLS+sockmap 조합 차단 제안이 병렬로 진행 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "BPF",
+    "검증기",
+    "tracing",
+    "arena",
+    "sockmap",
+    "BTF"
+  ],
+  "highlights": [
+    {
+      "title": "BPF 7.2 풀 요청: 검증기 심화 및 arena 직접 접근",
+      "priority": "상",
+      "impactType": "release",
+      "affectedAudience": "BPF 검증기/런타임 유지보수자, tracing 도구 개발자, BPF arena 기반 프로그램 작성자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260615180858.15938-1-alexei.starovoitov@gmail.com/",
+      "if": "7.2 기반 BPF 프로그램을 개발 중이라면",
+      "do": "콜 체인 깊이(8→16 프레임), 6개 이상 인수 지원, cnum 경계 표현 변경을 검토하고 kernel/bpf/inode.c 병합 충돌 해소 결과를 확인하세요.",
+      "verify": "lore 원문의 충돌 설명과 bpf-next-7.2 태그 커밋을 직접 확인하세요."
+    },
+    {
+      "title": "skb dynptr 패킷 포인터 무효화 누락 수정 (v5)",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF 검증기 유지보수자 및 skb/dynptr 네트워크 프로그램 작성자",
+      "verifyLink": "https://lore.kernel.org/bpf/cover.1781539813.git.chenyy23@mails.tsinghua.edu.cn/",
+      "if": "글로벌 서브프로그램 dynptr 인수나 skb dynptr writer kfunc를 사용하는 프로그램이 있다면",
+      "do": "v5 시리즈 적용 여부를 확인하고 직접 패킷 포인터를 변이 이후 재사용하는 코드 경로를 점검하세요.",
+      "verify": "bpf.git master 0e0611827f33 기반 QEMU 재현 결과(failures=0)와 stable 백포트 필요 여부를 원문에서 확인하세요."
+    },
+    {
+      "title": "TLS + sockmap 조합 차단 제안",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "sockmap/BPF psock 및 kTLS 사용자와 유지보수자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260615112010.3f8e0efb@kernel.org/",
+      "if": "TLS 소켓을 sockmap과 함께 사용하는 운영 환경이 있다면",
+      "do": "해당 패치가 병합 창에 포함됐는지 확인하고 kTLS+sockmap 의존 코드를 미리 분리해두세요.",
+      "verify": "lore 원문에서 최종 병합 형태(키 설정 시점 거부 vs. ULP 설치 시점 거부)를 확인하세요."
+    },
+    {
+      "title": "BTF 타입 태그와 수정자 레코드 순서 허용",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "BPF 검증기/BTF 유지보수자 및 arena/libarena 프로그램 작성자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260615180614.4376-1-emil@etsalapatis.com/",
+      "if": "Clang이 생성하는 __arena typedef BTF를 커널이 거부한다면",
+      "do": "btf_check_modifier_chain_length() 변경 패치 적용 여부를 확인하고 libarena 프로그램 로드 테스트를 수행하세요.",
+      "verify": "lore 원문의 셀프테스트 결과와 해당 Clang 최소 버전 요건을 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**[GIT PULL] BPF changes for 7.2**\n\nAlexei Starovoitov가 Linux 7.1-rc5 기반 위에 bpf-next-7.2 풀 요청을 제출했습니다.\n\n영향: 검증기 내부(cnum 경계 표현 신설, 콜 체인 8→16 프레임, 6개 이상 인수 지원), 추적 레이어(tracing_multi 링크, FD 기반 uprobe_multi, 빌드 ID 캐싱), arena 직접 접근(페이지폴트 복구, ptep_try_set())이 한꺼번에 개편됩니다. kernel/bpf/inode.c에 단순하지 않은 병합 충돌이 보고되었습니다.\n\n> \"tags/bpf-next-7.2 ... since commit ... Linux 7.1-rc5 ... There are two conflicts: trivial merge conflict in include/linux/bpf.h ... not so simple merge conflict in kernel/bpf/inode.c\"\n\n> \"Raise the maximum BPF call chain depth from 8 to 16 frames ... support 6+ arguments in BPF programs and kfuncs on x86 and arm64\"\n\n[원문 확인](https://lore.kernel.org/bpf/20260615180858.15938-1-alexei.starovoitov@gmail.com/)\n\n*Linus의 실제 병합 여부 및 inode.c 충돌 해소 최종 내용은 확인이 필요합니다.*"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**skb dynptr 패킷 포인터 무효화 누락 수정 (v5)**\n\nYiyang Chen의 v5 시리즈가 검증기 건전성 결함을 수정합니다. 글로벌 서브프로그램 dynptr 인수와 skb dynptr writer kfunc에서 직접 패킷 포인터 무효화가 각각 누락되어 있었습니다.\n\n영향: 패킷 변이 이후에도 신뢰된 직접 패킷 포인터가 살아남는 검증기 우회 원시형이 될 수 있는 결함입니다. kernel/bpf/verifier.c, cfg.c, states.c와 스택 상태 가지치기 비교 로직이 변경됩니다.\n\n> \"the normal verifier path had coverage for bpf_dynptr_write() with concrete skb dynptrs, but missed unspecialized global subprogram dynptr arguments. skb dynptr writer kfuncs also did not participate i\"\n\n[원문 확인](https://lore.kernel.org/bpf/cover.1781539813.git.chenyy23@mails.tsinghua.edu.cn/)\n\n*CVE 미발급, Fixes: 태그 미확인 — stable 백포트 필요 여부는 별도 확인이 필요합니다.*\n\n---\n\n**TLS + sockmap 조합 차단 제안**\n\nJakub Kicinski가 TLS+sockmap(BPF psock) 조합을 커널 수준에서 거부하는 패치를 제안했습니다. 악용 가능한 잠재 버그가 다수 존재하며 알려진 활성 사용자가 없다는 것이 이유입니다.\n\n영향: kTLS+sockmap을 함께 사용하는 운영 환경은 키 설정 단계에서 오류가 발생하게 됩니다. ULP 대 sockmap 초기화 경쟁 조건(espintcp도 동일 문제)은 이번 패치 범위 밖으로 남습니다.\n\n> \"TLS and sockmap (BPF psock) integration hides a lot of latent bugs. Bugs which may be more or less relevant for real users but they are definitely exploitable. We could not find anyone actively using \"\n\n> \"races in ULP vs sockmap init is a separate can of warms ... espintcp faces the same race...\"\n\n[원문 확인](https://lore.kernel.org/bpf/20260615112010.3f8e0efb@kernel.org/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**BTF 타입 태그와 수정자 레코드 순서 허용**\n\nEmil Tsalapatis의 패치가 BTF 검증 로직을 조정하여 Clang이 생성하는 수정자 레코드 뒤 타입 태그 레코드 순서(예: `typedef struct rbtree __arena rbtree_t;`)를 허용합니다.\n\n영향: 7.2 풀에 포함된 libarena 작업을 위한 BTF 쪽 활성화 패치입니다. 이 패치 없이는 커널이 arena typedef의 BTF를 거부하여 프로그램 로드 시점에 실패합니다. btf_check_type_tags()는 btf_check_modifier_chain_length()로 이름이 변경됩니다.\n\n> \"Clang is able to attach type tag records to modifier BTF records. This is useful for using typedefs that encompass a base type and a type tag, e.g.: typedef struct rbtree __arena rbtree_t;\"\n\n[원문 확인](https://lore.kernel.org/bpf/20260615180614.4376-1-emil@etsalapatis.com/)\n\n---\n\n**ptep_try_set() 아치 메인테이너 검토 절차 논의**\n\nDavid Hildenbrand와 Tejun Heo가 BPF arena 직접 접근 브랜치에 포함된 ptep_try_set() 원시형의 x86/arm64 메인테이너 명시적 승인 여부를 논의 중입니다.\n\n영향: arena 직접 접근 구현 전반에 영향을 줄 수 있는 거버넌스 문제입니다. 최종 승인 여부는 확인이 필요합니다.\n\n> \"I am talking about any patch that touches arch code without an ACK from the maintainer. Maybe arm64 and x86 people are fine with that, but I heard other voices recently, thus my question.\"\n\n[원문 확인](https://lore.kernel.org/bpf/ajA49jgCaMo_3KdB@slm.duckdns.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "중-상",
+    "note": "리서치 dossier의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "[GIT PULL] BPF changes for 7.2",
+      "url": "https://lore.kernel.org/bpf/20260615180858.15938-1-alexei.starovoitov@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Fix packet pointer invalidation for skb dynptr writes (v5)",
+      "url": "https://lore.kernel.org/bpf/cover.1781539813.git.chenyy23@mails.tsinghua.edu.cn/",
+      "note": "thread"
+    },
+    {
+      "title": "tls: reject the combination of TLS and sockmap",
+      "url": "https://lore.kernel.org/bpf/20260615112010.3f8e0efb@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Allow type tag BTF records to succeed other modifier records",
+      "url": "https://lore.kernel.org/bpf/20260615180614.4376-1-emil@etsalapatis.com/",
+      "note": "thread"
+    },
+    {
+      "title": "mm: ptep_try_set() maintainer-ack process discussion",
+      "url": "https://lore.kernel.org/bpf/ajA49jgCaMo_3KdB@slm.duckdns.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-15T18:55:24.970Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
