@@ -1,0 +1,118 @@
+{
+  "id": "2026-06-17-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-06-17 BPF·perf 보안 패치 넷 — Linux Perf/RT",
+  "headline": "BPF 범위 검사 우회·Spectre v4 홀·perf 메모리 누출 등 보안 패치 4건 동시 검토",
+  "date": "2026-06-17",
+  "summary": "이번 수집에서는 BPF 헬퍼 정수 오버플로, Spectre v4 검증 인덱스 오류, perf 브랜치 레코드 미초기화 등 세 건의 보안 버그 수정과, PREEMPT_RT 환경의 %pK 오용을 lockdep으로 탐지하는 런타임 강화 패치 한 건이 검토됐습니다. 모두 신규 항목이며, 안정 트리 백포트 여부는 아직 미확인입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "BPF",
+    "보안",
+    "Spectre",
+    "perf",
+    "PREEMPT_RT"
+  ],
+  "highlights": [
+    {
+      "title": "HID-BPF 헬퍼 정수 오버플로 — OOB 포인터 획득 가능",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "HID-BPF 및 BPF 헬퍼 유지관리자, 드라이버 보안 검토자",
+      "verifyLink": "https://lore.kernel.org/bpf/cover.1781627122.git.chenyy23@mails.tsinghua.edu.cn/",
+      "if": "HID-BPF 프로그램에서 hid_bpf_get_data()를 매우 큰 size 인수로 호출하면 부호 없는 정수 래핑으로 경계 검사가 통과됩니다.",
+      "do": "패치 적용 여부를 확인하고, 안정 트리 백포트 계획을 bpf 메일링리스트에서 추적합니다.",
+      "verify": "Patch 2의 셀프테스트(offset 2, size ~0ULL → NULL 기대)가 자신의 빌드에서 통과하는지 확인합니다."
+    },
+    {
+      "title": "BPF 검증기 Spectre v4 슬롯 인덱스 오류 — 스택 쓰기 새니타이제이션 누락",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF 검증기 유지관리자, Spectre 완화 검토자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260617-f01-11-stack-nospec-slot-index-v1-1-e3a080b0cd7e@mails.tsinghua.edu.cn/",
+      "if": "e4f4db47794c가 포함된 커널에서 4바이트 스택 쓰기 시 슬롯 인덱스 불일치로 Spectre v4 새니타이제이션이 누락될 수 있습니다.",
+      "do": "bpf/bpf-next 트리에서 v1 패치 수락 여부를 확인하고, e4f4db47794c를 포함한 안정 트리의 백포트를 추적합니다.",
+      "verify": "BPF 셀프테스트 suite에서 스택 nospec 관련 케이스가 모두 통과하는지 확인합니다."
+    },
+    {
+      "title": "perf 브랜치 레코드 미초기화 필드 — 커널 메모리 사용자 공간 노출",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "perf 코어·PMU 유지관리자, 정보 누출 검토자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260616155716.2631508-3-puranjay@kernel.org/",
+      "if": "new_type·priv 필드가 초기화되지 않은 커널에서 perf 브랜치 샘플을 수집하면 커널 메모리 잔존 값이 사용자 공간에 노출될 수 있습니다.",
+      "do": "Fixes 커밋(b190bc4ac9e6, 5402d25aa571)을 기준으로 영향받는 출시 커널 버전을 확인합니다.",
+      "verify": "perf_event_paranoid 설정과 권한 수준에 따라 누출 가능성이 제한되는지 점검합니다."
+    },
+    {
+      "title": "vsprintf %pK 오용 탐지 lockdep 주석 추가 — PREEMPT_RT 대상, 수정 중",
+      "priority": "하",
+      "impactType": "runtime",
+      "affectedAudience": "vsprintf·printk 및 PREEMPT_RT 유지관리자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/ajEUClmHBPiiB4eC@pathway.suse.cz/",
+      "if": "atomic·IRQ 컨텍스트에서 %pK 포맷 지시자를 사용하면 PREEMPT_RT 환경에서 잠재적 lockdep 위반이 발생할 수 있습니다.",
+      "do": "커널 테스트 로봇이 보고한 lockdep 위반 원인이 해결됐는지 메일링리스트를 추적합니다.",
+      "verify": "패치 적용 후 기존 인트리 %pK 사용처에서 lockdep 경고가 발생하지 않는지 확인합니다."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**HID: bpf: Fix hid_bpf_get_data() range check**\n\nhid_bpf_get_data()가 offset+size를 부호 없는 정수로 합산해 검사하던 방식에서, 오프셋을 먼저 검증한 뒤 잔여 바이트와 요청 크기를 비교하는 방식으로 수정됐고, 회귀 셀프테스트가 함께 추가됐습니다.\n\n영향: HID-BPF rdesc_fixup/device 콜백에서 공격자가 제어하는 BPF 프로그램이 HID 컨텍스트 버퍼의 범위 밖 포인터를 획득할 수 있는 OOB 읽기/쓰기 경로가 닫혔습니다.\n\n> \"Since both operands are unsigned, a very large size can wrap the sum and make an out-of-range request look valid.\"\n\n[원문 확인](https://lore.kernel.org/bpf/cover.1781627122.git.chenyy23@mails.tsinghua.edu.cn/)\n\n---\n\n**bpf: Fix stack slot index in nospec checks**\n\ncheck_stack_write_fixed_off()의 Spectre v4 사전 검사가 쓰기 경로와 다른 slot_type 인덱스를 참조해 일부 스택 슬롯 쓰기에서 nospec_result 처리가 누락됐으며, 동일 인덱스를 사용하도록 수정됐습니다.\n\n영향: BPF 스택에서 포인터를 스칼라로 덮어쓸 때 Spectre v4(speculative store bypass) 완화가 우회될 수 있었던 구멍이 패치됩니다. 원래 완화를 도입한 e4f4db47794c를 포함한 안정 트리로의 백포트 필요성 확인이 요구됩니다.\n\n> \"Use the same slot index in the sanitization pre-check that the write path uses when updating slot_type[].\"\n\n[원문 확인](https://lore.kernel.org/bpf/20260617-f01-11-stack-nospec-slot-index-v1-1-e3a080b0cd7e@mails.tsinghua.edu.cn/)\n\n---\n\n**perf/core: Clear the whole branch entry in perf_clear_branch_entry()**\n\nnew_type·priv 필드가 perf_branch_entry에 추가됐으나 perf_clear_branch_entry_bitfields()에서 초기화되지 않아 사용자 공간 레코드에 커널 메모리 잔존 값이 노출됐으며, 구조체 전체를 복합 리터럴로 초기화하도록 수정되고 헬퍼 이름도 변경됐습니다.\n\n영향: perf 브랜치 샘플을 통한 커널 메모리 정보 누출 경로가 구조적으로 제거되고, 향후 필드 추가 시 수동 동기화를 빠뜨릴 위험도 함께 사라집니다.\n\n> \"new_type and priv were added to perf_branch_entry but never cleared here, so stale values can leak into the records handed to userspace.\"\n\n[원문 확인](https://lore.kernel.org/bpf/20260616155716.2631508-3-puranjay@kernel.org/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**lib/vsprintf: Validate spinlock context during restricted pointer formatting**\n\nrestricted_pointer()에 공유 fake LD_WAIT_CONFIG 스핀락 맵과 가드를 추가해, atomic·IRQ 컨텍스트에서의 %pK 오용을 PREEMPT_RT 환경에서도 lockdep이 감지할 수 있도록 했습니다. 단, 커널 테스트 로봇이 lockdep 위반을 보고해 패치는 현재 수정 중입니다(신뢰도: 중간).\n\n영향: 이 패치 자체는 %pK 출력을 바꾸지 않고 오용 탐지만 강화하는 디버그 주석이지만, has_capability_noaudit()이 스핀락을 취득하는 경로가 PREEMPT_RT에서 잠재적 문제임을 명시적으로 드러냅니다.\n\n> \"Add a lockdep annotation to unconditionally introduce a fake spinlock in restricted_pointer(), so lockdep can detect misuse even if the current test system configuration would not exhibit the issue.\"\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/ajEUClmHBPiiB4eC@pathway.suse.cz/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "HID: bpf: Fix hid_bpf_get_data() range check (cover letter)",
+      "url": "https://lore.kernel.org/bpf/cover.1781627122.git.chenyy23@mails.tsinghua.edu.cn/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Fix stack slot index in nospec checks (v1)",
+      "url": "https://lore.kernel.org/bpf/20260617-f01-11-stack-nospec-slot-index-v1-1-e3a080b0cd7e@mails.tsinghua.edu.cn/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Fix pointer-leak due to insufficient speculative store bypass mitigation (stable backport)",
+      "url": "https://lore.kernel.org/stable/20230130134339.748966275@linuxfoundation.org/",
+      "note": "thread"
+    },
+    {
+      "title": "perf/core: Clear the whole branch entry in perf_clear_branch_entry()",
+      "url": "https://lore.kernel.org/bpf/20260616155716.2631508-3-puranjay@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "lib/vsprintf: Validate spinlock context during restricted pointer formatting",
+      "url": "https://lore.kernel.org/linux-rt-devel/ajEUClmHBPiiB4eC@pathway.suse.cz/",
+      "note": "thread"
+    },
+    {
+      "title": "kernel test robot lockdep violation report (vsprintf patch)",
+      "url": "https://lore.kernel.org/all/202606110945.d3871219-lkp@intel.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-16T18:58:39.559Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

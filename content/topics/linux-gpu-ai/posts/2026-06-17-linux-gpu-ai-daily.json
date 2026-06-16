@@ -1,0 +1,118 @@
+{
+  "id": "2026-06-17-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-06-17 GPU 보안·회귀 4건 동시 — DRM/GPU·AI",
+  "headline": "DRM EDID 힙 OOB·v3d NULL 역참조 등 보안 결함 2건, TTM 절전 UAF·amdkfd SVM 회귀 수정 동시 제출",
+  "date": "2026-06-17",
+  "summary": "drm/edid DisplayID 파서의 힙 OOB 읽기와 drm/v3d 비특권 NULL 역참조가 보안 패치로 제출됐다. TTM bulk_move 절전 UAF(RFC)와 amdkfd SVM 정렬 회귀(Applied)도 병행 수정되어 amdgpu 안정성이 개선될 전망이다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "DRM",
+    "GPU",
+    "보안",
+    "amdgpu",
+    "fbdev"
+  ],
+  "highlights": [
+    {
+      "title": "drm/edid: DisplayID tiled 블록 힙 OOB 읽기",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "drm_edid/DisplayID 파서 및 EDID를 신뢰하지 않는 모든 KMS 드라이버 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260615184737.899892-1-xmei5@asu.edu/",
+      "if": "drm_parse_tiled_block() 패치가 미적용된 커널에서 EDID 주입 인터페이스(status_store)가 로컬 사용자에게 노출된 경우 악용 가능성을 점검한다.",
+      "do": "패치의 stable 큐 등록 여부를 추적하고, EDID 주입 경로의 접근 권한을 최소화한다.",
+      "verify": "KASAN 활성 환경에서 짧은 tiled 블록을 drm_edid_connector_update 경로에 주입하여 slab-out-of-bounds가 재현되지 않음을 확인한다."
+    },
+    {
+      "title": "drm/v3d: 비특권 클라이언트 NULL 역참조 로컬 DoS",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "drm/v3d(Broadcom/RPi GPU) 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260616070048.1590551-1-dlwognsdc610@gmail.com/",
+      "if": "라즈베리파이 등 v3d GPU 환경에서 로컬 비특권 사용자가 GPU 컨텍스트에 접근 가능하면 커널 oops 유발 가능성을 검토한다.",
+      "do": "해당 패치를 적용하고 stable Cc 여부를 확인해 배포판 커널 반영을 요청한다.",
+      "verify": "패치 적용 후 잘못된 indirect CSD 핸들로 ioctl을 호출했을 때 -ENOENT가 반환되고 oops가 발생하지 않는지 확인한다."
+    },
+    {
+      "title": "drm/ttm: hibernate 후 bulk_move cursor UAF (RFC)",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "TTM/amdgpu 메모리 관리 유지보수 담당 및 amdgpu + hibernate 사용자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260615234922.151263-1-skainsworth@gmail.com/",
+      "if": "Framework 13(AMD Ryzen 7040) 등 amdgpu + hibernate 조합 환경에서 resume 후 패닉이 발생한다면 이 패치를 우선 검토한다.",
+      "do": "RFC 상태이므로 머지 여부를 추적하고, CONFIG_DEBUG_LIST 활성 환경에서 hibernate/resume 사이클을 반복해 LRU 손상 재현 여부를 확인한다.",
+      "verify": "hibernate/resume 후 GEM close 경로에서 CONFIG_DEBUG_LIST BUG가 더 이상 발생하지 않음을 확인한다."
+    },
+    {
+      "title": "drm/amdkfd: SVM split 정렬 회귀 수정 (Applied)",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "amdkfd SVM/HMM 매핑 유지보수 담당 및 amdgpu compute 사용자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/CADnq5_PV0BF9RkrG7ZN-OBOr2YQ=TdtvknkuDpBnwqswLNiZBg@mail.gmail.com/",
+      "if": "448ee45353ef 이후 커널에서 2MB 경계 직전에 끝나는 SVM range를 사용하는 amdgpu compute 워크로드에서 PMD 매핑 누락이 의심된다면 이 수정을 적용한다.",
+      "do": "Alex Deucher가 Applied 처리했으므로 stable 백포트 큐 등록 여부를 추적하고 해당 커밋이 포함된 빌드로 업그레이드한다.",
+      "verify": "RX 7600 XT 환경에서 C/HSA 재현자를 실행해 통과 여부를 확인한다(인용 미검증 — 원문 재확인 권장)."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**fbdev: defio — 5.15 LTS 백포트 (upstream 9ded47ad003f)**\n\ndeferred I/O 상태를 새 struct fb_deferred_io_state로 분리해 fb_info 해제 후 활성 매핑 접근 시 SIGBUS로 처리하도록 5.15-stable 리뷰용으로 백포트됐다. kzalloc_obj() 대신 kzalloc(sizeof(*fbdefio_state), GFP_KERNEL)으로 치환됐다.\n\n영향: 장치 hot-unplug 시 유저스페이스가 그래픽 메모리 매핑을 유지한 채 fb_info가 해제되던 long-standing UAF성 결함을 5.15 LTS 운용 환경에서 차단한다.\n\n> \"Hold state of deferred I/O in struct fb_deferred_io_state... If the fb_info and the contained deferred I/O meanwhile goes away, clear struct fb_deferred_io_state.info to invalidate the mapping.\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260616145116.032660421@linuxfoundation.org/)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm/edid: drm_parse_tiled_block() 힙 OOB 읽기**\n\nDisplayID tiled 블록의 num_bytes를 검사하지 않고 고정 struct로 캐스팅해 정확한 크기로 kmemdup()된 EDID 할당 경계를 초과 읽던 문제를 길이 검사 후 거부하도록 수정했다. Fixes 40d9b043a89e.\n\n영향: 조작된 EDID(status_store 경로로 주입 가능)로 비신뢰 입력이 DRM 코어 전반에 KASAN slab-out-of-bounds를 유발하던 보안 경로가 차단된다.\n\n> \"The read then runs past the end of the exact-sized kmemdup()'d EDID allocation, a heap out-of-bounds read.\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260615184737.899892-1-xmei5@asu.edu/)\n\n---\n\n**drm/v3d: 잘못된 indirect CSD 핸들 NULL 역참조 DoS**\n\nv3d_get_cpu_indirect_csd_params()가 drm_gem_object_lookup() 실패 시 결과를 검사하지 않아 info->indirect에 NULL이 저장되고, CPU job 실행 중 역참조로 커널 oops를 일으키던 경로를 -ENOENT로 거부하도록 수정했다. Fixes 18b8413b25b7.\n\n영향: 비특권 클라이언트가 v3d GPU 환경(라즈베리파이 등)에서 임의로 커널 oops를 유발할 수 있는 로컬 DoS 경로가 제거된다.\n\n> \"when the CPU job runs, v3d_rewrite_csd_job_wg_counts_from_indirect() dereferences it ... and oopses the kernel. Any unprivileged client can trigger this.\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260616070048.1590551-1-dlwognsdc610@gmail.com/)\n\n---\n\n**drm/amdkfd: SVM split 정렬 회귀 — Alex Deucher Applied (인용 미검증)**\n\nprange->last(inclusive)를 exclusive 상한 prange->last+1로 교체해, 2MB 경계 직전에 끝나는 SVM range가 remap 목록에서 누락되던 448ee45353ef 도입 회귀를 수정했다. Cc stable, freedesktop gitlab work_item #4914 연결.\n\n영향: amdgpu compute에서 PMD 매핑이 누락돼 발생하던 SVM split 오동작이 해소될 것으로 추정되나, 인용 검증이 불완전하므로 원문 재확인을 권장한다.\n\n> \"Use prange->last + 1 as the exclusive upper bound when computing the original range's last 2MB-aligned boundary.\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/CADnq5_PV0BF9RkrG7ZN-OBOr2YQ=TdtvknkuDpBnwqswLNiZBg@mail.gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/ttm: bulk_move cursor UAF — amdgpu hibernate 패닉 수정 (RFC)**\n\nbulk_move LRU cursor에 추가된 resource가 pin/swap으로 unevictable이 된 후 ttm_resource_del_bulk_move()가 제거를 건너뛰어 dangling cursor가 남는 문제를 cursor 멤버십 명시 추적으로 수정하고, kunit 회귀 테스트를 추가했다.\n\n영향: Framework 13(AMD Ryzen 7040)에서 hibernate/resume 후 GEM close 경로(amdgpu_vm_bo_del→ttm_bo_set_bulk_move)에서 발생하던 CONFIG_DEBUG_LIST BUG 패닉을 차단한다. drm/amd issue #5387 연결. 제출자가 해당 영역 신규 기여자임을 명시했으므로 RFC 상태로 리뷰 중이다.\n\n> \"Once freed, the next allocation on that bulk_move dereferences the dangling cursor (use-after-free) and corrupts the LRU list, which CONFIG_DEBUG_LIST turns into a fatal BUG.\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260615234922.151263-1-skainsworth@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "중",
+    "note": "리서치 dossier의 출처를 근거로 작성했습니다. drm/amdkfd SVM 항목은 인용 검증 실패(verified: false)로 단정을 피하고 추정 표현을 사용했습니다. lore.kernel.org 자동 fetch 불가로 일부 Applied/stable 상태를 교차 확인하지 못했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "fbdev: defio 5.15 LTS 백포트 (upstream 9ded47ad003f)",
+      "url": "https://lore.kernel.org/dri-devel/20260616145116.032660421@linuxfoundation.org/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/edid: drm_parse_tiled_block() OOB read 수정",
+      "url": "https://lore.kernel.org/dri-devel/20260615184737.899892-1-xmei5@asu.edu/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/ttm: bulk_move cursor UAF RFC (kunit 포함)",
+      "url": "https://lore.kernel.org/dri-devel/20260615234922.151263-1-skainsworth@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/v3d: indirect CSD NULL 역참조 수정",
+      "url": "https://lore.kernel.org/dri-devel/20260616070048.1590551-1-dlwognsdc610@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/amdkfd: SVM split 정렬 회귀 Applied",
+      "url": "https://lore.kernel.org/dri-devel/CADnq5_PV0BF9RkrG7ZN-OBOr2YQ=TdtvknkuDpBnwqswLNiZBg@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "freedesktop gitlab drm/amd work_item #4914",
+      "url": "https://gitlab.freedesktop.org/drm/amd/-/work_items/4914",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-16T19:09:39.226Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
