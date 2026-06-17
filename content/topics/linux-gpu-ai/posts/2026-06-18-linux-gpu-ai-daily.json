@@ -1,0 +1,124 @@
+{
+  "id": "2026-06-18-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-06-18 DRM atomic API 개편 진행 중 — Linux GPU/AI",
+  "headline": "drm/bridge atomic_create_state 신규 콜백 추가, Xe SRCID 진단 강화·amdgpu RAS 잠재 버그 수정 등 DRM 전반 패치 동시 진행",
+  "date": "2026-06-18",
+  "summary": "drm/bridge에 atomic_create_state 콜백이 신설되면서 DRM atomic 상태 할당 패턴 표준화가 bridge까지 확산되고 있다. Intel Xe의 pagefault SRCID 노출, amdgpu UMC 미초기화 버그픽스, Panthor VA 격리 검사 추가 등 GPU 서브시스템 전반에서 안정성·진단 개선 패치가 동시에 진행 중이다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "DRM",
+    "GPU",
+    "Intel",
+    "AMD",
+    "Rockchip",
+    "Panthor"
+  ],
+  "highlights": [
+    {
+      "title": "drm/bridge atomic_create_state 신규 콜백 — atomic_reset 계약 분리",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "drm_bridge 드라이버 및 DRM atomic 코어 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/178171213663.312625.2294080557921796779.b4-review@b4/",
+      "if": "drm_bridge 드라이버에서 atomic_reset 콜백을 구현 중이라면",
+      "do": "atomic_create_state로의 마이그레이션 계획을 수립하고 상태 생성과 리셋 시맨틱을 분리할 것",
+      "verify": "패치 시리즈가 drm-misc-next에 머지됐는지 lore 스레드에서 확인할 것"
+    },
+    {
+      "title": "Intel Xe pagefault에 SRCID 추가 — UAPI xe_drm.h 변경",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Intel Xe 드라이버 및 GPU VM/pagefault 진단 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260617181849.769247-1-jonathan.cavitt@intel.com/",
+      "if": "Xe VM 폴트 진단 도구나 유저스페이스 라이브러리를 개발 중이라면",
+      "do": "xe_drm.h에 srcid 필드 추가를 확인하고 폴트 리포트 파싱 코드 업데이트를 준비할 것",
+      "verify": "v3 이후 리뷰 수락 및 머지 여부를 lore 스레드에서 확인할 것"
+    },
+    {
+      "title": "amdgpu UMC ret 미초기화 — ECC bad-page 경로 잠재 버그",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "amdgpu RAS/UMC 메모리 오류 경로 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/359d55b0-d1a6-494a-a9d3-9afce5c8c8d7@amd.com/",
+      "if": "amdgpu ECC/RAS 경로에서 불확실한 상태 반환 문제를 추적 중이라면",
+      "do": "루프 직전 ret 초기화 방식으로 변경된 v2 패치 제출 여부를 amd-gfx 목록에서 확인할 것",
+      "verify": "v2가 제출됐는지 확인하고 메인테이너 승인 여부를 점검할 것"
+    },
+    {
+      "title": "Panthor vm_bind 커널 VA 교차 검사 누락 — v1 설계 방향 변경 중",
+      "priority": "하",
+      "impactType": "runtime",
+      "affectedAudience": "Panthor(Arm Mali) MMU/vm_bind 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260617205003.07e4275e@fedora-2.home/",
+      "if": "Panthor vm_bind VA 격리 동작을 검증하거나 관련 코드를 유지보수 중이라면",
+      "do": "v2에서 user_va_end 단일 경계 검사 방식으로 바뀌는지 스레드를 추적할 것",
+      "verify": "이번 인용이 미검증(verified=false)이므로 lore 스레드 원문을 직접 확인할 것"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**amdgpu UMC error record fill에서 ret 변수 미초기화**\n\numc_v12_0_fill_error_record()에서 amdgpu_umc_lookup_bad_pages_in_a_row()가 0을 반환해 루프가 건너뛰어질 때 ret이 스택 잔여값 그대로 반환되던 잠재 버그를 ret=0 초기화로 수정하는 패치가 제출됐다.\n\n영향: ECC bad-page 경로에서 RAS 상태가 비결정적으로 보고될 수 있어 메모리 오류 처리 신뢰성에 영향을 미치며, 메인테이너가 선언부 초기화 대신 루프 직전 초기화를 요구해 v2 재작업이 필요한 상태다.\n\n> \"Initialize ret to 0 so the zero-page path reports a deterministic status instead of returning stack data.\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/359d55b0-d1a6-494a-a9d3-9afce5c8c8d7@amd.com/)\n\n---\n\n**Panthor vm_bind 커널 BO 예약 VA 교차 검사 누락**\n\nPanthor VM에서 커널 BO용으로 예약한 VA 영역에 유저스페이스 노출 BO의 vm_bind 매핑이 침범하지 못하도록 교차 검사를 추가하는 패치 v1이 제출됐으나, 메인테이너가 '유저 영역 포함 여부'로 검사하는 단순화 설계를 요구해 v2 방향이 변경 중이다.\n\n영향: 검사 부재 시 유저 모드가 커널 예약 VA를 매핑할 수 있어 VM 격리 안전성 위험이 존재하나, 이번 인용은 미검증(verified=false) 상태이므로 단정을 보류한다.\n\n> (원문 인용 미검증 — lore 스레드 직접 확인 필요)\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260617205003.07e4275e@fedora-2.home/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/bridge: atomic_create_state 신규 콜백 추가**\n\ndrm_bridge에 부작용 없이 pristine 상태만 할당·초기화하는 atomic_create_state 훅을 신설해 기존 atomic_reset의 '하드웨어 영향 여부 불명확' 문제를 해소하고 상태 생성과 리셋 계약을 분리한다. drm_private_obj에 먼저 도입된 패턴(47b5ac7daa46)을 bridge로 확장하는 흐름이다.\n\n영향: bridge 드라이버 유지보수자는 atomic_reset 구현을 새 콜백으로 마이그레이션해야 하며, msm·amdgpu·omap·tegra 등 여러 드라이버에 이미 확산 중인 패턴과 정렬된다.\n\n> \"the reset name does not make this contract clear: callers and implementers cannot tell from the name alone whether the hardware will be affected or when the hook is safe to call.\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/178171213663.312625.2294080557921796779.b4-review@b4/)\n\n---\n\n**drm/xe: pagefault 보고에 SRCID 추가 — UAPI xe_drm.h 변경**\n\nxe_pagefault 구조체에 폴트를 일으킨 HW 유닛 ID(SRCID)를 추가하고 xe_vm_get_property_ioctl의 per-VM 폴트 리포트로 유저스페이스에 노출한다. include/uapi/drm/xe_drm.h가 변경되어 UAPI 수준에서 srcid 정보가 공개된다.\n\n영향: Xe VM 폴트 진단 도구 및 유저스페이스 라이브러리가 UAPI 변경을 반영해야 하며, 어느 HW 유닛이 폴트를 발생시켰는지 식별할 수 있어 GPU 폴트 진단 효율이 개선된다.\n\n> \"Add SRCID to the xe_pagefault struct, which reports the ID of the faulting hardware unit. This will be passed on to the xe_vm_get_property_ioctl for reading per-vm faults and will assist in diagnosing\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260617181849.769247-1-jonathan.cavitt@intel.com/)\n\n---\n\n**drm/rockchip: DW HDMI QP에 10-bit YUV 4:2:2·4:2:0 출력 지원 추가**\n\nRockchip DW HDMI QP 컨트롤러의 출력 색포맷을 10-bit YUV 4:2:2 및 8/10-bit YUV 4:2:0까지 확장하고, RGB↔YUV 전환 시 발생하는 글리치·복구 문제와 10-bit YUV 4:2:2에서 잘못된 DCLK 소스 전환을 함께 수정한다.\n\n영향: RK3588/RK3576 기반 임베디드 시스템에서 4K@60Hz YUV 4:2:0 출력이 가능해지나, Rockchip Samsung HDPTX PHY clk-fixes v4 시리즈에 런타임 의존하므로 해당 시리즈 머지 여부를 먼저 확인해야 한다.\n\n> \"extends the output color format support of the Rockchip DW HDMI QP controller to cover 10-bit YUV 4:2:2 and 8/10-bit YUV 4:2:0. ... has a runtime dependency on the Rockchip Samsung HDPTX PHY driver bu\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260617-dw-hdmi-qp-yuv-v1-0-a665cfd06d7d@collabora.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "medium",
+    "note": "리서치 dossier의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/xe/pagefault: Add SRCID to pagefault reporting",
+      "url": "https://lore.kernel.org/dri-devel/20260617181849.769247-1-jonathan.cavitt@intel.com/",
+      "note": "thread"
+    },
+    {
+      "title": "xe_vm_get_property_ioctl — per-VM 폴트 50개 보고 구현",
+      "url": "https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg538796.html",
+      "note": "thread"
+    },
+    {
+      "title": "drm/bridge: Add new atomic_create_state callback",
+      "url": "https://lore.kernel.org/dri-devel/178171213663.312625.2294080557921796779.b4-review@b4/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/atomic: Allocate drm_private_state through a callback (amdgpu·msm 확산)",
+      "url": "https://www.mail-archive.com/amd-gfx@lists.freedesktop.org/msg129800.html",
+      "note": "thread"
+    },
+    {
+      "title": "drm/amdgpu: initialize ret in UMC error record fill",
+      "url": "https://lore.kernel.org/dri-devel/359d55b0-d1a6-494a-a9d3-9afce5c8c8d7@amd.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/panthor: Add vm_bind region with kbo range intersection check",
+      "url": "https://lore.kernel.org/dri-devel/20260617205003.07e4275e@fedora-2.home/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/rockchip: Support 10-bit YUV422 and 8/10-bit YUV420 on DW HDMI QP",
+      "url": "https://lore.kernel.org/dri-devel/20260617-dw-hdmi-qp-yuv-v1-0-a665cfd06d7d@collabora.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-17T19:10:21.530Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

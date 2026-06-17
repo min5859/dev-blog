@@ -1,0 +1,132 @@
+{
+  "id": "2026-06-18-linux-daily-briefing",
+  "topic": "linux",
+  "title": "2026-06-18 스케줄러 최적화·LTS 보안 백포트 — 리눅스 개발",
+  "headline": "6.12 LTS에 메모리 봉인·스택 오버플로 등 보안 수정 310건이 백포트됐고, 스케줄러 PSI 최적화 패치 두 건이 새로 제출됐습니다.",
+  "date": "2026-06-18",
+  "summary": "6.12.93 LTS에 memfd 봉인·act_mirred 스택 오버플로·iSCSI double-free 등 보안성 수정이 포함된 310건의 백포트가 배포돼 장기 운영 환경에서 즉시 적용이 권장됩니다. 스케줄러 PSI irqtime delta==0 early-return 최적화와 미사용 schedstats 필드 제거 패치가 새로 제출됐으며, 메인테이너 검토 결과를 주시할 필요가 있습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "LTS",
+    "스케줄러",
+    "PSI",
+    "백포트"
+  ],
+  "highlights": [
+    {
+      "title": "6.12.93 LTS — 보안·안정성 310건 백포트",
+      "priority": "상",
+      "impactType": "backport",
+      "affectedAudience": "6.12 LTS를 장기 운영하는 임베디드·엔터프라이즈 배포 담당자",
+      "verifyLink": "https://www.phoronix.com/news/Linux-6.18-LTS-6.12-6.6-Extend",
+      "if": "6.12 LTS 커널을 프로덕션에서 운영 중이라면 주목하세요.",
+      "do": "6.12.93으로 업데이트하고 memfd seal·act_mirred·iSCSI 관련 수정이 포함됐는지 변경 목록을 검토하세요.",
+      "verify": "git.kernel.org/stable/h/v6.12.93 또는 배포판 업스트림 트래커에서 백포트 포함 여부를 직접 확인하세요."
+    },
+    {
+      "title": "sched/psi: irqtime delta==0 early-return 최적화 (신규)",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "고코어 수 서버에서 cgroup PSI를 켜고 컨텍스트 스위치가 잦은 워크로드 운영자",
+      "verifyLink": "https://lore.kernel.org/lkml/20260617175219.2494857-1-usama.arif@linux.dev/",
+      "if": "고코어 서버에서 cgroup PSI를 활성화한 워크로드를 운영 중이라면 확인하세요.",
+      "do": "패치가 머지되면 컨텍스트 스위치 핫패스 부담 감소를 perf stat으로 측정하고 비교해 보세요.",
+      "verify": "lore.kernel.org 스레드에서 메인테이너 수락 여부와 Acked-by 기록을 확인하세요."
+    },
+    {
+      "title": "sched/debug: 미사용 schedstats 필드 3개 제거 (신규)",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "스케줄러 통계(/proc sched debug)를 파싱하는 모니터링 도구 개발자",
+      "verifyLink": "https://lore.kernel.org/lkml/20260617174139.155540-2-sshegde@linux.ibm.com/",
+      "if": "/proc/sched_debug 또는 sched 통계를 파싱하는 모니터링 도구를 관리한다면 확인하세요.",
+      "do": "도구 코드에서 nr_migrations_cold·nr_wakeups_passive·nr_wakeups_idle 필드 참조를 제거하세요.",
+      "verify": "패치 머지 후 /proc/sched_debug 출력에서 해당 필드가 사라졌는지 직접 확인하세요."
+    },
+    {
+      "title": "7.0.12 stable — 333건 백포트",
+      "priority": "하",
+      "impactType": "backport",
+      "affectedAudience": "7.0 stable 커널을 추적하는 배포·운영 담당자",
+      "verifyLink": "https://git.kernel.org/stable/h/v7.0.12",
+      "if": "7.0 stable 커널을 추적 중이라면 업데이트를 검토하세요.",
+      "do": "serial 콘솔 락업·KVM arm64·USB 수정 포함 여부를 변경 목록에서 확인하세요.",
+      "verify": "git.kernel.org/stable/h/v7.0.12에서 관련 백포트를 직접 확인하세요(원문 열람 권장)."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.1 mainline (어제 이후 진척 없음)**\n\n2026-06-14 Linus Torvalds가 정식 릴리스한 7.1에 대해 오늘 추가 진척은 확인되지 않았습니다. NTFS 재작성(완전한 쓰기 지원 + iomap 인프라)과 Intel FRED 기본 활성화가 핵심 변경으로, 파일시스템·x86 예외 처리 경로 검증이 필요한 단계입니다.\n\n> Linux 7.1 Released: New NTFS Driver, Intel FRED For Panther Lake, Faster Arc Graphics\n\n[원문 확인](https://www.phoronix.com/news/Linux-7.1-Released)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**sched/psi: irq delta==0일 때 irqtime 계산 건너뛰기 (신규)**\n\npsi_account_irqtime()이 delta가 0일 때도 seqcount write·cpu_clock() 읽기·cgroup 조상 체인 순회를 수행하던 낭비 경로를 delta==0 early-return으로 건너뜁니다.\n\n영향: 176스레드 AMD EPYC 30초 측정 기준 전체 호출의 15.6%(early-return 이후 29.7%, 약 89k calls/sec)가 delta==0 낭비 경로였습니다. 고코어 멀티코어 + cgroup PSI 환경의 컨텍스트 스위치 핫패스 부담이 줄어들 것으로 보입니다(confidence: medium — 메인테이너 수락 여부 미확인).\n\n> 15.6 % of all psi_account_irqtime() calls -- and 29.7 % of the calls that get past the early returns -- hit the delta == 0 case. ... Extend the early-return to also cover delta == 0.\n\n[원문 확인](https://lore.kernel.org/lkml/20260617175219.2494857-1-usama.arif@linux.dev/)\n\n---\n\n**sched/debug: 미사용 schedstats 필드 3개 제거 (신규)**\n\nnr_migrations_cold, nr_wakeups_passive, nr_wakeups_idle 세 필드를 sched_statistics 구조체와 sched debug 출력에서 제거합니다. 갱신 경로가 전혀 없으므로 schedstat 버전은 올리지 않습니다.\n\n영향: 해당 통계를 파싱하는 모니터링 도구가 있다면 출력 레이아웃 변화를 미리 인지해야 합니다. 메인테이너 응답·머지 여부는 아직 미확인입니다.\n\n> nr_migrations_cold, nr_wakeups_passive and nr_wakeups_idle are not being updated anywhere. So remove them. These are per process stats. So updating sched stats version isn't necessary.\n\n[원문 확인](https://lore.kernel.org/lkml/20260617174139.155540-2-sshegde@linux.ibm.com/)\n\n---\n\n**Linux 6.12.93 LTS — 보안·안정성 310건 백포트**\n\n6.12 LTS에 310건이 백포트됐습니다. memfd SEAL_WRITE 암시 시 쓰기 가능 매핑 거부, net/sched act_mirred blockcast 재귀로 인한 스택 오버플로 수정, iSCSI iscsit_handle_text_cmd() CRC overread 및 double-free 수정, thunderbolt 속성 파서 재귀 깊이 제한, mptcp 일련의 수정이 포함됩니다.\n\n영향: 6.12는 2028년까지 지원이 연장된 LTS 시리즈로 보안성 수정이 다수 포함돼 장기 운영 환경에서 우선 적용 대상입니다(confidence: medium, git.kernel.org 태그 직접 열람 불가 — 원문 확인 권장).\n\n> Linux 6.18 LTS / 6.12 LTS / 6.6 LTS Support Periods Extended\n\n[원문 확인](https://www.phoronix.com/news/Linux-6.18-LTS-6.12-6.6-Extend)\n\n---\n\n**Linux 7.0.12 stable — 333건 백포트**\n\n7.0 stable에 333건이 백포트됐습니다. KVM arm64 nested MMU 재할당·vgic-its 캐시 참조 수정, USB SuperSpeed root hub wMaxPacketSize, 8250/zs/dz serial 콘솔 핸드오버 락업, drm/amdgpu, rxrpc RESPONSE 패킷 검증이 포함되며 hugetlbfs mmap_prepare 변경을 되돌립니다.\n\n영향: serial 콘솔 락업·KVM arm64·USB 등 광범위 서브시스템을 건드리며 hugetlbfs revert는 회귀 대응 성격입니다(confidence: low — 전체 333건 중 일부만 확인, 원문 확인 권장).\n\n> Revert \"mm/hugetlbfs: update hugetlbfs to use mmap_prepare\"\n\n[원문 확인](https://git.kernel.org/stable/h/v7.0.12)"
+    },
+    {
+      "heading": "기타",
+      "body": "linux-next(next-20260616) 일일 통합 스냅샷은 특정 변경 및 changelog를 식별할 수 없고 원문도 열람 불가하여 이번 수집에서 제외됐습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Linux 7.1 Released: New NTFS Driver, Intel FRED For Panther Lake, Faster Arc Graphics",
+      "url": "https://www.phoronix.com/news/Linux-7.1-Released",
+      "note": "article"
+    },
+    {
+      "title": "Linux Kernel 7.1 Released with Rewritten NTFS Support",
+      "url": "https://linuxiac.com/linux-kernel-7-1-released-with-rewritten-ntfs-support/",
+      "note": "article"
+    },
+    {
+      "title": "sched/debug: Remove unused schedstats (Shrikanth Hegde, 2026-06-17)",
+      "url": "https://lore.kernel.org/lkml/20260617174139.155540-2-sshegde@linux.ibm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "[RFC PATCH v4 04/17] sched/debug: Remove unused schedstats",
+      "url": "https://lkml.org/lkml/2025/11/19/301",
+      "note": "thread"
+    },
+    {
+      "title": "sched/psi: skip irqtime accounting when delta is zero (Usama Arif, 2026-06-17)",
+      "url": "https://lore.kernel.org/lkml/20260617175219.2494857-1-usama.arif@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "[PATCH] psi: update psi irqtime when the irq delta is nonzero",
+      "url": "https://lkml.iu.edu/hypermail/linux/kernel/2308.1/03787.html",
+      "note": "thread"
+    },
+    {
+      "title": "Linux 7.0.12 stable changelog",
+      "url": "https://git.kernel.org/stable/h/v7.0.12",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 6.12.93 LTS changelog",
+      "url": "https://git.kernel.org/stable/h/v6.12.93",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 6.18 LTS / 6.12 LTS / 6.6 LTS Support Periods Extended",
+      "url": "https://www.phoronix.com/news/Linux-6.18-LTS-6.12-6.6-Extend",
+      "note": "article"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-17T18:02:50.855Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-newsletter-from-dossier-ko.md"
+  }
+}

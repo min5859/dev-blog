@@ -1,0 +1,78 @@
+{
+  "id": "2026-06-18-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-06-18 Rust DRM UAF 차단 패치 — linux-toolchain",
+  "headline": "Rust DRM hot-unplug 경로 UAF 차단 패치 제안, 임베디드 bootconfig cmdline 빌드타임 prepend v5 공개",
+  "date": "2026-06-18",
+  "summary": "Rust DRM의 Registration::drop이 drm_dev_unplug()로 교체돼 hot-removable 장치 분리 시 use-after-free를 차단하는 패치가 제안됐다. 임베디드 bootconfig의 kernel.* 서브트리를 빌드 타임에 평탄화해 early_param 전에 주입하는 v5 시리즈도 함께 공개됐다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "Rust",
+    "DRM",
+    "보안",
+    "bootconfig",
+    "toolchain"
+  ],
+  "highlights": [
+    {
+      "title": "Rust DRM hot-unplug UAF 차단",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "Rust DRM 드라이버 및 DRM core hot-unplug 경로 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260617150303.2259-1-mike@fireburn.co.uk/",
+      "if": "USB dock 등 hot-removable DRM 장치를 Rust 드라이버로 관리하고 있다면",
+      "do": "이 패치가 drm-rust 또는 drm-misc 트리에 머지되는지 lore 스레드를 추적한다",
+      "verify": "머지 후 drm_dev_unplug 심볼을 grep해 Rust 바인딩이 C 경로와 일관성을 유지하는지 확인한다"
+    },
+    {
+      "title": "임베디드 bootconfig cmdline 빌드타임 prepend v5",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "임베디드 bootconfig 사용자 및 early boot cmdline 파싱 경로 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20260617-bootconfig_using_tools-v5-0-fd589a9cc5e3@debian.org/",
+      "if": "임베디드 bootconfig의 kernel.*에 early_param 의존 설정(미티게이션 토글 등)을 넣고 있다면",
+      "do": "v5 시리즈의 setup_arch() 변경이 자신의 아키텍처를 커버하는지 패치 diff를 직접 확인한다",
+      "verify": "빌드 후 boot_command_line 덤프로 prepend 순서가 기대대로인지 검증한다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**rust: drm: unplug the device on Registration drop**\n\nRust DRM의 Registration::drop이 drm_dev_unregister() 대신 hot-unplug-safe 상위 집합인 drm_dev_unplug()를 호출하도록 교체돼 보류된 fd의 UAF를 차단한다.\n\n영향: USB dock 등 hot-removable 버스에서 컴포지터가 card/render 노드를 연 채로 장치가 사라질 때 발생하던 use-after-free를 SRCU 기반 동기화로 봉쇄해, ioctl/mmap 경로가 -ENODEV를 안전하게 반환하도록 보장한다. 대상 트리(drm-rust vs drm-misc) 및 안정 트리 백포트 여부는 아직 확인 필요.\n\n> \"Use `drm_dev_unplug()` instead: the hot-unplug-safe superset. It sets `dev->unplugged` (so the DRM ioctl/mmap paths return -ENODEV to held fds)\"\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260617150303.2259-1-mike@fireburn.co.uk/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**bootconfig: embed kernel.* cmdline at build time**\n\n임베디드 bootconfig의 kernel.* 서브트리를 빌드 타임에 평탄화한 문자열로 .init.rodata에 저장하고, setup_arch()가 parse_early_param() 실행 전에 boot_command_line 앞에 prepend 한다.\n\n영향: 기존에는 early_param 핸들러가 임베디드 bootconfig 값을 볼 수 없었으나 이 변경으로 CONFIG_CMDLINE과 동등한 효과를 제공한다. 오버플로 시 panic 대신 로그만 남겨 과대 bconf로 인한 부팅 불능을 방지한다. v5 시리즈는 머지 전 단계이며 커버 아키텍처 범위는 확인 필요.\n\n> \"Overflow is a soft error: the helper logs and leaves boot_command_line untouched rather than panicking, so an oversized embedded bconf cannot brick a boot.\"\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20260617-bootconfig_using_tools-v5-0-fd589a9cc5e3@debian.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "medium",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "rust: drm: unplug the device on Registration drop",
+      "url": "https://lore.kernel.org/rust-for-linux/20260617150303.2259-1-mike@fireburn.co.uk/",
+      "note": "thread"
+    },
+    {
+      "title": "bootconfig: embed kernel.* cmdline at build time (v5)",
+      "url": "https://lore.kernel.org/linux-kbuild/20260617-bootconfig_using_tools-v5-0-fd589a9cc5e3@debian.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-17T18:44:10.190Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
