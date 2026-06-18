@@ -1,0 +1,124 @@
+{
+  "id": "2026-06-19-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-06-19 drm 회귀·WQ 경고 수정 — Linux GPU/AI",
+  "headline": "fb_helper CRTC 하드코딩 회귀 수정 제안, amdgpu WQ 이름 패치 머지; TTM API 리네이밍·i915 VRR 확장 검토 중",
+  "date": "2026-06-19",
+  "summary": "drm fb_helper의 CRTC 인덱스 0 하드코딩 회귀가 수정 제안됐으며, amdgpu 워크큐 이름 초과 경고 패치(e498c7d6a603)가 머지됐다. TTM 배치 API 리네이밍과 i915 VRR 리프레시 확장, Renesas dual-DSI 패널 드라이버가 리뷰 진행 중이다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "DRM",
+    "GPU",
+    "amdgpu",
+    "i915",
+    "TTM",
+    "fbdev"
+  ],
+  "highlights": [
+    {
+      "title": "fb_helper vblank 타임아웃 회귀: CRTC 0 하드코딩 수정 제안",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "drm fb_helper/fbdev 에뮬레이션 및 omapdrm 등 다중 CRTC 드라이버 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/5118b37e579cec220f2d2b6ab0bb1ecfb67f0d5c.1781803617.git.hns@goldelico.com/",
+      "if": "비-CRTC0 출력 환경(omapdrm HDMI=CRTC1만 연결 등)에서 부팅 후 콘솔 로그가 vblank timeout 경고로 도배되면",
+      "do": "drm_fb_helper_fb_dirty() 패치 적용 여부를 확인하고 활성 CRTC 매핑 경로를 추적한다",
+      "verify": "dmesg에서 'vblank wait timed out on crtc 0' 메시지가 사라졌는지 확인한다"
+    },
+    {
+      "title": "amdgpu WQ 이름 단축 패치 머지 — 숨겨진 NULL 역참조 이슈 별도 지적",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "amdgpu/amdgpu_dm 디스플레이 드라이버 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260618170132.3882C1F00A3A@smtp.kernel.org/",
+      "if": "FRL 지원 amdgpu 시스템에서 부팅 경고 해소 후에도 워크큐 할당 실패 경로가 존재할 것으로 의심되면",
+      "do": "커밋 e498c7d6a603 이후 워크큐 할당 실패 시 NULL 역참조·UAF 처리 후속 패치를 dri-devel에서 추적한다",
+      "verify": "amdgpu 드라이버 로드/언로드 사이클에서 NULL 역참조나 메모리 릭이 보고되지 않는지 확인한다"
+    },
+    {
+      "title": "TTM ttm_place::fpfn/lpfn → param1/param2 트리 전역 API 리네이밍 제안",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "TTM 코어 및 이를 사용하는 GPU 드라이버(out-of-tree 포함) 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/1544040a-578f-41b0-9660-5a6f470f031f@ursulin.net/",
+      "if": "트리 전역 리네이밍이 머지되면 out-of-tree TTM 드라이버의 소스 호환성이 깨질 것으로 예상되면",
+      "do": "fpfn/lpfn 참조 코드를 param1/param2로 사전에 교체할 준비를 한다",
+      "verify": "mainline include/drm/ttm/ttm_placement.h에 param1/param2 변경이 실제 적용됐는지 확인한다"
+    },
+    {
+      "title": "i915 eDP VRR 범위 내 임의 리프레시 레이트 모드셋 지원 논의",
+      "priority": "하",
+      "impactType": "runtime",
+      "affectedAudience": "i915 디스플레이/VRR 및 eDP 패널 관련 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/ajQ7W44qv28-i6Pq@intel.com/",
+      "if": "VRR 지원 내장 eDP 패널에서 모드 리스트 외 리프레시 레이트가 필요한 경우가 생기면",
+      "do": "관련 패치 시리즈 진행 상황을 dri-devel 목록에서 계속 추적한다",
+      "verify": "머지 후 VRR 범위 내 임의 리프레시 모드셋이 blink 없이 성공하는지 확인한다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm/fb_helper: drm_fb_helper_fb_dirty() 내 CRTC 인덱스 하드코딩 회귀 수정**\n\ndrm_client_modeset_wait_for_vblank() 호출 시 crtc_index가 0으로 고정되어 있던 것을 실제 활성 CRTC를 탐색해 사용하도록 수정하는 패치가 제출됐다. 다중 CRTC 매칭 시 마지막 활성 CRTC를 사용하고, 매칭이 없으면 vblank 대기를 건너뛴다.\n\n영향: CRTC 0이 비활성인 구성(omapdrm PandaBoard-ES에서 HDMI=CRTC1만 연결)에서 콘솔이 vblank timeout 경고로 도배되던 회귀를 해소하며, fbdev 에뮬레이션을 쓰는 비-CRTC0 출력 환경 전반에 영향을 미친다.\n\n> \"the console is flooded with vblank timeout warnings ... vblank wait timed out on crtc 0 ... The root cause is the hardcoded crtc_index = 0. Fixes: d8c4bddcd8bcb\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/5118b37e579cec220f2d2b6ab0bb1ecfb67f0d5c.1781803617.git.hns@goldelico.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/amd/display: hdmi_frl_status_polling_workqueue 이름 단축 패치 머지**\n\namdgpu_dm 초기화 시 WQ_NAME_LEN을 초과하던 워크큐 이름을 \"hdmi_frl_status_polling_wq\"로 단축한 패치(커밋 e498c7d6a603, Nathan Chancellor)가 머지됐다.\n\n영향: FRL 지원 amdgpu 시스템 부팅 시 출력되던 'name exceeds WQ_NAME_LEN' 경고가 제거된다. 그러나 자동 리뷰가 워크큐 할당 실패 시 NULL 역참조·언로드 시 leak/UAF 가능성을 선재 이슈로 별도 지적해 후속 대응이 필요하다.\n\n> \"workqueue: name exceeds WQ_NAME_LEN. Truncating to: hdmi_frl_status_polling_workque ... Missing error handling for `hdmi_frl_status_polling_wq` allocation failure ... leading to a NULL pointer dereference when the workqueue is used.\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260618170132.3882C1F00A3A@smtp.kernel.org/)\n\n---\n\n**drm/ttm: ttm_place::fpfn/lpfn → param1/param2 API 리네이밍 제안 (미머지, 검토 중)**\n\nstruct ttm_place의 fpfn/lpfn 필드를 의미 중립적인 param1/param2로 개명하고 해석을 백엔드 정의로 문서화하는 트리 전역 변경이 제안됐다. amdgpu·i915·nouveau·radeon·qxl·loongson 등 다수 드라이버가 영향권이며, VRAM range manager 동작은 변화 없다(NFC). 현재 mainline에는 미반영 상태다.\n\n영향: PFN 특화 의미에서 API를 분리해 향후 mask 기반·segment-aware 배치 제약을 가능케 하지만, 머지 시 out-of-tree TTM 드라이버의 소스 호환성이 깨질 수 있다. 머지 일정은 확인 필요.\n\n> \"Rename them to the generic param1/param2 and document that their interpretation is backend-defined ... No functional change. Suggested-by: Christian König\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/1544040a-578f-41b0-9660-5a6f470f031f@ursulin.net/)\n\n---\n\n**drm/i915: eDP 내장 패널에서 VRR 범위 내 임의 리프레시 레이트 모드셋 지원 논의 (검토 중)**\n\ni915가 내장 eDP 패널에서 VRR을 활용해 VRR 범위 내 임의 리프레시 레이트 변경을 허용하는 패치/논의가 진행 중이다. 비-VRR 패널은 기존처럼 ±1Hz 이내 매칭만 허용하며, blink 없이 달성 불가 시 commit을 거부하는 안전장치도 검토됐다.\n\n영향: 랩톱 내장 패널에서 모드 리스트에 없는 리프레시도 VRR 범위 내라면 모드셋으로 적용 가능해진다. 패치 시리즈 최종 동작은 머지 여부 확인 필요.\n\n> \"Without VRR support it can only expect modes that have the same refresh rate as one of the modes on the connector's mode list to work. With VRR support anything within the VRR range should generally w\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/ajQ7W44qv28-i6Pq@intel.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "**drm/panel: Renesas R63419 기반 dual-DSI video mode 패널 드라이버 신규 제출 (검토 중)**\n\nAyaneo 게이밍 핸드헬드에 쓰이는 Renesas R63419 기반 dual-DSI 패널용 신규 드라이버가 제출됐다. 리뷰에서 커스텀 dsi_link_switch() 대신 공용 mipi_dsi_dual() 헬퍼 사용 및 disable 경로의 반환값 처리가 지적됐다.\n\n영향: 신규 핸드헬드 하드웨어 지원이 추가될 예정이며, dual-DSI 패널 드라이버 작성 시 mipi_dsi_dual() 패턴을 따르라는 선례가 형성되고 있다. 후속 버전 제출 및 머지 여부는 확인 필요.\n\n> \"Implement support for the Renesas 63419 based dual-DSI video mode Display Panels found in the Ayaneo gaming handled devices. ... can't you use the mipi_dsi_dual() function?\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/CAD=FV=W5FgXGznH1+SA74WOfAUXaAggaJi=ds8udqZ69K3i=Ow@mail.gmail.com/)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/amd/display: Shorten hdmi_frl_status_polling_workqueue (패치 스레드)",
+      "url": "https://lore.kernel.org/dri-devel/20260618-amdgpu-fix-wq_name_len-warning-v2-1-ef0e2e6f5be7@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "amdgpu WQ 패치 머지 알림 및 선재 이슈 자동 리뷰 (commit e498c7d6a603)",
+      "url": "https://lore.kernel.org/dri-devel/20260618170132.3882C1F00A3A@smtp.kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/fb_helper: Determine proper crtc_index within drm_fb_helper_fb_dirty",
+      "url": "https://lore.kernel.org/dri-devel/5118b37e579cec220f2d2b6ab0bb1ecfb67f0d5c.1781803617.git.hns@goldelico.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/ttm: rename ttm_place::fpfn/lpfn to param1/param2",
+      "url": "https://lore.kernel.org/dri-devel/1544040a-578f-41b0-9660-5a6f470f031f@ursulin.net/",
+      "note": "thread"
+    },
+    {
+      "title": "ttm_placement.h mainline 현황 (fpfn/lpfn 여전히 존재 확인)",
+      "url": "https://github.com/torvalds/linux/blob/master/include/drm/ttm/ttm_placement.h",
+      "note": "commit"
+    },
+    {
+      "title": "drm/i915: VRR based refresh rate changes on eDP 논의",
+      "url": "https://lore.kernel.org/dri-devel/ajQ7W44qv28-i6Pq@intel.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/panel: Renesas R63419 dual-DSI 패널 드라이버 리뷰",
+      "url": "https://lore.kernel.org/dri-devel/CAD=FV=W5FgXGznH1+SA74WOfAUXaAggaJi=ds8udqZ69K3i=Ow@mail.gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-18T19:11:25.408Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

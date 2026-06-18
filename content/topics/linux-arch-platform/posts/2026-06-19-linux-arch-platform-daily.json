@@ -1,0 +1,119 @@
+{
+  "id": "2026-06-19-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-06-19 arm64 병렬 CPU 부팅 도입 — linux-arch-platform",
+  "headline": "arm64 HOTPLUG_PARALLEL RFC 등장·DVMSync 에라타 회귀 수정·RISC-V IOMMU 32-bit 접근 논의",
+  "date": "2026-06-19",
+  "summary": "arm64에 병렬 secondary CPU 부팅을 도입하는 RFC 패치가 올라왔으며, 128 vCPU KVM 환경에서 부팅 시간이 절반 이하로 줄었다고 보고됐습니다. 한편 C1-Pro SME DVMSync 에라타 워크어라운드가 kswapd 성능 회귀를 유발해 수정 패치가 제출됐고, RISC-V IOMMU 64-bit 레지스터의 원자성 부재 문제도 제기됐습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "arm64",
+    "RISC-V",
+    "Rust",
+    "CPU핫플러그",
+    "IOMMU",
+    "SME"
+  ],
+  "highlights": [
+    {
+      "title": "arm64 HOTPLUG_PARALLEL RFC — 대규모 vCPU 부팅 시간 절반 단축",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "arm64 SMP/CPU hotplug 및 부팅 경로 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/ajPitENEHWa8lDfC@willie-the-truck/",
+      "if": "arm64 SMP 부팅 경로나 vCPU 스케일링을 추적한다면",
+      "do": "RFC 스레드를 검토하고 secondary_data per-CPU 배열 전환 및 arch_cpuhp_kick_ap_alive() 구현을 파악해 두기를 권장합니다.",
+      "verify": "QEMU virt KVM 환경에서 128 vCPU 기준 부팅 시간이 155 초 수준에서 62 초 이하로 줄었는지 측정값을 원문에서 직접 확인하세요."
+    },
+    {
+      "title": "arm64 DVMSync 에라타 수정 — kswapd 회귀 복원·IPI DoS 완화 일부 해제",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "arm64 TLB/메모리 reclaim 및 SME 에라타 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/ajQivugZfBzG4X2I@willie-the-truck/",
+      "if": "C1-Pro SME 에라타 또는 kswapd 성능을 추적한다면",
+      "do": "sme_active_cpus 마스크 도입 패치를 리뷰하고, TLB 배칭 케이스에서 IPI 기반 DoS 완화가 부분 해제된다는 트레이드오프를 숙지하세요.",
+      "verify": "Will Deacon이 요청한 Tested-by가 스레드에 달렸는지 원문에서 확인하세요."
+    },
+    {
+      "title": "RISC-V IOMMU 64-bit 레지스터 원자성 부재 — 32-bit 폴백 제안",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "RISC-V IOMMU 드라이버 및 아키텍처 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/CAJF2gTQqnpHPrE-df_kDZ-Y9g7sSfTQco3jKKnDzkuJfOEKmxQ@mail.gmail.com/",
+      "if": "RISC-V IOMMU 드라이버 또는 성능 카운터 읽기 경로를 담당한다면",
+      "do": "스펙 6장의 atomicity UNSPECIFIED 항목을 확인하고, 64-bit 레지스터 읽기 시 32-bit 폴백 패턴 적용 범위(카운터 한정 또는 전체 레지스터) 논의를 추적하세요.",
+      "verify": "David Laight의 seqlock 스타일 읽기 패턴 제안이 채택됐는지 리뷰 스레드에서 확인하세요."
+    },
+    {
+      "title": "Rust 드라이버 ID 정보 포인터 전환 — driver.rs ACPI/OF open-code 제거",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust 커널 드라이버 모델/추상화 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260618-id_info-v1-0-96af1e559ef9@garyguo.net/",
+      "if": "Rust 플랫폼·ACPI·OF 드라이버를 작성하거나 driver.rs API를 추적한다면",
+      "do": "10개 패치 시리즈를 검토하고 driver_data 표현 방식이 인덱스에서 정적 참조(static reference)로 바뀌는 인터페이스 변경을 확인하세요.",
+      "verify": "v1 패치 각각의 리뷰 상태와 머지 타깃 트리를 원문 스레드에서 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**arm64: C1-Pro SME DVMSync 에라타 — kswapd 회귀 수정 패치 제출**\n\nCatalin Marinas가 기존 DVMSync 워크어라운드의 배치 TLBI마다 DSB를 강제하던 방식을 철회하고, EL0에서 SME를 활성화한 CPU를 추적하는 sme_active_cpus 마스크를 도입해 flush 시점에만 배리어를 거는 패치를 제출했습니다.\n\n영향: kswapd 경로의 성능 회귀를 복원하지만, TLB 배칭 케이스에 한해 IPI 기반 DoS 완화(Sashiko 보고)를 부분적으로 해제하는 트레이드오프가 있으며, Will Deacon은 성능 검증자의 Tested-by를 요청했습니다.\n\n> \"this partially undoes the work to mitigate the IPI-based DoS reported by Sashiko, but only for the TLB batching case... it would be great to see some Tested-by lines\"\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/ajQivugZfBzG4X2I@willie-the-truck/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**arm64: HOTPLUG_PARALLEL — secondary CPU 병렬 부팅 RFC**\n\nRFC 패치가 전역 secondary_data를 per-CPU 배열로 재작업하고, arm64용 arch_cpuhp_kick_ap_alive() 핸들러와 cpuhp_ap_sync_alive() 콜백을 추가해 x86·MIPS·RISC-V에 이어 arm64도 병렬 bringup을 지원합니다.\n\n영향: 128 vCPU KVM guest 기준 secondary CPU 부팅 시간이 155 초 수준에서 62 초 이하로 절반 이상 단축됐다고 보고됐으며, wait_for_completion_timeout() 대신 cpu_relax(yield)를 사용해 VM exit 오버헤드를 줄인 것이 원인으로 분석됩니다. 아직 RFC 단계이며 머지 타깃은 미확정입니다.\n\n> \"Rework the global `secondary_data` accessed during early boot into a per-CPU array... cutting the secondary CPU boot time by more than half.\"\n\n[원문 확인](https://lore.kernel.org/linux-riscv/ajPitENEHWa8lDfC@willie-the-truck/)\n\n---\n\n**iommu/riscv: 64-bit 레지스터 32-bit MMIO 폴백 지원 제안**\n\nGuo Ren이 RISC-V IOMMU 비준 스펙 6장에서 8-byte 접근의 단일 복사 원자성이 UNSPECIFIED임을 근거로, 64-bit 레지스터(성능 카운터 등) 읽기를 32-bit MMIO 두 번으로 폴백하는 방식을 제안했습니다.\n\n영향: 현재 32-bit MMIO로 구현된 다수 벤더 하드웨어에서 64-bit 읽기는 찢어진 값을 반환할 수 있으며, David Laight는 hi 레지스터 재읽기를 줄이는 seqlock 스타일 읽기 패턴을 대안으로 제시했습니다.\n\n> \"Whether an 8-byte access to an IOMMU register is single-copy atomic is UNSPECIFIED... the Linux RISC-V IOMMU driver should fall back to 32-bit MMIO accesses when reading 64-bit registers\"\n\n[원문 확인](https://lore.kernel.org/linux-riscv/CAJF2gTQqnpHPrE-df_kDZ-Y9g7sSfTQco3jKKnDzkuJfOEKmxQ@mail.gmail.com/)\n\n---\n\n**rust: driver: device_id driver_data 인덱스 → 포인터 전환 (10개 패치 시리즈)**\n\nRust 드라이버의 device_id driver_data를 인덱스 기반 사이드 테이블 방식에서 C 드라이버 관례처럼 정적 참조(static reference) 기반으로 전환하는 v1 시리즈가 제출됐으며, driver.rs의 open-coded ACPI/OF 처리가 제거됩니다.\n\n영향: Rust로 작성되는 모든 플랫폼·ACPI·OF 드라이버의 driver_data 표현 방식과 driver.rs 내부 API가 변경되므로 해당 드라이버 작성자는 인터페이스 변경을 확인해야 합니다.\n\n> \"This leads to open-coded ACPI/OF handling in driver.rs, which is not desirable. Convert the code to use pointers (or rather, static references) instead.\"\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260618-id_info-v1-0-96af1e559ef9@garyguo.net/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 모든 항목의 신뢰도가 medium이며 lore.kernel.org Anubis 차단으로 일부 스레드 끝단과 패치 diff를 직접 확인하지 못했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "arm64: Add HOTPLUG_PARALLEL support for secondary CPUs (RFC)",
+      "url": "https://lore.kernel.org/linux-riscv/ajPitENEHWa8lDfC@willie-the-truck/",
+      "note": "thread"
+    },
+    {
+      "title": "LWN: Parallel CPU bringup (x86 배경)",
+      "url": "https://lwn.net/Articles/929422/",
+      "note": "article"
+    },
+    {
+      "title": "arm64: Avoid eager DVMSync reclaim batches with C1-Pro SME erratum",
+      "url": "https://lore.kernel.org/linux-arm-kernel/ajQivugZfBzG4X2I@willie-the-truck/",
+      "note": "thread"
+    },
+    {
+      "title": "iommu/riscv: Support 32-bit register accesses",
+      "url": "https://lore.kernel.org/linux-riscv/CAJF2gTQqnpHPrE-df_kDZ-Y9g7sSfTQco3jKKnDzkuJfOEKmxQ@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "iommu/riscv: David Laight seqlock 스타일 읽기 패턴 제안",
+      "url": "https://lore.kernel.org/linux-riscv/20260618143634.7f3dd6c5@pumpkin/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: driver: use pointers instead of indices for ID info (v1)",
+      "url": "https://lore.kernel.org/linux-riscv/20260618-id_info-v1-0-96af1e559ef9@garyguo.net/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-18T19:07:03.569Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

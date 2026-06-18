@@ -1,0 +1,98 @@
+{
+  "id": "2026-06-19-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-06-19 __counted_by 회귀 수정 · Rust 추상화 진전 — Linux Toolchain",
+  "headline": "__counted_by 회귀가 tun_dst_unclone 런타임 트랩을 유발, Rust dma_fence RcuBox 포팅과 드라이버 IdInfo 포인터 전환 패치가 등장했다.",
+  "date": "2026-06-19",
+  "summary": "커널 하드닝(__counted_by) 도입이 네트워크 터널 복사 경로를 FORTIFY 경계 검사에서 false-positive 로 터트리는 회귀가 발견돼 2단계 복사로 수정됐다. Rust 진영에서는 dma_fence RcuBox 포팅과 드라이버 IdInfo 포인터 전환 패치 시리즈가 메일링리스트에 올라왔다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "툴체인",
+    "Rust",
+    "하드닝",
+    "dma-fence",
+    "네트워크"
+  ],
+  "highlights": [
+    {
+      "title": "tun_dst_unclone __counted_by false-positive 회귀 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "네트워크 터널/메타데이터(dst_metadata) 유지보수 담당 및 __counted_by 하드닝 추적자",
+      "verifyLink": "https://lore.kernel.org/llvm/CAKv6aAMTqSo0qSng2Kv4=i6BSvJuUy9KSfeFRYx5JsYuo9=kqQ@mail.gmail.com/",
+      "if": "net/dst_metadata.c 의 tun_dst_unclone() 을 거치는 터널 경로를 FORTIFY·__counted_by 활성 빌드에서 운영 중이라면",
+      "do": "패치 적용 여부를 확인하고, ip_tunnel_info 를 __counted_by flexible array 로 전환하는 상위 시리즈와 함께 머지 트리 동선을 추적하세요.",
+      "verify": "24시간 스트레스 후 FORTIFY overflow 트랩이 발생하지 않으면 패치 정상 적용으로 간주 가능."
+    },
+    {
+      "title": "Rust dma_fence RcuBox 포팅으로 UAF 타입 수준 차단",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust-for-Linux / DMA-buf·dma_fence 추상화 및 GPU 드라이버 작성자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260618132628.3811068-2-phasta@kernel.org/",
+      "if": "Rust 로 dma_fence 콜백(backend_ops) 을 구현하는 드라이버를 작성 중이라면",
+      "do": "FenceCtx::drop() 이 atomic context 에서 실행될 수 있으므로 RCU 동기화를 내부에서 직접 호출할 수 없음을 숙지하고, module unload 시 grace period 처리 방식을 스레드에서 확인하세요.",
+      "verify": "드라이버 unload 후 use-after-free 트레이스가 발생하지 않으면 정상."
+    },
+    {
+      "title": "Rust 드라이버 IdInfo 인덱스 → 정적 참조 포인터 전환",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust-for-Linux 드라이버 코어(device id/ACPI/OF 매칭) 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260618-id_info-v1-0-96af1e559ef9@garyguo.net/",
+      "if": "Rust 드라이버에서 ACPI/OF device ID 매칭 인터페이스를 사용 중이거나 이를 추적 중이라면",
+      "do": "v1 패치 시리즈를 검토해 driver_data 전달 방식이 인덱스에서 정적 참조로 바뀌는 API 변경에 대비하세요.",
+      "verify": "OF/ACPI 매칭 경로에서 드라이버 바인딩이 정상 동작하는지 테스트로 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**net: dst_metadata: tun_dst_unclone __counted_by false-positive 회귀 수정**\n\n`tun_dst_unclone()` 의 단일 `memcpy(sizeof(ip_tunnel_info)+md_size)` 를 두 단계로 분리해 `__counted_by` 카운터(options_len)를 먼저 설정한 뒤 옵션 영역만 별도 복사하도록 수정한다.\n\n영향: `ip_tunnel_info` 를 `__counted_by` flexible array 로 전환하면서, 카운터가 채워지기 전에 전체 구조체를 통째로 복사하던 기존 경로가 FORTIFY 경계 검사에서 false-positive overflow 로 런타임 트랩을 유발할 수 있었다. 하드닝 도입이 정상 코드 경로를 깨는 전형적 회귀 사례다.\n\n> /* Copy in two stages to keep the __counted_by happy. */ new_md->u.tun_info = md_dst->u.tun_info; memcpy(ip_tunnel_info_opts(&new_md->u.tun_info), ip_tunnel_info_opts(&md_dst->u.tun_info), md_size);\n\n[원문 확인](https://lore.kernel.org/llvm/CAKv6aAMTqSo0qSng2Kv4=i6BSvJuUy9KSfeFRYx5JsYuo9=kqQ@mail.gmail.com/)\n\n테스터가 패치 적용 후 24시간 스트레스에도 버그를 재현하지 못함이 확인됐다.\n\n> Just stressed it for 24 hours and - I cannot trigger the bug with this patch applied.\n\n정식 Fixes: 해시 및 머지 트리(net/net-next)는 lore 접근 제한으로 미확인. 런타임 트랩 여부는 스레드 정황상 런타임으로 추정되나 원문 전체 미확인."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**rust / dma_buf: dma_fence Rust 안전 추상화 추가**\n\n`DmaFence` 를 `RcuBox` 로 포팅하고, `call_rcu()`/`synchronize_rcu()` 추상화 및 `ARef` 의 `ForeignOwnable` 지원을 도입한다. fence 를 XArray 등에 보관하는 것도 가능해진다.\n\n영향: dma_fence 는 드라이버·GPU 스케줄링에서 UAF·atomic-context 위반이 잦은 영역이다. RcuBox 기반 지연 해제로 이후 추가되는 콜백(backend_ops)을 통한 UAF 를 타입 수준에서 원천 차단한다.\n\n> Port DmaFence to RcuBox to make UAF bugs through later, new dma_fence callbacks (backend_ops) impossible.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260618132628.3811068-2-phasta@kernel.org/)\n\nmodule unload 시 grace period 보장 책임을 driver-core 가 맡을지 드라이버가 직접 맡을지는 스레드에서 미결로 언급됐다. v3 전체 패치 본문·리뷰 합의 상태는 lore 차단으로 미확인.\n\n---\n\n**rust: driver: IdInfo driver_data 인덱스 → 정적 참조 포인터 전환**\n\nRust 드라이버가 `device_id` 의 `driver_data` 를 인덱스+side table 로 `&IdInfo` 에 매핑하던 방식을 C 드라이버처럼 정적 참조 포인터로 직접 전달하도록 변경해 `driver.rs` 의 open-coded ACPI/OF 처리를 제거한다.\n\n영향: 인덱스·side table 방식의 불일치 여지가 사라지고, 드라이버 코어 매칭 경로가 C 구현과 정합된다.\n\n> This leads to open-coded ACPI/OF handling in driver.rs, which is not desirable. Convert the code to use pointers (or rather, static references) instead.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260618-id_info-v1-0-96af1e559ef9@garyguo.net/)\n\nv1 시리즈 머지/리뷰 통과 여부 및 kernel_ulong_t 캐스팅 안전성 합의 상태는 lore 차단으로 미확인."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "net: dst_metadata: fix false-positive memcpy overflow in tun_dst_unclone (lore/llvm 스레드)",
+      "url": "https://lore.kernel.org/llvm/CAKv6aAMTqSo0qSng2Kv4=i6BSvJuUy9KSfeFRYx5JsYuo9=kqQ@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "net: Add options as a flexible array to struct ip_tunnel_info (linux-hardening)",
+      "url": "https://www.mail-archive.com/linux-hardening@vger.kernel.org/msg07588.html",
+      "note": "thread"
+    },
+    {
+      "title": "rust / dma_buf: Add abstractions for dma_fence (rust-for-linux 스레드)",
+      "url": "https://lore.kernel.org/rust-for-linux/20260618132628.3811068-2-phasta@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: driver: use pointers instead of indices for ID info (rust-for-linux 스레드)",
+      "url": "https://lore.kernel.org/rust-for-linux/20260618-id_info-v1-0-96af1e559ef9@garyguo.net/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-18T18:46:12.284Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
