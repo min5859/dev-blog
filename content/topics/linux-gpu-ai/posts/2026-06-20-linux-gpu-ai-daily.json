@@ -1,0 +1,124 @@
+{
+  "id": "2026-06-20-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-06-20 panthor 보안·API 전환 — Linux GPU/AI DRM",
+  "headline": "panthor Mali GPU 커널 메모리 격리 취약점 패치와 DRM atomic_create_state API 전환이 동시 진행 중입니다.",
+  "date": "2026-06-20",
+  "summary": "Arm Mali GPU(panthor) 드라이버에서 사용자 공간이 커널 BO 카브아웃 영역을 덮어쓸 수 있는 보안 결함이 패치 검토 중입니다. 동시에 Maxime Ripard가 주도하는 DRM atomic_create_state 전환 시리즈가 커넥터·브리지 전반에 걸쳐 drm-misc-next에서 진행 중이며, i.MX93 MIPI DSI 픽셀 클럭 회귀 수정과 DisplayPort sysfs uAPI RFC도 이번 수집에 포함됐습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "DRM",
+    "GPU",
+    "보안",
+    "Mali",
+    "MIPI-DSI",
+    "DisplayPort"
+  ],
+  "highlights": [
+    {
+      "title": "panthor vm_bind 커널 BO 영역 침범 차단",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "panthor(Arm Mali) GPU 드라이버 메인테이너 및 사용자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/178188765712.2027515.1485808731432603029.b4-reply@b4/",
+      "if": "panthor 기반 Mali GPU 시스템을 운영 중이라면",
+      "do": "패치 적용 여부와 CVE 지정 가능성을 추적하고 업스트림 머지 상태를 확인하세요.",
+      "verify": "커밋 647810ec2476의 후속 패치가 drm 트리에 반영됐는지 점검하세요."
+    },
+    {
+      "title": "imx93-mipi-dsi 픽셀 클럭 모드 검증 회귀 수정",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "i.MX93 / NXP DRM 브리지 메인테이너 및 디스플레이 통합 담당자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/DJD6I8NMLN3W.3LVT4L17HT5TU@bootlin.com/",
+      "if": "i.MX93 기반 MIPI DSI 디스플레이에서 특정 해상도 모드가 거부된다면",
+      "do": "브리지 체인 op 플래그 검사 로직을 패치된 버전으로 교체하세요.",
+      "verify": "1080p60 등 비표준 PLL 주파수 모드가 정상 검증되는지 테스트하세요."
+    },
+    {
+      "title": "DRM connector/bridge atomic_create_state API 전환",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "DRM 커넥터·브리지 드라이버 메인테이너",
+      "verifyLink": "https://lore.kernel.org/dri-devel/DJD5YZ2K1047.3UJ5QMMLQO6UY@bootlin.com/",
+      "if": "DRM 커넥터·브리지 드라이버에서 reset()을 상태 초기화 목적으로 사용 중이라면",
+      "do": "drm-misc-next 기준으로 리베이스하고 atomic_create_state 훅으로 마이그레이션하세요.",
+      "verify": "bridge hotplug 등 의존 시리즈의 리베이스 충돌 여부를 점검하세요."
+    },
+    {
+      "title": "DisplayPort 링크 트레이닝 sysfs uAPI 신설(RFC)",
+      "priority": "하",
+      "impactType": "api-abi",
+      "affectedAudience": "DRM 커넥터·브리지 메인테이너 및 사용자 공간 DP 진단 도구 개발자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260619194903.691023e9@kmaincent-XPS-13-7390/",
+      "if": "DP 링크 상태를 사용자 공간에서 표준화된 방식으로 읽어야 한다면",
+      "do": "RFC 시리즈를 검토하고 dp_link sysfs 레이아웃의 안정 uAPI 여부를 메일링리스트에서 확인하세요.",
+      "verify": "MST 지원 여부와 코어 설계 리뷰 결과를 추적하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm/panthor: vm_bind 커널 BO 영역 침범 차단**\n\n`vm_bind` ioctl 경로에 사용자 공간 BO 매핑이 커널 BO 카브아웃 영역과 겹치는지 검사를 추가했습니다.\n\n영향: 악의적이거나 버그 있는 사용자 공간이 커널 GPU 매핑을 덮어쓸 수 있는 메모리 격리 결함을 차단합니다. panthor(Arm Mali) GPU를 사용하는 시스템 전반에 해당합니다.\n\n> \"vm_bind mappings of UM-exposed BO's should not intersect with that region, but at the moment we're not checking this... Fixes: 647810ec2476 (\\\"drm/panthor: Add the MMU/VM logical block\\\")\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/178188765712.2027515.1485808731432603029.b4-reply@b4/)\n\n---\n\n**drm/bridge: imx93-mipi-dsi 픽셀 클럭 모드 검증 회귀 수정**\n\n`imx93_dsi_validate_mode()`가 브리지 체인의 마지막 커넥터 브리지(op 플래그 없음) 대신 올바른 브리지의 `DRM_BRIDGE_OP` 플래그를 검사하도록 수정하고, `imx93_dsi_get_next_bridge_in_chain()` 헬퍼를 신설했습니다.\n\n영향: i.MX93 DPHY PLL이 정확히 맞출 수 없는 픽셀 클럭(예: 1080p60, 445.333 MHz vs 445.5 MHz 목표값)에서 EDID 유효 모드가 잘못 거부되던 회귀를 해소합니다.\n\n> \"VESA Display Monitor Timing Standard allows +/-0.5% pixel clock rate deviation for timings.\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/DJD6I8NMLN3W.3LVT4L17HT5TU@bootlin.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/connector: atomic_create_state 콜백 신설**\n\n커넥터에 `atomic_create_state` 훅을 추가하여 `drmm_connector_hdmi_init()`이 초기 상태 할당 시 `reset()` 대신 이를 우선 사용하도록 변경했습니다. 16개 패치 시리즈의 일환으로 drm-misc-next에 반영됐으며 amdgpu·msm·omapdrm 등도 포함됩니다.\n\n영향: `reset()`이 초기화·상태 리셋·하드웨어 리셋을 혼용하던 구조를 분리하여, 드라이버가 할당 실패를 처리하고 probe 타임 초기화와 suspend/resume을 명확히 구분할 수 있습니다.\n\n> \"reset() also isn't fallible, which makes it harder to handle initialization errors properly... atomic_create_state to untangle a bit some of it\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/DJD5YZ2K1047.3UJ5QMMLQO6UY@bootlin.com/)\n\n---\n\n**drm/bridge: reset 훅 전면 제거, atomic_create_state로 일괄 전환**\n\n모든 DRM 브리지가 `reset`을 빈 상태 생성에만 사용하고 있음을 확인하여 `atomic_create_state` 훅으로 일괄 전환하고 브리지 `reset` 훅과 헬퍼를 완전히 삭제합니다.\n\n영향: 브리지 드라이버 작성자는 빈 상태 할당 로직을 새 훅으로 이전해야 하며, bridge hotplug 등 의존 시리즈의 리베이스에 영향이 발생합니다. 업스트림 최종 머지 여부는 확인 필요합니다.\n\n> \"All the bridges use reset to create a blank state only and don't use it to reset the hardware at all... we can convert all existing bridge users to it, and remove the reset hook and helpers.\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/DJD6WITJWQHS.1XR1LK4S8N5H5@bootlin.com/)\n\n---\n\n**DisplayPort 링크 트레이닝 정보 sysfs 인터페이스 추가(RFC)**\n\n`drmm_connector_dp_init()`·`drm_connector_dp_init_with_ddc()` 헬퍼를 신설하여 DP 링크 상태(레인 수, 링크 레이트, DSC)를 `dp_link` sysfs 속성으로 노출합니다. i915·MediaTek이 참조 구현으로 포함됩니다.\n\n영향: 드라이버별 ad-hoc debugfs를 표준 sysfs uAPI로 통합하나, MST 미지원 및 에러 전파 문제로 RFC 단계이며 코어 설계 리뷰 결과를 기다리고 있습니다.\n\n> \"These new drmm_connector_dp_init() and drm_connector_dp_init_with_ddc() helpers initialize a DP connector and expose link training capabilities and state to userspace via sysfs attributes under dp_lin\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260619194903.691023e9@kmaincent-XPS-13-7390/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "중",
+    "note": "리서치 dossier의 출처를 근거로 작성했습니다. 일부 패치는 리뷰 단계(미머지)이며, panthor 보안 패치의 CVE 지정 여부는 확인 필요합니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/bridge: imx93-mipi-dsi: Fix mode validation",
+      "url": "https://lore.kernel.org/dri-devel/DJD6I8NMLN3W.3LVT4L17HT5TU@bootlin.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/connector: Add new atomic_create_state callback",
+      "url": "https://lore.kernel.org/dri-devel/DJD5YZ2K1047.3UJ5QMMLQO6UY@bootlin.com/",
+      "note": "thread"
+    },
+    {
+      "title": "[PATCH v2 00/16] drm/atomic: Allocate drm_private_state through a callback",
+      "url": "https://www.mail-archive.com/amd-gfx@lists.freedesktop.org/msg129800.html",
+      "note": "thread"
+    },
+    {
+      "title": "drm/bridge: Convert all reset users to create_state",
+      "url": "https://lore.kernel.org/dri-devel/DJD6WITJWQHS.1XR1LK4S8N5H5@bootlin.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/panthor: Add vm_bind region with kbo range overlap check",
+      "url": "https://lore.kernel.org/dri-devel/178188765712.2027515.1485808731432603029.b4-reply@b4/",
+      "note": "thread"
+    },
+    {
+      "title": "[PATCH v5 07/14] drm/panthor: Add the MMU/VM logical block",
+      "url": "https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg481754.html",
+      "note": "commit"
+    },
+    {
+      "title": "Add support for DisplayPort link training information report",
+      "url": "https://lore.kernel.org/dri-devel/20260619194903.691023e9@kmaincent-XPS-13-7390/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-19T18:58:01.970Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

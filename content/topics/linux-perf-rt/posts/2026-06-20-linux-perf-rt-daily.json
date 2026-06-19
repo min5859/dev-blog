@@ -1,0 +1,118 @@
+{
+  "id": "2026-06-20-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-06-20 BPF 검증기·xfrm·SMC 보안 패치 3건 — linux-perf-rt",
+  "headline": "BPF 검증기 경계 오염·xfrm LSM 패닉·SMC 경계 초과 읽기, 세 보안 패치 동시 등장",
+  "date": "2026-06-20",
+  "summary": "BPF 검증기 레지스터 경계 오염, xfrm_decode_session BPF LSM 연결에 따른 커널 패닉, sockmap×SMC 상호작용 KASAN 경계 초과 읽기 세 건이 같은 날 보고됐습니다. RISC-V 최초 resctrl QoS(CAT) 시리즈도 리뷰 중이며, srmcfg CSR의 PM 재개·핫플러그 동기화 문제가 미결로 남아 있습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "BPF",
+    "보안",
+    "RISC-V",
+    "resctrl",
+    "libbpf"
+  ],
+  "highlights": [
+    {
+      "title": "BPF 검증기 레지스터 경계 오염 — 메모리 안전 우회 가능",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF 검증기 유지관리자, BPF-LSM 및 비특권 BPF 프로그램 운영자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260619110251.2576334-1-tristmd@gmail.com/",
+      "if": "LSM 훅 반환값을 로드하는 BPF 코드가 기존 경계를 가진 레지스터를 목적지로 사용하면 검증기와 런타임 간 불일치가 발생합니다.",
+      "do": "커밋 5d99e198be27 이후 커널에서 BPF-LSM 프로그램을 운영 중이라면 패치를 적용하고 프로그램을 재검증하세요.",
+      "verify": "check_mem_access()의 is_retval 경로에서 mark_reg_unknown() 호출이 __mark_reg_s32_range() 이전에 위치하는지 확인하세요."
+    },
+    {
+      "title": "xfrm_decode_session BPF LSM 부착 → BUG_ON 커널 패닉",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "xfrm/IPsec 트래픽 환경에서 LSM 프로그램을 운영하는 관리자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260619130305.27779-1-include@grrlz.net/",
+      "if": "BPF LSM 프로그램이 xfrm_decode_session에 부착돼 오류를 반환하면 void 경로의 BUG_ON()으로 커널이 패닉합니다.",
+      "do": "패치 적용 여부를 확인하고, bpftool prog list로 xfrm_decode_session에 부착된 프로그램이 없는지 점검하세요.",
+      "verify": "security_skb_classify_flow() 호출 경로에서 BPF LSM 오류 반환이 BUG_ON()에 도달하지 않는지 검토하세요."
+    },
+    {
+      "title": "net/smc + sockmap sk_user_data 충돌 → KASAN 경계 초과 읽기",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "sock_ops 프로그램과 SMC를 동시에 사용하는 운영자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260619150342.3626224-1-rhkrqnwk98@gmail.com/",
+      "if": "BPF sock_ops 프로그램이 SMC passive-open 자식 소켓을 sockmap에 추가하면 SMC 콜백이 sk_psock을 smc_sock으로 잘못 역참조해 경계 초과 읽기가 발생합니다.",
+      "do": "SMC + sockmap 조합 환경에 패치를 즉시 적용하고, KASAN 활성화 커널에서 해당 경로를 테스트하세요.",
+      "verify": "smc_clcsock_user_data()가 SMC 태그 단독인 경우에만 smc_sock을 반환하는지, sk_psock이 있으면 NULL을 반환하는지 확인하세요."
+    },
+    {
+      "title": "RISC-V 최초 resctrl QoS(CAT) 지원 시리즈 리뷰 중",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "RISC-V 플랫폼 유지관리자, resctrl 캐시 격리를 활용하는 perf/RT 엔지니어",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260619-dfustini-atl-sc-cbqri-dt-v1-0-e79a7723fab0@kernel.org/",
+      "if": "RISC-V 플랫폼에서 resctrl을 통한 캐시 할당(CAT)이 필요하다면 이 시리즈와 srmcfg CSR의 PM/핫플러그 미결 이슈를 함께 추적하세요.",
+      "do": "Tenstorrent Ascalon 또는 QEMU에서 CBQRI resctrl CAT 동작을 검증하고, 대역폭(MB) 제어는 Reinette의 범용 스키마를 대기하세요.",
+      "verify": "CPU_PM EXIT 및 CPU 핫플러그 경로에서 RCID/MCID가 올바르게 복원되는지 srmcfg CSR 값을 추적하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**BPF 검증기 레지스터 경계 오염 (check_mem_access)**\n\nLSM 훅 반환값 로드 시 기존 경계와 교집합 연산을 수행해 검증기와 런타임 간 불일치를 유발하는 검증기 건전성 버그. mark_reg_unknown()으로 is_retval 경로 진입 전 상태를 초기화하는 패치가 제출됨.\n\n영향: 검증기가 믿는 레지스터 범위와 실제 런타임 값이 달라져 BPF 메모리 안전 검사 우회에 활용될 수 있는 최고 심각도 등급의 버그.\n\n> \"creating a verifier/runtime mismatch that can be used to bypass BPF memory safety checks.\"\n\n[원문 확인](https://lore.kernel.org/bpf/20260619110251.2576334-1-tristmd@gmail.com/)\n\n---\n\n**BPF LSM: xfrm_decode_session 훅 부착 비활성화**\n\nBPF LSM 프로그램이 xfrm_decode_session에 연결돼 오류를 반환하면 security_skb_classify_flow()의 void 경로 BUG_ON()이 트리거되는 패닉 벡터를 훅 부착 자체를 막아 차단.\n\n영향: 네트워크 패킷 분류 경로에서 원격 DoS 가능, IPsec + LSM 프로그램 조합 환경에서 즉시 커널 패닉 발생.\n\n> \"That hook may return an error, but security_skb_classify_flow() calls it from a void path and triggers BUG_ON() if an error is returned.\"\n\n[원문 확인](https://lore.kernel.org/bpf/20260619130305.27779-1-include@grrlz.net/)\n\n---\n\n**net/smc: sk_user_data에 sk_psock 보관 시 경계 초과 읽기**\n\npassive-open 자식 소켓이 NOCOPY 포인터를 지운 뒤 BPF sock_ops 프로그램이 sk_psock을 동일 필드에 설치, 상속된 SMC data_ready 콜백이 이를 smc_sock으로 역참조해 KASAN slab-out-of-bounds 발생.\n\n영향: sockmap × SMC 교차 지점에서 현실적인 메모리 손상/DoS가 트리거 가능하며 BPF 데이터패스 환경에서 직접 관련됨.\n\n> \"The inherited callback reads it as an smc_sock and dereferences a clcsk_* pointer past the end of the sk_psock\"\n\n[원문 확인](https://lore.kernel.org/bpf/20260619150342.3626224-1-rhkrqnwk98@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**RISC-V Ssqosid + CBQRI resctrl 최초 지원 (시리즈 v1)**\n\nsrmcfg CSR(Ssqosid 확장), CBQRI 컨트롤러 인터페이스, DT 기반 캐시 컨트롤러 드라이버를 resctrl에 통합. CAT(cbm 스키마)만 구현, cc_cunits 및 대역폭(MB) 제어는 기존 resctrl 스키마와 맞지 않아 미포함.\n\n영향: RISC-V 플랫폼에서 x86과 동일한 resctrl 인터페이스로 캐시 격리가 가능해지는 첫 번째 경로로, Tenstorrent Ascalon 공유 캐시 및 QEMU 모델에서 테스트됨.\n\n> \"This series adds initial RISC-V QoS support: the Ssqosid extension (srmcfg CSR), the CBQRI controller interface integrated with resctrl, and DT-based platform driver for cache controllers.\"\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260619-dfustini-atl-sc-cbqri-dt-v1-0-e79a7723fab0@kernel.org/)\n\n---\n\n**RISC-V srmcfg CSR: CPU_PM 재개·핫플러그 경로 RCID/MCID 동기화 미결**\n\n컨텍스트 스위치마다 RCID/MCID를 기록하고 CPU당 CSR 상태를 캐시하지만, 자동화 리뷰('Sashiko AI')가 PM 재개 시 CSR_SRMCFG를 즉시 복원하지 않아 잘못된 QoS ID로 실행될 수 있다고 지적. 인간 유지관리자 확인은 미완료.\n\n영향: suspend/CPU 핫플러그 후 태스크가 다른 RCID/MCID로 동작해 캐시 격리 보장이 무효화될 가능성(추정 — 자동화 리뷰 지적, 재현 사례 미확인).\n\n> \"fails to eagerly restore the hardware CSR_SRMCFG, leaving the currently executing task running with incorrect QoS IDs during system resume.\"\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260619184028.ABCF31F000E9@smtp.kernel.org/)\n\n---\n\n**libbpf: ringbuf NULL 콜백 크래시 방지**\n\nring_buffer__new()/ring_buffer__add()가 NULL 샘플 콜백을 허용해 소비 시 NULL 함수 포인터 호출로 크래시되던 문제를 -EINVAL 반환으로 전환. ring__consume()/ring__consume_n() 문서도 오류 시 음수 반환으로 갱신. 패치는 'Assisted-by: Codex:gpt-5.5' 표기, 리뷰어 피드백은 미확인.\n\n영향: 혼합·지연 콜백으로 링 버퍼 매니저를 구성하는 추적/관측 도구가 하드 크래시 대신 정상 오류를 받을 수 있음.\n\n> \"ring_buffer__new() and ring_buffer__add() allow a NULL sample callback. When callback-based consumption reaches such a ring, it calls through the NULL function pointer and crashes.\"\n\n[원문 확인](https://lore.kernel.org/bpf/ajVKM9tJskwg9OFa@krava/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "riscv: Add Ssqosid and initial CBQRI resctrl support",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260619-dfustini-atl-sc-cbqri-dt-v1-0-e79a7723fab0@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: Add support for srmcfg CSR from Ssqosid extension",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260619184028.ABCF31F000E9@smtp.kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Reset register bounds before narrowing retval range in check_mem_access()",
+      "url": "https://lore.kernel.org/bpf/20260619110251.2576334-1-tristmd@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: lsm: disable xfrm_decode_session hook attachment",
+      "url": "https://lore.kernel.org/bpf/20260619130305.27779-1-include@grrlz.net/",
+      "note": "thread"
+    },
+    {
+      "title": "net/smc: fix out-of-bounds read when sk_user_data holds a sk_psock",
+      "url": "https://lore.kernel.org/bpf/20260619150342.3626224-1-rhkrqnwk98@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "libbpf: ringbuf: Prevent NULL callback crash",
+      "url": "https://lore.kernel.org/bpf/ajVKM9tJskwg9OFa@krava/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-19T18:47:17.230Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

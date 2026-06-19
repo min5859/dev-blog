@@ -1,0 +1,133 @@
+{
+  "id": "2026-06-20-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-06-20 LTS 보안 롤업 + CFI 훅 논쟁 — 리눅스 커널 보안",
+  "headline": "5.15 LTS에 nfsd 힙 오버플로·ksmbd OOB 수정 대형 롤업, CFI KUnit 훅 설계 논쟁 격화",
+  "date": "2026-06-20",
+  "summary": "안정 트리 전반에 걸쳐 파일서버·arm64 errata·netfilter 메모리 안전 수정이 대거 백포트됐으며, CFI 테스트 인프라를 둘러싼 보안 트레이드오프 논쟁이 lkml에서 진행 중입니다. git.kernel.org stable 페이지 대부분이 Anubis로 차단돼 수치·인용 직접 검증을 완료하지 못했으므로, 중요 판단 전 원문 확인이 필수입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "보안",
+    "LTS",
+    "CFI",
+    "netfilter",
+    "io_uring"
+  ],
+  "highlights": [
+    {
+      "title": "5.15.210 LTS: nfsd 힙 오버플로·ksmbd OOB 백포트",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "5.15 LTS 기반 배포·임베디드, 파일서버(ksmbd/nfsd) 운영자",
+      "verifyLink": "https://git.kernel.org/stable/h/v5.15.210",
+      "if": "5.15 LTS 기반에서 ksmbd 또는 nfsd 파일서버를 운영 중이라면",
+      "do": "배포판 패키지 채널에서 5.15.210 이상 커널 여부를 확인하고 업데이트 일정을 수립하세요 — Anubis 차단으로 변경목록 직접 검증이 불가하므로 원문 링크를 통해 내용을 재확인하세요",
+      "verify": "업데이트 후 uname -r로 커널 버전을 확인하고, ksmbd·nfsd 서비스가 정상 동작하는지 점검하세요"
+    },
+    {
+      "title": "CFI KUnit 훅 논쟁: 배포 활성화 시 CFI 우회 가능성 경고",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "CFI/하드닝 유지보수 담당, KUnit 테스트 인프라 관여자",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20260619093708.GT49951@noisy.programming.kicks-ass.net/",
+      "if": "배포 커널에 KUnit 또는 CFI_PERMISSIVE 관련 설정을 포함할 계획이라면",
+      "do": "Peter Zijlstra의 반론 스레드를 직접 읽고, 해당 훅이 배포 빌드에서 절대 활성화되지 않도록 Kconfig 가드를 점검하세요",
+      "verify": "배포 커널 .config에서 CONFIG_KUNIT이 비활성화 상태인지 grep CONFIG_KUNIT .config 로 확인하세요"
+    },
+    {
+      "title": "7.0.13 stable: 381건 백포트, netfilter 스택 누수 수정 포함 추정",
+      "priority": "중",
+      "impactType": "backport",
+      "affectedAudience": "stable 트리 추종 배포·운영자, arm64 플랫폼 및 amdgpu 사용 환경",
+      "verifyLink": "https://git.kernel.org/stable/h/v7.0.13",
+      "if": "7.x stable 트리를 추종하거나 netfilter nft_fib 또는 drm/amd/display 경로를 사용 중이라면",
+      "do": "7.0.13 릴리스 노트를 원문에서 확인하고 해당 수정이 환경에 반영됐는지 점검하세요 — Anubis 차단으로 백포트 목록 직접 검증이 불가합니다",
+      "verify": "nft_fib OIFNAME 경로 관련 회귀가 없는지 네트워크 필터링 기능 테스트를 실시하세요"
+    },
+    {
+      "title": "io_uring: IORING_REGISTER_CLONE_FILES 신규 opcode RFC 제안",
+      "priority": "하",
+      "impactType": "api-abi",
+      "affectedAudience": "io_uring 유지보수 담당, UAPI/ABI 소비 라이브러리(liburing) 작성자",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20260619093641.25339-1-harshal24.chavan@gmail.com/",
+      "if": "liburing 또는 io_uring을 사용하는 애플리케이션을 유지보수 중이라면",
+      "do": "RFC 패치 스레드를 팔로우하며 Jens Axboe의 수용 여부를 추적하세요 — 아직 병합 미확인 상태입니다",
+      "verify": "병합 후 liburing 체인지로그에서 CLONE_FILES 지원 여부를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.0.13 stable**\n\n381건 백포트가 포함된 것으로 보이며, arm64 TLBI errata 완화(Microsoft Azure Cobalt 100 / NVIDIA Olympus 등 신규 Arm CPU)와 netfilter nft_fib의 OIFNAME 레지스터를 통한 stale 스택 누수, drm/amd/display OOB read·NULL deref·버퍼 over-read 수정이 핵심인 것으로 알려졌습니다. RDMA/umem 4G 이상 블록 크기 truncation 수정, fs/fcntl SOFTIRQ-unsafe lock order 수정도 포함된 것으로 추정됩니다.\n\n영향: 7.x stable을 추종하는 배포·운영자에게 데스크톱과 서버 양쪽에 걸친 메모리 안전 수정이 묶인 대형 롤업으로 빠른 적용 검토 대상입니다.\n\n> \"netfilter: nft_fib: fix stale stack leak via the OIFNAME register / drm/amd/display: Fix out-of-bounds read in dp_get_eq_aux_rd_interval()\" (출처 미검증)\n\n[원문 확인](https://git.kernel.org/stable/h/v7.0.13)\n\n---\n\n**Linux 7.1.1 stable**\n\n10건 소규모 백포트로 arm64 errata 완화 및 C1-Premium/C1-Ultra cputype 추가, driver core의 미등록 bus 디바이스 거부 및 faux root 디바이스 등록 수정, fs/fcntl fasync lock order 수정이 포함된 것으로 보입니다.\n\n영향: 7.1 계열 첫 안정 패치로 회귀 위험이 낮아 신규 7.1 채택자에게 안전한 업데이트 후보입니다.\n\n> \"driver core: reject devices with unregistered buses / fs/fcntl: fix SOFTIRQ-unsafe lock order in fasync signaling\" (출처 미검증)\n\n[원문 확인](https://git.kernel.org/stable/h/v7.1.1)\n\n---\n\n**Linux 5.10.259 longterm**\n\n343건 백포트에 lib/crypto mpi_read_raw_from_sgl() 정수 언더플로, apparmor 기본 DFA 상태 경계 검증, x86 AMD Zen3 BTC_NO 감지 위치 이동, USB gadget f_hid 디바이스 참조 누수, xfrm input 재주입 시 netns 보유 수정 등이 포함된 것으로 알려졌습니다.\n\n영향: 가장 오래된 활성 LTS 중 하나로 광범위한 배포 기반에 crypto·apparmor 보안 수정과 USB/IIO 안정화가 함께 들어옵니다.\n\n> \"lib/crypto: mpi: Fix integer underflow in mpi_read_raw_from_sgl() / apparmor: validate default DFA states are in bounds\" (출처 미검증)\n\n[원문 확인](https://git.kernel.org/stable/h/v5.10.259)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**Linux 5.15.210 longterm: nfsd 힙 오버플로·ksmbd OOB read 백포트**\n\n5.15 LTS에 409건 백포트가 들어온 것으로 보이며, nfsd NFSv4.0 LOCK replay cache 힙 오버플로와 ksmbd smb_check_perm_dacl() ACE-walk OOB read 회귀, batman-adv tp_meter의 race/leak 수정, mptcp rcv_wnd 계산 TOCTOU race, blk-cgroup NULL deref 등이 수정된 것으로 알려졌습니다.\n\n영향: 파일서버(ksmbd/nfsd)를 운영하는 5.15 LTS 기반 엔터프라이즈·임베디드 환경에서 보안 우선 적용 대상입니다. 단, Anubis 차단으로 CVE 매핑을 독립 확인하지 못했습니다.\n\n> \"nfsd: fix heap overflow in NFSv4.0 LOCK replay cache / ksmbd: OOB read regression in smb_check_perm_dacl() ACE-walk loops\" (출처 미검증)\n\n[원문 확인](https://git.kernel.org/stable/h/v5.15.210)\n\n---\n\n**kunit: CFI 간접호출 테스트 훅 논쟁**\n\nKees Cook가 report_cfi_failure()에 KUnit 테스트용 failure hook을 추가해 의도적 CFI 위반을 소비·집계하는 패치를 제안했고, Peter Zijlstra가 간접호출 실패 처리 경로에 다시 간접호출을 넣는 모순과 공격면 확대를 들어 강하게 반대했습니다. 리뷰어는 hook이 항상 true를 반환하도록 조작되면 CFI 우회가 가능하므로 배포 커널에서 절대 활성화돼서는 안 된다고 명시했습니다.\n\n영향: CFI/하드닝을 추적하는 엔지니어에게 테스트 가능성과 보안 트레이드오프의 핵심 논쟁이며, 스레드 후속 합의(병합·드롭 여부)는 아직 확인되지 않았습니다.\n\n> \"now all an attacker needs to do is ensure cfi_kunit_handled() unconditionally returns true. IOW, no distro must ever have this KUNIT crap enabled.\"\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20260619093708.GT49951@noisy.programming.kicks-ass.net/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**io_uring: IORING_REGISTER_CLONE_FILES 신규 opcode RFC 제안**\n\n소스 ring의 등록 파일 테이블을 대상 ring으로 직접 복제하는 IORING_REGISTER_CLONE_FILES opcode가 RFC 형태로 제안됐습니다. io_clone_buffers UAPI를 미러링해 부분 오프셋과 IORING_REGISTER_DST_REPLACE 플래그를 지원하며, 락 동기화 안전을 위해 대상 노드를 참조 공유 대신 새 private io_rsrc_node로 할당합니다.\n\n영향: io_uring UAPI/ABI 소비자(liburing 등)에게 새 API 표면 추가로, 파일 테이블 복제는 하드닝 리스트에서 추가 리뷰가 진행 중입니다. Jens Axboe의 수용 여부는 아직 확인되지 않았습니다.\n\n> \"This implementation strictly mirrors the io_clone_buffers UAPI, supporting partial offsets and the IORING_REGISTER_DST_REPLACE flag.\"\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20260619093641.25339-1-harshal24.chavan@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "**ARM: NXP NOMMU 플랫폼 지원 제거 시리즈**\n\n상용 사용자·HW 벤더가 수년 전 Zephyr 등 RTOS로 이전해 사실상 미사용·미유지 상태가 된 Freescale/NXP의 NOMMU 플랫폼 DTS 및 플랫폼 코드를 제거하는 시리즈가 제안됐습니다. 일부 드라이버는 타 SoC 재사용 가능성 때문에 보존됩니다.\n\n영향: arm/플랫폼 유지보수 부담 감소 목적의 deadcode 정리이며, NOMMU NXP 타깃을 빌드하는 환경은 지원 중단 영향을 받습니다. linux-hardening에서 관찰됐으나 arm-soc 머지 경로 및 최종 수용 여부는 확인되지 않았습니다.\n\n> \"leaving the NOMMU platform support effectively unused and unmaintained. Remove the obsolete support to reduce maintenance burden\"\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20260619-dts_cleanup_arm_mcore-v1-0-0101795a2662@nxp.com/)"
+    }
+  ],
+  "confidence": {
+    "level": "낮음",
+    "note": "리서치 dossier의 출처를 근거로 작성했습니다. git.kernel.org stable 페이지 대부분이 Anubis로 차단돼 백포트 목록·CVE 매핑·인용 검증을 완료하지 못했습니다. CFI 논쟁 스레드(lore.kernel.org)는 직접 검증됐습니다. 중요한 판단 전에는 링크된 원문을 반드시 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Linux 7.0.13 stable changelog",
+      "url": "https://git.kernel.org/stable/h/v7.0.13",
+      "note": "changelog"
+    },
+    {
+      "title": "netfilter nft_fib.c (torvalds/linux)",
+      "url": "https://github.com/torvalds/linux/blob/master/net/netfilter/nft_fib.c",
+      "note": "commit"
+    },
+    {
+      "title": "Linux 7.1.1 stable changelog",
+      "url": "https://git.kernel.org/stable/h/v7.1.1",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 5.15.210 longterm changelog",
+      "url": "https://git.kernel.org/stable/h/v5.15.210",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 5.10.259 longterm changelog",
+      "url": "https://git.kernel.org/stable/h/v5.10.259",
+      "note": "changelog"
+    },
+    {
+      "title": "Peter Zijlstra: CFI KUnit 훅 반론 (lkml)",
+      "url": "https://lore.kernel.org/linux-hardening/20260619093708.GT49951@noisy.programming.kicks-ass.net/",
+      "note": "thread"
+    },
+    {
+      "title": "IORING_REGISTER_CLONE_FILES RFC 패치 (lkml)",
+      "url": "https://lore.kernel.org/linux-hardening/20260619093641.25339-1-harshal24.chavan@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "io_uring_register(2) man page",
+      "url": "https://man7.org/linux/man-pages/man2/io_uring_register.2.html",
+      "note": "article"
+    },
+    {
+      "title": "ARM NXP NOMMU 플랫폼 제거 시리즈 (lkml)",
+      "url": "https://lore.kernel.org/linux-hardening/20260619-dts_cleanup_arm_mcore-v1-0-0101795a2662@nxp.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-19T18:31:50.442Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
