@@ -1,0 +1,117 @@
+{
+  "id": "2026-06-22-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-06-22 amdgpu 가드 누락 회귀 주의 — Linux GPU/AI",
+  "headline": "amdgpu gfx 리팩터에서 disable_kq 가드 누락으로 GPU reset 위험, APU VBIOS 폴백 패치 제출",
+  "date": "2026-06-22",
+  "summary": "amdgpu gfx_v11/v12 중복 제거 리팩터링 패치에서 disable_kq 가드가 사라져 spurious GPU reset 위험이 리뷰에서 [High]로 지적됐다. nouveau 메모리 누수 수정(Cc: stable)과 APU VBIOS firmware 폴백 제안 등 여러 보수·기능 패치가 dri-devel을 통과 중이다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "GPU",
+    "amdgpu",
+    "nouveau",
+    "DRM"
+  ],
+  "highlights": [
+    {
+      "title": "amdgpu gfx 리팩터 — disable_kq 가드 누락으로 spurious GPU reset 위험",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "amdgpu gfx fault/TDR 경로 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260621114806.59E951F000E9@smtp.kernel.org/",
+      "if": "gfx_v11/v12 리팩터 패치를 검토 중이거나 해당 커밋이 이미 트리에 들어와 있으면",
+      "do": "추출된 amdgpu_gfx_handle_priv_fault에 !disable_kq 가드가 복원된 v2 패치가 올라왔는지 메일 스레드를 확인한다",
+      "verify": "gfx_v11_0.c·gfx_v12_0.c와 amdgpu_gfx.c 양쪽에서 disable_kq 가드 존재를 grep으로 대조한다"
+    },
+    {
+      "title": "APU VBIOS firmware 파일 폴백 — 라이선스·linux-firmware 정책 논쟁 예상",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "amdgpu APU/VBIOS 디스커버리 담당, 배포판 firmware 패키저",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260621173211.28443-1-oz@shift-computing.de/",
+      "if": "Radeon 780M(1002:1900) 등 APU에서 'Unable to locate a BIOS ROM' 바인딩 실패를 겪고 있으면",
+      "do": "패치 메일 스레드에서 AMD 메인테이너 수용 여부와 linux-firmware 정책 논의를 추적한다",
+      "verify": "amdgpu/1002_1900.bin 배포 경로와 라이선스 태그가 linux-firmware 저장소에 추가됐는지 확인한다"
+    },
+    {
+      "title": "nouveau falcon/ACR BL 로드 실패 메모리 누수 수정 — Cc: stable",
+      "priority": "중",
+      "impactType": "backport",
+      "affectedAudience": "nouveau falcon/ACR 펌웨어 경로 담당, stable 백포트 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/DJEQTPJAR8DW.18CJ2FC7YZPA3@kernel.org/",
+      "if": "nouveau ACR 초기화 실패 경로의 메모리 누수를 의심하거나 stable 백포트를 관리하면",
+      "do": "Fixes: 2541626cfb79 커밋이 포함된 stable 브랜치에 백포트 적용 여부를 greg-kh/stable 트리에서 확인한다",
+      "verify": "nvkm_falcon_fw_ctor_hs()에서 BL 로드 실패 시 'done' 라벨 경유 nvkm_falcon_fw_dtor() 호출이 보장되는지 패치 diff를 검토한다"
+    },
+    {
+      "title": "nouveau cli_work 단순화 수용 — dma_fence 구현 세부 의존 hack 경고 포함",
+      "priority": "하",
+      "impactType": "runtime",
+      "affectedAudience": "nouveau cli_work/dma_fence 수명관리 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/DJEU27KUZRNN.3R1F8AL6UL30S@kernel.org/",
+      "if": "nouveau fence/work 경로를 수정하거나 dma_fence 수명관리를 다루면",
+      "do": "lock dance 방식 대신 queue_rcu_work()/flush_rcu_work() 기반 재작업 계획이 후속 패치로 진행 중인지 메인테이너 스레드에서 확인한다",
+      "verify": "per-CLI shared work 구조에서 RCU 배리어가 per-fence 콜백 grace period를 실제로 커버하는지 검토한다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**amdgpu gfx_v11/v12 리팩터 — disable_kq 가드 누락으로 spurious GPU reset 위험**\n\namdgpu_gfx_handle_priv_fault 공통 함수로 fault 처리를 추출한 리팩터 패치에서 기존 `if (!adev->gfx.disable_kq)` 가드가 제거됐다는 [High] 심각도 지적이 코드 리뷰에서 제기됐다.\n\n영향: 커널 큐가 비활성(MES가 user queue 관리)인 환경에서 아이들 커널 ring의 me/pipe/queue ID가 우연히 겹치면 drm_sched_fault()가 잘못 트리거돼 불필요한 TDR 기반 GPU reset이 발생할 수 있으며, 머지 전 반드시 가드 복원이 필요하다.\n\n> \"The refactored `amdgpu_gfx_handle_priv_fault` removes the `if (!adev->gfx.disable_kq)` guard, which can cause spurious scheduler faults and GPU resets when kernel queues are disabled.\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260621114806.59E951F000E9@smtp.kernel.org/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**amdgpu gfx_v11/v12 중복 코드 제거 리팩터링**\n\ngfx_v11_0_handle_priv_fault와 gfx_v12_0_handle_priv_fault의 공통 ring 검색·스케줄러 fault 트리거 로직을 amdgpu_gfx.c의 amdgpu_gfx_handle_priv_fault로 추출하고, HW별 ring ID 디코딩은 각 버전 파일에 남긴다.\n\n영향: amdgpu gfx 유지보수 코드 중복이 줄지만, 회귀·보안 신호 섹션의 disable_kq 가드 누락 문제가 해결되기 전까지 머지 보류가 권고된다.\n\n> \"The functions gfx_v11_0_handle_priv_fault and gfx_v12_0_handle_priv_fault share the same logic for searching and triggering a scheduler fault on a ring.\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260620160407.8195-1-ulissespaixao@usp.br/)\n\n---\n\n**radeon atombios enc_priv NULL 포인터 하드닝**\n\nradeon_add_atom_encoder() 초기화 실패로 enc_priv(dig)가 NULL일 수 있는 경우 atombios_set_encoder_crtc_source()에서 역참조 전 NULL 체크 후 조기 반환을 추가한다. SVACE 정적 분석(linuxtesting.org)으로 발견됐다.\n\n영향: 오류 경로의 NULL 역참조(커널 패닉/DoS)를 방어하며, 동일 함수를 대상으로 한 별개의 SVACE 패치(Fixes: a4863ca93ccc, connector 체크)와 혼동하지 않아야 한다.\n\n> \"An error during initialization may leave radeon_encoder->enc_priv as NULL, leading to a NULL pointer dereference in atombios_set_encoder_crtc_source().\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260620183150.1248791-1-a.velichayshiy@ispras.ru/)\n\n---\n\n**amdgpu APU VBIOS firmware 파일 폴백 추가 제안**\n\n전용 VBIOS ROM이 없는 APU(예: Radeon 780M, 1002:1900)에서 기존 4경로(ACPI VFCT/VRAM BAR/ROM BAR/platform BIOS)가 모두 실패할 때 request_firmware()로 \"amdgpu/1002_1900.bin\" 형식 파일을 다섯 번째 폴백으로 로드하는 패치가 제출됐다.\n\n영향: 일부 APU의 바인딩 거부 문제를 해결할 수 있으나, 추출 VBIOS 이미지 배포는 라이선스·linux-firmware 정책 측면의 논쟁이 예상되며 AMD 메인테이너 수용 여부가 미확인이다.\n\n> \"Add a fifth fallback: request a firmware file named \\\"amdgpu/<vendor>_<device>.bin\\\" (e.g. \\\"amdgpu/1002_1900.bin\\\") via request_firmware().\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260621173211.28443-1-oz@shift-computing.de/)\n\n---\n\n**nouveau falcon/ACR BL 로드 실패 경로 메모리 누수 수정 (Cc: stable)**\n\nHS 부트로더 blob 로드 실패 시 nvkm_falcon_fw_ctor_hs()가 즉시 반환해 nvkm_falcon_fw_ctor()/_sign()이 할당한 상태를 누수하는 문제를 'done' 라벨 경유 nvkm_falcon_fw_dtor() 호출로 수정하고, BL fw를 별도 'blob_bl' 포인터로 분리 해제한다.\n\n영향: stable 백포트 대상(Fixes: 2541626cfb79)이나 제출자가 적합한 NVIDIA GPU 없이 allyesconfig 빌드만 확인했으므로 런타임 검증이 필요하다.\n\n> \"If loading the HS bootloader blob fails, nvkm_falcon_fw_ctor_hs() returns immediately. This skips the common cleanup path and leaks the firmware state allocated by nvkm_falcon_fw_ctor() and nvkm_falco\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/DJEQTPJAR8DW.18CJ2FC7YZPA3@kernel.org/)\n\n---\n\n**nouveau cli_work lock dance 단순화 수용 — dma_fence 구현 의존 경고**\n\nnouveau_cli_work에서 work 해제 전 fence 콜백 동기화를 위해 dma_fence lock/unlock dance를 도입하는 패치가 메인테이너에게 수용됐으나, dma_fence 구현 세부에 의존하는 hack이라는 경고가 리뷰에 기록됐다.\n\n영향: per-CLI shared work 특성상 단일 flush_rcu_work()로는 per-fence 콜백 grace period를 보장하지 못하므로 queue_rcu_work()/flush_rcu_work() 기반 재작업이 권고 사항으로 남는다.\n\n> \"The reason I call it hack is that it fundamentally relies on dma_fence implementation details and not a specified API contract.\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/DJEU27KUZRNN.3R1F8AL6UL30S@kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/amd/amdgpu: remove duplicated code in gfx_v11 and gfx_v12",
+      "url": "https://lore.kernel.org/dri-devel/20260620160407.8195-1-ulissespaixao@usp.br/",
+      "note": "thread"
+    },
+    {
+      "title": "disable_kq 가드 누락 리뷰 회신",
+      "url": "https://lore.kernel.org/dri-devel/20260621114806.59E951F000E9@smtp.kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/radeon: Add NULL pointer check for enc_priv in atombios_set_encoder_crtc_source()",
+      "url": "https://lore.kernel.org/dri-devel/20260620183150.1248791-1-a.velichayshiy@ispras.ru/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/amd/amdgpu: add firmware file fallback for APU VBIOS discovery",
+      "url": "https://lore.kernel.org/dri-devel/20260621173211.28443-1-oz@shift-computing.de/",
+      "note": "thread"
+    },
+    {
+      "title": "nouveau/firmware: fix memory leak on BL load failure",
+      "url": "https://lore.kernel.org/dri-devel/DJEQTPJAR8DW.18CJ2FC7YZPA3@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/nouveau: Simplify nouveau_cli_work — 메인테이너 수용 회신",
+      "url": "https://lore.kernel.org/dri-devel/DJEU27KUZRNN.3R1F8AL6UL30S@kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-21T19:15:57.309Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

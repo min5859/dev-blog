@@ -1,0 +1,127 @@
+{
+  "id": "2026-06-22-linux-perf-rt-weekly-rollup",
+  "topic": "linux-perf-rt",
+  "title": "2026-06-22 주간 요약",
+  "headline": "UDF 파일시스템 유지보수 담당, 신뢰할 수 없는 UDF 이미지를 마운트하는 PREEMPT_RT/일반 커널 사용자 주목: udf: avoid r",
+  "date": "2026-06-22",
+  "summary": "오늘의 핵심: 릴리스/로드맵 0건, 회귀·보안 신호 8건, 핵심 변경 0건. 리서치 dossier 의 출처를 근거로 정리했습니다.",
+  "tags": [
+    "주간"
+  ],
+  "highlights": [
+    {
+      "title": "udf: avoid recursive s_alloc_mutex deadlock when freeing AED blocks",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "UDF 파일시스템 유지보수 담당, 신뢰할 수 없는 UDF 이미지를 마운트하는 PREEMPT_RT/일반 커널 사용자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260621035841.56194-1-kartikey406@gmail.com/",
+      "if": "UDF 파일시스템 유지보수 담당, 신뢰할 수 없는 UDF 이미지를 마운트하는 PREEMPT_RT/일반 커널 사용자라면",
+      "do": "udf_delete_aext() gains an out-parameter so the freed allocation-extent (AED) bl",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/linux-rt-devel/20260621035841.56194-1-kartikey406@gmail.com/"
+    },
+    {
+      "title": "bpf: Reset register bounds before narrowing retval range in check_mem_access()",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF verifier maintainers and operators running BPF-LSM / unprivileged-adjacent programs",
+      "verifyLink": "https://lore.kernel.org/bpf/20260619110251.2576334-1-tristmd@gmail.com/",
+      "if": "BPF verifier maintainers and operators running BPF-LSM / unprivileged-adjacent programs라면",
+      "do": "When the verifier loads an LSM hook return value, __mark_reg_s32_range() interse",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/bpf/20260619110251.2576334-1-tristmd@gmail.com/"
+    },
+    {
+      "title": "bpf: lsm: disable xfrm_decode_session hook attachment",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF-LSM maintainers and operators with xfrm/IPsec traffic and LSM programs loaded",
+      "verifyLink": "https://lore.kernel.org/bpf/20260619130305.27779-1-include@grrlz.net/",
+      "if": "BPF-LSM maintainers and operators with xfrm/IPsec traffic and LSM programs loaded라면",
+      "do": "BPF LSM programs could attach to xfrm_decode_session(). That hook may return an ",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/bpf/20260619130305.27779-1-include@grrlz.net/"
+    },
+    {
+      "title": "net/smc: fix out-of-bounds read when sk_user_data holds a sk_psock",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF sockmap and net/smc maintainers; operators combining sock_ops programs with SMC",
+      "verifyLink": "https://lore.kernel.org/bpf/20260619150342.3626224-1-rhkrqnwk98@gmail.com/",
+      "if": "BPF sockmap and net/smc maintainers; operators combining sock_ops programs with SMC라면",
+      "do": "SMC stores its smc_sock in clcsock's sk_user_data tagged SK_USER_DATA_NOCOPY, wh",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/bpf/20260619150342.3626224-1-rhkrqnwk98@gmail.com/"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**udf: avoid recursive s_alloc_mutex deadlock when freeing AED blocks**\n\nudf_delete_aext() gains an out-parameter so the freed allocation-extent (AED) block is reported back instead of being released inline; the two callers holding s\n\n영향: udf_delete_aext() -> udf_free_blocks() -> udf_table_free_blocks() re-acquires s_alloc_mutex while it is already held. On PREEMPT_RT the rtmutex detector returns\n\n> On a non-RT kernel the same path is a hard self-deadlock (or a lockdep recursive-locking splat). It is reachable from a crafted UDF image via the write/sendfile path.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260621035841.56194-1-kartikey406@gmail.com/)\n\n**bpf: Reset register bounds before narrowing retval range in check_mem_access()**\n\nWhen the verifier loads an LSM hook return value, __mark_reg_s32_range() intersects (max_t/min_t) the hook's valid range with the register's existing bounds ins\n\n영향: Stale bounds make the verifier believe it knows a register's exact value while a different value is loaded at runtime — a verifier/runtime mismatch usable to by\n\n> creating a verifier/runtime mismatch that can be used to bypass BPF memory safety checks.\n\n[원문 확인](https://lore.kernel.org/bpf/20260619110251.2576334-1-tristmd@gmail.com/)\n\n**bpf: lsm: disable xfrm_decode_session hook attachment**\n\nBPF LSM programs could attach to xfrm_decode_session(). That hook may return an error, but security_skb_classify_flow() calls it from a void path and hits BUG_O\n\n영향: An attached BPF LSM program returning an error turns ordinary packet classification into a kernel panic — a DoS reachable from the network/xfrm path. Disabling \n\n> That hook may return an error, but security_skb_classify_flow() calls it from a void path and triggers BUG_ON() if an error is returned.\n\n[원문 확인](https://lore.kernel.org/bpf/20260619130305.27779-1-include@grrlz.net/)\n\n**net/smc: fix out-of-bounds read when sk_user_data holds a sk_psock**\n\nSMC stores its smc_sock in clcsock's sk_user_data tagged SK_USER_DATA_NOCOPY, while sockmap stores a sk_psock in the same field with SK_USER_DATA_NOCOPY|SK_USER\n\n영향: A KASAN slab-out-of-bounds in the TCP receive path triggerable by a BPF sock_ops/sockmap program on SMC sockets — a real corruption/DoS at the intersection of s\n\n> The inherited callback reads it as an smc_sock and dereferences a clcsk_* pointer past the end of the sk_psock\n\n[원문 확인](https://lore.kernel.org/bpf/20260619150342.3626224-1-rhkrqnwk98@gmail.com/)\n\n**net: mvneta: free/request IRQ across suspend/resume**\n\nPREEMPT_RT에서 mvneta가 suspend/resume 후 인터럽트 전달이 영구 중단되는 문제. v1/v2의 최초 분석(suspend 시 irq_desc::depth가 1→2가 됐다가 resume에서 1로만 감소해 unmask가 호출되지 않음, igb를 모방해 suspend에서\n\n영향: PREEMPT_RT(force-threaded IRQ)에서 percpu IRQ와 suspend/resume이 얽혀 NIC가 resume 후 죽는 회귀로, RT·전력관리 독자에게 직접적이다. 초기 igb 모방 접근이 잘못된 depth 분석에 기반했음이 드러나 패치 방향이 무거운 free/\n\n> mvneta uses request_percpu_irq() which sets IRQF_NO_SUSPEND, so the PM framework never touches this IRQ. The depth never changes from 1.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/bb1ee9c0-06d2-4bb1-8960-4088c4148eea@windriver.com/)\n\n**net: mvneta: free/request IRQ across suspend/resume**\n\nv2 patch가 mvneta_suspend()에서 IRQ를 free하고 mvneta_resume()에서 다시 request하도록 변경한다. armada3700은 free_irq/request_irq, 그 외는 free_percpu_irq/request_percpu_irq 경로를 타며,\n\n영향: PREEMPT_RT에서 force-threaded oneshot IRQ는 핸들러 호출 사이에 desc->depth==1로 마스킹된 채 suspend에 진입할 수 있다. IRQCHIP_MASK_ON_SUSPEND로 depth가 2가 되고 resume 때 1로만 감소해 unmask가 호출되\n\n> On resume, depth is decremented back to 1, but since it does not reach 0, the unmask is never called. The MPIC CPU routing remains cleared, permanently disabling interrupt delivery.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260617092028.1722407-1-yun.zhou@windriver.com/)\n\n**bpf: Fix stack slot index for Spectre v4 nospec checks**\n\ncheck_stack_write_fixed_off()에서 Spectre v4 sanitization 검사와 slot_type[] 기록이 서로 다른 byte-indexing을 쓰던 것을 동일한 stack-byte 인덱스로 통일한다. verifier.c 3줄 변경 + verifier_unp\n\n영향: sub-8-byte write에서 sanitization 검사가 실제로 덮어쓰이지 않는 byte를 보게 되어, lower half를 0으로 만든 뒤 upper half에 쓰는 두 번째 write의 nospec 배리어를 놓칠 수 있다. unprivileged BPF가 활성화된 시스템에서 \n\n> A zeroed lower half-slot followed by a write to the upper half-slot can therefore miss the nospec barrier for the second write.\n\n[원문 확인](https://lore.kernel.org/bpf/20260618-f01-11-stack-nospec-slot-index-v3-0-780297041721@mails.tsinghua.edu.cn/)\n\n**bpf: Preserve pointer spill metadata during half-slot cleanup**\n\nkernel/bpf/states.c의 __clean_func_state()에서 high half가 죽고 low half가 살아있는 STACK_SPILL을 STACK_MISC/STACK_ZERO로 강등하던 것을 scalar spill에 한정한다(`if (spill->type != SCAL\n\n영향: 포인터 spill의 메타데이터를 지우면 이후 살아있는 half에서의 32-bit fill이 non-scalar 레지스터 fill 검사를 우회해 평범한 scalar stack read로 취급될 수 있다 — verifier가 포인터를 scalar처럼 다루게 되는 안전 문제. 보수적으로 pa\n\n> For a pointer spill, this metadata clear lets a later 32-bit fill from the still-live half avoid the normal non-scalar register-fill check and be treated as an ordinary scalar stack read.\n\n[원문 확인](https://lore.kernel.org/bpf/20260617-f01-06-half-slot-pointer-spill-v2-1-42b9cdc3cf64@mails.tsinghua.edu.cn/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "국부 드라이버/플랫폼 패치는 본문에서 제외했습니다. 자기 영역 키워드로 lore.kernel.org에서 직접 검색하세요."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "udf: avoid recursive s_alloc_mutex deadlock when freeing AED blocks",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260621035841.56194-1-kartikey406@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Reset register bounds before narrowing retval range in check_mem_access()",
+      "url": "https://lore.kernel.org/bpf/20260619110251.2576334-1-tristmd@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: lsm: disable xfrm_decode_session hook attachment",
+      "url": "https://lore.kernel.org/bpf/20260619130305.27779-1-include@grrlz.net/",
+      "note": "thread"
+    },
+    {
+      "title": "net/smc: fix out-of-bounds read when sk_user_data holds a sk_psock",
+      "url": "https://lore.kernel.org/bpf/20260619150342.3626224-1-rhkrqnwk98@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "net: mvneta: free/request IRQ across suspend/resume",
+      "url": "https://lore.kernel.org/linux-rt-devel/bb1ee9c0-06d2-4bb1-8960-4088c4148eea@windriver.com/",
+      "note": "thread"
+    },
+    {
+      "title": "net: mvneta: free/request IRQ across suspend/resume",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260617092028.1722407-1-yun.zhou@windriver.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Fix stack slot index for Spectre v4 nospec checks",
+      "url": "https://lore.kernel.org/bpf/20260618-f01-11-stack-nospec-slot-index-v3-0-780297041721@mails.tsinghua.edu.cn/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Preserve pointer spill metadata during half-slot cleanup",
+      "url": "https://lore.kernel.org/bpf/20260617-f01-06-half-slot-pointer-spill-v2-1-42b9cdc3cf64@mails.tsinghua.edu.cn/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "source": "research-dossier",
+    "bucketCounts": {
+      "릴리스/로드맵": 0,
+      "회귀·보안 신호": 8,
+      "핵심 변경": 0,
+      "기타": 0
+    },
+    "entryCount": 8
+  }
+}

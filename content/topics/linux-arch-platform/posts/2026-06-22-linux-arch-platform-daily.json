@@ -1,0 +1,104 @@
+{
+  "id": "2026-06-22-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-06-22 BPF JIT·TLB 회귀 경고 — 아키텍처·플랫폼",
+  "headline": "riscv64 BPF 예외 JIT 지원 첫 추가, arm64 6.1-stable TLB flush 백포트 회귀 가능성 제기",
+  "date": "2026-06-22",
+  "summary": "riscv64가 BPF throw/assert(예외) JIT 지원을 arm64·x86에 이어 구현해 주요 아키텍처 기능 동등성에 한 걸음 다가섰다. 한편 arm64 6.1-stable 트리에 올라온 TLB flush 범위 변경 백포트가 FEAT_TLBIRANGE 미지원 CPU에서 성능 회귀를 유발할 수 있다는 우려가 제기됐다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "arm64",
+    "riscv",
+    "BPF",
+    "TLB",
+    "GIC",
+    "stable"
+  ],
+  "highlights": [
+    {
+      "title": "riscv64 BPF 예외 JIT 지원 추가",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "riscv BPF JIT 유지보수자 및 riscv에서 BPF exception/assert 기능을 쓰려는 개발자",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260621144259.288135-1-varunrmallya@gmail.com/",
+      "if": "riscv64에서 BPF throw/assert 프로그램을 로드하려 한다면",
+      "do": "CONFIG_FRAME_POINTER 활성화 여부를 확인하고 해당 시리즈의 머지 여부를 lore에서 검증한다",
+      "verify": "verifier가 exception 프로그램을 거부하지 않고 BPF exception selftest(tailcall 혼합 케이스 제외)가 통과하는지 확인한다"
+    },
+    {
+      "title": "arm64 6.1-stable TLB flush 백포트 회귀 우려",
+      "priority": "중",
+      "impactType": "backport",
+      "affectedAudience": "arm64 mm/메모리 핫플러그 유지보수자 및 stable 트리 백포트 검토자",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/b0d5836032ce3135bfc473f6bff791306d086925.camel@decadent.org.uk/",
+      "if": "6.1-stable 트리에서 메모리 핫리무브 경로 성능을 추적한다면",
+      "do": "stable 트리에 백포트(48478b9f7913)가 적용되었는지 확인하고 FEAT_TLBIRANGE 미지원 환경에서 회귀 여부를 검토한다",
+      "verify": "unmap_hotplug_range() 경로에서 TLB 무효화 횟수가 비정상적으로 증가하지 않는지 perf/ftrace로 확인한다"
+    },
+    {
+      "title": "GIC-v3 ITS OF 노드 참조 누수 수정 (Fixes 태그 논쟁)",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "GIC-v3 ITS/irqchip 유지보수자 및 Cavium ThunderX NUMA 플랫폼 사용자",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/24e2da5b-82a4-4889-8b62-5f445cec9657@linux.dev/",
+      "if": "Cavium ThunderX 플랫폼에서 erratum 23144 워크라운드 경로를 사용한다면",
+      "do": "최종 패치의 Fixes 태그가 fbf8f40e1658로 정정되었는지, __free(device_node) 방식으로 재제출되었는지 lore에서 확인한다",
+      "verify": "its_cpu_init_collection() 호출 후 OF 노드 참조 카운트가 누수 없이 해제되는지 kmemleak으로 검증한다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**arm64/mm: 6.1-stable TLB flush 백포트 회귀 가능성 제기**\n\n상류 커밋 48478b9f7913을 6.1-stable에 백포트할 때 unmap_hotplug_pmd_range()/pud_range()의 TLB 무효화 범위가 PAGE_SIZE에서 PMD_SIZE/PUD_SIZE로 바뀌며, Ben Hutchings가 이 변경이 구형 환경에서 회귀를 유발할 수 있다고 지적했다.\n\n영향: FEAT_TLBIRANGE 미지원 CPU나 6.13 이전 커널에서는 base page 간격으로 다수의 TLBI가 발생하며, PUD_SIZE 경우 사실상 flush_tlb_all()에 수렴해 메모리 핫리무브 경로 성능이 저하될 수 있다.\n\n> \"this change is fine for Linux 6.13+ with a CPU that supports TLB range flushing, but otherwise results in unnecessarily executing multiple TLB invalidations at intervals of the base page size.\"\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/b0d5836032ce3135bfc473f6bff791306d086925.camel@decadent.org.uk/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**riscv: BPF 예외(throw/assert) JIT 지원 추가**\n\nriscv64 BPF JIT에 arch_bpf_stack_walk() 구현, exception 경계 프로그램용 전체 callee-saved 레지스터(ra, s0-s11) 저장(rv_exception_csave_regs), bpf_jit_supports_exceptions() true 반환을 추가했다. CONFIG_FRAME_POINTER에 게이트된다.\n\n영향: arm64·x86에 이어 riscv64에서도 BPF throw/assert 프로그램이 verifier 단계를 통과해 실행 가능해지며 주요 아키텍처 기능 동등성이 확보된다. bpf-to-bpf 호출과 tailcall 혼합 케이스는 아직 미지원이다.\n\n> \"bpf_jit_supports_exceptions() returns true now so that the verifier does not reject programs containing BPF exceptions on riscv64.\"\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260621144259.288135-1-varunrmallya@gmail.com/)\n\n---\n\n**irqchip/gic-v3-its: of_get_cpu_node() OF 노드 참조 누수 수정**\n\nits_cpu_init_collection()의 Cavium 23144 워크라운드 경로에서 of_get_cpu_node()로 얻은 device_node를 NUMA 노드 조회 후 해제하지 않던 누수를 수정한다. 리뷰에서 Fixes 태그 정확성(fbf8f40e1658 지목)과 __free(device_node) 클린업 인프라 사용 여부를 두고 논의가 이어지고 있다.\n\n영향: Cavium ThunderX NUMA 환경 장기 운용 시 device_node 참조 카운트가 반환되지 않는 잠재 누수가 제거된다. 최종 Fixes 태그와 코드 스타일은 재제출 후 확정 예정이다.\n\n> \"It looks to me that this issue was introduced in fbf8f40e1658 (\\\"irqchip/gicv3-its: numa: Enable workaround for Cavium thunderx erratum 23144\\\"). What am I missing?\"\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/24e2da5b-82a4-4889-8b62-5f445cec9657@linux.dev/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "arm64/mm: batched TLB flush 백포트 회귀 우려 스레드 (Ben Hutchings)",
+      "url": "https://lore.kernel.org/linux-arm-kernel/b0d5836032ce3135bfc473f6bff791306d086925.camel@decadent.org.uk/",
+      "note": "thread"
+    },
+    {
+      "title": "[PATCH 1/2] arm64/mm: Enable batched TLB flush in unmap_hotplug_range()",
+      "url": "https://lkml.org/lkml/2026/2/2/100",
+      "note": "thread"
+    },
+    {
+      "title": "irqchip/gic-v3-its: Fixes 태그 논쟁 및 __free 제안 스레드 (Marc Zyngier)",
+      "url": "https://lore.kernel.org/linux-arm-kernel/24e2da5b-82a4-4889-8b62-5f445cec9657@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: BPF exceptions JIT 지원 추가 패치 시리즈",
+      "url": "https://lore.kernel.org/linux-riscv/20260621144259.288135-1-varunrmallya@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv BPF exceptions selftest 결과 회신",
+      "url": "https://lore.kernel.org/linux-riscv/950216803ac2380e0537b27c94ff87dd2ae0dc689fe320c51d96b9095cefc614@mail.kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-21T19:10:23.265Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

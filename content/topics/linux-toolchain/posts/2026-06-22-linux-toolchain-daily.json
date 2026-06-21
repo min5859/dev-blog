@@ -1,0 +1,128 @@
+{
+  "id": "2026-06-22-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-06-22 Rust DRM 수명 결함 수정 — Linux Toolchain",
+  "headline": "Rust DRM ioctl 수명 결함 수정과 zerocopy 전환으로 드라이버 안전성 강화, trace_printk 분리로 빌드 최적화",
+  "date": "2026-06-22",
+  "summary": "Rust DRM ioctl 추상화의 unbounded lifetime soundness 결함이 패치되고 Nova GPU가 zerocopy::FromBytes derive로 전환되는 등 Rust 드라이버 안전성이 강화됐다. kbuild 쪽에서는 trace_printk.h 분리·SCMI modalias 재작업으로 빌드 시간 단축과 모듈 자동 로딩이 개선된다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "Rust",
+    "kbuild",
+    "DRM",
+    "보안",
+    "빌드최적화"
+  ],
+  "highlights": [
+    {
+      "title": "Rust DRM ioctl unbounded lifetime 수정",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "Rust DRM 드라이버 작성자, rust/kernel drm 추상화 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260620184924.2247517-2-dakr@kernel.org/",
+      "if": "Rust DRM ioctl 핸들러 인자에 'static을 명시한 코드가 있다면 즉시 확인",
+      "do": "패치 적용 후 핸들러 시그니처에서 'static 수명 주석 제거 여부를 점검",
+      "verify": "패치 스레드 diff에서 lifetime 파라미터 'a 바인딩 적용을 확인"
+    },
+    {
+      "title": "Nova GPU 파싱 구조체 zerocopy::FromBytes derive 전환",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "nova-core Rust 드라이버 작성자, zerocopy 도입 추적자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260621143647.264770-1-nico.antinori.7@gmail.com/",
+      "if": "nova-core에서 수동 unsafe kernel::transmute::FromBytes를 사용 중이라면",
+      "do": "zerocopy::FromBytes derive로 교체하고 컴파일 타임 validity 검사 통과 여부를 확인",
+      "verify": "zerocopy crate 벤더링 상태·버전 및 컴파일 오류 없음을 직접 확인"
+    },
+    {
+      "title": "trace_printk.h를 kernel.h에서 분리",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "kbuild·헤더 의존성 정리 추적자, 빌드 시간 최적화 담당",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20260621093430.264983361@kernel.org/",
+      "if": "trace_printk()를 사용하는 드라이버·파일에서 헤더 누락 빌드 에러가 발생한다면",
+      "do": "CONFIG_TRACE_PRINTK_DEBUGGING 활성화 또는 trace_printk.h 명시적 include를 추가",
+      "verify": "allmodconfig 빌드에서 헤더 누락 에러가 없음을 확인"
+    },
+    {
+      "title": "Rust fsleep()/udelay() 범위 초과 입력 경고 추가",
+      "priority": "하",
+      "impactType": "runtime",
+      "affectedAudience": "rust/kernel time 추상화 사용 드라이버 작성자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260621105909.4055210-1-ekffu200098@gmail.com/",
+      "if": "fsleep()/udelay()에 범위 초과 값을 전달하는 드라이버가 있다면",
+      "do": "debug 빌드에서 debug_assert! 패닉 메시지를 확인 후 입력 값을 보정",
+      "verify": "pr_warn_once! 메시지가 dmesg에 출력되지 않음을 런타임에서 확인"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**rust: drm: ioctl — unbounded lifetime 수정**\n\ndeclare_drm_ioctls! 매크로가 생성하던 unbounded lifetime을 로컬 anchor 변수에 묶인 lifetime 파라미터 'a로 교체해, 핸들러가 'static 주석으로 ioctl 호출보다 오래 사는 참조를 저장하던 soundness 결함을 닫는다.\n\n영향: Rust DRM 추상화의 use-after-free 위험 제거 — GPU/DRM Rust 드라이버 작성자에게 직접적 안전성 영향이며 sashiko-bot 자동 보고로 발견됐다.\n\n> \"If an ioctl handler explicitly annotates its parameters with 'static, the compiler accepts this, allowing the handler to stash references that outlive the ioctl call.\"\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260620184924.2247517-2-dakr@kernel.org/)\n\n---\n\n**gpu: nova-core — zerocopy::FromBytes derive 전환**\n\nFalconUCodeDescV3·PcirStruct·BitHeader·NpdeStruct·PmuLookupTableHeader 5개 파싱 구조체의 수동 unsafe FromBytes 구현을 derivable zerocopy::FromBytes로 교체해 컴파일 타임 validity 검사를 도입한다.\n\n영향: nova-core 파싱 경로의 수동 unsafe 제거 및 upstream zerocopy crate 채택 방향 확인 — 머지 여부 및 zerocopy 벤더링 상태는 확인 필요.\n\n> \"When this trait is derived, validity checks are performed at compile time to make sure that the type can safely implement `FromBytes`.\"\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260621143647.264770-1-nico.antinori.7@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**tracing: trace_printk.h를 kernel.h에서 분리**\n\nCONFIG_TRACE_PRINTK_DEBUGGING 신규 옵션을 추가하고 trace_printk.h를 kernel.h에서 분리해, 디버그 전용 API가 전체 커널 빌드에 강제 포함되지 않도록 한다(21개 파일에 명시적 include 추가 필요).\n\n영향: kernel.h를 포함하는 모든 파일의 불필요한 컴파일 오버헤드 절감 — 시리즈 머지 여부 및 Kconfig 기본값은 확인 필요.\n\n> \"There's been complaints about trace_printk() being defined in kernel.h as it can increase the compilation time.\"\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20260621093430.264983361@kernel.org/)\n\n---\n\n**tracing: 트레이싱 제어 prototype trace_control.h 신설 논의**\n\nkernel.h로 되돌리려던 트레이싱 제어 prototype에 Yury Norov가 반대하고('사용처가 약 10개 파일뿐'), Steven Rostedt가 별도 trace_control.h 헤더 추가에 동의해 분리 범위를 조율 중이다.\n\n영향: trace_printk.h 분리 시리즈의 최종 형태(kernel.h 오염 없는 trace_control.h)를 결정 — v2 반영 여부는 확인 필요.\n\n> \"kernel.h is included everywhere. Is that API needed everywhere? No, it's needed in literally 10 files. So, no place in kernel.h.\"\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/C4ED8F5F-042B-43B6-B17A-7C3E2743E48F@goodmis.org/)\n\n---\n\n**firmware: arm_scmi — 모듈 자동 로딩 modalias 재작업**\n\nmodpost가 MODULE_DEVICE_TABLE(scmi, ...) 정보를 소비하도록 SCMI alias 지원을 재작업하고 protocol-based alias를 추가해, SCMI 드라이버(예: Arm SCMI CPUfreq)가 부팅·핫플러그 시 자동 로드되게 한다.\n\n영향: modpost/alias 생성 메커니즘 변경으로 SCMI 기반 모듈 자동 로딩 문제 해결 — protocol-based alias 과잉 로딩 위험 관련 리뷰 논의는 확인 필요.\n\n> \"Rework the SCMI device table alias support to make modpost consume the information from MODULE_DEVICE_TABLE(scmi, ...) and allow drivers to be loaded based on this information, if known.\"\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20260618-scmi-modalias-v2-0-8c7547c1be21@oss.qualcomm.com/)\n\n---\n\n**rust: time — fsleep()/udelay() 범위 초과 입력 경고 추가**\n\nfsleep()에 debug_assert!를 추가하고 두 함수 모두에 pr_warn_once!를 넣어, 범위 초과 delay 입력이 debug 빌드에서 즉시 검출되고 프로덕션에서도 관측된다.\n\n영향: 조용히 clamp되던 타이밍 버그를 가시화해 Rust time API 오용 디버깅 품질 향상 — 머지 여부 및 clamp 정확한 임계값은 확인 필요.\n\n> \"fsleep() documents out-of-range input as a bug but does not check it, unlike udelay(). Add `debug_assert!` calls to catch it in debug builds.\"\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260621105909.4055210-1-ekffu200098@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "rust: drm: ioctl: fix unbounded lifetimes in ioctl handler arguments",
+      "url": "https://lore.kernel.org/rust-for-linux/20260620184924.2247517-2-dakr@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "[PATCH v2 1/8] rust: drm: ioctl: Add DRM ioctl abstraction (원본 커밋 참조)",
+      "url": "https://www.mail-archive.com/nouveau@lists.freedesktop.org/msg44046.html",
+      "note": "thread"
+    },
+    {
+      "title": "tracing: Move trace_printk.h out of kernel.h",
+      "url": "https://lore.kernel.org/linux-kbuild/20260621093430.264983361@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "tracing: Move non-trace_printk prototypes back to kernel.h (trace_control.h 논의)",
+      "url": "https://lore.kernel.org/linux-kbuild/C4ED8F5F-042B-43B6-B17A-7C3E2743E48F@goodmis.org/",
+      "note": "thread"
+    },
+    {
+      "title": "gpu: nova-core: parse structs via zerocopy",
+      "url": "https://lore.kernel.org/rust-for-linux/20260621143647.264770-1-nico.antinori.7@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Rust-for-Linux issue #1241 (zerocopy 관련)",
+      "url": "https://github.com/Rust-for-Linux/linux/issues/1241",
+      "note": "thread"
+    },
+    {
+      "title": "rust: time: warn and assert out-of-range input in fsleep() and udelay()",
+      "url": "https://lore.kernel.org/rust-for-linux/20260621105909.4055210-1-ekffu200098@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "firmware: arm_scmi: Ensure automatic module loading (v2)",
+      "url": "https://lore.kernel.org/linux-kbuild/20260618-scmi-modalias-v2-0-8c7547c1be21@oss.qualcomm.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-21T18:54:06.856Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
