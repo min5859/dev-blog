@@ -1,0 +1,115 @@
+{
+  "id": "2026-06-23-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-06-23 riscv BUG() panic·SMMUv3 침묵 결함 — Arch·Platform",
+  "headline": "riscv BUG()가 머신 전체를 panic시키는 트랩 설계 논쟁과 arm-smmu-v3 page fault 무음 손실 패치가 동시에 제기됐다",
+  "date": "2026-06-23",
+  "summary": "riscv의 EBREAK 단일 예외 경로에서 BUG()/kprobes/kgdb를 함께 처리하는 구조가 전체 머신 panic을 유발한다는 설계 논쟁이 불거졌고, arm-smmu-v3에서 priq IRQ 미할당 시 SVA page fault를 조용히 버리는 silent failure 버그 패치가 제출됐다. ux500 전원 도메인 정리 작업은 DBx500 PRCMU 헤더 중복 정의 오류로 arc/arm/arm64 전반에 걸친 빌드 회귀를 일으켰다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "riscv",
+    "arm64",
+    "smmu",
+    "iommu",
+    "perf",
+    "ux500",
+    "pmu"
+  ],
+  "highlights": [
+    {
+      "title": "riscv BUG()가 태스크 하나를 죽이는 대신 머신 전체를 panic시킴",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "riscv arch entry/트랩 처리 유지보수 담당, generic entry 코드 관련자",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260622111757.GR48970@noisy.programming.kicks-ass.net/",
+      "if": "riscv 커널에서 BUG()가 단일 태스크 종료 없이 panic을 유발하는 현상을 추적한다면",
+      "do": "x86 방식처럼 WARN/BUG는 #UD, gdb/kprobes는 #BP로 예외를 분리하는 패치 방향을 lore에서 추적할 것",
+      "verify": "합의된 패치 방향(예외 분리 vs irqentry_nmi_exit 전환) 및 최종 머지 여부를 lore 스레드에서 확인할 것"
+    },
+    {
+      "title": "arm-smmu-v3: priq IRQ 없을 때 PRI 큐에 쌓인 SVA page fault 전량 무음 손실",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "arm-smmu-v3 드라이버 및 arm64 플랫폼/SVA·IOPF 사용자",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260622-smmu_pri-v1-1-14ad92b6043f@debian.org/",
+      "if": "arm64 플랫폼에서 SVA/IOPF를 사용하는데 펌웨어가 priq GSIV를 할당하지 않는다면",
+      "do": "해당 패치(v1) 적용 및 stable 백포트 대상 범위를 lore에서 확인할 것",
+      "verify": "패치 적용 후 IOMMU_DEV_FEAT_IOPF가 더 이상 상위에 광고되지 않고 PRI 큐가 활성화되지 않는지 확인할 것"
+    },
+    {
+      "title": "ux500-power-domains-v7.1: PRCMU 헤더 redefinition으로 다수 빌드 회귀",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "ARM ux500/nomadik 플랫폼 및 dbx500 PRCMU MFD 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/202606230255.rEhNEYL4-lkp@intel.com/",
+      "if": "linusw/linux-nomadik ux500-power-domains-v7.1 브랜치를 빌드하거나 해당 트리를 머지 대상으로 검토한다면",
+      "do": "dbx500-prcmu.h 헤더 가드/스텁 중복 정의 수정 패치가 제출됐는지 lore를 확인할 것",
+      "verify": "arc/arm/arm64 allmodconfig에서 prcmu_* 심볼 redefinition 오류 없이 빌드 성공하는지 확인할 것"
+    },
+    {
+      "title": "RISC-V perf counter delegation v7: QEMU virt legacy 이벤트 vendor 테이블 추가",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "riscv PMU/perf 및 QEMU virt 가상화 환경 사용자",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260622-counter_delegation-v7-18-0ba2fd34614e@meta.com/",
+      "if": "QEMU virt 환경에서 riscv perf를 사용하거나 counter delegation 기능을 테스트한다면",
+      "do": "counter delegation v7 시리즈 전체의 머지 여부와 대상 릴리스를 Atish Patra의 lore 시리즈에서 추적할 것",
+      "verify": "counter delegation 활성화 상태에서 QEMU virt에 perf stat을 실행해 이벤트 계수 정상 동작을 확인할 것"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**riscv EBREAK 단일 예외 경로: BUG()가 머신 전체 panic 유발**\n\ndo_trap_break()에서 BUG()/kprobes/kgdb를 하나의 예외 경로로 처리해, BUG() 시 irqentry_nmi_enter()로 in_interrupt() 상태가 되어 die()→make_task_dead()→panic() 경로를 타는 문제가 논의 중. Peter Zijlstra는 제안된 패치가 BUG()와 local_irq_disable();BUG()를 다르게 동작시킨다고 지적하며 예외 분리 구조를 권고.\n\n영향: 태스크 단위 종료가 아닌 전체 머신 halt로 이어져 riscv 커널 안정성·디버깅 흐름에 직접 영향. 트랩 진입 아키텍처 설계가 아직 합의되지 않은 상태.\n\n> \"currently on riscv all BUG() simply completely panic() the entire machine, rather than just killing the one task.\"\n\n> \"on x86 WARN/BUG and kGDB use different exceptions (#UD for WARN/BUG and #BP for gdb)... you're handling 3 different cases in one exception, which is a bit of a mess\"\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260622111757.GR48970@noisy.programming.kicks-ass.net/)\n\n---\n\n**ux500-power-domains-v7.1: DBx500 PRCMU 헤더 redefinition 빌드 회귀**\n\nlinusw/linux-nomadik의 ux500-power-domains-v7.1 브랜치(HEAD 10278e18bc5a)에서 intel lkp가 빌드 회귀 보고. dbx500-prcmu.h의 prcmu_abb_read/write, prcmu_config_clkout, prcmu_ac_wake_req/sleep_req 등이 redefinition 오류를 일으키며 arc/arm/arm64 allmodconfig·allyesconfig·randconfig 다수에서 재현.\n\n영향: ux500 전원 도메인 정리 작업이 MFD 헤더 중복 정의를 노출시켜 광범위한 config에서 빌드를 깨뜨림. 트리 머지 전 해결 필요.\n\n> \"include/linux/mfd/dbx500-prcmu.h:408:19: error: redefinition of 'prcmu_abb_read' ... :424:19: error: redefinition of 'prcmu_config_clkout'\"\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/202606230255.rEhNEYL4-lkp@intel.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**arm-smmu-v3: priq IRQ 미할당 시 PRI 비활성화 패치 제출**\n\n펌웨어가 IDR0.PRI로 PRI-capable이라 광고했지만 priq GSIV를 할당하지 않은 경우, 기존에는 경고만 내고 ARM_SMMU_FEAT_PRI를 유지한 채 PRI 큐를 활성화하고 IOMMU_DEV_FEAT_IOPF까지 상위에 광고했다. 패치는 IRQ 누락 경로에서 ARM_SMMU_FEAT_PRI를 클리어해 드라이버 전체가 PRI-less로 일관되게 동작하도록 수정.\n\n영향: 아무도 드레인하지 않는 큐에 page request가 쌓이고 SVA 바인드가 성공한 것처럼 보이면서 page fault를 전량 무음 손실하는 silent failure를 방지. arm64 플랫폼/펌웨어 통합 및 SVA·IOPF 사용 환경에서 중요.\n\n> \"Page Request messages from devices land in a queue no one drains, and SVA binds appear to succeed while silently dropping every page fault.\"\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260622-smmu_pri-v1-1-14ad92b6043f@debian.org/)\n\n---\n\n**RISC-V perf: counter delegation v7 — QEMU virt legacy 이벤트 vendor 테이블 추가**\n\ncounter delegation v7 시리즈(Atish Patra, Meta)의 일환으로, QEMU virt 머신이 지원하는 최소한의 legacy perf 이벤트를 vendor 테이블에 추가. counter delegation이 활성화된 환경에서 사용자가 해당 이벤트를 perf로 수집할 수 있게 됨.\n\n영향: riscv PMU를 S-mode에서 직접 다루는 counter delegation 기능의 QEMU 기반 개발·테스트 흐름 개선. v7 시리즈 전체의 머지 여부 및 대상 릴리스는 확인 필요.\n\n> \"Qemu virt machine supports a very minimal set of legacy perf events. Add them to the vendor table so that users can use them when counter delegation is enabled.\"\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260622-counter_delegation-v7-18-0ba2fd34614e@meta.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "**raid6: riscv RVV 심볼 미선언 sparse 경고 제거**\n\nlib/raid6/riscv/rvv.c가 익스포트 함수 선언이 담긴 pq_arch.h를 include하지 않아 raid6_rvvx1/x2/x4/x8 심볼에 대한 sparse 경고가 발생. 헤더 include 추가로 해결(Ben Dooks, Codethink). 기능 변경 없는 정적 분석 위생 수정.\n\n영향: riscv RVV용 RAID6 가속 경로의 sparse 클린 상태 유지. 런타임 동작 변화 없음.\n\n> \"The riscv rvv.c file is missing the include of pq_arch.h which defines all the exported functions... warning: symbol 'raid6_rvvx1' was not declared. Should it be static?\"\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260622135207.480540-1-ben.dooks@codethink.co.uk/)"
+    }
+  ],
+  "confidence": {
+    "level": "medium",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "riscv: entry: Fixup do_trap_break from kernel side (Peter Zijlstra)",
+      "url": "https://lore.kernel.org/linux-riscv/20260622111757.GR48970@noisy.programming.kicks-ass.net/",
+      "note": "thread"
+    },
+    {
+      "title": "iommu/arm-smmu-v3: Disable PRI when no priq IRQ is available",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260622-smmu_pri-v1-1-14ad92b6043f@debian.org/",
+      "note": "thread"
+    },
+    {
+      "title": "RISC-V: perf: Add Qemu virt machine events (counter delegation v7-18)",
+      "url": "https://lore.kernel.org/linux-riscv/20260622-counter_delegation-v7-18-0ba2fd34614e@meta.com/",
+      "note": "commit"
+    },
+    {
+      "title": "[linusw-nomadik:ux500-power-domains-v7.1] BUILD REGRESSION (intel lkp)",
+      "url": "https://lore.kernel.org/linux-arm-kernel/202606230255.rEhNEYL4-lkp@intel.com/",
+      "note": "thread"
+    },
+    {
+      "title": "raid6: fix riscv symbol undeclared warnings (Ben Dooks)",
+      "url": "https://lore.kernel.org/linux-riscv/20260622135207.480540-1-ben.dooks@codethink.co.uk/",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-22T19:02:39.319Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
