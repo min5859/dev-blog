@@ -1,0 +1,114 @@
+{
+  "id": "2026-06-24-linux-distro-stable-daily",
+  "topic": "linux-distro-stable",
+  "title": "2026-06-24 teql UAF 직렬화 패치 — Linux Stable",
+  "headline": "net/sched teql slaves_lock 신규 등장으로 ZDI 확인 UAF 차단, 5.15 LTS에 nfsd 힙 오버플로 수정 배포",
+  "date": "2026-06-24",
+  "summary": "ZDI(Trend Micro)가 재현한 teql RCU stale 포인터 slab-use-after-free가 slaves_lock 직렬화 패치로 stable 큐에 진입했다. 어제 보고된 5.15.210·7.0.13 등 stable 다중 라인에는 nfsd 힙 오버플로·nft_fib 스택 누출 등 네트워크 공격면 수정이 이미 배포됐으며, 원문 직접 확인이 권장된다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "net/sched",
+    "stable",
+    "보안",
+    "UAF",
+    "netfilter",
+    "LTS"
+  ],
+  "highlights": [
+    {
+      "title": "teql slaves_lock: ZDI 확인 slab-use-after-free 직렬화 패치 (신규)",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "net/sched(트래픽 컨트롤) 유지보수 담당 및 stable 백포트 검토자",
+      "verifyLink": "https://lore.kernel.org/stable/20260623184247.508956-1-jhs@mojatatu.com/",
+      "if": "net/sched teql 장치를 사용하는 커널을 운영 중이거나 stable 백포트를 검토 중이라면",
+      "do": "lore 링크의 패치를 확인하고 해당 stable 브랜치에 slaves_lock 백포트 채택 여부를 추적할 것",
+      "verify": "KASAN 빌드에서 AF_PACKET 송신과 teql 장치 삭제를 동시 수행해 slab-use-after-free 미발생 확인"
+    },
+    {
+      "title": "5.15.210: nfsd 힙 오버플로 + ksmbd OOB read 수정 (어제 보고)",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "5.15 LTS 를 운영하는 배포/엔터프라이즈 커널 보안 담당",
+      "verifyLink": "https://git.kernel.org/stable/h/v5.15.210",
+      "if": "NFSv4.0 또는 ksmbd 파일서버를 5.15 커널로 외부에 노출 중이라면",
+      "do": "5.15.210 으로 업그레이드하거나 nfsd·ksmbd 수정 커밋을 체리픽할 것",
+      "verify": "NFSv4.0 LOCK 재시도와 ksmbd ACE 검사 경로에서 메모리 손상 경고 없음 확인(KASAN)"
+    },
+    {
+      "title": "7.0.13: nft_fib OIFNAME 스택 누출 + eth_hdr 헤더 검증 (어제 보고)",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "stable 7.0 라인을 추적하는 배포/커널 보안 담당",
+      "verifyLink": "https://git.kernel.org/stable/h/v7.0.13",
+      "if": "netfilter nft_fib 를 7.0.x 커널에서 사용 중이라면",
+      "do": "7.0.13 으로 업데이트하고 OIFNAME 규칙 적용 환경의 스택 정보 누출 여부를 점검할 것",
+      "verify": "nft_fib OIFNAME 경로에서 정보 누출 없음 확인(ftrace/KASAN)"
+    },
+    {
+      "title": "7.1.1: stable 헤드 첫 점 릴리스 (어제 보고)",
+      "priority": "하",
+      "impactType": "release",
+      "affectedAudience": "stable 7.1 라인을 추적하는 커널 유지보수 담당",
+      "verifyLink": "https://git.kernel.org/stable/h/v7.1.1",
+      "if": "7.1 라인을 베이스로 추적 중이라면",
+      "do": "fs/fcntl fasync 락 순서 수정과 driver core 미등록 버스 장치 거부 변경 검토",
+      "verify": "fasync 시그널링 경로에서 SOFTIRQ-unsafe 락 순서 경고 없음 확인"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.1.1 — stable 헤드 첫 점 릴리스**\n\n7.1 라인의 첫 점 릴리스로 10건 소규모 백포트. fs/fcntl fasync SOFTIRQ-unsafe 락 순서 수정과 driver core 미등록 버스 장치 거부 검증이 포함됐다.\n\n영향: fs·driver core 기반 잠금 안전성·장치 모델 무결성에 영향. 보안 비중은 크지 않으나 7.1 채택자의 기준선 릴리스.\n\n> \"driver core: reject devices with unregistered buses ... fs/fcntl: fix SOFTIRQ-unsafe lock order in fasync signaling\"\n\n[원문 확인](https://git.kernel.org/stable/h/v7.1.1)\n\n※ 어제 보고된 릴리스. 추가 진척 없음. 인용구 직접 검증 권장(원문 페이지 403 확인 실패)."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**net/sched teql: slaves_lock 도입으로 UAF·경쟁 조건 직렬화 (신규)**\n\nteql의 master->slaves 단일 연결 리스트가 teql_master_xmit()/teql_dequeue()/teql_init()/teql_destroy() 에서 락·RCU 보호 없이 동시 변경되던 문제를 새 slaves_lock으로 직렬화. ZDI가 qdisc의 RCU grace period 해제 이후 다른 CPU의 teql_master_xmit()이 stale 포인터를 잡는 경로를 재현했다.\n\n영향: netlink(rtnl_dellink) 경로에서 KASAN으로 확인된 slab-use-after-free로 로컬 권한 상승 후보. teql은 root qdisc 전용이라 공격면은 좁지만, net/sched 유지보수자와 stable 백포트 담당이 즉시 추적해야 한다.\n\n> \"zdi-disclosures@trendmicro.com has demonstrated that the qdisc is freed after an RCU grace period, but teql_master_xmit() running on another CPU can still hold a stale pointer into the list\"\n\n> \"BUG: KASAN: slab-use-after-free in teql_destroy+0x3ca/0x440 ... Read of size 8 at addr ffff88802923aa80 by task ip/10024\"\n\n[원문 확인](https://lore.kernel.org/stable/20260623184247.508956-1-jhs@mojatatu.com/)\n\n---\n\n**Linux 7.0.13: nft_fib OIFNAME 스택 누출 + eth_hdr 헤더 검증 (어제 보고)**\n\n381건 백포트 중 nft_fib OIFNAME 레지스터 경유 stale 스택 누출 수정과 eth_hdr() 사용 전 Ethernet MAC 헤더 존재 요구 수정이 포함됐다.\n\n영향: 네트워크 입력으로 트리거 가능한 정보 누출·헤더 검증 우회 수정으로 7.0.x 운영자의 즉시 채택 대상.\n\n> \"netfilter: nft_fib: fix stale stack leak via the OIFNAME register\"\n\n[원문 확인](https://git.kernel.org/stable/h/v7.0.13)\n\n※ 어제 보고된 릴리스. 추가 진척 없음. 인용구 직접 검증 권장(quote 미검증).\n\n---\n\n**Linux 5.15.210: nfsd 힙 오버플로 + ksmbd OOB read (어제 보고)**\n\n409건 백포트 중 nfsd NFSv4.0 LOCK replay cache 힙 오버플로, ksmbd smb_check_perm_dacl() ACE-walk OOB read 회귀, MAC 상수시간 비교, apparmor 기본 DFA 상태 경계 검증이 포함됐다.\n\n영향: 파일서버 노출 시스템에서 원격·로컬 메모리 손상 공격면. 5.15 LTS 운영자의 우선 적용 항목.\n\n> \"nfsd: fix heap overflow in NFSv4.0 LOCK replay cache ... ksmbd: OOB read regression in smb_check_perm_dacl() ACE-walk loops ... ksmbd: Compare MACs in constant time\"\n\n[원문 확인](https://git.kernel.org/stable/h/v5.15.210)\n\n※ 어제 보고된 릴리스. 추가 진척 없음. 인용구 직접 검증 권장(quote 미검증)."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Linux 5.10.259: apparmor DFA 경계 검증 + crypto 정수 언더플로 백포트 (어제 보고)**\n\n343건 백포트 중 apparmor 기본 DFA 상태 경계 검증, lib/crypto mpi_read_raw_from_sgl() 정수 언더플로, usb gadget f_hid 참조 누수, Bluetooth L2CAP cleanup_listen 채널 타이머 정리가 포함됐다.\n\n영향: 5.10 LTS 기반 임베디드·배포 환경에 crypto 정수 언더플로·LSM 무결성 수정 전달. 장수 베이스라 적용 범위가 넓다.\n\n> \"apparmor: validate default DFA states are in bounds ... lib/crypto: mpi: Fix integer underflow in mpi_read_raw_from_sgl()\"\n\n[원문 확인](https://git.kernel.org/stable/h/v5.10.259)\n\n※ 어제 보고된 릴리스. 추가 진척 없음. 인용구 직접 검증 권장(quote 미검증)."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "혼합 (teql 항목 high / stable 릴리스 항목 low)",
+    "note": "teql UAF 패치는 lore.kernel.org 스레드에서 직접 확인된 증거 기반입니다. stable 릴리스(7.1.1·7.0.13·5.15.210·5.10.259) 항목은 kernel.org Anubis 403 오류로 원문 인용구 검증에 실패했습니다. 중요한 판단 전에는 링크된 원문을 직접 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "net/sched: sch_teql: Introduce slaves_lock to avoid race condition and UAF",
+      "url": "https://lore.kernel.org/stable/20260623184247.508956-1-jhs@mojatatu.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Linux 7.1.1 changelog",
+      "url": "https://git.kernel.org/stable/h/v7.1.1",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 7.0.13 changelog",
+      "url": "https://git.kernel.org/stable/h/v7.0.13",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 5.15.210 changelog",
+      "url": "https://git.kernel.org/stable/h/v5.15.210",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 5.10.259 changelog",
+      "url": "https://git.kernel.org/stable/h/v5.10.259",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-23T18:54:33.219Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

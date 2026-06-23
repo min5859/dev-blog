@@ -1,0 +1,124 @@
+{
+  "id": "2026-06-24-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-06-24 MPTCP Clang 빌드 회귀 — Linux Toolchain",
+  "headline": "Clang 22가 MPTCP 패치 시리즈의 미선언 함수 호출을 하드 에러로 차단, Rust·kbuild 빌드 인프라도 동시 다발 변경",
+  "date": "2026-06-24",
+  "summary": "0day CI에서 clang 22가 net/mptcp/pm_kernel.c:1154의 mptcp_remove_anno_list_by_saddr() 호출을 ISO C99 에러로 처리해 빌드를 차단했습니다. 같은 날 Rust rate-limited print 프리미티브 추가, bootconfig 빌드 타임 cmdline 삽입(v6), kconfig 정적 검사기 제안이 함께 스레드에 올라왔습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "툴체인",
+    "clang",
+    "Rust",
+    "kbuild",
+    "kconfig",
+    "MPTCP"
+  ],
+  "highlights": [
+    {
+      "title": "MPTCP × Clang 22: 암시적 함수 선언 에러로 빌드 차단",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "MPTCP 유지보수자 및 clang 기반 커널 빌드/CI 담당",
+      "verifyLink": "https://lore.kernel.org/llvm/202606231240.AR0wvSEl-lkp@intel.com/",
+      "if": "clang 기반 CI에서 MPTCP pm_kernel.c 빌드가 실패한다면",
+      "do": "v5 시리즈에서 mptcp_remove_anno_list_by_saddr 프로토타입 노출 여부를 lore에서 확인한 뒤 패치를 적용한다.",
+      "verify": "clang W=1 빌드에서 implicit-function-declaration 에러가 사라졌는지 확인한다."
+    },
+    {
+      "title": "Rust rate-limited printing: 전역 raw_spinlock_t 프리미티브 추가",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust-for-Linux 추상화 계층 및 Rust Binder 개발자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260623-pr-ratelimited-v1-0-cc922f544dc0@google.com/",
+      "if": "Rust Binder 또는 rate-limited 로그 API를 사용하는 드라이버를 작성한다면",
+      "do": "시리즈 재전송 시 확정될 매크로 이름·모듈 경로를 추적하고, 7.1-rc6 기반 적용 가능 여부를 점검한다.",
+      "verify": "전역 raw_spinlock_t 선언과 ratelimited print API가 Rust 추상화 트리에 머지됐는지 확인한다."
+    },
+    {
+      "title": "bootconfig: kernel.* cmdline을 빌드 타임에 .init.rodata에 삽입 (v6)",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "bootconfig·임베디드 부트 구성 사용자, setup_arch·early param 관련 아키텍처 담당",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20260623-bootconfig_using_tools-v6-0-640c2f587a3c@debian.org/",
+      "if": "embedded bootconfig를 사용하면서 early_param 핸들러가 bootconfig 값을 못 읽는다면",
+      "do": "v6 시리즈 적용 후 CONFIG_CMDLINE 대신 embedded bootconfig로 단일화하고 오버플로 로그를 모니터링한다.",
+      "verify": "setup_arch() 이후 early_param 핸들러가 bootconfig kernel.* 값을 올바르게 읽는지 부팅 로그를 확인한다."
+    },
+    {
+      "title": "kconfig-sym-check: Kconfig 스펙의 dangling 심볼 정적 검사기 제안",
+      "priority": "하",
+      "impactType": "build",
+      "affectedAudience": "kconfig·kbuild 유지보수자, 대규모 Kconfig 트리 관리자",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/f2520b56-59d8-45d1-8f38-90f2472c96e9@gmail.com/",
+      "if": "Kconfig 심볼 rename·삭제 후 dangling 참조가 우려된다면",
+      "do": "make kconfig-sym-check를 실행해 Kconfig 스펙 자체의 끊어진 심볼을 빌드 전에 검출한다.",
+      "verify": "KCONFIG_WARN_UNKNOWN_SYMBOLS와 중복 없이 Kconfig 스펙 레벨 경고가 출력되는지 확인한다."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**MPTCP × Clang 22 빌드 회귀**\n\n0day 테스트 로봇이 clang 22 W=1 빌드(x86_64-kexec)에서 net/mptcp/pm_kernel.c:1154의 mptcp_remove_anno_list_by_saddr() 미선언 호출을 ISO C99 에러로 처리해 MPTCP 패치 시리즈 v4 빌드를 차단.\n\n영향: GCC가 경고로 넘기던 암시적 함수 선언을 clang이 하드 에러로 처리하므로, clang 기반 CI 환경에서 프로토타입·스코프 누락이 곧바로 net/main 빌드 차단으로 이어진다. 후속 v5에서 수정됐는지는 확인 필요(현재 lore 접근 제한으로 미확인).\n\n> net/mptcp/pm_kernel.c:1154:15: error: call to undeclared function 'mptcp_remove_anno_list_by_saddr'; ISO C99 and later do not support implicit function declarations\n\n[원문 확인](https://lore.kernel.org/llvm/202606231240.AR0wvSEl-lkp@intel.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Rust rate-limited printing: 전역 raw_spinlock_t 선언 프리미티브 추가**\n\nRust Binder 로그 DoS 방지를 위한 rate-limited print API 구현 전제로, 전역 변수에 raw_spinlock_t를 선언하는 기능을 먼저 추가. 핵심 Rust 부분은 7.1-rc6 위에 적용되며, Binder 패치는 머지 윈도우 이후 재전송 예정.\n\n영향: Rust 추상화 계층에 새 저수준 동기화 프리미티브가 추가되며, 최종 API 표면(매크로 이름·모듈 경로)은 재전송 시리즈에서 확정 예정.\n\n> before we can implement rate limited printing, we must first implement the ability declare a raw_spinlock_t in a global variable. Thus, do that too.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260623-pr-ratelimited-v1-0-cc922f544dc0@google.com/)\n\n---\n\n**bootconfig: kernel.* cmdline 빌드 타임 삽입 (v6)**\n\nembedded bootconfig의 kernel.* 서브트리를 빌드 타임에 평탄한 문자열로 렌더해 .init.rodata에 저장, setup_arch()가 parse_early_param() 전에 boot_command_line 앞에 prepend. 오버플로는 soft error로 처리해 부팅을 막지 않음. userspace 측 도구는 이미 머지 완료.\n\n영향: 기존에 embedded bootconfig가 parse_early_param() 이후 파싱돼 early_param() 핸들러가 값을 볼 수 없던 문제를 해소. CONFIG_CMDLINE과 동등한 동작을 단일 소스에서 얻게 됨.\n\n> setup_arch() prepends it to boot_command_line before parse_early_param() runs. Overflow is a soft error\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20260623-bootconfig_using_tools-v6-0-640c2f587a3c@debian.org/)\n\n---\n\n**kconfig-sym-check: Kconfig 스펙 정적 검사기 제안**\n\nscripts/kconfig/kconfig-sym-check.pl과 make 타깃 kconfig-sym-check를 통해 Kconfig 스펙 내 존재하지 않는 심볼 참조(dangling reference)를 빌드 전에 검출. 기존 KCONFIG_WARN_UNKNOWN_SYMBOLS가 .config를 검사하는 것과 달리 Kconfig 스펙 자체를 대상으로 함. 머지 합의 여부는 스레드 후속에서 미확인.\n\n영향: 심볼 rename·삭제로 생기는 잠재적 데드 의존성을 빌드 전에 검출해 kconfig 유지보수 안정성을 높임.\n\n> The two tools do not do the same thing. One is a check on .config and the other is a check on the Kconfig spec.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/f2520b56-59d8-45d1-8f38-90f2472c96e9@gmail.com/)\n\n---\n\n**[전일 보도 업데이트] Nova GPU Rust 모듈 간 호출 워크어라운드 v5**\n\nv5에서 CONFIG_MODVERSIONS/GENDWARFKSYMS 환경의 CRC가 C shim 기준으로 잘못 계산되던 버그 수정. nova_core.o에 gendwarfksyms를 적용해 심볼 버전을 Rust DWARF에서 도출하도록 변경.\n\n영향: Rust 커널 모듈 modversion 정합성 보강. 정식 Rust 빌드 시스템 지원 전까지의 임시 메커니즘으로 합의된 것으로 보이나 본 머지 가능성은 확인 필요.\n\n> The fix is to run `gendwarfksyms` on `nova_core.o`, so symbol versions are derived from the Rust DWARF.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20260622-nova-exports-v5-0-6191773fc977@nvidia.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "0day CI: MPTCP pm_kernel.c clang 빌드 실패 보고",
+      "url": "https://lore.kernel.org/llvm/202606231240.AR0wvSEl-lkp@intel.com/",
+      "note": "thread"
+    },
+    {
+      "title": "intel-lab-lkp: MPTCP ADD_ADDR id 0 패치 커밋 미러",
+      "url": "https://github.com/intel-lab-lkp/linux/commits/Kalpan-Jani/mptcp-pm-drop-pending-ADD_ADDR-when-removing-id-0-endpoint/20260623-033836",
+      "note": "commit"
+    },
+    {
+      "title": "Nova GPU Rust 모듈 간 호출 워크어라운드 v5 (kbuild)",
+      "url": "https://lore.kernel.org/linux-kbuild/20260622-nova-exports-v5-0-6191773fc977@nvidia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bootconfig: kernel.* cmdline 빌드 타임 삽입 v6",
+      "url": "https://lore.kernel.org/linux-kbuild/20260623-bootconfig_using_tools-v6-0-640c2f587a3c@debian.org/",
+      "note": "thread"
+    },
+    {
+      "title": "Rust: rate-limited printing + 전역 raw_spinlock_t v1",
+      "url": "https://lore.kernel.org/rust-for-linux/20260623-pr-ratelimited-v1-0-cc922f544dc0@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "kconfig-sym-check 정적 검사기 논의 (Andy Shevchenko 답신)",
+      "url": "https://lore.kernel.org/linux-kbuild/f2520b56-59d8-45d1-8f38-90f2472c96e9@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "kconfig-sym-check vs KCONFIG_WARN_UNKNOWN_SYMBOLS 비교 논의",
+      "url": "https://lore.kernel.org/linux-kbuild/ajo4DVWoSaEZtBDa@google.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-23T18:49:36.752Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,133 @@
+{
+  "id": "2026-06-24-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-06-24 UFS 데드락 3종 완료 — Android 커널",
+  "headline": "android16-6.12 UFS PM 데드락·후속 회귀 3종 패치 착지, Wonder GKI 드라이버 모듈 활성화",
+  "date": "2026-06-24",
+  "summary": "어제에 이어 android16-6.12에 UFS 런타임 PM 데드락과 후속 회귀(host_sem 미해제·NULL 역참조 크래시) 수정 3종이 모두 착지했습니다. android-mainline에서는 Wonder Wi-Fi 가상 디바이스 드라이버가 GKI 모듈로 활성화되고, build.config.constants 최상위 심볼릭 링크가 삭제되어 벤더 빌드 스크립트 점검이 필요합니다.",
+  "tags": [
+    "안드로이드",
+    "커널",
+    "UFS",
+    "GKI",
+    "Wonder",
+    "BBR",
+    "Kleaf"
+  ],
+  "highlights": [
+    {
+      "title": "UFS 런타임 PM 데드락·회귀 3종 패치 세트",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "android16-6.12 백포트/UFS 스토리지 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/7ef00d3457d8c9cee0915ee0edff247031c36e0c",
+      "if": "android16-6.12 기반 벤더 트리에 UFS PM 데드락이나 스토리지 불안정 증상이 있다면,",
+      "do": "7ef00d34 → 459c818f → a460b437 세 커밋을 반드시 순서대로 cherry-pick하세요.",
+      "verify": "UFS 런타임 서스펜드·에러 핸들러 경로에서 데드락, host_sem 누수, NULL 역참조 크래시가 재현되지 않는지 확인하세요."
+    },
+    {
+      "title": "build.config.constants 최상위 심볼릭 링크 삭제",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "ACK 빌드 시스템(Kleaf/Bazel)·벤더 빌드 스크립트 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/b4221e52ff0edf4d07a3c526292056bc878e96fc",
+      "if": "벤더 빌드 스크립트가 최상위 build.config.constants를 직접 source한다면,",
+      "do": "해당 참조를 bazel/constants.scl 자동 로드 방식(Kleaf)으로 교체하세요.",
+      "verify": "벤더 빌드가 오류 없이 완료되고 상수 값이 예상대로 적용되는지 확인하세요."
+    },
+    {
+      "title": "Wonder Wi-Fi 가상 디바이스 드라이버 GKI 모듈 활성화",
+      "priority": "중",
+      "impactType": "project",
+      "affectedAudience": "ACK/GKI 트리 담당, Wi-Fi 가상 디바이스 테스트 인프라 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/8a7c7d3954c2839bb2f6ebe475648ec14b8a2c9f",
+      "if": "android-mainline 기반 GKI 빌드를 관리한다면,",
+      "do": "8a7c7d39(드라이버 추가)와 4a8e5125(defconfig 활성화) 두 커밋이 모두 포함되었는지 확인하세요.",
+      "verify": "GKI 모듈 산출물에 Wonder 관련 모듈이 존재하고, 드라이버 용도(테스트 전용 여부)를 원문 커밋에서 확인하세요."
+    },
+    {
+      "title": "GKI BBR TCP 혼잡 제어 내장 활성화",
+      "priority": "하",
+      "impactType": "runtime",
+      "affectedAudience": "ACK/GKI 배포 담당, 네트워크 튜닝 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/05c6fbd18c50f80608fc7773e801bf1e636d6d58",
+      "if": "GKI 디바이스에서 BBR 혼잡 제어를 활용하고 싶다면,",
+      "do": "sysctl net.ipv4.tcp_congestion_control=bbr 로 런타임 전환하세요(기본값 CUBIC 유지, 기존 동작 회귀 없음).",
+      "verify": "ss -tin 으로 대상 연결의 혼잡 제어 알고리즘이 bbr로 표시되는지 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**UFS 런타임 PM 데드락·후속 회귀 3종 패치 세트**\n\nandroid16-6.12에 UFS 런타임 서스펜드 데드락 수정(7ef00d34), host_sem 미해제 회귀 수정(459c818f), 에러 핸들러 NULL 역참조 크래시 방지(a460b437) 세 패치가 모두 착지했습니다. Dan Carpenter가 host_sem 이슈를 보고했으며, SM8750에서 크래시 수정이 검증되었습니다.\n\n영향: 세 패치는 하나의 시리즈입니다. 첫 패치만 백포트하면 host_sem 누수 회귀가 남고, 두 번째까지만 적용하면 부팅 초기 NULL 크래시가 남습니다. 반드시 순서대로 세 건을 함께 적용해야 합니다.\n\n> \"Prevent the deadlock by checking pm_op_in_progress and performing a quick recovery. ...the error handler does not wait indefinitely for runtime PM to resume\"\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/7ef00d3457d8c9cee0915ee0edff247031c36e0c)\n\n> \"Fix the issue where host_sem is not released due to a new return path in commit f966e02ae521 ... Check pm_op_in_progress before acquiring hba->host_sem to prevent deadlocks\"\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/459c818f8b5a562c34a27b915fae53792fa82a71)\n\n> \"The UFS error handler may be activated before SCSI scanning has started and hence before hba->ufs_device_wlun has been set. Check the hba->ufs_device_wlun pointer before using it.\"\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/a460b437af44c3317a57e637455ee891d0ee0352)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Wonder Wi-Fi 가상 디바이스 드라이버 GKI 진입 + 모듈 활성화**\n\nandroid-mainline에 Wonder Wi-Fi 가상 디바이스 드라이버가 GKI 드라이버로 추가(8a7c7d39, 21개 파일)되고, arm64 gki_defconfig에서 GKI 모듈로 활성화(4a8e5125)되었습니다. Will McVicker(Google) 기여.\n\n영향: GKI 모듈 목록과 빌드 산출물이 변경됩니다. 드라이버의 정확한 용도(테스트 전용 vs 제품 경로)는 확인 필요입니다.\n\n> \"This adds the Wonder Wi-Fi virtual device driver to the Android Common Kernel as a GKI driver. It is based off of the android17-6.18 wonder driver at version 3.6.5.\"\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/8a7c7d3954c2839bb2f6ebe475648ec14b8a2c9f)\n\n**build.config.constants 최상위 심볼릭 링크 삭제**\n\n상수가 bazel/constants.scl로 이전되어 자동 로드되므로 최상위 심볼릭 링크가 삭제되었습니다(go/keep-ack-clean 정리 작업, HONG Yifan 기여).\n\n영향: build.config.constants를 직접 source하던 벤더 빌드 스크립트는 즉시 수정이 필요합니다. 기능 변경은 없습니다.\n\n> \"The constants were moved to bazel/constants.scl and has been automatically loaded. It is not necessary to source build.config.constants manually. Delete the top-level symlink for simplicity.\"\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/b4221e52ff0edf4d07a3c526292056bc878e96fc)\n\n**GKI BBR TCP 혼잡 제어 내장 활성화**\n\nandroid-mainline gki_defconfig에서 CONFIG_TCP_CONG_BBR을 활성화했습니다. 기본 알고리즘은 CUBIC 유지. vivo 기여, Carlos Llamas가 upstream 커밋 2개 cherry-pick.\n\n영향: GKI 디바이스에서 벤더 모듈·패치 없이 런타임에 BBR 전환이 가능해집니다.\n\n> \"Enable support for BBR (Bottleneck Bandwidth and RTT) TCP congestion control algorithm... Note this still maintains CUBIC as the default algorithm.\"\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/05c6fbd18c50f80608fc7773e801bf1e636d6d58)\n\n**GKI crc·crypto KUnit 테스트 활성화**\n\narm64/x86 gki_defconfig에서 crc_kunit과 aes_cbc_macs, chacha20poly1305, ghash, nh KUnit 테스트를 활성화했습니다. Eric Biggers 기여. 기능 변경 없음.\n\n영향: GKI CI에서 crc·crypto 회귀 탐지력이 향상됩니다.\n\n> \"Enable crc_kunit and some recently-added crypto tests. The code tested by these tests is already enabled in gki_defconfig.\"\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/6f25e0da2951c90af2d4c2b458eeee96a98427dc)\n\n**honor 벤더 GKI 심볼 리스트 갱신 (tcp_send_reset 추적)**\n\nhonor 벤더 심볼 리스트에 TCP reset 추적 관련 심볼 2개가 추가된 것으로 보입니다(인용 검증 실패, 단정 주의). GKI ABI 검증 갱신이 동반됩니다.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/74c43557c8aed4002d058c4e88c768a6086df9c2)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier의 출처를 근거로 작성했습니다. honor 심볼 리스트 항목(74c43557)은 인용 검증이 실패하여 단정 표현을 피했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "UPSTREAM: scsi: ufs: core: Fix runtime suspend error deadlock",
+      "url": "https://android.googlesource.com/kernel/common/+/7ef00d3457d8c9cee0915ee0edff247031c36e0c",
+      "note": "commit"
+    },
+    {
+      "title": "UPSTREAM: scsi: ufs: core: Fix error handler host_sem issue",
+      "url": "https://android.googlesource.com/kernel/common/+/459c818f8b5a562c34a27b915fae53792fa82a71",
+      "note": "commit"
+    },
+    {
+      "title": "UPSTREAM: scsi: ufs: core: Fix an error handler crash",
+      "url": "https://android.googlesource.com/kernel/common/+/a460b437af44c3317a57e637455ee891d0ee0352",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: Add Wonder driver to GKI",
+      "url": "https://android.googlesource.com/kernel/common/+/8a7c7d3954c2839bb2f6ebe475648ec14b8a2c9f",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: gki_defconfig: arm64: Enable the Wonder driver",
+      "url": "https://android.googlesource.com/kernel/common/+/4a8e51250625671e4a0175e18b4001cc03ac3971",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: Delete top-level build.config.constants.",
+      "url": "https://android.googlesource.com/kernel/common/+/b4221e52ff0edf4d07a3c526292056bc878e96fc",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: GKI: enable CONFIG_TCP_CONG_BBR",
+      "url": "https://android.googlesource.com/kernel/common/+/05c6fbd18c50f80608fc7773e801bf1e636d6d58",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: GKI: Enable crc_kunit and more crypto KUnit tests",
+      "url": "https://android.googlesource.com/kernel/common/+/6f25e0da2951c90af2d4c2b458eeee96a98427dc",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: GKI: Update symbol list for honor",
+      "url": "https://android.googlesource.com/kernel/common/+/74c43557c8aed4002d058c4e88c768a6086df9c2",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-23T18:08:56.081Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/android-newsletter-from-dossier-ko.md"
+  }
+}

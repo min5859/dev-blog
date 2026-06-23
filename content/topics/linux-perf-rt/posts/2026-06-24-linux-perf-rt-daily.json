@@ -1,0 +1,123 @@
+{
+  "id": "2026-06-24-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-06-24 VMSCAPE BHB 완화 전환 — linux-perf-rt",
+  "headline": "VMSCAPE 완화 IBPB→BHB clear 전환·BHI 루프 정정·sockmap UDP 누수 수정 등 보안 패치 4건",
+  "date": "2026-06-24",
+  "summary": "ADL 이상 CPU에서 VMSCAPE(CVE-2025-40300) 완화 방식을 IBPB에서 BHB clearing으로 전환하는 패치와, BHB clear 루프가 해당 CPU에서 충분하지 않다는 선행 수정 패치가 함께 제출됐다. BPF 영역에서는 sockmap UDP 소켓 refcount 누수 수정과 cgroup-struct_ops 연동 RFC가 추가 추적 대상이다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "보안",
+    "BPF",
+    "x86",
+    "VMSCAPE",
+    "BHI"
+  ],
+  "highlights": [
+    {
+      "title": "VMSCAPE 완화: ADL+ CPU에서 IBPB → BHB clear 다운그레이드",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "x86 mitigation/하이퍼바이저 격리 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260623174937.A2F1F1F000E9@smtp.kernel.org/",
+      "if": "ADL 이상 CPU 환경에서 VMSCAPE 완화 정책을 검토 중이라면",
+      "do": "BHB clear 전환 후 eIBRS 활성 여부 가드와 flush 이후 LFENCE speculation barrier 포함 여부를 최종 머지본에서 직접 확인한다",
+      "verify": "lore 원문에서 리뷰어가 지적한 eIBRS 미검증·LFENCE 누락 High 등급 문제가 최종본에 반영됐는지 확인한다"
+    },
+    {
+      "title": "BHI clear_bhb_loop() ADL+ 루프 카운트 증량 (5/5 → 12/7)",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "x86 speculation 완화 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/6c1d327fa989f1eee142b13e5e7f5a514b03357239fbcaa5190e0d6180d7f8b0@mail.kernel.org/",
+      "if": "ADL+ 시스템에서 BHI 완화 효과에 의존 중이라면",
+      "do": "X86_FEATURE_BHI_CTRL 보유 CPU에서 clear_bhb_loop()가 12/7 시퀀스로 전환됐는지 /sys/devices/system/cpu/vulnerabilities/spectre_v2 값을 확인한다",
+      "verify": "Fixes: 태그 보강 여부와 BHI_CTRL 미노출 게스트 환경의 폴백 처리가 커밋 최종본에 포함됐는지 확인한다"
+    },
+    {
+      "title": "sockmap UDP 소켓 refcount 누수 수정",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "BPF sockmap/네트워크 소켓 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260623-sockmap-lookup-udp-leak-v1-0-05804f9308e4@rbox.co/",
+      "if": "sockmap을 사용하는 BPF 데이터패스를 운영 중이라면",
+      "do": "패치와 동반 selftest를 적용하고 UDP sockmap lookup/release 경로에서 refcount 비대칭이 재현되지 않는지 검증한다",
+      "verify": "패치 본문에서 Fixes: 태그와 도입 버전을 확인하고 비특권 트리거 가능 여부를 테스트 환경에서 재현 시도한다"
+    },
+    {
+      "title": "BPF struct_ops → cgroup attach 공통 경로 RFC (cfi_stubs UAF·설계 미결)",
+      "priority": "하",
+      "impactType": "api-abi",
+      "affectedAudience": "BPF struct_ops/cgroup 서브시스템 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260623175006.3136053-1-ameryhung@gmail.com/",
+      "if": "cgroup 기반 BPF 확장 인터페이스를 추적 중이라면",
+      "do": "RFC v2 단계임을 감안해 cfi_stubs UAF 해소 여부와 map_free_pre_rcu 설계 결론을 다음 리비전에서 확인한다",
+      "verify": "저자가 명시한 map_free_pre_rcu 미결 사항이 후속 버전에서 해소됐는지 lore 스레드를 추적한다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**x86/vmscape: BHI 변형 전용 CPU에서 IBPB → BHB clear 전환**\n\nADL 이상이며 BHI_CTRL을 보유한 CPU에서 VMSCAPE(CVE-2025-40300) 완화 방식을 무거운 IBPB에서 BHB clearing 시퀀스로 다운그레이드한다. eIBRS가 게스트/호스트 userspace 간 간접 분기를 이미 격리하므로 branch history 초기화만으로 충분하다는 판단이다.\n\n영향: 완화 성능 비용 절감 효과가 있으나 리뷰에서 eIBRS 활성 여부 미검증 및 flush 후 LFENCE 부재가 High 등급으로 지적됐으며, 최종 머지본에서 해소 여부는 확인 필요다.\n\n> \"IBPB mitigation for VMSCAPE is an overkill on CPUs that are only affected by the BHI variant of VMSCAPE.\"\n\n[원문 확인](https://lore.kernel.org/bpf/20260623174937.A2F1F1F000E9@smtp.kernel.org/)\n\n---\n\n**x86/bhi: clear_bhb_loop() ADL+ 루프 카운트 증량**\n\nADL 이상에서 기존 BHI 완화 루프(outer 5/inner 5)가 BHB 엔트리를 충분히 비우지 못하는 결함을 발견하고, X86_FEATURE_BHI_CTRL 보유 시 outer 12/inner 7로 상향한다.\n\n영향: VMSCAPE 대응으로 BHB clear가 실제 동작 경로에 진입하면서 기존 루프 부족이 노출됐으며, 위 vmscape 패치의 선행 전제 조건이다. BHI_CTRL 미노출 게스트 환경 폴백 처리는 확인 필요다.\n\n> \"On Alder Lake and newer parts this sequence is not sufficient because it doesn't clear enough entries.\"\n\n[원문 확인](https://lore.kernel.org/bpf/6c1d327fa989f1eee142b13e5e7f5a514b03357239fbcaa5190e0d6180d7f8b0@mail.kernel.org/)\n\n---\n\n**bpf/sockmap: UDP 소켓 refcount 누수 수정**\n\nsockmap lookup/release 경로에서 UDP 소켓 refcount 비대칭으로 발생하는 소켓 누수를 수정하고 회귀 방지 selftest를 추가한다.\n\n영향: 반복 트리거 시 커널 메모리 고갈(DoS) 또는 객체 수명 오류 가능성이 추정되나, 비특권 트리거 가능 여부와 도입 버전은 확인 필요다(confidence: low).\n\n> \"Fix for UDP sockets refcount asymmetry in sockmap lookup/release. Accompanied by a selftest.\"\n\n[원문 확인](https://lore.kernel.org/bpf/20260623-sockmap-lookup-udp-leak-v1-0-05804f9308e4@rbox.co/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**bpf: cgroup에 struct_ops 연결하는 공통 경로 도입 (RFC)**\n\n기존 cgroup용 bpf_link 기반 attach/detach/update/query 및 ordering 모델을 struct_ops로 확장하고, 첫 사용자로 레거시 sockops TCP 훅을 미러링한 struct bpf_tcp_ops를 도입한다(BPF_SOCK_OPS_NEEDS_ECN/BASE_RTT 제외).\n\n영향: cgroup에 struct_ops를 붙이는 새 특권 인터페이스로 BPF 공격면·ABI가 확장되므로 인터페이스 안정성과 수명 관리를 주시할 필요가 있다. RFC v2 단계에서 cfi_stubs UAF 수정과 map_free_pre_rcu 설계가 미결 상태다.\n\n> \"The map_free_pre_rcu addition in patch 2 is not very ideal; it will need some thought too.\"\n\n[원문 확인](https://lore.kernel.org/bpf/20260623175006.3136053-1-ameryhung@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "x86/vmscape BHB clearing mitigation 스레드",
+      "url": "https://lore.kernel.org/bpf/20260623174937.A2F1F1F000E9@smtp.kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "VMSCAPE 커널 공식 문서",
+      "url": "https://docs.kernel.org/admin-guide/hw-vuln/vmscape.html",
+      "note": "article"
+    },
+    {
+      "title": "CVE-2025-40300 oss-security 공개",
+      "url": "https://www.openwall.com/lists/oss-security/2025/11/17/3",
+      "note": "cve"
+    },
+    {
+      "title": "x86/bhi: clear_bhb_loop() ADL+ 수정 커밋",
+      "url": "https://lore.kernel.org/bpf/6c1d327fa989f1eee142b13e5e7f5a514b03357239fbcaa5190e0d6180d7f8b0@mail.kernel.org/",
+      "note": "commit"
+    },
+    {
+      "title": "Spectre 커널 공식 문서",
+      "url": "https://docs.kernel.org/admin-guide/hw-vuln/spectre.html",
+      "note": "article"
+    },
+    {
+      "title": "bpf/sockmap UDP 소켓 누수 수정 스레드",
+      "url": "https://lore.kernel.org/bpf/20260623-sockmap-lookup-udp-leak-v1-0-05804f9308e4@rbox.co/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: cgroup struct_ops attach RFC 스레드",
+      "url": "https://lore.kernel.org/bpf/20260623175006.3136053-1-ameryhung@gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-23T19:00:55.202Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
