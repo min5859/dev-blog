@@ -1,0 +1,152 @@
+{
+  "id": "2026-06-25-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-06-25 BHI 완화·mvneta 회귀 수정 — Linux Perf/RT",
+  "headline": "신형 CPU BHI 완화 루프 최적화·mvneta suspend/resume 회귀 수정, BPF kfunc 확장 및 슬랩 _nolock 테스트 인프라 추가",
+  "date": "2026-06-25",
+  "summary": "Alder Lake 이상 CPU에서 clear_bhb_loop() 루프 카운트를 부팅 시 동적 조정해 IBPB 대비 BHI 완화 오버헤드를 절감하는 패치가 리뷰 중이며, Marvell mvneta의 suspend/resume per-CPU 인터럽트 회귀 수정이 RT 메일링에서 진행 중입니다. BPF 측에서는 icmp_send kfunc(v9), BPF_F_EGRESS 리다이렉트 확장, BPF_LOG_KERNEL 허용 수정이 동시에 논의됐습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "PREEMPT_RT",
+    "BPF",
+    "보안완화",
+    "슬랩"
+  ],
+  "highlights": [
+    {
+      "title": "mvneta suspend/resume per-CPU 인터럽트 회귀 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Marvell Armada/mvneta 드라이버 및 per-CPU 인터럽트 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260624093920.qvtBsCMJ@linutronix.de/",
+      "if": "Marvell Armada 370/XP/38x 기반 시스템에서 suspend/resume 후 네트워크가 응답하지 않는다면,",
+      "do": "해당 패치 및 Fixes 태그(2015년 커밋)를 기준으로 LTS 백포트 여부를 추적해 적용을 검토하세요.",
+      "verify": "resume 후 /proc/interrupts에서 mvneta per-CPU 인터럽트 카운터가 증가하는지 확인하세요."
+    },
+    {
+      "title": "x86 BHI 완화 clear_bhb_loop() 신형 CPU 대응",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "x86 보안 완화책 및 KVM 유지보수 담당, 완화책 오버헤드를 신경 쓰는 성능 엔지니어",
+      "verifyLink": "https://lore.kernel.org/bpf/20260624174949.zdcawcbjnlqsimo6@desk/",
+      "if": "Alder Lake 이상 CPU에서 VMSCAPE/BHI 완화의 IBPB 비용이 부담이라면,",
+      "do": "이 패치 시리즈 머지 상태를 추적하고, 적용 후 perf stat -e 'cpu/event=0x...,umask=0x../u'로 IBPB 횟수 변화를 측정하세요.",
+      "verify": "부팅 후 /sys/devices/system/cpu/vulnerabilities/spectre_bhb 내용과 perf IBPB 카운터 감소를 확인하세요."
+    },
+    {
+      "title": "BPF icmp_send kfunc 추가 (v9)",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "BPF cgroup_skb/tc 네트워크 정책 개발자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260624185554.362555-1-mahe.tardy@gmail.com/",
+      "if": "cgroup_skb 프로그램에서 TCP 소켓을 파괴하지 않고 east-west 트래픽을 거부해야 한다면,",
+      "do": "icmp_send kfunc 머지 여부를 추적하고 v9 패치를 테스트 환경에서 검토하세요.",
+      "verify": "패치 적용 후 cgroup_skb에서 ICMP_DEST_UNREACH 전송 및 소켓 유지 여부를 tcpdump로 확인하세요."
+    },
+    {
+      "title": "slub_kunit: kprobe로 _nolock API 강제 실행 테스트",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "슬랩 할당자 및 PREEMPT_RT 유지보수 담당, KUnit 테스트 작성자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/ajvczSpMOGWFhe30@pedro-suse/",
+      "if": "PREEMPT_RT 커널에서 kmalloc_nolock()/kfree_nolock() 회귀 검증 인프라가 없다면,",
+      "do": "이 패치와 Pedro의 KUnit 함수 리다이렉션 일반화 제안 방향을 추적하세요.",
+      "verify": "kunit.py run mm/slab으로 slub_kunit 케이스가 PREEMPT_RT 커널에서 통과하는지 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**net: mvneta: re-enable percpu interrupt on resume**\n\nMarvell Armada 370/XP/38x의 mvneta resume 경로에서 MPIC per-CPU 인터럽트가 언마스크되지 않던 버그를 on_each_cpu(mvneta_percpu_enable) 무조건 호출로 수정; Fixes 태그가 2015년 커밋(12bb03b436da)을 가리켜 광범위한 LTS 백포트 대상이 될 가능성 있음.\n\n영향: suspend/resume 후 per-CPU 인터럽트가 소생하지 않아 네트워크 디바이스가 사실상 멈추는 회귀이며, PREEMPT_RT 환경의 on_each_cpu 동작과 맞물려 Sebastian Siewior(linutronix)가 추적 중; net/stable 백포트 여부는 미확인.\n\n> \"Fix by calling on_each_cpu(mvneta_percpu_enable) in the resume path to unconditionally unmask the MPIC per-CPU interrupt regardless of pre-suspend state.\"\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260624093920.qvtBsCMJ@linutronix.de/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**x86/bhi: Make clear_bhb_loop() effective on newer CPUs**\n\nAlder Lake 이상의 더 큰 BHB를 충분히 비우지 못하던 clear_bhb_loop()의 루프 카운트를 부팅 시 X86_FEATURE_BHI_CTRL에 따라 동적 설정; VMSCAPE BHI 변종 대응에서 IBPB보다 저렴한 대안으로 사용하기 위한 사전 작업이며, 게스트 마이그레이션 관련 pessimization 논쟁은 별도 virtual-SPEC_CTRL RFC로 분리 예정.\n\n영향: IBPB 발행 횟수를 줄이려는 완화책 오버헤드 절감 흐름으로, 성능·보안 엔지니어 모두에게 직접적인 변경.\n\n> \"A cheaper alternative to the current IBPB mitigation is clear_bhb_loop(). But it currently does not clear enough BHB entries to be effective on newer CPUs with larger BHB.\"\n\n[원문 확인](https://lore.kernel.org/bpf/20260624174949.zdcawcbjnlqsimo6@desk/)\n\n---\n\n**bpf: Support BPF_F_EGRESS with bpf_redirect_peer**\n\ntc BPF(ingress hook) + veth/netkit 환경에서 BPF_F_EGRESS 플래그를 추가해 peer 디바이스 egress 방향 리다이렉트를 지원; proxy/workload 간 ingress 리다이렉트가 pod 송신 트래픽을 처리하는 BPF 프로그램을 건너뛰던 문제 해결을 위한 신규 API 확장 제안(현재 패치 논의 단계, 메인테이너 수용 여부 미확인).\n\n영향: Cilium/netkit 기반 투명 프록시·mTLS 사용례에서 동일 프로그램 이중 attach 우회책을 제거 가능.\n\n> \"the BPF_F_EGRESS flag tells bpf_redirect_peer to emit the skb in the egress direction of the target interface's peer device\"\n\n[원문 확인](https://lore.kernel.org/bpf/ca79d73d-a01c-407a-aef4-e41c931aed82@iogearbox.net/)\n\n---\n\n**bpf: add icmp_send kfunc (v9)**\n\ncgroup_skb(및 tc) 프로그램이 소켓을 파괴하지 않고 ICMP_DEST_UNREACH 류 메시지로 east-west 트래픽을 능동 거부하게 하는 icmp_send kfunc 추가; 재귀 호출 방지와 IPv4/IPv6 셀프테스트 포함, kfunc 이름과 제어 메시지 타입 인자 형태는 Daniel 제안으로 확정됨.\n\n영향: netfilter reject 타깃에 준하는 동작을 BPF로 제공하나, pass 반환 시 연결이 성립하면서 ICMP_DEST_UNREACH를 받는 설계상 caveat 존재; v9 머지 수락 여부는 확인 필요.\n\n> \"The goal is to allow cgroup_skb programs to actively reject east-west traffic, similarly to what is possible to do with netfilter reject target.\"\n\n[원문 확인](https://lore.kernel.org/bpf/20260624185554.362555-1-mahe.tardy@gmail.com/)\n\n---\n\n**mm/slab, slub_kunit: register kprobe to trigger _nolock APIs**\n\nPREEMPT_RT에서 NMI·hardirq 컨텍스트의 kmalloc_nolock()이 항상 실패해 슬랩 할당자 _nolock API를 슬랩 잠금 보유 상태에서만 테스트할 수 있는 한계를, s->cpu_sheaves->lock 또는 n->list_lock 보유 중 kprobe pre-handler를 등록하는 방식으로 우회; 리뷰어 Pedro는 KUnit 함수 리다이렉션으로의 일반화를 제안 중.\n\n영향: 테스트 봇이 커버하지 못하던 RT·NMI 안전 할당 경로에 회귀 검증 인프라가 생기는지 여부가 핵심; 현재 리뷰 단계, 머지 여부 미확정.\n\n> \"Test bots don't seem to test kmalloc_nolock() and kfree_nolock(), so subtle bugs are discovered late.\"\n\n[원문 확인](https://lwn.net/Articles/1066564/)\n\n---\n\n**bpf: allow BPF_LOG_KERNEL from kernel space (v2)**\n\nin-kernel 라이트 스켈레톤 로더 모듈이 BTF/BPF 로드 시 BPF_LOG_KERNEL(16)로 verifier 로그를 dmesg에 출력하려 할 때 -EINVAL로 실패하던 문제를, bpf_verifier_log_attr_valid()가 BPF_LOG_KERNEL을 무조건 허용하되 syscall 경계에서 is_kernel일 때만 통과시키는 권한 체크를 추가해 수정.\n\n영향: in-kernel 라이트 스켈레톤 로더의 verifier 거부 시 조용한 실패를 진단 가능하게 하며, 유저스페이스 로그 스팸 악용 방지 로직도 함께 포함; 일반 perf-rt 독자에게는 영향 범위가 좁음.\n\n> \"This patch modifies bpf_verifier_log_attr_valid() to accept BPF_LOG_KERNEL unconditionally.\"\n\n[원문 확인](https://lore.kernel.org/bpf/20260624-bpf-lskel-fixes-v2-1-e8ac5974a72c@google.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "net: mvneta: re-enable percpu interrupt on resume (linutronix)",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260624093920.qvtBsCMJ@linutronix.de/",
+      "note": "thread"
+    },
+    {
+      "title": "mvneta: Use on_each_cpu when possible (patchwork, 2015)",
+      "url": "https://patchwork.ozlabs.org/project/netdev/patch/1454084767-24715-3-git-send-email-gregory.clement@free-electrons.com/",
+      "note": "commit"
+    },
+    {
+      "title": "x86/bhi: clear_bhb_loop() newer CPUs (lore)",
+      "url": "https://lore.kernel.org/bpf/20260624174949.zdcawcbjnlqsimo6@desk/",
+      "note": "thread"
+    },
+    {
+      "title": "VMSCAPE 하드웨어 취약점 관리 안내 (kernel.org)",
+      "url": "https://docs.kernel.org/admin-guide/hw-vuln/vmscape.html",
+      "note": "article"
+    },
+    {
+      "title": "VMSCAPE BHI 변종 완화 최적화 v4 (lkml)",
+      "url": "https://lkml.org/lkml/2025/11/19/2211",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Support BPF_F_EGRESS with bpf_redirect_peer (lore)",
+      "url": "https://lore.kernel.org/bpf/ca79d73d-a01c-407a-aef4-e41c931aed82@iogearbox.net/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf_redirect_peer 헬퍼 함수 공식 문서",
+      "url": "https://docs.ebpf.io/linux/helper-function/bpf_redirect_peer/",
+      "note": "article"
+    },
+    {
+      "title": "netkit: BPF 프로그래머블 네트워크 디바이스 (LWN)",
+      "url": "https://lwn.net/Articles/949960/",
+      "note": "article"
+    },
+    {
+      "title": "bpf: add icmp_send kfunc v9 (lore)",
+      "url": "https://lore.kernel.org/bpf/20260624185554.362555-1-mahe.tardy@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: allow BPF_LOG_KERNEL from kernel space v2 (lore)",
+      "url": "https://lore.kernel.org/bpf/20260624-bpf-lskel-fixes-v2-1-e8ac5974a72c@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "slub_kunit _nolock API 테스트 (Pedro 리뷰, lore)",
+      "url": "https://lore.kernel.org/linux-rt-devel/ajvczSpMOGWFhe30@pedro-suse/",
+      "note": "thread"
+    },
+    {
+      "title": "slub_kunit _nolock 테스트 (LWN 기사)",
+      "url": "https://lwn.net/Articles/1066564/",
+      "note": "article"
+    },
+    {
+      "title": "slab: fix kmalloc_nolock() context check for PREEMPT_RT (lkml)",
+      "url": "https://lkml.org/lkml/2026/1/14/96",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-24T19:05:28.973Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

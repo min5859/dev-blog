@@ -1,0 +1,124 @@
+{
+  "id": "2026-06-25-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-06-25 ACPI 부팅 패닉 수정 — 아키텍처/플랫폼",
+  "headline": "RISC-V ACPI 부팅 패닉 회귀 수정, arm64 TLB 배치 플러시 stable 백포트 쟁점, RISC-V IOMMU 하드웨어 잠금 방지 패치가 동시 진행 중입니다.",
+  "date": "2026-06-25",
+  "summary": "RISC-V ACPI 플랫폼에서 콘솔 패닉 및 루트 장치 누락을 유발하던 부팅 회귀가 async_schedule 전환으로 수정됐습니다. arm64 TLB 배치 플러시의 6.1-stable 백포트 검토와 RISC-V IOMMU 명령 큐 잠금 방지 패치가 함께 진행 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "arm64",
+    "RISC-V",
+    "ACPI",
+    "IOMMU",
+    "KVM",
+    "stable-backport"
+  ],
+  "highlights": [
+    {
+      "title": "RISC-V ACPI 부팅 패닉 회귀 수정 (async_schedule 전환)",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "RISC-V ACPI 부팅/플랫폼 유지보수자, ACPI scan 백포트 검토자",
+      "verifyLink": "https://github.com/torvalds/linux/commit/7cf28b3797a81b616bb7eb3e90cf131afc452919",
+      "if": "RISC-V ACPI 플랫폼에서 콘솔 패닉 또는 레스큐 셸 진입이 재현된다면",
+      "do": "커밋 7cf28b3797a8의 stable 백포트 적용 여부를 확인하고 해당 트리에 적용하세요.",
+      "verify": "ACPI 의존성 장치(콘솔, PCIe 루트 브리지)가 init 실행 전 정상 등록되는지 부팅 로그로 확인하세요."
+    },
+    {
+      "title": "arm64 TLB 배치 플러시 6.1-stable 백포트 안전성 검토",
+      "priority": "중",
+      "impactType": "backport",
+      "affectedAudience": "arm64 mm/메모리 핫플러그 유지보수자, stable 트리 백포트 검토자",
+      "verifyLink": "https://github.com/torvalds/linux/commit/48478b9f791376b4b89018d7afdfd06865498f65",
+      "if": "6.1-stable에 이 백포트를 적용할 예정이라면",
+      "do": "TLB range 미지원 CPU에서 PMD_SIZE 범위 플러시가 PAGE_SIZE 간격 복수 TLBI를 발생시킬 수 있음을 인지하고, Ryan Roberts의 stride 인수 추가 제안 동향을 추적하세요.",
+      "verify": "메모리 핫 리무브 후 TLB 일관성 오류가 발생하지 않는지 KVM 게스트 환경에서 확인하세요."
+    },
+    {
+      "title": "RISC-V IOMMU 명령 큐 하드웨어 잠금 방지 (dummy IOFENCE)",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "RISC-V IOMMU 드라이버 유지보수자, RISC-V 플랫폼/가상화 통합 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260624140752.31155-1-fangyu.yu@linux.alibaba.com/",
+      "if": "RISC-V IOMMU 명령 큐 스톨 또는 가용성 저하가 보고된다면",
+      "do": "패치 적용 후 CQ illegal-command 오류 발생 시 IOFENCE 덮어쓰기로 명령 큐가 재개되는지 확인하세요.",
+      "verify": "불법 명령 주입 후 명령 큐 HEAD가 정상 진행되는지 드라이버 로그로 검증하세요."
+    },
+    {
+      "title": "RISC-V KVM eager page splitting v3 투고",
+      "priority": "하",
+      "impactType": "performance",
+      "affectedAudience": "RISC-V KVM/gstage MMU 유지보수자, 라이브 마이그레이션 성능 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260624160054463wcDvJaMoydSggcNOWgcfB@zte.com.cn/",
+      "if": "RISC-V 게스트 라이브 마이그레이션 중 vCPU 성능 저하가 문제라면",
+      "do": "v3 시리즈 메인테이너(Anup Patel) 검토 결과와 eager_page_split 파라미터 기본값을 확인하세요.",
+      "verify": "dirty-logging 활성화 시 거대 페이지 분할이 vCPU 폴트가 아닌 ioctl 컨텍스트에서 이뤄지는지 KVM trace로 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ACPI: scan async schedule로 RISC-V 부팅 회귀 수정**\n\n`acpi_scan_clear_dep_queue()`의 시스템 워크큐를 `async_schedule_dev_nocall()`로 교체해 의존성 지연 장치 재스캔이 `async_synchronize_full()` 배리어를 통해 userspace init 실행 전에 완료되도록 보장하는 커밋 7cf28b3797a8의 stable 백포트 패치가 투고됐습니다.\n\n영향: riscv-aplic에 의존하는 콘솔 장치와 PCIe 호스트 브리지가 init 이후에 스캔되어 발생하던 커널 패닉 및 레스큐 셸 진입 회귀를 수정합니다. RISC-V ACPI 부팅 환경 전반에 적용됩니다.\n\n> \"Kernel panic due to userspace init cannot have an opened console.\\n...\\nEntering rescue shell due to the lack of root devices (PCIe nvme in our case).\"\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260624-acpi-dependency-thing-v1-1-ec0d99e5bf0f@iscas.ac.cn/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**arm64/mm: TLB 배치 플러시 6.1-stable 백포트 검토 쟁점**\n\n업스트림 커밋 48478b9f7913이 `unmap_hotplug_range()` 선형 매핑 해제 시 엔트리별 TLB 플러시를 배치 방식으로 전환한 패치의 6.1-stable 백포트 검토 중, Ryan Roberts가 비연속 PMD 블록에 PMD_SIZE 범위 플러시를 적용하는 안전성과 API 개선 필요성을 지적했습니다.\n\n영향: TLB range 미지원 CPU에서 PAGE_SIZE 간격 복수 TLBI가 불필요하게 실행될 수 있으나 블록 매핑의 한 항목이 TLBI 범위에 교차해도 전체 블록이 무효화되므로 현재 구현은 안전하다고 결론됩니다. stride 인수 추가는 후속 메인라인 패치 과제로 남습니다.\n\n> \"all of the entries relating to the block mapping will be invalidated if just one of them intersects the TLBI range/address. So it should be safe to reapply this hack.\"\n\n[원문 확인](https://github.com/torvalds/linux/commit/48478b9f791376b4b89018d7afdfd06865498f65)\n\n---\n\n**iommu/riscv: 불법 명령 오류 시 dummy IOFENCE로 하드웨어 잠금 방지**\n\n`riscv_iommu_cmdq_process()`에서 CQ illegal-command 오류(`CQCSR_CMD_ILL`) 발생 시 멈춘 HEAD 인덱스를 읽어 해당 항목을 무연산 IOFENCE로 덮어써 하드웨어가 해당 위치에서 재개할 수 있도록 하는 패치가 투고됐습니다. 작성자/서명 체인의 명확성(fangyu.yu vs Zong Li)은 확인이 필요합니다.\n\n영향: 불법 명령이 IOMMU 명령 큐 HEAD를 영구 블록하는 가용성 중단 버그를 수정합니다.\n\n> \"By overwriting the illegal command with a valid instruction, the hardware can continue processing from the current position instead of being stuck.\"\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260624140752.31155-1-fangyu.yu@linux.alibaba.com/)\n\n---\n\n**RISC-V KVM eager page splitting v3: ioctl 컨텍스트에서 거대 페이지 분할**\n\nWang Yechao(ZTE)의 5패치 시리즈 v3가 `KVM_MEM_LOG_DIRTY_PAGES` 활성화 시 memslot 백업 거대 페이지를 ioctl 컨텍스트에서 4K로 분할하는 x86/ARM의 eager page splitting을 RISC-V gstage MMU에 이식합니다. split_page_cache 추가, 중복 TLB 플러시 제거, `eager_page_split` 모듈 파라미터를 포함합니다. 메인테이너 검토 결과는 확인 필요입니다.\n\n영향: 라이브 마이그레이션 중 거대 페이지 분할이 vCPU 폴트 시점으로 지연되어 발생하던 게스트 성능 저하를 개선합니다.\n\n> \"It improves the performance of dirty logging (used in live migrations) when guest memory is backed by huge pages.\"\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260624160054463wcDvJaMoydSggcNOWgcfB@zte.com.cn/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "중",
+    "note": "리서치 dossier의 출처를 근거로 작성했습니다. 일부 lore 스레드는 Anubis PoW로 직접 접근이 불가해 검증 상태가 낮습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "arm64/mm: Enable batched TLB flush in unmap_hotplug_range()",
+      "url": "https://github.com/torvalds/linux/commit/48478b9f791376b4b89018d7afdfd06865498f65",
+      "note": "commit"
+    },
+    {
+      "title": "arm64 TLB batching 6.1-stable backport review thread",
+      "url": "https://lore.kernel.org/linux-arm-kernel/2026062451-bluff-coherent-672d@gregkh/",
+      "note": "thread"
+    },
+    {
+      "title": "iommu/riscv: Replace illegal command with dummy IOFENCE",
+      "url": "https://lore.kernel.org/linux-riscv/20260624140752.31155-1-fangyu.yu@linux.alibaba.com/",
+      "note": "thread"
+    },
+    {
+      "title": "iommu/riscv: Command and fault queue support (Zong Li contributor reference)",
+      "url": "https://patchew.org/linux/cover.1728579958.git.tjeznach@rivosinc.com/6916f5308478013c7b4cda77403c1e9aa9982384.1728579958.git.tjeznach@rivosinc.com/",
+      "note": "article"
+    },
+    {
+      "title": "ACPI: scan: Use async schedule function in acpi_scan_clear_dep_fn()",
+      "url": "https://github.com/torvalds/linux/commit/7cf28b3797a81b616bb7eb3e90cf131afc452919",
+      "note": "commit"
+    },
+    {
+      "title": "RISC-V ACPI dependency scan regression report and stable backport",
+      "url": "https://lore.kernel.org/linux-riscv/20260624-acpi-dependency-thing-v1-1-ec0d99e5bf0f@iscas.ac.cn/",
+      "note": "thread"
+    },
+    {
+      "title": "RISC-V KVM eager page splitting v3 series",
+      "url": "https://lore.kernel.org/linux-riscv/20260624160054463wcDvJaMoydSggcNOWgcfB@zte.com.cn/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-24T19:12:11.594Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
