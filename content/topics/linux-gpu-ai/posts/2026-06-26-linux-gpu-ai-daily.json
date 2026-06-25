@@ -1,0 +1,119 @@
+{
+  "id": "2026-06-26-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-06-26 i915 MST HDR 첫 활성화 — Linux GPU·AI 렌즈",
+  "headline": "i915 DP MST HDR 첫 활성화, IOMMU 매핑 누수 수정, RZ/G3L LVDS v5 등 DRM 브리지 패치 활발",
+  "date": "2026-06-26",
+  "summary": "Intel i915 드라이버가 DP MST 경유 HDR을 처음으로 지원하는 패치가 제출되었고, IOMMU dma-iommu 핵심 경로의 부분 매핑 누수 버그가 수정 패치로 다뤄지고 있습니다. Renesas RZ/G3L LVDS 인코더 드라이버가 태그 수집을 마친 v5로 머지 단계에 진입하는 등 DRM 브리지 계층 전반의 패치 활동이 집중됐습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "DRM",
+    "GPU",
+    "i915",
+    "IOMMU",
+    "DRM브리지",
+    "Renesas"
+  ],
+  "highlights": [
+    {
+      "title": "Intel i915: DP MST 경유 HDR 최초 활성화",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "Intel i915 디스플레이/DP MST 유지보수 담당 및 ChromeOS 그래픽 엔지니어",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260625161104.2893517-1-gildekel@google.com/",
+      "if": "MST 허브·데이지체인 구성에서 HDR 지원이 필요하다면",
+      "do": "패치 시리즈를 리뷰하고 드라이버 분기에서 Acked·머지 여부를 추적하세요",
+      "verify": "커넥터별 max_bpc·HDR metadata·DP Colorspace 속성이 노출되는지 머지 후 확인하세요"
+    },
+    {
+      "title": "IOMMU dma-iommu: 부분 매핑 누수 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "IOMMU/DMA 코어 및 SG 매핑을 사용하는 GPU·가속기 드라이버 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/5016dea0-5710-b0f9-754b-36d0c7325d46@intel.com/",
+      "if": "대량 scatter-gather 매핑을 장시간 반복하는 가속기·GPU 드라이버를 유지보수한다면",
+      "do": "iommu_dma_map_sg() 패치를 검토하고 부분 매핑 발생 조건을 재현 환경에서 확인하세요",
+      "verify": "패치 적용 후 장기 운용에서 IOMMU 페이지 테이블 자원이 점진적으로 고갈되지 않음을 확인하세요"
+    },
+    {
+      "title": "Renesas RZ/G3L LVDS 인코더 드라이버 v5 머지 임박",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "Renesas RZ/G3L 및 DRM bridge/encoder 드라이버 담당, 임베디드 디스플레이 개발자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260625172359.292631-1-biju.das.jz@bp.renesas.com/",
+      "if": "RZ/G3L SoC 기반 임베디드 디스플레이를 개발 중이라면",
+      "do": "v5 패치를 적용해 LVDS 출력을 활성화하되 MIPI-DSI와 LVDS 동시 사용 불가 제약 및 reset 공유 시퀀스를 확인하세요",
+      "verify": "25~87MHz 픽셀 클럭 범위에서 단일 링크 4 데이터+1 클럭 레인 동작을 보드에서 검증하세요"
+    },
+    {
+      "title": "samsung-dsim: drm_bridge_add()를 probe로 이동, 무한 EPROBE_DEFER 해소",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "DRM bridge/DSI host 드라이버 담당 및 i.MX LCDIF 등 DSI 파이프라인 통합 개발자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/DJIAM5GDIA9W.NJQJTONTBQRI@bootlin.com/",
+      "if": "samsung-dsim과 앞단 파이프라인(예: imx-lcdif) 조합에서 부팅 시 -EPROBE_DEFER 현상을 겪었다면",
+      "do": "해당 패치를 적용해 probe 시점에 bridge_list 등록이 이뤄지는지 확인하세요",
+      "verify": "DSI 디바이스 없는 상태로 부팅 후 devm_drm_of_get_bridge()에서 EPROBE_DEFER가 재현되지 않음을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drivers/iommu: 부분 매핑 누수 수정 (iommu_dma_map_sg)**\n\niommu_map_sg()가 요청 iova_len보다 적은 바이트만 매핑했을 때, 기존 코드는 IOVA만 해제하고 이미 매핑된 바이트를 unmap하지 않아 IOMMU 페이지 테이블 자원이 점진적으로 고갈될 수 있던 누수 버그를 수정합니다. 부분 매핑(ret>0) 시 iommu_unmap()으로 롤백한 뒤 IOVA를 해제하도록 로직이 변경되며, 반환값 화이트리스트에 -EIO가 추가됩니다.\n\n영향: 대량 scatter-gather 매핑을 장시간 반복하는 GPU·가속기 드라이버의 장기 안정성에 영향. CVE 지정 여부와 재현 조건(GFP_ATOMIC 압박 등)은 현재 확인 필요 상태입니다.\n\n> Currently, if iommu maps fewer bytes than requested (iova_len), it proceeds to free the iova, but never tries to unmap already touched bytes. This behavior may cause memory hogging down the line.\n\n[원문 확인](https://lore.kernel.org/dri-devel/5016dea0-5710-b0f9-754b-36d0c7325d46@intel.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/i915/display: DP MST 경유 HDR 최초 활성화**\n\nIntel i915 드라이버가 DP MST 연결에서 HDR을 지원하는 2-패치 시리즈가 제출됐습니다. colorimetry 조회를 루트 포트 DPCD 직접 조회 대신 커넥터 단위 캐싱으로 리팩터(MST 허브가 false를 반환하던 문제 회피)하며, fastset(update_pipe) 경로에서 트랜스코더 Video DIP 레지스터를 설정해 풀 모드셋 없이 HDR 메타데이터를 전파합니다. MST 커넥터에 max_bpc·HDR metadata·DP Colorspace 속성도 노출됩니다.\n\n영향: MST 허브·데이지체인 환경에서 그동안 막혀 있던 HDR이 활성화되며, ChromeOS 멀티 디스플레이 사용자에게 직접적인 영향을 줍니다.\n\n> Currently, the Intel display driver does not support HDR over DP MST connections. This series enables this functionality.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260625161104.2893517-1-gildekel@google.com/)\n\n---\n\n**Add support for Renesas RZ/G3L LVDS encoder (v5)**\n\nRenesas RZ/G3L SoC용 LVDS 인코더 DRM bridge 드라이버 v5가 제출됐습니다. 단일 링크 4 데이터+1 클럭 레인, 픽셀 클럭 25~87MHz를 지원하며, LVDS와 MIPI-DSI가 peripheral clock 및 MIPI_DSI_PRESET_N reset을 공유해 동시 사용이 불가합니다. LVDS 사용 전 MIPI_DSI_CMN_RSTB/MIPI_DSI_ARESET_N을 assert해야 하는 요구사항이 있습니다. 태그 수집이 완료된 v5 기준으로 머지에 근접한 상태입니다.\n\n영향: RZ/G3L SoC 기반 임베디드 디스플레이 출력이 처음으로 주류 드라이버로 지원됩니다.\n\n> Add support for the RZ/G3L LVDS encoder driver. It operates in single-link mode with 4 lanes (Data) + 1 lane (Clock) and supports pixel clock rates from 25 to 87 MHz.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260625172359.292631-1-biju.das.jz@bp.renesas.com/)\n\n---\n\n**drm/bridge: Lontium LT9611C MIPI DSI→HDMI 드라이버 리뷰 중단 위기**\n\nLontium LT9611C DSI→HDMI 브리지 신규 드라이버 리뷰에서 reset 시퀀스(assert 상태로 장치를 남기는 점)와 DT의 GPIO 극성 선언 문제(active-low 핀을 GPIO_ACTIVE_HIGH로 기술)가 지적됐습니다. 제출자는 'EVB 하드웨어 RESET 버튼 에뮬레이션'이라 답했으나 부적절하다는 평가를 받아 추가 개정이 필요합니다. 동일 브리지를 통합하려는 개발자에게 GPIO 극성 기술의 중요성을 상기시켜 주는 사례입니다.\n\n영향: LT9611C 기반 보드 통합 시 DT에서 GPIO 극성을 정확히 기술하는 것이 필수 조건임을 보여줍니다. 현재 미확인 상태의 증거가 포함되어 있어 원문 확인 필요.\n\n> It should be GPIO_ACTIVE_LOW, if the pin as active-low.\n\n[원문 확인](https://lore.kernel.org/dri-devel/tpqutwzasfwhraxzymorkiot7uryef4l2n32fyo3i3fp337sak@fugghdkcqfrj/)\n\n---\n\n**drm/bridge: samsung-dsim drm_bridge_add()를 probe로 이동**\n\nsamsung-dsim DSI 호스트 브리지가 DSI host attach 콜백 대신 probe 시점에 global bridge_list에 등록되도록 변경이 제안됐습니다. 기존에는 앞단 파이프라인(예: imx-lcdif)이 devm_drm_of_get_bridge()에서 무한 -EPROBE_DEFER에 빠질 수 있었습니다. Maxime Ripard는 관련 DRM 문서도 함께 수정하자고 제안했습니다. 이 패턴은 다른 DSI host 브리지 드라이버에도 권장 모델로 제시됩니다.\n\n영향: DSI 디바이스 없이도 부팅 중 브리지가 가용해져 hotplug 지원의 사전 단계가 됩니다. 최종 머지 여부는 현재 확인 필요 상태입니다.\n\n[원문 확인](https://lore.kernel.org/dri-devel/DJIAM5GDIA9W.NJQJTONTBQRI@bootlin.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "**dt-bindings: img,powervr-*: PowerVR GPU DT 바인딩 유지보수자 교체 시도**\n\nImagination PowerVR Rogue/SGX GPU DT 바인딩에서 Frank Binns가 빠지고 Matt Coster·Alessio Belle·Luigi Santivetti가 새 유지보수자로 추가되는 패치가 제출됐습니다. 기술 변경은 없으나, 리뷰어 Conor Dooley가 커밋 메시지에 '유지보수권의 기능적 변경'임을 명시하라며 changes-requested를 표시해 현재 형태로는 머지되지 않습니다.\n\n영향: PowerVR GPU 드라이버·바인딩 관련 패치 리뷰·문의 대상이 변경될 것으로 보입니다. confidence가 낮으므로 최종 수용 전에는 추정 단계로 취급하세요.\n\n> The commit message should reflect that this is a functional change in maintainership not a correction to match a longstanding thing. pw-bot: changes-requested\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260625-pope-tassel-e18a30aa2b90@spud/)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/i915/display: Enable HDR over DP MST",
+      "url": "https://lore.kernel.org/dri-devel/20260625161104.2893517-1-gildekel@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drivers/iommu: Unroll unsuccessful mapping",
+      "url": "https://lore.kernel.org/dri-devel/5016dea0-5710-b0f9-754b-36d0c7325d46@intel.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Add support for Renesas RZ/G3L LVDS encoder",
+      "url": "https://lore.kernel.org/dri-devel/20260625172359.292631-1-biju.das.jz@bp.renesas.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/bridge: Add Lontium LT9611C MIPI DSI to HDMI driver",
+      "url": "https://lore.kernel.org/dri-devel/tpqutwzasfwhraxzymorkiot7uryef4l2n32fyo3i3fp337sak@fugghdkcqfrj/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/bridge: samsung-dsim: move drm_bridge_add() to probe",
+      "url": "https://lore.kernel.org/dri-devel/DJIAM5GDIA9W.NJQJTONTBQRI@bootlin.com/",
+      "note": "thread"
+    },
+    {
+      "title": "dt-bindings: gpu: img,powervr-*: Add maintainer entries",
+      "url": "https://lore.kernel.org/dri-devel/20260625-pope-tassel-e18a30aa2b90@spud/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-25T19:12:23.983Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
