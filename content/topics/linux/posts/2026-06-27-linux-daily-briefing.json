@@ -1,0 +1,132 @@
+{
+  "id": "2026-06-27-linux-daily-briefing",
+  "topic": "linux",
+  "title": "2026-06-27 ENTER 피벗 차단·taprio 패닉 신규 — 리눅스 개발",
+  "headline": "x86_64 vmalloc 가드 확장 제안·taprio softirq 패닉 수정이 신규 등장했고, 7.1.1 보안 업그레이드 권고가 여전히 유효합니다.",
+  "date": "2026-06-27",
+  "summary": "x86_64 커널 스택 뒤 가드를 17페이지로 늘려 단일 ENTER 명령 기반 스택 피벗을 차단하는 패치와, taprio qdisc의 qfq 자식 조합 시 softirq NULL 역참조 수정이 신규로 제출됐습니다. arm64 서버 운용자는 CVE-2025-10263이 포함된 7.1.1 업그레이드 권고가 계속 유효함을 확인하세요.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "보안",
+    "회귀",
+    "x86_64",
+    "네트워크"
+  ],
+  "highlights": [
+    {
+      "title": "mm/vmalloc: ENTER 스택 피벗 차단 가드 확장 제안",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "x86_64 커널 자기보호 및 익스플로잇 완화에 관여하는 보안 엔지니어",
+      "verifyLink": "https://lore.kernel.org/lkml/20260626173444.2252041-1-xmei5@asu.edu/",
+      "if": "x86_64 커널 자기보호 완화 코드를 유지하시는 분께 해당합니다.",
+      "do": "패치 제안 상태를 추적하고 머지 확정 후 VMAP_GUARD_PAGES 설정을 점검하세요.",
+      "verify": "lore 스레드에서 메인테이너 응답 및 스택당 메모리 오버헤드 합의 여부를 확인하세요."
+    },
+    {
+      "title": "Linux 7.1.1: CVE-2025-10263 arm64 TLBI errata 완화",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "arm64(Neoverse N2 계열·NVIDIA Olympus·Azure Cobalt 100) 서버를 운용하는 stable 커널 배포 담당자",
+      "verifyLink": "https://lwn.net/Articles/1078591/",
+      "if": "영향받는 arm64 서버(NVIDIA Olympus·Azure Cobalt 100 등)를 운용하신다면 해당합니다.",
+      "do": "7.1 시리즈 전 사용자 필수 업그레이드 — 즉시 7.1.1로 갱신하세요.",
+      "verify": "lwn.net 기사와 cdn.kernel.org ChangeLog-7.1.1에서 CVE-2025-10263 항목을 직접 확인하세요."
+    },
+    {
+      "title": "net/sched: taprio + qfq 조합 softirq NULL deref 수정 제출",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "taprio(TSN) qdisc를 쓰는 실시간/네트워킹 스택 운용자 및 stable 백포트 담당자",
+      "verifyLink": "https://lore.kernel.org/lkml/5d57e4ce-0460-4ad2-9891-1bc7d24020d8@mojatatu.com/",
+      "if": "taprio qdisc에 qfq 자식을 조합한 네트워크 스택을 운용하신다면 해당합니다.",
+      "do": "수정 패치의 머지 및 stable 백포트 여부를 추적하고 업그레이드를 준비하세요.",
+      "verify": "lore 스레드에서 Fixes 태그와 Cc: stable 포함 여부를 원문으로 확인하세요."
+    },
+    {
+      "title": "Linux 7.0.13: nft_fib 스택 누출·fcntl 데드락 등 381건 백포트",
+      "priority": "중",
+      "impactType": "backport",
+      "affectedAudience": "7.0 LTS/stable 트리를 추적하는 배포 담당자",
+      "verifyLink": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.0.13",
+      "if": "7.0 stable 트리를 배포 기반으로 운용하신다면 해당합니다.",
+      "do": "7.0.13으로 업그레이드하고 nft_fib 및 fcntl 관련 워크로드를 재검증하세요.",
+      "verify": "cdn.kernel.org ChangeLog-7.0.13에서 nft_fib·fcntl·vsock 항목을 직접 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "Linux 7.1(2026-06-14 릴리스)은 전일 보고 완료된 항목입니다. 신규 진척 없음 — 7.1 베이스라인 이행 및 제거된 레거시 빌드 점검은 전일 브리핑을 참조하세요.\n\n[원문 확인](https://www.phoronix.com/news/Linux-7.1-Released)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**mm/vmalloc: ENTER 기반 스택 피벗 차단을 위한 가드 영역 확장(패치 제안)**\n\nx86_64에 한해 CONFIG_VMAP_STACK 뒤 가드를 1페이지에서 0x11페이지(0x11000바이트)로 확장하는 패치가 제출됐습니다. arch별 오버라이드는 asm/vmalloc.h로 가능하며 기본값은 1페이지이므로 다른 아키텍처는 무영향입니다.\n\n영향: 단일 ENTER 명령(opcode 0xc8)이 RSP를 최대 0x100ff바이트 낮출 수 있어 기존 1페이지 가드로는 인접 공격자 제어 vmap 영역으로 피벗이 가능했습니다. 이 피벗은 제어 이전 이후에 발생해 kCFI·FineIBT로 차단되지 않습니다. 머지·리뷰 상태 및 메모리 오버헤드 합의 여부는 확인 필요입니다.\n\n> Widen the guard region from one page to VMAP_GUARD_PAGES (0x11 pages, 0x11000 bytes), which is the smallest whole-page span exceeding the 0x100ff-byte maximum single-ENTER pivot.\n\n[원문 확인](https://lore.kernel.org/lkml/20260626173444.2252041-1-xmei5@asu.edu/)\n\n---\n\n**net/sched: sch_taprio peek/dequeue 불일치로 인한 NULL deref 수정(패치 제출)**\n\ntaprio 소프트웨어 경로가 non-work-conserving 자식 qdisc를 peek할 때 child->dequeue()를 직접 호출해 자식의 gso_skb 스태시를 무시하고 qlen/backlog가 어긋나는 문제를 qdisc_dequeue_peeked() 경유로 수정하는 패치가 제출됐습니다.\n\n영향: qfq 자식과 조합 시 빈 리스트에서 자식을 재진입해 NULL을 역참조, 일반 egress 중 softirq에서 커널 패닉이 발생합니다. Fixes 태그와 Cc: stable이 붙어 백포트 대상이나, 머지 및 수락 여부는 원문 스레드로 확인 필요입니다.\n\n> With a qfq child this re-enters the child on an emptied list and dereferences NULL, panicking the kernel from softirq on ordinary egress.\n\n[원문 확인](https://lore.kernel.org/lkml/5d57e4ce-0460-4ad2-9891-1bc7d24020d8@mojatatu.com/)\n\n---\n\n**Linux 7.1.1: CVE-2025-10263 arm64 TLBI errata 완화(전일 보고 항목, 권고 지속)**\n\n메인테이너가 7.1 시리즈 전 사용자 즉시 업그레이드를 명시한 보안 릴리스로, 신규 진척은 없으나 권고가 여전히 유효합니다.\n\n> All users of the 7.1 kernel series must upgrade.\n\n[원문 확인](https://lwn.net/Articles/1078591/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Linux 7.0.13: 381건 백포트(전일 보고 항목, 권고 지속)**\n\nnft_fib 스택 누출·fcntl SOFTIRQ-unsafe 락 데드락·vsock 32비트 오버플로·RDMA 블록 truncation·drm/amd out-of-bounds·CVE-2025-10263 완화가 포함된 stable 업데이트입니다. 신규 진척 없음.\n\n> the destination register is declared with len = IFNAMSIZ (four 32-bit registers), but on the lookup-fail, RTN_LOCAL and oif-mismatch paths nft_fib{4,6}_eval() only writes one register via '*dest = 0'.\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.0.13)\n\n---\n\n**ext4: 손상된 파일시스템에서 중복 EA inode 참조로 인한 데드락 방지(제안, 보류)**\n\next4 xattr 항목이 같은 EA inode를 중복 참조할 때 deferred iput 워커와 두 번째 iget()이 ABBA 데드락을 일으킬 수 있어, per-call llist로 중복을 건너뛰자는 제안으로 보입니다. 메인테이너(Jan Kara)가 다른 EA inode 작업이 안정된 이후 재상정하자며 보류를 요청했으며 현재 머지되지 않습니다. 인용 출처 검증이 불완전하므로 원문 확인 권장입니다.\n\n영향: 실제 위험은 인정됐으나 현시점 패치셋은 보류 — 파일시스템 개발자라면 EA inode 관련 스레드를 계속 추적하세요.\n\n[원문 확인](https://lore.kernel.org/lkml/ipqfj2abofanrrcapw2qp4wx6x6m647nqjrhqpuynpxxlh5ugr@utgka6gkeufw/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 낙하된 후보 3건:\n\n- **linux-next (next-20260626)**: 일일 통합 트리 스냅샷으로 특정 변경 내용이 비어 있어 독립 뉴스 가치 낮음\n- **Rambus 크립토 가속기 DT binding**: 단일 벤더 제출이며 메인테이너가 기밀 푸터 문제로 Patchwork에서 철회 후 v2 재상정 요청 — 진행성 낮음\n- **Tegra124 cpufreq 정리 패치**: 단일 SoC 국부 변경이며 메인테이너가 변경 가치에 의문을 제기하며 논쟁 중"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Linux 7.1 Released (Phoronix)",
+      "url": "https://www.phoronix.com/news/Linux-7.1-Released",
+      "note": "article"
+    },
+    {
+      "title": "Linux kernel version history (Wikipedia)",
+      "url": "https://en.wikipedia.org/wiki/Linux_kernel_version_history",
+      "note": "article"
+    },
+    {
+      "title": "ChangeLog-7.1.1",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.1",
+      "note": "changelog"
+    },
+    {
+      "title": "LWN: Linux 7.1.1 — all users must upgrade",
+      "url": "https://lwn.net/Articles/1078591/",
+      "note": "article"
+    },
+    {
+      "title": "ChangeLog-7.0.13",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.0.13",
+      "note": "changelog"
+    },
+    {
+      "title": "mm/vmalloc: Widen guard for ENTER pivot (lore)",
+      "url": "https://lore.kernel.org/lkml/20260626173444.2252041-1-xmei5@asu.edu/",
+      "note": "thread"
+    },
+    {
+      "title": "Linux vmalloced kernel stacks documentation",
+      "url": "https://docs.kernel.org/mm/vmalloced-kernel-stacks.html",
+      "note": "article"
+    },
+    {
+      "title": "net/sched: taprio NULL deref fix (lore)",
+      "url": "https://lore.kernel.org/lkml/5d57e4ce-0460-4ad2-9891-1bc7d24020d8@mojatatu.com/",
+      "note": "thread"
+    },
+    {
+      "title": "ext4: duplicate EA inode deadlock fix, held (lore)",
+      "url": "https://lore.kernel.org/lkml/ipqfj2abofanrrcapw2qp4wx6x6m647nqjrhqpuynpxxlh5ugr@utgka6gkeufw/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-26T18:03:41.996Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-newsletter-from-dossier-ko.md"
+  }
+}

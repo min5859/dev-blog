@@ -1,0 +1,151 @@
+{
+  "id": "2026-06-27-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-06-27 vmalloc 가드 확장 제안 — Linux 커널 보안",
+  "headline": "stable 4종 신규 릴리스와 ENTER 스택 피벗 차단용 vmalloc 가드 확장 패치 제안, nft_fib 스택 누수 수정 주목",
+  "date": "2026-06-27",
+  "summary": "7.0.13에서 nft_fib OIFNAME 경로의 초기화되지 않은 스택 레지스터 누수가 수정됐으며, mm/vmalloc에 ENTER 기반 스택 피벗을 차단하기 위한 가드 페이지 확장 패치가 신규 제안됐다. 5.15·5.10 LTS에는 ksmbd OOB read·nfsd heap overflow·lib/crypto MPI underflow 등 원격 노출 가능 경로 수정이 대거 백포트됐다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "보안",
+    "stable",
+    "LTS",
+    "netfilter",
+    "vmalloc",
+    "ksmbd",
+    "nfsd",
+    "SELinux"
+  ],
+  "highlights": [
+    {
+      "title": "mm/vmalloc: ENTER 스택 피벗 차단 가드 페이지 확장 제안",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "mm/vmalloc·커널 하드닝(KSPP) 추적자, x86_64 보안 담당",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/CAPpSM+Qwmv_wsNFnEjtk3GbLdZB_JtH5vW0v-Cj-CyiE8M_UEw@mail.gmail.com/",
+      "if": "VMAP_STACK 환경에서 XDP_UMEM_REG 등 비권한 vmalloc 스프레이가 가능한 경우,",
+      "do": "패치 스레드를 팔로우해 VMAP_GUARD_PAGES 기본값 변경의 머지 여부를 확인하고 배포 커널 패치 계획을 수립하세요.",
+      "verify": "CONFIG_VMAP_STACK 빌드에서 VMAP_GUARD_PAGES 매크로 정의 여부를 확인하고, 미정의 시 1페이지 가드(기존 동작)가 유지됨을 인지하세요."
+    },
+    {
+      "title": "7.0.13: nft_fib OIFNAME 경로 스택 레지스터 누수 수정",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "netfilter/nftables 사용 환경, 7.0.x stable 배포 유지보수 담당",
+      "verifyLink": "https://git.kernel.org/stable/h/v7.0.13",
+      "if": "nftables fib 규칙을 사용 중이고 7.0.x 계열을 추적하는 경우,",
+      "do": "7.0.13으로 업그레이드해 OIFNAME 레지스터 경로의 초기화되지 않은 스택 3개 레지스터 누수를 차단하세요.",
+      "verify": "nft_fib 모듈이 7.0.13 기준 커밋을 포함하는지 modinfo 및 커밋 해시로 확인하세요(git.kernel.org Anubis 차단으로 해시 직접 조회가 필요할 수 있음)."
+    },
+    {
+      "title": "5.15.210: ksmbd OOB read·nfsd NFSv4.0 heap overflow 백포트",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "5.15 LTS 기반 배포·임베디드 유지보수 담당, ksmbd/nfsd 추적자",
+      "verifyLink": "https://git.kernel.org/stable/h/v5.15.210",
+      "if": "5.15 LTS 기반에서 ksmbd 또는 nfsd NFSv4.0 서비스를 외부에 노출 중인 경우,",
+      "do": "5.15.210으로 업그레이드해 원격 접근 가능 OOB read·heap overflow 경로를 차단하세요.",
+      "verify": "업그레이드 후 dmesg에서 KASAN·UBSAN 경보 소거 여부를 확인하고, CVE 매핑은 별도 확인이 필요합니다."
+    },
+    {
+      "title": "SELinux: strlcat() → seq_buf 교체 제안 (KSPP #370 준비)",
+      "priority": "하",
+      "impactType": "api-abi",
+      "affectedAudience": "SELinux·IMA 유지보수 담당, KSPP 하드닝 추적자",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/aj6hVjECikvYtnED@dev/",
+      "if": "SELinux/IMA 코드를 기여하거나 커널 하드닝 캠페인을 추적하는 경우,",
+      "do": "패치 스레드를 확인해 KSPP #370 진행 상황과 다른 strlcat 호출처 교체 일정을 파악하세요.",
+      "verify": "selinux_ima_collect_state() 구현에서 seq_buf_has_overflowed() 단일 검사 사용 여부를 grep으로 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.1.1 stable**\n\n7.1.x 라인(2026-06-14 발표)의 첫 점 릴리스로 10건 백포트 포함 — arm64 TLBI errata 완화(Azure Cobalt 100·NVIDIA Olympus 등), C1-Premium·C1-Ultra cputype 정의 추가, driver core 미등록 버스 거부·faux root device 등록 수정, fs/fcntl fasync의 SOFTIRQ-unsafe lock order 수정이 포함된 것으로 알려져 있다.\n\n영향: 7.1은 현재 최신 stable 라인이므로 프로덕션 추적자의 우선 업그레이드 대상이며, arm64 플랫폼 운영자는 errata 완화 적용 여부를 확인할 것.\n\n> \"arm64: errata: Mitigate TLBI errata on various Arm CPUs / fs/fcntl: fix SOFTIRQ-unsafe lock order in fasync signaling\" (git.kernel.org Anubis 차단으로 직접 검증 불가 — 단정 금지)\n\n[원문 확인](https://git.kernel.org/stable/h/v7.1.1)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**7.0.13: nft_fib OIFNAME 스택 누수 수정 외 381건 백포트**\n\nnft_fib OIFNAME 레지스터 경로가 초기화되지 않은 커널 스택 3개 레지스터를 userspace로 누출할 수 있는 정보 누수를 strscpy_pad 기반 store로 수정(Davide Ornaghi 작성, Florian Westphal 제안, Fixes f6d0cbcf09c5). eth_hdr() 사용 전 Ethernet MAC 헤더 요구, vsock/virtio 32비트 skb overhead overflow·무한 큐, RDMA/umem 4G 블록 truncation, amdgpu/display OOB read·NULL deref 수정도 포함된 것으로 알려져 있다.\n\n영향: nftables 사용 환경에서 직접적 정보 누수 경로가 차단되며, GPU·RDMA·가상화 스택 전반의 대형 배치. CVE 번호 할당 여부는 확인 필요.\n\n> \"netfilter: nft_fib: fix stale stack leak via the OIFNAME register\" (출처 미검증 — 단정 금지)\n\n[원문 확인](https://git.kernel.org/stable/h/v7.0.13)\n\n---\n\n**mm/vmalloc: ENTER 기반 스택 피벗 차단 가드 페이지 확장 제안 (신규)**\n\nCONFIG_VMAP_STACK 환경의 가드 페이지를 1페이지에서 VMAP_GUARD_PAGES(x86_64 기준 0x11페이지 = 0x11000바이트)로 확장하는 패치가 linux-hardening 리스트에 신규 제안됐다. 단일 ENTER 명령의 최대 변위(0xffff + 8×0x20 = 0x100ff바이트)를 초과하도록 설정해 한 번의 ENTER 스택 피벗이 인접 스프레이 페이지에 착지하지 못하게 한다. 아키텍처별 asm/vmalloc.h로 재정의 가능하며 기본값은 1페이지(기존 동작 불변)로 설계됐다.\n\n영향: XDP_UMEM_REG 등 비권한 vmalloc 스프레이와 결합한 CFI(kCFI/FineIBT) 우회 one-gadget 피벗 완화. 현재 제안 단계로 메인테이너 수용 여부는 확인 필요.\n\n> \"0xffff + 8 * 0x20 = 0x100ff bytes ... Widen the guard region from one page to VMAP_GUARD_PAGES (0x11 pages, 0x11000 bytes)\" (출처 미검증)\n\n[원문 확인](https://lore.kernel.org/linux-hardening/CAPpSM+Qwmv_wsNFnEjtk3GbLdZB_JtH5vW0v-Cj-CyiE8M_UEw@mail.gmail.com/)\n\n---\n\n**net: microchip: vcap 규칙 이동 HW/SW 불일치 수정 (신규)**\n\nMicrochip LPM VCAP에서 규칙 insert/delete 시 소프트웨어·하드웨어 주소 이동 불일치를 수정. 블록 내 모든 규칙 크기의 최소공배수에 정렬된 균일 오프셋 계산을 도입해 HW/SW 표현의 동기를 유지하고 모든 규칙이 정렬된 주소에 착지하도록 했다. Jakub Kicinski의 AI 생성 리뷰에서 잠재적 규칙 누수 가능성이 제기됐으나, 작성자는 현재 호출 경로로는 도달 불가하다고 응답했다.\n\n영향: Microchip 이더넷 스위치 드라이버 환경에서 ACL·필터 동작 회귀를 유발할 수 있는 경로가 차단될 것으로 보이나, 머지 여부는 확인 필요.\n\n> \"It introduces a uniform offset computation aligned to the least common multiple of all rule sizes in a block. This ensures that hardware and software representations remain synchronized\" (출처 미검증)\n\n[원문 확인](https://lore.kernel.org/linux-hardening/fc2d818282656906dc264f286c4a10c24f77f1d7.camel@microchip.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Linux 5.15.210 LTS: ksmbd OOB·nfsd heap overflow 등 409건 백포트**\n\n5.15 LTS에 보안 집중 대형 배치 — ksmbd smb_check_perm_dacl() ACE-walk OOB read 회귀, nfsd NFSv4.0 LOCK replay 캐시 heap overflow, ksmbd MAC 상수시간 비교, ipv6 ioam6 trace fill schema length wraparound, mptcp rcv_wnd TOCTOU 경쟁, batman-adv tp_meter race·leak, blk-cgroup NULL deref 수정이 포함된 것으로 알려져 있다.\n\n영향: ksmbd·nfsd는 원격 노출면이 큰 파일서버 경로라 OOB·heap overflow는 고위험으로 분류되며, 5.15는 다수 배포 기반이라 백포트 영향이 광범위함. CVE 매핑은 확인 필요.\n\n> \"ksmbd: OOB read regression in smb_check_perm_dacl() ACE-walk loops / nfsd: fix heap overflow in NFSv4.0 LOCK replay cache\" (출처 미검증 — 단정 금지)\n\n[원문 확인](https://git.kernel.org/stable/h/v5.15.210)\n\n---\n\n**Linux 5.10.259 LTS: lib/crypto MPI underflow·apparmor DFA 경계 검증 등 343건 백포트**\n\n5.10 최장수 활성 LTS에 lib/crypto mpi_read_raw_from_sgl() integer underflow, apparmor 기본 DFA 상태 경계 검증, usb gadget f_hid device reference leak, x86/AMD Zen3 BTC_NO 감지 이동, RDMA/umem 4G 블록 truncation, iio 드라이버 division-by-zero 수정이 백포트됐다고 알려져 있다.\n\n영향: lib/crypto·apparmor는 메모리 안전·LSM 관련 경로라 임베디드·엔터프라이즈 장수명 LTS 기반에 광범위한 영향. 전체 ChangeLog는 cdn 경로로 추가 확인을 권장한다.\n\n> \"lib/crypto: mpi: Fix integer underflow in mpi_read_raw_from_sgl() / apparmor: validate default DFA states are in bounds\" (출처 미검증 — 단정 금지)\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.259)\n\n---\n\n**SELinux: selinux_ima_collect_state() strlcat() → seq_buf 교체 제안 (신규, KSPP #370 준비)**\n\nselinux_ima_collect_state()의 strscpy()/strlcat() 체인을 struct seq_buf로 교체하는 패치가 신규 제안됐다. 7개의 per-append WARN_ON(rc >= buf_len) truncation 검사가 단일 seq_buf_has_overflowed() 검사로 대체되며, 7.2에서 strncpy 완전 제거를 앞둔 커널 하드닝 캠페인(KSPP #370)의 일환이다.\n\n영향: SELinux/IMA 코드의 truncation 버그 표면이 축소되며, seq_buf는 쓰기 위치·잔여 공간을 내부 추적해 안전성을 높임. 머지 여부는 확인 필요.\n\n> \"replace the strscpy()/strlcat() chain ... with a struct seq_buf ... The seven per-append WARN_ON(rc >= buf_len) truncation checks are replaced by a single seq_buf_has_overflowed() check\" (출처 미검증)\n\n[원문 확인](https://lore.kernel.org/linux-hardening/aj6hVjECikvYtnED@dev/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier의 출처를 근거로 작성했습니다. git.kernel.org의 Anubis 차단으로 다수 changelog·commit 해시를 직접 검증하지 못했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Linux 7.1 릴리스 공지 (lkml.iu.edu)",
+      "url": "https://lkml.iu.edu/2606.1/13340.html",
+      "note": "article"
+    },
+    {
+      "title": "Linux 7.1.1 stable tag (git.kernel.org)",
+      "url": "https://git.kernel.org/stable/h/v7.1.1",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 7.0.13 stable tag (git.kernel.org)",
+      "url": "https://git.kernel.org/stable/h/v7.0.13",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 7.0 Released — Phoronix",
+      "url": "https://www.phoronix.com/news/Linux-7.0-Released",
+      "note": "article"
+    },
+    {
+      "title": "Linux 5.15.210 stable tag (git.kernel.org)",
+      "url": "https://git.kernel.org/stable/h/v5.15.210",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 5.10.259 ChangeLog (cdn.kernel.org)",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.259",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 5.10.259 stable tag (git.kernel.org)",
+      "url": "https://git.kernel.org/stable/h/v5.10.259",
+      "note": "changelog"
+    },
+    {
+      "title": "mm/vmalloc: widen guard region to defeat ENTER-based stack pivot (linux-hardening 스레드)",
+      "url": "https://lore.kernel.org/linux-hardening/CAPpSM+Qwmv_wsNFnEjtk3GbLdZB_JtH5vW0v-Cj-CyiE8M_UEw@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Virtually Mapped Kernel Stack Support — kernel docs",
+      "url": "https://docs.kernel.org/mm/vmalloced-kernel-stacks.html",
+      "note": "article"
+    },
+    {
+      "title": "net: microchip: vcap rule move fix (linux-hardening 스레드)",
+      "url": "https://lore.kernel.org/linux-hardening/fc2d818282656906dc264f286c4a10c24f77f1d7.camel@microchip.com/",
+      "note": "thread"
+    },
+    {
+      "title": "SELinux strlcat → seq_buf 교체 제안 (linux-hardening 스레드)",
+      "url": "https://lore.kernel.org/linux-hardening/aj6hVjECikvYtnED@dev/",
+      "note": "thread"
+    },
+    {
+      "title": "Better string handling for the kernel — LWN",
+      "url": "https://lwn.net/Articles/948408/",
+      "note": "article"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-26T18:42:41.709Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

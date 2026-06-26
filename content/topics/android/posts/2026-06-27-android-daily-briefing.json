@@ -1,0 +1,120 @@
+{
+  "id": "2026-06-27-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-06-27 UFS 3연쇄 패치 주의 — Android 커널",
+  "headline": "UFS 런타임 서스펜드 데드락 수정이 유발한 host_sem 누수·NULL deref 회귀, 세 패치 묶음 백포트 필수",
+  "date": "2026-06-27",
+  "summary": "UFS 데드락 수정(f966e02ae521)이 host_sem 누수와 NULL 포인터 역참조라는 연쇄 회귀를 만들었습니다. ACK 백포트 담당은 7ef00d3457·459c818f·a460b437 세 패치를 반드시 묶어 적용해야 부팅 초기 크래시를 방지할 수 있습니다.",
+  "tags": ["안드로이드", "커널", "UFS", "회귀", "BBR", "GKI"],
+  "highlights": [
+    {
+      "title": "UFS host_sem 세마포어 누수 회귀",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "스토리지/UFS 담당, ACK 백포트 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/459c818f8b5a562c34a27b915fae53792fa82a71",
+      "if": "UFS 데드락 수정(7ef00d3457)만 단독으로 백포트한 경우",
+      "do": "459c818f8b5a와 a460b437af44도 함께 백포트하여 세 패치를 묶음으로 적용",
+      "verify": "런타임 서스펜드 진입 후 host_sem 누수 없음 및 부팅 초기 NULL deref 크래시 없음 확인"
+    },
+    {
+      "title": "UFS error handler 부팅 초기 NULL deref 크래시",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "스토리지/UFS 담당, ACK 백포트 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/a460b437af44c3317a57e637455ee891d0ee0352",
+      "if": "SCSI 스캔 완료 전에 UFS error handler가 동작할 수 있는 플랫폼에서 7ef00d3457만 적용한 경우",
+      "do": "UFS 연쇄 3패치(7ef00d3457·459c818f·a460b437)를 묶어서 한 번에 백포트 적용",
+      "verify": "SM8750 또는 동등 플랫폼 부팅 초기 UFS error handler 경로에서 크래시 없음 확인"
+    },
+    {
+      "title": "build.config.constants 심볼릭 링크 삭제",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "ACK 빌드 시스템(Kleaf/Bazel) 담당, 벤더 빌드 스크립트 유지보수자",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/b4221e52ff0edf4d07a3c526292056bc878e96fc",
+      "if": "다운스트림 벤더 빌드 스크립트가 최상위 build.config.constants를 직접 source하는 경우",
+      "do": "해당 스크립트를 bazel/constants.scl 자동 로드 방식으로 전환",
+      "verify": "빌드 성공 및 상수 값이 기존과 동일함을 확인"
+    },
+    {
+      "title": "GKI BBR TCP 혼잡 제어 알고리즘 활성화",
+      "priority": "하",
+      "impactType": "runtime",
+      "affectedAudience": "ACK 배포/네트워크 담당, 벤더 트리 통합 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/05c6fbd18c50f80608fc7773e801bf1e636d6d58",
+      "if": "BBR을 기본 혼잡 제어 알고리즘으로 전환하려는 경우",
+      "do": "런타임에 net.ipv4.tcp_congestion_control=bbr 설정으로 전환하여 적용",
+      "verify": "기본값이 CUBIC으로 유지됨을 확인하고, BBR 전환 후 네트워크 동작 검증"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**UPSTREAM: scsi: ufs: core: Fix error handler host_sem issue**\n\nf966e02ae521의 새 반환 경로에서 host_sem이 해제되지 않던 세마포어 누수를 수정. pm_op_in_progress를 host_sem 획득 전에 먼저 검사.\n\n영향: 7ef00d3457만 단독 백포트하면 세마포어 누수가 잔존하므로 이 패치 없이는 안전하지 않음.\n\n> \"Fix the issue where host_sem is not released due to a new return path in commit f966e02ae521 (\\\"scsi: ufs: core: Fix runtime suspend error deadlock\\\").\"\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/459c818f8b5a562c34a27b915fae53792fa82a71)\n\n---\n\n**UPSTREAM: scsi: ufs: core: Fix an error handler crash**\n\nSCSI 스캔 전(hba->ufs_device_wlun 미설정 상태)에 error handler가 동작할 때 발생하던 NULL 포인터 역참조를 포인터 사용 전 검사로 방지.\n\n영향: 앞선 두 UFS 수정이 함께 유발한 부팅 초기 크래시를 막는 체인의 마지막 패치. SM8750에서 테스트 확인.\n\n> \"The UFS error handler may be activated before SCSI scanning has started and hence before hba->ufs_device_wlun has been set. Check the hba->ufs_device_wlun pointer before using it.\"\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/a460b437af44c3317a57e637455ee891d0ee0352)\n\n---\n\n**UPSTREAM: scsi: ufs: core: Fix runtime suspend error deadlock** *(연쇄 회귀의 기점)*\n\n런타임 서스펜드 중 에러 발생 시 error handler가 runtime PM resume을 무한 대기하던 데드락을, pm_op_in_progress 확인 후 quick recovery로 해소.\n\n영향: 이 패치 단독 백포트는 위 두 회귀를 함께 끌어들이므로 세 패치 묶음 적용 필수.\n\n> \"Prevent the deadlock by checking pm_op_in_progress and performing a quick recovery. This approach ensures that the error handler does not wait indefinitely for runtime PM to resume\"\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/7ef00d3457d8c9cee0915ee0edff247031c36e0c)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**ANDROID: GKI: enable CONFIG_TCP_CONG_BBR**\n\ngki_defconfig(arm64/x86)에서 BBR 혼잡 제어 알고리즘을 GKI에 활성화. 기본값은 CUBIC 유지.\n\n영향: 벤더가 별도 패치 없이 런타임에 BBR을 선택 가능해져 네트워크 시나리오별 활용도 향상. 기본값 변경 없어 기존 동작 회귀 위험 낮음.\n\n> \"Enable support for BBR (Bottleneck Bandwidth and RTT) TCP congestion control algorithm... Note this still maintains CUBIC as the default algorithm.\"\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/05c6fbd18c50f80608fc7773e801bf1e636d6d58)\n\n---\n\n**ANDROID: Add Wonder driver to GKI**\n\ndrivers/android/wonder/ 아래 21개 파일로 Wonder Wi-Fi 가상 디바이스 드라이버를 ACK GKI 드라이버로 추가(mac80211, nl80211 벤더 커맨드, wondertap 등 포함).\n\n영향: android17-6.18 기준 버전 3.6.5에서 이식. 테스트 전용 가상 디바이스 여부 등 용도는 커밋만으로 단정 불가 — 확인 필요.\n\n> \"This adds the Wonder Wi-Fi virtual device driver to the Android Common Kernel as a GKI driver. It is based off of the android17-6.18 wonder driver at version 3.6.5.\"\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/8a7c7d3954c2839bb2f6ebe475648ec14b8a2c9f)\n\n---\n\n**ANDROID: GKI: Update symbol list for honor**\n\nhonor 심볼 리스트와 abi.stg에 trace_tcp_send_reset 트레이스포인트 관련 심볼 2개 추가.\n\n영향: GKI KMI ABI 표면이 확장되므로 ABI 모니터링 담당이 인지 필요. 인용 원문은 검증 실패로 단정 표현 생략.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/74c43557c8aed4002d058c4e88c768a6086df9c2)\n\n---\n\n**ANDROID: GKI: Enable crc_kunit and more crypto KUnit tests**\n\ncrc_kunit 및 최근 추가된 crypto KUnit 테스트(aes_cbc_macs, chacha20poly1305, ghash, nh)를 gki_defconfig에서 활성화.\n\n영향: GKI 빌드의 in-tree 테스트 커버리지 확대로 crypto/CRC 회귀를 조기 탐지 가능.\n\n> \"Enable crc_kunit and some recently-added crypto tests. The code tested by these tests is already enabled in gki_defconfig.\"\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/6f25e0da2951c90af2d4c2b458eeee96a98427dc)\n\n---\n\n**ANDROID: Delete top-level build.config.constants**\n\n최상위 build.config.constants 심볼릭 링크 삭제. 상수는 bazel/constants.scl로 이전되어 자동 로드.\n\n영향: 구식 build.config 흐름에 의존하는 다운스트림 벤더 빌드 스크립트가 파손될 수 있어 Kleaf/Bazel 전환 여부 점검 필요.\n\n> \"The constants were moved to bazel/constants.scl and has been automatically loaded. It is not necessary to source build.config.constants manually. Delete the top-level symlink for simplicity.\"\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/b4221e52ff0edf4d07a3c526292056bc878e96fc)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ANDROID: GKI: enable CONFIG_TCP_CONG_BBR",
+      "url": "https://android.googlesource.com/kernel/common/+/05c6fbd18c50f80608fc7773e801bf1e636d6d58",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: GKI: Update symbol list for honor",
+      "url": "https://android.googlesource.com/kernel/common/+/74c43557c8aed4002d058c4e88c768a6086df9c2",
+      "note": "commit"
+    },
+    {
+      "title": "UPSTREAM: scsi: ufs: core: Fix runtime suspend error deadlock",
+      "url": "https://android.googlesource.com/kernel/common/+/7ef00d3457d8c9cee0915ee0edff247031c36e0c",
+      "note": "commit"
+    },
+    {
+      "title": "UPSTREAM: scsi: ufs: core: Fix error handler host_sem issue",
+      "url": "https://android.googlesource.com/kernel/common/+/459c818f8b5a562c34a27b915fae53792fa82a71",
+      "note": "commit"
+    },
+    {
+      "title": "UPSTREAM: scsi: ufs: core: Fix an error handler crash",
+      "url": "https://android.googlesource.com/kernel/common/+/a460b437af44c3317a57e637455ee891d0ee0352",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: Add Wonder driver to GKI",
+      "url": "https://android.googlesource.com/kernel/common/+/8a7c7d3954c2839bb2f6ebe475648ec14b8a2c9f",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: GKI: Enable Wonder driver module (gki_defconfig)",
+      "url": "https://android.googlesource.com/kernel/common/+/4a8e51250625671e4a0175e18b4001cc03ac3971",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: GKI: Enable crc_kunit and more crypto KUnit tests",
+      "url": "https://android.googlesource.com/kernel/common/+/6f25e0da2951c90af2d4c2b458eeee96a98427dc",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: Delete top-level build.config.constants",
+      "url": "https://android.googlesource.com/kernel/common/+/b4221e52ff0edf4d07a3c526292056bc878e96fc",
+      "note": "commit"
+    }
+  ]
+}

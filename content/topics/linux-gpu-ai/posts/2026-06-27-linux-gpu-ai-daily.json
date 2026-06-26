@@ -1,0 +1,114 @@
+{
+  "id": "2026-06-27-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-06-27 DP MST HDR 활성화 — Linux GPU·디스플레이",
+  "headline": "Intel i915 DP MST HDR 출력 첫 지원, AMD amdgpu_dm 댕글링 포인터 수정 패치 리뷰 진행 중",
+  "date": "2026-06-27",
+  "summary": "Intel i915 드라이버가 MST 허브·도킹 환경에서 HDR 출력을 처음으로 지원하는 v2 패치 시리즈가 제출됐다. AMD amdgpu_dm은 상태 리셋 경로의 잠재적 use-after-free를 수정하는 패치가 리뷰 중이나, kfree 누락 지적으로 최종 병합 전 v3가 필요한 상황이다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "DRM",
+    "i915",
+    "amdgpu",
+    "DisplayPort",
+    "HDR",
+    "GPU"
+  ],
+  "highlights": [
+    {
+      "title": "Intel i915 DP MST HDR 출력 지원 활성화 (v2)",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "Intel i915 display & DP-MST maintainers, ChromeOS display/graphics",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260626175510.3899476-1-gildekel@google.com/",
+      "if": "MST 허브나 DP 체이닝·도킹 환경에서 HDR 디스플레이를 사용 중이라면",
+      "do": "drm-intel-next 병합 여부를 추적하고, 루트 포트 DPCD를 직접 읽는 커넥터별 colorimetry 코드가 있다면 점검하세요.",
+      "verify": "lore 스레드에서 리뷰 상태 및 drm-intel-next 병합 알림을 확인하세요."
+    },
+    {
+      "title": "AMD amdgpu_dm 상태 리셋 경로 댕글링 포인터 수정",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "amdgpu/DC (amdgpu_dm) maintainers and reviewers",
+      "verifyLink": "https://lore.kernel.org/dri-devel/6f93acaf-7483-42d4-b29d-72b3b9933fe9@amd.com/",
+      "if": "amdgpu_dm plane/crtc/connector 리셋 경로를 포함한 커널을 안정 브랜치에 백포트할 계획이라면",
+      "do": "v3 패치 게시 여부를 확인하고, connector reset 함수에서 누락된 kfree() 복구 여부를 검토하세요.",
+      "verify": "lore 스레드에서 리뷰어의 kfree 누락 코멘트와 v3 응답을 확인하세요."
+    },
+    {
+      "title": "lt9611c HDMI 브리지 디스플레이 활성화 지연 440ms 제거",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "Lontium lt9611c / DRM HDMI bridge driver users and maintainers",
+      "verifyLink": "https://lore.kernel.org/dri-devel/DJJ42UCJ1Y6X.TBR370GE9U1Q@bootlin.com/",
+      "if": "lt9611c HDMI 브리지를 사용하는 보드에서 디스플레이 활성화 지연이 보고됐다면",
+      "do": "패치 병합 후 lt9611c_bridge_atomic_pre_enable() 경로를 검증하고, HDR 메타데이터 VSI 콜백 완성 여부를 추적하세요.",
+      "verify": "lore 스레드에서 커밋 분리 재작업 여부와 drm-misc 병합 알림을 확인하세요."
+    },
+    {
+      "title": "DRM 브리지 커넥터 핫플러그 기반 리팩터 시작",
+      "priority": "하",
+      "impactType": "project",
+      "affectedAudience": "DRM bridge / display-helper maintainers and bridge driver authors",
+      "verifyLink": "https://lore.kernel.org/dri-devel/DJJ4X22CJ3FG.5EYF84LVRNOG@bootlin.com/",
+      "if": "drm_bridge_connector 초기화 경로를 수정하거나 bridge hotplug 구현을 계획 중이라면",
+      "do": "drm_bridge_connector_init() 분리 패치를 검토하고, Maxime Ripard의 설계 질의(bridge 제거 시 bridge_connector 지속 여부)를 추적하세요.",
+      "verify": "lore 스레드에서 Ripard의 리뷰 응답과 후속 hotplug 시리즈 게시 여부를 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**DRM 브리지 커넥터 핫플러그 준비 리팩터**\n\ndrm_bridge_connector_init()에서 커넥터 추가·초기화·등록 코드를 별도 함수로 분리하는 패치가 리뷰 중이다. 기능 변경 없는 코드 이동이며, bridge hotplug 구현을 위한 기반 작업이다.\n\n영향: drm_connector 객체를 핫플러그 이벤트에 따라 런타임에 추가·제거하면서 drm_bridge_connector는 카드 수명 동안 유지하는 이중 수명 모델의 전제 조건이 된다. DRM 브리지 커넥터를 사용하는 모든 드라이버에 영향을 줄 API 방향성이다.\n\n> \"the drm_connector needs to be added and removed at any time based on hotplug events ... so it must be persistent for the card lifetime\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/DJJ4X22CJ3FG.5EYF84LVRNOG@bootlin.com/)\n\nMaxime Ripard가 bridge가 핫플러그 제거될 때 drm_bridge_connector를 지속시켜야 하는지에 대한 설계 질의를 제기 중이며, 전체 hotplug 시리즈 게시 여부는 확인 필요."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**AMD amdgpu_dm 상태 리셋 경로 댕글링 포인터 수정**\n\namdgpu_dm의 plane·crtc·connector 리셋 함수 세 곳에서 kzalloc 실패 시 구 상태를 먼저 해제한 후 신규 할당에 실패하면 댕글링 포인터가 남는 버그를 수정하는 v2 패치가 리뷰 중이다. Linux Verification Center(linuxtesting.org)가 SVACE 정적 분석으로 발견했으며 Fixes 태그가 세 커밋을 지목하고 있다.\n\n영향: 메모리 할당 실패 경로의 잠재적 use-after-free로, amdgpu_dm atomic state 안정성에 직결되는 이슈다.\n\n> \"If kzalloc_obj() fails, the function returns without updating the state pointer, leaving a dangling pointer to already freed memory.\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/6f93acaf-7483-42d4-b29d-72b3b9933fe9@amd.com/)\n\n주의: 리뷰어가 connector reset 리팩터에서 기존 kfree()가 누락됐다고 지적했다. 이 패치를 안정 브랜치에 적용하기 전 v3 게시 여부를 반드시 확인해야 한다.\n\n> \"You seem to have lost this kfree() in your refactor.\""
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Intel i915 DP MST HDR 출력 지원 활성화 (v2)**\n\nDP MST 연결(MST 허브·데이지체인·도킹 스테이션)에서 HDR 출력을 지원하는 v2 2-패치 시리즈가 제출됐다. 루트 포트 DPCD를 직접 읽는 방식 대신 커넥터별로 colorimetry 지원을 쿼리·캐시하고, MST 스트림 설정에서 VSC 및 HDR 메타데이터 SDP를 계산하며, 트랜스코더 Video DIP 레지스터를 스트림 활성화 및 fastset(update_pipe) 시 설정하여 full modeset 없이 HDR 메타데이터 변경을 반영한다. max_bpc·HDR 메타데이터·DP Colorspace 속성도 MST 커넥터에 노출된다. v2는 Werror CI 빌드 오류(-Wunused-but-set-variable)와 checkpatch 경고를 수정했다.\n\n영향: MST 허브를 통한 HDR 출력이 드라이버 수준에서 이전까지 지원되지 않았으며, 이 패치로 처음 활성화된다. ChromeOS 팀이 작성했으며 다중 디스플레이·도킹 환경에 직접 연관된다.\n\n> \"Currently, the Intel display driver does not support HDR over DP MST connections. This series enables this functionality.\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260626175510.3899476-1-gildekel@google.com/)\n\ndrm-intel-next 병합 여부 및 검증된 플랫폼·트랜스코더 목록은 확인 필요.\n\n---\n\n**DP 레인 카운트 검증 공통 헬퍼 추가**\n\nDisplayPort 레인 카운트가 규격 준수값(1·2·4)인지 확인하는 drm_dp_lane_count_is_valid() 헬퍼를 DRM DP 코어에 추가하는 패치가 리뷰 중이다. Rockchip의 Damon Ding이 제출했다.\n\n영향: 각 DP 브리지·인코더 드라이버가 개별 구현하던 동일한 레인 카운트 검증 로직을 공통 헬퍼로 통합해 중복을 줄인다. 적용되는 기존 드라이버 목록은 확인 필요.\n\n> \"Add a generic helper function drm_dp_lane_count_is_valid() ... This helper avoids duplicating DP lane count validation logic\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/178249136511.1374898.9104900523077961218.b4-review@b4/)\n\n병합 여부는 아직 확인되지 않았다(b4-review 스레드, Applied 알림 미확인).\n\n---\n\n**lt9611c HDMI 브리지 디스플레이 활성화 지연 440ms 제거**\n\nlt9611c 브리지의 bridge_atomic_pre_enable()에서 불필요한 리셋 호출 제거(활성화마다 약 440ms 지연 발생), 프로브 말미 리셋 제거, DRM HDMI 브리지 프레임워크가 요구하는 HDR 메타데이터용 VSI 인포프레임 콜백 스텁 추가, OF 매치 데이터로 칩 변종 감지 이동, bridge.vendor/bridge.product 채우기를 묶은 패치가 리뷰 중이다.\n\n영향: 활성화마다 발생하던 약 440ms 지연 제거로 사용자에게 체감되는 디스플레이 켜짐 속도가 개선된다. HDR 메타데이터 VSI 콜백은 스텁 단계로 완전 동작 여부는 확인 필요. 리뷰어가 무관한 변경들을 커밋별로 분리할 것을 요청 중이어서 최종 병합 형태는 미확정이다.\n\n> \"calling it again on every display enable adds ~440ms of unnecessary latency.\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/DJJ42UCJ1Y6X.TBR370GE9U1Q@bootlin.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "[PATCH v2 0/2] drm/i915/display: Enable HDR over DP MST",
+      "url": "https://lore.kernel.org/dri-devel/20260626175510.3899476-1-gildekel@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "[PATCH v2] drm/amd/display: Fix dangling pointers in state reset functions on allocation failure",
+      "url": "https://lore.kernel.org/dri-devel/6f93acaf-7483-42d4-b29d-72b3b9933fe9@amd.com/",
+      "note": "thread"
+    },
+    {
+      "title": "[PATCH] drm/dp: Add helper to validate DP lane counts",
+      "url": "https://lore.kernel.org/dri-devel/178249136511.1374898.9104900523077961218.b4-review@b4/",
+      "note": "thread"
+    },
+    {
+      "title": "[PATCH] drm/bridge: lontium lt9611c: fixes and improvements",
+      "url": "https://lore.kernel.org/dri-devel/DJJ42UCJ1Y6X.TBR370GE9U1Q@bootlin.com/",
+      "note": "thread"
+    },
+    {
+      "title": "[PATCH] drm/display: bridge-connector: split code creating the connector to a subfunction",
+      "url": "https://lore.kernel.org/dri-devel/DJJ4X22CJ3FG.5EYF84LVRNOG@bootlin.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-26T19:16:53.500Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

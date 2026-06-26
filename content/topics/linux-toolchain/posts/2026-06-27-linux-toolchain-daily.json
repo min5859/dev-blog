@@ -1,0 +1,104 @@
+{
+  "id": "2026-06-27-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-06-27 ath9k EEPROM 스택 오버플로 패치 — Linux Toolchain",
+  "headline": "ath9k EEPROM 경계 검증으로 스택 오버플로 차단, Rust IO·devres 추상화 타입 안전성 동시 강화",
+  "date": "2026-06-27",
+  "summary": "ath9k 드라이버에서 악의적 EEPROM 보정 데이터로 인한 스택 오버플로 가능성을 경계 검증과 static 제거로 차단하는 패치(v3)가 제출됐습니다. Rust 커널 IO 추상화에서는 비타입 접근·register! 매크로를 Region 타입으로 한정하고 ForLt 트레잇을 공변성 보장 하위트레잇으로 분리해 드라이버 자원 수명 건전성을 확보했습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "도구체인",
+    "Rust",
+    "clang",
+    "LLVM",
+    "보안",
+    "kbuild"
+  ],
+  "highlights": [
+    {
+      "title": "ath9k EEPROM 경계 검증 — 스택 오버플로 차단",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "ath9k/무선 드라이버 유지보수자, clang 커널 빌드·스택 사용량 추적 담당",
+      "verifyLink": "https://lore.kernel.org/llvm/20260626040647.842093-1-rosenp@gmail.com/",
+      "if": "ath9k 드라이버를 유지보수하거나 clang으로 빌드하고 있다면",
+      "do": "v3 패치의 ath-next 머지 상태를 확인하고 적용 일정을 점검하세요",
+      "verify": "패치 적용 후 스택 프레임이 0x440(1088B)→0x330(816B)으로 줄었는지, 경계 초과 입력에서 오버플로가 발생하지 않는지 확인하세요"
+    },
+    {
+      "title": "Rust IO — 비타입 접근을 Region 타입으로 한정",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust for Linux 드라이버 작성자, rust/kernel IO 추상화 유지보수자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260626-io_projection-v5-3-d0961471ae50@garyguo.net/",
+      "if": "Mmio<u32> 같은 타입 영역에서 read8() 등 비타입 접근을 사용하는 Rust 드라이버를 작성·유지하고 있다면",
+      "do": "io_projection v5 시리즈 머지 여부를 추적하고, Region 타입 미사용 비타입 접근 코드를 미리 점검하세요",
+      "verify": "변경 후 Region 외 경로로 비타입 접근 시 컴파일 오류가 발생하는지 확인하세요"
+    },
+    {
+      "title": "ForLt/CovariantForLt 분리 — devres 수명 건전성 확보",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust for Linux 코어/devres·auxiliary 추상화 작성자, 드라이버 자원 수명 처리 담당",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260626183630.2585057-1-dakr@kernel.org/",
+      "if": "devres·auxiliary 기반 Rust 드라이버에서 into_devres()나 cast_ref()를 사용하고 있다면",
+      "do": "v4 시리즈 머지 여부를 확인하고, 불변 타입(Mutex<&'bound T>)에 cast_ref()가 노출되는 코드를 클로저 API로 마이그레이션할 준비를 하세요",
+      "verify": "불변 타입에서 cast_ref() 직접 호출이 컴파일 오류로 차단되고, HRTB 클로저 API만 허용되는지 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**[PATCHv3 ath-next] wifi: ath9k: eeprom: drop static from local pdadc and vpdTable arrays**\n\nEEPROM 전력 보정 함수 3곳의 static 지역 배열을 스택으로 이동하고, 잘못된 EEPROM 보정 데이터로 인한 스택 버퍼 오버플로·OOB 읽기·음수 인덱스·무한 시프트를 경계 검증으로 차단합니다. vpdTableI를 vpdTableL에 앨리어싱해 스택 프레임도 1088B→816B로 축소됩니다.\n\n영향: 온디바이스 EEPROM 데이터로 도달 가능한 결함으로 보안 의미가 있으며, clang 빌드 기준 스택 사용량 감소는 도구체인 렌즈에도 직접 영향합니다. CVE 및 Fixes 태그는 현재 미확인입니다.\n\n> \"a malformed EEPROM calibration dataset can cause stack buffer overflows (vpdTable rows are 64 bytes but the fill loop runs up to 128 iterations)\"\n\n[원문 확인](https://lore.kernel.org/llvm/20260626040647.842093-1-rosenp@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**rust: io: restrict untyped IO access and `register!` to `Region`**\n\nIo 트레잇의 비타입 접근자(read8 등)와 register! 매크로를 Region 타입 영역으로 제한하고, IoLoc에 허용 베이스 타입을 나타내는 제네릭 인자를 추가합니다.\n\n영향: Mmio<u32> 같은 타입 영역에서 read8() 같은 어긋난 비타입 접근이 컴파일 타임에 차단되어 드라이버 간 MMIO 격리 기반이 마련됩니다. io_projection v5 시리즈의 머지 여부는 현재 확인 불가 상태입니다.\n\n> \"restrict the untyped methods and also the register macro to `Region` type only ... for now restrict everything to require `IoLoc<Region<SIZE>, _>`\"\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260626-io_projection-v5-3-d0961471ae50@garyguo.net/)\n\n---\n\n**ForLt/CovariantForLt split, auxiliary closure API and DevresLt**\n\nForLt 트레잇을 베이스 ForLt와 공변성 보장 unsafe 하위트레잇 CovariantForLt로 분리하고, 불변 타입용 HRTB 클로저 기반 registration_data_with()와 DevresLt(DevresBar/DevresIoMem 별칭 포함)를 도입합니다.\n\n영향: 기존 ForLt가 Mutex<&'bound T>처럼 수명에 불변인 타입에서도 cast_ref()를 노출해 불건전했던 문제를 해소하며, DevresLt::new()가 unsafe로 전환되어 into_devres() 호출자의 마이그레이션이 필요할 수 있습니다.\n\n> \"This series splits ForLt into two traits: ForLt: base trait ... CovariantForLt: unsafe subtrait that guarantees covariance, providing a safe cast_ref() method.\"\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260626183630.2585057-1-dakr@kernel.org/)\n\n---\n\n**Kbuild updates for 7.2 #2** (어제 다룬 항목)\n\nLLVM=1 빌드 시 호스트 프로그램 ld.lld 링크·distributed ThinLTO modpost 경고 수정·Kconfig 변경 입력 선택적 경고가 담긴 kbuild-7.2-2 태그가 Linus에게 풀 요청 상태입니다. 실제 머지 여부는 현재까지 확인 불가입니다.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20260624225711.GA1132314@ax162/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "medium",
+    "note": "리서치 dossier의 출처를 근거로 작성했습니다. ath9k 패치는 v3 검토 단계이며, Rust 시리즈 두 건 모두 머지 여부가 미확인입니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Kbuild updates for 7.2 #2 — pull request",
+      "url": "https://lore.kernel.org/linux-kbuild/20260624225711.GA1132314@ax162/",
+      "note": "changelog"
+    },
+    {
+      "title": "kbuild-7.2-2 tag — git.kernel.org",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/kbuild/linux.git/log/?h=kbuild-7.2-2",
+      "note": "commit"
+    },
+    {
+      "title": "[PATCHv3] wifi: ath9k: eeprom: drop static from local pdadc and vpdTable arrays",
+      "url": "https://lore.kernel.org/llvm/20260626040647.842093-1-rosenp@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: io: restrict untyped IO access and register! to Region [io_projection v5]",
+      "url": "https://lore.kernel.org/rust-for-linux/20260626-io_projection-v5-3-d0961471ae50@garyguo.net/",
+      "note": "thread"
+    },
+    {
+      "title": "ForLt/CovariantForLt split, auxiliary closure API and DevresLt",
+      "url": "https://lore.kernel.org/rust-for-linux/20260626183630.2585057-1-dakr@kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-26T18:50:19.575Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
