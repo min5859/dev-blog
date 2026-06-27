@@ -1,0 +1,97 @@
+{
+  "id": "2026-06-28-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-06-28 fbdev·udmabuf 결함 수정 — linux-gpu-ai",
+  "headline": "fbdev 다중 메모리 결함과 udmabuf 캐시 동기화 회귀가 7.2-rc1에 포함되고 SDM845 MDSS 버스 stall 워크어라운드가 RFC로 제출됐습니다.",
+  "date": "2026-06-28",
+  "summary": "Helge Deller의 fbdev 7.2-rc1 두 번째 pull에 UAF·OOB read·NULL deref 등 메모리 안전 결함 다수가 포함됐습니다. udmabuf의 첫 CPU 접근 시 캐시 동기화 누락 회귀 수정과 SDM845 MDSS interconnect collapse 워크어라운드(RFC)도 dri-devel에 올라왔습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "drm",
+    "fbdev",
+    "dma-buf",
+    "GPU"
+  ],
+  "highlights": [
+    {
+      "title": "fbdev 메모리 안전 결함 다수 7.2-rc1 수정",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "fbdev/fbcon 유지보수 담당, fbdev 드라이버를 캐리하는 배포판",
+      "verifyLink": "https://lore.kernel.org/dri-devel/akANXx5Fr4vBRhwg@carbonx1/",
+      "if": "fbdev/fbcon 드라이버를 유지 또는 백포트하고 있다면",
+      "do": "null-ptr-deref·use-after-free·OOB read 수정 커밋을 배포판 커널에 선별 적용하십시오.",
+      "verify": "vc_data 없는 fbcon 경로, store_modes() 호출, fbcon_do_set_font() 에러 경로를 추적하여 패닉이 재현되지 않음을 확인하십시오."
+    },
+    {
+      "title": "udmabuf 첫 CPU 접근 캐시 동기화 누락 회귀 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "dma-buf/udmabuf 유지보수 담당 및 CPU 캐시 동기화에 의존하는 udmabuf 사용자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/CABXGCsPHdi3=Tpg2uZhZMuLNmg8r9Bg=OgD39eyMc=pv8gc_TQ@mail.gmail.com/",
+      "if": "504e2b4ab97a 이후 커널에서 udmabuf 첫 CPU 접근 시 stale 데이터가 의심된다면",
+      "do": "Robert Mader의 begin_cpu_udmabuf() 재구성 패치를 적용하십시오.",
+      "verify": "첫 번째 CPU 접근 후 dma_sync_sgtable_for_cpu() 호출 여부와 데이터 정합성을 확인하십시오."
+    },
+    {
+      "title": "SDM845 MDSS interconnect collapse 워크어라운드 RFC",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "drm/msm MDSS·전력 관리 유지보수 담당, SDM845 기반 기기 사용자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260627-rfc-sdm845-interconnect-collapse-workaround-v1-1-608a38de3715@samcday.com/",
+      "if": "SDM845 기기에서 suspend 후 버스 stall 또는 치명적 리셋이 발생한다면",
+      "do": "Sam Day의 RFC 패치를 추적하고 qcom,sdm845-mdss compatible 가드 구현 방식에 리뷰 의견을 제출하십시오.",
+      "verify": "suspend/resume 사이클 후 mdp1-mem peak vote가 유지되고 리셋이 사라짐을 확인하십시오."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**additional fbdev fixes and updates for v7.2-rc1**\n\nHelge Deller가 7.2-rc1 merge window 두 번째 fbdev pull을 제출했으며, fbcon NULL-ptr-deref·fb_new_modelist null-ptr-deref·store_modes() use-after-free·fbcon_do_set_font() OOB read 수정 및 pm2fb/goldfishfb/viafb 실패 경로 정리가 포함됩니다.\n\n영향: UAF·OOB read·NULL deref 등 메모리 안전 결함 다수가 mainline rc1으로 향하므로 fbdev 드라이버를 캐리하는 배포판이 선별 백포트 여부를 즉시 검토해야 합니다.\n\n> \"fbdev: fix fb_new_modelist to prevent null-ptr-deref in fb_videomode_to_var [Ian Bridges]; fbdev: fix modelist use-after-free in store_modes() [Ian Bridges]\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/akANXx5Fr4vBRhwg@carbonx1/)\n\n---\n\n**udmabuf: Ensure to perform cache synchronisation in begin_cpu_udmabuf()**\n\nRobert Mader 패치가 begin_cpu_udmabuf() 첫 호출에서도 dma_sync_sgtable_for_cpu()를 보장하도록 함수를 재구성했습니다. 504e2b4ab97a가 DMA_ATTR_SKIP_CPU_SYNC를 도입하며 get_sg_table()의 암묵적 CPU 동기화가 사라진 것이 원인입니다.\n\n영향: udmabuf 첫 CPU 접근 시 stale 데이터가 노출될 수 있는 데이터 정합성 회귀를 수정하며, 504e2b4ab97a 이후 커널 전반에 영향을 줍니다.\n\n> \"This, however, does not apply to the first time begin_cpu_udmabuf() is called on an udmabuf, in which case the implementation previously relied on get_sg_table() to perform the cache synchronisation.\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/CABXGCsPHdi3=Tpg2uZhZMuLNmg8r9Bg=OgD39eyMc=pv8gc_TQ@mail.gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/msm/mdss: keep mdp1-mem interconnect alive during suspend on SDM845**\n\nSam Day의 RFC v1이 SDM845에서 suspend 시 mdp1-mem peak vote를 0으로 내리지 않도록 compatible-string 가드를 추가합니다. msm_mdss_disable()의 interconnect 대역폭 제로화 루프에서 qcom,sdm845-mdss compatible 검사로 i==1 경로를 예외 처리합니다.\n\n영향: fabric path collapse로 인한 버스 stall·치명적 리셋이 발생하는 SDM845 한정 회귀를 막는 좁은 워크어라운드입니다. RFC 단계이므로 generic icc suspend 경로에 플랫폼 가드를 포함하는 방식의 적절성을 메인테이너가 검토해야 하며, -EPROBE_DEFER 처리 개선 등 후속 버전의 반영 여부는 확인 필요입니다.\n\n> \"If the peak vote for mdp1-mem is allowed to drop to zero, it seems to cause the fabric to collapse that path entirely, which causes the device to bus stall and fatally reset.\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260627-rfc-sdm845-interconnect-collapse-workaround-v1-1-608a38de3715@samcday.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/msm/mdss: keep mdp1-mem interconnect alive during suspend on SDM845",
+      "url": "https://lore.kernel.org/dri-devel/20260627-rfc-sdm845-interconnect-collapse-workaround-v1-1-608a38de3715@samcday.com/",
+      "note": "thread"
+    },
+    {
+      "title": "SDM845 interconnect RFC — Sashiko AI 자동 리뷰",
+      "url": "https://lore.kernel.org/dri-devel/20260627122730.B45F41F000E9@smtp.kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "additional fbdev fixes and updates for v7.2-rc1",
+      "url": "https://lore.kernel.org/dri-devel/akANXx5Fr4vBRhwg@carbonx1/",
+      "note": "changelog"
+    },
+    {
+      "title": "udmabuf: cache sync fix — begin_cpu_udmabuf() 재구성",
+      "url": "https://lore.kernel.org/dri-devel/CABXGCsPHdi3=Tpg2uZhZMuLNmg8r9Bg=OgD39eyMc=pv8gc_TQ@mail.gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-27T19:08:55.449Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
