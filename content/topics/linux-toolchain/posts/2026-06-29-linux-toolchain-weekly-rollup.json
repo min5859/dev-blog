@@ -1,0 +1,127 @@
+{
+  "id": "2026-06-29-linux-toolchain-weekly-rollup",
+  "topic": "linux-toolchain",
+  "title": "2026-06-29 주간 요약",
+  "headline": "rust_binder 유지보수 담당, 32비트 커널을 운용하는 Android/임베디드 벤더, stable 백포트 담당 주목: rust_binde",
+  "date": "2026-06-29",
+  "summary": "오늘의 핵심: 릴리스/로드맵 0건, 회귀·보안 신호 3건, 핵심 변경 5건. 리서치 dossier 의 출처를 근거로 정리했습니다.",
+  "tags": [
+    "주간"
+  ],
+  "highlights": [
+    {
+      "title": "rust_binder: use a u64 stride when cleaning up the offsets array",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "rust_binder 유지보수 담당, 32비트 커널을 운용하는 Android/임베디드 벤더, stable 백포트 담당",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/aj8Srto26mBb3vQ6@google.com/",
+      "if": "rust_binder 유지보수 담당, 32비트 커널을 운용하는 Android/임베디드 벤더, stable 백포트 담당라면",
+      "do": "rust_binder의 Allocation Drop이 offsets 배열(binder_size_t = u64)을 정리할 때 stride와 엔트리",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/rust-for-linux/aj8Srto26mBb3vQ6@google.com/"
+    },
+    {
+      "title": "[PATCHv3 ath-next] wifi: ath9k: eeprom: drop static from local pdadc and vpdTable arrays",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "ath9k/무선 드라이버 유지보수자, clang 커널 빌드·스택 사용량 추적 담당",
+      "verifyLink": "https://lore.kernel.org/llvm/20260626040647.842093-1-rosenp@gmail.com/",
+      "if": "ath9k/무선 드라이버 유지보수자, clang 커널 빌드·스택 사용량 추적 담당라면",
+      "do": "EEPROM 전력 보정 함수 3곳의 가변 지역 배열에서 static 한정자를 제거(재진입성 확보, ~1KB를 정적 데이터 섹션에서 제거)하고, ",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/llvm/20260626040647.842093-1-rosenp@gmail.com/"
+    },
+    {
+      "title": "rust_binder: reject context manager self-transaction",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "Android binder / rust_binder 유지보수 담당, C↔Rust 동작 패리티를 추적하는 커널 보안 엔지니어",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260622145801.344-1-iganschel@gmail.com/",
+      "if": "Android binder / rust_binder 유지보수 담당, C↔Rust 동작 패리티를 추적하는 커널 보안 엔지니어라면",
+      "do": "Rust Binder가 handle 0을 context-manager 노드로 resolve한 뒤, 그 노드를 호출자가 소유한 경우의 트랜잭션을 ",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/rust-for-linux/20260622145801.344-1-iganschel@gmail.com/"
+    },
+    {
+      "title": "rust: add `Ownable` trait and `Owned` type (v18)",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust 커널 추상화(kernel crate) 유지보수 담당, Rust 드라이버 작성자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260625-unique-ref-v18-0-4e06b5896d47@kernel.org/",
+      "if": "Rust 커널 추상화(kernel crate) 유지보수 담당, Rust 드라이버 작성자라면",
+      "do": "C 측에서 온 타입처럼 자체 할당·해제 방식을 정의하는 타입을 위한 `Ownable` 트레이트와 `Owned` 타입 추가. `Owned`에 `F",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/rust-for-linux/20260625-unique-ref-v18-0-4e06b5896d47@kernel.org/"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**rust_binder: use a u64 stride when cleaning up the offsets array**\n\nrust_binder의 Allocation Drop이 offsets 배열(binder_size_t = u64)을 정리할 때 stride와 엔트리 읽기를 usize로 처리하던 것을 u64로 수정. 64비트에선 무해하지만 32비트에선 8바이트 엔트리를 4바이트씩 순회해 N개 배열을 2N번 \n\n영향: Rust 드라이버라도 정수 폭 가정 오류는 메모리 안전성으로 막히지 않음을 보여주는 사례. 32비트 ARM에서 강한 참조가 남아있는데도 BR_RELEASE가 통지되는 refcount 언더플로(보안 영향)이며 `Cc: stable`로 백포트 대상이다.\n\n> on 32-bit kernels it walks the 8-byte entries in 4-byte steps, iterating an N-entry array 2N times, and reads the always-zero high word as offset 0\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/aj8Srto26mBb3vQ6@google.com/)\n\n**[PATCHv3 ath-next] wifi: ath9k: eeprom: drop static from local pdadc and vpdTable arrays**\n\nEEPROM 전력 보정 함수 3곳의 가변 지역 배열에서 static 한정자를 제거(재진입성 확보, ~1KB를 정적 데이터 섹션에서 제거)하고, EEPROM에서 유도되는 루프 한계·인덱스에 경계 검증을 추가해 악의적 EEPROM 보정 데이터로 인한 스택 버퍼 오버플로/OOB 읽기/음수 인\n\n영향: static→스택 이동 전에는 잠복하던 BSS 손상이, 이동 후에는 스택 버퍼 오버플로로 드러날 수 있어 경계 검증이 함께 들어갔습니다. 온디바이스 EEPROM 데이터로 도달 가능한 결함이라 보안 측면이 있고, clang의 static 지역 배열 처리·스택 프레임 관점에서 도구체인 렌즈\n\n> a malformed EEPROM calibration dataset can cause stack buffer overflows (vpdTable rows are 64 bytes but the fill loop runs up to 128 iterations)\n\n[원문 확인](https://lore.kernel.org/llvm/20260626040647.842093-1-rosenp@gmail.com/)\n\n**rust_binder: reject context manager self-transaction**\n\nRust Binder가 handle 0을 context-manager 노드로 resolve한 뒤, 그 노드를 호출자가 소유한 경우의 트랜잭션을 거부하도록 수정. C binder와 동작을 일치시키며, sync·oneway 양쪽 모두 Process::get_transaction_node()\n\n영향: C binder를 대체 중인 Rust Binder가 context-manager 프로세스가 자기 자신에게 트랜잭션을 거는 케이스를 막지 않던 동작 격차를 닫는 하드닝 패리티 수정. 보안 렌즈 독자에게는 C→Rust 이행 중 누락된 검증을 추적하는 대표 사례.\n\n> The C binder driver rejects transactions from the context-manager process to handle 0 after resolving the target node. Match that behavior in Rust Binder\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260622145801.344-1-iganschel@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**rust: add `Ownable` trait and `Owned` type (v18)**\n\nC 측에서 온 타입처럼 자체 할당·해제 방식을 정의하는 타입을 위한 `Ownable` 트레이트와 `Owned` 타입 추가. `Owned`에 `ForeignOwnable` 구현, `Page`를 `Ownable`로 전환하고 `from_raw` 추가. `ARef`↔`Owned` 변환을 허용하\n\n영향: Rust-for-Linux의 소유권 추상화 핵심 인프라. `AlwaysRefCounted`/`ARef`에 대응하는 '유일 소유' 모델을 제공해 C FFI 타입을 KBox 유사 방식으로 안전하게 다룰 수 있게 하며, 향후 Rust 드라이버들이 의존할 기반 API다. v18까지 온 장기 시\n\n> Add a new trait `Ownable` and type `Owned` for types that specify their own way of performing allocation and destruction. This is useful for types from the C side.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260625-unique-ref-v18-0-4e06b5896d47@kernel.org/)\n\n**Kbuild updates for 7.2 #2**\n\nKbuild 7.2 2차 풀리퀘스트. (1) `$(LLVM)` 설정 시 호스트 프로그램도 ld.lld로 링크하도록 변경, (2) 최근 병합된 distributed ThinLTO에서 더 공격적으로 발생하는 static 변수명 승격(name promotion)으로 인한 modpost 경고를\n\n영향: 툴체인 렌즈 핵심 변경. LLVM=1 빌드의 호스트 툴 링커 일관성, ThinLTO 도입 후 modpost 회귀 방지, defconfig 입력값이 조용히 바뀌는 문제의 가시화까지 LLVM/Kconfig 빌드 사용자가 직접 체감하는 항목들이다.\n\n> Link host programs with ld.lld when $(LLVM) is set to match user's expectations that LLVM will be used exclusively during the build process\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20260624225711.GA1132314@ax162/)\n\n**x86/boot/compressed: Disable jump tables for clang**\n\narch/x86/boot/compressed/Makefile에 한 줄을 추가해 clang 빌드 시 디컴프레서에서 점프 테이블 생성을 끈다. 최근 upstream LLVM 변경으로 switch 문(handle_zstd_error())에 점프/룩업 테이블이 생성되면서 misc.o의 문자열 \n\n영향: ClangBuiltLinux/LLVM 커널 빌드를 추적하는 독자에게 직접적인 빌드 회귀다. 컴파일러 최적화 임계값 변경이 조용히 부트 디컴프레서 링크를 깨뜨린 사례로, clang 기반 x86 빌드 사용자가 곧 마주칠 수 있다.\n\n> linking the compressed x86 boot image when CONFIG_KERNEL_ZSTD is enabled fails with: ld.lld: error: Unexpected run-time relocations (.rela) detected!\n\n[원문 확인](https://lore.kernel.org/llvm/20260624093848.GA48970@noisy.programming.kicks-ass.net/)\n\n**Fix missing fops.owner in Rust DRM/misc abstractions**\n\nRust DRM/misc 추상화에서 fops.owner가 설정되지 않아, 파일이 열린 상태에서 모듈을 언로드(rmmod tyr)하면 모듈 참조 카운트가 잡히지 않아 해제된 코드로 점프하는 NULL 포인터 역참조(pc: 0x0)가 발생하던 문제를 고친다. tyr debugfs 개발 중 g\n\n영향: Rust 추상화를 쓰는 드라이버 독자에게 중요한 use-after-free/NULL 역참조 건전성 버그다. fops.owner 누락은 사용 중 모듈 언로드를 허용해 커널 크래시로 이어지므로, Rust DRM/miscdevice 추상화를 쓰는 모든 드라이버에 영향을 준다.\n\n> Unable to handle kernel NULL pointer dereference at virtual address 0000000000000000 ... pc : 0x0 ... after `rmmod tyr` while gnome-shell still held /dev/card1 open\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260624-fix-fops-owner-v6-0-5295e333cb3e@linux.dev/)\n\n**selftests: mptcp: add regression test for stale ADD_ADDR on id 0 removal**\n\n0day kernel test robot의 clang 22 W=1 빌드(x86_64-kexec)가 MPTCP 시리즈 'mptcp: pm: drop pending ADD_ADDR when removing id 0 endpoint' v4에서 실패. net/mptcp/pm_kernel.c:1\n\n영향: clang은 암시적 함수 선언을 ISO C99+ 기준으로 하드 에러 처리하므로(GCC가 경고로 넘기던 것과 대비) 프로토타입/스코프 누락이 곧 빌드 차단이 된다. 도구체인 독자에게는 clang vs gcc 진단 정책 차이가 곧바로 net/main 빌드 회귀로 드러난 사례.\n\n> net/mptcp/pm_kernel.c:1154:15: error: call to undeclared function 'mptcp_remove_anno_list_by_saddr'; ISO C99 and later do not support implicit function declarations\n\n[원문 확인](https://lore.kernel.org/llvm/202606231240.AR0wvSEl-lkp@intel.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "국부 드라이버/플랫폼 패치는 본문에서 제외했습니다. 자기 영역 키워드로 lore.kernel.org에서 직접 검색하세요."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "rust_binder: use a u64 stride when cleaning up the offsets array",
+      "url": "https://lore.kernel.org/rust-for-linux/aj8Srto26mBb3vQ6@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "[PATCHv3 ath-next] wifi: ath9k: eeprom: drop static from local pdadc and vpdTable arrays",
+      "url": "https://lore.kernel.org/llvm/20260626040647.842093-1-rosenp@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "rust_binder: reject context manager self-transaction",
+      "url": "https://lore.kernel.org/rust-for-linux/20260622145801.344-1-iganschel@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: add `Ownable` trait and `Owned` type (v18)",
+      "url": "https://lore.kernel.org/rust-for-linux/20260625-unique-ref-v18-0-4e06b5896d47@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "Kbuild updates for 7.2 #2",
+      "url": "https://lore.kernel.org/linux-kbuild/20260624225711.GA1132314@ax162/",
+      "note": "thread"
+    },
+    {
+      "title": "x86/boot/compressed: Disable jump tables for clang",
+      "url": "https://lore.kernel.org/llvm/20260624093848.GA48970@noisy.programming.kicks-ass.net/",
+      "note": "thread"
+    },
+    {
+      "title": "Fix missing fops.owner in Rust DRM/misc abstractions",
+      "url": "https://lore.kernel.org/rust-for-linux/20260624-fix-fops-owner-v6-0-5295e333cb3e@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "selftests: mptcp: add regression test for stale ADD_ADDR on id 0 removal",
+      "url": "https://lore.kernel.org/llvm/202606231240.AR0wvSEl-lkp@intel.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "source": "research-dossier",
+    "bucketCounts": {
+      "릴리스/로드맵": 0,
+      "회귀·보안 신호": 3,
+      "핵심 변경": 5,
+      "기타": 0
+    },
+    "entryCount": 8
+  }
+}

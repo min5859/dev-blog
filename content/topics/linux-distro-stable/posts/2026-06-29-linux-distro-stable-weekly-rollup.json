@@ -1,0 +1,127 @@
+{
+  "id": "2026-06-29-linux-distro-stable-weekly-rollup",
+  "topic": "linux-distro-stable",
+  "title": "2026-06-29 주간 요약",
+  "headline": "SCSI/block 레이어 및 ATA libata 유지보수 담당, DMA 정렬 패딩을 쓰는 드라이버 주목: scsi: scsi_alloc_sgt",
+  "date": "2026-06-29",
+  "summary": "오늘의 핵심: 릴리스/로드맵 0건, 회귀·보안 신호 8건, 핵심 변경 0건. 리서치 dossier 의 출처를 근거로 정리했습니다.",
+  "tags": [
+    "주간"
+  ],
+  "highlights": [
+    {
+      "title": "scsi: scsi_alloc_sgtables에서 DMA 패딩 바이트 초기화",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "SCSI/block 레이어 및 ATA libata 유지보수 담당, DMA 정렬 패딩을 쓰는 드라이버",
+      "verifyLink": "https://lore.kernel.org/stable/20260628183500.31970-1-p.vaganov@ideco.ru/",
+      "if": "SCSI/block 레이어 및 ATA libata 유지보수 담당, DMA 정렬 패딩을 쓰는 드라이버라면",
+      "do": "scsi_alloc_sgtables가 마지막 비정렬 sg 엔트리를 pad_len만큼 확장할 때 패딩 바이트를 초기화하지 않아, 초기화되지 않은 ",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/stable/20260628183500.31970-1-p.vaganov@ideco.ru/"
+    },
+    {
+      "title": "rust: devres: 동시 revoker 간 경쟁 수정",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "Rust-for-Linux / 드라이버 코어(devres) 유지보수 담당, Rust DMA 추상화 사용 드라이버",
+      "verifyLink": "https://lore.kernel.org/stable/20260628174451.2275679-1-dakr@kernel.org/",
+      "if": "Rust-for-Linux / 드라이버 코어(devres) 유지보수 담당, Rust DMA 추상화 사용 드라이버라면",
+      "do": "devres_release_all()의 release 콜백이 호출하는 Revocable::revoke()와 Devres::drop()의 revo",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/stable/20260628174451.2275679-1-dakr@kernel.org/"
+    },
+    {
+      "title": "wifi: brcmfmac: cyw: fix remotely-triggered heap overflow on short auth frame",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "brcmfmac/wireless maintainers and distros enabling external SAE on Broadcom/CYW Wi-Fi",
+      "verifyLink": "https://lore.kernel.org/stable/20260627131313.3878893-1-maoyixie.tju@gmail.com/",
+      "if": "brcmfmac/wireless maintainers and distros enabling external SAE on Broadcom/CYW Wi-Fi라면",
+      "do": "brcmf_notify_auth_frame_rx() computed mgmt_frame_len = e->datalen - sizeof(struc",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/stable/20260627131313.3878893-1-maoyixie.tju@gmail.com/"
+    },
+    {
+      "title": "net/sched: sch_teql: add slaves_lock to fix UAF on master->slaves list",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "net/sched (traffic control) maintainers and anyone exposing teql qdisc configuration",
+      "verifyLink": "https://lore.kernel.org/stable/20260627163602.GG1310988@horms.kernel.org/",
+      "if": "net/sched (traffic control) maintainers and anyone exposing teql qdisc configuration라면",
+      "do": "The teql master->slaves singly-linked list (and NEXT_SLAVE() links) was mutated ",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/stable/20260627163602.GG1310988@horms.kernel.org/"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**scsi: scsi_alloc_sgtables에서 DMA 패딩 바이트 초기화**\n\nscsi_alloc_sgtables가 마지막 비정렬 sg 엔트리를 pad_len만큼 확장할 때 패딩 바이트를 초기화하지 않아, 초기화되지 않은 메모리가 DMA로 매핑되던 문제를 수정합니다. 확장 전에 memzero_page()로 패딩 영역을 0으로 채우며, 페이지 경계를 넘는 경우 두 \n\n영향: sg_io/ioctl 경로(SG_IO, sr_block_ioctl)에서 도달 가능한 uninit-value로, 초기화되지 않은 커널 메모리가 장치로 전달되는 정보 유출 가능성이 있습니다. KMSAN/Syzkaller로 검출된 메모리 안전 결함이라 보안 추적 대상입니다.\n\n> These bytes remain uninitialized, which leads to a problem. Zero the pad_len padding bytes before extending the length. This ensures that the DMA does not receive uninitialized data\n\n[원문 확인](https://lore.kernel.org/stable/20260628183500.31970-1-p.vaganov@ideco.ru/)\n\n**rust: devres: 동시 revoker 간 경쟁 수정**\n\ndevres_release_all()의 release 콜백이 호출하는 Revocable::revoke()와 Devres::drop()의 revoke_nosync()가 다른 CPU에서 동시에 실행될 때 UAF가 발생할 수 있었습니다. Completion을 추가해 release 콜백이 re\n\n영향: Rust-for-Linux 추상화의 메모리 안전 회귀로, Devres<DmaMappedSgt>가 SGTable의 sg_table·페이지 해제와 경쟁하며 인접 리소스 drop 시 UAF가 나는 시나리오입니다. Rust 드라이버 코어의 신뢰성을 추적하는 독자에게 핵심적입니다.\n\n> the revoker that did may still be executing drop_in_place() on the inner data. This can cause a use-after-free... Fix this by adding a Completion.\n\n[원문 확인](https://lore.kernel.org/stable/20260628174451.2275679-1-dakr@kernel.org/)\n\n**wifi: brcmfmac: cyw: fix remotely-triggered heap overflow on short auth frame**\n\nbrcmf_notify_auth_frame_rx() computed mgmt_frame_len = e->datalen - sizeof(struct brcmf_rx_mgmt_data) and then memcpy'd mgmt_frame_len - offsetof(struct ieee802\n\n영향: During the external SAE auth exchange a malicious or malfunctioning AP can send a short frame, making this a remotely triggered heap overflow in the wireless RX\n\n> When mgmt_frame_len is below that, the subtraction wraps as an unsigned value to a huge length. The memcpy then runs far past the kzalloc'd buffer. A malicious or malfunctioning AP can make the frame\n\n[원문 확인](https://lore.kernel.org/stable/20260627131313.3878893-1-maoyixie.tju@gmail.com/)\n\n**net/sched: sch_teql: add slaves_lock to fix UAF on master->slaves list**\n\nThe teql master->slaves singly-linked list (and NEXT_SLAVE() links) was mutated concurrently from teql_master_xmit(), teql_dequeue(), teql_init() and teql_destr\n\n영향: ZDI demonstrated a controllable slab-use-after-free: a freed qdisc is still reachable via a stale list pointer on another CPU, and with a SLUB spray the UAF bec\n\n> BUG: KASAN: slab-use-after-free in teql_destroy+0x3ca/0x440 ... the resulting UAF is controllable enough to be turned into a read/write primitive against the freed qdisc object.\n\n[원문 확인](https://lore.kernel.org/stable/20260627163602.GG1310988@horms.kernel.org/)\n\n**nfc: nci: fix uninit-value (KMSAN) in RF discover/activated NTF handlers**\n\nnci_rf_discover_ntf_packet() and nci_rf_intf_activated_ntf_packet() parsed notifications into on-stack structs that were left uninitialized when rf_tech_specifi\n\n영향: KMSAN flagged a use of uninitialized stack memory whose values flow into a user-visible target structure — a kernel info-leak (and a memcpy length derived from \n\n> BUG: KMSAN: uninit-value in nci_add_new_protocol+0x624/0x6c0 ... copies nfcid1/sens_res/sel_res into ndev->targets, which is later exposed to user space via NFC_CMD_GET_TARGET.\n\n[원문 확인](https://lore.kernel.org/stable/9f73948f-7045-4ef3-bc8c-731fde943c1e@ixit.cz/)\n\n**net/sched: fix pedit partial COW leading to page cache corruption (CVE-2026-46331 stable backport)**\n\ntcf_pedit_act()가 키 순회 전에 tcfp_off_max_hint로 COW 범위를 한 번만 계산해, typed key의 런타임 헤더 오프셋이 누락되면 skb_ensure_writable()로 보호된 영역 밖으로 쓰기가 발생하던 OOB write를 수정. skb_ensure_w\n\n영향: 공유 page cache를 오염시켜 setuid 바이너리의 메모리 이미지를 변조, 비특권 로컬 사용자가 root로 권한 상승할 수 있는 실증된 LPE. kernel.org CNA가 머지 시점(6/16)에 CVE를 부여했고 6/17 weaponized PoC가 공개되어, stable/lo\n\n> fix pedit partial COW leading to page cache corruption\n\n[원문 확인](https://ubuntu.com/security/CVE-2026-46331)\n\n**rxrpc: Fix ACKALL packet handling**\n\n위조된 ACKALL 패킷이 아직 reply가 큐잉되지 않은 신규 서비스 콜(RXRPC_CALL_SERVER_RECV_REQUEST)에 도달하면 tx_queue가 NULL인 상태로 rxrpc_rotate_tx_window()가 NULL 역참조를 일으키던 문제를, CLIENT_PRE_SEN\n\n영향: 원격에서 위조 패킷 하나로 트리거 가능한 NULL 역참조(원격 DoS)라서 AFS/rxrpc를 쓰는 시스템 보안 담당자에게 직접적인 위협이며, 상태 머신 자체를 손보는 비교적 큰 수정입니다.\n\n> A forged ACKALL can therefore reach a new service call in RXRPC_CALL_SERVER_RECV_REQUEST ... call->tx_top is zero and call->tx_queue is NULL\n\n[원문 확인](https://lore.kernel.org/stable/20260624163819.3017002-2-dhowells@redhat.com/)\n\n**net: ipv4: stop checking crypto_ahash_alignmask**\n\nEric Biggers의 상류 커밋(e77f5dd70138)을 6.1-stable로 cherry-pick한 데 대해 Ben Hutchings가, alignmask=0 전제가 선행 드라이버 변경들 이후에만 성립하므로 단독 백포트는 회귀라고 지적하며 ipv6 카운터파트와 함께 revert를\n\n영향: 보안 픽스로 보이는 백포트가 선행 패치 누락 시 오히려 암호 해시 경로에서 정렬 처리 회귀를 일으킬 수 있다는 경고라, 안정 트리에 무엇이 들어가는지 추적하는 담당자에게 적용 보류 신호입니다.\n\n> that is only true after the earlier changes in the series ... I think it makes more sense to revert this and its ipv6 counterpart\n\n[원문 확인](https://lore.kernel.org/stable/6218e66138c5c1c5fb02bd653c8b91d6ff8c3abd.camel@decadent.org.uk/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "국부 드라이버/플랫폼 패치는 본문에서 제외했습니다. 자기 영역 키워드로 lore.kernel.org에서 직접 검색하세요."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "scsi: scsi_alloc_sgtables에서 DMA 패딩 바이트 초기화",
+      "url": "https://lore.kernel.org/stable/20260628183500.31970-1-p.vaganov@ideco.ru/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: devres: 동시 revoker 간 경쟁 수정",
+      "url": "https://lore.kernel.org/stable/20260628174451.2275679-1-dakr@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "wifi: brcmfmac: cyw: fix remotely-triggered heap overflow on short auth frame",
+      "url": "https://lore.kernel.org/stable/20260627131313.3878893-1-maoyixie.tju@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "net/sched: sch_teql: add slaves_lock to fix UAF on master->slaves list",
+      "url": "https://lore.kernel.org/stable/20260627163602.GG1310988@horms.kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "nfc: nci: fix uninit-value (KMSAN) in RF discover/activated NTF handlers",
+      "url": "https://lore.kernel.org/stable/9f73948f-7045-4ef3-bc8c-731fde943c1e@ixit.cz/",
+      "note": "thread"
+    },
+    {
+      "title": "net/sched: fix pedit partial COW leading to page cache corruption (CVE-2026-46331 stable backport)",
+      "url": "https://ubuntu.com/security/CVE-2026-46331",
+      "note": "cve"
+    },
+    {
+      "title": "rxrpc: Fix ACKALL packet handling",
+      "url": "https://lore.kernel.org/stable/20260624163819.3017002-2-dhowells@redhat.com/",
+      "note": "thread"
+    },
+    {
+      "title": "net: ipv4: stop checking crypto_ahash_alignmask",
+      "url": "https://lore.kernel.org/stable/6218e66138c5c1c5fb02bd653c8b91d6ff8c3abd.camel@decadent.org.uk/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "source": "research-dossier",
+    "bucketCounts": {
+      "릴리스/로드맵": 0,
+      "회귀·보안 신호": 8,
+      "핵심 변경": 0,
+      "기타": 0
+    },
+    "entryCount": 8
+  }
+}

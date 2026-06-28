@@ -1,0 +1,124 @@
+{
+  "id": "2026-06-29-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-06-29 CCA 회귀·kexec 보안 수정 동시 진행 — linux-arch-platform",
+  "headline": "ARM Realm THP·stage2 폴트 회귀와 RISC-V kexec NULL 역참조 보안 패치가 동시 리뷰 중",
+  "date": "2026-06-29",
+  "summary": "ARM CCA(Realm) RMI v14 시리즈에서 THP 메모리 슬롯 파손과 virtio vring 미반영 회귀가 보고됐고, RISC-V machine_kexec_prepare의 NULL 포인터 역참조 보안 수정도 함께 올라왔습니다. Qualcomm Shikra A704 GPU 지원 v3와 TI am62p5 DTS 정렬 패치도 병행 진행 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "arm64",
+    "riscv",
+    "drm",
+    "iommu",
+    "kexec",
+    "cca"
+  ],
+  "highlights": [
+    {
+      "title": "RISC-V kexec NULL 포인터 역참조 수정",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "RISC-V arch 및 kexec/IMA 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260627222602.23594-2-ltao@redhat.com/",
+      "if": "IMA가 활성화된 RISC-V 시스템에서 kexec를 사용 중이라면",
+      "do": "해당 패치의 Fixes: 태그 및 stable 백포트 표기를 lore 원문에서 직접 확인할 것",
+      "verify": "IMA 활성화 환경에서 kexec 수행 시 커널 크래시가 재현되지 않는지 검증할 것"
+    },
+    {
+      "title": "ARM CCA/Realm RMI v14 — THP·공유 stage2 폴트 회귀",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "arm64 KVM/CCA(RMI·Realm) 및 메모리 관리 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/901398bb-ed6c-4997-b3cd-ce2829b09c87@redhat.com/",
+      "if": "ARM CCA/Realm 게스트 환경에서 THP나 virtio 장치를 사용 중이라면",
+      "do": "v14 시리즈 리뷰 상태와 THP/공유 stage2 수정 포함 여부를 lore 원문에서 확인할 것",
+      "verify": "QEMU+Realm 환경에서 virtio-net vring 업데이트가 정상 반영되는지 테스트할 것"
+    },
+    {
+      "title": "TI am62p5 VAR-SOM DTS — Ethernet PHY 오설정 수정 포함",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "TI K3/am62p 및 Variscite SOM 보드 DT 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/cover.1782665899.git.stefano.r@variscite.com/",
+      "if": "VAR-SOM-AM62P + Symphony 캐리어 보드 기반 시스템을 운용 중이라면",
+      "do": "Ethernet PHY 수정이 Fixes: 태그와 stable 백포트 대상인지 lore 원문에서 확인할 것",
+      "verify": "보드에서 Ethernet 링크업이 정상적으로 이뤄지는지 검증할 것"
+    },
+    {
+      "title": "drm/msm: Qualcomm Shikra A704 GPU 지원 v3",
+      "priority": "하",
+      "impactType": "runtime",
+      "affectedAudience": "drm/msm·Adreno 드라이버 및 Qualcomm SoC DT 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260628-shikra-gpu-v3-0-9b28a3b167e1@oss.qualcomm.com/",
+      "if": "Qualcomm Shikra SoC 플랫폼을 지원하거나 drm/msm 신규 인에이블먼트 패턴을 참고한다면",
+      "do": "v3 시리즈의 Reviewed-by 및 msm-next 머지 여부를 lore에서 확인할 것",
+      "verify": "A704 GPU가 Mesa 유저스페이스와 함께 정상 초기화되는지 DT+zap 펌웨어 경로를 점검할 것"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**RISC-V kexec NULL 포인터 역참조 수정**\n\nmachine_kexec_prepare에서 image->segment[i].buf가 NULL인 경로를 미검사로 복사하던 버그를 수정하며, NULL buf는 IMA ima_add_kexec_buffer 경로에서 유입됩니다.\n\n영향: IMA가 활성화된 RISC-V 시스템의 kexec 크래시 경로를 차단하는 실질적 안정성 수정입니다.\n\n> \"A NULL pointer reference issue is noticed in riscv's machine_kexec_prepare, where image->segment[i].buf might be NULL and copied unchecked.\"\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260627222602.23594-2-ltao@redhat.com/)\n\n---\n\n**TI am62p5 VAR-SOM DTS — Ethernet PHY 오설정 및 장치 추가**\n\nVariscite VAR-SOM-AM62P+Symphony DTS를 실제 HW 리비전에 정렬하는 4개 패치로, Ethernet PHY 수정·오디오 코덱 갱신·터치스크린·TPM 추가를 포함합니다(약 77줄 추가).\n\n영향: Ethernet PHY 오설정 수정은 기존 DTS 사용자의 네트워크 회귀를 바로잡을 수 있으나, 회귀 심각도(부팅 불능 vs 정합성 개선)와 stable 백포트 여부는 원문 확인이 필요합니다.\n\n> \"It aligns the Ethernet PHY description, updates the audio codec configuration, and adds the touchscreen and TPM devices together with their required board-level resources.\"\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/cover.1782665899.git.stefano.r@variscite.com/)\n\n---\n\n**ARM CCA/Realm RMI v14 — THP·공유 stage2 폴트 회귀 (confidence: low, 인용 미검증)**\n\nTHP로 백킹된 메모리 슬롯 파손과 공유(unprotected) 공간 stage2 폴트 미처리로 virtio-net vring 업데이트가 QEMU에 반영되지 않는 문제가 v14 리뷰 중 보고됐습니다. Lorenzo/Mathieu/Suzuki/Steven이 QEMU 측 CCA 지원과 THP 수정을 병행 중입니다.\n\n영향: realm 게스트의 부팅·I/O 안정성에 직접 영향을 주는 회귀이나, 인용 검증이 미완료됐으므로 단정을 피하고 원문 확인이 필요합니다.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/901398bb-ed6c-4997-b3cd-ce2829b09c87@redhat.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/msm: Qualcomm Shikra A704 GPU 지원 v3**\n\nAdreno A704(A702 IP 재사용)를 drm/msm에 추가하는 v3 시리즈로, KMD 측 변경은 chipid와 DT로 지정하는 zap 펌웨어뿐이며 Mesa 유저스페이스는 이미 머지된 상태입니다.\n\n영향: 최소 코드 변경으로 신규 SoC GPU를 인에이블하는 패턴을 확인할 수 있으며, DT·드라이버·Mesa 3자 동기화 사례로 참고할 수 있습니다.\n\n> \"Adreno A704 GPU found in Shikra is an IP reuse of A702 GPU with very minimal changes. The only KMD facing difference is the chipid and the zap firmware which is specified via devicetree.\"\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260628-shikra-gpu-v3-0-9b28a3b167e1@oss.qualcomm.com/)\n\n---\n\n**iommu/riscv: 32비트 레지스터 접근 논의 중 (confidence: low)**\n\nRISC-V IOMMU 스펙(Chapter 6)상 8바이트 레지스터 접근의 single-copy atomicity가 UNSPECIFIED임을 근거로, 64비트 레지스터 읽기 시 32비트 MMIO 폴백을 적용하자는 토론 스레드가 진행 중입니다. 합의된 구현 방향(32비트 폴백 vs 메모리 접근)은 아직 확인 필요 상태입니다.\n\n영향: 다수 벤더가 32비트 MMIO만 구현한 현실에서, 잘못된 64비트 atomic 가정은 IOMMU 레지스터 오독을 유발할 수 있습니다.\n\n> \"Whether an 8-byte access to an IOMMU register is single-copy atomic is UNSPECIFIED ... as if two separate 4-byte accesses — first to the high half and second to the low half — were performed.\"\n\n[원문 확인](https://lore.kernel.org/linux-riscv/CAJF2gTQD+PZj1pLpVT0u+q9CAwFMQubF6d3CYS=GDR0-b_fykQ@mail.gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "**riscv: kprobes c.jal 시뮬레이션 (어제 수집 항목, 진척 미확인)**\n\nRV32 kprobes에서 c.jal을 REJECTED 대신 SIMULATED로 처리하는 패치로, 어제 수집됐습니다. lore 차단으로 리뷰어 피드백 및 머지 여부가 확인되지 않아 변화 없이 대기 중인 것으로 보입니다.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260627124345.39726-1-xiaofengmian@163.com/)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/msm: Add support for Shikra GPU (A704) v3",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260628-shikra-gpu-v3-0-9b28a3b167e1@oss.qualcomm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "arm64: dts: am62p5-var-som-symphony: align DTS with hardware revision",
+      "url": "https://lore.kernel.org/linux-arm-kernel/cover.1782665899.git.stefano.r@variscite.com/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: probes: simulate c.jal instruction",
+      "url": "https://lore.kernel.org/linux-riscv/20260627124345.39726-1-xiaofengmian@163.com/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: Fix a NULL pointer reference in machine_kexec_prepare",
+      "url": "https://lore.kernel.org/linux-riscv/20260627222602.23594-2-ltao@redhat.com/",
+      "note": "thread"
+    },
+    {
+      "title": "iommu/riscv: Support 32-bit register accesses",
+      "url": "https://lore.kernel.org/linux-riscv/CAJF2gTQD+PZj1pLpVT0u+q9CAwFMQubF6d3CYS=GDR0-b_fykQ@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "arm64: RMI: Runtime faulting of memory (v14 review)",
+      "url": "https://lore.kernel.org/linux-arm-kernel/901398bb-ed6c-4997-b3cd-ce2829b09c87@redhat.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Mesa A704 Adreno support MR",
+      "url": "https://gitlab.freedesktop.org/mesa/mesa/-/merge_requests/41762",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-28T19:05:19.161Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

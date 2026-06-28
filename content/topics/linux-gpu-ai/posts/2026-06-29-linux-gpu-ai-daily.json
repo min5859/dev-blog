@@ -1,0 +1,119 @@
+{
+  "id": "2026-06-29-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-06-29 Tegra BO 누수·A704 GPU 지원 — Linux GPU/AI",
+  "headline": "tegra BO 누수 패치(stable 대상)와 Shikra A704 GPU 활성화, Rust GEM 타입 안전성 강화가 금일 DRM 핵심 변경.",
+  "date": "2026-06-29",
+  "summary": "drm/tegra 에러 경로 BO 참조 누수가 stable 백포트 대상으로 확인됐고, Qualcomm Shikra SoC용 Adreno A704 GPU 지원(v3)이 Mesa 준비 완료 상태에서 커널 활성화를 기다리고 있습니다. Rust GEM 추상화의 AlwaysRefCounted 타입-상태 제한으로 nova-core 등 신규 드라이버의 메모리 안전성이 한층 강화됩니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "DRM",
+    "GPU",
+    "Rust",
+    "Qualcomm",
+    "Tegra",
+    "NVIDIA"
+  ],
+  "highlights": [
+    {
+      "title": "drm/tegra host1x_bo_pin 에러 경로 BO 누수 (stable 대상)",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "drm/tegra · host1x 유지보수자, stable 백포트 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260628151140.0C81C1F000E9@smtp.kernel.org/",
+      "if": "tegra DRM 기반 디스플레이 시스템을 유지보수한다면",
+      "do": "패치가 drm-misc/tegra 트리에 반영됐는지, stable 백포트가 진행되는지 확인할 것",
+      "verify": "host1x/job.c pin_job()의 동일 패턴 누수도 별도 패치로 처리되는지 스레드에서 확인"
+    },
+    {
+      "title": "drm/msm Adreno A704(Shikra SoC) GPU 지원 v3",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "drm/msm(adreno) 유지보수자 및 Qualcomm SoC 인에이블먼트 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260628-shikra-gpu-v3-0-9b28a3b167e1@oss.qualcomm.com/",
+      "if": "Qualcomm Shikra SoC 기반 기기를 지원한다면",
+      "do": "v3 패치 시리즈를 drm-msm 큐에 반영 검토할 것",
+      "verify": "Mesa 측 MR 41762 실제 병합 여부를 gitlab.freedesktop.org에서 직접 확인"
+    },
+    {
+      "title": "Rust GEM AlwaysRefCounted를 Normal DeviceContext로 제한",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust GEM 추상화 사용 DRM 드라이버 저자(nova-core 등)",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260628151344.0E0F71F000E9@smtp.kernel.org/",
+      "if": "Rust DRM/GEM 추상화로 신규 드라이버를 개발 중이라면",
+      "do": "Object::new 및 lookup_handle 호출부 시그니처 변경에 맞게 드라이버 코드를 갱신할 것",
+      "verify": "gem_create_object 미설정 시 OOB 접근 우려가 이 패치만으로 완전히 닫히는지 리뷰 스레드에서 확인"
+    },
+    {
+      "title": "nova-core GspMem zerocopy 전환으로 unsafe transmute 제거",
+      "priority": "하",
+      "impactType": "runtime",
+      "affectedAudience": "nova-core / NVIDIA GSP Rust 드라이버 개발자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260628172200.B116D1F000E9@smtp.kernel.org/",
+      "if": "nova-core GSP 메시지큐 구조체를 직접 다룬다면",
+      "do": "zerocopy 전환 후 FromBytes/IntoBytes derive 추가 여부를 구조체별로 점검할 것",
+      "verify": "리뷰가 제기한 공유 메모리 length TOCTOU 우려가 이 패치 범위에서 다뤄지는지 스레드에서 확인"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm/tegra: host1x_bo_pin 에러 경로 BO 누수 수정**\n\ntegra_dc_pin()에서 map->chunks > 1 에러 처리 시, 방금 host1x_bo_pin()으로 얻은 매핑을 state->map[i]에 저장하기 전 unpin 레이블로 점프해 해당 매핑이 해제되지 않는 누수가 발견됐다. 패치는 goto 직전에 host1x_bo_unpin(map) 호출을 추가한다. Fixes: c6aeaf56f468 태그 및 Cc: stable이 붙어 백포트 대상이다.\n\n영향: 디스플레이 커밋 에러 경로마다 참조가 누적돼 장시간 운용 시 메모리 압박 및 디스플레이 실패로 이어질 수 있다. 리뷰는 host1x/job.c pin_job()에도 동일 패턴이 존재한다고 지적해 추가 패치가 필요한 상황이다.\n\n> \"When map->chunks > 1 triggers an error, the function jumps to unpin before storing the current map in state->map[i]. The unpin loop only cleans up previously pinned planes ... never released via host1\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260628151140.0C81C1F000E9@smtp.kernel.org/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/msm: Adreno A704(Shikra SoC) GPU 지원 v3**\n\nv3 패치 시리즈가 Qualcomm Shikra SoC에 탑재된 Adreno A704 GPU를 활성화한다. A704는 A702의 IP 재사용으로, 커널 측 변경은 chipid 추가와 devicetree를 통한 zap 펌웨어 지정이 전부다. v3에서 DT 바인딩이 추가됐다.\n\n영향: Mesa 유저스페이스는 이미 병합됐다고 저자가 밝히고 있어, 이 KMD 패치가 Shikra GPU 전체 스택의 마지막 관문이다.\n\n> \"Adreno A704 GPU found in Shikra is an IP reuse of A702 GPU with very minimal changes. The only KMD facing difference is the chipid and the zap firmware which is specified via devicetree.\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260628-shikra-gpu-v3-0-9b28a3b167e1@oss.qualcomm.com/)\n\n---\n\n**Rust DRM GEM: AlwaysRefCounted를 Normal DeviceContext로 제한**\n\nDanilo Krummrich가 gem::Object와 gem::shmem::Object의 AlwaysRefCounted 구현을 Normal DeviceContext로 제한한다. Object::new는 Normal 전용 블록이 되고, lookup_handle은 Self: AlwaysRefCounted + Driver<Object = Self> 바운드를 요구하도록 시그니처가 바뀐다.\n\n영향: C 측 dumb_create/prime_import 헬퍼가 gem_create_object 없이 kzalloc으로 할당한 구조체를 Rust Object<T>로 캐스팅할 때 발생할 수 있는 타입 혼동 및 trailing 필드 OOB 접근을 컴파일 타임에 차단한다. nova-core 등 신규 Rust DRM 드라이버에 직접 영향을 준다.\n\n> \"This commit restricts AlwaysRefCounted for gem::Object and gem::shmem::Object to the Normal context. It updates Object::new methods to Normal-only blocks and simplifies DeviceContext usage.\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260628151344.0E0F71F000E9@smtp.kernel.org/)\n\n---\n\n**nova-core: GspMem zerocopy 전환으로 unsafe transmute 제거**\n\nnova-core의 GspMem 및 MsgqData 등 관련 구조체에 명시적 패딩을 추가하고 FromBytes/IntoBytes/Immutable을 derive해 zerocopy 기반 변환으로 전환한다. gsp/cmdq.rs의 수동 unsafe transmute 구현을 대체한다.\n\n영향: coherent DMA 메모리에 매핑되는 GSP 메시지큐 구조체 파싱의 unsafe 표면이 줄어 NVIDIA Rust 드라이버의 안전성이 향상된다. 다만 리뷰는 공유 메모리에서 헤더 length를 재독해 ring 포인터를 전진시키는 부분의 TOCTOU 가능성을 제기해, 이 패치만으로 완전히 해소되는지는 추가 확인이 필요하다.\n\n> \"converts GspMem and related structures to use zerocopy for safe transmutations by adding explicit padding and deriving FromBytes and IntoBytes. It replaces the manual unsafe transmute implementations.\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260628172200.B116D1F000E9@smtp.kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "**drm/omap DSI: BTA sync 최적화 논의 중 (신뢰도: 낮음)**\n\nomapdrm DSI write 경로에서 매번 BTA(bus turn-around) sync를 전송하지 않도록 하는 변경이 메일링 리스트에서 논의되고 있다. short 패킷은 dsi_vc_send_short() 결과를 즉시 반환하는 형태가 제안됐으나, 리뷰어는 '다른 변경들과 조합하면 이 수정이 불필요할 수 있다'고 지적했다. 최종 형태는 아직 미정이며 합의 전 리뷰 단계다.\n\n영향: DSI 커맨드 write마다의 BTA 대기가 없어지면 레거시 TI OMAP 기기의 디스플레이 응답 지연이 줄어들 수 있으나, 실제 채택 여부 및 지연 개선 수치는 확인 필요하다.\n\n> \"Waiting on short packets seems to work here. ... do you really need the change from above? I think it should not be needed with the other changes.\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260628190041.4a30f769@kemnade.info/)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/msm: Add support for Shikra GPU (A704) v3",
+      "url": "https://lore.kernel.org/dri-devel/20260628-shikra-gpu-v3-0-9b28a3b167e1@oss.qualcomm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/tegra: fix host1x_bo_pin leak in tegra_dc_pin error path",
+      "url": "https://lore.kernel.org/dri-devel/20260628151140.0C81C1F000E9@smtp.kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/tegra: Implement correct DMA-BUF semantics (Fixes 대상 c6aeaf56f468)",
+      "url": "https://github.com/torvalds/linux/commit/c6aeaf56f468",
+      "note": "commit"
+    },
+    {
+      "title": "rust: drm: restrict AlwaysRefCounted to Normal GEM Object context",
+      "url": "https://lore.kernel.org/dri-devel/20260628151344.0E0F71F000E9@smtp.kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "gpu: nova-core: gsp: convert GspMem to zerocopy via the transmute bridge",
+      "url": "https://lore.kernel.org/dri-devel/20260628172200.B116D1F000E9@smtp.kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/omap: dsi: avoid sending bta sync all the time in writes",
+      "url": "https://lore.kernel.org/dri-devel/20260628190041.4a30f769@kemnade.info/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-28T19:12:02.596Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

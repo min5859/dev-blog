@@ -1,0 +1,141 @@
+{
+  "id": "2026-06-29-linux-distro-stable-daily",
+  "topic": "linux-distro-stable",
+  "title": "2026-06-29 7.0.x EOL·SCSI DMA 보안 패치 — Linux Stable",
+  "headline": "7.0.x EOL 공시와 함께 SCSI DMA 미초기화·HID OOB·Rust devres UAF 등 보안 패치 4건이 stable 대기 중입니다.",
+  "date": "2026-06-29",
+  "summary": "Linux 7.0.14가 EOL 최종 릴리스로 출시되어 이 계열 운용 시스템의 마이그레이션이 시급합니다. SCSI DMA 패딩 미초기화, HID 드라이버 OOB 읽기, Rust devres 동시 revoker UAF 등 보안 수정 4건이 stable 리뷰 단계에 있습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "stable",
+    "보안",
+    "LTS"
+  ],
+  "highlights": [
+    {
+      "title": "SCSI DMA 패딩 미초기화 → 커널 메모리 유출 경로",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "SCSI/block 레이어 및 ATA libata 유지보수 담당, DMA 정렬 패딩을 쓰는 드라이버",
+      "verifyLink": "https://lore.kernel.org/stable/20260628183500.31970-1-p.vaganov@ideco.ru/",
+      "if": "SG_IO 또는 sr_block_ioctl 경로를 통해 DMA 패딩이 발생하는 워크로드를 운용하고 있다면",
+      "do": "패치 stable 수락 여부를 추적하고, 해당 시리즈에 백포트되면 즉시 적용하세요.",
+      "verify": "KMSAN으로 __dma_map_sg_attrs 경로에서 uninit-value 보고가 사라졌는지 확인하세요."
+    },
+    {
+      "title": "Rust devres 동시 revoker UAF — Completion 추가로 수정",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "Rust-for-Linux / 드라이버 코어(devres) 유지보수 담당, Rust DMA 추상화 사용 드라이버",
+      "verifyLink": "https://lore.kernel.org/stable/20260628174451.2275679-1-dakr@kernel.org/",
+      "if": "Rust devres 추상화 또는 Devres<DmaMappedSgt>를 사용하는 드라이버를 유지보수하고 있다면",
+      "do": "Completion 추가 패치(fixes 05aa6fb1c21d)를 추적하고 해당 시리즈 머지 시 검증하세요.",
+      "verify": "드라이버 unbind·rebind 동시 경쟁 시나리오에서 KASAN 경보가 없는지 확인하세요."
+    },
+    {
+      "title": "Linux 7.0.14 EOL — 이 계열 보안 업데이트 종료",
+      "priority": "상",
+      "impactType": "release",
+      "affectedAudience": "7.0.x stable을 운용 중인 배포/임베디드 유지보수 담당",
+      "verifyLink": "https://git.kernel.org/stable/h/v7.0.14",
+      "if": "7.0.x 계열 커널을 프로덕션에서 운용 중이라면",
+      "do": "5.15, 6.1, 6.6, 6.12 등 활성 LTS 계열로 마이그레이션 일정을 즉시 수립하세요.",
+      "verify": "kernel.org active longterm 목록에서 현재 사용 시리즈의 EOL 날짜를 확인하세요."
+    },
+    {
+      "title": "HID OOB 읽기 2건 — roccat-koneplus·elo 동시 제보",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "HID/roccat 및 HID/elo 드라이버 유지보수 담당, 신뢰 불가 USB 입력 환경",
+      "verifyLink": "https://lore.kernel.org/stable/20260628164611.17467-1-alhouseenyousef@gmail.com/",
+      "if": "roccat Koneplus 마우스 또는 elo 터치 장치를 신뢰 불가 USB 환경에 노출하고 있다면",
+      "do": "두 패치의 stable 수락 여부를 확인하고, 적용 시 해당 드라이버를 즉시 교체하세요.",
+      "verify": "짧은 HID 리포트(1~7바이트)를 시뮬레이션해 OOB 보고가 더 이상 발생하지 않는지 검증하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.0.14 stable · EOL (출처 독립 확인 필요)**\n\n총 42건 백포트와 함께 7.0.x 계열의 마지막 릴리스로 표시될 예정입니다.\n\n영향: EOL 이후 이 계열에 보안 업데이트가 제공되지 않으므로 잔류 시스템은 마이그레이션이 시급합니다. rose 프로토콜 UAF 클러스터, virtiofs 언마운트 UAF, ksmbd 세션 검증 등 다수의 메모리 안전 수정이 포함된 것으로 전해지나, kernel.org 페이지가 Anubis 차단으로 독립 확인이 불가합니다.\n\n> 인용 검증 실패 — 수치 및 항목은 후보 제공 목록 기준이며 원문 확인 전 단정 금지.\n\n[원문 확인](https://git.kernel.org/stable/h/v7.0.14)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**SCSI DMA 패딩 미초기화 — 커널 메모리 유출 경로**\n\nscsi_alloc_sgtables가 비정렬 sg 엔트리를 pad_len만큼 확장할 때 패딩 영역을 초기화하지 않아, 초기화되지 않은 커널 메모리가 DMA로 전달되는 문제를 memzero_page()로 수정합니다.\n\n영향: SG_IO·sr_block_ioctl 경로에서 도달 가능한 uninit-value로, 커널 메모리 내용이 장치에 노출될 수 있습니다. KMSAN·Syzkaller로 검출된 메모리 안전 결함입니다.\n\n> \"These bytes remain uninitialized, which leads to a problem. Zero the pad_len padding bytes before extending the length. This ensures that the DMA does not receive uninitialized data\"\n\n[원문 확인](https://lore.kernel.org/stable/20260628183500.31970-1-p.vaganov@ideco.ru/)\n\n---\n\n**HID roccat-koneplus — 짧은 버튼 리포트 OOB 읽기**\n\nKoneplus raw-event 경로가 버튼 리포트를 길이 검증 없이 8바이트 구조체로 캐스팅해, 악의적 USB 장치가 짧은 리포트를 버튼 리포트로 위장하면 OOB 읽기가 발생합니다. 완전한 리포트 길이 요구로 수정합니다.\n\n영향: USB 물리 접근 공격면으로, 신뢰 불가 장치 환경에서 커널 메모리 OOB 읽기가 가능합니다.\n\n> \"A malformed USB device can identify a shorter report as a button report and trigger out-of-bounds reads. Require the complete button report before either consumer sees it.\"\n\n[원문 확인](https://lore.kernel.org/stable/20260628164611.17467-1-alhouseenyousef@gmail.com/)\n\n---\n\n**HID elo 터치 드라이버 — 1바이트 마커로 OOB 읽기**\n\nelo_process_data()가 data[7]까지 참조하지만 raw-event 콜백이 패킷 마커만 검사해, 1바이트 리포트로 OOB 읽기가 유발됩니다. 8개 프로토콜 바이트가 모두 있는 터치 패킷만 처리하도록 수정합니다.\n\n영향: roccat 건과 동일한 HID 입력 길이 미검증 패턴으로, 동일 제보자가 같은 날 일련으로 제출했습니다.\n\n> \"a malformed USB device can submit a one-byte marker report and trigger out-of-bounds reads from the input buffer. Only process touch packets that contain all eight protocol bytes.\"\n\n[원문 확인](https://lore.kernel.org/stable/20260628163527.14279-1-alhouseenyousef@gmail.com/)\n\n---\n\n**Rust devres 동시 revoker — UAF, Completion 추가로 수정**\n\ndevres_release_all()의 release 콜백에서 호출되는 Revocable::revoke()와 Devres::drop()의 revoke_nosync()가 다른 CPU에서 동시에 실행될 때 UAF가 발생하는 경쟁 조건을 Completion 추가로 해결합니다.\n\n영향: Rust-for-Linux DMA 추상화의 메모리 안전 회귀로, Devres<DmaMappedSgt>가 sg_table·페이지 해제와 경쟁하는 시나리오에서 UAF가 발생합니다.\n\n> \"the revoker that did may still be executing drop_in_place() on the inner data. This can cause a use-after-free... Fix this by adding a Completion.\"\n\n[원문 확인](https://lore.kernel.org/stable/20260628174451.2275679-1-dakr@kernel.org/)\n\n---\n\n**net rtl8150 — 링크 상태 미초기화, stable 적합성 논의 중**\n\nset_carrier()가 USB 전송 실패 시 초기화되지 않은 스택 변수를 읽어 임의의 캐리어 상태를 선택하던 문제입니다. 읽기 실패 시 기존 상태를 유지하도록 수정하나, 리뷰어 Andrew Lunn이 stable 규칙을 들어 net-next 제출을 권고해 stable 적용 여부가 불확실합니다.\n\n영향: 캐리어 상태 오판 수준으로, 보안보다 회귀 관점에서 추적하면 충분합니다.\n\n> \"A transient USB error should not be treated as link loss.\"\n\n[원문 확인](https://lore.kernel.org/stable/20260628162528.8273-1-alhouseenyousef@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Linux 5.10.259 longterm — 343건 대규모 백포트 (출처 독립 확인 필요)**\n\narm64 TLBI errata 완화(Azure Cobalt 100, NVIDIA Olympus 포함 다수 Arm CPU), apparmor 기본 DFA 상태 경계 검증, lib/crypto mpi 정수 언더플로 수정 등이 포함된 것으로 전해집니다.\n\n영향: 5.10 LTS 기반 장기 운용 시스템의 arm64 하드웨어 안정성과 보안성을 함께 강화합니다. kernel.org 페이지 독립 확인이 불가해 수치·내역은 후보 제공 목록 기준입니다.\n\n> 인용 검증 실패 — 원문 확인 전 단정 금지.\n\n[원문 확인](https://git.kernel.org/stable/h/v5.10.259)\n\n---\n\n**Linux 6.18.37 longterm — 전일 대비 변화 사항 (출처 독립 확인 필요)**\n\n전날 보고된 계열로, 신규 진척으로는 VM_MAYBE_GUARD의 LTS 백포트 배경(기능 추가 vs 수정)이 여전히 kernel.org 접근 차단으로 미확인 상태입니다. mm 동작 변화는 회귀 가능성이 있어 6.18 LTS 추적자의 지속적인 주시가 필요합니다.\n\n영향: firmware samsung acpm 크로스 스레드 RX 길이 손상·rose UAF 등 메모리 안전 수정이 포함되나 독립 확인 불가입니다.\n\n> 인용 검증 실패 — 원문 확인 전 단정 금지.\n\n[원문 확인](https://git.kernel.org/stable/h/v6.18.37)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier의 출처를 근거로 작성했습니다. kernel.org 일부 페이지가 Anubis 봇 차단으로 독립 확인이 불가해 7.0.14·5.10.259·6.18.37 항목의 수치 및 세부 내역은 후보 제공 목록 기준(confidence=low)입니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "SCSI: scsi_alloc_sgtables DMA 패딩 미초기화 수정 패치",
+      "url": "https://lore.kernel.org/stable/20260628183500.31970-1-p.vaganov@ideco.ru/",
+      "note": "thread"
+    },
+    {
+      "title": "SCSI DMA 패딩 관련 LKML 선행 논의",
+      "url": "https://lkml.org/lkml/2025/7/25/657",
+      "note": "thread"
+    },
+    {
+      "title": "HID: roccat-koneplus OOB 읽기 수정 패치",
+      "url": "https://lore.kernel.org/stable/20260628164611.17467-1-alhouseenyousef@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "HID: elo 터치 드라이버 OOB 읽기 수정 패치",
+      "url": "https://lore.kernel.org/stable/20260628163527.14279-1-alhouseenyousef@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Rust devres 동시 revoker UAF 수정 패치",
+      "url": "https://lore.kernel.org/stable/20260628174451.2275679-1-dakr@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "Rust devres 경쟁 조건 관련 LKML 선행 논의",
+      "url": "https://lkml.org/lkml/2026/2/7/49",
+      "note": "thread"
+    },
+    {
+      "title": "net rtl8150 링크 상태 미초기화 수정 패치",
+      "url": "https://lore.kernel.org/stable/20260628162528.8273-1-alhouseenyousef@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Andrew Lunn의 rtl8150 stable 적합성 검토 답신",
+      "url": "https://lore.kernel.org/stable/31402931-dd4f-4dda-9637-2880350101d7@lunn.ch/",
+      "note": "thread"
+    },
+    {
+      "title": "Linux 7.0.14 stable changelog",
+      "url": "https://git.kernel.org/stable/h/v7.0.14",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 5.10.259 longterm changelog",
+      "url": "https://git.kernel.org/stable/h/v5.10.259",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 6.18.37 longterm changelog",
+      "url": "https://git.kernel.org/stable/h/v6.18.37",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-28T18:53:30.266Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
