@@ -1,0 +1,119 @@
+{
+  "id": "2026-06-30-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-06-30 drm/omap UAF·PCON hang 회귀 — Linux GPU/AI",
+  "headline": "omapdrm DSI ISR UAF·amdgpu NULL 역참조 패치 제출, CH7218 PCON quirk은 DCN42 hang 회귀로 차단",
+  "date": "2026-06-30",
+  "summary": "omapdrm DSI 드라이버에서 ISR 테이블 UAF와 BTA sync FIFO overflow 수정 패치가 제출됐으며, amdgpu GEM mapping-info ioctl의 NULL 역참조 가드(v3)도 올라왔다. CH7218 PCON quirk 패치는 DCN42에서 hang/reboot를 유발하는 회귀가 보고돼 병합이 차단된 상태다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "GPU",
+    "DRM",
+    "amdgpu",
+    "omapdrm",
+    "보안",
+    "회귀"
+  ],
+  "highlights": [
+    {
+      "title": "CH7218 PCON quirk — DCN42 hang/reboot 회귀",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "amd/display DC link capability(PCON/DP-HDMI) 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/3d303f39-433c-4ccb-aa99-9b832cefe435@amd.com/",
+      "if": "amd/display DC link capability 경로를 다루고 있다면",
+      "do": "CH7218 PCON quirk 패치의 병합 여부를 DCN42 hang 회귀 해결 확인 후 추적하세요.",
+      "verify": "리뷰 스레드에서 회귀 수정 여부와 패치 철회·재제출 상태를 확인하세요."
+    },
+    {
+      "title": "drm/omap DSI ISR 테이블 복사 제거 — UAF 수정",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "omapdrm/OMAP DSS2 DSI ISR 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260629-dsi-uaf-v1-1-a5e894f4e4d1@kemnade.info/",
+      "if": "OMAP DSS2 DSI 기반 플랫폼을 유지보수하고 있다면",
+      "do": "Fixes 태그(4ae2ddddf44cd)를 기준으로 안정 백포트 필요 여부를 검토하세요.",
+      "verify": "CVE 할당 또는 stable 백포트 진행 상황을 커널 메일링 리스트에서 확인하세요."
+    },
+    {
+      "title": "amdgpu GEM mapping-info ioctl BO VA NULL 역참조 가드 (확인 필요)",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "amdgpu GEM/VM 및 mapping-info ioctl 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/9935b6d9-d534-4275-8a7d-414ce555779a@amd.com/",
+      "if": "amdgpu GEM/VM API 경로를 추적하고 있다면",
+      "do": "v3 패치의 drm-misc-next 병합 여부를 확인하고, 로컬 DoS 가능성에 따른 stable 적용을 검토하세요.",
+      "verify": "원문 스레드에서 Christian König의 최종 reviewed-by 및 병합 상태를 직접 확인하세요."
+    },
+    {
+      "title": "drm/imagination PowerVR 메인테이너 Matt Coster 퇴임 (확인 필요)",
+      "priority": "하",
+      "impactType": "project",
+      "affectedAudience": "drm/imagination(PowerVR) 드라이버 기여자·리뷰 요청자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260629-goodbye-v1-0-3bab53a80c53@imgtec.com/",
+      "if": "drm/imagination 드라이버에 패치를 보내거나 리뷰를 기대하고 있다면",
+      "do": "MAINTAINERS 파일에서 후임 메인테이너 지정 여부를 확인하고 리뷰 경로를 업데이트하세요.",
+      "verify": "커밋 적용 이후 MAINTAINERS 변경사항을 git log에서 직접 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm/omap DSI ISR 테이블 복사 제거 — UAF 수정**\n\nISR 등록 해제 시 스택 할당 객체가 IRQ 처리 중 역참조될 수 있는 UAF 가능성을 ISR 테이블 복사 제거로 차단한다.\n\n영향: OMAP DSS2 DSI ISR 경로의 안정성 수정으로, Fixes 태그(4ae2ddddf44cd)가 초기 ISR 지원 커밋을 가리켜 백포트 검토 대상이 될 수 있다.\n\n> \"there are stack-allocated objects passed to these isrs giving chances of UAF of these objects if irqs are unregistered while they are handled, so better do not copy that table. Fixes: 4ae2ddddf44cd\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260629-dsi-uaf-v1-1-a5e894f4e4d1@kemnade.info/)\n\n---\n\n**amdgpu GEM mapping-info ioctl BO VA NULL 역참조 가드 (확인 필요)**\n\nhandle-close 경쟁으로 per-file BO VA가 제거된 상태에서 매핑 리스트를 순회할 때 NULL 역참조가 발생할 수 있으며, bo_va 없을 시 -EINVAL을 반환하는 가드(v3)가 제안된 것으로 보인다.\n\n영향: 로컬 DoS로 이어질 수 있는 amdgpu GEM/VM ioctl 경로 수정으로, drm-misc-next 기준으로 정리 중이나 병합 여부는 추정 수준이며 원문 직접 확인이 필요하다.\n\n> \"a concurrent handle close can remove the per-file BO VA before amdgpu_vm_bo_find() runs. The mapping-list walks then dereference the NULL BO VA. Return -EINVAL when the BO is no longer associated with\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/9935b6d9-d534-4275-8a7d-414ce555779a@amd.com/)\n\n---\n\n**drm/amd/display CH7218 PCON quirk — DCN42 hang/reboot 회귀**\n\nChrontel CH7218 DP-to-HDMI 2.1 어댑터를 DP-HDMI 컨버터로 분류하는 quirk 패치가 DCN42에서 DP2 Link Layer Compliance 테스트 중 hang/reboot를 유발한다는 보고가 들어와 병합이 차단된 상태다.\n\n영향: AMD display DC link capability 경로 유지보수자는 이 회귀가 해결되기 전까지 해당 패치 병합을 차단해야 한다.\n\n> \"We observed a hang/reboot due to these patches on DCN42 while testing DP2 Link Layer Compliance: 4.3.1.23 ... 4.3.1.24 - UHBR Fallback rate table validation. Tested on DCN42 with M42d compliance box v\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/3d303f39-433c-4ccb-aa99-9b832cefe435@amd.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/omap DSI BTA sync 조건부 전송 — FIFO overflow 방지**\n\nDSI write 경로에서 ACK가 요청되지 않을 때 BTA sync를 생략하고 IRQ(DSI_VC_IRQ_PACKET_SENT) 기반 completion으로 패킷 완료를 기다려 FIFO overflow를 막는다.\n\n영향: TC358762 브리지·Epson Moverio BT-200 등 OMAP4/5 기반 패널 유지보수자에게 동작 변경이지만, 리뷰에서 on-stack completion UAF 및 error IRQ 미등록으로 인한 500ms stall 우려가 제기돼 아직 정착 전이다.\n\n> \"do not send bta sync during writes if no acks are requested. Instead just wait for the packet to be sent to avoid FIFO overflows. ... Fixes: e70965386353e (\\\"drm/omap: dsi: simplify write function\\\")\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260629-vm-upstr-v4-1-9f0c62d8808e@kemnade.info/)"
+    },
+    {
+      "heading": "기타",
+      "body": "**drm/imagination PowerVR 메인테이너 Matt Coster 퇴임 (확인 필요)**\n\nMatt Coster가 퇴사 마지막 날 본인을 drm/imagination(PowerVR) 드라이버 MAINTAINERS에서 제거하는 패치를 직접 적용 예고한 것으로 전해진다.\n\n영향: PowerVR 드라이버에 패치를 보내거나 리뷰를 기대하는 엔지니어는 후임 메인테이너 지정 여부와 새 리뷰 경로를 확인해야 한다.\n\n> \"I'll apply this towards the end of business tomorrow; my last day. ... It's been a great chapter of my life contributing to this project\"\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260629-goodbye-v1-0-3bab53a80c53@imgtec.com/)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/omap: dsi: avoid sending bta sync all the time in writes",
+      "url": "https://lore.kernel.org/dri-devel/20260629-vm-upstr-v4-1-9f0c62d8808e@kemnade.info/",
+      "note": "commit"
+    },
+    {
+      "title": "drm/omap DSI BTA sync 리뷰 — on-stack completion UAF·500ms stall 우려",
+      "url": "https://lore.kernel.org/dri-devel/20260629160448.13D001F000E9@smtp.kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/omap: dsi: do not copy isr table",
+      "url": "https://lore.kernel.org/dri-devel/20260629-dsi-uaf-v1-1-a5e894f4e4d1@kemnade.info/",
+      "note": "commit"
+    },
+    {
+      "title": "drm/amdgpu: reject mapping info when BO VA is gone (v3)",
+      "url": "https://lore.kernel.org/dri-devel/9935b6d9-d534-4275-8a7d-414ce555779a@amd.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/amd/display CH7218 PCON quirk — DCN42 hang 회귀 보고",
+      "url": "https://lore.kernel.org/dri-devel/3d303f39-433c-4ccb-aa99-9b832cefe435@amd.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/imagination: Remove Matt Coster as maintainer",
+      "url": "https://lore.kernel.org/dri-devel/20260629-goodbye-v1-0-3bab53a80c53@imgtec.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-29T18:58:25.005Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

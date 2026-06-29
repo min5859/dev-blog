@@ -1,0 +1,122 @@
+{
+  "id": "2026-06-30-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-06-30 kzalloc_flex 확산·NFSD 회귀 — Linux Kernel Security",
+  "headline": "rt2x00·clk-samsung에 kzalloc_flex 메모리 안전 패치 동시 유입, 7.1.2 stable에서 NFSD defer-cleanup revert 확인",
+  "date": "2026-06-30",
+  "summary": "hardening 트리에서 kzalloc_flex/flexible array 전환 패치가 rt2x00 wireless와 clk-samsung 두 서브시스템에 동시에 제출됐습니다. 현행 stable 7.1.2에서는 NFSD defer-cleanup 패치가 회귀를 일으켜 revert된 것으로 보이며, NFSD 추적자는 원 패치 영향 범위 확인이 필요합니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "보안",
+    "stable",
+    "hardening",
+    "메모리안전"
+  ],
+  "highlights": [
+    {
+      "title": "7.1.2 NFSD defer-cleanup revert — 현행 stable 회귀 신호",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "현행 7.1.y stable 사용자, NFSD/fuse/io_uring 유지보수 담당",
+      "verifyLink": "https://git.kernel.org/stable/h/v7.1.2",
+      "if": "NFSD export put 콜백 경로를 운영 중이라면",
+      "do": "7.1.2 changelog에서 revert된 원 패치 번호와 도입 버전 범위를 확인할 것",
+      "verify": "NFS 서버 export 처리 중 hang·메모리 누수 증상을 운영 로그에서 점검할 것"
+    },
+    {
+      "title": "rt2x00 hw_mode_spec — kzalloc_flex 단일 할당 전환",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "wireless(rt2x00) 및 메모리 안전 hardening 추적 개발자",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20260629033156.2363850-1-rosenp@gmail.com/",
+      "if": "rt2x00 드라이버를 유지보수하거나 AI-assisted 패치 동향을 추적 중이라면",
+      "do": "스레드에서 메인테이너 ack 여부와 wireless 트리 머지 상태를 확인할 것",
+      "verify": "Codex:GPT-5.5 표기에 대한 리뷰어 반응이 스레드에 있는지 확인할 것"
+    },
+    {
+      "title": "clk-samsung PATCHv3 — 세 구조체 kzalloc_flex 전환",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "Samsung/Exynos clk 드라이버 유지보수 담당, hardening 추적자",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20260629032540.2331559-1-rosenp@gmail.com/",
+      "if": "clk-samsung을 추적하거나 GCC 15+ 환경에서 __counted_by 활성화가 필요하다면",
+      "do": "v3 스레드에서 clk 메인테이너 ack 상태와 머지 여부를 확인할 것",
+      "verify": "__counted_by 추가가 GCC 15 미만 빌드에서 경고 없이 통과하는지 빌드 로그로 확인할 것"
+    },
+    {
+      "title": "kgdbts strscpy 교체 — 100건 시리즈 리뷰 마찰 관찰",
+      "priority": "하",
+      "impactType": "runtime",
+      "affectedAudience": "kgdb 드라이버 유지보수 담당, strcpy 제거 hardening 시리즈 추적자",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/akI6GewIobXk7RBs@aspen.lan/",
+      "if": "약 100건 규모의 strcpy 제거 시리즈 진행 상황을 추적 중이라면",
+      "do": "스레드에서 strscpy vs strlen/memcpy 결론과 커밋 메시지 보강 여부를 확인할 것",
+      "verify": "Makefile에 추가된 strcpy 허용 예외가 hardening 메인테이너에게 수용됐는지 메일링리스트에서 확인할 것"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.0.14 — 7.0.y EOL 릴리스로 보이는 마지막 배포**\n\nrose(AX.25/ROSE) UAF·refcount·notifier 정리 10여 건을 포함한 42건 백포트로 7.0.y 계열의 마지막 릴리스로 표기된 것으로 보입니다(kernel.org EOL 공식 확정 여부는 직접 확인 필요).\n\n영향: 7.0.y 사용자는 이 계열에서 보안 업데이트가 끊길 수 있으므로 7.1.y 또는 LTS로 이전을 검토해야 하며, rose 관련 메모리 안전 수정이 한 릴리스에 집중된 점은 해당 코드 경로의 결함 밀도가 높았음을 시사합니다.\n\n> virtiofs: fix UAF on submount umount / rose: don't free fd-owned sockets when reaping in the heartbeat / rose: fix race between loopback timer and module removal\n\n[원문 확인](https://git.kernel.org/stable/h/v7.0.14)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**Linux 7.1.2 — NFSD defer-cleanup revert 및 fuse·io_uring 수정**\n\n현행 stable 7.1.2가 'NFSD: Defer sub-object cleanup in export put callbacks' 패치를 revert하고, fuse 페이지캐시 재잠금·io_uring msghdr 비동기 회피 수정 등 14건을 포함합니다.\n\n영향: NFSD defer-cleanup의 revert는 이전 변경이 회귀를 유발해 되돌려진 것으로 보이며, NFSD를 추적하는 쪽은 원 패치가 어느 버전부터 적용됐고 어떤 회귀를 일으켰는지 원 커밋과 메일링리스트를 통해 확인해야 합니다(원문 인용 검증 미완료).\n\n> Revert \"NFSD: Defer sub-object cleanup in export put callbacks\" / fuse: re-lock request before replacing page cache folio / io_uring/net: Avoid msghdr on op_connect/op_bind async data\n\n[원문 확인](https://git.kernel.org/stable/h/v7.1.2)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**rt2x00 hw_mode_spec — flexible array member + kzalloc_flex 단일 할당**\n\nstruct hw_mode_spec의 채널 정보를 flexible array member로 전환하고 rt2x00_dev와 함께 kzalloc_flex() 한 번으로 할당하도록 변경됐습니다. 커밋 메시지에 'Assisted-by: Codex:GPT-5.5' 표기가 포함됩니다.\n\n영향: 별도 할당·해제 경로가 제거되어 UAF·누수 여지가 줄고 bounds 추적이 가능해지며, AI 보조 패치가 hardening 트리에 유입되는 사례로 주목됩니다.\n\n> store the channel info as a flexible array member, and allocate both pieces together with kzalloc_flex(). Assisted-by: Codex:GPT-5.5\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20260629033156.2363850-1-rosenp@gmail.com/)\n\n---\n\n**clk-samsung PATCHv3 — clk.c·clk-cpu.c·clk-pll.c 세 구조체 kzalloc_flex 전환**\n\nclk-samsung의 세 구조체를 flexible array member로 교체하고 __counted_by 어노테이션을 추가했습니다. v3에서 rd_num 위치 조정, v2에서 컴파일 오류 수정이 반영됐습니다(순변경 약 +48/-57 라인).\n\n영향: GCC 15+ 환경에서 __counted_by 런타임 경계 검사가 활성화되며, rt2x00과 동일한 kzalloc_flex 패턴이 clk 서브시스템으로 확산되는 흐름을 보여줍니다.\n\n> Switch three structs to flexible array members to combine allocations. v3: move rd_num ... clk: samsung: use kzalloc_flex\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20260629032540.2331559-1-rosenp@gmail.com/)\n\n---\n\n**kgdbts — strlen()+strcpy()를 strscpy()로 교체 시도, 리뷰 마찰 발생**\n\nkgdbts_option_setup()에서 strcpy()를 strscpy() 반환값 기반 오버플로우 판정으로 교체하는 패치가 제출됐으나, 리뷰어(Daniel)가 커밋 메시지에 '왜'가 빠졌다고 지적하고 strlen()/memcpy() 대안을 제안했습니다.\n\n영향: 약 100건 규모 strcpy 제거 시리즈에서 리뷰 품질(근거 설명)과 접근 방식 선택을 둘러싼 마찰이 관찰되며, Makefile에 strcpy 허용 예외를 두는 방식까지 논의되고 있어 시리즈 전체 진행 방향을 확인할 필요가 있습니다(원문 인용 검증 미완료).\n\n[원문 확인](https://lore.kernel.org/linux-hardening/akI6GewIobXk7RBs@aspen.lan/)\n\n---\n\n**Linux 6.18.37 LTS — mm VMA 플래그 인프라 백포트 다수**\n\n53건 백포트 중 VM_MAYBE_GUARD 도입·/proc/$pid/smaps 노출·copy-on-fork VMA·VM_SOFTDIRTY merge 전파·VM_UFFD_WP 불필요 복사 회피 등 guard region 관련 VMA 플래그 인프라 변경이 이례적으로 다수 포함됩니다.\n\n영향: LTS에 기능성에 가까운 VMA 변경이 집중 유입된 배경(단순 버그 수정인지 guard region 회귀 대응인지)은 mm 추적자가 원 커밋에서 확인해야 하며, firmware samsung acpm RX 길이 손상 수정은 Exynos 계열 펌웨어 통신 안정성에 직결됩니다(원문 인용 검증 미완료).\n\n> mm: introduce VM_MAYBE_GUARD and make visible in /proc/$pid/smaps / mm: propagate VM_SOFTDIRTY on merge / mm: introduce copy-on-fork VMAs and make VM_MAYBE_GUARD one\n\n[원문 확인](https://git.kernel.org/stable/h/v6.18.37)\n\n---\n\n**Linux 5.10.259 LTS — 343건 대형 배치, 신형 arm64 CPU errata 역포팅**\n\nAzure Cobalt 100·NVIDIA Olympus·Arm C1-Premium/Ultra 등 최신 서버 CPU의 errata 완화 코드가 5.10 LTS에 역포팅됐으며, lib/crypto mpi 정수 언더플로우·RDMA umem 4G 이상 truncation 수정이 포함됩니다.\n\n영향: 신형 arm64 서버를 5.10 LTS에서 운영 중인 팀은 errata 적용 여부를 확인해야 하며, mpi 정수 언더플로우는 암호 경로 관련 이슈로 우선순위가 높습니다. 343건 규모 자체가 검증·재빌드 부담임을 주의해야 합니다(343건이 단일 릴리스인지 누적인지는 확인 필요).\n\n> arm64: errata: Mitigate TLBI errata on Microsoft Azure Cobalt 100 CPU / arm64: cputype: Add NVIDIA Olympus definitions / lib/crypto: mpi: Fix integer underflow in mpi_read_raw_from_sgl()\n\n[원문 확인](https://git.kernel.org/stable/h/v5.10.259)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "낮음",
+    "note": "리서치 dossier의 출처를 근거로 작성했습니다. 대부분 항목의 원문 인용이 검증되지 않았으며(Anubis 차단으로 stable 릴리스 페이지 접근 불가 포함), 단정적 표현은 피했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Linux 7.0.14 changelog",
+      "url": "https://git.kernel.org/stable/h/v7.0.14",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 7.1.2 changelog",
+      "url": "https://git.kernel.org/stable/h/v7.1.2",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 6.18.37 changelog",
+      "url": "https://git.kernel.org/stable/h/v6.18.37",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 5.10.259 changelog",
+      "url": "https://git.kernel.org/stable/h/v5.10.259",
+      "note": "changelog"
+    },
+    {
+      "title": "wifi: rt2x00 flexible array + kzalloc_flex 패치",
+      "url": "https://lore.kernel.org/linux-hardening/20260629033156.2363850-1-rosenp@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "clk: samsung PATCHv3 kzalloc_flex 전환",
+      "url": "https://lore.kernel.org/linux-hardening/20260629032540.2331559-1-rosenp@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "kgdbts strscpy 교체 리뷰 스레드",
+      "url": "https://lore.kernel.org/linux-hardening/akI6GewIobXk7RBs@aspen.lan/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-29T18:30:49.166Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,129 @@
+{
+  "id": "2026-06-30-linux-distro-stable-daily",
+  "topic": "linux-distro-stable",
+  "title": "2026-06-30 7.1.2 출시·hiddev UAF — Linux Stable/LTS",
+  "headline": "7.1.2 stable 출시와 hiddev·ioc3-eth UAF 세 건이 동시에 보안 큐에 올라왔다",
+  "date": "2026-06-30",
+  "summary": "Linux 7.1.2가 ksmbd 세션 검증·virtiofs UAF 등 14건을 백포트하며 출시됐고, 7.0 시리즈는 EOL에 진입했다. 동시에 HID hiddev와 SGI ioc3-eth 드라이버에서 고위험 UAF 세 건이 stable 큐에 보고됐다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "stable",
+    "LTS",
+    "보안",
+    "UAF",
+    "HID",
+    "IOMMU"
+  ],
+  "highlights": [
+    {
+      "title": "HID hiddev: disconnect/close 경합 UAF (syzbot)",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "HID 서브시스템 메인테이너, USB HID 디바이스 사용 환경",
+      "verifyLink": "https://lore.kernel.org/stable/20260629152947.13821-1-alhouseenyousef@gmail.com/",
+      "if": "USB HID 디바이스 동시 disconnect/close 경로가 있는 환경이라면",
+      "do": "해당 패치의 stable 트리 백포트 상태를 확인하고 해당 커널 버전에 체리픽 적용을 검토하세요.",
+      "verify": "syzbot 트래커에서 563191a4939ddbfe73d4 버그 클로즈 여부와 백포트 태그를 확인하세요."
+    },
+    {
+      "title": "net: ioc3-eth: netdev 해제 순서 역전으로 인한 UAF",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "네트워크 드라이버 메인테이너, SGI IOC3 이더넷 사용 환경",
+      "verifyLink": "https://lore.kernel.org/stable/akKo5i95wiQu6SLY@alpha.franken.de/",
+      "if": "ioc3-eth 드라이버가 포함된 SGI 시스템에서 running 인터페이스를 제거한다면",
+      "do": "unregister_netdev()를 DMA 링 해제보다 앞에 두는 패치의 머지·백포트 여부를 확인하세요.",
+      "verify": "패치 적용 후 디바이스 remove 시 KASAN 또는 kmemleak으로 freed coherent 메모리 접근이 사라지는지 확인하세요."
+    },
+    {
+      "title": "Linux 7.1.2 stable 출시",
+      "priority": "중",
+      "impactType": "release",
+      "affectedAudience": "stable 트리 운영자, 배포판 커널 메인테이너, ksmbd/virtiofs 사용 환경",
+      "verifyLink": "https://git.kernel.org/stable/h/v7.1.2",
+      "if": "ksmbd 또는 virtiofs를 운영 중이라면",
+      "do": "7.1.2로 즉시 업그레이드하고 ksmbd 세션 검증·virtiofs UAF 수정을 포함한 14건 백포트를 검토하세요.",
+      "verify": "업그레이드 후 ksmbd 컴파운드 요청 처리 로그와 virtiofs 마운트 해제 경로에서 UAF 재현이 없는지 확인하세요(태그 원문 미검증, 확인 필요)."
+    },
+    {
+      "title": "iommu/arm-smmu-v3: kdump 진입 시 SMMUEN 비활성화 문제",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "ARM SMMUv3 플랫폼의 kdump 운영자, IOMMU 메인테이너",
+      "verifyLink": "https://lore.kernel.org/stable/akKcOMsUoc0mYVoe@google.com/",
+      "if": "ARM SMMUv3 플랫폼에서 kdump를 운영 중이라면",
+      "do": "stable v6.12 이상 트리에 해당 패치 백포트 여부를 확인하고 kdump 커널 진입 시 DMA 격리 유지 여부를 점검하세요.",
+      "verify": "kdump 진입 후 SMMU CR0 레지스터의 SMMUEN 비트가 유지되는지 확인하세요(머지 완료 여부 확인 필요)."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.1.2 stable**\n\n현행 stable 시리즈에 14건이 백포트됐다. ksmbd 컴파운드 요청에서 비-VALID 세션 거부, vc_screen vcs_notifier() null-ptr-deref(동시 vcs_write 경합), virtiofs submount umount UAF, io_uring/net op_connect·op_bind async data 처리, fuse 페이지 캐시 folio 재잠금이 포함된다.\n\n영향: ksmbd·virtiofs 사용 환경은 즉시 적용 대상이며, vc_screen 경합과 virtiofs 메모리 안전 결함은 원격/로컬 트리거 가능성이 있어 우선순위가 높다(태그 원문 미검증, 확인 필요).\n\n> ksmbd: reject non-VALID session in compound request branch / vc_screen: fix null-ptr-deref in vcs_notifier() during concurrent vcs_write / virtiofs: fix UAF on submount umount\n\n[원문 확인](https://git.kernel.org/stable/h/v7.1.2)\n\n---\n\n**Linux 7.0.14 stable — EOL 진입**\n\n7.0 시리즈의 마지막(EOL) 릴리스로 42건이 백포트됐다. 어제 보고와 달리 EOL 확정이 핵심 변화다 — 이후 보안 백포트는 없다.\n\n영향: 7.0 잔류 사용처는 7.1 이상으로 이전 계획을 수립해야 한다. ROSE 스택 UAF·레이스 다건이 마지막 하드닝으로 들어왔다(EOL 공지 원문 미검증, 확인 필요).\n\n> rose: don't free fd-owned sockets when reaping in the heartbeat / rose: fix race between loopback timer and module removal\n\n[원문 확인](https://git.kernel.org/stable/h/v7.0.14)\n\n---\n\n**Linux 6.18.37 LTS**\n\n6.18 LTS에 53건이 백포트됐다. VM_MAYBE_GUARD·sticky/atomic VMA 플래그·copy-on-fork VMA 등 대규모 mm VMA 플래그 인프라, firmware samsung acpm cross-thread RX 길이 손상, sctp udp_tunnel_xmit_skb() 전 BH 비활성화 수정이 포함된다.\n\n영향: VMA 플래그 인프라 백포트는 분량이 커 회귀 위험이 있고, Samsung SoC(acpm) 플랫폼 운영자는 RX 손상 수정을 주목해야 한다(원문 미검증, 확인 필요).\n\n> mm: introduce VM_MAYBE_GUARD and make visible in /proc/$pid/smaps / firmware: samsung: acpm: Fix cross-thread RX length corruption / sctp: disable BH before calling udp_tunnel_xmit_skb()\n\n[원문 확인](https://git.kernel.org/stable/h/v6.18.37)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**HID hiddev: disconnect/close 경합 UAF (syzbot 재현)**\n\nmutex_unlock()이 wait lock 전 owner를 먼저 비우는 틈을 이용해, hiddev 파일 release 스레드가 disconnect 직후 hiddev를 해제하고 이후 mutex slow unlock 경로에서 UAF가 발생한다. 연결과 각 열린 파일에 명시적 참조를 부여해 critical section 종료 후에만 참조를 내려 수정했다.\n\n영향: USB HID 디바이스 동시 disconnect/close 시 트리거 가능한 명확한 UAF로, Fixes 커밋(079034073faf)이 매우 오래돼 거의 모든 stable 트리가 영향권이다. CVE 배정 여부는 확인 필요.\n\n> free hiddev before the disconnecting thread reaches the mutex wait lock. This causes a use-after-free in the mutex slow unlock path.\n\n[원문 확인](https://lore.kernel.org/stable/20260629152947.13821-1-alhouseenyousef@gmail.com/)\n\n---\n\n**iommu/arm-smmu-v3: kdump 진입 시 SMMUEN 비활성화로 DMA 격리 해제**\n\nkdump 커널이 arm_smmu_device_reset()에서 CR0_SMMUEN을 끄면 in-flight DMA가 번역 없이 새 커널 메모리를 침범할 수 있다. ARM_SMMU_OPT_KDUMP_ADOPT 감지 시 CR1/CR2/STRTAB_BASE 갱신을 건너뛰고 SMMUEN을 유지해 stream table 격리를 보존한다. stable v6.12+ Cc.\n\n영향: kdump 신뢰성과 메모리 보호에 직접적이다. Reviewed-by는 달렸으나 머지·백포트 완료 여부는 확인 필요.\n\n> Those register writes are all CONSTRAINED UNPREDICTABLE while CR0_SMMUEN==1, so leaving them intact lets in-flight DMAs continue to be translated by the adopted stream table.\n\n[원문 확인](https://lore.kernel.org/stable/akKcOMsUoc0mYVoe@google.com/)\n\n---\n\n**net: sgi: ioc3-eth: netdev 해제 순서 역전으로 freed coherent 메모리 접근**\n\nioc3eth_remove()가 netdev unregister보다 먼저 coherent RX/TX 링을 free하면, running 인터페이스의 unregister_netdev()이 ndo_stop 경로에서 이미 해제된 메모리에 접근했다. unregister_netdev()를 링 해제보다 앞으로 옮겨 수정했다(Fixes: c7b572747549).\n\n영향: SGI IOC3 시스템에서 running 인터페이스 제거 시 메모리 손상·DMA가 freed 주소를 사용할 위험이 있다.\n\n> Both cleanup functions access descriptors in the rings, so the current ordering causes CPU accesses to freed coherent memory.\n\n[원문 확인](https://lore.kernel.org/stable/akKo5i95wiQu6SLY@alpha.franken.de/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**net: sgi: ioc3-eth: split TX DMA 매핑 길이 오류 수정**\n\n선형 skb가 16KiB 경계를 넘어 s1/s2로 분할될 때 두 번째 버퍼를 s1로 잘못 매핑하고, 에러 경로에서도 d1을 s1이 아닌 전체 len으로 unmap하던 것을 각각 s2와 s1로 수정했다(Fixes: ed870f6a7aa2).\n\n영향: 매핑 범위 불일치는 잘못된 캐시 유지보수나 DMA fault를 유발할 수 있어 SGI IOC3 환경의 데이터 무결성에 영향을 준다. 위 UAF 수정과 동반하는 드라이버 하드닝 묶음이다(원문 미검증, 확인 필요).\n\n> the second buffer is also mapped with s1 even though the device is told to fetch s2 bytes from it ... can result in incorrect cache maintenance or a DMA fault\n\n[원문 확인](https://lore.kernel.org/stable/akKog7-ppsYUs7z0@alpha.franken.de/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "low",
+    "note": "리서치 dossier의 출처를 근거로 작성했습니다. git.kernel.org 태그 페이지와 lore.kernel.org 원문 대부분이 안티봇 차단으로 직접 검증되지 않았습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Linux 7.1.2 changelog",
+      "url": "https://git.kernel.org/stable/h/v7.1.2",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 7.0.14 changelog (EOL)",
+      "url": "https://git.kernel.org/stable/h/v7.0.14",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 6.18.37 changelog",
+      "url": "https://git.kernel.org/stable/h/v6.18.37",
+      "note": "changelog"
+    },
+    {
+      "title": "HID: hiddev: keep state alive through disconnect unlock",
+      "url": "https://lore.kernel.org/stable/20260629152947.13821-1-alhouseenyousef@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "syzbot: hiddev UAF 버그 트래커",
+      "url": "https://syzkaller.appspot.com/bug?extid=563191a4939ddbfe73d4",
+      "note": "cve"
+    },
+    {
+      "title": "iommu/arm-smmu-v3: Retain CR0_SMMUEN during kdump device reset",
+      "url": "https://lore.kernel.org/stable/akKcOMsUoc0mYVoe@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "net: sgi: ioc3-eth: unregister netdev before freeing DMA rings",
+      "url": "https://lore.kernel.org/stable/akKo5i95wiQu6SLY@alpha.franken.de/",
+      "note": "thread"
+    },
+    {
+      "title": "net: sgi: ioc3-eth: fix split TX DMA mapping lengths",
+      "url": "https://lore.kernel.org/stable/akKog7-ppsYUs7z0@alpha.franken.de/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-29T18:43:24.481Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

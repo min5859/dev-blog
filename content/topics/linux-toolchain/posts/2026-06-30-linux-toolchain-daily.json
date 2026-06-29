@@ -1,0 +1,112 @@
+{
+  "id": "2026-06-30-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-06-30 Rust 추상화 3건·MSR 인라인 — Linux 툴체인",
+  "headline": "커널 Rust 추상화 3건(zerocopy·fwctl·Synology)과 x86 MSR 인라인 패칭 시리즈 V4가 리뷰 단계",
+  "date": "2026-06-30",
+  "summary": "2026-06-30 수집에서는 nova-core GPU 구조체의 zerocopy 마이그레이션, fwctl Rust 추상화(v6), Synology MCU Rust 드라이버(v16) 등 Rust-for-Linux 관련 3건이 주목됩니다. x86 MSR 접근을 paravirt alternatives로 인라인 패칭하는 18패치 시리즈(V4)도 병행 리뷰 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "Rust",
+    "툴체인",
+    "x86",
+    "zerocopy"
+  ],
+  "highlights": [
+    {
+      "title": "nova-core: unsafe transmute를 zerocopy 파생으로 교체",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "Rust-for-Linux 및 nova-core(GPU) 드라이버 개발자, 커널 내 크레이트 도입 정책 관심자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260629142007.269873-1-nico.antinori.7@gmail.com/",
+      "if": "커널 트리 내 zerocopy 크레이트 도입 현황을 추적 중이라면",
+      "do": "issue #1241 진행 상황과 본 패치의 머지 여부를 확인하세요.",
+      "verify": "drm-rust-next 브랜치에서 nova-core 관련 커밋 로그를 점검하세요."
+    },
+    {
+      "title": "x86/msr: alternatives로 RDMSR/WRMSR 인라인 패칭 (V4, 18패치)",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "x86 아키텍처·paravirt 유지보수, 컴파일러/코드젠 및 objtool·binutils 관심자",
+      "verifyLink": "https://lore.kernel.org/llvm/20260629065544.3643253-1-jgross@suse.com/",
+      "if": "paravirt 오버헤드 제거 혹은 binutils immediate-form MSR opcode 지원 요건을 추적 중이라면",
+      "do": "18패치 시리즈 커버레터에서 immediate-form opcode 요구 사양과 extable 변경 범위를 확인하세요.",
+      "verify": "tip 트리 x86/msr 브랜치 및 objtool 관련 변경 여부를 점검하세요."
+    },
+    {
+      "title": "rust: fwctl 서브시스템용 Rust 추상화 도입 (v6)",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust 커널 추상화 설계자, fwctl 서브시스템 유지보수, vGPU 드라이버 작성자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260629150156.3169384-1-zhiw@nvidia.com/",
+      "if": "GAT lifetime 기반 커널 Rust 추상화 패턴을 참고하거나 fwctl을 사용하는 드라이버를 작성 중이라면",
+      "do": "Operations 트레이트와 RegistrationData<'a> GAT 설계를 패치 시리즈에서 검토하세요.",
+      "verify": "CONFIG_RUST_FWCTL_ABSTRACTIONS 활성화 후 FWCTL=y 빌드가 통과하는지 확인하세요."
+    },
+    {
+      "title": "Synology NAS MCU Rust 드라이버 v16 (LED 제어 초기 구현)",
+      "priority": "하",
+      "impactType": "project",
+      "affectedAudience": "Rust 드라이버 작성자, LED·serdev 추상화 유지보수, Synology 하드웨어 사용자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260629-synology_microp_initial-v16-0-601e91c49e0d@posteo.de/",
+      "if": "led 추상화(v21)·serdev 추상화(v12)에 의존하는 드라이버를 개발 중이라면",
+      "do": "두 의존 추상화의 머지 현황을 먼저 확인한 뒤 본 시리즈를 리뷰하세요.",
+      "verify": "led v21·serdev v12 패치의 적용 여부를 lore에서 점검하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**gpu: nova-core: parse structs via zerocopy**\n\nnova-core의 8개 펌웨어/ROM 파싱 구조체(FalconUCodeDescV3 등)에서 수동 unsafe `kernel::transmute::FromBytes` 구현을 파생 가능한 `zerocopy::FromBytes`로 교체하며, 파생 시 컴파일타임에 타입 유효성이 검증됩니다.\n\n영향: 커널 트리 내 zerocopy 크레이트 정식 도입(issue #1241) 마이그레이션의 일환으로, 디바이스 메모리 해석 시 unsafe transmute 패턴을 컴파일타임 보장 기반으로 전환하는 방향성을 제시합니다.\n\n> \"When this trait is derived, validity checks are performed at compile time to ensure that the type can safely implement `FromBytes`.\"\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260629142007.269873-1-nico.antinori.7@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**x86/msr: Inline rdmsr/wrmsr instructions (V4)**\n\nCONFIG_PARAVIRT_XXL 빌드에서 베어메탈 MSR 접근을 alternatives 메커니즘을 통해 native RDMSR/WRMSR(및 WRMSRNS, immediate-form 변형)로 직접 인라인 패칭하는 18패치 시리즈(V4)로, immediate-form MSR opcode·extable 지원과 MSR 헬퍼 `__always_inline` 전환을 포함합니다.\n\n영향: paravirt 간접 호출 오버헤드를 제거하며, alternatives 패칭·immediate-form opcode·objtool 인지가 필요한 툴체인 변경이 집약되어 있습니다.\n\n> \"Switch to inline RDMSR/WRMSR instructions in this case, reducing the paravirt overhead. ... This series has been tested to work with Xen PV and on bare metal.\"\n\n[원문 확인](https://lore.kernel.org/llvm/20260629065544.3643253-1-jgross@suse.com/)\n\n---\n\n**rust: introduce abstractions for fwctl (v6)**\n\nfwctl 서브시스템에 대한 Rust 추상화를 도입합니다(단일 Rust 패치, v6): Operations 트레이트(open/close/info/fw_rpc), GAT lifetime을 활용한 RegistrationData<'a>, Device<T>/Registration<T>, RpcScope/FwRpcResponse 타입 안전 enum을 CONFIG_RUST_FWCTL_ABSTRACTIONS(FWCTL=y 요구) 하에 조건부로 제공합니다.\n\n영향: GAT lifetime으로 콜백 가시 데이터 수명을 묶는 진일보한 추상화 패턴 사례로, NVIDIA vGPU RFC가 동기이며 unsafe 포인터 조작을 추상화 계층에 격리합니다.\n\n> \"This series introduces a Rust abstraction over the fwctl subsystem, providing safe and idiomatic bindings. ... Use a GAT lifetime for `Operations::RegistrationData<'a>` instead of requiring `ForLt`.\"\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260629150156.3169384-1-zhiw@nvidia.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "**Introduce Synology Microp driver (v16)**\n\nSynology NAS 시리얼 포트 연결 MCU(LED, 팬, 부저, 종료/재시작 등 제어)를 위한 신규 Rust 드라이버 v16으로, 현재는 LED 제어만 구현하며 rust led 추상화(v21)·rust serdev 추상화(v12)에 의존합니다.\n\n영향: 의존 추상화 시리즈의 머지 여부가 게이팅 요소이며, v16까지 진행된 장기 시리즈로 Rust 드라이버 의존성 체인의 성숙도를 보여줍니다. hwmon/input/sysoff 추상화는 별도 후속 작업이 필요합니다(확인 필요).\n\n> \"This patch series depends on the rust led abstraction [1] and the rust serdev abstraction [2]. This is only a initial version of the driver able to control LEDs.\"\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260629-synology_microp_initial-v16-0-601e91c49e0d@posteo.de/)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "gpu: nova-core: parse structs via zerocopy",
+      "url": "https://lore.kernel.org/rust-for-linux/20260629142007.269873-1-nico.antinori.7@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "zerocopy 마이그레이션 상위 이슈 #1241",
+      "url": "https://github.com/Rust-for-Linux/linux/issues/1241",
+      "note": "thread"
+    },
+    {
+      "title": "x86/msr: Inline rdmsr/wrmsr instructions V4",
+      "url": "https://lore.kernel.org/llvm/20260629065544.3643253-1-jgross@suse.com/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: introduce abstractions for fwctl v6",
+      "url": "https://lore.kernel.org/rust-for-linux/20260629150156.3169384-1-zhiw@nvidia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Introduce Synology Microp driver v16",
+      "url": "https://lore.kernel.org/rust-for-linux/20260629-synology_microp_initial-v16-0-601e91c49e0d@posteo.de/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-29T18:38:07.853Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

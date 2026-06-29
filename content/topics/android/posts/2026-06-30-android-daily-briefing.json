@@ -1,0 +1,137 @@
+{
+  "id": "2026-06-30-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-06-30 pKVM·UFS 회귀 수정 — Android 커널",
+  "headline": "ACK android16-6.12에 pKVM 부팅 초기화 순서 회귀 수정과 UFS 런타임-suspend 데드락 패치가 반영됐습니다.",
+  "date": "2026-06-30",
+  "summary": "오늘 ACK android16-6.12에 pKVM 전원 관리 드라이버의 부팅 시점 초기화 순서 회귀가 신규 수정으로 포함되었습니다. UFS 런타임-suspend 데드락 3연 패치와 drm/xe 디스플레이 없는 환경의 suspend oops 수정도 병행 반영됐으며, ACK mainline에는 Wonder Wi-Fi 가상 드라이버와 BBR 혼잡 제어 활성화 등이 계속 추적됩니다.",
+  "tags": [
+    "안드로이드",
+    "커널",
+    "pKVM",
+    "UFS",
+    "GKI",
+    "회귀"
+  ],
+  "highlights": [
+    {
+      "title": "pKVM PM 드라이버 조기 초기화 회귀 수정 (신규)",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "ACK android16-6.12 유지보수 담당, pKVM/protected-KVM 벤더",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/b69d903ab12dd848cf96f14d950282e3c01aff3b",
+      "if": "android16-6.12 기반으로 pKVM 활성화 기기를 빌드·배포한다면",
+      "do": "b69d903 패치 포함 여부를 확인하고, PM 드라이버가 device_initcall로 정상 등록되는지 부팅 로그를 점검하세요",
+      "verify": "dmesg에서 platform_driver_register 실패 없이 pKVM PM 드라이버가 등록되는지 확인하세요"
+    },
+    {
+      "title": "UFS 런타임-suspend 데드락 3연 패치",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "ACK 배포 담당, UFS 스토리지 벤더(MediaTek/Qualcomm 등)",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/7ef00d3457d8c9cee0915ee0edff247031c36e0c",
+      "if": "android16-6.12에 UFS 런타임-suspend 데드락 수정(7ef00d3)을 백포트한다면",
+      "do": "후속 패치 459c818(host_sem 누수)과 a460b43(NULL 크래시) 세 개를 반드시 함께 적용하세요",
+      "verify": "UFS 기기에서 런타임-suspend/resume 반복 후 시스템 행 또는 크래시가 없는지 확인하세요"
+    },
+    {
+      "title": "drm/xe 디스플레이 없는 환경 suspend/shutdown oops 수정",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "ACK android-mainline 담당, x86/Intel GPU(xe) 사용 환경",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/68938cc08e23a94fd881e845837ff918de005ce7",
+      "if": "xe 드라이버를 사용하는 디스플레이 없는 x86 ACK 환경에서 suspend/shutdown을 수행한다면",
+      "do": "68938cc 패치 포함 여부를 확인하고 stable v6.8+ 대상 백포트를 검토하세요",
+      "verify": "디스플레이 없는 xe 설정에서 suspend → resume → shutdown 사이클에 커널 oops가 없는지 확인하세요"
+    },
+    {
+      "title": "Wonder Wi-Fi 가상 드라이버 GKI 모듈 등록",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "GKI 유지보수 담당, Wi-Fi/테스트 인프라 담당(Cuttlefish)",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/4a8e51250625671e4a0175e18b4001cc03ac3971",
+      "if": "Cuttlefish 또는 가상 기기에서 Wi-Fi 테스트 환경을 구축한다면",
+      "do": "ACK mainline의 Wonder 드라이버(8a7c7d3 + 4a8e512)가 자신의 빌드에 포함됐는지 확인하세요",
+      "verify": "arm64 GKI 빌드에서 wonder 모듈이 로드되고 mac80211 가상 인터페이스가 정상 생성되는지 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**GKI arm64/x86에 BBR TCP 혼잡 제어 활성화 (진행 중)**\n\narm64·x86 gki_defconfig에 CONFIG_TCP_CONG_BBR이 추가되고, CUBIC은 기본값으로 유지됩니다.\n\n영향: 벤더·사용자공간이 커스텀 커널 설정 없이도 BBR을 선택할 수 있어 처리량 민감 경로 튜닝이 가능해집니다. BBR이 내장(built-in)인지 모듈인지는 원문 확인이 필요합니다.\n\n> \"Enable support for BBR ... TCP congestion control algorithm ... Note this still maintains CUBIC as the default algorithm.\"\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/05c6fbd18c50f80608fc7773e801bf1e636d6d58)\n\n---\n\n**Wonder Wi-Fi 가상 드라이버 + arm64 GKI 모듈 등록 (진행 중)**\n\nandroid17-6.18 v3.6.5 기반 Wonder Wi-Fi 가상 기기 드라이버(drivers/android, mac80211 기반, 약 21개 파일)가 ACK mainline에 추가되고, arm64 gki_defconfig에서 GKI 모듈로 활성화되었습니다.\n\n영향: CTS/VTS 및 Cuttlefish 환경에서 물리 하드웨어 없이 Wi-Fi 기능 테스트가 가능해지며, GKI 모듈 집합과 빌드 표면이 변경됩니다.\n\n> \"This adds the Wonder Wi-Fi virtual device driver to the Android Common Kernel as a GKI driver. It is based off of the android17-6.18 wonder driver at version 3.6.5.\"\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/8a7c7d3954c2839bb2f6ebe475648ec14b8a2c9f)\n\n---\n\n**GKI 암호화·CRC KUnit 테스트 확장 (진행 중)**\n\ncrc_kunit, aes_cbc_macs_kunit, chacha20poly1305_kunit, ghash_kunit, nh_kunit이 arm64·x86 gki_defconfig 및 tradefed KUnit 설정에 추가되었습니다. 테스트 대상 코드는 이미 활성화된 상태입니다.\n\n영향: CI에서 이미 배포된 암호화 코드의 회귀를 조기에 탐지할 수 있게 됩니다.\n\n> \"Enable crc_kunit and some recently-added crypto tests. The code tested by these tests is already enabled in gki_defconfig.\"\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/6f25e0da2951c90af2d4c2b458eeee96a98427dc)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**pKVM PM 드라이버 조기 초기화 회귀 수정 (신규)**\n\npkvm_device_pm_init()이 platform bus 생성 이전인 setup_arch 내 pkvm_init_hyp_services()에서 호출되어 platform_driver_register()가 실패하는 문제를 수정합니다. device_initcall로 독립 등록하도록 변경하고 pkvm-guest.h 포함을 제거합니다.\n\n영향: pKVM/protected-VM 활성화 기기에서 PM 드라이버가 조용히 등록 실패하는 부팅 시점 회귀가 해소됩니다.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/b69d903ab12dd848cf96f14d950282e3c01aff3b)\n\n---\n\n**UFS 런타임-suspend 데드락 3연 패치 (진행 중)**\n\n세 패치가 함께 완전한 수정을 이룹니다. ① 7ef00d3: pm_op_in_progress 확인 후 빠른 복구로 에러 핸들러가 런타임 PM 재개를 기다리지 않도록 수정(upstream f966e02 cherry-pick, 검증됨). ② 459c818: 선행 수정이 도입한 host_sem 누수 해소(Dan Carpenter 지적). ③ a460b43: SCSI 스캔 이전 에러 핸들러 실행 시 hba->ufs_device_wlun NULL 역참조 방지(SM8750 테스트).\n\n영향: ①만 단독 적용하면 host_sem 누수와 NULL 크래시 위험이 남습니다. 세 패치를 세트로 백포트해야 합니다.\n\n> \"Resolve the deadlock issue during runtime suspend when an error triggers the error handler ... (cherry picked from commit f966e02ae52192928d544262ee7a68611e333031)\"\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/7ef00d3457d8c9cee0915ee0edff247031c36e0c)\n\n---\n\n**drm/xe 디스플레이 없는 환경 suspend/shutdown oops 수정 (진행 중)**\n\nxe->info.probe_display가 런타임 초기화 후에도 참으로 남아 for_each_intel_crtc 루프에서 NULL 역참조가 발생하는 문제를 수정합니다. 런타임 초기화 시점을 앞당기고 intel_display_device_present()를 재확인합니다. stable v6.8+ 대상 태그 포함(인용 미검증).\n\n영향: 디스플레이가 fuse로 비활성화된 Intel xe GPU 환경에서 suspend/shutdown 시 커널 oops가 방지됩니다. android-mainline 기반 x86 가상 기기 경로에 영향합니다.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/68938cc08e23a94fd881e845837ff918de005ce7)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**ACK ABI: Honor 벤더 심볼 목록 갱신 (진행 중)**\n\ntcp_send_reset 트레이스포인트 심볼(__traceiter_tcp_send_reset, __tracepoint_tcp_send_reset)이 Honor 벤더 심볼 목록과 gki/aarch64/abi.stg에 추가되었습니다.\n\n영향: GKI ABI 표면이 변경되므로 ACK ABI 관리자는 abi.stg 변경을 추적해야 합니다. Honor 벤더 모듈이 TCP 리셋·플로 진단에 trace_tcp_send_reset을 활용할 수 있게 됩니다.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/74c43557c8aed4002d058c4e88c768a6086df9c2)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "medium",
+    "note": "리서치 dossier의 출처를 근거로 작성했습니다. dossier 내 6개 항목의 인용(quote)이 미검증 상태이므로 중요한 판단 전에는 링크된 원문을 직접 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ANDROID: drivers/virt: pkvm: Make PM driver initialization standalone",
+      "url": "https://android.googlesource.com/kernel/common/+/b69d903ab12dd848cf96f14d950282e3c01aff3b",
+      "note": "commit"
+    },
+    {
+      "title": "UPSTREAM: scsi: ufs: core: Fix runtime suspend error deadlock",
+      "url": "https://android.googlesource.com/kernel/common/+/7ef00d3457d8c9cee0915ee0edff247031c36e0c",
+      "note": "commit"
+    },
+    {
+      "title": "UPSTREAM: scsi: ufs: core: Fix error handler host_sem issue",
+      "url": "https://android.googlesource.com/kernel/common/+/459c818f8b5a562c34a27b915fae53792fa82a71",
+      "note": "commit"
+    },
+    {
+      "title": "UPSTREAM: scsi: ufs: core: Fix an error handler crash",
+      "url": "https://android.googlesource.com/kernel/common/+/a460b437af44c3317a57e637455ee891d0ee0352",
+      "note": "commit"
+    },
+    {
+      "title": "drm/xe/display: fix oops in suspend/shutdown without display",
+      "url": "https://android.googlesource.com/kernel/common/+/68938cc08e23a94fd881e845837ff918de005ce7",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: Add Wonder driver to GKI",
+      "url": "https://android.googlesource.com/kernel/common/+/8a7c7d3954c2839bb2f6ebe475648ec14b8a2c9f",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: gki_defconfig: arm64: Enable the Wonder driver",
+      "url": "https://android.googlesource.com/kernel/common/+/4a8e51250625671e4a0175e18b4001cc03ac3971",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: GKI: enable CONFIG_TCP_CONG_BBR",
+      "url": "https://android.googlesource.com/kernel/common/+/05c6fbd18c50f80608fc7773e801bf1e636d6d58",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: GKI: Update symbol list for honor",
+      "url": "https://android.googlesource.com/kernel/common/+/74c43557c8aed4002d058c4e88c768a6086df9c2",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: GKI: Enable crc_kunit and more crypto KUnit tests",
+      "url": "https://android.googlesource.com/kernel/common/+/6f25e0da2951c90af2d4c2b458eeee96a98427dc",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-29T18:09:24.682Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/android-newsletter-from-dossier-ko.md"
+  }
+}
