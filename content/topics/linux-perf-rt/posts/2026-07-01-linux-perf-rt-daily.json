@@ -1,0 +1,127 @@
+{
+  "id": "2026-07-01-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-07-01 inode 보안 패치·RT 회귀 — linux-perf-rt",
+  "headline": "BPF LSM inode 스토리지 보안 패치 bpf 트리 적용, TC_ACT_REDIRECT PREEMPT_RT 회귀 수정 논의 중",
+  "date": "2026-07-01",
+  "summary": "CONFIG_BPF_LSM=y 빌드에서 LSM 미초기화 시 inode 스토리지 맵 생성이 RCU 콜백을 NULL로 만들어 커널 패닉을 유발하는 버그가 bpf 트리에 적용됐습니다. 또한 2024년 PREEMPT_RT 변경으로 잠재 버그가 실제 NULL 역참조로 드러난 TC_ACT_REDIRECT 회귀 수정이 두 가지 접근법으로 검토 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "BPF",
+    "PREEMPT_RT",
+    "보안",
+    "sockmap"
+  ],
+  "highlights": [
+    {
+      "title": "BPF LSM 미초기화 inode 스토리지 → RCU NULL 역참조 패닉 수정 (bpf 트리 적용)",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF LSM / bpf_local_storage 메인테이너 및 CONFIG_BPF_LSM=y 커널 운영자",
+      "verifyLink": "https://lore.kernel.org/bpf/e3c95beb-8b74-4037-8520-9f3c18a35606@iogearbox.net/",
+      "if": "CONFIG_BPF_LSM=y이지만 lsm= 부트 파라미터로 BPF LSM을 활성화하지 않은 커널을 운영한다면",
+      "do": "해당 패치가 안정 트리에 반영됐는지 확인하고, 적용 전까지는 권한 있는 사용자의 BPF 맵 생성을 제한하세요.",
+      "verify": "inode_storage_map_alloc()가 -EOPNOTSUPP를 반환하는지, rcu_do_batch() 경로에서 패닉 없이 동작하는지 테스트로 확인하세요."
+    },
+    {
+      "title": "TC_ACT_REDIRECT, PREEMPT_RT에서 NULL 역참조 회귀 — 두 수정안 검토 중",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "PREEMPT_RT 환경에서 bpf_redirect() 또는 act_bpf를 qdisc 필터 체인에서 사용하는 net/sched 운영자",
+      "verifyLink": "https://lore.kernel.org/bpf/CAM0EoMn6H6cKCweHmt=8ve2i0JuK=E8W1Q89oqDD7vra_Uuk-w@mail.gmail.com/",
+      "if": "PREEMPT_RT 커널에서 qdisc 필터 체인의 BPF 프로그램이 bpf_redirect()를 호출한다면",
+      "do": "net/sched 래퍼 방안과 BPF 코어 격리 방안 중 어느 것이 머지될지 lore 스레드를 추적하고, 결정된 패치를 즉시 로컬에 백포트하는 것을 검토하세요.",
+      "verify": "bpf_redirect()를 사용하는 qdisc 필터 체인에서 NULL 역참조가 발생하지 않고 TC_ACT_SHOT으로 안전하게 처리되는지 확인하세요."
+    },
+    {
+      "title": "sockmap: tc·xdp·socket_filter·flow_dissector에서 mutation 차단 (v4 검토 중)",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "sockmap/sk_msg 사용자 및 tc·xdp·socket_filter·flow_dissector 타입 BPF 프로그램 작성자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260630145410.3648099-1-rhkrqnwk98@gmail.com/",
+      "if": "tc, xdp, socket_filter, flow_dissector 타입 BPF 프로그램에서 sockmap 엔트리를 갱신하거나 삭제한다면",
+      "do": "해당 프로그램을 지금 점검하고 sockmap mutation 로직을 적절한 프로그램 타입으로 이동하세요. 머지 후에는 검증기에서 로드 시점에 거부됩니다.",
+      "verify": "해당 타입 프로그램이 sockmap에 접근할 때 verifier가 거부하는지, 이전에 발생하던 stab->lock vs sk_callback_lock 교착이 재현되지 않는지 확인하세요."
+    },
+    {
+      "title": "bpf_init_inode_xattr kfunc: inode 생성 시 원자적 보안 레이블 지정 (v4 검토 중)",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "레이블 기반 MAC을 구현하는 BPF LSM 작성자 및 security_inode_init_security() 시그니처 변경을 검토하는 LSM 메인테이너",
+      "verifyLink": "https://lore.kernel.org/bpf/20260630183956.281293-1-dwindsor@gmail.com/",
+      "if": "BPF LSM 프로그램에서 inode 생성 시 보안 xattr을 원자적으로 설정해야 한다면",
+      "do": "v4 시리즈 리뷰 진행 상황을 추적하고, lsm_get_xattr_slot() 기반 API와 bpf.* 네임스페이스 제한 사항을 미리 숙지하세요.",
+      "verify": "bpf_init_inode_xattr() 호출 후 inode_init_security 훅에서 xattr이 unlabeled 윈도우 없이 설정되는지 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**bpf: BPF LSM 미초기화 시 BPF_MAP_TYPE_INODE_STORAGE 생성 차단**\n\n`bpf_lsm_init()` 호출 전 inode 스토리지 맵 생성을 `__ro_after_init` 플래그로 차단해 `rcu_head.func` NULL 역참조로 인한 커널 패닉을 방지하며, bpf 트리에 적용됐습니다.\n\n영향: CONFIG_BPF_LSM=y이지만 lsm= 미설정 커널에서 권한 있는 사용자가 유발할 수 있는 즉각적 커널 패닉(권한 있는 DoS) 위험 제거.\n\n> \"Gate map allocation in inode_storage_map_alloc() on this flag, returning -EOPNOTSUPP if the BPF LSM is in turn uninitialized.\"\n\n[원문 확인](https://lore.kernel.org/bpf/e3c95beb-8b74-4037-8520-9f3c18a35606@iogearbox.net/)\n\n---\n\n**net/sched: qdisc 필터 체인에서 TC_ACT_REDIRECT NULL 역참조 회귀**\n\n2024년 `bpf_redirect_info`를 `task_struct`로 이동한 변경(커밋 401cb7dae813)이 qdisc 필터 체인의 `bpf_redirect()`를 NULL 역참조 크래시로 전환시켰으며, net/sched 래퍼 방안과 BPF 코어 격리 방안이 병행 검토 중입니다.\n\n영향: PREEMPT_RT 환경에서 qdisc BPF 필터의 리다이렉트 버딕트가 NULL 역참조 크래시로 나타남. 2015년 이래 조용히 패킷만 손실하던 잠재 버그가 실질적 위협이 됐으며, 수정 방안이 결정되기 전까지 위험이 지속됩니다.\n\n> \"no qdisc classify function handled TC_ACT_REDIRECT, so the packet fell through the switch and was enqueued normally instead of being redirected.\"\n\n[원문 확인](https://lore.kernel.org/bpf/CAM0EoMn6H6cKCweHmt=8ve2i0JuK=E8W1Q89oqDD7vra_Uuk-w@mail.gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**bpf_init_inode_xattr kfunc: inode 생성 시 원자적 보안 레이블 지정 (v4 검토 중)**\n\n`struct lsm_xattrs` 도입 및 `bpf_init_inode_xattr()` kfunc 추가(3패치 시리즈)로 BPF LSM 프로그램이 `inode_init_security` 훅에서 `bpf.*` 네임스페이스 xattr을 원자적으로 설정할 수 있게 됩니다. `security_inode_init_security()` 시그니처도 함께 변경됩니다.\n\n영향: 기존에 불가능했던 inode 생성 시 원자적 레이블 지정이 가능해져 SELinux·Smack·IMA 수준의 레이블 기반 정책을 BPF LSM에서도 구현 가능해집니다. 머지 여부는 미확인.\n\n> \"This series introduces the bpf_init_inode_xattr() kfunc, which takes the combined inode_init_security xattr context argument to access xattrs and xattr_count, and internally writes to xattr_count via\"\n\n[원문 확인](https://lore.kernel.org/bpf/20260630183956.281293-1-dwindsor@gmail.com/)\n\n---\n\n**bpf, sockmap: tc·xdp·socket_filter·flow_dissector에서 sockmap mutation 차단 (v4 검토 중)**\n\n검증기의 `may_update_sockmap()`을 강화해 해당 프로그램 타입이 sockmap 엔트리를 갱신·삭제하지 못하도록 하며, 관련 셀프테스트도 제거됩니다. v4에서 BPF_PROG_TYPE_SOCKET_FILTER가 차단 대상에 추가됐습니다.\n\n영향: `stab->lock` vs `sk_callback_lock` 교착(자기 교착 DoS)을 검증기 단계에서 차단. 기존에 로드 가능했던 해당 타입 프로그램이 sockmap에 접근하면 로드 시점에 거부되는 동작 변경 수반.\n\n> \"A tc, xdp, socket_filter or flow_dissector program updating or deleting a sockmap deadlocks on stab->lock vs sk_callback_lock and has no reason to. Patch 1 disallows it in may_update_sockmap()\"\n\n[원문 확인](https://lore.kernel.org/bpf/20260630145410.3648099-1-rhkrqnwk98@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "bpf: reject BPF_MAP_TYPE_INODE_STORAGE creation if BPF LSM is uninitialized",
+      "url": "https://lore.kernel.org/bpf/e3c95beb-8b74-4037-8520-9f3c18a35606@iogearbox.net/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Implement bpf_local_storage for inodes (Fixes 커밋)",
+      "url": "https://github.com/torvalds/linux/commit/8ea636848aca35b9f97c5b5dee30225cf2dd0fe6",
+      "note": "commit"
+    },
+    {
+      "title": "bpf: add bpf_init_inode_xattr kfunc for atomic inode labeling (v4)",
+      "url": "https://lore.kernel.org/bpf/20260630183956.281293-1-dwindsor@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf, sockmap: disallow sockmap mutation from tc, xdp, socket_filter and flow_dissector (v4)",
+      "url": "https://lore.kernel.org/bpf/20260630145410.3648099-1-rhkrqnwk98@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "net/sched: Handle TC_ACT_REDIRECT from qdisc filter chains",
+      "url": "https://lore.kernel.org/bpf/CAM0EoMn6H6cKCweHmt=8ve2i0JuK=E8W1Q89oqDD7vra_Uuk-w@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Daniel Borkmann alternative BPF-core fix for TC_ACT_REDIRECT",
+      "url": "https://lore.kernel.org/bpf/3a88dd85-6857-462f-98cd-9cd5dac25316@iogearbox.net/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: add bpf_redirect() helper (원점 커밋, 2015)",
+      "url": "https://github.com/torvalds/linux/commit/27b29f63058d26c6c1742f1993338280d5a41dc6",
+      "note": "commit"
+    },
+    {
+      "title": "net: Reference bpf_redirect_info via task_struct on PREEMPT_RT (회귀 유발, 2024)",
+      "url": "https://github.com/torvalds/linux/commit/401cb7dae8130fd34eb84648e02ab4c506df7d5e",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-30T18:49:17.689Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

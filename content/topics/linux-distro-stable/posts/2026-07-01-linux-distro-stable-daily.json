@@ -1,0 +1,126 @@
+{
+  "id": "2026-07-01-linux-distro-stable-daily",
+  "topic": "linux-distro-stable",
+  "title": "2026-07-01 7.0 EOL·ext4 OOB — 리눅스 안정 커널",
+  "headline": "7.0.14 EOL 선언·ext4 OOB 쓰기·XFS 로그 복구 결함 등 stable 보안 백포트 집중 릴리스",
+  "date": "2026-07-01",
+  "summary": "7.0.y 브랜치가 EOL로 전환되며 추가 보안 업데이트가 종료된다. ext4 inline data 길이 미검증으로 인한 OOB 쓰기와 XFS 로그 복구 경로의 syzbot 결함이 stable로 제출됐다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "stable",
+    "보안",
+    "ext4",
+    "XFS",
+    "KVM",
+    "SEV",
+    "arm64",
+    "IOMMU"
+  ],
+  "highlights": [
+    {
+      "title": "ext4 inline data OOB 쓰기 — 손상 이미지 마운트로 트리거 가능",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "ext4/파일시스템 유지보수 담당, stable 백포트 검토자",
+      "verifyLink": "https://lore.kernel.org/stable/20260630163923.50039-2-ytohnuki@amazon.com/",
+      "if": "손상 또는 악성 ext4 이미지를 마운트하는 환경이라면 이 패치 적용 여부를 확인하세요.",
+      "do": "upstream commit 356227096eb6 백포트 여부를 각 stable 브랜치에서 점검하고 미적용 시 우선 백포트하세요.",
+      "verify": "inline data size가 PAGE_SIZE를 초과하는 이미지 마운트 시 -EFSCORRUPTED가 반환되는지 검증하세요."
+    },
+    {
+      "title": "XFS torn write 판정 — 블록 0 오인식 syzbot 결함",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "XFS 유지보수 담당, 파일시스템 견고성/syzbot 추적 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20260630160448.GA6526@frogsfrogsfrogs/",
+      "if": "XFS 로그 복구 경로(torn write 처리 포함)를 사용하는 환경이라면 패치 적용 여부를 확인하세요.",
+      "do": "Fixes: 7088c4136fa1 백포트를 해당 stable 브랜치에서 확인하고 first_bad 초기화 패치를 적용하세요.",
+      "verify": "syzbot 재현 시나리오로 로그 복구 오동작이 사라지는지 확인하세요."
+    },
+    {
+      "title": "Linux 7.0.14 EOL — 7.0.y 보안 업데이트 영구 종료",
+      "priority": "상",
+      "impactType": "release",
+      "affectedAudience": "7.0.y stable 사용자, 배포판 보안 업데이트 추적 담당",
+      "verifyLink": "https://git.kernel.org/stable/h/v7.0.14",
+      "if": "7.0.y 기반 시스템을 운영 중이라면 즉시 이전 계획을 수립하세요.",
+      "do": "7.1.x 이상 브랜치로 이전 일정을 확정하고 7.0.14의 마지막 보안 수정 목록을 검토하세요.",
+      "verify": "이전 후 7.0.14에 포함된 메모리 안전 수정이 신규 브랜치에도 포함됐는지 확인하세요."
+    },
+    {
+      "title": "ARM SMMUv3 kdump GBPA 오설정 — 패닉·메모리 손상 위험 (리뷰 중)",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "IOMMU/ARM SMMUv3 유지보수 담당, kdump/crash 인프라 운영자",
+      "verifyLink": "https://lore.kernel.org/stable/akQLURkLA-bZ9dAk@google.com/",
+      "if": "ARM SMMUv3 환경에서 kdump를 사용하는 경우 현재 GBPA 설정 동작을 확인하세요.",
+      "do": "시리즈 머지 여부를 stable 메일링 리스트에서 추적하고, GBPA=ABORT/BYPASS 시나리오별 동작을 사전 검증하세요.",
+      "verify": "kdump 전환 시 PCIe AER/SError 없이 crash dump가 정상 완료되는지 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.0.14 stable · EOL — 7.0.y 마지막 릴리스 (독립 확인 필요)**\n\n7.0.14가 EOL로 표시되며 42건의 백포트를 끝으로 7.0.y 브랜치의 보안 업데이트가 종료되는 것으로 알려졌다.\n\n영향: 7.0.y를 사용하는 환경은 추가 보안 패치를 받지 못하므로 7.1.x 이상으로 이전이 필요하며, rose 소켓 UAF 등 이번 수정 묶음이 업데이트 없는 기준선이 된다.\n\n[원문 확인](https://git.kernel.org/stable/h/v7.0.14)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ext4: inline data OOB 쓰기 수정 — stable 백포트 제출**\n\next4_read_inline_page()에서 inline data 길이가 PAGE_SIZE를 초과하는지 검증하지 않아 손상·악성 이미지 마운트 시 커널 메모리 경계 밖 쓰기가 발생할 수 있었으며, len 초과 시 -EFSCORRUPTED를 반환하도록 수정하는 패치가 제출됐다.\n\n영향: 마운트 가능한 악성·손상 이미지로 트리거되는 OOB write로, 스토리지/파일시스템 보안 담당자에게 직접적 메모리 안전 이슈다.\n\n> \"If the inline size exceeds PAGE_SIZE due to filesystem corruption, this could lead to a kernel memory write beyond the page boundary.\"\n\n[원문 확인](https://lore.kernel.org/stable/20260630163923.50039-2-ytohnuki@amazon.com/)\n\n---\n\n**ARM SMMUv3: kdump 전환 중 in-flight DMA 안전화 시리즈 — 리뷰 진행 중**\n\nkdump 커널이 CR0_SMMUEN을 클리어하고 GBPA를 ABORT로 설정하는 공격적 HW 리셋을 중단하고, 크래시 커널의 stream table을 그대로 채택해 in-flight DMA를 기존 페이지 테이블로 계속 변환하도록 변경하는 시리즈가 리뷰 중이다.\n\n영향: GBPA=ABORT는 kdump 커널 패닉을, GBPA=BYPASS는 1:1 매핑 IOVA의 물리 메모리 손상을 유발할 수 있어 ARM SMMUv3 환경의 crash dump 무결성에 직결된다. 리뷰어가 TLB 상태 불명·휴리스틱 복잡성 우려를 제기한 상태다.\n\n> \"If GBPA is set to BYPASS, in-flight DMA targeting some IOVAs will bypass the SMMU and corrupt the physical memory at those 1:1 mapped IOVAs.\"\n\n[원문 확인](https://lore.kernel.org/stable/akQLURkLA-bZ9dAk@google.com/)\n\n---\n\n**XFS: torn write 판정 first_bad 오류 — syzbot 보고 수정 패치**\n\nxlog_verify_head()에서 first_bad 미설정(값 0)을 유효한 로그 블록 0 오류와 구분하지 못하던 문제를, first_bad를 XFS_BUF_DADDR_NULL로 초기화하고 sentinel을 명시 검사하는 방식으로 수정하는 패치가 제출됐다.\n\n영향: syzbot이 재현한 로그 복구 경로 결함으로, 손상 이미지에서 torn write 복구 로직이 오동작할 수 있다.\n\n> \"Initialize first_bad to XFS_BUF_DADDR_NULL and test it explicitly before treating the error as a torn write. ... Reported-by: syzbot+b7dfbed0c6c2b5e9fd34\"\n\n[원문 확인](https://lore.kernel.org/stable/20260630160448.GA6526@frogsfrogsfrogs/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**KVM SEV: vCPU 해제 시 GHCB unmap/unpin 누락 수정 — 백포트 제출**\n\nSEV-ES 게스트의 GHCB가 vCPU 해제 경로에서 제대로 unmap/unpin되지 않던 문제를 수정하는 4개 커밋 중 2/4·4/4가 stable로 백포트 제출됐으며, 1/4·3/4는 6.12.y에 이미 존재한다.\n\n영향: 컨피덴셜 컴퓨팅 호스트에서 메모리 누수 및 핀된 페이지 잔존이 발생할 수 있다. 머지 대상 브랜치와 CVE 부여 여부는 확인 중이다.\n\n> \"08385c5e1814 KVM: SEV: Move sev_free_vcpu() down below sev_es_unmap_ghcb() ... db38bcb33110 KVM: SEV: Unmap and unpin the GHCB as needed on vCPU free\"\n\n[원문 확인](https://lore.kernel.org/stable/20260630172204.279784-1-seanjc@google.com/)\n\n---\n\n**Linux 5.10.259 longterm — 343건 백포트 (독립 확인 필요)**\n\napparmor DFA 기본 상태 경계 검증, mpi_read_raw_from_sgl() 정수 언더플로 수정, arm64 다수 CPU TLBI errata 완화 등이 포함된 것으로 알려졌다.\n\n영향: 5.10 기반 배포판·임베디드 환경의 apparmor 정책 우회·암호 라이브러리 취약점·arm64 사변 실행 완화가 한 릴리스에 집약된 것으로 추정되나, 전체 목록은 원문에서 직접 확인이 필요하다.\n\n[원문 확인](https://git.kernel.org/stable/h/v5.10.259)\n\n---\n\n**Linux 6.18.37 longterm — 전일 보고 항목 릴리스 (진척)**\n\n전일 보고된 virtiofs UAF, vc_screen null-ptr-deref, ksmbd 세션 검증 수정 등 53건이 6.18.37로 출시된 것으로 알려졌다. 추가적인 신규 보안 신호는 없다.\n\n[원문 확인](https://git.kernel.org/stable/h/v6.18.37)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ext4: inline data 길이 bounds check 백포트 패치",
+      "url": "https://lore.kernel.org/stable/20260630163923.50039-2-ytohnuki@amazon.com/",
+      "note": "thread"
+    },
+    {
+      "title": "XFS: first_bad XFS_BUF_DADDR_NULL 초기화 패치 (syzbot)",
+      "url": "https://lore.kernel.org/stable/20260630160448.GA6526@frogsfrogsfrogs/",
+      "note": "thread"
+    },
+    {
+      "title": "ARM SMMUv3: kdump in-flight DMA 안전화 시리즈",
+      "url": "https://lore.kernel.org/stable/akQLURkLA-bZ9dAk@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM SEV: GHCB unmap/unpin 백포트",
+      "url": "https://lore.kernel.org/stable/20260630172204.279784-1-seanjc@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Linux 5.10.259 longterm 릴리스",
+      "url": "https://git.kernel.org/stable/h/v5.10.259",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 6.18.37 longterm 릴리스",
+      "url": "https://git.kernel.org/stable/h/v6.18.37",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 7.0.14 stable EOL 릴리스",
+      "url": "https://git.kernel.org/stable/h/v7.0.14",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-30T18:41:00.651Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,77 @@
+{
+  "id": "2026-07-01-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-07-01 동기화 건전성 결함 탐지 — Linux Toolchain",
+  "headline": "FerroLens LLM 도구가 커널 Guard::lock_ref()에서 데이터 레이스 허용 건전성 결함을 보고, PoC 커널 모듈 동봉",
+  "date": "2026-07-01",
+  "summary": "FerroLens(LLM 기반 unsoundness 탐지 도구)가 커널 Rust Guard::lock_ref()에서 non-Send 타입의 &Lock이 스레드 경계를 넘어 공유 가능한 건전성 위반을 보고했다. IOMMU 코드에서는 core::mem::zeroed를 Zeroable::zeroed로 교체해 불필요한 unsafe 블록이 제거됐다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "러스트",
+    "동기화",
+    "보안",
+    "iommu"
+  ],
+  "highlights": [
+    {
+      "title": "Guard::lock_ref() 건전성 위반 — Rust 동기화 핵심 타입",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "Rust-for-Linux 동기화 프리미티브 유지보수 담당 및 kernel::sync를 사용하는 Rust 드라이버 작성자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/cover.1782763889.git.pgovind2@uci.edu/",
+      "if": "kernel::sync의 Guard 또는 Lock 타입을 사용하는 드라이버를 작성하거나 유지보수하고 있다면",
+      "do": "Guard::lock_ref() 호출 경로를 점검하고, Lock이 Sync임을 보장하는 trait bound 변경이 트리에 병합됐는지 lore 스레드에서 확인",
+      "verify": "linux-next에서 rust/kernel/sync/lock.rs의 lock_ref() 시그니처에 Lock: Sync bound가 추가됐는지 git log로 확인"
+    },
+    {
+      "title": "IOMMU Zeroable::zeroed 채택으로 unsafe 블록 제거",
+      "priority": "하",
+      "impactType": "security",
+      "affectedAudience": "Rust IOMMU/io-pgtable 추상화 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260629201046.423464-1-nico.antinori.7@gmail.com/",
+      "if": "Rust IOMMU 코드를 유지보수하거나 issue #1189 관련 모듈을 담당한다면",
+      "do": "io_pgtable_cfg 및 유사 초기화 코드에서 Zeroable::zeroed 패턴 미적용 모듈을 점검하고 동일 방식으로 정리",
+      "verify": "IOMMU 트리 또는 linux-next에서 해당 패치 병합 여부를 git log로 확인"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**rust: sync: Guard::lock_ref 건전성 결함 — FerroLens 탐지**\n\nGuard<T>가 T: Sync이면 Sync이나 Lock<T>는 T: Send여야 Sync이므로, lock_ref()를 통해 non-Send 타입의 &Lock이 스레드 경계를 넘어 공유되고 guard drop 이후 다른 스레드가 &mut T를 획득하는 데이터 레이스가 발생한다. 패치는 Lock이 Sync가 아닌 경우 lock_ref()를 사용 불가하게 trait bound를 추가해 이 경로를 차단한다.\n\n영향: 커널 Rust 안전 추상의 핵심 불변식이 깨지며, kernel::sync를 사용하는 모든 Rust 드라이버가 잠재 영향권에 있다. PoC 커널 모듈이 동봉되어 실제 트리거 가능성이 제시됐다.\n\n> \"Guard is Sync if T is Sync. However, Lock is Sync only if T is Send. This means that a reference to Guard can be sent across threads and multiple threads can acquire a reference to the Lock, even if L\"\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/cover.1782763889.git.pgovind2@uci.edu/)\n\n---\n\n**rust: iommu: Zeroable::zeroed 채택으로 unsafe 블록 제거**\n\nio_pgtable_cfg 초기화에서 `core::mem::zeroed` 대신 `Zeroable::zeroed`를 사용해 불필요한 unsafe 블록 하나를 제거한다. bindings의 모든 타입은 가능할 경우 Zeroable을 구현하므로 이 패턴은 넓게 적용 가능하며, Rust-for-Linux issue #1189의 일환으로 다수 모듈로 확산 중이다.\n\n영향: 기능 변화는 없으나 IOMMU 코드의 unsafe 감사 표면이 줄어, 보안 추적 독자가 주목하는 unsafe 최소화 추세에 부합한다.\n\n> \"This enables using `Zeroable::zeroed` for `io_pgtable_cfg` initialization instead of relying on `..unsafe { core::mem::zeroed() }`. This change improves readability and removes an unnecessary unsafe b\"\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260629201046.423464-1-nico.antinori.7@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "medium",
+    "note": "리서치 dossier의 출처를 근거로 작성했습니다. Guard::lock_ref() 패치의 메인테이너 수락·merge 여부 및 CVE 할당 여부는 lore 스레드 접근이 차단(Anubis)되어 확인하지 못했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "rust: sync: Make Guard::lock_ref unavailable if Lock is not Sync",
+      "url": "https://lore.kernel.org/rust-for-linux/cover.1782763889.git.pgovind2@uci.edu/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: iommu: replace core::mem::zeroed with Zeroable::zeroed",
+      "url": "https://lore.kernel.org/rust-for-linux/20260629201046.423464-1-nico.antinori.7@gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-06-30T18:36:21.832Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
