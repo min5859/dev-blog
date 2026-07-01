@@ -1,0 +1,125 @@
+{
+  "id": "2026-07-02-linux-distro-stable-daily",
+  "topic": "linux-distro-stable",
+  "title": "2026-07-02 HID 멀티터치 OOB 수정 — 배포판 Stable",
+  "headline": "HID 멀티터치 OOB 버그와 mac802154 UAF가 stable에 수정되었고, xfs stable(<=6.6) 유지보수 공백 논의도 제기됐다.",
+  "date": "2026-07-02",
+  "summary": "비신뢰 USB/블루투스 멀티터치 장치의 OOB 비트 접근과 mac802154 인터페이스 제거 UAF가 stable에 수정됐다. 6.18.37/5.10.259/7.0.14(EOL) 백포트와 함께 xfs stable(<=6.6) 유지보수 공백 논의도 제기됐다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "stable",
+    "보안"
+  ],
+  "highlights": [
+    {
+      "title": "HID 멀티터치 OOB 비트 접근 수정",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "HID/입력 서브시스템 유지보수 담당, 신뢰 경계에서 USB/BT 장치를 다루는 보안 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20260701171320.16367-1-trungnh@cystack.net/",
+      "if": "신뢰할 수 없는 USB/블루투스 멀티터치 장치를 다루는 시스템을 운영한다면",
+      "do": "mt_io_flags를 별도의 active_slots 비트맵으로 분리한 이 패치를 stable 트리에 백포트하라",
+      "verify": "ContactCountMaximum이 큰 장치를 연결해 KASAN 빌드에서 GPF가 재현되지 않는지 확인하라"
+    },
+    {
+      "title": "mac802154 인터페이스 제거 UAF 수정",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "mac802154/IEEE 802.15.4 무선 서브시스템 유지보수 담당, syzbot 트리아지 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20260701164222.9094-1-alhouseenyousef@gmail.com/",
+      "if": "IEEE 802.15.4 무선 스택을 운영하거나 syzbot 리포트를 트리아지한다면",
+      "do": "대량 하드웨어 teardown 경로를 list_del_rcu()로 교체한 이 패치를 적용하라",
+      "verify": "syzkaller 재현 케이스로 ieee802154_wake_queue() 관련 GPF가 사라졌는지 확인하라"
+    },
+    {
+      "title": "xfs stable(<=6.6) 유지보수 공백 논의",
+      "priority": "중",
+      "impactType": "project",
+      "affectedAudience": "6.6 LTS xfs 운영자, stable/LTS 백포트 정책·보안 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20260701163310.GB6517@frogsfrogsfrogs/",
+      "if": "6.6 LTS 기반 xfs 파일시스템을 운영 중이라면",
+      "do": "xfs 보안·데이터손상 수정이 stable로 자동 도달하지 않을 수 있음을 전제하고 자체 백포트 체계를 점검하라",
+      "verify": "이 스레드에서 unmaintained 선언 여부에 대한 최종 결론이 나왔는지 원문을 확인하라"
+    },
+    {
+      "title": "huge_memory hwpoison 플래그 설정 순서 수정",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "MM/huge_memory 유지보수 담당, DEBUG_VM 기반 fuzzing/CI 운영자",
+      "verifyLink": "https://lore.kernel.org/stable/20260701174235.3173401-1-riel@surriel.com/",
+      "if": "CONFIG_DEBUG_VM 커널로 hwpoison/large folio split 경로를 fuzzing 하거나 CI에서 돌리고 있다면",
+      "do": "folio_set_has_hwpoisoned() 호출을 prep_compound_page() 이후로 옮긴 이 패치를 반영하라",
+      "verify": "hwpoison-inject 후 MADV_REMOVE로 shmem 대형 folio를 펀치홀 처리해 BUG가 재현되지 않는지 확인하라"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.0.14 stable (EOL) — rose UAF 클러스터 포함 42건 (확인 필요)**\n\n7.0.y 계열의 마지막 릴리스로 42건이 백포트된 것으로 파악된다. rose(AX.25) 프로토콜의 UAF/refcount 수정 클러스터와 ksmbd 세션 검증, virtiofs UAF, vc_screen NULL 역참조 수정이 포함된 것으로 보인다.\n\n영향: 7.0.y가 EOL로 표시된 것으로 보여 이 트리 사용자는 상위 stable/LTS로 이전을 검토해야 한다. git.kernel.org 원문 접근이 차단되어 태그·배포일 독립 검증은 되지 않아 확인이 필요하다.\n\n> rose: don't free fd-owned sockets when reaping in the heartbeat; rose: fix race between loopback timer and module removal; rose: fix netdev double-hold in rose_make_new()\n\n[원문 확인](https://git.kernel.org/stable/h/v7.0.14)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**HID: multitouch: fix out-of-bounds bit access on mt_io_flags**\n\nmt_io_flags라는 단일 unsigned long에 슬롯 번호로 인덱싱하던 per-slot 비트맵을, maxcontacts 크기로 별도 할당한 active_slots 비트맵으로 분리했다. ContactCountMaximum이 255까지 가능해 BITS_PER_LONG를 넘는 set_bit()/clear_bit()가 인접한 struct mt_device 멤버를 덮어써 NULL 역참조를 유발했다.\n\n영향: 신뢰할 수 없는 USB/블루투스 멀티터치 장치가 큰 contact count를 광고하는 것만으로 로컬 권한 없이 커널 메모리 손상을 유도할 수 있는 물리 접근 공격면이다.\n\n> The state is reachable from an untrusted USB or Bluetooth HID multitouch device; no local privileges are required.\n\n[원문 확인](https://lore.kernel.org/stable/20260701171320.16367-1-trungnh@cystack.net/)\n\n**mac802154: remove interfaces with RCU list deletion**\n\n대량 하드웨어 teardown 경로가 local->interfaces를 list_del()로 제거해, RCU로 리스트를 순회하는 비동기 transmit completion이 poisoned list node를 따라가는 use-after-free가 발생했다. 단일 인터페이스 제거 경로와 동일하게 list_del_rcu()로 교체했다.\n\n영향: syzbot이 재현한 use-after-free로, RCU 리스트 독법과 teardown 경로의 불일치라는 흔한 결함 패턴을 보여준다.\n\n> an asynchronous transmit completion can follow a poisoned list node in ieee802154_wake_queue().\n\n[원문 확인](https://lore.kernel.org/stable/20260701164222.9094-1-alhouseenyousef@gmail.com/)\n\n**mm/huge_memory: set PG_has_hwpoisoned only after new folio head is established**\n\n__split_folio_to_order()가 아직 tail page 상태인 folio에서 folio_set_has_hwpoisoned()를 호출해 새 page-flags 레이아웃의 어서션을 위반했다. 호출 시점을 clear_compound_head()/prep_compound_page() 이후로 옮겨 정상 head folio에서 플래그를 설정하도록 순서만 바꿨다.\n\n영향: syzkaller가 hwpoison-inject와 MADV_REMOVE 조합으로 재현하는 CONFIG_DEBUG_VM 크래시로, 프로덕션 커널에서의 실제 메모리 안전성 영향은 원문에 명시되어 있지 않아 확인이 필요하다.\n\n> kernel BUG at include/linux/page-flags.h:354 ... At the current call site @new_head still has the tail marker (compound_info bit 0 set, PG_head clear)\n\n[원문 확인](https://lore.kernel.org/stable/20260701174235.3173401-1-riel@surriel.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Linux 6.18.37 longterm — 보안 백포트 53건 (확인 필요)**\n\n현재 LTS 6.18.y에 53건이 백포트된 것으로 파악된다. ksmbd의 compound request 세션 검증, virtiofs submount umount UAF, vc_screen 동시 쓰기 NULL 역참조, iio 드라이버 인덱스 bounds 체크 등이 포함된 것으로 보인다.\n\n영향: LTS를 추적하는 배포판·제품 보안팀이 흡수를 검토해야 할 롤업이다. git.kernel.org 페이지 접근 차단으로 태그·전체 목록 독립 검증은 되지 않아 확인이 필요하다.\n\n> ksmbd: reject non-VALID session in compound request branch; virtiofs: fix UAF on submount umount; vc_screen: fix null-ptr-deref in vcs_notifier() during concurrent vcs_write\n\n[원문 확인](https://git.kernel.org/stable/h/v6.18.37)\n\n**Linux 5.10.259 longterm — 보안 백포트 343건 (확인 필요)**\n\n구형 LTS 5.10.y에 343건이 백포트된 것으로 파악된다. apparmor default DFA 상태 bounds 검증, lib/crypto mpi_read_raw_from_sgl() 정수 언더플로, RDMA/umem 4G 이상 블록 truncation 수정 등이 포함된 것으로 보인다.\n\n영향: 여전히 광범위하게 배포된 5.10 LTS 사용자에게 메모리 안전·정책 우회 관점에서 주목할 백포트다. 원문 독립 검증이 되지 않아 확인이 필요하다.\n\n> apparmor: validate default DFA states are in bounds; lib/crypto: mpi: Fix integer underflow in mpi_read_raw_from_sgl(); RDMA/umem: Fix truncation for block sizes >= 4G\n\n[원문 확인](https://git.kernel.org/stable/h/v5.10.259)\n\n**xfs/235 크래시 수정 논의 — xfs stable(<=6.6) 유지보수 공백**\n\nxfs/235 테스트 커널 크래시 수정을 6.6.y로 백포트하려는 논의 중, xfs-stable 메일링 리스트의 마지막 stable 머지가 약 1년 전으로 방치되었고 담당자 이동으로 backfill이 없어 xfs in stable <=6.6이 unmaintained로 선언될 수 있다는 논의가 나왔다.\n\n영향: 유지보수되지 않는 stable 브랜치는 xfs 보안·데이터손상 수정이 LTS에 도달하지 못함을 의미해, 6.6 LTS 파일시스템 운영 조직의 백포트 신뢰도에 직접 영향한다. 최종 결정은 담당자 복귀 후로 확인이 필요하다.\n\n> I think at this point we can officially declare xfs in stable <= 6.6 unmaintained ... maybe need to send patches to LTS MAINTAINERS.\n\n[원문 확인](https://lore.kernel.org/stable/20260701163310.GB6517@frogsfrogsfrogs/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "HID: multitouch: fix out-of-bounds bit access on mt_io_flags",
+      "url": "https://lore.kernel.org/stable/20260701171320.16367-1-trungnh@cystack.net/",
+      "note": "thread"
+    },
+    {
+      "title": "mac802154: remove interfaces with RCU list deletion",
+      "url": "https://lore.kernel.org/stable/20260701164222.9094-1-alhouseenyousef@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "mac802154 syzbot 재현 리포트",
+      "url": "https://syzkaller.appspot.com/bug?extid=36256deb69a588e9290e",
+      "note": "cve"
+    },
+    {
+      "title": "mm/huge_memory: set PG_has_hwpoisoned only after new folio head is established",
+      "url": "https://lore.kernel.org/stable/20260701174235.3173401-1-riel@surriel.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Linux 6.18.37 longterm changelog",
+      "url": "https://git.kernel.org/stable/h/v6.18.37",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 5.10.259 longterm changelog",
+      "url": "https://git.kernel.org/stable/h/v5.10.259",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 7.0.14 stable (EOL) changelog",
+      "url": "https://git.kernel.org/stable/h/v7.0.14",
+      "note": "changelog"
+    },
+    {
+      "title": "xfs stable(<=6.6) 유지보수 공백 논의 스레드",
+      "url": "https://lore.kernel.org/stable/20260701163310.GB6517@frogsfrogsfrogs/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-01T18:47:26.153Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,133 @@
+{
+  "id": "2026-07-02-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-07-02 NFSD 회귀 리버트 — 커널 보안",
+  "headline": "7.1.2 NFSD export cleanup 리버트, vmalloc guard 확대로 ENTER 스택 피벗 방어 논의 진행",
+  "date": "2026-07-02",
+  "summary": "7.0.14·7.1.2·6.18.37·5.10.259 스테이블/롱텀 릴리스가 함께 나오며 NFSD 리버트와 guard-region VMA 플래그 백포트가 눈에 띕니다. lore에서는 vmalloc guard 확대를 통한 ENTER 스택 피벗 방어, ZONE_DEVICE memmap 초기화 성능 개선, selinux seq_buf 전환이 논의되고 있습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "NFSD export cleanup 리버트 (7.1.2)",
+      "priority": "상",
+      "impactType": "release",
+      "affectedAudience": "7.1 스테이블 기반 서버 운영자, NFSD/fuse/io_uring 사용자",
+      "verifyLink": "https://git.kernel.org/stable/h/v7.1.2",
+      "if": "NFS 서버를 7.1 스테이블 커널로 운영 중이라면",
+      "do": "7.1.2로 업데이트하고 이전 export cleanup 최적화로 인한 회귀 여부를 점검하세요",
+      "verify": "git.kernel.org의 7.1.2 changelog에서 Revert 커밋 목록을 확인하세요"
+    },
+    {
+      "title": "vmalloc guard 확대 vs ENTER 트랩 하드닝 논쟁",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "MM/vmalloc 및 x86 하드닝 유지보수 담당, objtool 관련자",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20260701074834.GI49529@noisy.programming.kicks-ass.net/",
+      "if": "vmalloc guard region 크기나 x86 스택 하드닝 정책에 관여하고 있다면",
+      "do": "guard 확대안과 supervisor-ENTER 트랩안 중 어느 쪽이 채택되는지 스레드를 추적하세요",
+      "verify": "linux-hardening 메일링리스트 해당 스레드에서 최신 답신을 확인하세요"
+    },
+    {
+      "title": "ZONE_DEVICE memmap 초기화 56~60% 단축",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "MM/ZONE_DEVICE·pmem(nd_pmem/dax_pmem) 및 x86 memcpy 헬퍼 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20260701090553.62691-1-lizhe.67@bytedance.com/",
+      "if": "대용량 pmem(fsdax/devdax) 구성에서 bind/rebind 지연이 문제였다면",
+      "do": "템플릿 복사 + memcpy_nt() 패치 시리즈의 머지 여부를 추적하고 벤치마크에 반영하세요",
+      "verify": "패치 커버레터의 rebind 시간 측정치를 원문에서 확인하세요"
+    },
+    {
+      "title": "guard-region VMA 플래그 6.18 LTS 백포트",
+      "priority": "중",
+      "impactType": "backport",
+      "affectedAudience": "6.18 LTS 기반 배포판, MM 서브시스템·smaps 파서 유지보수 담당",
+      "verifyLink": "https://git.kernel.org/stable/h/v6.18.37",
+      "if": "/proc/$pid/smaps를 파싱하는 툴이나 VMA 병합 로직에 의존하고 있다면",
+      "do": "6.18.37 업데이트 후 VM_MAYBE_GUARD 플래그 노출로 인한 smaps 출력 변화를 점검하세요",
+      "verify": "6.18.37 changelog에서 guard region 관련 커밋 목록을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.0.14 stable (EOL) — rose 서브시스템 대량 수정**\n\n7.0.x 계열의 마지막 스테이블 릴리스로 42건이 백포트된 것으로 보이며, rose(X.25) UAF/refcount/타이머 경쟁 수정이 10여 건으로 가장 많고 virtiofs 서브마운트 umount UAF, ksmbd compound 요청 세션 검증, vc_screen null-ptr-deref, iio 드라이버 bounds check도 포함된 것으로 파악됩니다.\n\n영향: 7.0 계열 사용 배포판·임베디드는 이 릴리스가 마지막 업스트림 수정이므로 7.1+ 이관 계획이 필요하고, rose 정리 커밋이 몰려 있어 회귀 여부를 주시해야 합니다.\n\n> Linux 7.0.14 stable · EOL / 백포트된 커밋 제목 (총 42건)\n\n[원문 확인](https://git.kernel.org/stable/h/v7.0.14)\n\n**Linux 7.1.2 stable — NFSD export cleanup 리버트 포함 14건**\n\n14건 백포트로 virtiofs/ksmbd/iio 등 7.0.14와 겹치는 수정 외에, NFSD의 \"Defer sub-object cleanup in export put callbacks\" 최적화가 리버트되고 fuse의 folio 교체 전 request 재잠금, io_uring/net의 msghdr 사용 회피가 추가된 것으로 확인됩니다.\n\n영향: 현재 활성 스테이블 계열의 우선 적용 대상이며, NFSD 리버트는 이전 릴리스의 export cleanup 최적화가 회귀를 유발했음을 시사하므로 NFS 서버 운영자는 확인이 필요합니다.\n\n> Revert \"NFSD: Defer sub-object cleanup in export put callbacks\"\n\n[원문 확인](https://git.kernel.org/stable/h/v7.1.2)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**vmalloc guard 확대 — ENTER 스택 피벗 방어 논쟁**\n\nvmalloc guard region을 넓혀 x86 ENTER(0xc8) 명령 기반 스택 피벗 공격을 막자는 하드닝 스레드에서, supervisor 모드 ENTER를 트랩하는 MSR 노브 아이디어와 objtool에서 ENTER 발견 시 WARN을 내는 방안이 함께 논의되고 있습니다. 다만 ENTER가 1바이트 opcode라 다른 명령 중간에 나타날 수 있어 objtool 디코딩만으로는 신뢰하기 어렵다는 반박도 있어 방향이 확정되지 않았습니다.\n\n영향: vmalloc guard 크기 결정과 커널 스택 피벗/ROP 방어 설계가 직접 얽히는 논쟁으로, 최종 방향에 따라 MM/x86 하드닝 코드 경로가 달라질 수 있습니다.\n\n> So yeah, having a knob to make supervisor-ENTER trap would be useful I suppose. x86_64-defconfig builds clean with the below :-)\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20260701074834.GI49529@noisy.programming.kicks-ass.net/)\n\n**selinux_ima_collect_state() strlcat → seq_buf 전환**\n\ndeprecated strlcat() 제거(KSPP #370) 준비로 selinux_ima_collect_state()의 strscpy/strlcat 체인을 seq_buf로 교체하고, 필드별 7개의 개별 WARN_ON 절단 검사를 seq_buf_has_overflowed() 단일 검사로 대체하는 패치가 진행 중인 것으로 보입니다. 고정 버퍼 대안 대신 사이즈 사전계산을 유지할지가 리뷰 쟁점으로 남아 있어 최종 형태는 확인이 필요합니다.\n\n영향: IMA로 측정되는 selinux-state 문자열이 조용히 절단되던 위험을 정리하는 변경으로, SELinux/IMA 및 strlcat 제거 흐름을 추적하는 담당자는 참고할 필요가 있습니다.\n\n> The seven per-append WARN_ON(rc >= buf_len) truncation checks are replaced by a single seq_buf_has_overflowed() check after the string is built.\n\n[원문 확인](https://lore.kernel.org/linux-hardening/akSrg483zJ0ii7wc@dev/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Linux 6.18.37 longterm — guard-region VMA 플래그 백포트**\n\n53건 백포트 중 VM_MAYBE_GUARD 도입 및 /proc/$pid/smaps 노출, sticky/atomic VMA 플래그, guard region 설치 시 플래그 세팅, VM_SOFTDIRTY 병합 전파 등 guard-region 관련 MM 인프라가 통째로 들어온 것으로 파악됩니다.\n\n영향: smaps 출력과 VMA 병합 동작이 바뀌므로 관련 파서/툴이 영향을 받을 수 있고, guard region 하드닝 기반이 LTS에 정착하는 신호입니다.\n\n> mm: introduce VM_MAYBE_GUARD and make visible in /proc/$pid/smaps; mm: set the VM_MAYBE_GUARD flag on guard region install\n\n[원문 확인](https://git.kernel.org/stable/h/v6.18.37)\n\n**Linux 5.10.259 longterm — arm64 신규 CPU errata 대량 백포트**\n\n343건 규모의 릴리스로, Microsoft Azure Cobalt 100·NVIDIA Olympus 등 신규 arm64 CPU에 대한 TLBI errata 완화가 추가되고, lib/crypto mpi_read_raw_from_sgl()의 정수 언더플로 수정 등 보안성 수정도 포함된 것으로 보입니다.\n\n영향: 오래된 5.10 LTS에까지 최신 arm64 서버 CPU errata가 내려온 점이 눈에 띄며, crypto mpi 언더플로 수정은 보안 관련이라 적용 우선순위가 높습니다.\n\n> arm64: errata: Mitigate TLBI errata on Microsoft Azure Cobalt 100 CPU; arm64: errata: Mitigate TLBI errata on NVIDIA Olympus CPU\n\n[원문 확인](https://git.kernel.org/stable/h/v5.10.259)\n\n**ZONE_DEVICE memmap 초기화 템플릿 복사 + memcpy_nt() 최적화**\n\n대용량 pmem namespace bind/rebind 시 memmap_init_zone_device()가 struct page를 PFN 단위로 반복 초기화하던 문제를, 준비된 템플릿 재사용과 x86 memcpy_nt() 복사로 개선하는 8패치 시리즈입니다. page_ref_set tracepoint 활성 시·sanitized 빌드는 기존 느린 경로를 유지합니다.\n\n영향: VM 측정 기준 nd_pmem rebind 평균 60.4%, dax_pmem 56.4% 시간이 단축되어(244→96.8ms, 273→119ms), 대용량 pmem 구성의 드라이버 bind/rebind 지연이 크게 줄어듭니다.\n\n> This reduces the average rebind time by about 60.4% for nd_pmem and 56.4% for dax_pmem.\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20260701090553.62691-1-lizhe.67@bytedance.com/)\n\n**AMD AXI I3C master 컨트롤러 드라이버 (v10 리뷰)**\n\nAMD AXI I3C master 컨트롤러 신규 드라이버가 v10까지 리뷰가 진행되며, 타이밍 상수 출처를 MIPI I3C v1.1.1 표와 AMD PG439 레지스터 섹션으로 주석에 명시하고, 디바이스 등록 반환값 검사를 제거해 한 디바이스 실패가 다른 디바이스 등록을 막지 않도록 정리된 것으로 보입니다.\n\n영향: AMD 플랫폼 I3C 하드웨어 신규 지원이 랜딩에 가까워졌음을 의미하며, i3c 코어의 디바이스 등록 지연 처리 방식과의 상호작용을 보여주는 리뷰입니다.\n\n> The driver now just calls i3c_master_add_i3c_dev_locked() without checking its return, so one device's failure can't block the others.\n\n[원문 확인](https://lore.kernel.org/linux-hardening/IA1PR12MB8408F56FCD4FD4E373EA6355F5F62@IA1PR12MB8408.namprd12.prod.outlook.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Linux 7.0.14 stable (EOL) release notes",
+      "url": "https://git.kernel.org/stable/h/v7.0.14",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 7.1.2 stable release notes",
+      "url": "https://git.kernel.org/stable/h/v7.1.2",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 6.18.37 longterm release notes",
+      "url": "https://git.kernel.org/stable/h/v6.18.37",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 5.10.259 longterm release notes",
+      "url": "https://git.kernel.org/stable/h/v5.10.259",
+      "note": "changelog"
+    },
+    {
+      "title": "mm/vmalloc: ENTER 기반 스택 피벗 방어 논의",
+      "url": "https://lore.kernel.org/linux-hardening/20260701074834.GI49529@noisy.programming.kicks-ass.net/",
+      "note": "thread"
+    },
+    {
+      "title": "mm/vmalloc: objtool ENTER WARN 방식에 대한 반박",
+      "url": "https://lore.kernel.org/linux-hardening/8730D74D-6395-4FF4-B9F9-06AFABBF8CDE@zytor.com/",
+      "note": "thread"
+    },
+    {
+      "title": "mm: ZONE_DEVICE memmap 초기화 최적화 패치 시리즈",
+      "url": "https://lore.kernel.org/linux-hardening/20260701090553.62691-1-lizhe.67@bytedance.com/",
+      "note": "thread"
+    },
+    {
+      "title": "selinux: strlcat → seq_buf 전환 패치",
+      "url": "https://lore.kernel.org/linux-hardening/akSrg483zJ0ii7wc@dev/",
+      "note": "thread"
+    },
+    {
+      "title": "selinux: seq_buf 리뷰 답신 (버퍼 사이즈 산정)",
+      "url": "https://lore.kernel.org/linux-hardening/20260701105237.0a797d5c@pumpkin/",
+      "note": "thread"
+    },
+    {
+      "title": "i3c: AMD AXI I3C master 드라이버 v10 리뷰",
+      "url": "https://lore.kernel.org/linux-hardening/IA1PR12MB8408F56FCD4FD4E373EA6355F5F62@IA1PR12MB8408.namprd12.prod.outlook.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-01T18:38:31.784Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
