@@ -1,0 +1,128 @@
+{
+  "id": "2026-07-05-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-07-05 BPF VLAN·부호버그 수정 — 성능/RT",
+  "headline": "bpf_fib_lookup()에 VLAN 방향별 조회가 추가되고 HID-BPF 부호 버그와 memcg kfunc OOB read 우려가 함께 보고되었습니다.",
+  "date": "2026-07-05",
+  "summary": "bpf_fib_lookup()에 양방향 VLAN 인식 플래그가 추가되어 XDP/tc BPF의 VLAN 라우팅 해소를 지원합니다. 동시에 HID-BPF의 부호 버그 수정과 memcg kfunc의 OOB read 우려가 보안 신호로 함께 올라왔습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "hid_bpf_hw_request() 부호 버그로 stale 데이터 노출 위험",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "HID-BPF struct_ops 사용자 및 HID 서브시스템 유지보수자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260704160703.156298-1-lgs201920130244@gmail.com/",
+      "if": "HID-BPF struct_ops 경로에서 hid_bpf_hw_request()를 사용한다면",
+      "do": "signed ret와 unsigned size 비교 수정 패치를 적용하고 실패 시 stale 데이터가 복사되지 않는지 점검하세요",
+      "verify": "패치가 머지되었는지, 안정 커널 백포트 대상인지 lore 스레드에서 확인하세요"
+    },
+    {
+      "title": "bpf_fib_lookup() 양방향 VLAN 인식 플래그 추가",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "XDP/tc BPF 네트워킹 개발자, bpf_fib_lookup() 사용자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260704092159.1256823-1-avinash.duduskar@gmail.com/",
+      "if": "XDP나 tc BPF 프로그램에서 VLAN 위 라우팅을 helper 내부에서 해소해야 한다면",
+      "do": "BPF_FIB_LOOKUP_VLAN·BPF_FIB_LOOKUP_VLAN_INPUT 플래그와 새 반환코드 BPF_FIB_LKUP_RET_VLAN_FAILURE 사용을 검토하세요",
+      "verify": "v6 패치가 머지되었는지 lore 스레드에서 확인하세요"
+    },
+    {
+      "title": "자동 리뷰, memcg kfunc의 배열 OOB read 가능성 지적",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "memcg BPF kfunc(mm/bpf_memcontrol.c) 유지보수자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260704050626.520011F000E9@smtp.kernel.org/",
+      "if": "memcg BPF kfunc bpf_mem_cgroup_vm_events를 유지보수하거나 호출한다면",
+      "do": "signed enum 인자에 대한 음수 하한 검사 누락 여부를 직접 재확인하세요",
+      "verify": "자동 리뷰(Sashiko AI)의 지적이 유지보수자에 의해 확정되었는지, 수정 패치가 있는지 확인하세요"
+    },
+    {
+      "title": "msg_alloc_iov 에러 경로 메모리 누수 수정",
+      "priority": "하",
+      "impactType": "build",
+      "affectedAudience": "BPF 셀프테스트(test_sockmap) 유지보수자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260704122936.102394-1-malayarout91@gmail.com/",
+      "if": "test_sockmap 셀프테스트를 유지보수한다면",
+      "do": "unwind_iov 경로에 추가된 free(iov) 수정을 반영하세요",
+      "verify": "패치가 머지되었는지 lore 스레드에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**HID: bpf: hid_bpf_hw_request() 부호 버그 수정**\n\nhid_hw_raw_request() 반환값을 버퍼 크기로 클램프할 때 signed ret와 unsigned size를 비교하면서, 음수 에러코드가 size_t로 승격되어 거대한 양수처럼 취급되는 버그를 수정한다. 그 결과 실패한 요청을 성공으로 오인해 stale 데이터를 호출자 버퍼에 memcpy 하던 문제가 함께 해결된다.\n\n영향: HID-BPF struct_ops 경로를 쓰는 사용자와 유지보수자에게 메모리 안전·정보 노출 결함을 막는 직접적인 수정이다.\n\n> The following memcpy() then treats the failed request as a successful transfer and copies stale data back to the caller.\n\n[원문 확인](https://lore.kernel.org/bpf/20260704160703.156298-1-lgs201920130244@gmail.com/)\n\n**자동 리뷰(Sashiko AI), memcg_stat_reader 벤치마크 기반 kfunc에서 OOB read 지적**\n\nmemcg_stat_reader 셀프테스트 패치에 대한 자동 리뷰가, 새로 작성된 테스트 코드가 아니라 기존 kfunc인 bpf_mem_cgroup_vm_events가 signed enum 인자에 음수 하한 검사를 하지 않아 배열 out-of-bounds read를 허용한다고 지적했다.\n\n영향: memcg BPF kfunc(mm/bpf_memcontrol.c) 유지보수자에게 잠재적 메모리 안전 결함 신호이지만, 자동 리뷰 봇의 미확인 지적이라 재현과 확정이 필요하다.\n\n> [High] The kfunc `bpf_mem_cgroup_vm_events` allows an out-of-bounds array read due to a missing negative bounds check on its signed enum argument.\n\n[원문 확인](https://lore.kernel.org/bpf/20260704050626.520011F000E9@smtp.kernel.org/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**bpf: bpf_fib_lookup()에 양방향 VLAN 지원 추가**\n\nBPF_FIB_LOOKUP_VLAN은 VLAN egress를 실디바이스와 VLAN 태그로 해소하고, BPF_FIB_LOOKUP_VLAN_INPUT은 태그 프레임이 해당 VLAN 서브인터페이스로 들어온 것처럼 조회해 iif 정책 라우팅과 VRF 테이블 선택을 지원한다. 새 반환코드 BPF_FIB_LKUP_RET_VLAN_FAILURE는 기존 열거값 뒤에 덧붙여 재번호매기지 않는다.\n\n영향: XDP/tc BPF 네트워킹 개발자가 VLAN 위 라우팅 해소를 helper 안에서 처리할 수 있게 되며, 플래그가 opt-in이라 하위호환이 유지된다.\n\n> BPF_FIB_LOOKUP_VLAN resolves a VLAN egress to its underlying real device plus the VLAN tag (XDP programs need this because VLAN devices have no XDP xmit)\n\n[원문 확인](https://lore.kernel.org/bpf/20260704092159.1256823-1-avinash.duduskar@gmail.com/)\n\n**selftests/bpf: BPF 경로와 memory.stat 경로로 memcg 통계 비교**\n\n유저스페이스가 각 cgroup의 memory.stat/current/max를 파싱하는 전통 경로와, 단일 iter.s/cgroup BPF 프로그램이 memcg kfunc를 호출해 해시맵에 모으는 경로를 대조하는 셀프테스트 시리즈를 추가한다.\n\n영향: eBPF cgroup iterator를 관측성 대안 경로로 제시하는 참조 예제이며, CONFIG_MEMCG=n일 때는 깨끗이 skip된다.\n\n> (B) a BPF path: a single SEC(\"iter.s/cgroup\") program walked over the subtree that calls the memcg kfuncs\n\n[원문 확인](https://lore.kernel.org/bpf/20260704045617.487664-1-ziyang.meme@gmail.com/)\n\n**selftests/bpf: msg_alloc_iov 에러 경로 메모리 누수 수정**\n\ntest_sockmap의 msg_alloc_iov()에서 개별 iov_base calloc() 실패 시 앞서 할당한 iov_base들은 해제하지만, 함수 초입에 calloc()으로 잡은 iov 배열 자체는 해제하지 않던 누수를 unwind_iov 경로에 free(iov)를 추가해 수정한다.\n\n영향: test_sockmap 유지보수자를 위한 소규모 정리이며, 할당 실패 시에만 발생해 런타임 영향은 제한적이다.\n\n> the error path frees all previously allocated iov_base entries but fails to free the iov array itself that was allocated with calloc() at the beginning of the function\n\n[원문 확인](https://lore.kernel.org/bpf/20260704122936.102394-1-malayarout91@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "bpf: bidirectional VLAN support for bpf_fib_lookup()",
+      "url": "https://lore.kernel.org/bpf/20260704092159.1256823-1-avinash.duduskar@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Always return target ifindex in bpf_fib_lookup",
+      "url": "https://github.com/torvalds/linux/commit/d1c362e1dd68",
+      "note": "commit"
+    },
+    {
+      "title": "HID: bpf: Fix signedness bug in hid_bpf_hw_request",
+      "url": "https://lore.kernel.org/bpf/20260704160703.156298-1-lgs201920130244@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "HID: bpf: prevent buffer overflow in hid_hw_request",
+      "url": "https://github.com/torvalds/linux/commit/2b658c1c442e",
+      "note": "commit"
+    },
+    {
+      "title": "selftests/bpf: compare BPF and memory.stat memcg stat readers",
+      "url": "https://lore.kernel.org/bpf/20260704045617.487664-1-ziyang.meme@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "mm: introduce BPF kfuncs to deal with memcg pointers",
+      "url": "https://lkml.org/lkml/2025/10/27/1965",
+      "note": "thread"
+    },
+    {
+      "title": "자동 리뷰(Sashiko AI): memcg_stat_reader 패치 리뷰 회신, kfunc OOB read 지적",
+      "url": "https://lore.kernel.org/bpf/20260704050626.520011F000E9@smtp.kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "selftests/bpf: Fix memory leak in msg_alloc_iov error path",
+      "url": "https://lore.kernel.org/bpf/20260704122936.102394-1-malayarout91@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: sockmap, add msg_peek tests to test_sockmap",
+      "url": "https://github.com/torvalds/linux/commit/753fb2ee0934",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-04T19:35:09.462Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

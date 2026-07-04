@@ -1,0 +1,94 @@
+{
+  "id": "2026-07-05-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-07-05 IoPageTable 안전성 강화 — 리눅스 툴체인",
+  "headline": "Rust IoPageTable에 lifetime을 추가해 디바이스 바인딩 종료 후 사용을 컴파일 타임에 막는 v3 패치가 올라왔습니다.",
+  "date": "2026-07-05",
+  "summary": "이번 수집에서는 Rust-for-Linux 진영의 IOMMU 페이지 테이블 lifetime 안전성 강화, 락 클래스 명명 RFC, rust_binder 디버그 로깅 확장이 다뤄졌습니다. 릴리스 소식이나 별도의 회귀·보안 신호는 이번 수집에 포함되지 않았습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "Rust"
+  ],
+  "highlights": [
+    {
+      "title": "IoPageTable에 디바이스 lifetime 추가",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust-for-Linux IOMMU/DMA 추상화 메인테이너와 io_pgtable을 사용하는 Rust GPU 드라이버 작성자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260703-pgtable_lt_b4-v3-1-e738e1f513a4@collabora.com/",
+      "if": "io_pgtable을 사용하는 Rust IOMMU/GPU 드라이버 코드를 유지보수하고 있다면",
+      "do": "IoPageTable을 Devres로 생성하던 경로를 <'bound> lifetime 기반 API로 마이그레이션하세요",
+      "verify": "패치 스레드에서 v3 diff와 Devres 생성자 제거 범위를 확인하세요"
+    },
+    {
+      "title": "rust_binder에 동적 디버그 로깅 마스크 추가",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "rust_binder 메인테이너와 Rust Binder FFI 경계를 감사하는 리뷰어",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260703-rust_binder_debug_mask-v1-1-9bdf12b5325c@google.com/",
+      "if": "rust_binder의 FFI 경계나 로깅 동작을 감사하고 있다면",
+      "do": "C companion 파일과 volatile FFI로 debug_mask를 읽어오는 구현을 검토하세요",
+      "verify": "패치 스레드에서 BINDER_DEBUG_OPEN_CLOSE 마스크 적용 범위와 리뷰 코멘트를 확인하세요"
+    },
+    {
+      "title": "Rust 락에 #[track_caller] 적용 논의",
+      "priority": "하",
+      "impactType": "project",
+      "affectedAudience": "Rust-for-Linux sync/locking 메인테이너와 Rust 락 관련 lockdep 리포트를 읽는 엔지니어",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260704171042.GT751831@noisy.programming.kicks-ass.net/",
+      "if": "lockdep 출력에서 Rust 락 식별자 표기 방식 변경을 주시하고 있다면",
+      "do": "file:line 기반 명명 방식에 대한 반대 의견과 RFC 진행 상황을 계속 확인하세요",
+      "verify": "스레드에서 후속 버전 게시 여부와 명명 방식 변경 여부를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**rust: iommu: add device lifetime to IoPageTable**\n\nRust IoPageTable에 <'bound> lifetime 파라미터를 추가해 페이지 테이블 핸들이 디바이스 바인딩 구간을 벗어나지 못하도록 컴파일 타임에 강제하고, lifetime을 아직 지원하지 않는 Devres 기반 생성자는 제거했습니다.\n\n영향: IOMMU 페이지 테이블이 디바이스 바인딩보다 오래 살아남으면 use-after-free급 위험으로 이어지므로, 이 보장을 컴파일러가 검증하게 되면 io_pgtable을 쓰는 Rust GPU 드라이버 코드를 감사하는 방식이 바뀝니다. Devres 생성자 제거는 소스 호환성을 깨는 변경입니다.\n\n> add a lifetime parameter to IoPageTable. This ensures that the returned IoPageTable cannot outlive the bus device binding.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260703-pgtable_lt_b4-v3-1-e738e1f513a4@collabora.com/)\n\n**rust_binder: Add dynamic debug logging mask**\n\nrust_binder 모듈에 런타임 debug_mask를 추가해 C Binder 드라이버와 동일한 수준의 동적 로그 레벨 제어를 지원합니다. Rust module! 매크로가 아직 모듈 파라미터를 지원하지 않아 C companion 파일에 값을 두고 volatile FFI로 읽어옵니다.\n\n영향: Binder IPC는 Android 커널의 주요 공격 표면이라 Rust 재구현의 기능 동등성 진척은 계속 추적할 신호입니다. 이번 변경 자체는 로깅 기능이라 직접적 보안 영향은 낮지만, C companion 파일과 volatile FFI라는 새 FFI 경계가 생겼다는 점은 감사 시 참고할 부분입니다.\n\n> Implement a dynamic debug logging mask (`debug_mask`) for the `rust_binder` module to allow dynamic runtime configuration of log levels.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260703-rust_binder_debug_mask-v1-1-9bdf12b5325c@google.com/)\n\n**rust: sync: create lock class using #[track_caller]**\n\nRust 락의 lockdep 클래스 이름을 문자열 대신 #[track_caller]로 캡처한 초기화 위치(file:line)로 표시하는 RFC입니다. 작성자는 기존 lockdep 이름 표기 자체를 바꾸는 것은 아니라고 설명했지만, 반대 의견도 있어 명명 방식은 확인이 필요합니다.\n\n영향: lockdep은 커널의 데드락·락 순서 검증 도구라서, Rust 락 표기 방식 변경은 락 관련 버그를 진단하는 엔지니어에게 영향을 줍니다. 반대 의견으로 명명 방식은 아직 확정되지 않았습니다.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260704171042.GT751831@noisy.programming.kicks-ass.net/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "rust: iommu: add device lifetime to IoPageTable (v3)",
+      "url": "https://lore.kernel.org/rust-for-linux/20260703-pgtable_lt_b4-v3-1-e738e1f513a4@collabora.com/",
+      "note": "thread"
+    },
+    {
+      "title": "io: add io_pgtable abstraction",
+      "url": "https://lwn.net/Articles/1046193/",
+      "note": "article"
+    },
+    {
+      "title": "rust_binder: Add dynamic debug logging mask",
+      "url": "https://lore.kernel.org/rust-for-linux/20260703-rust_binder_debug_mask-v1-1-9bdf12b5325c@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: sync: create lock class using #[track_caller]",
+      "url": "https://lore.kernel.org/rust-for-linux/20260704171042.GT751831@noisy.programming.kicks-ass.net/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-04T19:12:22.136Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

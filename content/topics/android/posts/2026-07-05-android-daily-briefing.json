@@ -1,0 +1,128 @@
+{
+  "id": "2026-07-05-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-07-05 pkvm 회귀·Wonder 편입 — Android 커널",
+  "headline": "pkvm PM 드라이버 초기화 회귀 수정, GKI Wonder Wi-Fi 드라이버·HID ABI wrapper 추가됨",
+  "date": "2026-07-05",
+  "summary": "pkvm PM 드라이버의 이른 초기화로 등록 실패가 발생하던 회귀가 device_initcall 방식으로 수정됐고, GKI에 Wonder Wi-Fi 가상 디바이스 드라이버가 신규 편입됐습니다. 이와 함께 HID ABI 유지 wrapper, SHA512/BBR defconfig 조정, honor 심볼 리스트 갱신, VFS xattr 상류 병합 등이 반영됐습니다.",
+  "tags": [
+    "안드로이드",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "pkvm PM 드라이버 초기화 독립화로 회귀 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "pKVM/protected KVM 게스트·가상화 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/b69d903ab12dd848cf96f14d950282e3c01aff3b",
+      "if": "pKVM 게스트 환경에서 PM 드라이버 등록 실패로 인한 부팅 초기 회귀를 겪고 있다면",
+      "do": "b69d903a 커밋을 반영해 pkvm_device_pm_init()을 device_initcall로 독립 초기화하도록 적용하십시오",
+      "verify": "Fixes 대상인 e6613dac9987이 포함된 브랜치에서 pKVM 게스트 부팅 시 PM 드라이버가 정상 등록되는지 확인하십시오"
+    },
+    {
+      "title": "hid_report_raw_event ABI 유지용 wrapper 추가",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "GKI KMI/ABI 유지 담당, HID 벤더 모듈 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/645d9a2808286130997a39caaddfdc23bddf0b01",
+      "if": "out-of-tree HID/USB gadget/greybus 드라이버를 유지 중이라면",
+      "do": "645d9a28 커밋의 wrapper를 통해 GKI KMI를 깨지 않고 상류 HID 보안 백포트를 반영하십시오 (대상 CVE는 커밋에 명시되어 있지 않아 별도 확인이 필요합니다)",
+      "verify": "Bug 483018448 관련 hid_report_raw_event() 호출부가 재빌드 없이 기존 ABI로 정상 동작하는지 확인하십시오"
+    },
+    {
+      "title": "gki_defconfig에 CONFIG_CRYPTO_SHA512 명시적 활성화",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "GKI defconfig/crypto 담당, ACK 배포 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/7eebb4e1420ffe868b6c6e50dd309ced05fe428d",
+      "if": "vts_kernel_net_tests 등 SHA512 의존 기능/테스트에서 회귀가 우려된다면",
+      "do": "7eebb4e1 커밋을 반영해 arm64/x86 gki_defconfig에 CONFIG_CRYPTO_SHA512를 명시적으로 추가하십시오",
+      "verify": "CRYPTO_FIPS=n 구성에서도 SHA512가 빌드에 정상 포함되는지 확인하십시오"
+    },
+    {
+      "title": "Wonder Wi-Fi 가상 디바이스 드라이버 GKI 편입",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "가상 디바이스/테스트 인프라, GKI 드라이버 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/8a7c7d3954c2839bb2f6ebe475648ec14b8a2c9f",
+      "if": "가상 디바이스 환경에서 Wi-Fi 테스트 인프라를 구성 중이라면",
+      "do": "8a7c7d39 커밋(android17-6.18 wonder 3.6.5 기반)과 4a8e5125 커밋(arm64 gki_defconfig 활성화)을 함께 반영해 Wonder 드라이버를 GKI 모듈로 사용하십시오",
+      "verify": "기존 mac80211_hwsim과의 관계 및 정확한 대상 디바이스는 확인되지 않았으므로 원문에서 재확인하십시오"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**pkvm PM 드라이버 초기화 독립화로 회귀 수정**\n\npkvm_device_pm_init()이 setup_arch 단계의 pkvm_init_hyp_services()에서 너무 이른 시점에 호출되어 platform bus가 아직 등록되지 않은 상태로 platform_driver_register()가 실패하던 문제를, 해당 함수를 device_initcall로 선언해 독립적으로 초기화하도록 고쳤습니다. pkvm-guest.h는 삭제되었습니다.\n\n영향: 앞선 ANDROID 커밋(e6613dac9987)이 유발한 pKVM 게스트 PM 드라이버 등록 실패 회귀가 해소됩니다.\n\n> initialize independently without being called from another function during early boot phases\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/b69d903ab12dd848cf96f14d950282e3c01aff3b)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**hid_report_raw_event ABI 유지용 wrapper 추가**\n\n상류가 HID 취약점 수정을 위해 hid_report_raw_event()에 원본 버퍼 크기 인자를 추가하며 시그니처를 바꿨고, 이로 인해 GKI KMI가 깨지자 기존 시그니처를 유지하는 wrapper를 도입했습니다. hid-core, wacom_sys, logitech-hidpp, multitouch, primax, vivaldi, greybus/hid, USB android_f_accessory 등 약 10개 파일과 include/linux/hid.h가 수정됐습니다.\n\n영향: wrapper가 없으면 hid_report_raw_event()를 사용하는 벤더/GKI 모듈의 ABI 호환성이 깨집니다. 다만 대상이 되는 정확한 상류 CVE/커밋은 이번 커밋에 명시되어 있지 않아 확인이 필요합니다.\n\n> the original buffer size passed through hid_report_raw_event()\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/645d9a2808286130997a39caaddfdc23bddf0b01)\n\n---\n\n**kbuild: 잔존 extmod_prefix 제거**\n\n상류 bad6beb2c0bb에서 이미 제거된 extmod_prefix 변수가 merge 충돌 해소 과정에서 scripts/Makefile.modfinal에 실수로 남아 있던 것을 제거했습니다.\n\n영향: 빌드 스크립트를 상류와 정합화해 향후 merge 충돌 위험을 줄이는 정리성 변경으로, 기능 영향은 크지 않습니다.\n\n> This variable was removed upstream ... it was mistakenly kept during a merge conflict resolution. Drop it!\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/b7afc9c272bd0bc9a66726a8f938508705390253)\n\n---\n\n**gki_defconfig에 CONFIG_CRYPTO_SHA512 명시적 활성화**\n\n기존에는 암시적 의존성 체인으로 CONFIG_CRYPTO_SHA512가 딸려 들어왔으나, 상류 4061bc8c0397(CRYPTO_FIPS=n일 때 DRBG 미포함)로 그 체인이 끊기면서 arm64/x86 gki_defconfig에 명시적으로 추가했습니다.\n\n영향: SHA512가 GKI 빌드에서 빠져 vts_kernel_net_tests 등 의존 기능/테스트가 회귀하는 것을 방지합니다.\n\n> CONFIG_CRYPTO_SHA512 was previously included by an implicit dependency chain. Now this chain has been broken we need to manually add it to the gki_defconfig.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/7eebb4e1420ffe868b6c6e50dd309ced05fe428d)\n\n---\n\n**GKI에 CONFIG_TCP_CONG_BBR 활성화**\n\nBBR(Bottleneck Bandwidth and RTT) TCP 혼잡 제어 알고리즘을 arm64/x86 gki_defconfig와 bazel/modules_private.bzl에서 활성화했습니다. 기본 알고리즘은 CUBIC으로 유지됩니다. vivo가 2024년 8월 작성한 변경이 2026년 6월 mainline에 자동 병합됐습니다.\n\n영향: 벤더나 앱이 선택적으로 BBR을 사용할 수 있게 되며, 기본값이 바뀌지 않아 기존 동작에는 영향이 없습니다. 다만 BBR이 built-in인지 모듈인지는 이번 커밋만으로 확정하기 어렵습니다.\n\n> Enable support for BBR ... which maximizes network utilization under certain scenarios. Note this still maintains CUBIC as the default algorithm.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/05c6fbd18c50f80608fc7773e801bf1e636d6d58)\n\n---\n\n**honor 심볼 리스트에 tcp_send_reset 트레이스포인트 추가**\n\nhonor 벤더 심볼 리스트(gki/aarch64/symbols/honor)와 abi.stg에 __traceiter_tcp_send_reset, __tracepoint_tcp_send_reset 심볼 2개가 추가된 것으로 보입니다.\n\n영향: honor 모듈이 TCP reset 이벤트를 트레이싱해 진단할 수 있게 될 것으로 보이며, KMI에 심볼이 추가되면 이후 ACK가 이를 안정 심볼로 유지해야 하므로 공유 ABI 표면에 영향을 줄 수 있습니다. 신뢰도가 낮은 항목이라 원문 확인이 필요합니다.\n\n> __traceiter_tcp_send_reset / __tracepoint_tcp_send_reset (gki/aarch64/symbols/honor, abi.stg); Bug: 524395666\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/74c43557c8aed4002d058c4e88c768a6086df9c2)\n\n---\n\n**Wonder Wi-Fi 가상 디바이스 드라이버 GKI 편입**\n\nmac80211 기반의 Wonder Wi-Fi 가상 디바이스 드라이버가 drivers/android/wonder/ 아래 약 21개 파일(debugfs 포함)로 ACK에 GKI 드라이버로 추가됐습니다. android17-6.18의 wonder 3.6.5 버전을 기반으로 합니다.\n\n영향: 가상 디바이스 환경의 Wi-Fi 테스트/개발 인프라에 새로운 드라이버가 편입됩니다. 기존 mac80211_hwsim과의 관계나 정확한 대상 디바이스는 확인이 필요합니다.\n\n> This adds the Wonder Wi-Fi virtual device driver to the Android Common Kernel as a GKI driver. It is based off of the android17-6.18 wonder driver at version 3.6.5.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/8a7c7d3954c2839bb2f6ebe475648ec14b8a2c9f)\n\n---\n\n**arm64 gki_defconfig에서 Wonder 드라이버 활성화**\n\narm64 gki_defconfig와 bazel/modules_private.bzl을 수정해 Wonder Wi-Fi 가상 디바이스 드라이버를 GKI 모듈로 빌드하도록 활성화했습니다.\n\n영향: 앞서 추가된 Wonder 드라이버가 실제 GKI 모듈로 산출되는 후속 조치로, GKI 모듈 구성이 변경됩니다.\n\n> This adds the Android Wonder Wi-Fi virtual device driver as a GKI module.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/4a8e51250625671e4a0175e18b4001cc03ac3971)\n\n---\n\n**vfs-7.2-rc1.xattr 상류 병합**\n\nandroid-mainline 추적 브랜치에 상류 vfs-7.2-rc1.xattr가 병합됐습니다. simple_xattr 해시 테이블이 inode에서 superblock 캐시로 이동했고, simple_xattrs 인터페이스로 lazy 할당이 내부화됐으며, kernfs xattr 직렬화, kernfs 노드를 LSM 초기화 전에 부모에 연결(SELinux NULL 역참조 방지), tmpfs security xattr을 kasprintf로 최적화, bpffs에 trusted.*/security.* xattr 지원이 추가됐습니다.\n\n영향: tmpfs·kernfs(sysfs)·bpffs·SELinux 등 Android 핵심 표면에 영향을 줄 수 있는 변경으로, 특히 kernfs와 SELinux 간 NULL 역참조 수정과 per-inode xattr 오버헤드 제거가 관련됩니다. mainline 추적 브랜치 병합이라 아직 출시된 GKI에는 포함되지 않은 것으로 보입니다.\n\n> Links kernfs nodes to their parent before LSM initialization runs, preventing NULL pointer dereferences during SELinux operations.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/ff8747aacaff8266dd751b8a8648fb728dcc3b21)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier의 출처를 근거로 작성했습니다. honor 심볼 리스트 갱신 항목은 신뢰도가 낮아 추정 표현을 사용했고, 일부 인용은 원문 검증이 완료되지 않아 단정을 피했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ANDROID: Fix ABI issues related to changed hid_report_raw_event()",
+      "url": "https://android.googlesource.com/kernel/common/+/645d9a2808286130997a39caaddfdc23bddf0b01",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: drivers/virt: pkvm: Make PM driver initialization standalone",
+      "url": "https://android.googlesource.com/kernel/common/+/b69d903ab12dd848cf96f14d950282e3c01aff3b",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: kbuild: remove leftover extmod_prefix",
+      "url": "https://android.googlesource.com/kernel/common/+/b7afc9c272bd0bc9a66726a8f938508705390253",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: gki_defconfig: Enable CONFIG_CRYPTO_SHA512",
+      "url": "https://android.googlesource.com/kernel/common/+/7eebb4e1420ffe868b6c6e50dd309ced05fe428d",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: GKI: enable CONFIG_TCP_CONG_BBR",
+      "url": "https://android.googlesource.com/kernel/common/+/05c6fbd18c50f80608fc7773e801bf1e636d6d58",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: GKI: Update symbol list for honor",
+      "url": "https://android.googlesource.com/kernel/common/+/74c43557c8aed4002d058c4e88c768a6086df9c2",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: Add Wonder driver to GKI",
+      "url": "https://android.googlesource.com/kernel/common/+/8a7c7d3954c2839bb2f6ebe475648ec14b8a2c9f",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: gki_defconfig: arm64: Enable the Wonder driver",
+      "url": "https://android.googlesource.com/kernel/common/+/4a8e51250625671e4a0175e18b4001cc03ac3971",
+      "note": "commit"
+    },
+    {
+      "title": "Merge tag 'vfs-7.2-rc1.xattr' of git://git.kernel.org/pub/scm/linux/kernel/git/vfs/vfs",
+      "url": "https://android.googlesource.com/kernel/common/+/ff8747aacaff8266dd751b8a8648fb728dcc3b21",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-04T18:14:21.056Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/android-newsletter-from-dossier-ko.md"
+  }
+}
