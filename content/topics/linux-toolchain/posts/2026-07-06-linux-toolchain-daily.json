@@ -1,0 +1,125 @@
+{
+  "id": "2026-07-06-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-07-06 Rust·UAPI 매크로 정리 — 리눅스 툴체인",
+  "headline": "이번 커널 툴체인 렌즈에서는 Rust 동기화 API의 타입 안전화, DRM 컴파일러 호환성 수정, UAPI 헤더 매크로 정규화가 다뤄집니다.",
+  "date": "2026-07-06",
+  "summary": "Rust for Linux 동기화 API가 원시 jiffies 대신 Delta 타입을 쓰도록 바뀌고, DRM은 Clang/LLVM 호환을 위해 indirect goto를 없앱니다. kbuild 쪽에서는 UAPI 헤더 매크로 정규화와 Rust 소스 cscope 인덱싱 개선이 다뤄졌습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "Rust",
+    "kbuild"
+  ],
+  "highlights": [
+    {
+      "title": "UAPI 헤더, __ASSEMBLY__ 관습으로 정규화",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "kbuild/UAPI 헤더 내보내기 유지보수 담당, 비-GCC 툴체인 사용 userspace 빌드 관리자",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20260630-uapi-assembly-v2-1-8e7bee2fe816@weissschuh.net/",
+      "if": "UAPI 헤더에서 __ASSEMBLER__와 __ASSEMBLY__ 매크로를 혼용하고 있다면 확인하세요.",
+      "do": "내보내는 헤더는 __ASSEMBLY__ 관습을 유지하도록 headers_install.sh 정규화 결과를 반영하세요.",
+      "verify": "비-GCC 호환 툴체인으로 헤더를 포함해 빌드가 깨지지 않는지 확인하세요."
+    },
+    {
+      "title": "Rust CondVar 타임아웃, jiffies에서 Delta로",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust for Linux 동기화 추상화 및 rust_binder 유지보수 담당, Delta 시간 API를 쓰는 Rust 드라이버 작성자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260704132558.2253275-3-tomo@aliasing.net/",
+      "if": "Rust 드라이버나 rust_binder에서 CondVar의 wait_interruptible_timeout()을 원시 jiffies 값으로 호출하고 있다면 확인하세요.",
+      "do": "타임아웃 인자를 Delta 타입으로 감싸 넘기도록 호출부를 갱신하세요.",
+      "verify": "as_jiffies_ceil() 변환 후 실제 대기 시간이 의도한 값과 일치하는지 점검하세요."
+    },
+    {
+      "title": "drm_exec, indirect goto 대신 direct goto로 전환",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "drm_exec/DRM 락킹 매크로 사용 드라이버 작성자, Clang/LLVM 커널 빌드 이식성 관리자",
+      "verifyLink": "https://lore.kernel.org/llvm/20260704084133.122053-1-christian.koenig@amd.com/",
+      "if": "drm_exec_until_all_locked() 매크로를 같은 함수 안에서 여러 번 쓰고 있다면 확인하세요.",
+      "do": "여러 번 필요한 경우 __label__ 문을 사용하도록 코드를 수정하세요.",
+      "verify": "Clang/LLVM으로 빌드해 indirect goto 관련 코드 생성 문제가 사라졌는지 확인하세요."
+    },
+    {
+      "title": "Rust IoCapable 64비트 접근자, 정렬 제약 논의",
+      "priority": "하",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust I/O(MMIO) 추상화 유지보수 담당, 64비트 접근자가 필요한 Rust 디바이스 드라이버 작성자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/DJQOWA2VOJ3G.2YGSYJGK7HPBJ@nvidia.com/",
+      "if": "Rust 드라이버에서 untyped I/O 영역에 64비트 무오류 접근자(read64 등)를 쓰고 있다면 확인하세요.",
+      "do": "MIN_ALIGN 제약을 고려해 접근 타입의 정렬을 재점검하고, 필요하면 typed region 논의를 따라가세요.",
+      "verify": "이 변경이 실제로 머지됐는지와 최종 안전 계약이 어떻게 확정됐는지 lore 스레드 후속 답신에서 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**rust: sync: use Delta for CondVar timeout API**\n\nCondVar의 wait_interruptible_timeout()과 CondVarTimeoutResult가 원시 jiffies 대신 Delta 타입을 받고 반환하도록 바뀌며, as_jiffies_ceil()로 변환하고 유일한 호출자인 binder의 ioctl_freeze()도 함께 갱신됩니다.\n\n영향: ms 값을 jiffies 자리에 넘기는 흔한 실수를 컴파일 타임에 막아, Rust 드라이버 작성자가 참고할 시간 단위 처리 패턴을 제공합니다.\n\n> Switch to Delta, the duration type already used elsewhere, so the unit is part of the type instead of a caller convention.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260704132558.2253275-3-tomo@aliasing.net/)\n\n**drm/drm_exec: avoid indirect goto**\n\ndrm_exec가 여러 컴파일러에서 direct jump로 낮춰지지 않을 수 있는 indirect goto 대신 direct goto를 쓰도록 바뀌며, drm_exec_until_all_locked() 매크로는 같은 함수에서 한 번만 쓸 수 있게 됩니다.\n\n영향: GNU C 확장(computed goto)에 의존하던 매크로를 Clang/LLVM 코드 생성 한계 때문에 포기하는 사례로, LLVM 커널 빌드의 이식성 트레이드오프를 보여줍니다.\n\n> Switch the indirect goto to a direct goto, the drawback is that we now can't use the dma_exec_until_all_locked() macro in the same function multiple times.\n\n[원문 확인](https://lore.kernel.org/llvm/20260704084133.122053-1-christian.koenig@amd.com/)\n\n**scripts: headers_install.sh: Normalize __ASSEMBLER__ to __ASSEMBLY__**\n\nheaders_install.sh가 __ASSEMBLY__에서 __ASSEMBLER__로의 마이그레이션이 진행되는 중에도 내보내는 UAPI 헤더는 계속 __ASSEMBLY__만 쓰도록 정규화합니다.\n\n영향: UAPI 헤더는 __ASSEMBLER__를 자동 정의하지 않는 비-GCC 호환 컴파일러에서도 쓰이므로, userspace 빌드 파손과 마이그레이션 과도기의 혼재를 막습니다.\n\n> the UAPI headers might be used with non-GCC-compatible compilers, which do not define __ASSEMBLER__ automatically.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20260630-uapi-assembly-v2-1-8e7bee2fe816@weissschuh.net/)\n\n**rust: io: add missing safety requirement in `IoCapable` methods**\n\nRust I/O 추상화의 io_addr_assert가 정렬을 검사하지 못하는 문제에 대해, offset_valid에 0을 넣는 대신 접근 타입의 정렬이 타깃 정렬 이하임을 컴파일 타임에 강제하는 방향이 논의된 것으로 보이며, 아직 확정 패치는 아닙니다.\n\n영향: 이 방향이 그대로 반영되면 MIN_ALIGN이 4인 untyped 영역에서 read64 등 64비트 무오류 접근자를 쓸 수 없게 되고, 지원은 후속 typed region 도입으로 미뤄질 것으로 보입니다.\n\n> It'd probably be solved by having typed regions. 32-bit is the most common alignment for I/O memory, so that's chosen. None of the existing Rust drivers require 64-bit accessors yet.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/DJQOWA2VOJ3G.2YGSYJGK7HPBJ@nvidia.com/)\n\n**scripts/tags.sh: Add support for rust source files**\n\nmake cscope가 생성하는 cscope.files에 *.rs가 빠지던 문제를 고치기 위해, find 계열 함수가 여러 파일명 패턴을 받도록 바뀌는 패치로 보이며 머지 여부는 확인되지 않습니다.\n\n영향: 확정되면 cscope/ctags로 Rust 커널 코드를 탐색하는 개발자의 코드 탐색 누락이 해소될 것으로 보입니다.\n\n> This causes make cscope command to generate a cscope.files file that contains *.rs files along with *.h, *.c, *.S\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20260705175957.4672-1-litvindev@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "rust: sync: use Delta for CondVar timeout API",
+      "url": "https://lore.kernel.org/rust-for-linux/20260704132558.2253275-3-tomo@aliasing.net/",
+      "note": "thread"
+    },
+    {
+      "title": "kernel::sync::CondVar",
+      "url": "https://rust.docs.kernel.org/kernel/sync/struct.CondVar.html",
+      "note": "changelog"
+    },
+    {
+      "title": "drm/drm_exec: avoid indirect goto",
+      "url": "https://lore.kernel.org/llvm/20260704084133.122053-1-christian.koenig@amd.com/",
+      "note": "thread"
+    },
+    {
+      "title": "amdgpu indirect goto precedent (2023)",
+      "url": "https://patchew.org/linux/20230727-amdgpu-v1-1-a95690e75388@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "scripts: headers_install.sh: Normalize __ASSEMBLER__ to __ASSEMBLY__",
+      "url": "https://lore.kernel.org/linux-kbuild/20260630-uapi-assembly-v2-1-8e7bee2fe816@weissschuh.net/",
+      "note": "thread"
+    },
+    {
+      "title": "arm: Replace __ASSEMBLY__ with __ASSEMBLER__ in uapi headers",
+      "url": "https://lkml.org/lkml/2026/2/28/425",
+      "note": "thread"
+    },
+    {
+      "title": "rust: io: add missing safety requirement in IoCapable methods",
+      "url": "https://lore.kernel.org/rust-for-linux/DJQOWA2VOJ3G.2YGSYJGK7HPBJ@nvidia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "scripts/tags.sh: Add support for rust source files",
+      "url": "https://lore.kernel.org/linux-kbuild/20260705175957.4672-1-litvindev@gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-05T19:05:56.298Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

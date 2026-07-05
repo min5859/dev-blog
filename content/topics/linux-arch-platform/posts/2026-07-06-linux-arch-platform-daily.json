@@ -1,0 +1,109 @@
+{
+  "id": "2026-07-06-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-07-06 RISC-V 언와인더 OOB 수정 — 아키텍처/플랫폼",
+  "headline": "RISC-V stacktrace 언와인더의 KASAN OOB 회귀를 수정했고, arm64 는 robust futex 언락 vDSO v4 를 제출했습니다.",
+  "date": "2026-07-06",
+  "summary": "RISC-V stacktrace 언와인더가 스택 상한을 절대 경계 기반으로 재계산해 KASAN stack-out-of-bounds 회귀를 수정했습니다. arm64 는 robust futex 언락 vDSO v4 를, Qualcomm arm-smmu 는 LPAC split address space 설정을 각각 제출했습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "아키텍처"
+  ],
+  "highlights": [
+    {
+      "title": "RISC-V stacktrace 언와인더 KASAN OOB 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "RISC-V 아키텍처 유지보수 담당 및 KASAN/backtrace 디버깅 개발자",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260705063656.237676-1-xujiakai2025@iscas.ac.cn/",
+      "if": "RISC-V 커널에서 KASAN 을 켜고 백트레이스나 언와인더를 디버깅한다면 확인하십시오",
+      "do": "walk_stackframe() 의 스택 상한을 절대 경계 기반으로 교체하는 이 패치를 적용하십시오",
+      "verify": "패치 적용 후 KASAN stack-out-of-bounds 경고가 재현되지 않는지 직접 확인하십시오"
+    },
+    {
+      "title": "arm64 robust futex 언락 vDSO v4 제출",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "arm64 arch/entry 및 vDSO 유지보수 담당, robust futex 의존 에뮬레이션/게이밍 스택",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260705-tonyk-robust_arm-v4-0-e0fd0fa259d3@igalia.com/",
+      "if": "arm64 에서 robust futex 나 Wine/Proton 류 에뮬레이션 스택을 다룬다면 주목하십시오",
+      "do": "__vdso_futex_robust_try_unlock() v4 패치와 entry 코드 변경 부분을 검토하십시오",
+      "verify": "저자도 확신하지 못한 arm64_enter_from_user_mode() 전환에 대한 메인테이너 의견을 lore 스레드에서 확인하십시오"
+    },
+    {
+      "title": "Qualcomm arm-smmu LPAC split address space 설정",
+      "priority": "하",
+      "impactType": "runtime",
+      "affectedAudience": "Qualcomm arm64 SoC 및 arm-smmu IOMMU 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260705-descriptive-name-lpac-upstream-v1-1-01d50c3e0c99@gmail.com/",
+      "if": "Qualcomm SoC 의 arm-smmu IOMMU 설정을 다룬다면 확인하십시오",
+      "do": "LPAC context bank 를 GFX 와 동일한 split address space 로 구성하는 패치를 검토하십시오",
+      "verify": "LPAC 대상 블록과 타깃 SoC, 리뷰 상태를 lore 스레드에서 직접 확인하십시오"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**RISC-V stacktrace 언와인더 KASAN OOB 수정**\n\nfp_is_valid() 의 스택 상한을 매 프레임 sp 기준 ALIGN 계산 대신, 언와인드 시작 전 확정한 절대 스택 경계(task/pt_regs/overflow/IRQ 스택별)로 교체했습니다.\n\n영향: 기존 방식은 sp 가 유효 스택을 벗어나면 상한도 함께 밀려 태스크 스택 끝을 넘어 읽어 KASAN stack-out-of-bounds 를 유발했습니다.\n\n> allowing the unwinder to read past the end of the allocated task stack and triggering KASAN stack-out-of-bounds\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260705063656.237676-1-xujiakai2025@iscas.ac.cn/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**arm64 robust futex 언락 vDSO v4 제출**\n\narm64 용 robust futex 언락 vDSO __vdso_futex_robust_try_unlock() 를 v4 로 제출했고, arm64_syscall_enter_from_user_mode() 를 arm64_enter_from_user_mode() 로 바꿔 테스트를 통과시켰습니다.\n\n영향: 언락과 list_op_pending 클리어가 원자적이지 않아 생기던 레이스를 막는 작업으로, x86 에 이어 arm64 에 커널-유저 인터페이스를 추가해 Wine/Proton 류 에뮬레이션 스택에 영향을 줍니다.\n\n> This is my take on implementing the new vDSO for unlocking a robust futex in arm64.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260705-tonyk-robust_arm-v4-0-e0fd0fa259d3@igalia.com/)\n\n---\n\n**Qualcomm arm-smmu LPAC split address space 설정**\n\nQualcomm arm-smmu 에서 LPAC 가 쓰는 context bank 를 GFX 와 동일하게 split address space 로 구성했습니다.\n\n영향: GFX/Adreno 계열에 쓰이던 주소공간 분리 방식을 LPAC 블록에도 적용하는 것으로, 해당 Qualcomm SoC 의 IOMMU 격리 동작에 영향을 줍니다.\n\n> We want the context bank used by LPAC to use split address space just like GFX.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260705-descriptive-name-lpac-upstream-v1-1-01d50c3e0c99@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "riscv: stacktrace: fix stack-out-of-bounds in walk_stackframe()",
+      "url": "https://lore.kernel.org/linux-riscv/20260705063656.237676-1-xujiakai2025@iscas.ac.cn/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: stacktrace: fixed walk_stackframe() (Fixes 대상 커밋 스레드)",
+      "url": "https://lore.kernel.org/all/D15GK3WBJL0X.BZR6XW0XXG8J@gmail.com/T/",
+      "note": "thread"
+    },
+    {
+      "title": "arm64: vdso: Implement __vdso_futex_robust_try_unlock() (v4)",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260705-tonyk-robust_arm-v4-0-e0fd0fa259d3@igalia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Robust futex unlock 레이스 배경 설명",
+      "url": "https://lwn.net/Articles/1066167/",
+      "note": "article"
+    },
+    {
+      "title": "Igalia's Work Improving The Linux Kernel For Helping Steam Play Gaming On ARM64",
+      "url": "https://www.phoronix.com/news/Igalia-Futex-ARM64-Linux-Work",
+      "note": "article"
+    },
+    {
+      "title": "iommu: arm-smmu-qcom: Configure lpac device with split address space",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260705-descriptive-name-lpac-upstream-v1-1-01d50c3e0c99@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "iommu/arm-smmu: Add Adreno SMMU specific implementation (split pagetable 배경)",
+      "url": "https://lwn.net/Articles/828509/",
+      "note": "article"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-05T19:33:29.977Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,89 @@
+{
+  "id": "2026-07-06-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-07-06 APU VBIOS 폴백 추가 — 리눅스 GPU/AI",
+  "headline": "amdgpu는 APU VBIOS 폴백을, msm은 Adreno LPAC 전용 IOMMU 도메인을 RFC로 제안했습니다.",
+  "date": "2026-07-06",
+  "summary": "amdgpu가 하이브리드 APU 부팅 시 VBIOS를 못 찾는 문제에 펌웨어 파일 폴백을 추가하는 v2 패치를 냈습니다. drm/msm은 Adreno a7xx LPAC용 별도 IOMMU 도메인을 도입하는 RFC 패치를 올렸으나 메모리 안전성 이슈가 다수 지적됐습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "GPU"
+  ],
+  "highlights": [
+    {
+      "title": "amdgpu APU VBIOS 펌웨어 폴백 추가",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "amdgpu 드라이버 유지보수 담당 및 하이브리드 그래픽(APU) 부트 경로 사용자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/42e07bbb-9384-4871-a345-e0fd6c00a772@shift-computing.de/",
+      "if": "pci=realloc,assign-busses로 부팅하는 하이브리드 dGPU+APU 시스템에서 iGPU가 바인딩되지 않는다면",
+      "do": "VFCT에서 dd로 추출한 VBIOS 이미지를 amdgpu/{vendor}_{device}.bin 이름으로 /lib/firmware/amdgpu/에 배치해 임시 우회하세요.",
+      "verify": "v2 패치가 dri-devel 리스트에서 merge되는지, 유지보수자가 제안한 버스 번호 추적 방식으로 대체되는지 확인하세요."
+    },
+    {
+      "title": "drm/msm LPAC 도메인 RFC, 메모리 안전성 이슈 다수",
+      "priority": "하",
+      "impactType": "project",
+      "affectedAudience": "drm/msm(Adreno) 및 iommu/arm-smmu-qcom 유지보수 담당",
+      "verifyLink": "https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg618266.html",
+      "if": "drm/msm에서 Adreno a7xx LPAC 관련 작업을 추적 중이라면",
+      "do": "RFC 13개 시리즈와 자동 리뷰가 지적한 msm_iommu_new() 에러 경로 누수, fault 정보 오류 등 High 5건을 함께 검토하세요.",
+      "verify": "hangcheck·recovery 의존 패치가 함께 올라와 시리즈가 정식 병합 준비 상태가 되는지 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/amd/amdgpu: APU VBIOS 탐색에 펌웨어 파일 폴백 추가**\n\nACPI VFCT, VRAM BAR, ROM BAR, 플랫폼 BIOS 네 경로가 모두 실패하면 request_firmware()로 amdgpu/{vendor}_{device}.bin(예: 1002_1900.bin)을 로드하는 다섯 번째 폴백을 추가하는 v2 패치가 7월 5일 제출되었습니다.\n\n영향: pci=realloc,assign-busses로 부팅하면 VFCT의 오래된 PCIBus 값과 런타임 버스 번호가 어긋나 하이브리드 dGPU+APU 기기에서 iGPU가 완전히 사용 불가능해지는 문제를 우회하지만, 유지보수자는 폴백 대신 버스 재번호 매김 자체를 추적하는 방식을 제안하고 있어 채택 방향이 미확정입니다.\n\n> The driver then prints \"Unable to locate a BIOS ROM\" and refuses to bind, leaving the APU completely unusable under Linux.\n\n[원문 확인](https://lore.kernel.org/dri-devel/42e07bbb-9384-4871-a345-e0fd6c00a772@shift-computing.de/)\n\n**drm/msm: a7xx LPAC용 별도 IOMMU 도메인 추가 (RFC)**\n\nAdreno a7xx의 LPAC 활성화 13개 패치 시리즈 중 하나로, msm_iommu에 LPAC 전용 iommu_domain(별도 context bank)을 추가하고 메인 도메인과 매핑·TLB flush를 동기화하는 RFC 패치가 7월 5일 제출되었습니다.\n\n영향: GPU에 분리된 주소 공간을 도입하는 방향 신호지만 아직 RFC 단계이며 preemption-aware hangcheck 패치 부재로 hangcheck와 recovery가 깨진 상태이고, 자동 리뷰에서 에러 경로 메모리 누수와 fault 정보를 잘못된 SMMU에서 읽는 문제 등 High 5건이 지적되어 재작업이 필요합니다.\n\n> Error paths in msm_iommu_new() leak allocated structures and fail to detach the primary device. ... The LPAC fault handler fetches fault information from the primary SMMU instead of the LPAC SMMU.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260705192755.3CD9D1F000E9@smtp.kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "amdgpu APU VBIOS 폴백 논의 스레드",
+      "url": "https://lore.kernel.org/dri-devel/42e07bbb-9384-4871-a345-e0fd6c00a772@shift-computing.de/",
+      "note": "thread"
+    },
+    {
+      "title": "amdgpu VBIOS 펌웨어 폴백 v2 패치 (mail-archive 미러)",
+      "url": "https://www.mail-archive.com/dri-devel@lists.freedesktop.org/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/msm: lpac_domain 패치 (RFC 02/13)",
+      "url": "https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg618266.html",
+      "note": "thread"
+    },
+    {
+      "title": "drm/msm: a7xx LPAC RFC 시리즈 00/13",
+      "url": "https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg618267.html",
+      "note": "thread"
+    },
+    {
+      "title": "자동 리뷰(Sashiko AI)의 lpac_domain 지적 사항",
+      "url": "https://lore.kernel.org/dri-devel/20260705192755.3CD9D1F000E9@smtp.kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-05T19:42:03.017Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

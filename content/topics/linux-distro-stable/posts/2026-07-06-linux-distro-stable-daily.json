@@ -1,0 +1,145 @@
+{
+  "id": "2026-07-06-linux-distro-stable-daily",
+  "topic": "linux-distro-stable",
+  "title": "2026-07-06 보안 백포트 무더기 — 배포판 안정판",
+  "headline": "ksmbd·fbdev·NFS에서 원격 또는 서버발로 트리거 가능한 메모리 안전성 결함이 다수 수정되고 7.1.3 안정판이 나왔습니다.",
+  "date": "2026-07-06",
+  "summary": "ksmbd DACL 검사, fbdev 폰트 설정 오류 경로, NFSv4 flexfiles 등에서 원격 또는 악성 서버로 트리거 가능한 메모리 안전성 결함이 다수 수정되었습니다. 이와 함께 Linux 7.1.3 안정판이 배포되고 7.0.14로 7.0.x 계열이 EOL을 맞았으며, 5.10.260·5.15.211 LTS 백포트도 함께 나왔습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "보안",
+    "안정판"
+  ],
+  "highlights": [
+    {
+      "title": "ksmbd DACL 검사 heap OOB read 수정",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "ksmbd/SMB server maintainers and operators exposing ksmbd shares with ACL xattrs",
+      "verifyLink": "https://github.com/torvalds/linux/commit/1ef06004ed4bd6d3ed8c840d9d1a376b66d4935b",
+      "if": "ACL xattr를 사용하는 ksmbd 공유를 운영 중이라면",
+      "do": "해당 커밋을 백포트하거나 Linux 7.1.3 이상 안정판으로 업그레이드하십시오",
+      "verify": "smb_check_perm_dacl()에 num_subauth와 ace->size를 비교하는 검사가 추가되었는지 커밋을 확인하십시오"
+    },
+    {
+      "title": "fbcon 폰트 설정 오류 경로 OOB read 수정",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "fbdev/fbcon and VT console maintainers; distros shipping framebuffer console",
+      "verifyLink": "https://github.com/torvalds/linux/commit/8fdc8c2057eea08d40ce2c8eed41ff9e451c65c2",
+      "if": "프레임버퍼 콘솔(fbcon)을 사용 중이고 메모리 압박 상황에서 폰트 설정 ioctl 경로가 노출된다면",
+      "do": "해당 패치를 적용하거나 최신 안정판으로 업그레이드하십시오",
+      "verify": "fbcon_do_set_font()의 err_out 경로에 vc_hi_font_mask 및 화면 버퍼 롤백이 추가되었는지 확인하십시오"
+    },
+    {
+      "title": "NFSv4/flexfiles 제로 파일핸들 버전 카운트 거부",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "NFS client / pNFS flexfiles maintainers and sites mounting flexfiles pNFS",
+      "verifyLink": "https://github.com/torvalds/linux/commit/2c6bb3c40bc24f6aa8dfbe6fe98c3ad6389203f2",
+      "if": "flexfiles 레이아웃으로 pNFS를 마운트하고 있다면",
+      "do": "해당 커밋을 백포트해 악의적이거나 손상된 서버로부터의 클라이언트 크래시를 방지하십시오",
+      "verify": "ff_layout_alloc_lseg()에서 kzalloc_objs() 호출 전에 fh_count==0을 거부하는 검사가 추가되었는지 확인하십시오"
+    },
+    {
+      "title": "Linux 7.1.3 안정판 배포",
+      "priority": "중",
+      "impactType": "release",
+      "affectedAudience": "Anyone tracking/running the 7.1 stable series",
+      "verifyLink": "https://git.kernel.org/stable/h/v7.1.3",
+      "if": "7.1.x 안정판 계열을 운영 중이라면",
+      "do": "7.1.3으로 업그레이드해 tcp-ao, ksmbd, fbdev, nfsd, KVM 등 다수 메모리 안전성 수정을 반영하십시오",
+      "verify": "git.kernel.org의 v7.1.3 변경 로그를 확인하십시오(Anubis 봇 차단으로 직접 열람이 어려울 수 있으니 원문 재확인 필요)"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.1.3 안정판 (백포트 122건, 다수 메모리 안전성 수정)**\n\n122개 백포트를 롤업한 새 7.1.x 안정판입니다. tcp-ao del_async 경로의 키 use-after-free, ksmbd DACL 검사 OOB read, fbdev 계열 UAF/OOB(fbcon err_out, omapfb_mmap, fb_find_mode), nfsd/NFSv4 강화(posix_acl 누수, SECINFO_NO_NAME 정리, 제로 길이 r_addr, 제로 파일핸들 버전 카운트), KVM SVM sev_dbg_crypt() ENCRYPT 경로 페이지 오버플로우, KVM x86 hyper-v sparse-bank 인덱스 범위 검사 등이 포함된 것으로 파악됩니다.\n\n영향: 7.1 안정판 계열 사용자는 업그레이드가 권장됩니다 — 네트워크로 도달 가능한 메모리 안전성 결함과 가상화 호스트 측 버그를 이번 롤업이 닫습니다. 오늘 다룬 개별 항목 중 다수가 이번 릴리스에 포함된 것과 동일한 수정입니다.\n\n> ksmbd: fix out-of-bounds read in smb_check_perm_dacl()\n\n[원문 확인](https://git.kernel.org/stable/h/v7.1.3)\n\n**Linux 7.0.14 stable — 7.0.x 계열 EOL**\n\n7.0.x 안정판 계열의 마지막 릴리스로 EOL 지정된 것으로 보이며, 42개 백포트를 롤업한 것으로 파악됩니다. virtiofs 서브마운트 언마운트 UAF, ksmbd 비-VALID 세션 거부, vc_screen 동시 vcs_write 시 null 포인터 역참조, net_failover 슬레이브 등록 데드락, ROSE(AX.25) UAF/이중 해제/타이머 레이스 다수 수정이 포함된 것으로 보입니다(Anubis 봇 차단으로 원문 직접 확인은 어려웠고, 개별 커밋 해시도 제공되지 않아 업스트림 검증되지 않았습니다 — 확인 필요).\n\n영향: 7.0.x가 EOL이라면 이후 보안/버그 수정을 받지 못하므로, 7.0 계열을 운영 중인 다운스트림은 7.1.x로의 마이그레이션을 검토해야 합니다.\n\n[원문 확인](https://git.kernel.org/stable/h/v7.0.14)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ksmbd DACL 검사 heap OOB read 수정**\n\nsmb_check_perm_dacl()이 ACE 헤더 크기와 sid.num_subauth의 SID_MAX_SUB_AUTHORITIES 상한은 검사했지만, ace->size가 num_subauth개의 sub-authority를 실제로 담기에 충분한지는 확인하지 않아 compare_sids()가 이를 역참조할 때 문제가 발생했습니다. parse_dacl(), smb_inherit_dacl()에 이미 있던 것과 동일한 num_subauth 대 ace_size 비교 검사를 추가했습니다.\n\n영향: ACL xattr를 사용하는 공유에서 인증된 SMB 클라이언트가 조작된 ACE(size==16, num_subauth>=1)를 security.NTACL xattr에 그대로 기록할 수 있고, 이후 SMB2_CREATE 접근 검사 시 pntsd 할당 영역을 넘어 최대 SID_MAX_SUB_AUTHORITIES*4바이트까지 힙 OOB read가 발생합니다 — 원격에서 도달 가능한 정보 유출/크래시 경로입니다. 아직 별도 CVE 배정은 확인되지 않았습니다.\n\n> A crafted ACE with size == 16 and num_subauth >= 1 placed at the tail of the security descriptor therefore causes a heap out-of-bounds read\n\n[원문 확인](https://github.com/torvalds/linux/commit/1ef06004ed4bd6d3ed8c840d9d1a376b66d4935b)\n\n**fbcon 폰트 설정 오류 경로 OOB read 수정**\n\nfbcon_do_set_font()가 실패해(예: 메모리 부족으로 vc_resize() 할당 실패) err_out으로 분기하면 vc_font.charcount는 복구했지만, set_vc_hi_font()가 이미 바꿔둔 vc_hi_font_mask와 화면 버퍼는 복구하지 않았습니다. 오류 경로에 누락된 hi_font 마스크 및 화면 버퍼 롤백을 추가했습니다.\n\n영향: 동기화되지 않은 상태로 vc_hi_font_mask가 계속 설정된 채 남아 VT 레이어가 255를 초과하는 문자 인덱스를 계속 받아들이고, 이를 되돌려진 256문자 폰트 배열을 인덱싱하는 화면 버퍼에 기록하게 되어 결정적인 OOB read와 커널 메모리 노출 가능성이 생깁니다 — 메모리 압박 상황에서 로컬 사용자가 폰트 설정 ioctl로 트리거할 수 있습니다.\n\n> these inflated indices to access the reverted, 256-character font array, leading to a deterministic out-of-bounds read and potential kernel memory disclosure\n\n[원문 확인](https://github.com/torvalds/linux/commit/8fdc8c2057eea08d40ce2c8eed41ff9e451c65c2)\n\n**NFSv4/flexfiles 제로 파일핸들 버전 카운트 거부**\n\nff_layout_alloc_lseg()는 flexfiles 레이아웃 본문에서 파일핸들 버전 배열 카운트를 디코딩할 때 NULL만 거부했습니다. 카운트가 0이면 kzalloc_objs()가 ZERO_SIZE_PTR을 반환하고 이 값이 dss_info->fh_versions에 저장되지만, 이후 flexfiles 경로들은 최소 하나의 파일핸들 버전이 존재한다고 가정합니다. GETDEVICEINFO 파서의 기존 version_count 검증과 동일하게 fh_count==0을 할당 전에 거부하도록 수정했습니다.\n\n영향: 악의적이거나 손상된 NFS 서버가 잘못된 flexfiles 레이아웃을 반환해 클라이언트를 크래시시킬 수 있습니다 — QEMU/KASAN 실행에서 nfs4_xdr_enc_layoutreturn()을 거쳐 ff_layout_encode_ff_layoutupdate()에서 null 포인터 역참조로 커널 패닉이 발생했습니다. 서버가 제어하는 클라이언트 측 DoS 경로이며, 클라이언트가 자신의 NFS 서버를 신뢰한다는 위협 모델 하에서만 유효합니다.\n\n> KASAN: null-ptr-deref in range [0x0000000000000010-0x0000000000000017] ... ff_layout_encode_ff_layoutupdate.isra.0+0x15f/0x750\n\n[원문 확인](https://github.com/torvalds/linux/commit/2c6bb3c40bc24f6aa8dfbe6fe98c3ad6389203f2)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**nfsd 지연 writeback 오류 시 write verifier 재설정**\n\nnfsd_vfs_write()와 nfsd_commit()은 filemap_check_wb_err()로 지연된 writeback 오류를 감지하지만, 두 함수의 다른 모든 영구 저장소 실패 경로와 달리 실패 시 서버 write verifier(nn->writeverf)를 회전시키지 않았습니다. filemap_check_wb_err()의 두 오류 지점 모두에 commit_reset_write_verifier()를 추가했습니다.\n\n영향: 메모리 안전성 문제는 아니지만 데이터 무결성 문제입니다 — verifier 회전이 없으면 UNSTABLE 데이터를 들고 있는 클라이언트가 COMMIT을 호출했을 때 변경되지 않은 verifier를 돌려받아 데이터가 영구 저장되었다고 오판하게 되며, writeback에 실패해 조용히 유실된 쓰기를 COMMIT이 보장해야 하는 UNSTABLE+COMMIT 계약(RFC 1813 §3.3.7, RFC 8881 §18.32) 위반으로 이어집니다.\n\n> clients holding UNSTABLE write data under the current verifier will COMMIT, receive the unchanged verifier back, and conclude their data is durable — silently dropping data that failed writeback\n\n[원문 확인](https://github.com/torvalds/linux/commit/2090b05803faab8a9fa62fbff871007862cac1b7)\n\n**Linux 5.10.260 longterm (LTS 보안 백포트)**\n\n5.10 LTS 계열의 포인트 릴리스로, 96개 백포트를 롤업한 것으로 파악됩니다. virtiofs 서브마운트 언마운트 UAF, pNFS pnfs_update_layout() UAF, tipc_aead_decrypt_done 슬랩 UAF, exfat_find_dir_entry() UAF, fpga region child_regions_with_firmware() UAF, ocfs2 과대 크기 그룹 비트맵 거부, KVM SVM sev_dbg_crypt() 페이지 오버플로우, bpf sysctl 쓰기 버퍼 kvfree 수정, f2fs ACL 엔트리 크기 검증 등이 포함된 것으로 보입니다(Anubis 봇 차단으로 원문 직접 확인은 어려웠고, 개별 커밋 해시도 제공되지 않아 업스트림 검증되지 않았습니다 — 확인 필요).\n\n영향: 5.10은 임베디드/엔터프라이즈에서 널리 쓰이는 LTS 베이스로, 이번 롤업이 확인된다면 다수의 UAF 및 검증 수정을 포함하므로 5.10 기반 커널 유지보수자에게 중요합니다.\n\n[원문 확인](https://git.kernel.org/stable/h/v5.10.260)\n\n**Linux 5.15.211 longterm (LTS 보안 백포트)**\n\n5.15 LTS 계열의 포인트 릴리스로, 95개 백포트를 롤업한 것으로 파악됩니다. 5.10.260과 상당 부분 겹치는 메모리 안전성 수정(virtiofs UAF, pNFS pnfs_update_layout() UAF, tipc_aead_decrypt_done UAF, exfat UAF, fpga UAF, ocfs2 비트맵 거부, KVM SVM sev_dbg_crypt() 페이지 오버플로우)에 더해 ksmbd 비-VALID 세션 거부, fuse 폴리오 교체 전 요청 재잠금, NFSv4/pNFS 제로 길이 r_addr 거부, hdlc_ppp 프로토콜별 타이머 동기화 후 해제 등이 포함된 것으로 보입니다(Anubis 봇 차단으로 원문 직접 확인은 어려웠고, 개별 커밋 해시도 제공되지 않아 업스트림 검증되지 않았습니다 — 확인 필요).\n\n영향: 5.15 역시 널리 쓰이는 LTS 베이스로, 이번 릴리스가 5.10과 같은 계열의 UAF/검증 수정을 5.15 기반 커널에 반영하므로 LTS 추적자는 반영 여부를 확인해야 합니다.\n\n[원문 확인](https://git.kernel.org/stable/h/v5.15.211)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ksmbd: fix out-of-bounds read in smb_check_perm_dacl()",
+      "url": "https://github.com/torvalds/linux/commit/1ef06004ed4bd6d3ed8c840d9d1a376b66d4935b",
+      "note": "commit"
+    },
+    {
+      "title": "ksmbd OOB read stable 제출 스레드",
+      "url": "https://lore.kernel.org/stable/20260705190630.1988235-1-sashal@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "fbdev: fbcon: fix out-of-bounds read in err_out of fbcon_do_set_font()",
+      "url": "https://github.com/torvalds/linux/commit/8fdc8c2057eea08d40ce2c8eed41ff9e451c65c2",
+      "note": "commit"
+    },
+    {
+      "title": "fbcon OOB read stable 제출 스레드",
+      "url": "https://lore.kernel.org/stable/20260705142459.1798975-1-sashal@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "NFSv4/flexfiles: reject zero filehandle version count",
+      "url": "https://github.com/torvalds/linux/commit/2c6bb3c40bc24f6aa8dfbe6fe98c3ad6389203f2",
+      "note": "commit"
+    },
+    {
+      "title": "NFS flexfiles stable 제출 스레드 (KASAN 리포트)",
+      "url": "https://lore.kernel.org/stable/20260705142039.1791851-1-sashal@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "nfsd: reset write verifier on deferred writeback errors",
+      "url": "https://github.com/torvalds/linux/commit/2090b05803faab8a9fa62fbff871007862cac1b7",
+      "note": "commit"
+    },
+    {
+      "title": "nfsd write verifier stable 제출 스레드",
+      "url": "https://lore.kernel.org/stable/20260705190625.1988013-2-sashal@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "Linux 7.1.3 stable 변경 로그",
+      "url": "https://git.kernel.org/stable/h/v7.1.3",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 7.0.14 stable 변경 로그 (EOL)",
+      "url": "https://git.kernel.org/stable/h/v7.0.14",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 5.10.260 longterm 변경 로그",
+      "url": "https://git.kernel.org/stable/h/v5.10.260",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 5.15.211 longterm 변경 로그",
+      "url": "https://git.kernel.org/stable/h/v5.15.211",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-05T19:16:18.883Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
