@@ -1,0 +1,99 @@
+{
+  "id": "2026-07-07-linux-daily-briefing",
+  "topic": "linux",
+  "title": "2026-07-07 7.2-rc2 헤더 대분리 — 리눅스 개발",
+  "headline": "리눅스 7.2 두 번째 후보가 나왔고 드라이버 헤더 구조가 크게 바뀌어 개발자 확인이 필요합니다.",
+  "date": "2026-07-07",
+  "summary": "리눅스 7.2-rc2가 공개되면서 디바이스 ID 헤더가 1,500개 넘는 파일 단위로 쪼개져 드라이버 빌드에 영향을 줄 수 있습니다. 메모리 관리 쪽에서는 PMD 단위로 거대 페이지 스왑인을 처리하는 패치 논의가 준비 단계를 거쳐 이어지고 있습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "메모리관리"
+  ],
+  "highlights": [
+    {
+      "title": "Linux 7.2-rc2, 디바이스 헤더 대분리",
+      "priority": "상",
+      "impactType": "release",
+      "affectedAudience": "메인라인 테스터, out-of-tree 드라이버 유지보수자, DRM 스택 개발자",
+      "verifyLink": "https://www.linuxcompatible.org/story/linux-kernel-72rc2-released-huge-device-id-header-split-and-heavy-drm-fixes",
+      "if": "메인라인 테스터나 out-of-tree 드라이버 유지보수자라면 확인하세요",
+      "do": "mod_devicetable.h 분리로 include 경로가 바뀌니 리베이스 후 빌드를 확인하세요",
+      "verify": "linuxcompatible.org 기사에서 diffstat과 1,500개 파일 변경 범위를 확인하세요"
+    },
+    {
+      "title": "PMD 스왑 폴트, 2MB 단위 일괄 처리",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "THP/스왑 성능에 관심 있는 mm 서브시스템 개발자, zswap/zram 대용량 워크로드 운영자",
+      "verifyLink": "https://lore.kernel.org/lkml/CAMgjq7CQ+1gsptFYH+Y0GEqyYj+5QpAKjtZLekRS4h+k4f8QvQ@mail.gmail.com/",
+      "if": "THP나 zswap/zram 스왑 경로 성능을 다루는 mm 개발자라면 확인하세요",
+      "do": "do_huge_pmd_swap_page() 도입 논의를 지켜보고 머지 여부는 원문에서 확인하세요",
+      "verify": "lore 스레드 원문에서 패치 상태와 목표 트리를 직접 확인하세요"
+    },
+    {
+      "title": "PMD 스왑 준비 패치, mm.git 반영",
+      "priority": "하",
+      "impactType": "performance",
+      "affectedAudience": "메모리 관리 서브시스템 개발자, 아키텍처별 pgtable 유지보수자",
+      "verifyLink": "https://lore.kernel.org/lkml/20260706105630.368ab0d13c1b02d3e1df4af5@linux-foundation.org/",
+      "if": "아키텍처별 pgtable 코드를 유지보수한다면 확인하세요",
+      "do": "CONFIG_ARCH_HAS_PMD_SOFTLEAVES로 바뀐 심볼명을 참조 코드에서 점검하세요",
+      "verify": "lore 스레드에서 Andrew Morton의 mm.git 반영 회신을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.2-rc2 공개**\n\nrc1 일주일 만인 2026-07-05에 두 번째 릴리스 후보가 나왔으며, 가장 큰 변경은 mod_devicetable.h를 서브시스템별 device-id 헤더로 쪼갠 것으로 1,500개 넘는 파일에 영향을 준다. Torvalds는 diffstat이 정상이며 작년 7.1의 rc2보다도 약간 작다고 평했다.\n\n영향: device_id 테이블을 참조하는 out-of-tree 및 다수 in-tree 드라이버의 include 경로가 바뀌므로, 메인라인 테스터와 드라이버 유지보수자는 리베이스 시 주의해야 한다.\n\n> The monolithic mod_devicetable.h header has been torn apart and replaced with smaller, per-subsystem device-id headers. The patch set touched over 1,500 files.\n\n[원문 확인](https://www.linuxcompatible.org/story/linux-kernel-72rc2-released-huge-device-id-header-split-and-heavy-drm-fixes)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 새로운 회귀·보안 항목은 없습니다. 어제 다룬 7.1.3의 보안 수정 사항은 진척이 없어 기타 항목으로 내렸습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**PMD 스왑 엔트리 폴트를 swap-in에서 한 번에 처리**\n\nvmf->orig_pmd가 스왑 엔트리를 인코딩하면 새 핸들러 do_huge_pmd_swap_page()가 2MB 매핑 전체를 한 번의 폴트로 처리하는 것으로 보이며, PMD-order 자원이 부족하면 512개의 PTE 스왑 엔트리로 분할 폴백한다.\n\n영향: huge page 스왑인 시 512번의 개별 폴트 대신 한 번에 복원하므로 zswap/zram 대용량 워크로드의 스왑인 성능에 영향을 줄 수 있다. 다만 머지 상태와 목표 트리는 확인되지 않아 원문 확인을 권장한다.\n\n> Add do_huge_pmd_swap_page() and dispatch to it from __handle_mm_fault() when vmf->orig_pmd encodes a swap entry. The handler resolves the entire 2 MB mapping in one shot, mirroring do_swap_page()\n\n[원문 확인](https://lore.kernel.org/lkml/CAMgjq7CQ+1gsptFYH+Y0GEqyYj+5QpAKjtZLekRS4h+k4f8QvQ@mail.gmail.com/)\n\n**PMD 레벨 스왑 준비 패치, mm.git 반영**\n\nPMD 페이지 테이블 스왑인 작업의 준비 단계로 Kconfig 심볼을 CONFIG_ARCH_HAS_PMD_SOFTLEAVES로 개명하고 arm64/riscv/s390/x86/powerpc/loongarch 등의 pgtable·swapops 코드 23개 파일을 정리한 것으로 보이며, Andrew Morton이 mm.git에 반영했다고 회신했다.\n\n영향: 위 PMD 스왑 폴트 처리를 떠받치는 기반 작업이라 mm 코어와 아키텍처별 pgtable 유지보수자가 후속 시리즈를 파악하는 데 참고할 만하다.\n\n> This is the preparatory part of the PMD page table swapin work.\n\n[원문 확인](https://lore.kernel.org/lkml/20260706105630.368ab0d13c1b02d3e1df4af5@linux-foundation.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "7.1.3 스테이블(ksmbd OOB 힙 읽기, KVM SEV 페이지 오버플로, MIPS 재부팅 행 등 수정)은 어제 이미 다룬 내용이며 새로운 진척은 확인되지 않았습니다. [원문 확인](https://www.linuxcompatible.org/story/linux-kernel-713-released-security-patches-nfs-fixes-and-mips-reboot-resolution/)\n\n7.0.14로 7.0 브랜치가 2026-06-27자 EOL에 도달했다는 소식도 이전에 전해드린 내용입니다. 아직 7.0을 운영 중이라면 7.1 또는 LTS로 이전하세요. [원문 확인](https://www.linuxcompatible.org/story/linux-kernel-712-61837-and-7014-released-70-branch-hits-eol/)\n\n이번 수집에서는 linux-next 일일 통합 스냅샷과 Cirrus cs35l33/cs35l34 오디오 코덱 드라이버의 국부 수정은 시스템 전반 영향이 작아 제외했습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Linux Kernel 7.1.3 Released: Security Patches, NFS Fixes, and MIPS Reboot Resolution",
+      "url": "https://www.linuxcompatible.org/story/linux-kernel-713-released-security-patches-nfs-fixes-and-mips-reboot-resolution/",
+      "note": "article"
+    },
+    {
+      "title": "Linux Kernel 7.0.14 Released — 7.0 Branch Hits EOL",
+      "url": "https://www.linuxcompatible.org/story/linux-kernel-712-61837-and-7014-released-70-branch-hits-eol/",
+      "note": "article"
+    },
+    {
+      "title": "Linux Kernel 7.2-rc2 Released: Huge Device-ID Header Split and Heavy DRM Fixes",
+      "url": "https://www.linuxcompatible.org/story/linux-kernel-72rc2-released-huge-device-id-header-split-and-heavy-drm-fixes",
+      "note": "article"
+    },
+    {
+      "title": "mm: add do_huge_pmd_swap_page() for PMD-level swap-in",
+      "url": "https://lore.kernel.org/lkml/CAMgjq7CQ+1gsptFYH+Y0GEqyYj+5QpAKjtZLekRS4h+k4f8QvQ@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "mm: PMD swapin preparatory patch — mm.git merge reply",
+      "url": "https://lore.kernel.org/lkml/20260706105630.368ab0d13c1b02d3e1df4af5@linux-foundation.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-06T18:06:12.031Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-newsletter-from-dossier-ko.md"
+  }
+}

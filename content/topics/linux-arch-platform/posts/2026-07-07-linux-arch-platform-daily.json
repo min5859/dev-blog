@@ -1,0 +1,106 @@
+{
+  "id": "2026-07-07-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-07-07 SMMUv3 검증 강화 — 아키텍처/플랫폼",
+  "headline": "RISC-V KVM ONE_REG 회귀 수정, ARM SMMUv3 invalidation 검증 강화, arm64 pKVM 준비 패치와 RV32 BPF JIT 개선이 함께 올라왔습니다.",
+  "date": "2026-07-07",
+  "summary": "RISC-V KVM 의 ONE_REG config 레지스터 노출 회귀를 수정하고, ARM SMMUv3 invalidation 명령 검증을 강화했습니다. 그 외 arm64 pKVM 프라이빗 레인지 주소 변환 준비 패치와 RV32 BPF JIT 부호연산·32비트 원자연산 지원이 함께 올라왔습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "RISC-V",
+    "ARM64",
+    "KVM"
+  ],
+  "highlights": [
+    {
+      "title": "ARM SMMUv3 invalidation 명령 검증 강화",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "ARM SMMUv3 / iommufd nested translation 유지보수·보안 담당",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/9b80861d509e9544715e2f011324cd83e719f915.1783363477.git.nicolinc@nvidia.com/",
+      "if": "iommufd 기반 nested ARM SMMUv3 가상화 환경을 운영·유지보수한다면",
+      "do": "arm_vsmmu_cache_invalidate() 의 opcode 별 필드 제한과 -EIO 거부 로직을 반영해 게스트발 malformed 명령 노출면을 점검하세요",
+      "verify": "CVE 할당 여부와 안정 커널 백포트 필요성을 원문 스레드에서 확인하세요"
+    },
+    {
+      "title": "RISC-V KVM ONE_REG config 레지스터 회귀 수정",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "RISC-V KVM 유지보수 담당 및 ONE_REG 유저스페이스(VMM)·selftest 개발자",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260706181522.2003922-1-anup.patel@oss.qualcomm.com/",
+      "if": "RISC-V KVM ONE_REG 인터페이스로 Zicbom/Zicboz/Zicbop 블록 크기 config 레지스터를 다루는 VMM/selftest 를 유지보수한다면",
+      "do": "kvm_riscv_vcpu_get/set_reg_config() 와 copy_config_reg_indices() 변경사항을 반영해, 호스트에 해당 확장이 없어도 config 레지스터가 항상 노출된다는 가정으로 코드를 갱신하세요",
+      "verify": "확장 미탑재 환경에서 get-reg-list selftest 를 재실행해 실패가 해소됐는지 확인하세요"
+    },
+    {
+      "title": "RV32 BPF JIT 부호연산·32비트 원자연산 지원",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "RISC-V(RV32) BPF JIT 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260706172846.3876436-1-visitorckw@gmail.com/",
+      "if": "RISC-V RV32 플랫폼에서 BPF JIT 를 사용·유지보수한다면",
+      "do": "BPF_SDIV/BPF_SMOD/BPF_MOVSX 및 A 확장 기반 32비트 원자연산(and/or/xor/xchg) 지원 패치를 반영하세요",
+      "verify": "test_bpf.ko 를 실행해 실패 0, JIT 성공 케이스 902건 도달을 재현하세요"
+    },
+    {
+      "title": "arm64 pKVM 프라이빗 레인지 PA 헬퍼 추가",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "KVM arm64 / pKVM 하이퍼바이저 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260706175415.2604046-2-vdonnefort@google.com/",
+      "if": "arm64 pKVM 하이퍼바이저에서 프라이빗 레인지 주소 변환 경로를 다루고 있다면",
+      "do": "__pkvm_private_range_pa() 도입과 이어지는 pKVM heap allocator 시리즈 진행 상황을 추적하세요",
+      "verify": "패치 스레드에서 후속 heap allocator 패치의 병합 여부를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ARM SMMUv3 invalidation 명령 검증 강화**\n\niommu/arm-smmu-v3-iommufd 의 arm_vsmmu_cache_invalidate() 가 게스트 무효화 명령의 VMID/SID 만 강제하고 나머지 비트를 신뢰 명령큐에 그대로 전달하던 것을, opcode 별 지원 필드로 제한하고 그 외 비트가 설정되면 큐 도달 전 -EIO 로 거부하도록 바꿉니다. 일부 필드/opcode 는 FEAT_RANGE_INV·FEAT_ATS·asid_bits·ssid_bits 등 하드웨어 기능에 따라 조건부 허용하고, Reserved 조합도 함께 거부합니다.\n\n영향: 게스트가 reserved/undefined 비트를 세팅해 malformed 명령을 신뢰 큐로 흘려보낼 수 있던 노출면을 차단하는 보안 하드닝으로, iommufd 기반 nested ARM SMMUv3 가상화를 다루는 유지보수·보안 담당에게 직접적입니다.\n\n> That lets a guest set bits the host never meant to forward: a reserved or undefined bit makes a command malformed\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/9b80861d509e9544715e2f011324cd83e719f915.1783363477.git.nicolinc@nvidia.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**RISC-V KVM ONE_REG config 레지스터 회귀 수정**\n\nkvm_riscv_vcpu_get/set_reg_config() 와 copy_config_reg_indices() 에서 ISA 확장 존재 검사를 제거해, Zicbom/Zicboz/Zicbop 블록 크기 config 레지스터를 호스트에 해당 확장이 없어도 ONE_REG 인터페이스에 항상 노출하도록 바꿉니다.\n\n영향: ONE_REG 의 config/core 레지스터는 유저스페이스가 항상 존재하는 base 레지스터로 가정하는데, 조건부 노출이 이 계약을 깨 KVM get-reg-list selftest 가 실패했습니다. RISC-V KVM 유지보수·마이그레이션 담당과 ONE_REG 유저스페이스(VMM)·selftest 개발자에게는 회귀 수정입니다.\n\n> KVM get-reg-list selftest fails when any of the Zicbo[m|z|p] ISA extension is not present on host.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260706181522.2003922-1-anup.patel@oss.qualcomm.com/)\n\n**arm64 pKVM 프라이빗 레인지 PA 헬퍼 추가**\n\npKVM 프라이빗 레인지는 identity-mapped 가 아니어서 표준 __hyp_pa() 로 물리주소를 구할 수 없으므로, 하이퍼바이저 페이지테이블을 워크해 해당 레인지의 PA 를 해석하는 __pkvm_private_range_pa() 를 새로 도입합니다.\n\n영향: 곧 추가될 pKVM heap allocator 를 위한 준비용 인프라로, KVM arm64/pKVM 하이퍼바이저 유지보수 담당에게 새 헬퍼의 의미와 사용처를 알려줍니다.\n\n> Mappings in the pKVM private range are not identity mapped, making the standard __hyp_pa() unsuitable for translating these addresses.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260706175415.2604046-2-vdonnefort@google.com/)\n\n**RV32 BPF JIT 부호연산·32비트 원자연산 지원**\n\nRV32 BPF JIT 에 누락됐던 부호 있는 연산(BPF_SDIV, BPF_SMOD, BPF_MOVSX)을 offset 필드 검사로 구현하고, 필수인 A 확장을 활용해 32비트 BPF 원자연산(and/or/xor/xchg)을 amo*.w 명령에 직접 매핑합니다. BPF_CMPXCHG 는 여전히 인터프리터로 폴백합니다.\n\n영향: RV32 BPF JIT 의 정확성·기능 커버리지 개선으로, test_bpf.ko 실패 0, JIT 성공 케이스가 843건에서 902건으로 늘어 RISC-V(RV32) BPF JIT 유지보수 담당에게 의미가 있습니다.\n\n> we leverage the mandatory A extension to natively support 32-bit BPF atomics (and, or, xor, xchg) by mapping them directly to amo*.w instructions.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260706172846.3876436-1-visitorckw@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "RISC-V: KVM: Zicbo[m|z|p] block sizes should be always present in ONE_REG",
+      "url": "https://lore.kernel.org/linux-riscv/20260706181522.2003922-1-anup.patel@oss.qualcomm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM: arm64: Add __pkvm_private_range_pa",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260706175415.2604046-2-vdonnefort@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "iommu/arm-smmu-v3-iommufd: Reject unsupported bits in invalidation commands",
+      "url": "https://lore.kernel.org/linux-arm-kernel/9b80861d509e9544715e2f011324cd83e719f915.1783363477.git.nicolinc@nvidia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv, bpf: Add support for signed operations and 32-bit atomics",
+      "url": "https://lore.kernel.org/linux-riscv/20260706172846.3876436-1-visitorckw@gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-06T19:36:15.739Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
