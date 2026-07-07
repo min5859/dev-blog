@@ -1,0 +1,119 @@
+{
+  "id": "2026-07-08-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-07-08 페이지 테이블 UAF 수정 — 아키텍처/플랫폼",
+  "headline": "커널 페이지 테이블 UAF를 RCU로 막고, syscall entry 재작업·arm64 vPMU 하드닝도 진행 중입니다.",
+  "date": "2026-07-08",
+  "summary": "syzbot이 발견한 커널 페이지 테이블 use-after-free를 RCU 지연 해제로 막는 패치가 올라왔고, syscall entry 재작업과 arm64 vPMU 하드닝, stmmac DTS 검증도 함께 논의되고 있습니다. 대부분 아직 리뷰 중인 패치라 최종 형태는 스레드에서 확인이 필요합니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "보안"
+  ],
+  "highlights": [
+    {
+      "title": "커널 페이지 테이블 UAF, RCU 지연 해제로 봉합",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "커널 페이지 테이블 해제 경로를 관리하는 mm / pgtable 메인테이너와 아키텍처(x86, arm64, riscv, powerpc) 메인테이너",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/CA+XhMqzvFtLq1OT-qh207aJhSf+okdE8o8Joe8e_KBvdCjcQfQ@mail.gmail.com/",
+      "if": "x86, riscv, powerpc 아키텍처에서 vmalloc과 ptdump가 동시에 커널 페이지 테이블에 접근하는 코드를 다룬다면",
+      "do": "pagetable_free_kernel()에 RCU grace period를 적용해 해제를 지연시키는 이 패치를 적용하세요.",
+      "verify": "5ba2f0a15564 커밋과 Lorenzo Stoakes의 재작성 스레드를 확인해 powerpc fragment 할당자 경로까지 커버되는지 점검하세요."
+    },
+    {
+      "title": "syscall entry 재작업, -1L 스킵 시맨틱 정리",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "generic entry / seccomp 메인테이너와 syscall entry를 구현하는 모든 아키텍처 메인테이너(특히 powerpc)",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260707181957.433213175@kernel.org/",
+      "if": "seccomp/ptrace의 syscall 스킵 처리나 kstack 오프셋 랜덤화 로직을 다룬다면",
+      "do": "syscall 번호를 포인터로 넘기고 스킵 여부를 별도 불리언으로 반환하는 새 시그니처로 전환할 준비를 하세요.",
+      "verify": "powerpc의 add_random_kstack_offset() 호출 순서가 enter_from_user_mode() 이후로 옮겨졌는지 스레드에서 확인하세요."
+    },
+    {
+      "title": "KVM arm64, pPMU 미커버 시 vPMU 차단",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "KVM/arm64 메인테이너와 이종/IMPDEF-PMU arm64 호스트에서 vPMU 게스트를 운용하는 사용자",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/ak1DVUs0bgkpZh0N@kernel.org/",
+      "if": "이종 PMU 토폴로지를 가진 arm64 호스트에서 vPMU 게스트를 운용한다면",
+      "do": "등록된 pPMU가 모든 가능한 CPU를 커버하지 않으면 vPMU를 비활성화하는 이 패치를 검토하세요.",
+      "verify": "ACPI 환경에서 supported_cpus가 나중에 늘어나는 케이스까지 이 검사가 정확한지 스레드 논의를 확인하세요."
+    },
+    {
+      "title": "stmmac, DTS 오설정 추가 검증",
+      "priority": "하",
+      "impactType": "runtime",
+      "affectedAudience": "stmmac / stmicro 이더넷 드라이버 메인테이너와 XGMAC 하드웨어용 DTS를 작성하는 SoC/보드 통합 담당자",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260707174431.1264520-1-j.raczynski@samsung.com/",
+      "if": "XGMAC 기반 stmmac 드라이버를 사용하는 보드의 DTS를 작성하거나 검토한다면",
+      "do": "큐 개수 0 입력과 AXI 설정값에 대한 유효성 검사 패치를 적용해 커널 패닉 경로를 막으세요.",
+      "verify": "메인테이너가 이 시리즈를 병합할 가치로 판단하는지 스레드에서 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**mm: pgtable: 커널 페이지 테이블을 RCU로 해제해 ptdump UAF 수정**\n\nptdump_walk_pgd()가 커널 주소 공간을 순회하는 동안 vmalloc이 PTE 페이지를 해제할 수 있어, pagetable_free_kernel()에 RCU grace period를 적용해 해제를 지연시키는 패치입니다.\n\n영향: x86, riscv, powerpc에서 syzbot이 발견한 use-after-free를 막는 조치로, ptdump처럼 소유하지 않은 범위를 순회하는 유일한 워커에 대한 대응입니다.\n\n> So ptdump can dereference a just-freed PTE page, which is the use after free syzbot hit in ptdump_pte_entry().\n\n[원문 확인](https://lore.kernel.org/linux-riscv/CA+XhMqzvFtLq1OT-qh207aJhSf+okdE8o8Joe8e_KBvdCjcQfQ@mail.gmail.com/)\n\n**entry: syscall 진입 처리 통합 및 재작업**\n\nsyscall_enter_from_user_mode()가 -1L로 syscall 스킵을 표시하던 방식을, syscall 번호를 포인터로 넘기고 별도 불리언 반환값으로 바꾸는 treewide 재작업이며, add_random_kstack_offset() 호출 순서 문제도 함께 정리합니다.\n\n영향: seccomp/ptrace의 스킵 시맨틱과 커널 스택 오프셋 랜덤화(하드닝 기능)에 영향을 미치며, powerpc는 현재 랜덤화 호출 순서가 잘못되어 있습니다.\n\n> ptrace and seccomp explicitly set the syscall number to -1L to indicate that the syscall invocation needs to be skipped... This can obviously not be differentiated from a syscall invocation where user\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260707181957.433213175@kernel.org/)\n\n**KVM: arm64: pPMU가 전체 CPU를 커버하지 못하면 vPMU 비활성화**\n\n기존 ec3eb9ed6081 커밋에 이어, 등록된 물리 PMU가 가능한 모든 CPU를 커버하지 못하면 vPMU를 허용하지 않도록 하는 후속 패치입니다.\n\n영향: 이종 PMU 토폴로지를 가진 arm64 호스트에서 게스트에 노출되는 vPMU UAPI를 하드닝하지만, ACPI에서 supported_cpus가 나중에 늘어나는 케이스에 대해 지나치게 보수적일 수 있다는 리뷰 우려가 있습니다.\n\n> Reject vPMU unless the registered pPMUs cover every possible CPU. This avoids carrying support for partial pPMU coverage into the fixed-counters-only UAPI introduced later\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/ak1DVUs0bgkpZh0N@kernel.org/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**net/stmmac: 잘못된 DTS 설정 추가 검증**\n\n기존 8a7bca6de6de 커밋에 이어, DTS의 큐 개수가 0인 경우와 AXI 설정값에 대한 검증을 추가하는 2-패치 시리즈입니다.\n\n영향: XGMAC 하드웨어에서 잘못된 device-tree 값으로 인한 커널 패닉을 막는 방어적 하드닝이며, 저자 스스로도 실수로 발생하기는 어려운 케이스라고 언급합니다.\n\n> there should also be protection against zero input and some AXI related config, as these are possible kernel panics too.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260707174431.1264520-1-j.raczynski@samsung.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ptdump UAF 스레드",
+      "url": "https://lore.kernel.org/linux-riscv/CA+XhMqzvFtLq1OT-qh207aJhSf+okdE8o8Joe8e_KBvdCjcQfQ@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "5ba2f0a15564 커밋",
+      "url": "https://github.com/torvalds/linux/commit/5ba2f0a15564",
+      "note": "commit"
+    },
+    {
+      "title": "syscall entry 재작업 스레드",
+      "url": "https://lore.kernel.org/linux-riscv/20260707181957.433213175@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM arm64 vPMU 스레드",
+      "url": "https://lore.kernel.org/linux-arm-kernel/ak1DVUs0bgkpZh0N@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "ec3eb9ed6081 커밋",
+      "url": "https://github.com/torvalds/linux/commit/ec3eb9ed6081",
+      "note": "commit"
+    },
+    {
+      "title": "stmmac DTS 검증 스레드",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260707174431.1264520-1-j.raczynski@samsung.com/",
+      "note": "thread"
+    },
+    {
+      "title": "8a7bca6de6de 커밋",
+      "url": "https://github.com/torvalds/linux/commit/8a7bca6de6de",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-07T19:13:48.503Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

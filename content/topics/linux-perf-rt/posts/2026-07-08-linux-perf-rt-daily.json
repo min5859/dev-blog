@@ -1,0 +1,120 @@
+{
+  "id": "2026-07-08-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-07-08 mlock 마이그레이션 경합 — 성능/RT",
+  "headline": "mm compaction의 VM_LOCKED 마이그레이션 경합과 sockmap FIONREAD 수정이 핵심입니다.",
+  "date": "2026-07-08",
+  "summary": "compaction이 VM_LOCKED VMA에 매핑된 폴리오를 마이그레이션해 PREEMPT_RT에서 지연 스파이크를 일으키는 경합이 보고되었고, sockmap은 verdict 프로그램 없이도 FIONREAD가 수신 큐를 반영하도록 수정되었습니다. printk_delay 비동기화 논의와 tracefs 트레이스포인트 BTF id 노출 제안도 함께 진행 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "RT",
+    "BPF"
+  ],
+  "highlights": [
+    {
+      "title": "mm/migrate: compaction이 VM_LOCKED 폴리오를 마이그레이션하는 경합 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "mlock/mlockall과 메모리 compaction을 함께 쓰는 PREEMPT_RT 사용자, mm compaction 및 RT 메인테이너",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260707125925.3725177-2-chenwandun1@gmail.com/",
+      "if": "PREEMPT_RT 커널에서 compact_unevictable_allowed=0으로 설정하고 mlock/mlockall로 페이지를 고정해 사용 중이라면",
+      "do": "이 패치가 반영된 커널로 갱신하거나 백포트 진행 상황을 추적하세요",
+      "verify": "lore 스레드에서 mm 트리 반영 여부와 stable 백포트 상태를 확인하세요"
+    },
+    {
+      "title": "bpf sockmap: verdict 프로그램 없이도 FIONREAD가 실제 수신 큐를 반영",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "sockmap/BPF 소켓 데이터플레인에서 FIONREAD/SIOCINQ를 조회하는 사용자, bpf-net 메인테이너",
+      "verifyLink": "https://lore.kernel.org/bpf/20260707-fionread-no-verdict-v1-1-ce94a72357ec@coralogix.com/",
+      "if": "sockmap을 쓰면서 verdict 프로그램 없이 FIONREAD/SIOCINQ로 읽을 바이트 수를 폴링하고 있다면",
+      "do": "이 v1 패치의 병합 여부를 확인하고 적용하세요",
+      "verify": "929e30f93125 이후 stable 백포트 여부와 이 시리즈의 병합 상태를 lore에서 확인하세요"
+    },
+    {
+      "title": "printk: nbcon 도입 이후 printk_delay가 콘솔 출력 타이밍을 못 맞추는 문제 논의",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "printk_delay/boot_delay로 부팅·서스펜드/리줌을 디버깅하는 PREEMPT_RT/임베디드 개발자, printk/nbcon 메인테이너",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/ak0VguIf-PxmbUOS@pathway.suse.cz/",
+      "if": "printk_delay/boot_delay를 부팅이나 서스펜드/리줌 디버깅에 의존하고 있다면",
+      "do": "지연 로직을 출력 코드로 옮기자는 이번 논의를 지켜보고 필요하면 의견을 내세요",
+      "verify": "lore 스레드에서 합의 여부와 최종 구현 방향을 확인하세요"
+    },
+    {
+      "title": "tracing: tracefs에 트레이스포인트 BTF id 노출 예정",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "libbpf 등 raw_tp/tp_btf 및 클래식 트레이스포인트 프로그램을 다루는 BPF/트레이싱 툴 개발자, 트레이싱 서브시스템",
+      "verifyLink": "https://lore.kernel.org/bpf/20260707120046.31573548@gandalf.local.home/",
+      "if": "트레이스포인트 attach/decode에 BTF 네이밍 추측 로직을 쓰고 있다면",
+      "do": "새 tracefs 인터페이스로 전환할 준비를 하고 커널 이미지 크기 증가(약 100K)를 검토하세요",
+      "verify": "lore 스레드에서 최종 tracefs 경로와 머지된 트리를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**mm/migrate: do not migrate folios mapped into VM_LOCKED VMAs under compaction**\n\nmlock_folio()가 PG_mlocked는 즉시, PG_unevictable은 지연 배치 처리(mlock_folio_batch())로 나중에 설정하는 사이 생기는 경합 창 때문에 compaction이 곧 unevictable이 될 폴리오를 마이그레이션할 수 있어, 이번 패치가 VM_LOCKED VMA에 매핑된 폴리오의 마이그레이션을 금지하고 mlock된 페이지를 건너뛰는 조기 반환 경로를 추가합니다.\n\n영향: PREEMPT_RT 환경에서 mlock/mlockall로 고정한 페이지가 compaction에 의해 마이그레이션되며 스파이크 지연을 유발하던 문제로, KUKA 산업/로보틱스 워크로드에서 보고되었고 mm 메인테이너 Vlastimil Babka가 수정을 제안했습니다(리뷰어 수용 여부는 확인 필요).\n\n> causing pages that are about to become unevictable to be migrated, which violates the intent of compact_unevictable_allowed, and causes spike latency in RT kernels\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260707125925.3725177-2-chenwandun1@gmail.com/)\n\n**printk: nbcon: move printk_delay to console emiting code**\n\nnbcon과 PREEMPT_RT 레거시 프린터 스레드가 printk 레코드를 호출자와 비동기로 출력하게 되면서, 호출 경로에 있던 printk_delay/boot_delay가 더 이상 실제 콘솔 출력 타이밍을 맞추지 못한다는 문제가 제기되어 지연 로직을 출력 코드 쪽으로 옮기자는 제안이 나왔습니다.\n\n영향: 부팅/서스펜드·리줌 디버깅 시 JTAG조차 죽는 상황에서 printk_delay/boot_delay로 콘솔 출력과 물리적 이벤트 순서를 맞추던 RT/임베디드 개발자들의 워크플로가 깨졌으며, 메인테이너 Petr Mladek이 실사용 사례를 인정했지만 아직 합의된 해법은 없습니다.\n\n> since the introduction of nbcon and the legacy printer thread for PREEMPT_RT kernels, printk records are now emited to the console asynchronously to the caller of printk\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/ak0VguIf-PxmbUOS@pathway.suse.cz/)\n\n**bpf, sockmap: Account for receive queue in FIONREAD without a verdict program**\n\ntcp_bpf_ioctl()이 SIOCINQ/FIONREAD를 psock->msg_tot_len(ingress_msg)만으로 응답해, stream/skb verdict 프로그램이 없어 데이터가 sk_receive_queue에 그대로 쌓이는 경우 FIONREAD가 0을 반환하던 문제를, verdict 프로그램이 없을 때 tcp_inq() 값을 더해 반영하도록 수정합니다.\n\n영향: verdict 프로그램 없이 sockmap 소켓의 읽을 수 있는 바이트 수를 폴링하던 애플리케이션이 read()는 데이터를 받으면서도 FIONREAD=0을 보던 문제로, 이전의 불완전한 FIONREAD 수정(929e30f93125)에 대한 후속 정합성 수정이며 셀프테스트가 추가되었습니다(이 v1 시리즈의 병합 여부는 확인 필요).\n\n> Without a stream/skb verdict program nothing is diverted there: data stays in sk_receive_queue, so FIONREAD returns 0 even though read() returns data.\n\n[원문 확인](https://lore.kernel.org/bpf/20260707-fionread-no-verdict-v1-1-ce94a72357ec@coralogix.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**tracing: Expose tracepoint BTF ids via tracefs**\n\n제네릭 트레이스포인트에 필요한 세 가지 BTF id(소유 객체 BTF, raw_tp/tp_btf용 FUNC_PROTO, 클래식 BPF_PROG_TYPE_TRACEPOINT용 trace_event_raw_<call> STRUCT id)를 tracefs 인터페이스로 노출하는 패치로, 커널 이미지 크기가 약 100K 늘어납니다.\n\n영향: 지금까지 '__bpf_trace_<name>'/'trace_event_raw_<name>' 네이밍 규칙을 추측해 BTF를 훑어야 했던 BPF/트레이싱 툴이 직접 타입을 조회할 수 있게 되며, 메인테이너 Steven Rostedt가 크기 증가를 감수하고 반영할 의사를 밝힌 것으로 전해집니다(확인 필요).\n\n> BPF and other consumers that want to attach to or decode a generic tracepoint need three pieces of BTF information for it\n\n[원문 확인](https://lore.kernel.org/bpf/20260707120046.31573548@gandalf.local.home/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "mm/migrate: do not migrate folios mapped into VM_LOCKED VMAs under compaction",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260707125925.3725177-2-chenwandun1@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "mm: mlock: use folios and a folio batch internally",
+      "url": "https://github.com/torvalds/linux/commit/90d07210ab55",
+      "note": "commit"
+    },
+    {
+      "title": "printk: nbcon: move printk_delay to console emiting code",
+      "url": "https://lore.kernel.org/linux-rt-devel/ak0VguIf-PxmbUOS@pathway.suse.cz/",
+      "note": "thread"
+    },
+    {
+      "title": "We made Linux v6.19 boot quicker for everyone",
+      "url": "https://www.thegoodpenguin.co.uk/blog/we-made-linux-v6-19-boot-quicker-for-everyone",
+      "note": "article"
+    },
+    {
+      "title": "tracing: Expose tracepoint BTF ids via tracefs",
+      "url": "https://lore.kernel.org/bpf/20260707120046.31573548@gandalf.local.home/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf, sockmap: Fix FIONREAD for sockmap",
+      "url": "https://github.com/torvalds/linux/commit/929e30f93125",
+      "note": "commit"
+    },
+    {
+      "title": "bpf, sockmap: Account for receive queue in FIONREAD without a verdict program",
+      "url": "https://lore.kernel.org/bpf/20260707-fionread-no-verdict-v1-1-ce94a72357ec@coralogix.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-07T19:07:31.833Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
