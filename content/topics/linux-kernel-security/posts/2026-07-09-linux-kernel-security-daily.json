@@ -1,0 +1,159 @@
+{
+  "id": "2026-07-09-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-07-09 skb 버킷 격리 진행 — 커널 보안",
+  "headline": "7.1.3·7.0.14(EOL)·LTS 스테이블 동시 릴리스로 메모리 안전 수정 집중, skb 버킷 격리 하드닝 논의 중.",
+  "date": "2026-07-09",
+  "summary": "2026-07-04 전후로 7.1.3·7.0.14(EOL)·5.10.260·5.15.211 스테이블이 잇달아 릴리스되며 ksmbd·NFS·pNFS·virtiofs 등 메모리 안전 수정이 집중됐다. net-next에서는 skb 데이터 버킷 격리로 네트워크 익스플로잇 표면을 줄이는 하드닝 패치가 GFP_DMA 처리를 두고 논의 중이다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "보안"
+  ],
+  "highlights": [
+    {
+      "title": "net: skb 데이터 버킷 격리로 하드닝 강화",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "네트워크 스택·slab/mm 유지보수 담당, 커널 하드닝 추적자",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/ak4w2k4Woj55E0On@pedro-suse/",
+      "if": "네트워크 스택이나 slab/mm 서브시스템을 유지보수하거나 커널 하드닝을 추적한다면",
+      "do": "GFP_DMA·CGROUP 캐시 복제 여부를 다루는 v3 스레드 논의를 검토하고 병합 전 설계 방향에 의견을 제시하세요.",
+      "verify": "lore.kernel.org 스레드에서 linux-mm/slab 유지보수자의 후속 답변과 v4 패치 등장 여부를 확인하세요."
+    },
+    {
+      "title": "KVM/arm64 PMU 마이그레이션 감지 정리",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "KVM/arm64 유지보수 담당, 이기종 arm64에서 VM 운용하는 개발자",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/a2d7ed42-b82e-4c0c-8985-32c12d7c49b0@rsg.ci.i.u-tokyo.ac.jp/",
+      "if": "이기종(big.LITTLE) arm64 환경에서 KVM 게스트의 PMU 카운터 정지를 경험했다면",
+      "do": "Oliver Upton의 vcpu->cpu 잔재 제거 패치와 Odaki의 fixed-counters-only 시리즈를 함께 추적하세요.",
+      "verify": "해당 lore 스레드에서 테스트 결과 회신과 병합 여부를 확인하세요."
+    },
+    {
+      "title": "dw-edma 디스크립터 구조 평탄화, 성능 근거는 미확정",
+      "priority": "하",
+      "impactType": "performance",
+      "affectedAudience": "dmaengine·PCIe endpoint 드라이버 개발자",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20260708-edma_ll-v4-0-cc128f0afb61@nxp.com/",
+      "if": "dw-edma 기반 dmaengine이나 PCIe endpoint 드라이버를 다룬다면",
+      "do": "v4 패치의 구조 변경 내용을 검토하되 성능 개선 주장은 별도로 벤치마크하세요.",
+      "verify": "RK3588 등 독립 테스트 스레드에서 QD=1 회귀 재현 여부와 후속 버전 등장을 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.0.14 stable · EOL**\n\n7.0 시리즈의 마지막 릴리스인 7.0.14가 2026-06-27 EOL에 도달했으며, virtiofs submount umount UAF·vidtv NULL deref·ksmbd 세션 검증과 rose 서브시스템의 refcount·경쟁 정리 등 42건이 백포트됐다.\n\n영향: 7.0.y는 이후 보안·버그 수정이 나오지 않으므로, 아직 운용 중이라면 7.1 또는 LTS(6.18/6.12/6.6/6.1)로 즉시 이전해야 한다.\n\n> rose: fix race between loopback timer and module removal\n\n[원문 확인](https://git.kernel.org/stable/h/v7.0.14)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**Linux 7.1.3 stable**\n\n7.1.3이 2026-07-04 릴리스되며 122건이 백포트됐다. ksmbd smb_check_perm_dacl() OOB read, KVM SVM sev_dbg_crypt() page overflow, Hyper-V sparse bank 인덱스 바운드, NFS 서버 계열 약 12건(ACL 누수·상태 경쟁), MIPS stop_this_cpu() RCU 보고 등 메모리 안전·경쟁 수정이 중심이다.\n\n영향: 7.1.y를 프로덕션에 올린 배포·운영자에게 즉시 반영 대상인 보안 롤업이다. ksmbd·NFSD·KVM 등 네트워크·가상화 노출 경로의 UAF/OOB가 다수라 지연 반영 시 원격·게스트 노출 위험이 크다.\n\n> ksmbd: fix out-of-bounds read in smb_check_perm_dacl()\n\n[원문 확인](https://git.kernel.org/stable/h/v7.1.3)\n\n**net: skb 데이터 영역 할당을 전용 버킷으로 격리**\n\nPedro Falcato의 net-next v3 패치가 skb 데이터 영역 할당을 공용 kmalloc 캐시 대신 전용 kmem_buckets(skb_data_buckets)로 라우팅한다. 리뷰에서 GFP_DMA를 요구하는 드라이버가 깨질 수 있다는 지적이 나와 linux-mm/slab 유지보수자를 소환해 DMA/CGROUP 캐시 복제 여부를 논의 중이다.\n\n영향: 원격 영향·가변 크기의 skb payload를 일반 kmalloc 캐시에서 분리하면 네트워크 대상 익스플로잇이 노리는 cross-cache/type-confusion 공격 표면이 줄어든다. 다만 GFP_DMA 처리 미결이 머지 차단 요소로 남아 있다.\n\n> Adding linux-mm and slab maintainers for input here. Considering the current slab bucketing does not seem to duplicate DMA or CGROUP caches, could it make sense to duplicate those as well?\n\n[원문 확인](https://lore.kernel.org/linux-hardening/ak4w2k4Woj55E0On@pedro-suse/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Linux 5.10.260 longterm**\n\n5.10 LTS의 5.10.260이 2026-07-04 릴리스되며 96건이 백포트됐다. virtiofs submount umount UAF, fastrpc DMA 주소 손상(find_vma 오용)·NULL deref, mptcp wakeup 누락, pNFS pnfs_update_layout() UAF, tipc aead decrypt UAF, exfat/f2fs/ocfs2 검증 강화 등이 포함된다.\n\n영향: 5.10은 임베디드·IoT·구형 엔터프라이즈의 주력 LTS지만 2026년 12월 EOL을 앞두고 있다. fastrpc·virtiofs·pNFS 등 메모리 손상 수정이 많아 반영 우선순위가 높고, 6.1/6.6로의 이전 계획도 서둘러야 한다.\n\n> virtiofs: fix UAF on submount umount\n\n[원문 확인](https://git.kernel.org/stable/h/v5.10.260)\n\n**Linux 5.15.211 longterm**\n\n5.15 LTS의 5.15.211이 2026-07-04 릴리스되며 95건이 백포트됐다. dlm event_done 양수 기록 시 NPD, crypto/qat 미사용 char device·IOCTL 제거, ksmbd compound 요청의 non-VALID 세션 거부, fuse 요청 재잠금, pNFS UAF, tipc aead UAF, hdlc_ppp 타이머 동기화 등이 포함된다.\n\n영향: 5.15는 Android 12/13·Ubuntu 22.04 등 사용자 층이 두꺼운 LTS다. ksmbd·pNFS·tipc 등 네트워크 파일/전송 경로 메모리 손상 수정이 다수이며, 이 트리도 2026년 12월 EOL을 앞두고 있어 반영과 마이그레이션을 병행해야 한다.\n\n> ksmbd: reject non-VALID session in compound request branch\n\n[원문 확인](https://git.kernel.org/stable/h/v5.15.211)\n\n**KVM: arm64 PMU fixed-counters-only 에뮬레이션 리뷰**\n\nAkihiko Odaki의 fixed-counters-only PMU 에뮬레이션 시리즈 리뷰 중, pCPU 마이그레이션 감지 helper가 kvm_arch_vcpu_put()에서 vcpu->cpu를 -1로 되돌리는 탓에 동작하지 않는 문제가 드러났다. Oliver Upton은 후속 패치로 이 잔재(commit e9b152cb957c)를 제거해 kvm_arch_vcpu_load()가 직접 CPU 마이그레이션을 감지하도록 정리했다.\n\n영향: 이기종(big.LITTLE) arm64에서 vCPU가 호환되지 않는 PMU를 가진 pCPU로 옮겨가면 카운터가 멈추는데, 공통 사이클 카운터만 노출하는 이 에뮬레이션은 핀 고정 없이도 게스트 PMU를 일관되게 유지해 Windows-on-Arm 게스트 안정 구동에 특히 중요하다.\n\n> Drop this remaining vestige such that kvm_arch_vcpu_load() can properly detect a CPU migration.\n\n[원문 확인](https://lore.kernel.org/linux-hardening/a2d7ed42-b82e-4c0c-8985-32c12d7c49b0@rsg.ci.i.u-tokyo.ac.jp/)\n\n**dmaengine: dw-edma 디스크립터 구조 평탄화**\n\nFrank Li(NXP)의 v4 시리즈가 dw_edma_desc→chunk→burst 3단 구조를 desc→burst[n] 평탄 배열로 접어 디스크립터 생성 시 kzalloc() 호출을 최소 2배 줄인다. 저자는 NVMe endpoint에서 약간의 개선을 보고했으나, 독립 테스트(RK3588 eDMA)는 유의미한 차이가 없었고 QD=1 일부 항목에서는 회귀(−28%)가 관측됐다.\n\n영향: 디스크립터 관리 단순화와 동적 DMA 요청 추가를 위한 선행 작업이라는 의미가 있으나, 성능 개선 주장은 독립 벤치마크로 아직 확인되지 않았다.\n\n> And reduce at least 2 times kzalloc() for each dma descriptor create.\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20260708-edma_ll-v4-0-cc128f0afb61@nxp.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Linux 7.1.3 stable changelog",
+      "url": "https://git.kernel.org/stable/h/v7.1.3",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux kernel 7.1.3 released — security patches, NFS fixes, MIPS reboot fix",
+      "url": "https://www.linuxcompatible.org/story/linux-kernel-713-released-security-patches-nfs-fixes-and-mips-reboot-resolution/",
+      "note": "article"
+    },
+    {
+      "title": "net: isolate skb data area allocations into a separate bucket (v3)",
+      "url": "https://lore.kernel.org/linux-hardening/ak4w2k4Woj55E0On@pedro-suse/",
+      "note": "thread"
+    },
+    {
+      "title": "skb bucket isolation — kmalloc type duplication discussion",
+      "url": "https://lore.kernel.org/linux-hardening/529e3997-d26f-4d8e-ad90-3329fe90e555@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "kmem_buckets hardening background",
+      "url": "https://lists.openwall.net/linux-hardening/2024/03/15/9",
+      "note": "thread"
+    },
+    {
+      "title": "Linux 7.0.14 stable changelog",
+      "url": "https://git.kernel.org/stable/h/v7.0.14",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux kernel 7.0 reaches end of life",
+      "url": "https://9to5linux.com/linux-kernel-7-0-reaches-end-of-life-its-time-to-upgrade-to-linux-kernel-7-1",
+      "note": "article"
+    },
+    {
+      "title": "LWN: 7.0.14 release / EOL",
+      "url": "https://lwn.net/Articles/1079854/",
+      "note": "article"
+    },
+    {
+      "title": "Linux 5.10.260 longterm changelog",
+      "url": "https://git.kernel.org/stable/h/v5.10.260",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux LTS kernels released with security patches",
+      "url": "https://www.linuxcompatible.org/story/linux-lts-kernels-61838-61295-66144-61177-515211-and-510260-released-with-security-patches",
+      "note": "article"
+    },
+    {
+      "title": "Linux 5.15.211 longterm changelog",
+      "url": "https://git.kernel.org/stable/h/v5.15.211",
+      "note": "changelog"
+    },
+    {
+      "title": "tuxmachines: Stable kernels batch (7.1.3, 6.18.38, 6.12.95, ...)",
+      "url": "https://news.tuxmachines.org/n/2026/07/05/Stable_kernels_Linux_7_1_3_Linux_6_18_38_Linux_6_12_95_Linux_6_.shtml",
+      "note": "article"
+    },
+    {
+      "title": "KVM arm64 PMU: drop vcpu->cpu vestige for migration detection",
+      "url": "https://lore.kernel.org/linux-hardening/a2d7ed42-b82e-4c0c-8985-32c12d7c49b0@rsg.ci.i.u-tokyo.ac.jp/",
+      "note": "thread"
+    },
+    {
+      "title": "LWN: heterogeneous arm64 PMU migration issue",
+      "url": "https://lwn.net/Articles/1032715/",
+      "note": "article"
+    },
+    {
+      "title": "KVM arm64 PMU FIXED_COUNTERS_ONLY series (v3)",
+      "url": "https://lkml.org/lkml/2026/2/25/156",
+      "note": "thread"
+    },
+    {
+      "title": "dmaengine: dw-edma flatten descriptor structure (v4)",
+      "url": "https://lore.kernel.org/linux-hardening/20260708-edma_ll-v4-0-cc128f0afb61@nxp.com/",
+      "note": "thread"
+    },
+    {
+      "title": "dw-edma flatten — independent RK3588 benchmark results",
+      "url": "https://lore.kernel.org/linux-hardening/2z2ba5kwgtyjzipkhxqf2jxjscerbx35ep7jndedv5zk6l6xwk@esy2ayjyhcoo/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-08T18:57:22.365Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

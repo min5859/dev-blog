@@ -1,0 +1,135 @@
+{
+  "id": "2026-07-09-linux-distro-stable-daily",
+  "topic": "linux-distro-stable",
+  "title": "2026-07-09 원격·게스트 DoS 무더기 — 배포판 안정판",
+  "headline": "브리지 IPv6 UAF·TIPC 로컬 DoS·KVM 게스트 BUG_ON이 동시에 수정되고 CVE-2025-21807 백포트도 진행됩니다.",
+  "date": "2026-07-09",
+  "summary": "bridge netfilter의 IPv6 조각화 경로에서 exploit PoC가 첨부된 use-after-free가 발견되어 패치됐고, TIPC 로컬 DoS와 KVM 게스트 트리거 BUG_ON도 함께 수정됐습니다. 6.12 LTS용 CVE-2025-21807 백포트 선행 패치가 큐잉됐으며, 7.1.3·7.0.14(EOL)·5.10.260·5.15.211 스테이블/롱텀 릴리스도 나왔습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "보안",
+    "안정판"
+  ],
+  "highlights": [
+    {
+      "title": "브리지 IPv6 조각화 UAF — exploit PoC 첨부",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "bridge netfilter / nf_conntrack_bridge 유지보수자 및 IPv6 bridge forwarding을 쓰는 배포/운영자",
+      "verifyLink": "https://lore.kernel.org/stable/20260708181150.3944015-1-xmei5@asu.edu/",
+      "if": "bridge netfilter / nf_conntrack_bridge 환경에서 IPv6 forwarding을 쓰고 있다면",
+      "do": "prevhdr offset을 저장해 checksum 후 재계산하는 이 패치를 백포트해 적용하세요",
+      "verify": "조작·조각화된 IPv6 프레임을 flood하는 시나리오에서 ip6_frag_next() 경로의 KASAN UAF 리포트가 재현되지 않는지 확인하세요"
+    },
+    {
+      "title": "TIPC 노드 기동 시 NULL deref — 비특권 netns에서 트리거 가능",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "TIPC 유지보수자 및 컨테이너/네임스페이스에서 TIPC를 노출하는 환경",
+      "verifyLink": "https://lore.kernel.org/stable/20260708173052.2973990-3-bestswngs@gmail.com/",
+      "if": "컨테이너/네임스페이스 환경에서 비특권 사용자가 TIPC를 구동할 수 있다면",
+      "do": "cluster_scope가 비어 있을 때 배포를 skip하도록 고친 이 패치를 적용하세요",
+      "verify": "노드 주소 설정 직후, 첫 self-binding 삽입 전 window에 peer가 link되는 상황을 재현해 크래시가 없는지 확인하세요"
+    },
+    {
+      "title": "KVM ioeventfd datamatch — 게스트 트리거 가능 BUG_ON 제거",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "KVM/x86 유지보수자 및 신뢰되지 않은 게스트를 돌리는 가상화 운영자",
+      "verifyLink": "https://lore.kernel.org/stable/20260708163100.92583-1-darnshah@amazon.de/",
+      "if": "신뢰되지 않은 게스트를 KVM/x86 위에서 운영한다면",
+      "do": "get_unaligned() 기반으로 BUG_ON을 제거한 이 패치를 적용하세요",
+      "verify": "페이지 경계를 걸치는 정렬되지 않은 datamatch ioeventfd store로 host BUG_ON이 더 이상 발화하지 않는지 확인하세요"
+    },
+    {
+      "title": "CVE-2025-21807 6.12 LTS 백포트 선행 패치 큐잉",
+      "priority": "중",
+      "impactType": "backport",
+      "affectedAudience": "block layer 유지보수자 및 6.12.y LTS를 추적하는 스테이블 사용자",
+      "verifyLink": "https://lore.kernel.org/stable/20260708120505.agent5-0005@kernel.org/",
+      "if": "6.12.y LTS를 추적하고 SCSI sd 등 sysfs limit 갱신 경로를 쓰고 있다면",
+      "do": "block sysfs store_limit 선행 패치와 뒤따르는 CVE-2025-21807 수정을 함께 반영할 준비를 하세요",
+      "verify": "queue freeze와 limits lock 순서가 얽힌 ABBA 데드락 시나리오가 더 이상 재현되지 않는지 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.1.3 stable (122건 백포트)**\n\n122건 백포트 중 다수가 메모리 안전/입력 검증 보안 수정으로 추정됩니다 — net/tcp-ao del_async 경로 key UAF, ksmbd smb_check_perm_dacl() OOB read, NFSv4/nfsd 자원 누수·역전 검사, KVM SVM sev_dbg_crypt() page overflow, KVM x86 hyper-v sparse bank index 바운드, fbdev(fbcon/omap2/modedb) UAF·OOB read 등이 포함된 것으로 보입니다(원문 직접 확인 필요).\n\n영향: SMB 서버(ksmbd), TCP-AO, KVM SVM 등 원격/게스트 노출 서브시스템의 UAF·OOB가 한 릴리스에 묶여 있어 7.1.x 사용자는 이 지점으로 업데이트를 검토해야 합니다.\n\n> net/tcp-ao: fix use-after-free of key in del_async path / ksmbd: fix out-of-bounds read in smb_check_perm_dacl() / KVM: SVM: Fix page overflow in sev_dbg_crypt() for ENCRYPT path\n\n[원문 확인](https://git.kernel.org/stable/h/v7.1.3)\n\n**Linux 7.0.14 stable · EOL로 표기됨 (42건 백포트)**\n\n7.0.y의 마지막(EOL) 릴리스로 추정되며 42건 백포트를 포함합니다 — virtiofs submount umount UAF, ksmbd 비-VALID 세션 거부, media vidtv NULL deref, vc_screen 동시성 null-ptr-deref, iio ADC/light 인덱스 바운드 체크, rose 서브시스템의 UAF/double-hold/타이머 레이스 정리 등(원문 직접 확인 필요).\n\n영향: EOL 표시가 맞다면 7.0.y는 이후 보안 업데이트를 받지 못하므로 이 브랜치 사용자는 7.1.x로 이전을 검토해야 합니다.\n\n> virtiofs: fix UAF on submount umount / ksmbd: reject non-VALID session in compound request branch\n\n[원문 확인](https://git.kernel.org/stable/h/v7.0.14)\n\n**Linux 5.10.260 longterm (96건 백포트)**\n\n5.10 LTS에 보안 수정이 백포트된 것으로 보입니다 — f2fs_acl_from_disk() ACL 엔트리 크기 검증, ocfs2 oversized group bitmap 거부, tipc_aead_decrypt_done slab-UAF, exfat_find_dir_entry() UAF, pnfs_update_layout() UAF, fpga region child_regions UAF, bpf sysctl write buffer kvfree, KVM SVM sev_dbg_crypt() overflow 등(원문 직접 확인 필요).\n\n영향: 파일시스템(f2fs/ocfs2/exfat) 및 네트워크(tipc) 메모리 안전 결함이 널리 배포된 LTS에 묶여 반영된 것으로 보여, 5.10 LTS를 유지하는 조직은 업데이트를 검토해야 합니다.\n\n> f2fs: validate ACL entry sizes in f2fs_acl_from_disk() / ocfs2: reject oversized group bitmap descriptors / exfat: fix potential use-after-free in exfat_find_dir_entry()\n\n[원문 확인](https://git.kernel.org/stable/h/v5.10.260)\n\n**Linux 5.15.211 longterm (95건 백포트)**\n\n5.15 LTS에도 유사한 백포트가 반영된 것으로 보입니다 — ksmbd 비-VALID 세션 거부, fuse 요청 재잠금 후 folio 교체, crypto qat 미사용 char device/IOCTL 제거, NFSv4/pNFS zero-length r_addr 거부, pnfs_update_layout() UAF, tipc_aead_decrypt_done slab-UAF, ocfs2 bitmap 거부 등으로 5.10.260과 상당수 중복되는 것으로 보입니다(원문 직접 확인 필요).\n\n영향: ksmbd·pNFS·tipc·crypto qat 공격 표면 축소가 5.10과 5.15 두 LTS에 공통으로 흘러가는 백포트 흐름을 보여줍니다.\n\n> ksmbd: reject non-VALID session in compound request branch / pNFS: Fix use-after-free in pnfs_update_layout() / crypto: qat - remove unused character device and IOCTLs\n\n[원문 확인](https://git.kernel.org/stable/h/v5.15.211)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**netfilter: bridge: fix stale prevhdr pointer in br_ip6_fragment()**\n\nbr_ip6_fragment()가 ip6_find_1stfragopt()로 얻은 prevhdr을 skb_checksum_help() 호출 뒤에도 사용하는데, cloned skb의 경우 skb_checksum_help()가 head를 재할당해 prevhdr이 dangling이 됩니다. 패치는 offset을 저장해 checksum 후 재계산하도록 고쳤습니다.\n\n영향: bridge netfilter 경로에서 위조·조각화된 IPv6 프레임을 flood하면 ip6_frag_next()에서 slab-use-after-free write가 발생해 커널 패닉으로 이어질 수 있으며, KASAN 리포트와 exploit PoC가 첨부됐습니다.\n\n> For a cloned skb skb_checksum_help() reallocates the head via pskb_expand_head(), leaving prevhdr dangling. It is later dereferenced in ip6_frag_next(), causing a use-after-free write.\n\n[원문 확인](https://lore.kernel.org/stable/20260708181150.3944015-1-xmei5@asu.edu/)\n\n**tipc: fix NULL deref in tipc_lxc_xmit() on node up**\n\ntipc_named_node_up()가 cluster_scope가 비어 있을 때 빈 skb chain을 전송하면 named_distribute()와 tipc_lxc_xmit()의 skb_peek*()가 NULL을 반환해 buf_msg(NULL)에서 폴트가 납니다. 패치는 cluster_scope가 비면 배포를 skip합니다.\n\n영향: 노드 주소 설정 후 첫 self-binding 삽입 전 window에 peer가 link되면 노드가 크래시하며, 비특권 사용자가 private net namespace에서 CAP_NET_ADMIN을 얻어 TIPC를 구동해 트리거할 수 있는 로컬 DoS입니다.\n\n> It is reachable by an unprivileged user, who can gain CAP_NET_ADMIN in a private net namespace and drive TIPC there.\n\n[원문 확인](https://lore.kernel.org/stable/20260708173052.2973990-3-bestswngs@gmail.com/)\n\n**KVM: ioeventfd datamatch의 게스트 트리거 가능 BUG_ON을 get_unaligned()로 대체**\n\n2009년부터 존재하던 eventfd.c의 도달 가능한 BUG_ON()을 제거하고 get_unaligned()로 대체했습니다. 페이지 경계를 걸치고 두 번째 페이지가 emulated MMIO/datamatch ioeventfd인 store에서 정렬되지 않은 접근이 BUG_ON을 발화시키던 문제입니다.\n\n영향: 게스트가 페이지 경계를 걸치는 정렬되지 않은 store를 발행하면 host 커널 BUG_ON이 터지는 게스트→호스트 DoS로, 신뢰되지 않은 게스트를 운영하는 KVM 호스트에 확실한 안정성 이슈입니다.\n\n> Drop a BUG_ON() that has been reachable since it was first added, way back in 2009, and instead use get_unaligned() to perform potentially-unaligned accesses.\n\n[원문 확인](https://lore.kernel.org/stable/20260708163100.92583-1-darnshah@amazon.de/)\n\n**media: i2c: ov02a10: fix endpoint parsing use-after-free**\n\nov02a10_check_hwcfg()가 fwnode_handle_put(ep)로 endpoint를 해제한 뒤 같은 'ep' 핸들로 fwnode_property_read_u32()를 호출하던 UAF를 수정했습니다. optional 속성 부재 시 probe가 실패하던 오류도 함께 정리했습니다(심각도는 probe 시점·로컬 구성에 의존하는 것으로 추정 — 확인 필요).\n\n영향: probe 시점의 UAF로 공격 표면은 제한적이나, ov02a10 센서 드라이버를 탑재한 보드에서는 메모리 안전 수정으로 기록해 둘 필요가 있습니다.\n\n> it subsequently calls fwnode_property_read_u32() using the same 'ep' handle, leading to a potential use-after-free.\n\n[원문 확인](https://lore.kernel.org/stable/20260708181248.57758-2-birenpandya@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**block: add a store_limit operations for sysfs entries (CVE-2025-21807 백포트 선행)**\n\nblock sysfs에 별도 ->store_limit() 연산을 추가하는 선행 패치가 6.12.y LTS로 큐잉됐습니다. CVE-2025-21807('block: fix queue freeze vs limits lock order in sysfs store methods') 수정을 6.12 LTS로 백포트하기 위한 선행 조건입니다.\n\n영향: CVE-2025-21807은 queue_attr_store()가 큐를 먼저 freeze한 뒤 limits lock을 잡아 SCSI sd 같은 드라이버의 재검증과 ABBA 데드락(CVSS 5.5)을 유발하는데, 6.12 LTS 사용자에게 이 수정이 반영되는 백포트 체인 신호입니다.\n\n> The prerequisite patch to backport of the CVE-2025-21807 fix to 6.12.y LTS (see Stable-dep-of)\n\n[원문 확인](https://lore.kernel.org/stable/20260708120505.agent5-0005@kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "netfilter: bridge: fix stale prevhdr pointer in br_ip6_fragment()",
+      "url": "https://lore.kernel.org/stable/20260708181150.3944015-1-xmei5@asu.edu/",
+      "note": "thread"
+    },
+    {
+      "title": "nf_conntrack_bridge IPv6 지원 배경 (2019, Pablo Neira Ayuso)",
+      "url": "https://lwn.net/Articles/787195/",
+      "note": "article"
+    },
+    {
+      "title": "tipc: fix NULL deref in tipc_lxc_xmit() on node up",
+      "url": "https://lore.kernel.org/stable/20260708173052.2973990-3-bestswngs@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM: Replace guest-triggerable BUG_ON() in ioeventfd datamatch with get_unaligned()",
+      "url": "https://lore.kernel.org/stable/20260708163100.92583-1-darnshah@amazon.de/",
+      "note": "thread"
+    },
+    {
+      "title": "block: add a store_limit operations for sysfs entries (CVE-2025-21807 백포트 선행)",
+      "url": "https://lore.kernel.org/stable/20260708120505.agent5-0005@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "CVE-2025-21807 상세",
+      "url": "https://nvd.nist.gov/vuln/detail/CVE-2025-21807",
+      "note": "cve"
+    },
+    {
+      "title": "Linux 7.1.3 stable 변경 로그",
+      "url": "https://git.kernel.org/stable/h/v7.1.3",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 7.0.14 stable 변경 로그 (EOL)",
+      "url": "https://git.kernel.org/stable/h/v7.0.14",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 5.10.260 longterm 변경 로그",
+      "url": "https://git.kernel.org/stable/h/v5.10.260",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 5.15.211 longterm 변경 로그",
+      "url": "https://git.kernel.org/stable/h/v5.15.211",
+      "note": "changelog"
+    },
+    {
+      "title": "media: i2c: ov02a10: fix endpoint parsing use-after-free",
+      "url": "https://lore.kernel.org/stable/20260708181248.57758-2-birenpandya@gmail.com/",
+      "note": "thread"
+    }
+  ]
+}

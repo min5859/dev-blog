@@ -1,0 +1,85 @@
+{
+  "id": "2026-07-09-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-07-09 BPF 인터프리터 폐지 예고 — 성능/RT",
+  "headline": "jit_required 플래그가 JIT 필수 프로그램의 패닉을 막고, 인터프리터 완전 폐지 RFC 예고도 나왔습니다.",
+  "date": "2026-07-09",
+  "summary": "Tiezhu Yang의 패치가 struct bpf_prog에 jit_required 플래그를 추가해 JIT 없이 인라인 헬퍼가 필요한 프로그램을 로드 시점에 거부하도록 해 인터프리터 폴백 패닉을 막습니다. 이를 검토한 Leon Hwang은 인터프리터를 보안 구멍으로 규정하며 완전 폐지 RFC를 곧 올리겠다고 예고했습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "BPF",
+    "보안"
+  ],
+  "highlights": [
+    {
+      "title": "bpf: jit_required 플래그로 인터프리터 폴백 패닉 방지",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF 코어 메인테이너, JIT/인터프리터 공격 표면을 추적하는 배포판 커널 보안팀",
+      "verifyLink": "https://lore.kernel.org/bpf/69e0b5f5-ea05-4740-a7a6-4ea4ab67cf92@linux.dev/",
+      "if": "JIT가 비활성화될 수 있는 환경에서 인라인 헬퍼를 쓰는 BPF 프로그램을 로드한다면",
+      "do": "jit_required 플래그가 반영된 커널로 갱신해 인터프리터 폴백 패닉을 피하세요.",
+      "verify": "lore 스레드에서 병합 트리(bpf/bpf-next)와 후속 인터프리터 폐지 RFC 등장 여부를 확인하세요."
+    },
+    {
+      "title": "selftests/bpf: signed loader 테스트의 fd 누수 수정",
+      "priority": "하",
+      "impactType": "build",
+      "affectedAudience": "BPF selftest 메인테이너, BPF 서명/키링 검증을 다루는 개발자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260708184107.369182-1-daniel@iogearbox.net/",
+      "if": "서명 강제(signature enforcement) 셀프테스트를 실행하거나 유지보수한다면",
+      "do": "이 fd 클로즈 패치를 반영해 서명 검증 실패 시 fd 누수로 결과가 흐려지지 않게 하세요.",
+      "verify": "lore 패치 스레드에서 병합 여부와 대상 트리를 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**bpf: jit_required 플래그로 인터프리터 폴백 패닉 방지**\n\nTiezhu Yang의 패치 시리즈가 struct bpf_prog에 jit_required 플래그를 추가해, 인라인 헬퍼처럼 JIT를 반드시 필요로 하는 프로그램을 로드 시점에 걸러낸다. JIT를 쓸 수 없는 환경에서 인터프리터로 대체 실행하다 커널 패닉이 나던 경로를 막는 조치다. Leon Hwang은 이 수정을 승인하면서 그 밖의 인터프리터 폴백 문제들을 언급하며 인터프리터 완전 폐지 RFC를 곧 올리겠다고 예고했다.\n\n영향: 인터프리터는 오래전부터 Spectre v2 공격 벡터이자 검증기 버그가 CVE로 다뤄지는 보안 취약 지점으로 취급되어 왔으며, 이번 수정과 예고된 RFC는 BPF_JIT_ALWAYS_ON에 이어 인터프리터 실행 경로 자체를 없애는 방향을 재확인한다. 인터프리터를 켠 채 배포하는 배포판은 다가올 RFC를 주시해야 한다.\n\n> The aim is to prevent a kernel panic by rejecting programs with inlined helpers when JIT is not available.\n\n[원문 확인](https://lore.kernel.org/bpf/69e0b5f5-ea05-4740-a7a6-4ea4ab67cf92@linux.dev/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**selftests/bpf: 서명 로더 테스트의 예상치 못한 성공 시 fd 누수 수정**\n\nsignature_enforced/signature_too_large/signature_zero_size/signature_bad_keyring 등 서명 로더 셀프테스트는 커널이 로드를 거부해야 정상인데, 예상과 달리 로드가 성공하면 test_progs는 검증 실패만 기록하고 반환된 fd를 닫지 않아 테스트가 끝날 때까지 남아 있었다. 이번 패치는 그 예상치 못한 성공 경로에서 fd를 닫도록 고쳤다.\n\n영향: 심각도는 낮지만 BPF 프로그램 서명 강제(program-signing enforcement) 테스트 영역이라, 서명 검증이 실제로 회귀해 신호가 가장 중요할 때 네거티브 경로 테스트가 fd를 누수하지 않도록 지켜준다.\n\n> test_progs asserts record the failure and continue, so the fd would linger for the rest of the run. Just close it.\n\n[원문 확인](https://lore.kernel.org/bpf/20260708184107.369182-1-daniel@iogearbox.net/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "bpf: Introduce jit_required to prevent a kernel panic",
+      "url": "https://lore.kernel.org/bpf/69e0b5f5-ea05-4740-a7a6-4ea4ab67cf92@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: related interpreter fallback issues series",
+      "url": "https://lore.kernel.org/bpf/20260626154330.33619-1-leon.hwang@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "LWN: BPF and security (interpreter/JIT background)",
+      "url": "https://lwn.net/Articles/946389/",
+      "note": "article"
+    },
+    {
+      "title": "selftests/bpf: Close fd on unexpected success in signed loader",
+      "url": "https://lore.kernel.org/bpf/20260708184107.369182-1-daniel@iogearbox.net/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-08T19:30:29.664Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
