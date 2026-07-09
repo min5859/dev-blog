@@ -1,0 +1,110 @@
+{
+  "id": "2026-07-10-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-07-10 RISC-V KVM 블록매핑 — 아키텍처·플랫폼",
+  "headline": "RISC-V KVM에 G-stage PMD 블록 매핑·WFI 트랩 정책 RFC, arm64 SoC 열관리·SMMUv3 리팩터링이 함께 올라왔다.",
+  "date": "2026-07-10",
+  "summary": "RISC-V KVM 쪽에 device passthrough 성능을 겨냥한 G-stage PMD 블록 매핑 RFC와 WFI 트랩 정책 옵션이 나란히 올라왔다. arm64 진영에서는 Qualcomm shikra GPU 냉각 패치와 arm-smmu-v3 무효화 명령 리팩터링 리뷰가 진행 중이다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "RISC-V",
+    "arm64"
+  ],
+  "highlights": [
+    {
+      "title": "KVM: riscv: G-stage PMD 블록 매핑으로 VM_PFNMAP 지원",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "RISC-V KVM 유지보수 담당 및 VFIO/device passthrough를 노리는 RISC-V 가상화 사용자",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260709130036.1708586-1-shanbeeyoo@gmail.com/",
+      "if": "RISC-V 플랫폼에서 VFIO/device passthrough로 대용량 PCI BAR을 게스트에 노출할 계획이라면",
+      "do": "이 RFC의 get_hva_mapping_size() 기반 PMD 블록 매핑 방식과 PUD·dirty logging 시 4KB 강제 폴백 제약을 리뷰하십시오.",
+      "verify": "lore 스레드에서 리뷰어 응답과 후속 리비전 여부를 직접 확인하십시오(현재 RFC 단계로 추정)."
+    },
+    {
+      "title": "RISC-V: KVM: wfi_trap_policy로 VS-mode WFI 트랩 제어",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "RISC-V KVM 유지보수 담당 및 지연·스케줄링을 튜닝하는 RISC-V 가상화 운영자",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260709115610.287420-1-yhchen312@gmail.com/",
+      "if": "RISC-V KVM 게스트의 지연시간을 튜닝해야 한다면",
+      "do": "kvm-riscv.wfi_trap_policy=notrap 옵션으로 WFI 트랩 exit를 없애는 대신 vCPU 독점 가능성을 함께 검토하십시오.",
+      "verify": "lore 스레드에서 리뷰어 피드백과 병합 상태를 확인하십시오."
+    },
+    {
+      "title": "arm64: dts: qcom: shikra GPU 냉각 추가",
+      "priority": "하",
+      "impactType": "runtime",
+      "affectedAudience": "Qualcomm arm64 SoC device tree/thermal 유지보수 담당 및 해당 플랫폼 통합 엔지니어",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/88edd673-1220-43ca-805f-675890be0cfc@oss.qualcomm.com/",
+      "if": "Qualcomm shikra 기반 arm64 플랫폼의 열관리를 다룬다면",
+      "do": "passive_delay로 주기적 폴링을 켜 중간 냉각 레벨 누락을 막는 이 패턴을 자신의 device tree에도 적용할지 검토하십시오.",
+      "verify": "패치 스레드에서 Konrad Dybcio의 리뷰 결과와 병합 여부를 확인하십시오(회신 본문이 서명에서 잘려 확인 필요)."
+    },
+    {
+      "title": "iommu/arm-smmu-v3: 무효화 명령 사전 계산 리팩터링",
+      "priority": "하",
+      "impactType": "performance",
+      "affectedAudience": "arm-smmu-v3(ARM SMMUv3) IOMMU 드라이버 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/ak%2FyDcoX5R7uWjrH@nvidia.com/",
+      "if": "arm-smmu-v3 invalidation 경로를 유지보수한다면",
+      "do": "data1의 LEAF/TG/cur_tg 사전 계산으로 중복 FIELD_PREP을 줄이는 이 리팩터링 제안을 검토하십시오.",
+      "verify": "lore에서 시리즈 원본과 최종 리비전, Reviewed-by 여부를 확인하십시오(원문 인용 검증 미완료 상태로 단정 금지)."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**KVM: riscv: G-stage PMD 블록 매핑으로 VM_PFNMAP 지원**\n\nRISC-V KVM의 G-stage 페이지 테이블이 VM_PFNMAP 영역(VFIO로 할당된 PCI BAR 등)을 4KB PTE 대신 2MB PMD 블록으로 매핑할 수 있게 하는 RFC로, arm64의 stage-2 블록 매핑(commit 2aa53d68cee6)을 이식하되 vma->vm_pgoff 대신 get_hva_mapping_size()로 호스트 페이지 테이블을 확인해 PMD leaf가 없으면 4KB로 폴백하며, 1차 버전은 PMD(2MB)만 지원하고 PUD(1GB)와 dirty logging 시에는 PAGE_SIZE를 강제한다.\n\n영향: device passthrough에서 수백 MB~GB급 BAR을 4KB PTE로 매핑할 때 발생하는 페이지 테이블 폭증과 G-stage fault 문제를 줄여, RISC-V IOMMU 하드웨어 등장 전 passthrough 성능 격차를 메우는 선행 작업이다.\n\n> This RFC adapts the arm64 \"stage-2 block mapping for host device MMIO\" idea (commit 2aa53d68cee6) to RISC-V KVM, allowing VM_PFNMAP regions ... to use 2 MB G-stage PMD block mappings\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260709130036.1708586-1-shanbeeyoo@gmail.com/)\n\n**RISC-V: KVM: wfi_trap_policy로 VS-mode WFI 트랩 제어**\n\n커널 커맨드라인 옵션 kvm-riscv.wfi_trap_policy=trap|notrap를 추가해 VS-mode 게스트가 실행한 WFI를 KVM(HS-mode)으로 트랩할지 네이티브 실행할지 선택할 수 있게 했으며, 기본값은 기존과 동일한 trap으로 회귀는 없고, 3초 측정에서 trap은 WFI_EXITS 295건이었던 반면 notrap은 0건이었다.\n\n영향: WFI 트랩은 vCPU를 yield할 기회를 주지만 트랩 비용이 들고, notrap은 트랩 exit를 없애 저지연 워크로드에 유리한 대신 게스트가 물리 CPU를 물고 있을 위험이 있어, RISC-V KVM 튜닝 노브가 arm64/x86 수준에 가까워지는 항목이다.\n\n> Add a kernel command-line option, kvm-riscv.wfi_trap_policy=trap|notrap, that controls whether a WFI executed by a VS-mode guest traps into KVM (HS-mode) or executes natively.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260709115610.287420-1-yhchen312@gmail.com/)\n\n**arm64: dts: qcom: shikra GPU 냉각 추가**\n\nQualcomm shikra SoC의 arm64 device tree에 GPU 냉각을 추가해 115도 도달 시 GPU 속도를 스로틀링하도록 했고, passive_delay를 설정해 트립 교차 인터럽트에만 의존하지 않고 주기적 폴링으로 모든 냉각 레벨이 적용되게 했다.\n\n영향: GPU는 CPU와 달리 고온에서 자동으로 속도를 낮추지 않는데, passive_delay가 없으면 두 트립 사이에서 온도가 안정될 때 인터럽트가 발생하지 않아 중간 냉각 레벨이 적용되지 않는 실제 결함을 막는다.\n\n> the GPU does not throttle its speed automatically ... Set up GPU cooling by throttling the GPU speed when reaching 115°C. Without passive_delay, the governor fires only on trip crossing interrupts.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/88edd673-1220-43ca-805f-675890be0cfc@oss.qualcomm.com/)\n\n**iommu/arm-smmu-v3: 무효화 명령 사전 계산 리팩터링**\n\narm_smmu_tlbi_calc_range에서 TLB 무효화 명령 data1의 공통 필드(LEAF/TG/cur_tg)를 미리 계산해 두고 분기별로는 TTL만 덧붙이도록 하자는 안에 Jason Gunthorpe가 중복 FIELD_PREP 제거를 제안했고 Nicolin이 동의한 것으로 보인다(원문 인용 검증 미완료).\n\n영향: TLBI 명령 조립 경로의 중복을 줄여 SMMUv3 invalidation 핫패스의 코드 명확성과 성능을 개선하는 리팩터링으로 추정된다.\n\n> tlbi->range.data1 |= FIELD_PREP(CMDQ_TLBI_1_TTL, ttl);\n> ...\n> Which removes most of the duplication\n>\n> Yea, that looks very clean.\n>\n> Nicolin\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/ak%2FyDcoX5R7uWjrH@nvidia.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "KVM: riscv: G-stage PMD block mappings for VM_PFNMAP",
+      "url": "https://lore.kernel.org/linux-riscv/20260709130036.1708586-1-shanbeeyoo@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM: arm64: Try stage2 block mapping for host device MMIO",
+      "url": "https://github.com/torvalds/linux/commit/2aa53d68cee6",
+      "note": "commit"
+    },
+    {
+      "title": "RISC-V: KVM: Add kvm-riscv.wfi_trap_policy to control VS-mode WFI trapping",
+      "url": "https://lore.kernel.org/linux-riscv/20260709115610.287420-1-yhchen312@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "arm64: dts: qcom: shikra: Add GPU cooling",
+      "url": "https://lore.kernel.org/linux-arm-kernel/88edd673-1220-43ca-805f-675890be0cfc@oss.qualcomm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "iommu/arm-smmu-v3: Precompute the invalidation commands",
+      "url": "https://lore.kernel.org/linux-arm-kernel/ak%2FyDcoX5R7uWjrH@nvidia.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-09T19:20:47.252Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

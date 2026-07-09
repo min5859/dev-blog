@@ -1,0 +1,128 @@
+{
+  "id": "2026-07-10-linux-daily-briefing",
+  "topic": "linux",
+  "title": "2026-07-10 mm swap storm 수정 — 리눅스 개발",
+  "headline": "메모리 단편화 방지 설정을 켰을 때 스왑이 폭주하던 버그의 수정안이 나왔고, 7.1.3 stable엔 다수 보안 수정이 반영됐습니다.",
+  "date": "2026-07-10",
+  "summary": "vm.defrag_mode 사용 시 스왑 폭주를 일으키던 버그의 수정안이 커널 메일링 리스트에 올라왔습니다. 7.1.3 stable에는 TCP-AO·KVM·ksmbd 관련 다수의 메모리 안전성 백포트가 반영됐습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "7.1.3 stable 보안 백포트",
+      "priority": "상",
+      "impactType": "backport",
+      "affectedAudience": "7.1.x stable 커널을 배포·유지하는 담당자, KVM 호스트/SMB 서버 운영자",
+      "verifyLink": "https://git.kernel.org/stable/h/v7.1.3",
+      "if": "7.1.x 커널을 배포하거나 KVM·SMB 서비스를 운영한다면",
+      "do": "TCP-AO·KVM SVM·ksmbd 메모리 안전성 수정을 위해 7.1.3으로 업그레이드하세요.",
+      "verify": "git.kernel.org v7.1.3 changelog에서 tcp-ao, sev_dbg_crypt, smb_check_perm_dacl 항목을 확인하세요."
+    },
+    {
+      "title": "defrag_mode swap storm 수정 제안",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "vm.defrag_mode=1을 사용하거나 THP·대용량 페이지 할당 압력에 민감한 대규모 운영자",
+      "verifyLink": "https://lore.kernel.org/lkml/ak_fl7Nq0DHmQd2K@cmpxchg.org/",
+      "if": "vm.defrag_mode=1을 켜고 THP 할당 압력이 큰 환경을 운영한다면",
+      "do": "패치 병합 전까지 압력 스파이크·swap storm 발생 여부를 점검하세요.",
+      "verify": "lore 스레드에서 Meta 프로덕션 회귀 보고와 slowpath 수정 내용을 확인하세요."
+    },
+    {
+      "title": "nvme passthrough freeze drain hung task",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "NVMe passthrough(nvme-cli, io_uring passthru 등)를 쓰는 스토리지 운영자·드라이버 개발자",
+      "verifyLink": "https://lore.kernel.org/lkml/CACd_6n1Ws_rg8bwqbOTV0VcKOGYnfA6TLQnCyM-JxhE4V5zGHw@mail.gmail.com/",
+      "if": "NVMe passthrough 사용 중 컨트롤러 리셋이 발생할 수 있다면",
+      "do": "리뷰 중인 패치 동향을 지켜보고 유사한 hung task 로그가 있는지 점검하세요.",
+      "verify": "lore 스레드에서 sync_blockdev 대기와 123초 hung task 로그를 확인하세요."
+    },
+    {
+      "title": "arm-cca-guest attestation migrate_disable() 전환",
+      "priority": "하",
+      "impactType": "runtime",
+      "affectedAudience": "Arm CCA realm(기밀 컴퓨팅) 게스트를 개발·운영하는 사람",
+      "verifyLink": "https://lore.kernel.org/lkml/fc88f924-929b-4e79-96fc-99b99791ffab@arm.com/",
+      "if": "Arm CCA realm 게스트에서 attestation 기능을 쓴다면",
+      "do": "v3 패치 머지 후 CONFIG_DEBUG_PREEMPT 환경에서 splat이 사라지는지 확인하세요.",
+      "verify": "lore 스레드의 smp_processor_id() splat 로그와 diff를 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**7.0.14 stable (7.0.x EOL 표기)**\n\n7.0.x 계열의 마지막으로 표기된 stable 릴리스로 42건의 백포트가 담긴 것으로 보이며, rose 프로토콜 use-after-free, ksmbd 세션 검증, net_failover 데드락 수정 등이 포함된 것으로 보입니다.\n\n영향: EOL 표기가 맞다면 7.0.x를 쓰는 배포처는 상위 stable로 이전을 계획해야 합니다(원문 확인 권장).\n\n> net: net_failover: Fix the deadlock in slave register\n\n[원문 확인](https://git.kernel.org/stable/h/v7.0.14)\n\n**7.2-rc2 mainline**\n\nv7.2-rc2 태그가 2026-07-06자로 릴리스 피드에 관측된 것으로 보이며, 병합 창 종료 후 안정화 단계로 진입한 것으로 추정됩니다.\n\n영향: 메인라인을 추적하는 개발자는 이번 rc 구간에서 자기 서브시스템의 회귀를 확인할 시점입니다(원문 확인 권장).\n\n[원문 확인](https://git.kernel.org/torvalds/h/v7.2-rc2)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**7.1.3 stable**\n\n122건의 백포트를 담은 stable 릴리스로, tcp-ao del_async 키 use-after-free, ksmbd smb_check_perm_dacl() OOB read, KVM SVM sev_dbg_crypt() 페이지 오버플로, fbdev UAF 다수 등이 포함된 것으로 보입니다.\n\n영향: TCP-AO·KVM·ksmbd 등 원격/게스트 노출 경로의 메모리 안전성 수정이 다수 묶여 있어 7.1.x 배포처는 우선 적용을 검토해야 합니다(원문 확인 권장).\n\n> net/tcp-ao: fix use-after-free of key in del_async path\n\n[원문 확인](https://git.kernel.org/stable/h/v7.1.3)\n\n**mm: defrag_mode의 reclaim/swap storm 수정**\n\nvm.defrag_mode=1에서 non-movable 요청이 slowpath의 ALLOC_NOFRAGMENT 강제 때문에 movable 블록에서 회수한 공간을 못 쓰고 과도한 reclaim을 유발하던 문제를, non-movable 요청이 slowpath의 pageblock 생산에 직접 참여하도록 바꿔 해결합니다.\n\n영향: Meta 프로덕션에서 압력 스파이크·swap storm으로 워크로드가 회귀하고 userspace OOM이 트리거된 사례가 근거로, defrag_mode를 쓰는 대규모 운영 환경의 안정성에 직접 영향을 줍니다.\n\n> As we deployed vm.defrag_mode=1 into Meta production, some workloads regressed with recurring pressure spikes and swap storms\n\n[원문 확인](https://lore.kernel.org/lkml/ak_fl7Nq0DHmQd2K@cmpxchg.org/)\n\n**arm-cca-guest: attestation 토큰 요청에 migrate_disable() 사용**\n\nArm CCA realm 게스트의 RSI attestation 토큰 init/continue 호출에서 smp_call_function_single() 콜백을 제거하고 migrate_disable()로 같은 CPU에서 직접 호출하도록 바꿉니다.\n\n영향: CONFIG_DEBUG_PREEMPT=y에서 발생하던 splat과 CPU 소멸로 인한 실패 경로를 없애 기밀 컴퓨팅 게스트의 attestation 신뢰성을 높입니다.\n\n> Use migrate_disable() and issue the token init and continue operations directly, without the smp_call_function_single() callbacks.\n\n[원문 확인](https://lore.kernel.org/lkml/fc88f924-929b-4e79-96fc-99b99791ffab@arm.com/)\n\n**mm/memory: memory_block_aligned_range() 헬퍼 추가**\n\n메모리 핫플러그가 요구하는 memory-block 정렬(시작 올림·끝 내림)을 수행하는 공용 헬퍼를 <linux/memory.h>에 추가하고, dax/kmem이 이를 쓰도록 정리했습니다.\n\n영향: 흩어져 있던 정렬 로직을 공용 API로 모으고 underflow 경계 케이스를 방어해 dax/kmem·CXL 등 메모리 핫플러그 경로의 중복과 잠재 버그를 줄입니다.\n\n> Add memory_block_aligned_range() as a common helper in <linux/memory.h> that aligns the start address up and end address down to memory block boundaries.\n\n[원문 확인](https://lore.kernel.org/lkml/c4e18591-137f-4827-b635-a8662a44fe9d@intel.com/)\n\n**nvme: passthrough 커맨드의 freeze drain에 상한 부여 제안**\n\nNVMe passthrough 경로에서 타임아웃→abort→reset은 정상 시작됐지만, reset이 bdev_mark_dead의 무조건 sync_blockdev(writeback 대기)에서 막혀 완료되지 못해 nvme_wait_freeze에 있던 nvme_passthru_start가 빠져나오지 못하는 hung task가 발생했습니다. 패치는 passthru_start의 freeze drain에 상한을 두자고 제안합니다.\n\n영향: 타임아웃 콜백이 정상 동작해도 reset이 writeback drain에 스스로 막히면 passthrough가 무한 대기에 빠질 수 있어 스토리지 스택의 가용성에 영향을 줍니다.\n\n> the unconditional sync_blockdev in bdev_mark_dead's bare-bdev else-branch (block/bdev.c) is itself waiting on the writeback that the reset was supposed to drain.\n\n[원문 확인](https://lore.kernel.org/lkml/CACd_6n1Ws_rg8bwqbOTV0VcKOGYnfA6TLQnCyM-JxhE4V5zGHw@mail.gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 linux-next 통합 스냅샷(next-20260709)과 i.MX 계열 thermal DT 보드 캘리브레이션 오프셋 문서화 패치는 단독 뉴스 가치가 낮아 본문에서 제외했습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "7.0.14 stable changelog",
+      "url": "https://git.kernel.org/stable/h/v7.0.14",
+      "note": "changelog"
+    },
+    {
+      "title": "7.1.3 stable changelog",
+      "url": "https://git.kernel.org/stable/h/v7.1.3",
+      "note": "changelog"
+    },
+    {
+      "title": "v7.2-rc2 mainline tag",
+      "url": "https://git.kernel.org/torvalds/h/v7.2-rc2",
+      "note": "changelog"
+    },
+    {
+      "title": "arm-cca-guest attestation migrate_disable() 스레드",
+      "url": "https://lore.kernel.org/lkml/fc88f924-929b-4e79-96fc-99b99791ffab@arm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "virt: arm-cca-guest TSM_REPORT support 패치 시리즈",
+      "url": "https://lists.infradead.org/pipermail/linux-arm-kernel/2024-October/970617.html",
+      "note": "article"
+    },
+    {
+      "title": "mm: defrag_mode swap storm 수정 스레드",
+      "url": "https://lore.kernel.org/lkml/ak_fl7Nq0DHmQd2K@cmpxchg.org/",
+      "note": "thread"
+    },
+    {
+      "title": "defrag_mode/ALLOC_NOFRAGMENT 배경 기사",
+      "url": "https://lwn.net/Articles/1014220/",
+      "note": "article"
+    },
+    {
+      "title": "mm/memory: memory_block_aligned_range() 스레드",
+      "url": "https://lore.kernel.org/lkml/c4e18591-137f-4827-b635-a8662a44fe9d@intel.com/",
+      "note": "thread"
+    },
+    {
+      "title": "nvme passthrough freeze drain hang 스레드",
+      "url": "https://lore.kernel.org/lkml/CACd_6n1Ws_rg8bwqbOTV0VcKOGYnfA6TLQnCyM-JxhE4V5zGHw@mail.gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-09T18:06:14.099Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-newsletter-from-dossier-ko.md"
+  }
+}

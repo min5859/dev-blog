@@ -1,0 +1,123 @@
+{
+  "id": "2026-07-10-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-07-10 blk-mq RT 회귀 수정 — 리눅스 성능·RT",
+  "headline": "blk-mq RT 처리량 회귀와 BPF verifier 보안 결함 2건, atlantic 메모리 누수 수정을 정리합니다.",
+  "date": "2026-07-10",
+  "summary": "PREEMPT_RT에서 고 MSI-X 스토리지 처리량을 떨어뜨린 blk-mq 회귀가 barrier 기반 수정으로 해소되고, BPF verifier의 cpumask 소유권 결함과 kfunc 반환 크기 truncate 결함이 함께 수정됩니다. atlantic NIC의 TX 버퍼 누수 수정과 printk boot_delay 폐기 소식도 담았습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "blk-mq RT 회귀, atomic quiesce_depth로 해결",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "다중 큐 스토리지(megaraid_sas 등 고 MSI-X)를 PREEMPT_RT로 운용하는 엔지니어, block/blk-mq 유지보수자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260709063803.23538-2-ionut.nechita@windriver.com/",
+      "if": "고 MSI-X 스토리지 컨트롤러를 PREEMPT_RT 커널에서 운용 중이라면",
+      "do": "이 패치를 적용하기 전 megaraid_sas 등 다중 큐 드라이버의 blk_mq_run_hw_queue 경로 처리량을 측정해두세요",
+      "verify": "이 v-series가 block 유지보수자 승인을 받아 병합됐는지 lore 스레드에서 확인하세요"
+    },
+    {
+      "title": "BPF cpumask verifier, 소유권 우회 결함 수정",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF verifier·cpumask kfunc 유지보수자, sched_ext(scx) 개발자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260709182800.2037938-1-main.kalliope@gmail.com/",
+      "if": "scx_bpf_get_online_cpumask() 같은 borrowed cpumask를 bpf_cpumask_populate()에 넘기는 BPF 프로그램을 운용 중이라면",
+      "do": "이 결함이 있는 커널에서는 해당 kfunc 호출부를 점검하세요",
+      "verify": "v3가 bpf-next에 병합됐는지, stable 백포트 태그가 붙었는지 lore 스레드에서 확인하세요"
+    },
+    {
+      "title": "atlantic NIC, TX 링 해제 시 메모리 누수 수정",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "aQuantia/Atlantic NIC에서 XDP_TX를 사용하는 운영자, page_pool·XDP 드라이버 유지보수자",
+      "verifyLink": "https://lore.kernel.org/bpf/tencent_8FE30FDFA32089B69BA3112E4A4C5E886D06@qq.com/",
+      "if": "atlantic 드라이버에서 XDP_TX를 쓰며 인터페이스를 자주 내리거나 XDP를 detach한다면",
+      "do": "aq_ring_tx_deinit() 복원 패치를 적용해 stranded skb/xdp_frame 누수를 막으세요",
+      "verify": "이 수정이 언급된 page_pool 전환 후속 시리즈의 선행 조건인지 lore 스레드에서 확인하세요"
+    },
+    {
+      "title": "BPF kfunc 반환 크기, U32_MAX 초과 truncate 결함 수정",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "BPF verifier 유지보수자, rdonly/rdwr 버퍼를 반환하는 kfunc 작성·사용 개발자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260709155837.1879230-1-main.kalliope@gmail.com/",
+      "if": "rdonly_buf_size/rdwr_buf_size를 쓰는 kfunc를 직접 작성하거나 호출한다면",
+      "do": "U32_MAX를 넘는 크기 값이 truncate 대신 거부되도록 이 패치를 적용하세요",
+      "verify": "실제 트리거 가능한 kfunc가 존재하는지, verifier.c의 경계 검사 지점을 코드 레벨에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**block/blk-mq: use atomic_t for quiesce_depth to avoid lock contention on RT**\n\nPREEMPT_RT에서 처리량 회귀를 유발한 mainline 커밋 6bda857bcbb86(blk_mq_run_hw_queue의 quiesced 재확인을 queue_lock으로 보호)을 걷어내고, quiesce_depth를 atomic_t로 바꿔 QUEUE_FLAG_QUIESCED 없이 barrier 기반으로 처리합니다.\n\n영향: RT에서 spinlock_t는 sleeping rt_mutex가 되어 모든 IRQ 스레드가 흔한 'nothing pending' 경로에서 단일 락에 직렬화되고 D-state로 블록되는데, 이 수정으로 megaraid_sas(128 MSI-X, 120 hw queue) 처리량 저하가 회복됩니다.\n\n> On a Broadcom/LSI MegaRAID 12GSAS/PCIe Secure SAS39xx (megaraid_sas, 128 MSI-X vectors, 120 hw queues) throughput drops from 640 MB/s to 153 MB/s.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260709063803.23538-2-ionut.nechita@windriver.com/)\n\n**net: atlantic: free stranded TX buffers on ring deinit**\n\naq_vec_deinit()가 TX 링을 단일 aq_ring_tx_clean() 호출로만 비워 정리 예산(256)을 넘거나 [hw_head, sw_tail) 구간에 남은 skb/xdp_frame이 해제되지 않던 문제를, 제거됐던 aq_ring_tx_deinit()를 되살려 teardown에 재사용해 고칩니다.\n\n영향: 인터페이스 down이나 XDP detach, 링 리사이즈마다 조용한 메모리 누수가 발생하고, page_pool 전환 후에는 stranded XDP_TX 프레임이 pool의 inflight 카운트를 계속 0 위로 유지시켜 page_pool_destroy()가 끝나지 않습니다.\n\n> page_pool_destroy() then never completes, the pool is leaked together with its pages, and \"page_pool_release_retry() stalled pool shutdown\" is warned every 60 seconds\n\n[원문 확인](https://lore.kernel.org/bpf/tencent_8FE30FDFA32089B69BA3112E4A4C5E886D06@qq.com/)\n\n**bpf: require an owned cpumask for bpf_cpumask_populate()**\n\nbpf_cpumask_populate()가 bitmap_copy()로 목적지에 기록하면서도 타입을 struct cpumask *로 선언해, verifier가 scx_bpf_get_online_cpumask() 반환값 같은 borrowed 읽기 전용 cpumask를 쓰기 가능한 목적지로 받아들이던 문제를, BPF 소유 cpumask를 요구하도록 고치고 selftest를 추가합니다.\n\n영향: 소유권 규약이 깨지는 verifier 결함으로, v1/v2가 security@kernel.org 비공개 신고였습니다. BPF verifier·cpumask kfunc 유지보수자와 sched_ext(scx) 개발자에게 중요합니다.\n\n> bpf_cpumask_populate() writes its destination with bitmap_copy() but types it as struct cpumask *, so the verifier accepts a borrowed, read-only cpumask ... as a writable destination.\n\n[원문 확인](https://lore.kernel.org/bpf/20260709182800.2037938-1-main.kalliope@gmail.com/)\n\n**bpf: bound rdonly/rdwr_buf_size kfunc return size**\n\ncheck_kfunc_args()가 kfunc의 rdonly_buf_size/rdwr_buf_size 인자를 u64에 저장하지만 check_kfunc_call()이 이를 반환 레지스터의 u32 mem_size로 좁히면서, U32_MAX를 넘는 값이 거부되지 않고 truncate되던 문제를 거부하도록 고치고 selftest를 추가합니다.\n\n영향: verifier가 보장해야 할 메모리 접근 경계가 조용히 흔들리는 결함으로, v1이 security@kernel.org 비공개 신고였습니다. kfunc를 작성·사용하는 개발자와 BPF verifier 유지보수자에게 중요합니다.\n\n> a u64 that check_kfunc_call() later narrows into the returned register's u32 mem_size, so a value above U32_MAX truncates instead of being rejected.\n\n[원문 확인](https://lore.kernel.org/bpf/20260709155837.1879230-1-main.kalliope@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**printk: deprecate boot_delay in favour of printk_delay**\n\n유사 기능을 하는 boot_delay(BOOT_PRINTK_DELAY) 커널 파라미터를 폐기하고 printk_delay(sysctl)로 일원화하며, 기능 보존을 위해 printk_delay를 early 커널 파라미터로도 설정 가능하게 확장합니다.\n\n영향: 지연이 이제 SYSTEM_RUNNING 상태에서도 계속되며 printk_delay=0을 sysctl로 명시해야 멈춥니다. boot_delay를 부팅·지연 디버깅에 스크립트로 쓰던 RT 엔지니어는 마이그레이션과 이 지속 동작을 인지해야 합니다(음수 값 처리 한계는 확인 필요).\n\n> The delay enabled by both \"boot_delay\" and \"printk_delay\" continues working even in SYSTEM_RUNNING state. It must be explicitly stopped by setting printk_delay=0 via sysctl.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/ak-vqrSr7NLCkGQw@pathway.suse.cz/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "blk-mq RT 회귀 스레드 - megaraid_sas 처리량 저하",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260709063803.23538-2-ionut.nechita@windriver.com/",
+      "note": "thread"
+    },
+    {
+      "title": "block: fix ordering between checking QUEUE_FLAG_QUIESCED request adding (mainline 커밋)",
+      "url": "https://github.com/torvalds/linux/commit/6bda857bcbb86",
+      "note": "commit"
+    },
+    {
+      "title": "net: atlantic TX 버퍼 누수 스레드",
+      "url": "https://lore.kernel.org/bpf/tencent_8FE30FDFA32089B69BA3112E4A4C5E886D06@qq.com/",
+      "note": "thread"
+    },
+    {
+      "title": "net: aquantia: remove function aq_ring_tx_deinit (mainline 커밋)",
+      "url": "https://github.com/torvalds/linux/commit/eb36bedf28be",
+      "note": "commit"
+    },
+    {
+      "title": "bpf: require an owned cpumask for bpf_cpumask_populate() 스레드",
+      "url": "https://lore.kernel.org/bpf/20260709182800.2037938-1-main.kalliope@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf/cpumask.c 소스 - bpf_cpumask_populate() 구현 확인",
+      "url": "https://github.com/torvalds/linux/blob/master/kernel/bpf/cpumask.c",
+      "note": "commit"
+    },
+    {
+      "title": "bpf: bound rdonly/rdwr_buf_size kfunc return size 스레드",
+      "url": "https://lore.kernel.org/bpf/20260709155837.1879230-1-main.kalliope@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "printk: deprecate boot_delay 스레드",
+      "url": "https://lore.kernel.org/linux-rt-devel/ak-vqrSr7NLCkGQw@pathway.suse.cz/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-09T19:13:23.820Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

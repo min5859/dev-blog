@@ -1,0 +1,128 @@
+{
+  "id": "2026-07-10-linux-distro-stable-daily",
+  "topic": "linux-distro-stable",
+  "title": "2026-07-10 RDMA UAF 재현 — 배포·Stable 렌즈",
+  "headline": "RDMA/rxe modify_qp 경합으로 responder UAF가 재현됐고, stable/longterm 롤업에 tcp-ao·ksmbd·hugetlb 보안 수정이 담겼습니다.",
+  "date": "2026-07-10",
+  "summary": "RDMA/rxe modify_qp 경합에 의한 responder UAF와 hugetlb memcg 에러 경로의 VM_BUG_ON이 새로 보고됐습니다. stable/longterm 계열에는 tcp-ao·ksmbd·pNFS 등 보안 백포트가 이어졌습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "RDMA/rxe modify_qp에서 responder UAF 재현 (KASAN)",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "RDMA(rdma_rxe) 유지보수 담당, soft-RoCE 사용 클러스터 운영자",
+      "verifyLink": "https://lore.kernel.org/stable/821c7993-b99d-42eb-be3f-0c2b9ac33340@linux.dev/",
+      "if": "soft-RoCE(rdma_rxe)를 사용 중이고 비특권 프로세스가 modify_qp()로 IB_QP_MAX_DEST_RD_ATOMIC만 설정할 수 있다면",
+      "do": "패치 적용 전까지 rdma_rxe 모듈에 대한 비특권 접근을 제한하세요",
+      "verify": "lore 스레드의 KASAN 리포트와 Fixes 태그 반영 여부를 원문에서 확인하세요"
+    },
+    {
+      "title": "hugetlb memcg charge 실패 시 VM_BUG_ON 트리거",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "MM/hugetlb·memcg 유지보수 담당, cgroup 메모리 제한 환경 운영자",
+      "verifyLink": "https://lore.kernel.org/stable/20260709185821.1893061-1-joshua.hahnjy@gmail.com/",
+      "if": "cgroup 메모리 제한 하에서 hugetlb를 사용 중이라면",
+      "do": "이 수정이 대상 시리즈에 백포트됐는지 확인하고 적용 전까지 memcg 제한과 hugetlb 조합 사용을 주의하세요",
+      "verify": "리뷰어가 지적한 VM_FAULT_OOM 누수 루프가 후속 패치로 다뤄졌는지 원문에서 확인하세요"
+    },
+    {
+      "title": "SMB 압축 LZ77 인코더의 32비트 정의되지 않은 시프트",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "ksmbd/cifs SMB 압축 유지보수 담당, 32비트 빌드 대상 유지보수자",
+      "verifyLink": "https://lore.kernel.org/stable/20260709173019.36808-1-acharyalaxman8848@gmail.com/",
+      "if": "32비트 아키텍처에서 SMB 압축(CONFIG_EXPERIMENTAL)을 활성화했다면",
+      "do": "UBSAN 활성 빌드로 재현 여부를 점검하고 패치 병합 여부를 추적하세요",
+      "verify": "Fixes 태그 d14bbfff259c와 패치의 반영 상태를 원문에서 확인하세요"
+    },
+    {
+      "title": "KASAN+Rust 빌드는 컴파일러 혼용 금지",
+      "priority": "하",
+      "impactType": "build",
+      "affectedAudience": "Rust for Linux·kbuild 유지보수 담당, KASAN 활성 빌드를 운용하는 CI/배포 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20260709175943.129241-1-ojeda@kernel.org/",
+      "if": "KASAN을 활성화한 빌드에서 Rust 코드를 포함한다면",
+      "do": "llvm 기반 rustc와 gcc 빌드를 혼용하지 않도록 CI 설정을 점검하세요",
+      "verify": "cherry-pick된 upstream 커밋 5b271543d0f0의 대상 stable 시리즈 반영 여부를 원문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.1.3 stable — 122건 백포트**\n\n현재 stable 시리즈의 point 릴리스로 122건이 백포트된 것으로 파악되며, TCP-AO del_async 경로의 key use-after-free, ksmbd smb_check_perm_dacl() out-of-bounds read, KVM SVM sev_dbg_crypt() page overflow 등 보안 관련 수정이 다수 포함된 것으로 보입니다.\n\n영향: tcp-ao UAF와 ksmbd OOB read는 원격/네트워크 표면에 걸쳐 있어 즉시 업그레이드 우선순위가 높습니다.\n\n> net/tcp-ao: fix use-after-free of key in del_async path; ksmbd: fix out-of-bounds read in smb_check_perm_dacl(); KVM: SVM: Fix page overflow in sev_dbg_crypt() for ENCRYPT path\n\n[원문 확인](https://git.kernel.org/stable/h/v7.1.3)\n\n**Linux 7.0.14 stable — 7.0 시리즈 EOL**\n\n7.0 시리즈의 마지막(EOL) 릴리스로 표기되며 42건이 백포트된 것으로 파악됩니다. rose(ROSE/AX.25) 네트워크 스택의 UAF·refcount 정리, virtiofs submount umount UAF, ksmbd 비-VALID 세션 거부 등이 포함된 것으로 보입니다.\n\n영향: 이후 보안 백포트가 끊기므로 7.0.x를 쓰는 곳은 상위 시리즈로의 마이그레이션 계획이 필요합니다.\n\n> virtiofs: fix UAF on submount umount; ksmbd: reject non-VALID session in compound request branch; rose: release netdev ref and destroy orphaned incoming sockets\n\n[원문 확인](https://git.kernel.org/stable/h/v7.0.14)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**RDMA/rxe modify_qp의 IB_QP_MAX_DEST_RD_ATOMIC 분기에서 responder UAF**\n\nrxe_qp_from_attr()의 IB_QP_MAX_DEST_RD_ATOMIC 분기가 상태 전이 처리 밖에서 qp->resp.resources[] 배열을 free/재할당하면서 state_lock을 잡지 않고 responder task를 드레인하지 않아, 비특권 modify_qp() 호출이 responder와 경합해 UAF를 유발합니다.\n\n영향: 비특권 userspace가 단일 프로세스·loopback만으로 KASAN slab-use-after-free를 약 11초 만에 재현하며, RDMA 서비스 노출 환경에서 로컬 권한상승/DoS 표면이 됩니다.\n\n> BUG: KASAN: slab-use-after-free in rxe_receiver+0x4f78/0x89e0 [rdma_rxe]  Workqueue: rxe_wq do_work [rdma_rxe]\n\n[원문 확인](https://lore.kernel.org/stable/821c7993-b99d-42eb-be3f-0c2b9ac33340@linux.dev/)\n\n**mm: hugetlb memcg charge 실패 시 folio refcount 불일치로 VM_BUG_ON**\n\nmem_cgroup_charge_hugetlb()가 -ENOMEM을 반환하면 folio refcount가 1로 남는데, 에러 경로가 refcount 0을 기대하는 free_huge_folio(folio)를 직접 호출해 VM_BUG_ON_FOLIO가 발동합니다. 수정은 리뷰를 받았으나 별개의 VM_FAULT_OOM 누수 루프가 추가로 관측됐습니다.\n\n영향: cgroup 메모리 제한 하의 hugetlb fault 경로에서 비특권 트리거로 커널 BUG_ON(패닉/DoS)이 발생할 수 있습니다.\n\n> The error path calls free_huge_folio(folio) directly, which expects a refcount of 0. Hence, VM_BUG_ON_FOLIO(folio_ref_count(folio), folio) is triggered.\n\n[원문 확인](https://lore.kernel.org/stable/20260709185821.1893061-1-joshua.hahnjy@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Linux 5.10.260 longterm — 96건 백포트 (pNFS·tipc·exfat UAF, f2fs ACL 검증)**\n\n5.10 longterm point 릴리스로 96건이 백포트된 것으로 파악되며, pNFS pnfs_update_layout() UAF, tipc_aead_decrypt_done slab-use-after-free, f2fs_acl_from_disk() ACL 엔트리 크기 검증 누락 등이 포함된 것으로 보입니다.\n\n영향: 5.10은 2026-12 EOL 예정 longterm으로, 장기 지원 대상 시스템 다수가 여기에 묶여 있어 하드닝 관점의 정기 흡수 대상입니다.\n\n> pNFS: Fix use-after-free in pnfs_update_layout(); tipc: fix slab-use-after-free Read in tipc_aead_decrypt_done; f2fs: validate ACL entry sizes in f2fs_acl_from_disk()\n\n[원문 확인](https://git.kernel.org/stable/h/v5.10.260)\n\n**Linux 5.15.211 longterm — 95건 백포트 (5.10.260과 상당 부분 중첩)**\n\n5.15 longterm point 릴리스로 95건이 백포트된 것으로 파악되며, dlm event_done NPD, fuse folio 재잠금, ksmbd 세션 검증 등 5.10.260과 겹치는 항목이 많습니다.\n\n영향: 두 longterm 시리즈에 동일 UAF 계열 수정이 동시에 백포트된 점은 해당 취약 계열이 여러 버전에 걸쳐 광범위하게 영향을 미침을 시사합니다.\n\n> dlm: prevent NPD when writing a positive value to event_done; fuse: re-lock request before replacing page cache folio; ksmbd: reject non-VALID session in compound request branch\n\n[원문 확인](https://git.kernel.org/stable/h/v5.15.211)\n\n**smb: common: LZ77 flag 인코딩의 정의되지 않은 시프트(UBSAN)**\n\nLZ77 인코더가 flag를 32비트 워드로 방출하면서 accumulator를 long으로 유지해 32비트만큼 시프트할 수 있어, 32비트 빌드에서 시프트 폭이 타입 폭과 같아지는 정의되지 않은 동작이 발생합니다. 수정은 u32 accumulator와 full-word 상태 특수처리로 이를 바로잡습니다.\n\n영향: SMB 압축(CONFIG_EXPERIMENTAL) 경로의 32비트 정의되지 않은 시프트는 아키텍처 의존적으로 잘못된 인코딩을 낳을 수 있어 우선 정리 대상입니다.\n\n> On 32-bit builds these shift counts are equal to the width of the shifted type, so UBSAN can report a runtime error and the encoded flag word is undefined.\n\n[원문 확인](https://lore.kernel.org/stable/20260709173019.36808-1-acharyalaxman8848@gmail.com/)\n\n**rust: kasan: KASAN+RUST 조합은 clang을 요구**\n\n커널 KASAN이 C/Rust 컴파일러에 넘기는 인자가 llvm과 gcc 사이에서 달라, KASAN이 켜진 상태에서 llvm 기반 rustc와 gcc 빌드를 섞는 것이 안전하지 않은 것으로 파악되며, 이를 막는 빌드 제약이 upstream 커밋 5b271543d0f0을 stable로 cherry-pick하는 형태로 추가된 것으로 보입니다.\n\n영향: Rust for Linux가 확대되는 가운데 툴체인 혼합 시 KASAN 계측이 어긋나 오탐/미탐을 낳을 수 있어, 빌드 조합 제약이 sanitizer 신뢰성 유지에 직결됩니다.\n\n> it's not safe to mix an llvm-based rustc with a gcc build when kasan is enabled.\n\n[원문 확인](https://lore.kernel.org/stable/20260709175943.129241-1-ojeda@kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Linux 7.1.3 stable changelog",
+      "url": "https://git.kernel.org/stable/h/v7.1.3",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 7.0.14 stable changelog (EOL)",
+      "url": "https://git.kernel.org/stable/h/v7.0.14",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 5.10.260 longterm changelog",
+      "url": "https://git.kernel.org/stable/h/v5.10.260",
+      "note": "changelog"
+    },
+    {
+      "title": "kernel.org releases — longterm EOL 일정",
+      "url": "https://www.kernel.org/category/releases.html",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 5.15.211 longterm changelog",
+      "url": "https://git.kernel.org/stable/h/v5.15.211",
+      "note": "changelog"
+    },
+    {
+      "title": "RDMA/rxe modify_qp responder UAF 스레드",
+      "url": "https://lore.kernel.org/stable/821c7993-b99d-42eb-be3f-0c2b9ac33340@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "mm hugetlb memcg charge 실패 VM_BUG_ON 스레드",
+      "url": "https://lore.kernel.org/stable/20260709185821.1893061-1-joshua.hahnjy@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "smb LZ77 UBSAN 정의되지 않은 시프트 스레드",
+      "url": "https://lore.kernel.org/stable/20260709173019.36808-1-acharyalaxman8848@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "rust kasan 컴파일러 혼용 금지 스레드",
+      "url": "https://lore.kernel.org/stable/20260709175943.129241-1-ojeda@kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-09T19:05:18.460Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

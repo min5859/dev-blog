@@ -1,0 +1,114 @@
+{
+  "id": "2026-07-10-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-07-10 리셋카운터 UAPI 이견 — GPU/AI 렌즈",
+  "headline": "etnaviv 리셋 카운터·amdgpu HPD 디바운스는 설계 이견 중이고, drm/msm은 Shikra A704 GPU 지원을 추가했습니다.",
+  "date": "2026-07-10",
+  "summary": "drm/msm의 Shikra A704 GPU 인에이블링과 이를 보완하는 DT 쿨링 설정이 나란히 올라왔고, etnaviv 리셋 카운터 UAPI와 amdgpu HPD 디바운스 통합은 각각 유지보수자 반대에 부딪혀 최종 형태가 아직 정해지지 않았습니다. etnaviv에서는 리셋-파일종료 경쟁을 막는 참조 카운팅 수정과 함께 AI 리뷰가 지적한 잠재적 NULL 역참조 결함도 함께 올라왔습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "GPU"
+  ],
+  "highlights": [
+    {
+      "title": "drm/etnaviv 리셋 카운터 UAPI, GET_PARAM 방식에 유지보수자 반대",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "etnaviv kernel maintainers; Mesa etnaviv GL/Vulkan driver developers implementing robustness/device-loss",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260709-etnaviv-reset-notification-v1-0-64c617496958@igalia.com/",
+      "if": "etnaviv 드라이버에서 GL_KHR_robustness나 VK_ERROR_DEVICE_LOST 구현을 위해 새 리셋 카운터 GET_PARAM에 의존할 계획이라면",
+      "do": "GET_PARAM 두 값 방식이 아직 확정되지 않았으니 Lucas Stach가 제안한 플래그 인자 기반 단일 ioctl로 바뀔 가능성을 감안해 인터페이스가 굳어지기 전까지는 연동 코드를 재검토 가능한 구조로 두세요.",
+      "verify": "lore 스레드에서 Christian의 후속 respin 여부와 Lucas의 ioctl 제안 채택 여부를 확인하세요."
+    },
+    {
+      "title": "drm/amd/display HPD 디바운스 파라미터 통합에 리뷰어 반대",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "amdgpu/DC display maintainers; users of monitors that toggle HPD (e.g. on deep sleep) needing debounce",
+      "verifyLink": "https://lore.kernel.org/dri-devel/0a341678-062e-46d4-affc-d56cb7c95ba0@amd.com/",
+      "if": "hdmi_hpd_debounce_delay_ms 또는 dp_hpd_debounce_delay_ms 모듈 파라미터를 배포판 설정이나 부팅 스크립트에서 참조하고 있다면",
+      "do": "두 파라미터가 hpd_debounce_delay_ms 하나로 합쳐지는 중이고 하위 호환 별칭 유지 여부도 아직 정해지지 않았으니, 파라미터 이름을 하드코딩하지 말고 v3 이후 논의 결과가 나올 때까지 지켜보세요.",
+      "verify": "lore 스레드에서 Ivan이 제안한 커넥터 타입별 dc_panel_patch 방식이 반영되는지, 혹은 기존 이름의 별칭이 유지되는지 확인하세요."
+    },
+    {
+      "title": "drm/msm, Shikra SoC의 Adreno A704 GPU 지원 추가",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "drm/msm (freedreno) maintainers; Qualcomm Shikra SoC integrators and distro kernel packagers",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260710-shikra-gpu-v6-0-b388ec5dce77@oss.qualcomm.com/",
+      "if": "Shikra SoC 기반 보드에서 GPU 활성화를 준비 중이라면",
+      "do": "A704는 A702와 같은 코드 경로를 쓰고 chipid와 디바이스트리로 지정하는 zap 펌웨어 항목만 다르므로, A702 DT 바인딩을 참고해 zap 펌웨어 경로를 먼저 준비하세요.",
+      "verify": "v6 시리즈가 어느 트리·버전에 병합되는지, Mesa 쪽 !41762 MR 상태와 함께 lore 스레드에서 확인하세요."
+    },
+    {
+      "title": "drm/etnaviv file_private 참조 카운팅 수정, AI 리뷰가 잠재적 NULL 역참조 지적",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "etnaviv maintainers; reviewers auditing DRM scheduler entity-init error handling",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260709151041.7D6B01F000E9@smtp.kernel.org/",
+      "if": "etnaviv에서 GPU 리셋(스케줄러 타임아웃)과 파일 종료(fd close)가 동시에 발생할 수 있는 경로를 다루고 있다면",
+      "do": "이번 kref 기반 참조 카운팅 패치로 use-after-free류 경쟁이 닫히니 반영을 검토하고, 별도로 지적된 drm_sched_entity_init() 반환값 미확인 문제는 자동화 리뷰(Sashiko AI)의 주장이므로 실제 코드에서 사람이 직접 재현 가능한지 먼저 확인하세요.",
+      "verify": "커밋 f3b8b988f63ea7f9c0ef8d910f216fe724269fff가 실제 트리에 존재하는지, entity->stats 할당 실패(-ENOMEM) 경로가 도달 가능한지 코드에서 직접 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/msm: Shikra GPU(A704) 지원 추가**\n\n퀄컴 Shikra SoC의 Adreno A704 GPU를 drm/msm에 활성화하는 v6 패치 시리즈로, A704는 기존 A702의 IP 재사용이며 chipid와 디바이스트리로 지정되는 zap 펌웨어만 다릅니다.\n\n영향: freedreno/drm/msm 유지보수 측에서는 A702 코드 경로를 그대로 타는 저위험 하드웨어 인에이블링이라 리뷰 부담이 DT와 펌웨어 이름 배선에 집중되며, Mesa 사용자 공간 지원은 이미 병합되어 커널 쪽이 게이팅 요소입니다.\n\n> Adreno A704 GPU found in Shikra is an IP reuse of A702 GPU with very minimal changes. The only KMD facing difference is the chipid and the zap firmware which is specified via devicetree.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260710-shikra-gpu-v6-0-b388ec5dce77@oss.qualcomm.com/)\n\n**arm64: dts: qcom: shikra: GPU 쿨링 추가**\n\nGPU는 CPU와 달리 스스로 스로틀링하지 않기 때문에 Shikra GPU 디바이스트리에 115°C에서 GPU 클럭을 낮추는 쿨링 설정을 추가하고, 온도가 트립 포인트 사이에서 안정될 때도 모든 쿨링 레벨이 적용되도록 거버너가 주기적으로 폴링하는 passive_delay를 함께 설정합니다.\n\n영향: drm/msm의 Shikra A704 GPU 인에이블링을 보완하는 DT/열 설정으로, 이것이 없으면 GPU가 자동 스로틀링 없이 고온으로 동작할 수 있으며 퀄컴 arm64 DT·열 유지보수자는 passive_delay를 빠뜨리면 트립 포인트 사이에서 중간 쿨링 레벨이 적용되지 않는다는 점에 유의해야 합니다.\n\n> Unlike the CPU, the GPU does not throttle its speed automatically when it reaches high temperatures. Set up GPU cooling by throttling the GPU speed when reaching 115°C.\n\n[원문 확인](https://lore.kernel.org/dri-devel/88edd673-1220-43ca-805f-675890be0cfc@oss.qualcomm.com/)\n\n**drm/etnaviv: 리셋 카운터 UAPI 추가와 설계 논쟁**\n\nGET_PARAM에 GPU 코어별 전역 리셋 카운터(ETNAVIV_PARAM_GLOBAL_RESET_COUNTER)와 컨텍스트별 유죄 리셋 카운터(ETNAVIV_PARAM_CONTEXT_RESET_COUNTER)를 추가해 msm/v3d처럼 무고한 피해자와 유죄 컨텍스트를 구분할 수 있게 하며, include/uapi/drm/etnaviv_drm.h를 수정하고 드라이버 마이너 버전을 올립니다.\n\n영향: GL_KHR_robustness / VK_ERROR_DEVICE_LOST 구현에 쓰일 새 UAPI라 etnaviv 유지보수자와 Mesa 드라이버 개발자의 합의가 먼저 필요한데, 유지보수자 Lucas Stach는 GET_PARAM 방식이 file_private당 단일 컨텍스트를 전제해 자신이 준비 중인 다중 컨텍스트 개편을 막고 왕복이 두 번 필요하다며 플래그 인자를 둔 단일 확장형 ioctl을 대안으로 제시해 최종 UAPI 형태가 아직 정해지지 않았습니다.\n\n> ETNAVIV_PARAM_GLOBAL_RESET_COUNTER counts every reset of a GPU core. ETNAVIV_PARAM_CONTEXT_RESET_COUNTER counts only the resets the calling context was guilty of.\n\n> My vote would be on adding a new ioctl to query both reset counters at the same time, with a flags argument baked in, so it can be extended\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260709-etnaviv-reset-notification-v1-0-64c617496958@igalia.com/)\n\n**drm/etnaviv: file_private 참조 카운팅 추가, AI 리뷰가 기존 NULL 역참조 결함 지적**\n\n리셋 카운터 시리즈의 1/2 패치로 etnaviv_file_private에 kref 기반 참조 카운팅을 추가해 스케줄러 타임아웃(GPU 리셋) 워커와 DRM 파일 종료가 경쟁할 때도 컨텍스트별 데이터가 유효하도록 하며, 모든 submit이 참조를 유지합니다.\n\n영향: 이 참조 카운팅 수정은 리셋 카운터 UAPI가 의존하는 실제 use-after-free 계열 경쟁 조건을 닫는 정정이며, 별도로 자동화된 Sashiko AI 리뷰는 etnaviv_open()이 drm_sched_entity_init()의 반환값을 무시해 실패 시(entity->stats 할당의 -ENOMEM 등) entity->rq가 NULL이 되어 drm_sched_job_init()에서 NULL 포인터 역참조로 이어질 수 있는 기존 잠재 결함을 지적했으나, 이는 자동화 도구의 주장으로 사람에 의한 확인이 필요합니다.\n\n> This commit adds reference counting to the etnaviv_file_private structure. It ensures that per-context data remains valid during GPU resets handled by the scheduler timeout worker\n\n> Unhandled error return from drm_sched_entity_init() leads to a NULL pointer dereference in the scheduler.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260709151041.7D6B01F000E9@smtp.kernel.org/)\n\n**drm/amd/display: HDMI/DVI/DP SST HPD 디바운스 지연 통합 (설계 이견)**\n\nv3에서 별도였던 hdmi_hpd_debounce_delay_ms와 dp_hpd_debounce_delay_ms 모듈 파라미터를 하나의 hpd_debounce_delay_ms로 합치고(eDP·MST는 여전히 제외) 커넥터 필드·워크·캐시된 싱크 이름을 범용 hpd_*로 바꾸며 DVI까지 적용 대상을 넓히고, MSI MPG 274U 모니터에 1500ms 디바운스를 기본 적용하는 apply_edid_quirks() 케이스를 추가합니다. 다만 통합 세부 사항은 아직 독립적으로 검증되지 않았습니다.\n\n영향: amdgpu/DC 디스플레이 유지보수자에게는 몇 사이클 전에 추가된 사용자 노출 모듈 파라미터 이름을 하위 호환 별칭 없이 바꾸는 변경이자 HDMI/DVI/DP SST의 HPD 글리치 처리를 바꾸는 사안인데, 리뷰어 Ivan은 모니터가 HDMI에서는 디바운스가 필요해도 DP에서는 필요 없을 수 있다며 dc_panel_patch에 커넥터 타입별 필드를 두자고 반박해 단일 파라미터 방식이 현재 형태로 병합될지 불확실합니다.\n\n> a monitor that requires HPD debounce delay on HDMI may not need it when connected via DP, a vice-versa, so I think we should differentiate them.\n\n[원문 확인](https://lore.kernel.org/dri-devel/0a341678-062e-46d4-affc-d56cb7c95ba0@amd.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/msm: Add support for Shikra GPU (A704)",
+      "url": "https://lore.kernel.org/dri-devel/20260710-shikra-gpu-v6-0-b388ec5dce77@oss.qualcomm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/etnaviv: Add GPU reset counters for robustness",
+      "url": "https://lore.kernel.org/dri-devel/20260709-etnaviv-reset-notification-v1-0-64c617496958@igalia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Re: drm/etnaviv: Add GPU reset counters (Lucas Stach 리뷰)",
+      "url": "https://lore.kernel.org/dri-devel/bb5b8c8ff15f8d8b9ad9a61e4887c14b9f77f3d6.camel@pengutronix.de/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/etnaviv: Reference count struct etnaviv_file_private",
+      "url": "https://lore.kernel.org/dri-devel/20260709151041.7D6B01F000E9@smtp.kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/amd/display: unify HDMI/DVI/DP SST HPD debounce delay",
+      "url": "https://lore.kernel.org/dri-devel/0a341678-062e-46d4-affc-d56cb7c95ba0@amd.com/",
+      "note": "thread"
+    },
+    {
+      "title": "arm64: dts: qcom: shikra: Add GPU cooling",
+      "url": "https://lore.kernel.org/dri-devel/88edd673-1220-43ca-805f-675890be0cfc@oss.qualcomm.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-09T19:27:24.548Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
