@@ -1,0 +1,114 @@
+{
+  "id": "2026-07-11-linux-daily-briefing",
+  "topic": "linux",
+  "title": "2026-07-11 TIPC 리스트 손상 버그 — 리눅스 개발",
+  "headline": "리눅스 네트워크 계층과 스케줄러에서 데이터 손상과 시스템 멈춤 버그가 각각 발견돼 수정 작업이 진행 중입니다.",
+  "date": "2026-07-11",
+  "summary": "TIPC UDP bearer의 리스트 동시성 버그와 sched_ext의 PSI 데드락이 새로 보고되어 검토가 진행 중입니다. 이어 7.1.3·7.0.14 stable 릴리스와 7.2-rc2 태깅도 함께 나왔습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "보안"
+  ],
+  "highlights": [
+    {
+      "title": "TIPC UDP bearer 리스트 손상 버그",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "TIPC UDP bearer를 사용하는 시스템 및 컨테이너 호스트 운영자",
+      "verifyLink": "https://lore.kernel.org/lkml/20260710174718.1969789-2-bestswngs@gmail.com/",
+      "if": "TIPC UDP bearer나 컨테이너 호스트 운영 여부를 확인하세요.",
+      "do": "직렬화 패치 반영 여부를 확인하고 비특권 네임스페이스의 TIPC 활성화를 제한하세요.",
+      "verify": "lore 스레드에서 list_del corruption BUG 로그와 패치 내용을 확인하세요."
+    },
+    {
+      "title": "sched_ext PSI 트리거 3자 데드락",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "sched_ext(scx) 스케줄러를 cgroup PSI와 함께 쓰는 운영자 및 스케줄러 개발자",
+      "verifyLink": "https://lore.kernel.org/lkml/alEv8QosliGUfUNZ@gpd4/",
+      "if": "scx_lavd 등 sched_ext와 cgroup PSI를 함께 쓰는지 확인하세요.",
+      "do": "패치가 병합되기 전까지 PSI 트리거 생성과 scx enable 동시 실행을 피하세요.",
+      "verify": "lore 스레드에서 lockdep 순환 락 경고와 병합 상태를 확인하세요."
+    },
+    {
+      "title": "Linux 7.1.3 stable 릴리스",
+      "priority": "중",
+      "impactType": "backport",
+      "affectedAudience": "7.1.y stable 커널을 배포/운영하는 담당자",
+      "verifyLink": "https://git.kernel.org/stable/h/v7.1.3",
+      "if": "7.1.y stable 커널을 배포·운영 중인지 확인하세요.",
+      "do": "tcp-ao UAF, ksmbd OOB 등 122건 백포트 반영 여부를 검토하세요.",
+      "verify": "git.kernel.org의 7.1.3 changelog에서 커밋 목록을 확인하세요."
+    },
+    {
+      "title": "PKCS#7 검증 상수시간 비교 제안",
+      "priority": "하",
+      "impactType": "security",
+      "affectedAudience": "모듈/펌웨어 서명 검증(PKCS#7) 경로를 다루는 crypto 서브시스템 개발자",
+      "verifyLink": "https://lore.kernel.org/lkml/8607c6f25d3bad7601665bc4c4ce528e9f4cabef.camel@HansenPartnership.com/",
+      "if": "PKCS#7 서명 검증 코드를 다루는지 확인하세요.",
+      "do": "채택 여부가 확정되기 전이니 즉시 패치를 반영하지 말고 논의를 지켜보세요.",
+      "verify": "lore 스레드에서 메인테이너 반론과 후속 논의를 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.0.14 stable (EOL, 7.0.y 마지막 릴리스)**\n\n7.0.y 계열의 마지막(EOL) 릴리스로 보이며 42건을 백포트했습니다. rose(AX.25) 서브시스템의 use-after-free/더블홀드/타이머 레이스 정리, virtiofs submount umount UAF, ksmbd 세션 검증, vc_screen null-ptr-deref 수정이 포함됩니다.\n\n영향: 이후 7.0.y 보안 업데이트가 끊기므로, 7.0.y를 쓰는 사용자는 상위 stable 계열로의 이전 계획이 필요합니다.\n\n> virtiofs: fix UAF on submount umount\n\n[원문 확인](https://git.kernel.org/stable/h/v7.0.14)\n\n**Linux 7.2-rc2 mainline**\n\n7.2 개발 사이클의 두 번째 release candidate가 태깅된 것으로 보입니다. 버전 문자열 외 세부 shortlog나 공지 내용은 확인되지 않았습니다.\n\n영향: 7.2 병합 창 이후 안정화 단계의 진행 지표로, mainline을 추적하며 회귀 테스트를 수행하는 개발자에게 참고가 됩니다.\n\n> Linux 7.2-rc2 mainline\n\n[원문 확인](https://git.kernel.org/torvalds/h/v7.2-rc2)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**tipc: serialize udp bearer replicast list updates**\n\ntipc_udp_rcast_add()와 cleanup_bearer()가 직렬화 없이 ub->rcast.list를 갱신해 리스트 손상이 발생합니다. 패치는 udp_bearer에 spinlock을 추가해 두 경로와 중복 peer 검사를 같은 락 아래에서 보호합니다.\n\n영향: encap receive softirq가 rtnl_lock 없이 실행돼 cleanup의 delete와 경쟁하며 커널 BUG를 유발하고, bearer가 비특권 user namespace에서도 활성화될 수 있어 로컬 공격 표면이 됩니다.\n\n> list_del corruption. prev->next should be ffff8880298d7ab8, but was ffff88802449ad38. kernel BUG at lib/list_debug.c:62!\n\n> The bearer can be enabled from an unprivileged user namespace, as the TIPCv2 generic-netlink ops carry no GENL_ADMIN_PERM.\n\n[원문 확인](https://lore.kernel.org/lkml/20260710174718.1969789-2-bestswngs@gmail.com/)\n\n**sched_ext: PSI 트리거 생성과의 데드락 수정 (검토 중)**\n\nscx_root_enable_workfn()이 scx_fork_rwsem을 먼저 잡고 cgroup_mutex를 기다리는데, pressure_write()가 cgroup_mutex를 든 채 kthread_create()를 호출하면서 kthreadd의 fork가 scx_fork_rwsem read를 기다려 3자 데드락이 됩니다. 패치는 락 획득 순서를 cgroup_mutex→scx_fork_rwsem으로 뒤집는 안이며 아직 확정되지 않았습니다.\n\n영향: 128-CPU EPYC에서 scx_lavd 활성화와 cgroup PSI 트리거 쓰기를 동시에 하면 fork가 멈춰 시스템 프로세스 생성이 중단됩니다. 다만 리뷰어가 이 수정이 새로운 lockdep 순환 락 경고를 유발한다고 보고해 아직 확정된 수정이 아닙니다.\n\n> The enable worker holds scx_fork_rwsem and waits for cgroup_mutex, while the PSI writer holds cgroup_mutex and waits for psimon creation to complete.\n\n> This seems to introduce the following (running the sched_ext kselftests): WARNING: possible circular locking dependency detected\n\n[원문 확인](https://lore.kernel.org/lkml/alEv8QosliGUfUNZ@gpd4/)\n\n**crypto: pkcs7_verify 상수시간 비교 제안 (익스플로잇 가능성 논쟁)**\n\nPKCS#7 서명 검증 시 다이제스트/서명 비교의 memcmp()를 crypto_memneq()로 교체해 타이밍 사이드채널을 막자는 제안입니다.\n\n영향: 메인테이너 James Bottomley가 다이제스트는 서명 안에 평문으로 들어 있어 공격자가 이미 계산할 수 있다며 실제 익스플로잇 경로가 성립하는지 반문했습니다. 채택 여부가 불확실한 논쟁 단계로 보입니다.\n\n> Replace memcmp() with crypto_memneq() for cryptographic digest and signature comparisons to prevent timing side-channel attacks.\n\n> the pkcs7 digest is inside the signature in plain text and the digest of the entity being compared should be computable by any attacker.\n\n[원문 확인](https://lore.kernel.org/lkml/8607c6f25d3bad7601665bc4c4ce528e9f4cabef.camel@HansenPartnership.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Linux 7.1.3 stable**\n\n7.1 안정 커널의 점 릴리스로 총 122건을 백포트한 것으로 보입니다. ksmbd OOB read, net/tcp-ao 키 use-after-free, KVM SVM sev_dbg_crypt() 페이지 오버플로우, 다수의 NFS/NFSD 누수·디코드 오류, fbdev UAF/OOB, i2c 어댑터 등록 레이스 수정이 포함됩니다.\n\n영향: UAF·OOB·리소스 누수 등 메모리 안전 결함이 다수 섞여 있어, stable 트리를 추적하는 배포·운영 담당자는 우선 반영 대상으로 검토해야 합니다.\n\n> net/tcp-ao: fix use-after-free of key in del_async path\n\n> ksmbd: fix out-of-bounds read in smb_check_perm_dacl(); KVM: SVM: Fix page overflow in sev_dbg_crypt() for ENCRYPT path\n\n[원문 확인](https://git.kernel.org/stable/h/v7.1.3)"
+    },
+    {
+      "heading": "기타",
+      "body": "SpacemiT K1 단일 SoC(Banana Pi BPI-F3)의 cpufreq DVFS 활성화, crypto ixp4xx 드라이버의 MODULE_DEVICE_TABLE() 추가 등 단일 보드·드라이버 범위의 국부 패치는 이번 수집에서 제외했습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Linux 7.1.3 stable changelog",
+      "url": "https://git.kernel.org/stable/h/v7.1.3",
+      "note": "changelog"
+    },
+    {
+      "title": "tipc: serialize udp bearer replicast list updates",
+      "url": "https://lore.kernel.org/lkml/20260710174718.1969789-2-bestswngs@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "sched_ext: PSI trigger creation deadlock discussion",
+      "url": "https://lore.kernel.org/lkml/alEv8QosliGUfUNZ@gpd4/",
+      "note": "thread"
+    },
+    {
+      "title": "Linux 7.0.14 stable changelog (EOL)",
+      "url": "https://git.kernel.org/stable/h/v7.0.14",
+      "note": "changelog"
+    },
+    {
+      "title": "crypto: pkcs7_verify constant-time comparison proposal",
+      "url": "https://lore.kernel.org/lkml/8607c6f25d3bad7601665bc4c4ce528e9f4cabef.camel@HansenPartnership.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Linux 7.2-rc2 mainline tag",
+      "url": "https://git.kernel.org/torvalds/h/v7.2-rc2",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-10T18:04:17.253Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-newsletter-from-dossier-ko.md"
+  }
+}

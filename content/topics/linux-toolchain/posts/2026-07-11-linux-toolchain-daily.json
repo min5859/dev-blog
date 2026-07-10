@@ -1,0 +1,134 @@
+{
+  "id": "2026-07-11-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-07-11 arm64 ftrace 완화 — 리눅스 툴체인",
+  "headline": "arm64 ftrace가 CALL_OPS 없이도 DIRECT_CALLS를 지원해 kCFI 커널에서 BPF 트램폴린이 되살아났습니다.",
+  "date": "2026-07-11",
+  "summary": "arm64 ftrace가 DYNAMIC_FTRACE_WITH_CALL_OPS 없이도 DIRECT_CALLS를 지원하게 되어, kCFI 하드닝 커널에서 막혀 있던 BPF 트램폴린이 다시 붙을 길이 열렸습니다. Rust 쪽에서는 SRCU 추상화, pin-init 업스트림 동기화, rust_binder 디버그 마스크가 나란히 진행됐습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "툴체인"
+  ],
+  "highlights": [
+    {
+      "title": "arm64: ftrace: support DIRECT_CALLS without CALL_OPS",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "arm64 ftrace/BPF 유지보수 담당, clang kCFI 커널 빌더",
+      "verifyLink": "https://lore.kernel.org/llvm/20260609-arm64-ftrace-direct-calls-v1-0-4a46f266697f@linux.dev/",
+      "if": "clang kCFI를 켠 arm64 커널에서 BPF 트램폴린(fentry/fexit·BPF LSM)이 -ENOTSUPP로 실패한다면",
+      "do": "이 2패치 시리즈를 적용해 DIRECT_CALLS가 CALL_OPS 없이도 선택되도록 Kconfig를 갱신하세요",
+      "verify": "arm64 메인테이너가 실제로 픽업했는지, CFI 비활성 구성에서 ftrace.o 외 오브젝트가 바이트 동일한지 원문에서 확인하세요"
+    },
+    {
+      "title": "rust: add SRCU abstraction",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust-for-Linux 기여자, RCU 유지보수 담당, Tyr GPU 드라이버 개발자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/f624a266-c37f-421d-925b-645bb31b411c@paulmck-laptop/",
+      "if": "Tyr(Arm GPU) reset 인프라나 Rust 드라이버에서 sleepable RCU 직렬화가 필요하다면",
+      "do": "v10 SRCU 추상화 시리즈를 확인하고 rcu 트리 큐잉 상태를 팔로우하세요",
+      "verify": "다가오는 머지 윈도에 실제로 포함되는지 Paul McKenney의 큐 상태를 원문에서 재확인하세요"
+    },
+    {
+      "title": "rust_binder: Implement dynamic debug logging mask",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "Rust-for-Linux Binder 개발자, Android 커널 개발자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/2026071046-musty-subfloor-53ec@gregkh/",
+      "if": "rust_binder 디버깅 시 재빌드·재부팅 없이 verbose 로그가 필요하다면",
+      "do": "/sys/module/rust_binder/parameters/debug_mask에 bitflags를 써서 즉시 로그를 활성화하세요",
+      "verify": "리베이스가 필요했던 patch 5·7(FAILED_TRANSACTION, DEAD_TRANSACTION)이 char-misc-testing 기준으로 재제출·큐잉됐는지 원문에서 확인하세요"
+    },
+    {
+      "title": "rust: pin-init: upstream synchronization for 7.3 (round 1)",
+      "priority": "하",
+      "impactType": "project",
+      "affectedAudience": "Rust-for-Linux 유지보수 담당, pin-init을 쓰는 드라이버 작성자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260710-pin-init-sync-v1-0-8fa16cde87ae@garyguo.net/",
+      "if": "pin-init 크레이트 기반 드라이버에서 unwind 안전성이나 중복 #[pin] 어트리뷰트 처리가 궁금하다면",
+      "do": "7.3용 동기화 라운드1 시리즈에서 PR #120·#140·#160의 반영 범위를 점검하세요",
+      "verify": "커버레터 시점에 'intend to merge soon'이던 PR #140·#160이 실제로 업스트림에 병합됐는지 원문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**arm64: ftrace: support DIRECT_CALLS without CALL_OPS**\n\nJose Fernandez(Anthropic)의 2패치 시리즈가 arm64에서 HAVE_DYNAMIC_FTRACE_WITH_DIRECT_CALLS를 DYNAMIC_FTRACE_WITH_CALL_OPS 없이도 선택 가능하게 완화한다. kCFI 타입 해시 오프셋과 CALL_OPS가 요구하는 pre-function NOP이 충돌해 CFI=y arm64 커널에는 ftrace direct call이 없었고, register_fentry()가 -ENOTSUPP로 실패해 BPF 트램폴린(fentry/fexit·fmod_ret·BPF LSM)이 붙지 못했다. Reviewed-by(Puranjay Mohan)·Acked-by(Xu Kuohai)·Tested-by를 받았지만, Steven Rostedt는 arm64 특화 사안이라 arm64 메인테이너 결정이라며 픽업을 미뤘다.\n\n영향: clang kCFI 하드닝과 BPF 기반 보안 모니터링을 arm64에서 동시에 쓰려던 배포가 지금까지 둘 중 하나를 포기해야 했던 제약이 풀린다.\n\n> CALL_OPS is an optimization for direct calls, not a dependency.\n\n[원문 확인](https://lore.kernel.org/llvm/20260609-arm64-ftrace-direct-calls-v1-0-4a46f266697f@linux.dev/)\n\n**rust: add SRCU abstraction**\n\nOnur Özkan의 v10 시리즈(5패치)가 Rust용 SRCU(sleepable RCU) 추상화를 추가한다. SRCU C 코드 변경 비중이 커서 rust 트리가 아니라 rcu 트리로 라우팅됐고, 동기는 Tyr(Arm GPU) reset 인프라에서 reset-민감 하드웨어 접근을 직렬화하는 작업을 독립 Rust API로 분리하려는 것이다. Boqun Feng의 Reviewed-by를 받았고 Paul E. McKenney가 큐잉했다.\n\n영향: Rust 커널 API 표면에 새 동기화 프리미티브가 추가되며, Tyr 드라이버 reset 작업의 선행 의존성을 푼다.\n\n> I have queued these, with a little luck for the upcoming merge window.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/f624a266-c37f-421d-925b-645bb31b411c@paulmck-laptop/)\n\n**rust: pin-init: upstream synchronization for 7.3 (round 1)**\n\nGary Guo의 7.3용 pin-init 크레이트 업스트림 동기화 라운드1(7패치)이다. 병합된 PR #120(중복 #[pin] 어트리뷰트 에러화)을 포함하고, 곧 병합 예정인 PR #160(lint 정리)·PR #140(unwind 안전성 수정: [pin_]init_array_from_fn, [pin_]chain)을 함께 담는다.\n\n영향: unwind 안전성과 중복 어트리뷰트 에러화는 드라이버 전반에서 쓰이는 Rust 초기화 매크로의 정확성에 직접 영향을 준다. PR #140·#160이 실제로 선행 병합됐는지는 확인이 필요하다.\n\n> This is a series that synchronize pin-init upstream.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260710-pin-init-sync-v1-0-8fa16cde87ae@garyguo.net/)\n\n**scripts: kconfig: merge_config.sh: keep temp file in the output dir**\n\nGustavo Luiz Duarte의 v2 단일 패치가 merge_config.sh의 임시 파일 생성 위치를 cwd에서 mktemp --tmpdir=\"$OUTPUT\"로 바꿔 $OUTPUT 아래로 옮긴다. 기본값 $OUTPUT=\".\"이므로 기존 동작은 그대로 유지되고, Breno Leitao의 Reviewed-by가 붙었다.\n\n영향: 읽기 전용 소스 트리에 대해서도 merge_config.sh를 돌릴 수 있게 해, CI·배포의 out-of-tree 빌드 구성에 실질적 편의를 준다. kbuild 메인테이너의 실제 픽업 여부는 확인이 필요하다.\n\n> Create it under $OUTPUT instead, which allows running the script against a read-only source tree.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20260710-merge_config_output-v2-1-8be3de601612@gmail.com/)\n\n**rust_binder: Implement dynamic debug logging mask**\n\nJahnavi MN(Google)의 v2 시리즈(7패치)가 C Binder의 동적 debug_mask를 rust_binder로 포팅한다. /sys/module/rust_binder/parameters/debug_mask에 bitflags(USER_ERROR, FAILED_TRANSACTION, DEATH_NOTIFICATION, DEAD_TRANSACTION)를 쓰면 실행 중 장치에서 즉시 verbose 로그를 켤 수 있고 기본은 꺼짐이다. Greg KH가 대부분을 큐잉했으나 patch 5(FAILED_TRANSACTION)·patch 7(DEAD_TRANSACTION)은 적용 실패로 char-misc-testing 브랜치 기준 리베이스를 요청했다.\n\n영향: 리빌드·리부트 없이 dmesg로 실패 원인을 즉시 보게 해 Rust Binder 드라이버의 디버깅 시간을 크게 줄인다. 리베이스된 patch 5·7이 재제출·큐잉됐는지는 확인이 필요하다.\n\n> Developers can enable logs instantly on a running device by writing to `/sys/module/rust_binder/parameters/debug_mask`.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260710-rust_binder_debug_mask-v2-0-2846410e3ae6@google.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "arm64: ftrace: support DIRECT_CALLS without CALL_OPS",
+      "url": "https://lore.kernel.org/llvm/20260609-arm64-ftrace-direct-calls-v1-0-4a46f266697f@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "systemd bpf-restrict-fs 참조 스레드",
+      "url": "https://lore.kernel.org/all/20250610232418.GA3544567@ax162/",
+      "note": "thread"
+    },
+    {
+      "title": "arm64 ftrace 시리즈 리뷰/픽업 상태",
+      "url": "https://lore.kernel.org/llvm/20260710115531.626f1e09@gandalf.local.home/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: add SRCU abstraction",
+      "url": "https://lore.kernel.org/rust-for-linux/f624a266-c37f-421d-925b-645bb31b411c@paulmck-laptop/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: pin-init: upstream synchronization for 7.3 (round 1)",
+      "url": "https://lore.kernel.org/rust-for-linux/20260710-pin-init-sync-v1-0-8fa16cde87ae@garyguo.net/",
+      "note": "thread"
+    },
+    {
+      "title": "pin-init PR #120: 중복 #[pin] 어트리뷰트 에러화",
+      "url": "https://github.com/Rust-for-Linux/pin-init/pull/120",
+      "note": "thread"
+    },
+    {
+      "title": "pin-init PR #140: unwind 안전성 수정",
+      "url": "https://github.com/Rust-for-Linux/pin-init/pull/140",
+      "note": "thread"
+    },
+    {
+      "title": "scripts: kconfig: merge_config.sh: keep temp file in the output dir",
+      "url": "https://lore.kernel.org/linux-kbuild/20260710-merge_config_output-v2-1-8be3de601612@gmail.com/",
+      "note": "commit"
+    },
+    {
+      "title": "rust_binder: Implement dynamic debug logging mask",
+      "url": "https://lore.kernel.org/rust-for-linux/20260710-rust_binder_debug_mask-v2-0-2846410e3ae6@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "rust_binder 큐잉/리베이스 요청",
+      "url": "https://lore.kernel.org/rust-for-linux/2026071046-musty-subfloor-53ec@gregkh/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-10T19:02:22.935Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
