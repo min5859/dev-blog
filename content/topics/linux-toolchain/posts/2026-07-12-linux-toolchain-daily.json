@@ -1,0 +1,124 @@
+{
+  "id": "2026-07-12-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-07-12 스택트레이스 file:line 임베드 — 리눅스 툴체인",
+  "headline": "kallsyms 파일:라인 임베드, PCI 플래그 원자화, Rust bitmap/firmware 정리가 함께 올라왔다.",
+  "date": "2026-07-12",
+  "summary": "PCI 코어는 is_busmaster 등 공유 비트필드를 원자적 접근자로 옮겨 Rust 디바이스 API 재작업의 선행조건을 마련했고, kallsyms는 커널 스택트레이스에 소스 file:line 정보를 새 빌드 의존성(libdw)과 약 44MiB 메모리 비용으로 추가합니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "툴체인"
+  ],
+  "highlights": [
+    {
+      "title": "PCI 비트필드 플래그, 원자적 접근자로 전환",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "PCI 코어 유지보수자 및 Rust-for-Linux 디바이스 추상화 개발자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260711-pci-dev-flags-v1-0-2fcf2811138c@mailbox.org/",
+      "if": "PCI 드라이버나 Rust 디바이스 인에이블 API 작업을 하고 있다면",
+      "do": "is_busmaster/broken_parity_status 를 새 atomic flags 비트맵으로 옮기는 이 v1 패치와 xen-pciback/lpfc/sfc 영향 범위를 검토하세요",
+      "verify": "링크된 스레드에서 Bjorn Helgaas 등 메인테이너 리뷰와 병합 상태를 원문으로 확인하세요"
+    },
+    {
+      "title": "커널 스택트레이스에 file:line 정보 삽입 (CONFIG_KALLSYMS_LINEINFO)",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "kbuild/툴체인 유지보수자, 커널 디버거, libdw 의존성과 메모리 비용을 검토하는 배포판 빌더",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20260709163833.3851179-2-sashal@kernel.org/",
+      "if": "커널 빌드에서 스택트레이스 가독성이나 vmlinux 빌드 의존성 변화에 관심이 있다면",
+      "do": "libdw(elfutils) 기반 신규 호스트 툴 gen_lineinfo 와 약 44MiB 늘어나는 .rodata 풋프린트를 검토하세요",
+      "verify": "v2 스레드에서 Helge Deller 의 parisc Tested-by 와 IS_ENABLED() 요청 등 리뷰 진행 상황을 원문으로 확인하세요"
+    },
+    {
+      "title": "Rust id_pool, kernel::bitmap 으로 이동하며 xarray/maple_tree 권장",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "ID/IDR 추상화를 선택하는 Rust-for-Linux 드라이버 작성자, Binder 유지보수자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260711-id-pool-move-bitmap-v1-1-cd5b7efc2c12@google.com/",
+      "if": "Rust 드라이버에서 ID 할당 방식을 고르고 있다면",
+      "do": "일반적인 IDR 용도에는 xarray/maple_tree 를, Binder 류의 특수한 비트맵 요구에는 id_pool(이제 kernel::bitmap 하위)을 사용하세요",
+      "verify": "패치 스레드에서 병합 여부와 최종 네이밍 합의를 원문으로 확인하세요"
+    },
+    {
+      "title": "Rust Firmware 예제의 null 포인터 UB 수정",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "Rust-for-Linux 추상화 작성자 및 예제를 참고하는 드라이버 개발자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260711180231.229525-1-ojeda@kernel.org/",
+      "if": "Firmware 추상화 문서 예제를 드라이버 코드에 참고했다면",
+      "do": "null 포인터로 ARef<Device> 를 만들던 기존 예제 대신 파라미터로 ARef 를 전달받는 새 버전으로 갱신하세요",
+      "verify": "이 패치의 인용문은 원문 검증에 실패했으므로, 링크된 원문에서 실제 커밋 내용을 직접 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**PCI 비트필드 플래그, 원자적 접근자로 전환**\n\nstruct pci_dev 의 공유 비트필드 word 에서 is_busmaster/broken_parity_status 를 공통 락 없이 여러 경로(런타임 PM resume 의 pci_set_master(), pci_disable_device(), sysfs 의 broken_parity_status_store())가 동시에 쓰는 데이터 레이스가 있어, 새 원자적 flags 비트맵으로 이 두 비트를 이동합니다.\n\n영향: Rust 디바이스 인에이블 API 재작업에서 계획된 guard 객체가 pci_disable_device() 를 pci_set_master() 와 동시에 실행할 수 있는 문맥에서 호출하므로, 이 이동이 그 안전성의 전제 조건입니다.\n\n> Bits sharing a word must not be modified concurrently, but several writers take no common lock\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260711-pci-dev-flags-v1-0-2fcf2811138c@mailbox.org/)\n\n**kallsyms: 커널 스택트레이스에 file:line 정보 임베드**\n\nCONFIG_KALLSYMS_LINEINFO 를 추가해, 빌드 시 호스트 툴 scripts/gen_lineinfo 가 libdw(elfutils)로 vmlinux 의 DWARF .debug_line 을 읽어 주소-대-file:line 테이블을 만들어 .rodata 에 링크하고, 런타임에는 이를 이진 탐색해 각 스택 프레임 뒤에 '(file:line)' 을 붙입니다. _text 기준 오프셋이라 KASLR-safe 하고 락-프리·할당-프리·panic-safe 이며, libdw-dev 빌드 의존성과 1852-옵션 x86_64 설정 기준 약 44MiB 풋프린트가 필요합니다.\n\n영향: 별도 addr2line/decode_stacktrace 없이 소스 위치가 스택트레이스에 바로 찍히지만, 큰 .rodata 메모리 비용과 새 elfutils/libdw 빌드 의존성이라는 트레이드오프를 배포판·CI 커널 빌더가 검토해야 합니다. v2 상태로 리뷰 코멘트가 열려 있어 병합 여부는 확인이 필요하며, Helge Deller 는 parisc Tested-by 를 주고 #ifdef 대신 IS_ENABLED() 사용을 요청했습니다.\n\n> a new host tool (scripts/gen_lineinfo) reads DWARF .debug_line from vmlinux using libdw (elfutils), extracts all address-to-file:line mappings\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20260709163833.3851179-2-sashal@kernel.org/)\n\n**Rust bitmap: id_pool 을 kernel::bitmap 으로 이동, xarray/maple_tree 권장**\n\nRust 커널의 id_pool 모듈을 kernel::bitmap 하위로 옮기고, 일반적인 IDR 용도에는 xarray 나 maple_tree 를 쓰라는 주석을 추가했습니다. id_pool 은 원래 성능·스핀락 요구사항 때문에 일반 IDR 대신 비트맵이 필요했던 Binder 드라이버를 위해 만들어졌습니다.\n\n영향: kernel::id_pool 이라는 이름이 범용 IDR 솔루션으로 오인되던 것을 바로잡아, Rust 드라이버 작성자가 잘못된 프리미티브를 고르지 않도록 API 네임스페이스와 가이드를 정리합니다.\n\n> move it to kernel::bitmap and add a comment recommending the xarray or maple tree for generic IDR use-cases\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260711-id-pool-move-bitmap-v1-1-cd5b7efc2c12@google.com/)\n\n**scripts/kconfig: merge_config.sh, 임시 파일을 출력 디렉터리에 생성**\n\nmerge_config.sh 가 임시 파일을 현재 디렉터리 대신 $OUTPUT 아래에 생성하도록 바뀌어, 읽기 전용 소스 트리에서도 스크립트를 실행할 수 있게 됩니다. $OUTPUT 기본값이 '.' 이므로 기존 사용자의 동작은 그대로 유지됩니다.\n\n영향: 소스 트리를 불변으로 유지하고 별도 출력 디렉터리에 빌드하는 배포판·CI 파이프라인이 임시 파일 쓰기 오류를 겪지 않게 되는 작은 kbuild 개선입니다. 어제 다룬 항목의 v2 갱신이며, kbuild 메인테이너(Masahiro Yamada)의 반영 여부는 확인이 필요합니다.\n\n> Create it under $OUTPUT instead, which allows running the script against a read-only source tree.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20260710-merge_config_output-v2-1-8be3de601612@gmail.com/)\n\n**Rust firmware: 예제의 null 포인터 UB 제거**\n\nFirmware 문서 예제가 Device::get_device() 의 안전 요구사항을 어기고 null 포인터로 ARef<Device> 를 만들었던 것으로 보이며, 이를 파라미터로 ARef 를 전달받는 방식으로 바꿔 unsafe 블록을 없애고 UB 를 제거하는 패치로 보입니다(해당 인용문은 원문 검증에 실패해 추정 표현입니다).\n\n영향: 추상화 예제는 rustdoc 문서 테스트로 실행되므로, 예제 자체의 UB 는 잠재적 테스트 실패이자 드라이버 작성자가 그대로 베낄 수 있는 나쁜 템플릿이 됩니다.\n\n> The `Firmware` example crafts an `ARef<Device>` using a null pointer, which breaks the safety requirements of `Device::get_device()`.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260711180231.229525-1-ojeda@kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "PCI: Convert bitfield flags to atomic accessors (v1)",
+      "url": "https://lore.kernel.org/rust-for-linux/20260711-pci-dev-flags-v1-0-2fcf2811138c@mailbox.org/",
+      "note": "thread"
+    },
+    {
+      "title": "driver core: Replace dev->offline + ->offline_disabled with accessors",
+      "url": "https://github.com/torvalds/linux/commit/a7cc262a1135",
+      "note": "commit"
+    },
+    {
+      "title": "kallsyms: embed source file:line info in kernel stack traces (v2)",
+      "url": "https://lore.kernel.org/linux-kbuild/20260709163833.3851179-2-sashal@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "Re: [PATCH v2] kallsyms lineinfo review (Helge Deller)",
+      "url": "https://www.mail-archive.com/linux-kernel@vger.kernel.org/msg2615506.html",
+      "note": "thread"
+    },
+    {
+      "title": "rust: bitmap: move id_pool into kernel::bitmap",
+      "url": "https://lore.kernel.org/rust-for-linux/20260711-id-pool-move-bitmap-v1-1-cd5b7efc2c12@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "[PATCH v16 0/5] rust: adds Bitmap API, ID pool and bindings",
+      "url": "https://www.mail-archive.com/linux-hardening@vger.kernel.org/msg10835.html",
+      "note": "thread"
+    },
+    {
+      "title": "scripts: kconfig: merge_config.sh: keep temp file in output dir (v2)",
+      "url": "https://lore.kernel.org/linux-kbuild/20260710-merge_config_output-v2-1-8be3de601612@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: firmware: avoid UB in example by passing parameter",
+      "url": "https://lore.kernel.org/rust-for-linux/20260711180231.229525-1-ojeda@kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-11T19:01:49.513Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

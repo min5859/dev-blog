@@ -1,0 +1,130 @@
+{
+  "id": "2026-07-12-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-07-12 dma-resv 락 홀드타임 단축 — GPU/AI",
+  "headline": "drm/xe dma-resv 락 보유시간을 1ms 미만으로 줄이는 패치와 nova-core 채널 할당자의 비트맵 전환이 핵심입니다.",
+  "date": "2026-07-12",
+  "summary": "drm/xe의 dma-resv 락 보유시간을 최대 1ms 미만으로 줄이는 재작업 패치가 TTM 디프래그멘터의 전제조건을 마련했지만 König와 설계 이견이 남아 있습니다. nova-core는 채널 ID 할당자를 find_next_zero_area 기반 비트맵 방식으로 확정하는 데 합의했습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "GPU",
+    "DRM"
+  ],
+  "highlights": [
+    {
+      "title": "dma-resv 락 홀드타임 100ms → 1ms 미만",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "drm/xe and drm/ttm maintainers; GPU driver devs sensitive to submit latency / frame budget",
+      "verifyLink": "https://lore.kernel.org/dri-devel/alJJ3CensWXW+Wa7@gsse-cloud1.jf.intel.com/",
+      "if": "drm/xe나 drm/ttm에서 BO 생성·이동 시 dma-resv 락 보유시간이 프레임 예산을 잠식한다면",
+      "do": "Matthew Brost의 재작업 시리즈를 검토해 페이지 할당과 DMA/IOVA 매핑을 락 임계구역 밖으로 옮기는 구조를 확인해야 합니다",
+      "verify": "링크된 스레드에서 Christian König의 반박 지점과 현재 리비전(v1/v2) 상태를 원문으로 확인해야 합니다"
+    },
+    {
+      "title": "nova-core 채널 ID 풀, 비트맵 방식으로 확정",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "nova-core / Rust GPU driver developers; Rust-for-Linux data-structure reviewers",
+      "verifyLink": "https://lore.kernel.org/dri-devel/DJVRYHMLVAMH.1UK0QWBNSMDO2@garyguo.net/",
+      "if": "nova-core 채널 할당 로직을 maple tree 기반으로 구현하고 있었다면",
+      "do": "find_next_zero_area 기반 비트맵 id_pool 구조를 요구하는 리뷰 합의를 반영해야 합니다",
+      "verify": "다음 리비전이 kernel::id_pool(BitmapVec) API를 직접 채택하는지 스레드에서 확인해야 합니다"
+    },
+    {
+      "title": "dma_resv 레퍼런스카운트 도입, König 스스로 이견 제기",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "dma-buf/dma_resv 코어 및 이를 소비하는 DRM 드라이버 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/DJVRML4G11GZ.Z7FTZH7I1LZN@kernel.org/",
+      "if": "dma_resv 객체의 라이프사이클을 다루는 드라이버를 유지보수한다면",
+      "do": "kref 도입안과 embedded 할당 경로가 공존할 때의 UAF 위험 지적을 검토해야 합니다",
+      "verify": "embedded 경로 제거 여부와 병합 상태를 스레드에서 다시 확인해야 합니다"
+    },
+    {
+      "title": "Rust PCI 디바이스 인에이블 API, 공개 flags 비트맵으로 재설계",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust-for-Linux PCI abstraction authors; nova-core and other Rust DRM driver devs; PCI core maintainers",
+      "verifyLink": "https://lore.kernel.org/dri-devel/DJVUHS5VHP4Z.G2FV1QJQ8ZYH@mailbox.org/",
+      "if": "nova-core 등 Rust DRM 드라이버에서 is_busmaster·broken_parity_status에 접근한다면",
+      "do": "priv_flags 대신 공개 flags 비트맵과 생성된 접근자를 쓰는 v1 시리즈를 검토해야 합니다",
+      "verify": "Bjorn Helgaas의 방향 결정과 리스핀 여부를 스레드에서 확인해야 합니다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/ttm, drm/xe: dma-resv 락 홀드타임 최소화 및 BO 디프래그먼트**\n\nMatthew Brost의 시리즈가 gem_create/BO 이동 비용의 대부분인 페이지 (재)할당과 DMA/IOVA 매핑을 dma-resv 임계구역 밖에서 미리 준비한 뒤, 짧은 보유 구간에서만 결과를 BO에 반영하도록 재작업했습니다. 이로써 TTM 디프래그멘터도 실현 가능해집니다.\n\n영향: dma-resv는 BO 또는 VM 단위 락이라 오래 붙잡으면 같은 VM에서 submit이 할당 작업에 막힙니다. 60Hz 기준 16ms 프레임 예산을 잡아먹던 5~100ms 보유시간이 일반적으로 100µs 미만, 최악의 경우에도 1ms 미만으로 줄어 반응성 있는 IOCTL과 디프래그멘터 도입의 전제조건이 마련됩니다. Christian König는 이 접근의 프레이밍/방식에 반대 의견을 냈습니다.\n\n> During the v1 implementation, I quickly noticed that the dma_resv lock could be held for up to 100 ms in the worst case, and more typically for 5–10 ms.\n\n[원문 확인](https://lore.kernel.org/dri-devel/alJJ3CensWXW+Wa7@gsse-cloud1.jf.intel.com/)\n\n**dma-buf: dma_resv에 레퍼런스카운트 추가**\n\nChristian König가 struct dma_resv에 kref 참조카운트를 추가해(container_of로 dma_resv_release, obj->allocated에 따라 kfree) '임베드 할당 해크'를 대체하자고 제안했습니다. Matthew Brost는 긍정적이었지만, König 본인이 이후 이 변경이 자기모순적이라고 지적했습니다. 임베드/할당 경로가 남아있는 한 배타적 소유(임베드)와 공유 소유(레퍼런스카운트)가 섞여 의미가 오히려 불명확해진다는 것입니다.\n\n영향: dma_resv는 모든 DRM/dma-buf 드라이버가 잠그는 예약 객체입니다. 임베드된 경우 메모리가 어차피 임의로 해제될 수 있는 상태에서 레퍼런스카운트를 얹는 것은 오류 유발적이고 UAF 위험을 키운다는 지적이 나왔으며, 모든 GEM/TTM 객체 수명주기에 파급되는 핵심 ABI 소유권 모델 결정입니다.\n\n> When the dma_resv is embedded in another object the reference count becomes meaningless.\n\n[원문 확인](https://lore.kernel.org/dri-devel/DJVRML4G11GZ.Z7FTZH7I1LZN@kernel.org/)\n\n**rust: pci: 디바이스 인에이블 API 재설계**\n\nRust PCI 추상화의 디바이스 인에이블 API 논의에서, 드라이버가 접근하는 플래그 비트(is_busmaster, broken_parity_status)를 어디에 둘지가 쟁점이 되었습니다. drivers/pci 비공개 priv_flags를 노출하는 대신, Maurice Hieronymus가 driver-core 선례를 따라 공개 flags 비트맵과 생성된 접근자를 추가하는 v1 시리즈를 제출했고, is_busmaster와 broken_parity_status를 전환했습니다. Bjorn Helgaas의 선호가 아직 반영 대기 중입니다.\n\n영향: is_busmaster는 xen-pciback, lpfc, sfc 등 drivers/pci 외부에서도 직접 읽고 쓰는 필드라, Rust PCI 계층은 구조체 필드를 직접 건드리는 대신 공인된 공개 접근자가 필요합니다. 이는 nova-core 같은 Rust GPU 드라이버가 디바이스를 인에이블하고 버스마스터 상태를 다루는 방식을 좌우합니다.\n\n> is_busmaster is accessed directly from outside: xen-pciback writes it, lpfc and sfc read it.\n\n[원문 확인](https://lore.kernel.org/dri-devel/DJVUHS5VHP4Z.G2FV1QJQ8ZYH@mailbox.org/)\n\n**gpu: nova-core: ChannelIdPool 추가**\n\nnova-core 채널 ID 할당자 리뷰에서, alloc_range+erase 루프로 정렬을 흉내 내고 별도 뮤텍스와 연산별 할당까지 필요한 MapleTreeAlloc 기반 구현이 거부되고, find_next_zero_area를 쓰는 비트맵 id_pool로 방향이 잡혔습니다. 핵심 요구사항은 8-정렬입니다. pre-Blackwell에서는 USERD가 BAR1에 페이지 단위(4K당 8채널, chid = page*8 + slot)로 배치돼 VM의 chid 범위가 8-정렬이어야 하며, Blackwell부터는 함수별 도어벨로 이 제약이 사라집니다. Hubbard, Ryhl, Guo가 비트맵 방식에 합의했습니다.\n\n영향: Rust nova(NVIDIA) 드라이버의 채널 할당 자료구조가 사실상 확정됩니다. 2048개 ID짜리 비트맵은 256바이트로 캐시라인 4개 수준에 불과하고, 기존 IOMMU/DMA/IRQ 관례(find_next_zero_area)와 일치하며, 락 한 번에 실패 없는 해제가 가능해 maple tree의 간접 참조와 루프 정렬 해크보다 우수합니다. 최근 반영된 kernel::id_pool(BitmapVec) Rust API와도 방향이 맞습니다.\n\n> Pre-Blackwell, USERD sits in BAR1 at page granularity, 8 channels to a 4K page (chid = page*8 + slot).\n\n[원문 확인](https://lore.kernel.org/dri-devel/DJVRYHMLVAMH.1UK0QWBNSMDO2@garyguo.net/)\n\n**dt-bindings: phy: MT8195/MT8196 DisplayPort PHY 문서화**\n\nAngeloGioacchino Del Regno가 MediaTek MT8195(및 변형)의 DisplayPort/embedded DisplayPort PHY와 MT8196의 eDP PHY용 DT 바인딩을 추가했습니다. 이 PHY는 보드별 최적의 EYE 패턴을 위해 신호별 임피던스 캘리브레이션을 지원하며 HBR3 이상 고속 DP를 겨냥합니다. Krzysztof Kozlowski가 커밋 메시지 문구 및 기존 DP 바인딩의 nvmem 폐기 항목과의 통합을 요청하는 사소한 리뷰를 남겼습니다.\n\n영향: 기존 DP 컨트롤러 바인딩에 있던 캘리브레이션 데이터가 이 PHY 바인딩으로 옮겨가는 MediaTek SoC 디스플레이 신규 지원입니다. MT8195/MT8196 DP의 안정적인 DT ABI를 정의하며, DP 바인딩의 nvmem 폐기(별도 후보 e5fbd5cd)와 짝을 이룹니다.\n\n> especially useful for very high bitrates such as HBR3 and higher, depending on board design.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260711-spiritual-wildebeest-from-uranus-0fce41@quoll/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/ttm, drm/xe: Minimize dma-resv hold times and defragment sub-optimally backed BOs",
+      "url": "https://lore.kernel.org/dri-devel/alJJ3CensWXW+Wa7@gsse-cloud1.jf.intel.com/",
+      "note": "thread"
+    },
+    {
+      "title": "TTM shrinker helpers and xe buffer object shrinker",
+      "url": "https://lwn.net/Articles/990686/",
+      "note": "article"
+    },
+    {
+      "title": "dma-buf: Add reference counting to dma_resv",
+      "url": "https://lore.kernel.org/dri-devel/DJVRML4G11GZ.Z7FTZH7I1LZN@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: pci: rework device enabling API",
+      "url": "https://lore.kernel.org/dri-devel/DJVUHS5VHP4Z.G2FV1QJQ8ZYH@mailbox.org/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: pci: 공개 flags 비트맵 v1 시리즈",
+      "url": "https://lore.kernel.org/r/20260711-pci-dev-flags-v1-0-2fcf2811138c@mailbox.org",
+      "note": "thread"
+    },
+    {
+      "title": "gpu: nova-core: add ChannelIdPool",
+      "url": "https://lore.kernel.org/dri-devel/DJVRYHMLVAMH.1UK0QWBNSMDO2@garyguo.net/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: adds Bitmap API, ID pool and bindings",
+      "url": "https://lwn.net/Articles/1033745/",
+      "note": "article"
+    },
+    {
+      "title": "gpu: nova-core: firmware: Hopper/Blackwell support",
+      "url": "https://lwn.net/Articles/1049124/",
+      "note": "article"
+    },
+    {
+      "title": "dt-bindings: phy: Document MT8195 and MT8196 DisplayPort PHYs",
+      "url": "https://lore.kernel.org/dri-devel/20260711-spiritual-wildebeest-from-uranus-0fce41@quoll/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-11T19:44:39.000Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

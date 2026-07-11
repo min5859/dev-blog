@@ -1,0 +1,108 @@
+{
+  "id": "2026-07-12-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-07-12 A733 클럭 드라이버 추가 — 아키텍처/플랫폼",
+  "headline": "A733 클럭 드라이버, RISC-V Svinval TLB 최적화, rk3568 NAS DT 등 신규 패치가 각각 리뷰 단계에 있습니다.",
+  "date": "2026-07-12",
+  "summary": "Allwinner A733 SoC 클럭 드라이버, RISC-V update_mmu_cache의 Svinval 적용, rk3568 기반 NAS devicetree 등 5건이 이번 수집에 포함되었습니다. 대부분 아직 초기 리뷰 단계라 병합 여부는 원문에서 확인이 필요합니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "Allwinner A733 CCU/PRCM 클럭 드라이버 v2",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "Allwinner/sunxi clk 및 arm64 SoC 활성화 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260711-a733-clk-v2-0-974d188cbe0c@pigmoral.tech/",
+      "if": "Allwinner A733 SoC 보드를 부팅하거나 sunxi-ng 클럭 드라이버를 유지보수한다면",
+      "do": "v2 시리즈의 PATTERN1/SDM 이중 레이아웃 변경이 A523 계열 공유 인프라에 미치는 영향을 검토하라",
+      "verify": "패치 스레드에서 pll-ref 기준클럭 정규화와 MCU_CCU 제거 내용을 확인하라"
+    },
+    {
+      "title": "RISC-V update_mmu_cache에 Svinval 적용",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "RISC-V mm/arch 유지보수 담당 및 TLB 성능에 민감한 서버/데이터센터 커널 엔지니어",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/e819486e-3cf9-bba0-6000-4750dc4d65ef@kernel.org/",
+      "if": "RISC-V 플랫폼에서 TLB 무효화 경로 성능을 추적한다면",
+      "do": "sfence.vma 대신 Svinval을 쓰는 분리된 두 번째 패치의 리뷰 진행 상황을 점검하라",
+      "verify": "메인테이너 트리 반영 여부와 실측 벤치마크 제시 여부를 원문 스레드에서 확인하라"
+    },
+    {
+      "title": "LincStation E1 devicetree 신규 추가",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "Rockchip/rk3568 및 arm64 devicetree 유지보수 담당, NAS 보드 활성화 사용자",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260711192842.845048-1-samuel@sholland.org/",
+      "if": "rk3568 기반 NAS 보드 활성화 작업을 진행한다면",
+      "do": "DTS 파일명과 보드 compatible 문자열이 아직 미확정임을 감안해 리뷰 논의를 추적하라",
+      "verify": "generic gpio LED 트리거 바인딩 추가가 LED/DT 메인테이너 승인을 받았는지 확인하라"
+    },
+    {
+      "title": "SM8450 reserved-memory 노드 정리 논의",
+      "priority": "하",
+      "impactType": "runtime",
+      "affectedAudience": "Qualcomm arm64 DT 유지보수 담당 및 reserved-memory 맵을 정리하는 커널 엔지니어",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/vbsdddrjoq73h2tal77rdm573ydomwsagr7fujjh7znw3dnbka@olj35zj5pyzn/",
+      "if": "Qualcomm SoC의 reserved-memory 맵을 정리한다면",
+      "do": "memtest=1 부팅으로 해제 영역의 실제 접근 가능 여부를 검증한 뒤 반영하라",
+      "verify": "SM8475에서 확인된 결과가 SM8450 전체 보드에도 동일하게 적용되는지 원문 스레드에서 확인하라"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**riscv: mm: Apply svinval in update_mmu_cache()**\n\nPaul Walmsley가 Xu Lu의 2025년 9월 패치를 이어받아 비-Svinval 경로를 먼저 분리하고, 확장이 있으면 update_mmu_cache_range()에서 sfence.vma 대신 Svinval을 쓰는 두 번째 패치를 추가했습니다.\n\n영향: update_mmu_cache_range()는 PTE 설치마다 호출되는 핫패스라 TLB 무효화 최적화 효과가 있고, 과거 회귀가 있었던 지점이라 경로 분리로 위험도 격리합니다.\n\n> here's the second patch, separated out from your original, which adds the Svinval path.  Thoughts?\n\n[원문 확인](https://lore.kernel.org/linux-riscv/e819486e-3cf9-bba0-6000-4750dc4d65ef@kernel.org/)\n\n**clk: sunxi-ng: Add support for Allwinner A733 CCU and PRCM**\n\nv2 시리즈가 Allwinner A733 SoC용 메인 CCU와 PRCM(R-CCU) 클럭 드라이버를 추가하고, 19.2/24/26MHz 오실레이터를 24MHz로 정규화하는 pll-ref 클럭을 도입하며 A523의 MCU_CCU를 제거하고 sunxi-ng SDM 헬퍼를 PATTERN1 이중 레이아웃으로 갱신했습니다.\n\n영향: A733은 A523 계열의 신규 SoC로 CCU/PRCM 없이는 실제 클럭 트리로 부팅할 보드가 없고, SDM/PATTERN1 변경은 공유 sunxi-ng 인프라를 건드려 Allwinner 클럭 드라이버 계열 전반에 영향을 줍니다.\n\n> Add support for the main CCU and the PRCM module (R-CCU) found in the Allwinner A733 SoC.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260711-a733-clk-v2-0-974d188cbe0c@pigmoral.tech/)\n\n**Add devicetree for LincPlus LincStation E1**\n\n4패치 시리즈가 LincStation E1 NAS용 arm64 rk3568 devicetree(약 1004줄)와 함께 generic gpio LED 트리거 문서, techvision 벤더 프리픽스, rockchip 보드 compatible 항목을 추가했으며, 메인라인 U-Boot 2026.07이 수정 없이 이 DT로 동작한다고 보고되었습니다.\n\n영향: 출시된 RK3568 NAS의 신규 보드 활성화이면서 다른 보드도 재사용할 수 있는 크로스커팅 바인딩 변경을 포함하고, DTS 파일명/compatible 문자열은 아직 미확정이라 메인테이너 결정이 필요합니다.\n\n> This series adds a binding and devicetree for the LincStation E1 NAS.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260711192842.845048-1-samuel@sholland.org/)\n\n**arm64: dts: qcom: sm8450: Remove unneeded reserved memory nodes**\n\nQualcomm SM8450 DT에서 reserved-memory 노드를 제거하는 패치 논의에서, 리뷰어 Dmitry Baryshkov가 제출자 Esteban Urrutia에게 memtest=1 부팅으로 해제 영역의 실제 접근 가능성을 증명하라고 요구했고, 제출자는 메인라인화된 SM8475 기기(motorola-bronco)에서 확인했다고 답했습니다.\n\n영향: 과도하게 선언된 reserved-memory 영역은 RAM을 영구히 빼앗지만 잘못 제거하면 펌웨어 보호 영역을 건드려 멈추거나 손상될 수 있어, memtest=1 검증 요구는 Qualcomm reserved-memory 맵을 정리하는 이들에게 유용한 패턴입니다.\n\n> Please verify that you can actually access those areas (boot with memtest=1)\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/vbsdddrjoq73h2tal77rdm573ydomwsagr7fujjh7znw3dnbka@olj35zj5pyzn/)\n\n**dt-bindings: media: sun4i-a10-video-engine: Fix SRAM count for H6**\n\nAllwinner H6용 video-engine 바인딩에 두 번째 SRAM 리전 phandle을 추가했는데, H6의 SRAM C 영역이 비디오 엔진이 쓰는 VE SRAM 일부의 별칭(alias)이기 때문입니다.\n\n영향: H6 미디어/VE 바인딩의 정확성 수정으로, 별칭 영역을 선점(claim)하지 않으면 다른 곳에서 뜻하지 않게 접근될 수 있어 VE 사용자를 위해 DT를 정확히 유지하는 데 필요합니다.\n\n> This region should also be claimed so that no access happens through the alias window.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260711135959.3616919-3-wens@kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "riscv: mm: Apply svinval in update_mmu_cache()",
+      "url": "https://lore.kernel.org/linux-riscv/e819486e-3cf9-bba0-6000-4750dc4d65ef@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "clk: sunxi-ng: Add support for Allwinner A733 CCU and PRCM",
+      "url": "https://lore.kernel.org/linux-riscv/20260711-a733-clk-v2-0-974d188cbe0c@pigmoral.tech/",
+      "note": "thread"
+    },
+    {
+      "title": "Add devicetree for LincPlus LincStation E1",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260711192842.845048-1-samuel@sholland.org/",
+      "note": "thread"
+    },
+    {
+      "title": "arm64: dts: qcom: sm8450: Remove unneeded reserved memory nodes",
+      "url": "https://lore.kernel.org/linux-arm-kernel/vbsdddrjoq73h2tal77rdm573ydomwsagr7fujjh7znw3dnbka@olj35zj5pyzn/",
+      "note": "thread"
+    },
+    {
+      "title": "dt-bindings: media: sun4i-a10-video-engine: Fix SRAM count for H6",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260711135959.3616919-3-wens@kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-11T19:36:32.095Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,105 @@
+{
+  "id": "2026-07-12-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-07-12 BPF tailcall 차단 — 커널 성능·RT",
+  "headline": "BPF verifier가 sync 콜백 tailcall을 거부하도록 바뀌고, libbpf btf_ext 초기화와 tracing_multi WARNING 수정 패치가 함께 올라왔습니다.",
+  "date": "2026-07-12",
+  "summary": "BPF verifier가 sync 콜백 서브프로그램 안의 tailcall을 거부하는 보안성 수정이 제출됐습니다. libbpf btf_ext 초기화 수정과 tracing_multi WARNING 교정도 함께 올라왔습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "BPF",
+    "RT"
+  ],
+  "highlights": [
+    {
+      "title": "BPF sync 콜백 tailcall 차단 패치",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF verifier 유지보수자, tailcall/JIT 담당자, BPF 보안 리뷰어",
+      "verifyLink": "https://lore.kernel.org/bpf/20260711104727.4023420-1-pulehui@huaweicloud.com/",
+      "if": "BPF sync 콜백 서브프로그램에서 tailcall을 사용하는 로직을 운용 중이라면",
+      "do": "verifier가 sync 콜백 내부 tailcall을 거부하도록 하는 이번 패치의 머지 여부를 추적하십시오",
+      "verify": "kernel/bpf/verifier.c의 is_cb 통합 검사와 selftest 반영 여부를 원문 스레드에서 확인하십시오"
+    },
+    {
+      "title": "libbpf btf_parse_elf 미초기화 포인터 수정",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "libbpf 기반 관측성 도구·언어 바인딩 개발자, BTF 파싱 API 사용자",
+      "verifyLink": "https://lore.kernel.org/bpf/178378853022.49961.12254894397759137901@digiscrypt.com/",
+      "if": "libbpf의 btf_parse_elf()를 직접 호출하거나 감싸는 바인딩을 유지하고 있다면",
+      "do": "*btf_ext 초기화 패치의 머지 여부와 대상 릴리스를 확인하십시오",
+      "verify": "이른 실패 경로에서 btf_ext__free()가 스택 쓰레기값을 해제하지 않는지 원문 스레드로 점검하십시오"
+    },
+    {
+      "title": "tracing_multi ftrace_managed 누락 수정",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "BPF tracing/fentry·trampoline 유지보수자, multi-attach 링크 사용자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260711124822.29406-1-leon.hwang@linux.dev/",
+      "if": "tracing_multi 링크와 fentry 링크를 함께 붙이는 관측성 파이프라인을 운용 중이라면",
+      "do": "register_fentry_multi()의 ftrace_managed 설정 패치가 bpf-next에 머지됐는지 확인하십시오",
+      "verify": "trampoline.c:1727의 WARNING 재현 여부와 v2 selftest 결과를 원문 스레드에서 점검하십시오"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**bpf: Reject callback subprogs that invoke tailcall**\n\n동기 콜백 서브프로그램 안에서 tailcall을 호출하면 x86_64처럼 tail call count를 레지스터로 전달하는 JIT에서 그 레지스터가 손상되는 문제를, verifier가 sync 콜백 내부 모든 서브프로그램의 tailcall을 거부하고 기존 async·exception 콜백 검사를 단일 is_cb 검사로 통합해 막습니다.\n\n영향: 손상된 tail call count는 tailcall 상한을 우회해 무한 tailcall로 이어질 수 있어 verifier 안전성과 DoS 방어의 핵심 사안입니다.\n\n> the corrupted TCC may bypass the TCC limit, leading to infinite tailcall.\n\n[원문 확인](https://lore.kernel.org/bpf/20260711104727.4023420-1-pulehui@huaweicloud.com/)\n\n머지 대상 트리(bpf 또는 bpf-next)와 다른 아키텍처로의 영향 여부는 확인이 필요합니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**libbpf: initialize btf_ext out-parameter early in btf_parse_elf()**\n\nbtf_parse_elf()가 .BTF.ext 파싱 이전 단계(elf_begin 실패, .BTF 섹션 부재, 손상된 .BTF/.BTF.base 등)에서 실패하면 정리 경로가 아직 값이 쓰이지 않은 *btf_ext를 읽던 문제를, 진입 시 *btf_ext를 NULL로 초기화해 모든 종료 경로에서 값이 정의되도록 고쳤습니다.\n\n영향: 초기화되지 않은 포인터에 btf_ext__free()가 동작하면 크래시나 힙 손상으로 이어질 수 있어 libbpf 기반 도구·바인딩의 메모리 안전 문제입니다.\n\n> ends up with btf_ext__free() operating on stack garbage, which can crash or corrupt the heap.\n\n[원문 확인](https://lore.kernel.org/bpf/178378853022.49961.12254894397759137901@digiscrypt.com/)\n\n머지 여부, 대상 libbpf 릴리스, Fixes 커밋 명시 여부는 확인이 필요합니다.\n\n---\n\n**bpf: Fix WARNING in bpf_trampoline_multi_detach**\n\ntracing_multi 링크가 ftrace_managed를 설정하지 않아 뒤이어 fentry 링크를 붙이면 tracing_multi 링크 해제에 실패하고 trampoline.c:1727에서 WARNING이 뜨던 문제를, register_fentry_multi()에서 ftrace_managed를 true로 설정해 고쳤습니다. v2에서 Jiri의 Acked-by를 받았고 selftest도 추가됐습니다.\n\n영향: fentry/tracing 트램폴린의 다중 어태치 경로 정합성 문제로, tracing_multi와 fentry를 함께 쓰는 관측성 시나리오에 직접 영향을 줍니다.\n\n> it would fail to release the tracing_multi link when attaching tracing_multi link and then attaching fentry link.\n\n[원문 확인](https://lore.kernel.org/bpf/20260711124822.29406-1-leon.hwang@linux.dev/)\n\nbpf-next 실제 머지 여부와 WARNING을 처음 유발한 커밋 명시 여부는 확인이 필요합니다.\n\n---\n\n**mm/page_alloc: spin_trylock 정리 후속 패치 (진행 상황)**\n\n어제 다룬 page_alloc spin_trylock/alloc-trylock 정리에 이어, 저자가 서로 직교적이라 밝힌 후속 패치 2개가 하나의 시리즈로 추가 제출됐습니다. mm-new 기반이며 alloc-trylock v5 시리즈에 의존합니다.\n\n영향: atomic-context 할당 경로 작업은 PREEMPT_RT와 BPF 메모리 할당 양쪽에 맞닿아 있지만, 이번 후속분은 정리 성격이라 영향은 제한적으로 보입니다.\n\n> These patches are technically orthogonal to each other I'm just sending them as a series to avoid someone needing to deal with the (trivial) conflicts.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260710-spin-trylock-followup-v1-0-affb5fe5ed00@google.com/)\n\n개별 패치의 구체 변경 내용과 PREEMPT_RT 관점의 실질적 동작 변화 여부는 확인이 필요합니다(신뢰도 낮음)."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "bpf: Reject callback subprogs that invoke tailcall",
+      "url": "https://lore.kernel.org/bpf/20260711104727.4023420-1-pulehui@huaweicloud.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: tailcalls in BPF subprograms (배경)",
+      "url": "https://lwn.net/Articles/830520/",
+      "note": "article"
+    },
+    {
+      "title": "libbpf: initialize btf_ext out-parameter early in btf_parse_elf()",
+      "url": "https://lore.kernel.org/bpf/178378853022.49961.12254894397759137901@digiscrypt.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Fix WARNING in bpf_trampoline_multi_detach",
+      "url": "https://lore.kernel.org/bpf/20260711124822.29406-1-leon.hwang@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "mm/page_alloc: spin_trylock cleanup followups",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260710-spin-trylock-followup-v1-0-affb5fe5ed00@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "alloc-trylock v5 시리즈 (배경, 미검증)",
+      "url": "https://lore.kernel.org/all/20260703-alloc-trylock-v5-0-c87b714e19d3@google.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-11T19:29:33.053Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
