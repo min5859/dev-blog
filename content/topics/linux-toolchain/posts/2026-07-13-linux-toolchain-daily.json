@@ -1,0 +1,115 @@
+{
+  "id": "2026-07-13-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-07-13 Rust 인프라 확장 — 리눅스 툴체인",
+  "headline": "L2CAP에 Clang Context Analysis가 처음 적용되고 Rust bug!() 매크로 등 커널 인프라가 함께 진전했다.",
+  "date": "2026-07-13",
+  "summary": "Bluetooth L2CAP 패치가 Clang 기반 Compiler Context Analysis를 실제 서브시스템에 처음 적용해 정적 락 분석 도입 부담을 보여줬다. 동시에 Rust bug!() 매크로, rust_binder 디버그 마스크, leds/serdev 버스 추상화 등 Rust for Linux 인프라가 여러 갈래로 진전했다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "Rust",
+    "Clang"
+  ],
+  "highlights": [
+    {
+      "title": "L2CAP 락 패턴 정리, Context Analysis 첫 적용",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "Clang 커널 빌드 담당자, Bluetooth/L2CAP 유지보수 담당, context-analysis 도입 추적자",
+      "verifyLink": "https://lore.kernel.org/llvm/9a718ecfbeb46077d8100dcb687e1ab6073986f6.1783860121.git.pav@iki.fi/",
+      "if": "Clang 기반 Compiler Context/Locking Analysis(Linux 7.0 목표) 도입을 추적하고 있다면",
+      "do": "l2cap_get_chan_by_scid/dcid()의 maybe-return-locked 패턴 제거와 l2cap_chan_lock/unlock() 어노테이션 추가 방식을 참고해 자신의 서브시스템에도 적용 가능한지 검토하세요.",
+      "verify": "패치 스레드에서 병합 트리와 리뷰 상태를 확인하고, 커널 문서의 Clang 22 vs 23 요구 버전 불일치를 재확인하세요."
+    },
+    {
+      "title": "Rust bug!() 매크로, BUG/WARN 인프라와 정렬",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "Rust for Linux core(kernel crate) 개발자, Rust 드라이버 작성자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260712102802.3013600-1-tomo@flapping.org/",
+      "if": "Rust 드라이버의 panic!()/.unwrap() 크래시 트레이스 품질에 관심이 있다면",
+      "do": "lib.rs의 panic() 안 bindings::BUG() 호출이 bug!() 매크로로 교체되는 이번 변경을 검토하세요.",
+      "verify": "현재 #[doc(hidden)] 내부 전용 범위가 리뷰에서 그대로 유지되는지 스레드를 확인하세요."
+    },
+    {
+      "title": "Rust Binder, 실행 중 디버그 로그 마스크 도입",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "Rust Binder/Android binder 드라이버 개발자, char-misc 트리 추적자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/2026071234-untidy-ruined-c98d@gregkh/",
+      "if": "-EINVAL만 던지는 Rust Binder 디버깅에 어려움을 겪고 있다면",
+      "do": "/sys/module/rust_binder/parameters/debug_mask에 값을 써서 정렬 오류·콜스택 불일치·잘못된 handle 참조 로그를 즉시 활성화하세요.",
+      "verify": "5·7번 패치가 char-misc-testing 기준으로 재전송·병합됐는지 확인하세요."
+    },
+    {
+      "title": "Rust serdev 버스 추상화, 실제 드라이버 예고",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust 드라이버 작성자, serdev/serial 버스 및 watchdog 서브시스템 관계자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260712-rust_serdev-v13-0-2c4060bc8e30@posteo.de/",
+      "if": "Synology MCU 드라이버나 초기 device data가 필요한 watchdog 드라이버 작성을 계획 중이라면",
+      "do": "v13 serdev 추상화 시리즈를 확인하고 dakr의 선행 device 추상화 시리즈 병합 상태도 함께 살펴보세요.",
+      "verify": "선행 시리즈 병합 여부와 이 v13의 유지보수자 ack 상태를 스레드에서 재확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Bluetooth: L2CAP: avoid maybe-return-locked and add locking annotations**\n\nl2cap_get_chan_by_scid/dcid()의 maybe-return-locked 패턴을 제거하고 호출부에서 NULL 체크 후 직접 잠그도록 재구성한 뒤, l2cap_chan_lock/unlock()에 context-analysis 어노테이션을 추가했다(동작 변경 없음).\n\n영향: Clang 기반 Compiler Context/Locking Analysis(Linux 7.0 목표, Clang 22/23+)를 실제 서브시스템에 적용한 사례로, 정적 락 분석이 처리 못하는 패턴 때문에 기존 코드 재구성이 필요함을 보여준다.\n\n> Replace the maybe-return-locked behavior of l2cap_get_chan_by_scid/dcid() by doing locking in the caller after NULL check. This allows the static context analysis to handle this.\n\n[원문 확인](https://lore.kernel.org/llvm/9a718ecfbeb46077d8100dcb687e1ab6073986f6.1783860121.git.pav@iki.fi/)\n\n**rust_binder: Implement dynamic debug logging mask**\n\nC 레거시 binder의 debug_mask 모듈 파라미터를 Rust Binder 드라이버에 도입해, sysfs에 값을 써서 실행 중인 장치에서 즉시 verbose 로그(정렬 오류·콜스택 불일치·잘못된 handle 참조)를 켤 수 있게 했다(기본값 off).\n\n영향: -EINVAL만 던지던 Rust Binder의 '블랙박스' 문제를 해소해 C binder 수준의 런타임 디버깅 동등성을 제공하며, char-misc 큐 진행 상태가 Rust 드라이버 상류화 흐름을 보여준다.\n\n> Developers can enable logs instantly on a running device by writing to `/sys/module/rust_binder/parameters/debug_mask`.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/2026071234-untidy-ruined-c98d@gregkh/)\n\n**rust: bug: Add bug macro**\n\nC의 BUG()에 대응하는 Rust bug!() 매크로를 추가해, x86_64/arm64/riscv/s390에서 어셈블리로 lib/bug.c의 BUG/WARN 기능을 사용하도록 했다(현재 #[doc(hidden)] 내부 전용).\n\n영향: kernel crate와 binder·nova-core 등 드라이버의 panic!()/.unwrap()이 이 경로로 수렴해, Rust 패닉/BUG 백트레이스 품질이 개선되고 커널 BUG 인프라와 정렬된다.\n\n> Add bug macro(), the Rust equivalent of the C's BUG(), which uses the BUG/WARN feature (lib/bug.c) via assembly for x86_64/arm64/riscv/s390 like warn_on() macro.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260712102802.3013600-1-tomo@flapping.org/)\n\n**rust: leds: add led classdev abstractions**\n\nLED 등록/해제용 기본 classdev 추상화와 멀티컬러 LED 추상화를 Rust로 추가했다(v22). i2c register! 매크로 미구현으로 드라이버는 제외했고, v21→v22에서 init 수명 사용·불필요한 import 제거·fwnode refcount 조기 감소 회귀를 수정했다.\n\n영향: Rust LED 드라이버를 가능케 하는 기반 추상화로 Rust 서브시스템 추상화 성숙도를 보여주며, dakr의 device/register! 시리즈 병합에 상류화가 게이트돼 있다.\n\n> fix fwnode refcount decremented too early\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260712-rust_leds-v22-0-055b0459a079@posteo.de/)\n\n**rust: add basic serial device bus abstractions**\n\nserdev(직렬 장치 버스) Rust 추상화를 추가했다(v13). Synology 장치 MCU를 겨냥한 드라이버가 사용할 예정이며, dakr의 선행 시리즈에 의존한다.\n\n영향: Rust로 실제 드라이버(Synology MCU, watchdog)를 작성할 수 있게 하는 새 버스 추상화로 Rust 드라이버 생태계 확장을 보여주지만, 선행 device 시리즈 병합에 게이트돼 있다.\n\n> This abstraction will be used by a driver, which targets the MCU devices in Synology devices.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260712-rust_serdev-v13-0-2c4060bc8e30@posteo.de/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Bluetooth: L2CAP: avoid maybe-return-locked and add locking annotations",
+      "url": "https://lore.kernel.org/llvm/9a718ecfbeb46077d8100dcb687e1ab6073986f6.1783860121.git.pav@iki.fi/",
+      "note": "thread"
+    },
+    {
+      "title": "Compiler-Based Context Analysis (Kernel Docs)",
+      "url": "https://docs.kernel.org/dev-tools/context-analysis.html",
+      "note": "article"
+    },
+    {
+      "title": "rust_binder: Implement dynamic debug logging mask",
+      "url": "https://lore.kernel.org/rust-for-linux/2026071234-untidy-ruined-c98d@gregkh/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: bug: Add bug macro",
+      "url": "https://lore.kernel.org/rust-for-linux/20260712102802.3013600-1-tomo@flapping.org/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: leds: add led classdev abstractions (v22)",
+      "url": "https://lore.kernel.org/rust-for-linux/20260712-rust_leds-v22-0-055b0459a079@posteo.de/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: add basic serial device bus abstractions (v13)",
+      "url": "https://lore.kernel.org/rust-for-linux/20260712-rust_serdev-v13-0-2c4060bc8e30@posteo.de/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-12T19:04:46.843Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

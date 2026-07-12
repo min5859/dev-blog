@@ -1,0 +1,127 @@
+{
+  "id": "2026-07-13-linux-perf-rt-weekly-rollup",
+  "topic": "linux-perf-rt",
+  "title": "2026-07-13 주간 요약",
+  "headline": "ptdump·DEBUG_WX 등 커널 페이지테이블 관측 기능과 vmalloc huge 매핑을 다루는 mm/아키텍처 유지보수 담당 주목: mm/v",
+  "date": "2026-07-13",
+  "summary": "오늘의 핵심: 릴리스/로드맵 0건, 회귀·보안 신호 7건, 핵심 변경 1건. 리서치 dossier 의 출처를 근거로 정리했습니다.",
+  "tags": [
+    "주간"
+  ],
+  "highlights": [
+    {
+      "title": "mm/vmalloc: huge vmap 승격 시 페이지테이블 해제와 ptdump 경합 UAF 수정",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "ptdump·DEBUG_WX 등 커널 페이지테이블 관측 기능과 vmalloc huge 매핑을 다루는 mm/아키텍처 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260712-series-vmap-race-fix-v2-0-ad134cc3a12a@kernel.org/",
+      "if": "ptdump·DEBUG_WX 등 커널 페이지테이블 관측 기능과 vmalloc huge 매핑을 다루는 mm/아키텍처 유지보수 담당라면",
+      "do": "vmap이 P4D/PUD/PMD를 huge leaf로 승격할 때 하위 페이지테이블을 아무 락 없이 해제해, 동시에 도는 ptdump 페이지테이블",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/bpf/20260712-series-vmap-race-fix-v2-0-ad134cc3a12a@kernel.org/"
+    },
+    {
+      "title": "block/blk-mq: use atomic_t for quiesce_depth to avoid lock contention on RT",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "다중 큐 스토리지(megaraid_sas 등 고 MSI-X)를 PREEMPT_RT로 운용하는 엔지니어, block/blk-mq 유지보수자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260709063803.23538-2-ionut.nechita@windriver.com/",
+      "if": "다중 큐 스토리지(megaraid_sas 등 고 MSI-X)를 PREEMPT_RT로 운용하는 엔지니어, block/blk-mq 유지보수자라면",
+      "do": "PREEMPT_RT에서 심각한 처리량 회귀를 유발한 mainline 커밋 6bda857bcbb86(blk_mq_run_hw_queue의 requ",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/linux-rt-devel/20260709063803.23538-2-ionut.nechita@windriver.com/"
+    },
+    {
+      "title": "net: atlantic: free stranded TX buffers on ring deinit",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "aQuantia/Atlantic NIC에서 XDP_TX를 사용하는 운영자, page_pool·XDP 드라이버 유지보수자",
+      "verifyLink": "https://lore.kernel.org/bpf/tencent_8FE30FDFA32089B69BA3112E4A4C5E886D06@qq.com/",
+      "if": "aQuantia/Atlantic NIC에서 XDP_TX를 사용하는 운영자, page_pool·XDP 드라이버 유지보수자라면",
+      "do": "aq_vec_deinit()가 TX 링을 단일 aq_ring_tx_clean() 호출로만 비워 AQ_CFG_TX_CLEAN_BUDGET(256)",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/bpf/tencent_8FE30FDFA32089B69BA3112E4A4C5E886D06@qq.com/"
+    },
+    {
+      "title": "bpf: require an owned cpumask for bpf_cpumask_populate()",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF verifier·cpumask kfunc 유지보수자, sched_ext(scx) 개발자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260709182800.2037938-1-main.kalliope@gmail.com/",
+      "if": "BPF verifier·cpumask kfunc 유지보수자, sched_ext(scx) 개발자라면",
+      "do": "bpf_cpumask_populate()가 목적지를 bitmap_copy()로 기록하면서도 타입을 struct cpumask *로 선언해, ve",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/bpf/20260709182800.2037938-1-main.kalliope@gmail.com/"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**mm/vmalloc: huge vmap 승격 시 페이지테이블 해제와 ptdump 경합 UAF 수정**\n\nvmap이 P4D/PUD/PMD를 huge leaf로 승격할 때 하위 페이지테이블을 아무 락 없이 해제해, 동시에 도는 ptdump 페이지테이블 워커와 use-after-free 경합이 발생할 수 있었다. 이 시리즈는 huge 승격 로직이 huge 엔트리 설정과 이전 leaf 페이지테이\n\n영향: ptdump는 커널 페이지테이블을 덤프하고 check_wx_pages/DEBUG_WX로 W+X 매핑을 점검하는 관측·디버그 기능이다. syzbot KASAN으로 드러난 이 UAF는 그 관측 기능을 켠 커널에서 트리거될 수 있어, 커널 관측성·디버깅 경로의 정확성을 좇는 독자에게 중요하다\n\n> This series addresses the issue by having the vmap huge promotion logic acquire the mmap read lock while both setting the huge page table entry and freeing the prior leaf page table.\n\n[원문 확인](https://lore.kernel.org/bpf/20260712-series-vmap-race-fix-v2-0-ad134cc3a12a@kernel.org/)\n\n**block/blk-mq: use atomic_t for quiesce_depth to avoid lock contention on RT**\n\nPREEMPT_RT에서 심각한 처리량 회귀를 유발한 mainline 커밋 6bda857bcbb86(blk_mq_run_hw_queue의 requiesce 재확인을 q->queue_lock으로 보호)를 barrier 방식으로 교체한다. quiesce_depth를 atomic_t로 바꿔 q\n\n영향: RT에서 spinlock_t는 sleeping rt_mutex가 되어, 모든 IRQ 스레드가 흔한 'nothing pending' 경로에서 단일 q->queue_lock에 직렬화되고 D-state로 블록된다. megaraid_sas(128 MSI-X, 120 hw queue)에서 640\n\n> On a Broadcom/LSI MegaRAID 12GSAS/PCIe Secure SAS39xx (megaraid_sas, 128 MSI-X vectors, 120 hw queues) throughput drops from 640 MB/s to 153 MB/s.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260709063803.23538-2-ionut.nechita@windriver.com/)\n\n**net: atlantic: free stranded TX buffers on ring deinit**\n\naq_vec_deinit()가 TX 링을 단일 aq_ring_tx_clean() 호출로만 비워 AQ_CFG_TX_CLEAN_BUDGET(256) 초과분과 [hw_head, sw_tail) 구간의 skb/xdp_frame이 해제되지 않던 문제를, 제거됐던 aq_ring_tx_deinit(\n\n영향: 인터페이스 down/XDP detach/링 리사이즈 시마다 조용한 메모리 누수가 발생하고, RX 경로의 page_pool 전환 후에는 stranded XDP_TX 프레임이 pool의 inflight를 영구히 0 위로 유지시켜 page_pool_destroy()가 끝나지 않고 60초마다 \n\n> page_pool_destroy() then never completes, the pool is leaked together with its pages, and \"page_pool_release_retry() stalled pool shutdown\" is warned every 60 seconds\n\n[원문 확인](https://lore.kernel.org/bpf/tencent_8FE30FDFA32089B69BA3112E4A4C5E886D06@qq.com/)\n\n**bpf: require an owned cpumask for bpf_cpumask_populate()**\n\nbpf_cpumask_populate()가 목적지를 bitmap_copy()로 기록하면서도 타입을 struct cpumask *로 선언해, verifier가 borrowed·read-only cpumask(예: scx_bpf_get_online_cpumask() 반환)를 쓰기 가능한 목\n\n영향: borrowed/read-only cpumask를 쓰기 목적지로 통과시키면 verifier가 지켜야 할 소유권 규약이 깨진다. v1/v2가 security@kernel.org 비공개 신고였던 검증기 결함으로, BPF verifier·cpumask kfunc 유지보수자와 scx_bpf_*\n\n> bpf_cpumask_populate() writes its destination with bitmap_copy() but types it as struct cpumask *, so the verifier accepts a borrowed, read-only cpumask ... as a writable destination.\n\n[원문 확인](https://lore.kernel.org/bpf/20260709182800.2037938-1-main.kalliope@gmail.com/)\n\n**bpf: Introduce jit_required to prevent a kernel panic**\n\nTiezhu Yang's series adds a 'jit_required' flag to struct bpf_prog to mark programs that strictly need JIT (e.g. those with inlined helpers). At load time the k\n\n영향: For a kernel-security reader this closes a concrete interpreter-fallback crash path and confirms the direction of travel: the interpreter is treated as a securi\n\n> The aim is to prevent a kernel panic by rejecting programs with inlined helpers when JIT is not available.\n\n[원문 확인](https://lore.kernel.org/bpf/69e0b5f5-ea05-4740-a7a6-4ea4ab67cf92@linux.dev/)\n\n**mm/migrate: do not migrate folios mapped into VM_LOCKED VMAs under compaction**\n\nmlock_folio() sets PG_mlocked immediately but defers PG_unevictable to the deferred mlock_folio_batch(), leaving a window where a soon-to-be-unevictable folio c\n\n영향: For PREEMPT_RT deployments this race produces compaction-induced spike latency on pages that should be pinned as unevictable — exactly the determinism guarantee\n\n> causing pages that are about to become unevictable to be migrated, which violates the intent of compact_unevictable_allowed, and causes spike latency in RT kernels\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260707125925.3725177-2-chenwandun1@gmail.com/)\n\n**bpf, sockmap: Account for receive queue in FIONREAD without a verdict program**\n\ntcp_bpf_ioctl() answered SIOCINQ/FIONREAD only from psock->msg_tot_len (ingress_msg). Without a stream/skb verdict program nothing is diverted into ingress_msg,\n\n영향: sockmap is a BPF socket data-plane feature; apps polling readable bytes on a sockmap'd socket without a verdict program got FIONREAD=0 while read() still return\n\n> Without a stream/skb verdict program nothing is diverted there: data stays in sk_receive_queue, so FIONREAD returns 0 even though read() returns data.\n\n[원문 확인](https://lore.kernel.org/bpf/20260707-fionread-no-verdict-v1-1-ce94a72357ec@coralogix.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**bpf: Fix trampoline handling of 128-bit values**\n\nBPF 트램폴린이 타깃 함수 반환값(R0)을 8바이트만 보존하고, x86_64에서 128비트 인자용 레지스터 저장 영역을 과소 할당하는 두 버그를 고칩니다. verifier에서 return-reading 트램폴린 경로의 >8바이트 반환값을 거부하고(bpf: Reject >8 byte r\n\n영향: 트램폴린은 fentry/fexit/struct_ops 등 BPF 트레이싱·연결의 핵심 경로입니다. 이 버그는 메모리 손상 또는 BPF 프로그램·실제 caller가 관측하는 잘못된 값으로 이어지므로, 관측성 렌즈 독자에게 정확성·안정성 측면에서 높은 우선순위 신호입니다.\n\n> The BPF trampoline preserves only 8 bytes of a target function's return value (R0), and its register save area under-allocates space for 128-bit arguments for x86_64.\n\n[원문 확인](https://lore.kernel.org/bpf/20260710182204.1085329-1-yonghong.song@linux.dev/)"
+    },
+    {
+      "heading": "기타",
+      "body": "국부 드라이버/플랫폼 패치는 본문에서 제외했습니다. 자기 영역 키워드로 lore.kernel.org에서 직접 검색하세요."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "mm/vmalloc: huge vmap 승격 시 페이지테이블 해제와 ptdump 경합 UAF 수정",
+      "url": "https://lore.kernel.org/bpf/20260712-series-vmap-race-fix-v2-0-ad134cc3a12a@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "block/blk-mq: use atomic_t for quiesce_depth to avoid lock contention on RT",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260709063803.23538-2-ionut.nechita@windriver.com/",
+      "note": "thread"
+    },
+    {
+      "title": "net: atlantic: free stranded TX buffers on ring deinit",
+      "url": "https://lore.kernel.org/bpf/tencent_8FE30FDFA32089B69BA3112E4A4C5E886D06@qq.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: require an owned cpumask for bpf_cpumask_populate()",
+      "url": "https://lore.kernel.org/bpf/20260709182800.2037938-1-main.kalliope@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Introduce jit_required to prevent a kernel panic",
+      "url": "https://lore.kernel.org/bpf/69e0b5f5-ea05-4740-a7a6-4ea4ab67cf92@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "mm/migrate: do not migrate folios mapped into VM_LOCKED VMAs under compaction",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260707125925.3725177-2-chenwandun1@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf, sockmap: Account for receive queue in FIONREAD without a verdict program",
+      "url": "https://lore.kernel.org/bpf/20260707-fionread-no-verdict-v1-1-ce94a72357ec@coralogix.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Fix trampoline handling of 128-bit values",
+      "url": "https://lore.kernel.org/bpf/20260710182204.1085329-1-yonghong.song@linux.dev/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "source": "research-dossier",
+    "bucketCounts": {
+      "릴리스/로드맵": 0,
+      "회귀·보안 신호": 7,
+      "핵심 변경": 1,
+      "기타": 0
+    },
+    "entryCount": 8
+  }
+}

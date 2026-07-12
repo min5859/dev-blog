@@ -1,0 +1,113 @@
+{
+  "id": "2026-07-13-linux-daily-briefing",
+  "topic": "linux",
+  "title": "2026-07-13 PSI 데드락 수정 — 리눅스 개발",
+  "headline": "cgroup 압력 신호 기록과 BPF 스케줄러 전환이 겹치면 시스템 전체가 멈추는 문제가 발견되어 수정 패치가 나왔습니다.",
+  "date": "2026-07-13",
+  "summary": "cgroup PSI 압력 트리거 기록 중 sched_ext 스케줄러를 켜면 전체 시스템이 멈추는 데드락이 발견돼 수정 패치가 올라왔습니다. 한편 stable 7.1.3이 tcp-ao·ksmbd 등 원격 노출 경로의 메모리 안전 수정 122건을 담아 배포됐습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "PSI-sched_ext 데드락 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "sched_ext 스케줄러와 cgroup PSI 압력 트리거를 함께 운용하는 커널 엔지니어·플랫폼 운영자",
+      "verifyLink": "https://lore.kernel.org/lkml/20260712174619.3553231-1-tj@kernel.org/",
+      "if": "sched_ext와 cgroup PSI를 함께 쓴다면",
+      "do": "패치 머지 여부를 확인하고 백포트 계획을 세우세요",
+      "verify": "lore.kernel.org 패치 스레드에서 머지 상태를 확인하세요"
+    },
+    {
+      "title": "Linux 7.1.3 stable (122 백포트)",
+      "priority": "중",
+      "impactType": "backport",
+      "affectedAudience": "7.1.x stable 커널을 배포·유지하는 담당자와 배포판 커널 팀",
+      "verifyLink": "https://git.kernel.org/stable/h/v7.1.3",
+      "if": "7.1.x stable을 배포·유지 중이라면",
+      "do": "122건 백포트를 반영해 즉시 갱신하세요",
+      "verify": "kernel.org와 git.kernel.org changelog를 확인하세요"
+    },
+    {
+      "title": "Linux 7.0 시리즈 EOL",
+      "priority": "중",
+      "impactType": "release",
+      "affectedAudience": "7.0.x 계열을 아직 운용 중이라 이전 대상 시리즈를 정해야 하는 배포·플랫폼 팀",
+      "verifyLink": "https://www.kernel.org/",
+      "if": "7.0.x 계열을 아직 운용 중이라면",
+      "do": "7.1.x나 LTS로 이전 계획을 세우세요",
+      "verify": "kernel.org 현행 릴리스 목록에서 7.0 부재를 확인하세요"
+    },
+    {
+      "title": "Linux 7.2-rc2 공개",
+      "priority": "하",
+      "impactType": "release",
+      "affectedAudience": "mainline을 추적하며 7.2 회귀 테스트를 준비하는 개발자·테스터",
+      "verifyLink": "https://www.kernel.org/",
+      "if": "mainline을 추적하며 7.2를 준비한다면",
+      "do": "지금부터 회귀 테스트와 조기 검증을 시작하세요",
+      "verify": "kernel.org에서 rc2 게시일을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.0.14 stable · 시리즈 EOL**\n\n7.0 시리즈의 마지막 릴리스로 보이며, virtiofs submount umount use-after-free 등 다수 수정이 담긴 것으로 보입니다(원문 확인 권장).\n\n영향: kernel.org 현행 목록에 7.0 계열이 더 이상 노출되지 않아, 해당 계열 사용팀은 7.1.x나 LTS로 전환을 검토해야 합니다.\n\n> Latest Release 7.1.3\n\n[원문 확인](https://www.kernel.org/)\n\n**Linux 7.2-rc2 mainline**\n\n7.2 개발 주기 두 번째 릴리스 후보가 2026-07-06자로 mainline에 게시됐습니다.\n\n영향: 머지 윈도가 닫히고 안정화 국면에 들어섰음을 뜻해 회귀 테스트와 조기 검증을 시작할 시점입니다.\n\n> mainline: 7.2-rc2 2026-07-06\n\n[원문 확인](https://www.kernel.org/)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**sched/psi: psimon fork 데드락 + rtpoll_timer UAF 수정 (v2)**\n\npressure_write()가 cgroup_mutex를 쥔 채 psimon kthread를 fork하던 문제를 되돌려, fork를 cgroup_mutex 밖으로 옮기고 트리거 소멸 후 rtpoll_timer 재무장으로 인한 use-after-free도 함께 막았습니다.\n\n영향: sched_ext 활성화 경로와 락 역전을 일으켜 이후 모든 fork가 뒤에 쌓이는 시스템 전역 데드락으로 이어지므로, sched_ext와 cgroup PSI를 함께 쓰는 환경은 주의해야 합니다.\n\n> made pressure_write() fork the psimon kthread while holding cgroup_mutex, which deadlocks against the sched_ext enable path blocking forks before grabbing cgroup_mutex.\n\n[원문 확인](https://lore.kernel.org/lkml/20260712174619.3553231-1-tj@kernel.org/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Linux 7.1.3 stable (122 백포트)**\n\n현행 stable 시리즈 세 번째 점 릴리스로 tcp-ao 키 use-after-free, ksmbd OOB read, NFS/nfsd 누수 수정 등 122건의 백포트가 담겼습니다.\n\n영향: tcp-ao·ksmbd·nfsd 등 원격 노출 경로의 메모리 안전 결함이 포함돼 7.1.x 배포자는 우선순위 높게 갱신해야 합니다.\n\n> net/tcp-ao: fix use-after-free of key in del_async path\n\n[원문 확인](https://git.kernel.org/stable/h/v7.1.3)"
+    },
+    {
+      "heading": "기타",
+      "body": "linux-next 일일 스냅샷과 UFS sysfs 표시 문자열 변경(gear 6 'HS_GEAR6') 등은 시스템 전반 영향이 작아 이번 briefing에서 제외했습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "kernel.org 릴리스 현황",
+      "url": "https://www.kernel.org/",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 7.1.3 stable changelog",
+      "url": "https://git.kernel.org/stable/h/v7.1.3",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 7.0.14 stable changelog",
+      "url": "https://git.kernel.org/stable/h/v7.0.14",
+      "note": "changelog"
+    },
+    {
+      "title": "sched/psi 데드락 수정 패치 v2 (커버레터)",
+      "url": "https://lore.kernel.org/lkml/20260712174619.3553231-1-tj@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "sched/psi 데드락 수정 패치 v2 (2/2)",
+      "url": "https://lore.kernel.org/lkml/20260712174619.3553231-2-tj@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "psi/sched_ext 데드락 재현 보고",
+      "url": "https://lore.kernel.org/all/20260710100441.2653477-1-matt@readmodwrite.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-12T18:08:30.477Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-newsletter-from-dossier-ko.md"
+  }
+}

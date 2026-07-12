@@ -1,0 +1,113 @@
+{
+  "id": "2026-07-13-linux-distro-stable-daily",
+  "topic": "linux-distro-stable",
+  "title": "2026-07-13 psi 데드락 수정 제안 — 배포판·스테이블",
+  "headline": "psimon fork 데드락·rtpoll_timer UAF 수정 패치셋 등 신규 보안·회귀 수정 제안 5건이 확인됐습니다.",
+  "date": "2026-07-13",
+  "summary": "이번 수집에서 sched_ext와 충돌하는 psimon fork 데드락 및 rtpoll_timer UAF 수정 패치셋, scsi_debug REPORT ZONES OOB write, x86/mm/pat ptdump UAF 수정 등 신규 회귀·보안 제안 5건이 확인되었습니다. 이 중 TCP SYN reopen 제안은 메인테이너가 AI 환각으로 판단해 거부했습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "sched/psi: psimon fork 데드락 + rtpoll_timer UAF 수정 (v2 패치셋)",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "PSI/cgroup·sched_ext를 쓰는 스케줄러·컨테이너 런타임 운영 및 스테이블 백포트 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20260712174619.3553231-1-tj@kernel.org/",
+      "if": "cgroup pressure 인터페이스와 sched_ext를 함께 쓰는 환경을 운영 중이라면",
+      "do": "이 v2 패치셋(psimon fork를 cgroup_mutex 밖으로 이동, rtpoll_timer UAF 수정)의 병합 여부를 추적하세요",
+      "verify": "sched_ext enable과 pressure write가 겹칠 때 fork가 전부 멈추는 현상이 재현되는지 확인하세요"
+    },
+    {
+      "title": "scsi: scsi_debug REPORT ZONES alloc_len 언더플로 OOB write 수정",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "scsi_debug·zoned 스토리지 테스트/퍼징 및 SCSI 서브시스템 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20260712183739.83915-1-security@auditcode.ai/",
+      "if": "scsi_debug를 zoned 스토리지 테스트나 퍼징에 쓰고 있다면",
+      "do": "rep_max_zones를 devip->nr_zones로 클램프하는 이 수정의 병합 여부를 확인하세요",
+      "verify": "32비트 환경에서 큰 alloc_len 값으로 kzalloc(0)이 ZERO_SIZE_PTR을 반환해 OOB write가 재현되는지 점검하세요"
+    },
+    {
+      "title": "x86/mm/pat: 페이지테이블 free 시 mmap lock 획득으로 ptdump UAF 방지",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "x86 mm/pat·ptdump를 사용하는 커널 디버깅·하드닝 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20260712165341.GAalPGldsKpBs5treJ@fat_crate.local/",
+      "if": "ptdump을 활성화한 x86 커널을 디버깅·하드닝 용도로 쓰고 있다면",
+      "do": "init_mm 페이지테이블 해제 경로에 mmap read lock을 추가하는 이 패치의 최종 반영 여부를 확인하세요",
+      "verify": "ptdump과 페이지테이블 teardown이 동시에 실행될 때 UAF가 재현되는지 점검하세요"
+    },
+    {
+      "title": "tcp: SYN 큐 가득 참 시 TIME_WAIT reopen 거부 제안 — 메인테이너 거부(AI 환각)",
+      "priority": "하",
+      "impactType": "security",
+      "affectedAudience": "TCP 스택·netdev 리뷰어 및 AI 생성 보안 패치 심사 담당",
+      "verifyLink": "https://lore.kernel.org/stable/CANn89i+X+VQ-4a-qbM1-qmykR9stXo+sEQMOgj9AkhXSHA7LYA@mail.gmail.com/",
+      "if": "AI가 생성한 보안 패치 제안을 스테이블 트리 반영 대상으로 검토 중이라면",
+      "do": "Fixes 커밋 지목이 실제 원인과 맞는지부터 직접 검증하고, 이 메인테이너 거부 사례를 심사 기준에 참고하세요",
+      "verify": "제출자가 지목한 Fixes: 1da177e4c3f4(2.6.12-rc2)가 실제 회귀 원인인지 원문 스레드로 대조하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**sched/psi: psimon fork 데드락 + rtpoll_timer UAF 수정 (v2 패치셋)**\n\nTejun Heo가 a5b98009f16d 회귀를 두 패치로 수정 제안했습니다. patch 1은 cgroup_mutex를 잡은 채 psimon kthread를 fork하던 pressure_write()를 뮤텍스 밖에서 fork하도록 분리해, sched_ext enable 경로가 fork를 막고 cgroup_mutex를 잡을 때 발생하던 데드락(Cloudflare의 Matt Fleming이 보고)을 해소합니다. patch 2는 group 해제 시 rtpoll_timer를 종료해 psi_trigger_destroy() 뒤 재무장으로 생기는 UAF를 차단합니다.\n\n영향: rtpoll_timer UAF는 PSI 트리거 해제 경합에서 발생하는 메모리 안전 결함이고, cgroup_mutex 데드락은 sched_ext 활성화와 겹칠 때 전체 fork를 멈추는 가용성 회귀라 컨테이너 런타임 운영에 직접 영향입니다.\n\n> its enable path blocks forks and then grabs cgroup_mutex, so a pressure write racing a scheduler enable deadlocks, with every other fork piling up behind.\n\n[원문 확인](https://lore.kernel.org/stable/20260712174619.3553231-1-tj@kernel.org/)\n\n**scsi: scsi_debug REPORT ZONES alloc_len 언더플로 OOB write 수정**\n\nresp_report_zones()에서 CDB alloc_len을 ALIGN()으로 올림하면 0xFFFFFFC1~0xFFFFFFFF 구간이 4GB arr_len을 만들고, 32비트에서 size_t가 잘려 kzalloc(0)이 !arr 체크를 통과해 OOB write/패닉이 발생합니다. rep_max_zones를 devip->nr_zones로 클램프해 차단하는 패치가 제안됐습니다.\n\n영향: 정수 오버플로가 OOB write로 이어지는 메모리 안전 하드닝이지만, scsi_debug는 root 권한과 모듈 로드가 필요한 테스트 드라이버라 실제 원격 악용도는 낮습니다.\n\n> kzalloc(0) returns ZERO_SIZE_PTR, which passes the !arr check, and desc = arr + 64 is then dereferenced in the loop -> out-of-bounds write / panic.\n\n[원문 확인](https://lore.kernel.org/stable/20260712183739.83915-1-security@auditcode.ai/)\n\n**x86/mm/pat: 페이지테이블 free 시 mmap lock 획득으로 ptdump UAF 방지**\n\nLorenzo Stoakes의 패치가 init_mm 페이지테이블 해제 경로에서 mmap read lock을 잡아, init_mm write lock을 잡는 ptdump와 상호배제하도록 수정을 제안했습니다.\n\n영향: ptdump(디버그 인터페이스)와 x86 PAT 페이지테이블 teardown 간 경합으로 발생하는 UAF를 닫는 메모리 안전 수정으로, ptdump를 활성화한 커널의 하드닝 관점에서 유의미합니다.\n\n> acquiring the mmap read lock on init_mm to ... provide mutual exclusion against ptdump, which acquires the init_mm write lock.\n\n[원문 확인](https://lore.kernel.org/stable/20260712165341.GAalPGldsKpBs5treJ@fat_crate.local/)\n\n**tcp: SYN 큐 가득 참 시 TIME_WAIT reopen 거부 제안 — 메인테이너 거부(AI 환각)**\n\n제출자는 tcp_tw_isn이 붙은 TIME_WAIT reopen SYN이 tcp_conn_request()의 SYN 큐 스로틀을 우회한다며 수정을 제안했으나, 메인테이너는 위협이 아니라고 판단해 거부했습니다.\n\n영향: 'Assisted-by: Claude-Code:GLM-5.2-special' 표기 등 AI 생성 패치 특유의 패턴을 보이며, netdev 메인테이너가 AI 환각으로 일축한 사례로 확정된 취약점은 아닌 것으로 보입니다.\n\n> I do not see it as a threat, sorry.\n> Say no to AI hallucinations.\n\n[원문 확인](https://lore.kernel.org/stable/CANn89i+X+VQ-4a-qbM1-qmykR9stXo+sEQMOgj9AkhXSHA7LYA@mail.gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "[PATCHSET v2] sched/psi: psimon fork 데드락 + rtpoll_timer UAF 수정 (커버레터)",
+      "url": "https://lore.kernel.org/stable/20260712174619.3553231-1-tj@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "sched/psi: psimon kthread를 cgroup_mutex 밖에서 생성 (patch 1/2)",
+      "url": "https://lore.kernel.org/stable/20260712174619.3553231-2-tj@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "Matt Fleming(Cloudflare)의 원 데드락 보고 스레드",
+      "url": "https://lore.kernel.org/all/20260710100441.2653477-1-matt@readmodwrite.com/",
+      "note": "thread"
+    },
+    {
+      "title": "scsi: scsi_debug: REPORT ZONES alloc_len 언더플로 OOB write 수정 스레드",
+      "url": "https://lore.kernel.org/stable/20260712183739.83915-1-security@auditcode.ai/",
+      "note": "thread"
+    },
+    {
+      "title": "x86/mm/pat: init_mm 페이지테이블 free 시 mmap lock 관련 리뷰 회신",
+      "url": "https://lore.kernel.org/stable/20260712165341.GAalPGldsKpBs5treJ@fat_crate.local/",
+      "note": "thread"
+    },
+    {
+      "title": "tcp SYN reopen 제안에 대한 메인테이너 거부 회신",
+      "url": "https://lore.kernel.org/stable/CANn89i+X+VQ-4a-qbM1-qmykR9stXo+sEQMOgj9AkhXSHA7LYA@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "tcp: SYN 큐 가득 참 시 TIME_WAIT reopen 거부 (원 제안)",
+      "url": "https://lore.kernel.org/stable/20260712132531.33028-1-zhaoyz24@mails.tsinghua.edu.cn/",
+      "note": "thread"
+    }
+  ]
+}
