@@ -1,0 +1,110 @@
+{
+  "id": "2026-07-14-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-07-14 ARM 부팅 회귀 수정 — 아키텍처·플랫폼 렌즈",
+  "headline": "ARM lpc32xx 멀티플랫폼 부팅 회귀 수정과 RISC-V futex 무제한 재시도 제한 패치가 이번 렌즈의 핵심입니다.",
+  "date": "2026-07-14",
+  "summary": "ARM 멀티플랫폼에서 LPC32xx 전용 초기화가 다른 v5 보드의 부팅을 깨뜨리던 회귀가 수정되었고, RISC-V futex cmpxchg의 무제한 LR/SC 루프에 재시도 한도가 도입되었습니다. RISC-V 쪽에서는 clang 빌드 경고 정리와 Spacemit K3 PCIe DT 리뷰도 함께 진행 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "ARM",
+    "RISC-V"
+  ],
+  "highlights": [
+    {
+      "title": "ARM lpc32xx SoC 초기화, 멀티플랫폼 부팅 회귀 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "ARM 멀티플랫폼/lpc32xx 플랫폼 유지관리자 및 ARCH_MULTI_V5 설정을 배포하는 배포판 커널 빌더",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260713192506.7782-1-kmehltretter@gmail.com/",
+      "if": "ARCH_MULTI_V5 멀티플랫폼 설정으로 커널을 빌드해 LPC32xx가 아닌 보드(예: versatile)를 부팅한다면",
+      "do": "lpc32xx_check_uid()/lpc32xx_pm_init() 호출을 lpc3250_machine_init()의 .init_machine 훅으로 옮기는 이 패치를 적용하세요.",
+      "verify": "패치 적용 후 versatile 등 비-LPC32xx 보드에서 페이징 요청 오류 없이 부팅되는지 확인하세요."
+    },
+    {
+      "title": "RISC-V futex, cmpxchg LL/SC 재시도 횟수 제한",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "RISC-V 아키텍처 유지관리자 및 비특권 사용자 공간발 지연/DoS를 하드닝하려는 엔지니어",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260713161529.arwwntkwpg75opzk@offworld/",
+      "if": "RISC-V 커널에서 futex PI 연산 경로의 무제한 LR/SC 재시도 루프가 우려된다면",
+      "do": "FUTEX_MAX_LOOPS(128) 제한과 -EAGAIN 반환을 도입하는 이 패치를 검토해 적용하세요.",
+      "verify": "v2 재전송(컴파일 테스트만 완료) 상태이므로, lore 스레드에서 메인테이너 큐잉 여부를 재확인한 뒤 반영하세요."
+    },
+    {
+      "title": "RISC-V dts, Spacemit K3 PCIe 노드 추가 리뷰 중",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "RISC-V DT/플랫폼 유지관리자 및 Spacemit K3 보드 브링업 엔지니어",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/CAEev2e8ZyM+b9qLxS6NZjkBZy5GFz37vjgtEfH0ax24nfPozow@mail.gmail.com/",
+      "if": "Spacemit K3 보드에서 PCIe 디바이스(r8169, rtw89_8852be 등)를 활성화하려 한다면",
+      "do": "interrupts 노드/인터럽트 부모(saplic) 누락과 wifi 카드의 DMA 마스크 문제가 해결됐는지 리뷰 스레드에서 먼저 확인하세요.",
+      "verify": "of_irq_parse_pci 오류와 wifi 프로브 실패가 재현되는지 부팅 로그로 검증하세요."
+    },
+    {
+      "title": "RISC-V io, PIO 헬퍼 null 포인터 연산 경고 제거",
+      "priority": "하",
+      "impactType": "build",
+      "affectedAudience": "RISC-V 아키텍처 유지관리자 및 clang/LLVM 커널 빌드(CI) 담당자",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/74ffb0c5-4edd-7b64-3d3f-be76c2aec4c2@kernel.org/",
+      "if": "clang로 RISC-V를 빌드하며 PIO 관련 null 포인터 연산 경고를 제거하고 싶다면",
+      "do": "포트 문자열 헬퍼를 CONFIG_HAS_IOPORT 조건부로 제한하는 이 패치를 적용하세요.",
+      "verify": "v7.2-rc 트리에 실제로 반영됐는지 커밋 로그에서 확인하세요(스레드 내 큐잉 언급은 미확인 상태입니다)."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ARM lpc32xx SoC 초기화, 멀티플랫폼 부팅 회귀 수정**\n\nlpc32xx_check_uid()와 lpc32xx_pm_init()이 arch_initcall로 등록되어 있어 ARCH_MULTI_V5 멀티플랫폼 커널에서도 실행되었고, 이 패치는 두 함수를 arch_initcall에서 빼내 lpc3250_machine_init()의 .init_machine 훅에서 호출하도록 바꿨습니다.\n\n영향: ARCH_MULTI_V5 설정으로 versatile 등 LPC32xx가 아닌 보드를 부팅하면 커널 페이징 요청 처리 실패로 부팅이 깨지던 회귀였습니다.\n\n> lpc32xx_check_uid() and lpc32xx_pm_init() are arch_initcalls that poke LPC32xx-only registers... they also run on other ARCH_MULTI_V5 boards where access faults e.g. on versatile\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260713192506.7782-1-kmehltretter@gmail.com/)\n\n**RISC-V futex, cmpxchg LL/SC 재시도 횟수 제한**\n\narch/riscv/include/asm/futex.h의 futex_atomic_cmpxchg_inatomic()이 쓰던 무제한 LR/SC 재시도 루프에 FUTEX_MAX_LOOPS(128)를 도입해, 한도 초과 시 -EAGAIN을 반환하고 호출자가 락을 풀고 재스케줄 후 재시도하도록 했습니다.\n\n영향: 이 루프는 해시 버킷 락을 쥐고 preemption을 비활성화한 채 실행되어, 비특권 사용자 공간의 PI 연산이 병리적 지연이나 livelock을 유발할 수 있는 로컬 DoS 하드닝 이슈입니다. 확인 필요: 메인테이너 큐잉 여부.\n\n> futex_atomic_cmpxchg_inatomic() does an unbounded LR/SC retry loop while (minimally) holding the hb lock + pf disabled. This can lead to pathological cases from unpriviledged userspace pi operations.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260713161529.arwwntkwpg75opzk@offworld/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**RISC-V dts, Spacemit K3 PCIe 노드 추가 리뷰 중**\n\nSpacemit K3 SoC용 PCIe 디바이스 노드를 k3.dtsi, k3-pinctrl.dtsi, k3-pico-itx.dts에 추가하는 패치(266줄 추가)로, 리뷰 과정에서 r8169와 rtw89_8852be가 'of_irq_parse_pci: failed with rc=-22' 오류를 내고, RC 노드에 interrupts 노드나 인터럽트 부모(saplic)가 없으며, wifi 카드가 64비트 전용 메모리 맵에서 32비트 DMA로 인해 프로브에 실패하는 문제가 드러났습니다.\n\n영향: RISC-V 신규 SoC 플랫폼 인에이블먼트이지만, INTx/인터럽트 노드 누락과 DMA 마스크 불일치 같은 DT 정합성 문제가 남아 있어 머지 전에 arch/platform 리뷰어가 추적해야 할 사안입니다. 확인 필요: 벤더 커널의 36비트 DMA 패치 반영 여부와 머지 상태.\n\n> r8169 0002:01:00.0: of_irq_parse_pci: failed with rc=-22... This is an expected error because the driver does not support INTx but the hardware claims it supports.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/CAEev2e8ZyM+b9qLxS6NZjkBZy5GFz37vjgtEfH0ax24nfPozow@mail.gmail.com/)\n\n**RISC-V io, PIO 헬퍼 null 포인터 연산 경고 제거**\n\nRISC-V의 포트 문자열 I/O 헬퍼를 CONFIG_HAS_IOPORT가 활성화된 경우에만 노출하도록 바꾸고, MMIO 문자열 헬퍼는 계속 무조건 제공하도록 정리했습니다.\n\n영향: 포트 I/O를 지원하지 않는 설정에서 PCI_IOBASE 기반 주소 계산이 유발하던 clang의 null 포인터 연산 진단을 제거했습니다. 스레드에서는 Arnd Bergmann 리뷰 후 v7.2-rc용으로 큐잉되었다는 언급이 있으나, 실제 트리 반영 여부는 확인이 필요합니다.\n\n> exposing the port-string helpers is both unnecessary and can make clang diagnose null-pointer arithmetic from the PCI_IOBASE based address expression... only provide the port I/O variants when CONFIG_\n\n[원문 확인](https://lore.kernel.org/linux-riscv/74ffb0c5-4edd-7b64-3d3f-be76c2aec4c2@kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ARM: lpc32xx: only run SoC init on LPC32xx hardware",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260713192506.7782-1-kmehltretter@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv/futex: Bound number of LL/SC retries in cmpxchg",
+      "url": "https://lore.kernel.org/linux-riscv/20260713161529.arwwntkwpg75opzk@offworld/",
+      "note": "thread"
+    },
+    {
+      "title": "arm64 futex FUTEX_WAKE_OP 루프 제한 선례 (mail-archive)",
+      "url": "https://www.mail-archive.com/linux-kernel@vger.kernel.org/msg1995204.html",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: io: avoid null-pointer arithmetic in PIO helpers",
+      "url": "https://lore.kernel.org/linux-riscv/74ffb0c5-4edd-7b64-3d3f-be76c2aec4c2@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: dts: spacemit: k3: Add PCIe device node",
+      "url": "https://lore.kernel.org/linux-riscv/CAEev2e8ZyM+b9qLxS6NZjkBZy5GFz37vjgtEfH0ax24nfPozow@mail.gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-13T19:50:44.824Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

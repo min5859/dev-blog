@@ -1,0 +1,133 @@
+{
+  "id": "2026-07-14-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-07-14 pKVM PM 초기화 수정 — Android 커널",
+  "headline": "pKVM PM 초기화 순서, rust_binder 우선순위 복원, HID ABI 보존 백포트 등 정확성·빌드 수정이 반영됐습니다.",
+  "date": "2026-07-14",
+  "summary": "pKVM PM 드라이버 초기화 순서 결함과 rust_binder 중첩 트랜잭션 우선순위 복원 문제가 수정됐습니다. HID 버퍼 크기 보안 수정을 GKI ABI를 보존한 채 백포트했고, sched.h 매크로 재정의 빌드 오류도 함께 해소됐습니다.",
+  "tags": [
+    "안드로이드",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "pKVM PM 드라이버 초기화 순서 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "pKVM/가상화 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/b69d903ab12dd848cf96f14d950282e3c01aff3b",
+      "if": "pKVM 게스트 디바이스의 런타임 전원관리(PM)를 사용 중이라면",
+      "do": "android16-6.12 브랜치에서 pkvm_device_pm_init()를 device_initcall로 전환한 이 커밋을 반영해 platform_driver_register() 실패를 방지하십시오.",
+      "verify": "부팅 로그에서 pkvm-device-power 드라이버 등록이 실패 없이 완료되는지 확인하십시오."
+    },
+    {
+      "title": "rust_binder 중첩 응답 우선순위 복원 수정",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "rust_binder/ACK 개발 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/4dd097d4271efd3d8164d7f40023880a93966f0c",
+      "if": "GKI Rust Binder 모듈을 반영 중이라면",
+      "do": "중첩 트랜잭션 응답 시 prio_state를 pending으로 갱신하는 이 수정을 적용하십시오.",
+      "verify": "중첩 binder 트랜잭션 응답 후 스레드가 부모 트랜잭션 우선순위로 복원되는지 확인하십시오."
+    },
+    {
+      "title": "hid_report_raw_event() 보안 수정과 ABI 보존",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "GKI/ACK 유지관리자, HID 드라이버 개발자",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/645d9a2808286130997a39caaddfdc23bddf0b01",
+      "if": "out-of-tree HID 모듈이나 GKI KMI 안정성에 의존하고 있다면",
+      "do": "__hid_report_raw_event() 내부 함수와 기존 시그니처를 유지하는 래퍼 구조를 확인하고 이 백포트를 반영하십시오.",
+      "verify": "hid_report_raw_event() export 심볼 시그니처가 변경되지 않았는지, KMI 심볼 리스트가 깨지지 않는지 확인하십시오."
+    },
+    {
+      "title": "sched.h TRACE_INCLUDE_PATH 매크로 재정의 빌드 오류 수정",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "sched vendor/trace hook을 빌드하는 ACK·벤더 커널 개발자",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/82be0d329bf2b455546a09cc84a40c9d1716b54d",
+      "if": "sched.h를 다른 trace-hook 헤더와 함께 include하는 빌드를 유지하고 있다면",
+      "do": "누락된 #undef TRACE_INCLUDE_PATH를 추가한 이 수정을 android-mainline과 android16-6.12 양쪽에서 반영하십시오.",
+      "verify": "-Werror,-Wmacro-redefined 옵션으로 빌드해 매크로 재정의 오류가 사라지는지 확인하십시오."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**pKVM PM 드라이버 초기화 순서 결함 수정**\n\npkvm_device_pm_init()을 초기 부팅 단계의 pkvm_init_hyp_services()에서 호출하던 방식에서 독립 device_initcall로 전환했습니다.\n\n영향: platform bus가 아직 등록되지 않은 시점에 호출되어 platform_driver_register()가 실패하던 문제로, 미적용 시 pKVM 게스트 디바이스의 런타임 전원관리(PM)가 동작하지 않습니다.\n\n> This was too early because the platform bus is not registered yet, causing platform_driver_register() to fail. Make pkvm_device_pm_init() standalone by declaring it as a device_initcall.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/b69d903ab12dd848cf96f14d950282e3c01aff3b)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**rust_binder 중첩 트랜잭션 응답 시 prio_state 갱신 수정**\n\nRust Binder에서 중첩 트랜잭션에 응답할 때 prio_state를 pending으로 갱신하도록 수정해 부모 트랜잭션의 우선순위로 스레드가 복원되도록 했습니다.\n\n영향: 이 수정이 없으면 중첩 응답 후 binder 스레드가 잘못된 스케줄링 우선순위에 머물러 GKI Rust Binder 모듈의 우선순위 복원 동작이 깨집니다.\n\n> When replying to a nested transaction, the prio_state should be updated to pending. Otherwise the thread isn't restored to the parent transaction's priority.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/4dd097d4271efd3d8164d7f40023880a93966f0c)\n\n---\n\n**sched.h TRACE_INCLUDE_PATH 매크로 재정의 빌드 오류 수정(android-mainline)**\n\ninclude/trace/hooks/sched.h에서 TRACE_INCLUDE_PATH의 #define 앞에 누락됐던 #undef를 추가했습니다.\n\n영향: 여러 trace-hook 헤더를 한 컴파일 단위에서 include할 때 -Werror,-Wmacro-redefined로 빌드가 깨지는 문제를 방지합니다.\n\n> Add missing #undef TRACE_INCLUDE_PATH before #define in include/trace/hooks/sched.h to prevent -Werror,-Wmacro-redefined\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/82be0d329bf2b455546a09cc84a40c9d1716b54d)\n\n---\n\n**동일 수정의 android16-6.12 브랜치 cherry-pick**\n\nandroid-mainline 커밋 82be0d32의 #undef TRACE_INCLUDE_PATH 수정을 android16-6.12 브랜치로 cherry-pick하여 test-infra 봇이 자동 제출했습니다.\n\n영향: 출시 대상인 android16-6.12 ACK 브랜치로 빌드 수정이 전파되어, 6.12를 트래킹하는 벤더가 동일한 -Wmacro-redefined 오류를 겪지 않게 됩니다.\n\n> (cherry picked from commit 82be0d329bf2b455546a09cc84a40c9d1716b54d)\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/0e0925f375430dad13c832a90bd8badb63ff88d6)\n\n---\n\n**hid_report_raw_event() 보안 수정과 GKI ABI 보존**\n\n업스트림이 HID 버퍼 크기 취약점 수정을 위해 hid_report_raw_event()에 size_t bufsize 인자를 추가하면서 깨진 GKI KMI를 보존하기 위해, bufsize를 받는 내부 __hid_report_raw_event()를 신설하고 export되는 함수는 원래 시그니처를 유지하는 래퍼로 두었습니다.\n\n영향: export 심볼 시그니처가 그대로라 hid_report_raw_event()를 호출하는 벤더/out-of-tree HID 모듈이 무수정으로 동작하며, KMI 파괴 없이 보안 수정이 반영됩니다.\n\n> However, since it changes the function signature which breaks ABI, we need to provide a wrapper.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/645d9a2808286130997a39caaddfdc23bddf0b01)\n\n---\n\n**GKI defconfig에 hard lockup detector 활성화**\n\narm64는 CONFIG_HARDLOCKUP_DETECTOR=y와 CONFIG_HARDLOCKUP_DETECTOR_PREFER_BUDDY=y를, x86은 CONFIG_HARDLOCKUP_DETECTOR=y를 활성화했습니다.\n\n영향: Android GKI 커널이 기본적으로 CPU hard lockup을 감지하게 되어 hang 진단과 신뢰성이 향상되며, hardlockup panic 자체는 별도 CL로 분리되어 이번에는 켜지지 않습니다.\n\n> ARM64 devices prefer to use the buddy detector in case the perf detector isn't available.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/bdc8ab55a8c960214437a2174168dd21242e2d06)\n\n---\n\n**kbuild 잔여 extmod_prefix 변수 제거**\n\n업스트림에서 이미 삭제됐으나 kbuild-v6.13 머지 충돌 해소 중 실수로 재도입된 scripts/Makefile.modfinal의 extmod_prefix 변수를 제거했습니다.\n\n영향: 머지 충돌로 남은 stale 빌드 변수를 정리해 ACK kbuild 로직을 업스트림 v6.13과 정렬합니다.\n\n> However, it was mistakenly kept during a merge conflict resolution. Drop it!\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/b7afc9c272bd0bc9a66726a8f938508705390253)\n\n---\n\n**gki_defconfig에 CONFIG_CRYPTO_SHA512 명시적 활성화**\n\narm64·x86 gki_defconfig에 CONFIG_CRYPTO_SHA512=y를 명시적으로 추가해, 암묵적으로 끌려오던 SHA-512/SHA-384 crypto 드라이버를 복구했습니다.\n\n영향: 선행 변경이 암묵적 의존 체인을 끊어 미적용 시 GKI 커널에서 SHA-512/384가 조용히 사라지며, 이는 HMAC·무결성 해싱·IPsec/xfrm 등 전반에 영향을 줍니다.\n\n> CONFIG_CRYPTO_SHA512 was previously included by an implicit dependency chain. Now this chain has been broken we need to manually add it to the gki_defconfig.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/7eebb4e1420ffe868b6c6e50dd309ced05fe428d)\n\n---\n\n**GKI에 CONFIG_TCP_CONG_BBR 활성화**\n\narm64·x86 gki_defconfig에 CONFIG_TCP_CONG_BBR=y를 활성화해 BBR TCP 혼잡 제어 알고리즘을 추가했습니다. 기본 알고리즘은 CUBIC을 유지합니다.\n\n영향: 특정 네트워크 조건에서 처리량과 이용률을 높이는 BBR를 벤더·앱이 커스텀 커널 없이 선택 적용할 수 있게 됐습니다.\n\n> Enable support for BBR (Bottleneck Bandwidth and RTT) TCP congestion control algorithm, which maximizes network utilization under certain scenarios.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/05c6fbd18c50f80608fc7773e801bf1e636d6d58)\n\n---\n\n**업스트림 vfs xattr 재작업 트리 머지**\n\nsimple xattr API를 재작업한 업스트림 vfs 트리를 머지해, simple_xattr 해시 테이블을 per-inode에서 per-superblock 캐시로 옮기고 bpffs trusted/security xattr 지원과 kernfs xattr race 수정을 포함했습니다.\n\n영향: tmpfs·kernfs·bpffs가 쓰는 핵심 VFS xattr 인프라로, Android의 SELinux security.* 라벨링을 뒷받침하는 확장 속성 배관과 동일해 메모리 오버헤드 감소와 race 수정이 폭넓게 관련됩니다.\n\n> The simple_xattr hash table moves from the inode into a per-superblock cache, removing the per-inode overhead for the common case of few or no xattrs.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/ff8747aacaff8266dd751b8a8648fb728dcc3b21)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ANDROID: rust_binder: update prio_state on nested reply",
+      "url": "https://android.googlesource.com/kernel/common/+/4dd097d4271efd3d8164d7f40023880a93966f0c",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: sched: Avoid macro redefinition of TRACE_INCLUDE_PATH (android-mainline)",
+      "url": "https://android.googlesource.com/kernel/common/+/82be0d329bf2b455546a09cc84a40c9d1716b54d",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: sched: Avoid macro redefinition of TRACE_INCLUDE_PATH (android16-6.12 cherry-pick)",
+      "url": "https://android.googlesource.com/kernel/common/+/0e0925f375430dad13c832a90bd8badb63ff88d6",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: Fix ABI issues related to changed hid_report_raw_event()",
+      "url": "https://android.googlesource.com/kernel/common/+/645d9a2808286130997a39caaddfdc23bddf0b01",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: drivers/virt: pkvm: Make PM driver initialization standalone",
+      "url": "https://android.googlesource.com/kernel/common/+/b69d903ab12dd848cf96f14d950282e3c01aff3b",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: gki_defconfig: Enable hard lockup detector",
+      "url": "https://android.googlesource.com/kernel/common/+/bdc8ab55a8c960214437a2174168dd21242e2d06",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: kbuild: remove leftover extmod_prefix",
+      "url": "https://android.googlesource.com/kernel/common/+/b7afc9c272bd0bc9a66726a8f938508705390253",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: gki_defconfig: Enable CONFIG_CRYPTO_SHA512",
+      "url": "https://android.googlesource.com/kernel/common/+/7eebb4e1420ffe868b6c6e50dd309ced05fe428d",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: GKI: enable CONFIG_TCP_CONG_BBR",
+      "url": "https://android.googlesource.com/kernel/common/+/05c6fbd18c50f80608fc7773e801bf1e636d6d58",
+      "note": "commit"
+    },
+    {
+      "title": "Merge tag 'vfs-7.2-rc1.xattr' of git://git.kernel.org/pub/scm/linux/kernel/git/vfs/vfs",
+      "url": "https://android.googlesource.com/kernel/common/+/ff8747aacaff8266dd751b8a8648fb728dcc3b21",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-13T18:14:07.711Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/android-newsletter-from-dossier-ko.md"
+  }
+}

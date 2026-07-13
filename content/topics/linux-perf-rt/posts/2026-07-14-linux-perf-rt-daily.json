@@ -1,0 +1,125 @@
+{
+  "id": "2026-07-14-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-07-14 RT 스핀락 정정 — 성능·RT",
+  "headline": "PREEMPT_RT 스핀락 수정과 i386 BPF JIT 부호 버그 수정 등 커널 성능·RT 수정 4건을 정리했습니다.",
+  "date": "2026-07-14",
+  "summary": "PREEMPT_RT 환경의 스핀락 오류 수정과 32비트 BPF JIT의 부호 있는 나눗셈 버그 수정이 오늘의 핵심입니다. bpf_fib_lookup() VLAN 지원 확장과 arm64 ftrace DIRECT_CALLS 진행 상황도 함께 다룹니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "BPF",
+    "PREEMPT_RT"
+  ],
+  "highlights": [
+    {
+      "title": "Samsung PWM 클럭소스 락, raw_spinlock으로 전환",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "PREEMPT_RT를 켠 레거시 ARM 플랫폼에서 Samsung PWM 타이머를 클럭소스로 쓰는 드라이버/플랫폼 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260713085653.1145015-1-m.szyprowski@samsung.com/",
+      "if": "PREEMPT_RT를 켠 ARM 플랫폼에서 Samsung PWM 타이머를 클럭소스로 사용한다면",
+      "do": "samsung_pwm_lock을 raw_spinlock_t로 전환하는 이 패치를 확인하고 적용 여부를 검토하십시오.",
+      "verify": "원문 스레드에서 패치가 clocksource 트리에 큐잉됐는지, stable 백포트 계획이 있는지 확인하십시오."
+    },
+    {
+      "title": "i386 BPF JIT, 부호 있는 32비트 div/mod 버그 수정",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "32비트 x86(i386) 커널에서 eBPF를 JIT 컴파일해 실행하는 사용자 및 x86 BPF JIT 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260713185848.120137-1-main.kalliope@gmail.com/",
+      "if": "i386 커널에서 signed ALU32 BPF_DIV/BPF_MOD 명령을 JIT로 실행한다면",
+      "do": "emit_ia32_div_mod_r()의 부호 처리를 고친 이 패치를 확인하십시오.",
+      "verify": "원문 스레드에서 RV32 JIT의 동일 gap 수정 여부와 패치 적용 상태를 확인하십시오."
+    },
+    {
+      "title": "bpf_fib_lookup(), 양방향 VLAN 지원 추가(v7)",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "XDP/tc에서 bpf_fib_lookup()으로 VLAN 라우팅·정책 라우팅을 수행하는 BPF 데이터패스 개발자(Cilium 류 포함)",
+      "verifyLink": "https://lore.kernel.org/bpf/20260713162305.1237211-1-avinash.duduskar@gmail.com/",
+      "if": "XDP/tc 프로그램에서 VLAN 위 라우팅을 bpf_fib_lookup()으로 처리해야 한다면",
+      "do": "BPF_FIB_LOOKUP_VLAN·BPF_FIB_LOOKUP_VLAN_INPUT 플래그와 새 반환코드 BPF_FIB_LKUP_RET_VLAN_FAILURE를 검토하십시오.",
+      "verify": "원문에서 v7 시리즈의 메인테이너 반영 여부를 확인하십시오."
+    },
+    {
+      "title": "arm64 ftrace DIRECT_CALLS(CALL_OPS 없이), 메인테이너 응답 대기",
+      "priority": "중",
+      "impactType": "project",
+      "affectedAudience": "arm64에서 ftrace DIRECT_CALLS·BPF 트램폴린(fentry)·fprobe 기반 트레이싱을 쓰는 개발자 및 arm64 ftrace 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/alUWljnhfgLB_4a-@J2N7QTR9R3.cambridge.arm.com/",
+      "if": "arm64 ftrace DIRECT_CALLS·BPF 트램폴린 부착 경로를 추적하고 있다면",
+      "do": "Reviewed-by/Acked-by/Tested-by를 받은 이 2패치 시리즈의 리뷰 현황을 확인하십시오.",
+      "verify": "메인테이너 Mark Rutland의 실제 검토·머지 여부는 확인이 필요하니 원문에서 후속 상황을 확인하십시오."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Samsung PWM 클럭소스 락, raw_spinlock으로 전환**\n\nPREEMPT_RT를 켠 ARM에서 일반 spinlock이 sleeping lock(mutex 기반)으로 바뀌어 하드 IRQ 핸들러 같은 atomic 컨텍스트에서 쓸 수 없는 문제를, samsung_pwm_lock을 raw_spinlock_t로 전환해 해결했습니다.\n\n영향: PREEMPT_RT 커널의 atomic 컨텍스트에서 sleeping lock을 잡는 것은 sleeping-in-atomic 결함으로 이어지며, 두 개의 Fixes 태그를 달고 있어 백포트 대상이 될 수 있습니다.\n\n> Switch the samsung_pwm_lock to the raw_spinlock, which remains a true non-sleeping spinlock even under PREEMPT_RT.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260713085653.1145015-1-m.szyprowski@samsung.com/)\n\n**i386 BPF JIT, 부호 있는 32비트 div/mod 버그 수정**\n\ni386 BPF JIT의 emit_ia32_div_mod_r()가 명령의 부호성과 무관하게 항상 부호 없는 나눗셈을 방출해 signed ALU32 BPF_DIV/BPF_MOD가 음수 피연산자에서 잘못된 결과를 냈던 문제를, is_signed 플래그를 전달해 cdq+idiv 경로를 쓰도록 고쳤습니다.\n\n영향: 32비트 x86 커널에서 eBPF를 JIT로 실행하면 음수에 대한 signed div/mod가 인터프리터/verifier와 다른 결과를 냈던 정확성 결함으로, RV32 JIT에도 같은 문제가 있다고 커밋 메시지가 밝히고 있습니다.\n\n> emit_ia32_div_mod_r() always emits an unsigned divide (xor edx,edx + div ecx), regardless of the BPF instruction's signedness.\n\n[원문 확인](https://lore.kernel.org/bpf/20260713185848.120137-1-main.kalliope@gmail.com/)\n\n**bpf_fib_lookup(), 양방향 VLAN 지원 추가(v7)**\n\nbpf_fib_lookup()에 BPF_FIB_LOOKUP_VLAN(VLAN egress를 실제 디바이스+태그로 해석)과 BPF_FIB_LOOKUP_VLAN_INPUT(태그된 프레임의 iif 정책 라우팅) 플래그를 추가하고, 환원 불가능한 경우를 위한 새 반환코드 BPF_FIB_LKUP_RET_VLAN_FAILURE를 도입했습니다(v7).\n\n영향: XDP/tc에서 bpf_fib_lookup()으로 VLAN 위 경로를 직접 라우팅할 수 있게 되는 uAPI 확장이며, 새 플래그·반환코드는 옵트인이라 기존 호출자의 동작은 바뀌지 않습니다.\n\n> BPF_FIB_LOOKUP_VLAN resolves a VLAN egress to its underlying real device plus the VLAN tag (XDP programs need this because VLAN devices have no XDP xmit)\n\n[원문 확인](https://lore.kernel.org/bpf/20260713162305.1237211-1-avinash.duduskar@gmail.com/)\n\n**arm64 ftrace DIRECT_CALLS(CALL_OPS 없이) 지원, 메인테이너 응답 대기**\n\nCALL_OPS 없이 arm64 ftrace에서 DIRECT_CALLS를 지원하는 2패치 시리즈가 Reviewed-by/Acked-by/Tested-by를 두루 받고 미해결 코멘트 없이 대기 중이며, 메인테이너 Mark Rutland는 아직 검토하지 못했다고 답했습니다.\n\n영향: ftrace DIRECT_CALLS는 arm64에서 BPF 트램폴린(fentry류)·fprobe 등 직접 콜 기반 트레이싱 부착의 토대이며, 실제 머지 여부는 확인이 필요합니다.\n\n> Sorry, this is on my queue to look at, but I have been busy elsewhere over the last few weeks. I'll get to it shortly.\n\n[원문 확인](https://lore.kernel.org/bpf/alUWljnhfgLB_4a-@J2N7QTR9R3.cambridge.arm.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "bpf, x86: Fix signed 32-bit div/mod in the i386 JIT",
+      "url": "https://lore.kernel.org/bpf/20260713185848.120137-1-main.kalliope@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Support new signed div/mod instructions",
+      "url": "https://github.com/torvalds/linux/commit/ec0e2da95f72",
+      "note": "commit"
+    },
+    {
+      "title": "bpf: bidirectional VLAN support for bpf_fib_lookup()",
+      "url": "https://lore.kernel.org/bpf/20260713162305.1237211-1-avinash.duduskar@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Always return target ifindex in bpf_fib_lookup",
+      "url": "https://github.com/torvalds/linux/commit/d1c362e1dd68",
+      "note": "commit"
+    },
+    {
+      "title": "clocksource/drivers/samsung_pwm: switch to raw_spinlock_t type",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260713085653.1145015-1-m.szyprowski@samsung.com/",
+      "note": "thread"
+    },
+    {
+      "title": "clocksource: samsung_pwm_timer: Make PWM spinlock global",
+      "url": "https://github.com/torvalds/linux/commit/7aac482e6290",
+      "note": "commit"
+    },
+    {
+      "title": "clocksource: add samsung pwm timer driver",
+      "url": "https://github.com/torvalds/linux/commit/f11899894c0a",
+      "note": "commit"
+    },
+    {
+      "title": "arm64: ftrace: support DIRECT_CALLS without CALL_OPS",
+      "url": "https://lore.kernel.org/bpf/alUWljnhfgLB_4a-@J2N7QTR9R3.cambridge.arm.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-13T19:43:18.656Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
