@@ -1,0 +1,125 @@
+{
+  "id": "2026-07-15-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-07-15 GPU-SVM 참조 누수 수정 — GPU/AI 렌즈",
+  "headline": "drm/gpusvm mm 참조 누수와 panthor 펌웨어 검증 버그가 수정되고, blend mode PREMULTI 제약 완화 논의가 진행됩니다.",
+  "date": "2026-07-15",
+  "summary": "GPU-SVM 코어의 mm 참조 누수와 panthor 펌웨어 로드 검증 버그에 대한 수정 패치가 제출됐습니다. blend mode API 완화 논의와 sii9234 시리즈의 부분 적용 소식도 함께 다룹니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "GPU",
+    "DRM"
+  ],
+  "highlights": [
+    {
+      "title": "drm/gpusvm: MM 참조 누수 수정",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "drm/gpusvm 코어 및 GPU SVM 사용 드라이버(Xe 등) 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260714170025.3487974-1-matthew.brost@intel.com/",
+      "if": "Xe 드라이버에서 SVM 기반 GPU 메모리 오프로딩을 사용 중이라면",
+      "do": "이 수정을 백포트하거나 적용 여부를 확인하세요",
+      "verify": "evict 경로 스트레스 테스트에서 mm refcount가 정상적으로 감소하는지 확인하세요"
+    },
+    {
+      "title": "drm/panthor: truncated 펌웨어 감지 시 에러 반환",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "drm/panthor(Mali CSF) 드라이버 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260714163056.22329-1-osama.abdelkader@gmail.com/",
+      "if": "Mali CSF 기반 panthor 드라이버를 운용 중이라면",
+      "do": "펌웨어 로드 실패 처리 경로에 이 수정을 반영하세요",
+      "verify": "의도적으로 truncated 펌웨어 이미지를 주입해 로드 실패가 올바르게 보고되는지 확인하세요"
+    },
+    {
+      "title": "drm/drm_blend: PREMULTI 없이도 blend mode property 허용",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "DRM KMS 코어 및 blend mode를 노출하는 드라이버·compositor 개발자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/CAPj87rMYpXsxO1D2w_zv-RTw-WdtBHPYhdSTQN7rY+uMndFDsA@mail.gmail.com/",
+      "if": "COVERAGE만 지원하고 PREMULTI가 없는 하드웨어를 드라이버로 지원 중이라면",
+      "do": "이 시리즈의 논의 진행 상황을 추적하고 patch 적용 시점을 확인하세요",
+      "verify": "머지 후 blend mode property 생성이 PREMULTI 없이도 정상 동작하는지 확인하세요"
+    },
+    {
+      "title": "drm/bridge: sii9234 시리즈 중 subset만 적용",
+      "priority": "하",
+      "impactType": "project",
+      "affectedAudience": "drm/bridge sii9234(MHL) 및 Exynos 디스플레이 드라이버 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/178404746733.242094.13579113773760674255.b4-ty@b4/",
+      "if": "sii9234 기반 MHL 핫플러그 수정을 기다리고 있다면",
+      "do": "extcon 기반 3/3 패치의 별도 적용 여부를 확인하세요",
+      "verify": "적용 트리에서 extcon 케이블 감지 커밋이 포함됐는지 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/gpusvm: MM 참조 누수 수정**\n\ndrm_gpusvm_range_evict()에서 kvmalloc_array() 실패 시 앞서 획득한 mm 참조를 해제하지 않던 누수를, 실패 경로에서 mm 참조를 drop하도록 수정합니다.\n\n영향: GPU-SVM 공통 코어의 mm refcount 누수는 주소공간을 계속 pin한 채로 남겨, SVM을 쓰는 모든 드라이버(특히 Xe)에 영향을 줍니다.\n\n> If kvmalloc_array() fails in drm_gpusvm_range_evict(), the MM reference acquired earlier is not released, resulting in a reference leak.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260714170025.3487974-1-matthew.brost@intel.com/)\n\n**drm/panthor: truncated 펌웨어 감지 시 에러 반환**\n\npanthor_fw_load()가 truncated 펌웨어 이미지를 감지하고도 ret를 설정하지 않아 0(성공)을 반환할 수 있던 버그를, 해당 경로에서 ret=-EINVAL로 설정하도록 수정합니다.\n\n영향: 잘못된/짧은 펌웨어를 정상 로드로 취급하던 문제를 막아 Mali CSF 펌웨어 로드 경로의 견고성을 높입니다.\n\n> panthor_fw_load() detects truncated firmware images, but jumps to the common cleanup path without setting ret... can return 0 and treat the invalid firmware as successfully loaded.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260714163056.22329-1-osama.abdelkader@gmail.com/)\n\n**drm/drm_blend: PREMULTI 없이도 blend mode property 허용**\n\nCOVERAGE만 지원하고 PREMULTI가 전혀 없는 하드웨어도 blend mode property를 만들 수 있도록, blend mode property 생성 시 PREMULTI 존재를 강제하던 DRM 제약을 제거하는 시리즈입니다. 이 메시지가 신규 제출인지 기존 스레드에 대한 Ack 회신인지는 확인되지 않았습니다.\n\n영향: per-plane blend mode의 KMS uAPI 의미를 완화하는 변경으로, blend mode를 노출하는 모든 드라이버와 compositor(Weston 대응 진행 중)에 영향을 줍니다.\n\n> Some hardware only supports the COVERAGE blend mode and lacks PREMULTI support entirely. DRM currently requires that PREMULTI is present when creating a blend mode property...\n\n[원문 확인](https://lore.kernel.org/dri-devel/CAPj87rMYpXsxO1D2w_zv-RTw-WdtBHPYhdSTQN7rY+uMndFDsA@mail.gmail.com/)\n\n**drm/bridge: sii9234 시리즈 중 subset만 적용**\n\nLuca Ceresoli가 시리즈 중 subset(1/3 주석·메시지 오타 수정, 2/3 dev_err_probe 전환)만 적용했으며, 핵심인 extcon 기반 케이블 감지(3/3)는 이번 applied subset에 포함되지 않았습니다.\n\n영향: MHL/HDMI 핫플러그 수정을 목표로 한 시리즈에서 준비성 정리 패치만 먼저 머지된 상태로, 실제 핫플러그 수정은 아직 미적용입니다.\n\n> Applied, thanks!\n[1/3] drm/bridge: sii9234: fix some typos in comments and messages\n[2/3] drm/bridge: sii9234: use dev_err_probe where applicable\n\n[원문 확인](https://lore.kernel.org/dri-devel/178404746733.242094.13579113773760674255.b4-ty@b4/)\n\n**drm/bridge: lontium-lt8912b supply_names 배열 static화 (확인 필요)**\n\nread-only const 배열 supply_names를 런타임에 스택으로 생성하지 않고 static으로 만드는 janitorial 정리 패치로 보입니다. linux-next 대상 제출로 추정되며 실제 적용 여부는 확인되지 않았습니다.\n\n영향: 기능 변화 없는 코드젠 정리로 추정되어, 드라이버 추적자에게는 영향이 낮을 것으로 보입니다.\n\n> Don't populate the read-only const array supply_names on the stack at run time, instead make it static\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260714190400.194605-1-colin.i.king@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/gpusvm: Fix MM reference leak in drm_gpusvm_range_evict",
+      "url": "https://lore.kernel.org/dri-devel/20260714170025.3487974-1-matthew.brost@intel.com/",
+      "note": "thread"
+    },
+    {
+      "title": "gpusvm Fixes 대상 커밋(99624bdff867) 확인",
+      "url": "https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg534399.html",
+      "note": "commit"
+    },
+    {
+      "title": "drm/panthor: return error on truncated firmware",
+      "url": "https://lore.kernel.org/dri-devel/20260714163056.22329-1-osama.abdelkader@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "panthor Fixes 대상 커밋(2718d91816ee) 확인",
+      "url": "https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg481747.html",
+      "note": "commit"
+    },
+    {
+      "title": "drm/drm_blend: allow blend mode property without PREMULTI",
+      "url": "https://lore.kernel.org/dri-devel/CAPj87rMYpXsxO1D2w_zv-RTw-WdtBHPYhdSTQN7rY+uMndFDsA@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Weston COVERAGE blend mode 지원 MR",
+      "url": "https://gitlab.freedesktop.org/wayland/weston/-/merge_requests/2046",
+      "note": "article"
+    },
+    {
+      "title": "sii9234 시리즈 b4-ty 적용 알림",
+      "url": "https://lore.kernel.org/dri-devel/178404746733.242094.13579113773760674255.b4-ty@b4/",
+      "note": "changelog"
+    },
+    {
+      "title": "drm/bridge: lontium-lt8912b make supply_names static",
+      "url": "https://lore.kernel.org/dri-devel/20260714190400.194605-1-colin.i.king@gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-14T19:58:14.976Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

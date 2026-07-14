@@ -1,0 +1,95 @@
+{
+  "id": "2026-07-15-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-07-15 vmalloc UAF 수정 — Perf/RT",
+  "headline": "vmalloc ptdump UAF 수정, cBPF JIT spray 하드닝 백포트, coresight PREEMPT_RT 패닉 수정을 다룹니다.",
+  "date": "2026-07-15",
+  "summary": "mm/vmalloc 의 ptdump UAF 수정이 mm-hotfixes-unstable 에 반영됐지만 일부 경로에서 여전히 취약할 수 있다는 지적이 나왔습니다. 동시에 BPF JIT spray 하드닝이 stable 트리로 백포트되고, PREEMPT_RT coresight 패닉 수정도 논의되고 있습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "보안",
+    "PREEMPT_RT"
+  ],
+  "highlights": [
+    {
+      "title": "mm/vmalloc: huge vmap 승격 시 ptdump UAF 수정",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "mm/vmalloc·ptdump 유지보수자 및 arm64/x86 huge vmap 사용 환경",
+      "verifyLink": "https://lore.kernel.org/bpf/20260714174025.796481F000E9@smtp.kernel.org/",
+      "if": "arm64 또는 x86 환경에서 vmalloc-huge 와 ptdump(예: /sys/kernel/debug/page_tables/current_kernel)를 함께 쓰고 있다면",
+      "do": "mm-hotfixes-unstable 에 반영된 이 수정을 적용하되, efi_mm 또는 current->mm 경로로 ptdump 가 커널 페이지테이블을 순회하는 경우 init_mm.mmap_lock 을 잡지 않아 UAF 가 남을 수 있다는 지적을 함께 확인하세요.",
+      "verify": "lore 스레드에서 Sashiko AI 리뷰가 제기한 efi_mm/current->mm 경로 문제에 대한 유지보수자의 후속 답변과 후속 버전 여부를 확인하세요."
+    },
+    {
+      "title": "cBPF JIT spray 하드닝, 6.16.y 백포트",
+      "priority": "상",
+      "impactType": "backport",
+      "affectedAudience": "BPF JIT·x86 bugs 유지보수자 및 6.16/6.18 stable 트리 소비자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260714-cbpf-jit-spray-hardening-6-16-y-v1-0-2fc3e16263ac@linux.intel.com/",
+      "if": "6.16.y 또는 6.18.y stable 커널을 사용 중이라면",
+      "do": "freed 된 JIT 프로그램의 stale branch prediction 재사용을 막는 이 6개 패치 시리즈의 머지 여부를 확인하고 적용을 검토하세요.",
+      "verify": "6.16.y stable 유지보수자의 수락 여부와 연결된 CVE 번호를 lore 스레드에서 확인하세요(현재 커버레터에는 명시돼 있지 않습니다)."
+    },
+    {
+      "title": "coresight: PREEMPT_RT scheduling-while-atomic 패닉 수정",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "coresight(하드웨어 트레이싱) 및 PREEMPT_RT 유지보수자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260713230028.8046-1-mohamedaymanworkspace@gmail.com/",
+      "if": "coresight 를 PREEMPT_RT 빌드에서 사용 중이라면",
+      "do": "put_device() 를 프로세스 컨텍스트로 지연시키는 이 수정을 적용해 idle 전환 중 scheduling-while-atomic 패닉을 방지하세요.",
+      "verify": "패치 버전과 타깃 트리(mainline vs -rt), Fixes 태그, 머지 여부를 lore 스레드에서 확인하세요 — 현재 미확인 상태입니다."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**mm/vmalloc: huge vmap 승격 시 ptdump UAF 수정**\n\nLorenzo Stoakes 의 mm-hotfixes v3 시리즈가 vmap huge page 승격 시 페이지테이블 해제와 ptdump 사이의 Use-After-Free 경합을 막기 위해, 페이지테이블을 free 하기 전에 init_mm.mmap_lock read trylock 을 취득하고 walk_page_range_debug() 에 mmap_assert_write_locked() 를 추가합니다. Andrew Morton 이 mm-hotfixes-unstable 에 반영했고 v3 는 v2 대비 코드 변경이 없다고 확인했습니다.\n\n영향: 커널 공유 페이지테이블 UAF 는 메모리 안전성 취약점으로 번질 수 있습니다. 다만 Sashiko AI 리뷰는 x86/arm64 에서 ptdump 가 efi_mm 또는 current->mm 경로로 커널 페이지테이블을 순회할 때는 init_mm.mmap_lock 을 잡지 않아 trylock 이 성공해버려 UAF 가 남을 수 있다고 지적했습니다.\n\n> This commit attempts to fix a Use-After-Free race between ptdump and vmap huge page promotion by acquiring a read trylock on init_mm.mmap_lock before freeing page tables.\n\n> the fix is incomplete. On x86 and arm64, ptdump can walk kernel page tables via efi_mm or current->mm ... vmap will free the shared kernel page tables while ptdump is actively walking them\n\n[원문 확인](https://lore.kernel.org/bpf/20260714174025.796481F000E9@smtp.kernel.org/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**cBPF JIT spray 하드닝, 6.16.y 백포트**\n\nIntel(linux.intel.com) 발신자가 spectre-v2 계열 공격에 대한 BPF JIT 하드닝을 stable 6.16.y 로 백포트하는 6개 패치 시리즈를 올렸습니다. BPF JIT 프로그램 할당 시 전 CPU 에 IBPB predictor flush 를 발행(spectre-v2 완화가 적용된 경우에만 조건부)하고, 이후 패치로 flush 범위를 비특권 cBPF 할당으로 좁혀 pack allocator 의 중복 IBPB 를 최소화합니다.\n\n영향: freed 된 JIT 프로그램이 남긴 stale branch prediction 을 신규 JIT 실행이 재사용하는 JIT-spray/spectre-v2 공격 표면을 stable 커널에서 닫습니다. 병행 6.18.y 백포트 시리즈도 존재합니다.\n\n> These backports harden BPF JIT against spectre-v2 class of attacks. Without a predictor flush, execution of new BPF program may use stale prediction left behind by the freed one.\n\n[원문 확인](https://lore.kernel.org/bpf/20260714-cbpf-jit-spray-hardening-6-16-y-v1-0-2fc3e16263ac@linux.intel.com/)\n\n**coresight: PREEMPT_RT scheduling-while-atomic 패닉 수정**\n\nPREEMPT_RT 에서 CPU idle 전환(인터럽트 비활성) 중 coresight_device 마지막 참조 해제가 put_device()→free_percpu()(rt-mutex sleeping lock) 및 부모 release 콜백의 sleep 을 유발해 scheduling-while-atomic 패닉을 냅니다. 수정은 put_device() 호출 전체를 put_pending 카운터+work_struct 로 프로세스 컨텍스트로 지연시키고, 전용 coresight_wq 를 coresight_exit() 에서 drain/destroy 해 모듈 언로드 중 UAF 경합을 막습니다.\n\n영향: PREEMPT_RT 빌드에서 원자 컨텍스트 sleep 으로 인한 커널 패닉(가용성)과 모듈 언로드 시 UAF(메모리 안전성) 두 가지를 동시에 다룹니다. 패치 버전·머지 여부·CVE 할당 여부는 확인이 필요합니다.\n\n> Dropping the last reference to a coresight_device triggers a kernel panic on PREEMPT_RT builds due to a \"scheduling while atomic\" violation.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260713230028.8046-1-mohamedaymanworkspace@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "mm/vmalloc: acquire init_mm lock on huge vmap to avoid ptdump UAF (v3)",
+      "url": "https://lore.kernel.org/bpf/20260714174025.796481F000E9@smtp.kernel.org/",
+      "note": "commit"
+    },
+    {
+      "title": "Re: mm/vmalloc UAF fix — mm-hotfixes-unstable 반영 확인",
+      "url": "https://lore.kernel.org/bpf/20260714121102.9cb28d080556c94d45a6bc3e@linux-foundation.org/",
+      "note": "thread"
+    },
+    {
+      "title": "cBPF JIT spray hardening (6.16.y backport) cover letter",
+      "url": "https://lore.kernel.org/bpf/20260714-cbpf-jit-spray-hardening-6-16-y-v1-0-2fc3e16263ac@linux.intel.com/",
+      "note": "thread"
+    },
+    {
+      "title": "coresight: Fix scheduling while atomic in coresight_put_percpu_source_ref()",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260713230028.8046-1-mohamedaymanworkspace@gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-14T19:33:30.683Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
