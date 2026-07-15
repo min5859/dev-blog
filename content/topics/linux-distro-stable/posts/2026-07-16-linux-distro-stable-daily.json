@@ -1,0 +1,113 @@
+{
+  "id": "2026-07-16-linux-distro-stable-daily",
+  "topic": "linux-distro-stable",
+  "title": "2026-07-16 mwifiex 취약점 수정 — 배포판 stable",
+  "headline": "mwifiex HT/VHT·OUI IE 파싱 OOB read 두 건 수정, coresight·gpio-sch 회귀도 함께 백포트됐습니다.",
+  "date": "2026-07-16",
+  "summary": "mwifiex 드라이버의 HT/VHT capability IE와 pairwise-cipher OUI 파싱에서 각각 OOB read를 유발할 수 있는 취약점이 stable에 posted됐고, coresight etb10 KCSAN 회귀 복원과 gpio-sch의 PREEMPT_RT 락 전환도 함께 올라왔습니다. 7.1.3·7.0.14·5.15.211·5.10.260 stable/LTS 릴리스는 지난 수집과 버전·백포트 건수에 변화가 없어 이번 수집에서는 생략합니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "mwifiex: HT/VHT capability·operation IE 길이 검증 추가",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "mwifiex Wi-Fi 드라이버 사용자 및 무선/네트워크 스택 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20260715185543.14478-1-doruk@0sec.ai/",
+      "if": "mwifiex 드라이버를 쓰는 기기가 인증 안 된 인접 AP에 노출될 수 있는 환경을 운영한다면",
+      "do": "이 패치가 백포트된 stable 커널로 업데이트하세요",
+      "verify": "mwifiex_update_bss_desc_with_ie()와 mwifiex_set_sta_ht_cap()의 길이 검증 로직을 원문에서 확인하세요"
+    },
+    {
+      "title": "mwifiex: pairwise-cipher OUI 순회를 IE 길이로 경계화",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "mwifiex Wi-Fi 드라이버 사용자 및 무선/네트워크 스택 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20260715185541.14350-1-doruk@0sec.ai/",
+      "if": "mwifiex로 주변 AP의 비콘·프로브응답을 스캔하는 기기를 운영한다면",
+      "do": "mwifiex_search_oui_in_ie() 경계 검사가 포함된 stable 커널로 업데이트하세요",
+      "verify": "IE 길이 대비 pairwise count 검증 로직을 원문에서 확인하세요"
+    },
+    {
+      "title": "coresight: etb10 공유 reading 상태 atomic_t 복원",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "CoreSight/ARM 트레이싱 서브시스템 유지보수 담당 및 KCSAN 대상 개발자",
+      "verifyLink": "https://lore.kernel.org/stable/20260715165405.963048-1-sashal@kernel.org/",
+      "if": "CoreSight etb10을 KCSAN 활성 환경에서 사용한다면",
+      "do": "local_t 전환을 되돌린 이 패치가 반영된 stable 커널로 업데이트하세요",
+      "verify": "크로스-CPU reading 변수 소유 문제 설명을 원문 스레드에서 직접 확인하세요(원문 라이브 확인은 미완)"
+    },
+    {
+      "title": "gpio: sch: irq startup 경로 raw_spinlock_t 전환",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "PREEMPT_RT 커널 사용자 및 gpio-sch(Intel SCH) 드라이버 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20260715164415.958948-1-sashal@kernel.org/",
+      "if": "PREEMPT_RT 커널에서 gpio-sch(Intel SCH)를 사용한다면",
+      "do": "raw_spinlock_t 전환이 포함된 stable 커널로 업데이트하세요",
+      "verify": "패치에 첨부된 lockdep BUG 로그와 irq_startup 경로 설명을 원문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다. (7.1.3·7.0.14 EOL·5.15.211·5.10.260는 지난 수집과 버전·백포트 건수 변화가 없어 생략)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**mwifiex: HT/VHT capability·operation IE 길이 검증 추가**\n\nmwifiex_update_bss_desc_with_ie()가 비콘/프로브응답의 HT/VHT Capabilities·Operation IE를 길이 검증 없이 고정 오프셋으로 저장하던 것을, 드라이버가 이후 읽는 구조체보다 짧은 요소면 -EINVAL로 거부하도록 수정했습니다. uAP 경로의 mwifiex_set_sta_ht_cap()도 짧은 요소를 건너뛰도록 보강했습니다.\n\n영향: 인접한 rogue/evil-twin AP(자격증명 불필요한 open SSID)가 잘린 HT/VHT cap 요소를 광고하면, 피해자의 association 시도 중 슬랩 OOB read가 발생하고 일부 메모리가 무선상으로 유출될 수 있습니다. 동일 함수는 과거 heap overflow(CVE-2019-3846) 이력이 있어 IE 파싱 메모리 안전 결함 유형이 실재합니다.\n\n> a truncated HT/VHT cap element therefore triggers a slab out-of-bounds read on the victim's association attempt.\n\n[원문 확인](https://lore.kernel.org/stable/20260715185543.14478-1-doruk@0sec.ai/)\n\n**mwifiex: pairwise-cipher OUI 순회를 IE 길이로 경계화**\n\nmwifiex_search_oui_in_ie()가 RSN/WPA IE의 pairwise-cipher(PTK) count 바이트를 요소 길이 검증 없이 신뢰해 count개의 4바이트 OUI를 순회하던 것을, 사용 가능한 IE 바이트 수를 넘지 않도록 경계화했습니다.\n\n영향: count는 공격자 제어 IE에서 오는 값(최대 255)이라, 조작된 큰 pairwise count로 요소 뒤 최대 255*4바이트를 읽어 kmemdup된 비콘 버퍼 경계를 넘는 OOB read가 발생합니다. 스캔 결과 파싱 단계라 인증 이전에 어떤 AP의 비콘·프로브응답으로도 트리거될 수 있습니다.\n\n> a crafted RSN/WPA IE with a large pairwise count makes the walk read up to 255 * 4 bytes past the element -- an out-of-bounds read of the kmemdup()'d beacon buffer\n\n[원문 확인](https://lore.kernel.org/stable/20260715185541.14350-1-doruk@0sec.ai/)\n\n**coresight: etb10 공유 reading 상태 atomic_t 복원**\n\netb10 miscdevice의 배타 게이트 drvdata->reading을 local_t/local_cmpxchg에서 atomic_t/atomic_cmpxchg·atomic_set으로 되돌렸습니다. commit 27b10da8fff2가 도입한 local_t 전환을 회귀로 보고 복원한 것으로 파악됩니다(원문 라이브 확인은 미완).\n\n영향: reading은 CPU-local이 아니라 장치별 공유 상태라, /dev 재개방 시 한 CPU에서 claim되고 다른 CPU에서 clear될 수 있어 KCSAN 데이터 레이스가 발생하는 것으로 보입니다. QEMU no-device KCSAN PoC로 재현된 동시성 결함이라고 패치가 설명합니다.\n\n> the same drvdata->reading variable may be claimed on one CPU and later cleared on another.\n\n[원문 확인](https://lore.kernel.org/stable/20260715165405.963048-1-sashal@kernel.org/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**gpio: sch: irq startup 경로 raw_spinlock_t 전환**\n\ngpio-sch의 sch->lock을 spinlock_t에서 raw_spinlock_t로 전환했습니다. sch_irq_unmask가 호출하는 sch_irq_mask_unmask가 irq_startup()의 비수면 컨텍스트에서 실행되기 때문이며, 같은 락을 쓰는 direction/value 콜백은 MMIO 레지스터만 다뤄 비수면 유지가 적절합니다.\n\n영향: PREEMPT_RT에서는 일반 spinlock_t가 수면 락이 되어 irq 셋업 중 'sleeping function called from invalid context' BUG가 발생할 수 있습니다. RT 커널에서 gpio-sch(Intel SCH)를 쓰는 환경의 잠재적 데드락/lockdep 경고 문제이며, 원격 취약점은 아닙니다.\n\n> That path is not sleepable, but on PREEMPT_RT a regular spinlock_t becomes a sleeping lock.\n\n[원문 확인](https://lore.kernel.org/stable/20260715164415.958948-1-sashal@kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "wifi: mwifiex: validate HT/VHT capability and operation IE lengths",
+      "url": "https://lore.kernel.org/stable/20260715185543.14478-1-doruk@0sec.ai/",
+      "note": "thread"
+    },
+    {
+      "title": "CVE-2019-3846: heap overflow in mwifiex_update_bss_desc_with_ie",
+      "url": "https://nvd.nist.gov/vuln/detail/cve-2019-3846",
+      "note": "cve"
+    },
+    {
+      "title": "[PATCH v2] wireless: mwifiex: initial commit for Marvell mwifiex driver",
+      "url": "https://yhbt.net/lore/all/1299873746-29484-1-git-send-email-bzhao@marvell.com/",
+      "note": "commit"
+    },
+    {
+      "title": "wifi: mwifiex: bound the pairwise-cipher OUI walk to the IE length",
+      "url": "https://lore.kernel.org/stable/20260715185541.14350-1-doruk@0sec.ai/",
+      "note": "thread"
+    },
+    {
+      "title": "coresight: etb10: restore atomic_t for shared reading state",
+      "url": "https://lore.kernel.org/stable/20260715165405.963048-1-sashal@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "local_ops 문서 — local atomic operations는 CPU-local 접근 전제",
+      "url": "https://docs.kernel.org/core-api/local_ops.html",
+      "note": "article"
+    },
+    {
+      "title": "gpio: sch: use raw_spinlock_t in the irq startup path",
+      "url": "https://lore.kernel.org/stable/20260715164415.958948-1-sashal@kernel.org/",
+      "note": "thread"
+    }
+  ]
+}

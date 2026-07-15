@@ -1,0 +1,103 @@
+{
+  "id": "2026-07-16-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-07-16 pKVM DMA 격리 — 아키텍처·플랫폼",
+  "headline": "pKVM SMMUv3가 호스트 stage-2를 섀도잉해 DMA 격리를 강화했고, vmalloc·ioremap 가속과 RISC-V TLB flush 최적화가 각각 mm-unstable 반영과 리뷰 단계로 진행 중이다.",
+  "date": "2026-07-16",
+  "summary": "pKVM용 SMMUv3 IOMMU 페이지테이블이 호스트 stage-2를 섀도잉해 DMA 격리를 확립했고, vmalloc·ioremap 연속 매핑 가속(v7)이 mm-unstable에 반영됐다. RISC-V는 Svinval 기반 TLB flush 최적화 V2가 리뷰 중이다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "KVM arm64: pKVM SMMUv3 stage-2 섀도잉으로 DMA 격리",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "KVM/arm64 pKVM·IOMMU(SMMUv3)·보안 서브시스템 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/alfUyfyAIFURy39W@google.com/",
+      "if": "pKVM 기밀 컴퓨팅의 DMA 격리 설계를 검토하고 있다면",
+      "do": "IOMMU 페이지테이블을 호스트 stage-2와 공유가 아닌 섀도잉으로 유지하는 이유(포맷 불일치, 페이지폴트 의존)와 콜백 삽입 위치(옵션 #2)를 코드 리뷰에 반영하세요",
+      "verify": "host_stage2_set_owner_locked 등 하위 레벨 콜백 채택 논의를 원문 스레드에서 확인하세요"
+    },
+    {
+      "title": "mm/vmalloc: ioremap·vmalloc·vmap 연속 메모리 가속 (v7, mm-unstable)",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "메모리 관리(mm/vmalloc) 및 arm64 mm 서브시스템 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260715113759.74d68fef26f1df0c6bbcc85c@linux-foundation.org/",
+      "if": "mm-unstable 브랜치에서 vmalloc/ioremap 성능 변화를 추적하고 있다면",
+      "do": "hugetlb 헬퍼 재사용 구조와 PTE_CONT 매핑이 PMD_SIZE 미만으로 클램프되는 동작을 코드 리뷰에 반영하세요",
+      "verify": "mm.git mm-unstable 브랜치 반영 여부와 diffstat을 원문 스레드에서 확인하세요"
+    },
+    {
+      "title": "riscv: mm: Svinval 기반 TLB flush 최적화 (V2)",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "RISC-V 메모리 관리(TLB/pgtable) 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260715132009.10634-1-luxu.kernel@bytedance.com/",
+      "if": "RISC-V SMP 환경에서 TLB flush 오버헤드를 줄이려 한다면",
+      "do": "Svinval 확장 가용 시 update_mmu_cache_range()의 local_sinval_vma 경로 적용과 mm_cpumask 정리 로직을 검토하세요",
+      "verify": "V2 패치셋과 리뷰어의 동작 확인 답신을 원문 스레드에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**KVM: arm64: pKVM SMMUv3 stage-2 섀도잉으로 DMA 격리**\n\nMostafa Saleh(Google)의 pKVM SMMUv3 시리즈가 IOMMU 페이지테이블로 호스트 CPU stage-2를 섀도잉해 DMA 격리를 확립하며, 콜백 삽입 위치로 하위 레벨 함수(host_stage2_set_owner_locked 등)를 채택했다.\n\n영향: pKVM 기밀 컴퓨팅을 추적하는 보안·arm64 유지보수 담당에게 핵심으로, 손상된 호스트가 DMA로 보호 게스트·하이퍼바이저 메모리에 접근하지 못하도록 막는다.\n\n> IOMMU page tables are shadowed and not shared, that is mainly because:\n> - Possible inconsistency between IOMMU and CPU features or format.\n> - KVM relies on handling in page faults (BBM, lazy mapping).\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/alfUyfyAIFURy39W@google.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**mm/vmalloc: 물리적으로 연속된 메모리에서 ioremap·vmalloc·vmap 가속 (v7, mm-unstable 반영)**\n\nWen Jiang의 v7 패치셋이 물리적으로 연속된 메모리에서 ioremap·vmalloc·vmap을 가속하며, hugetlb 헬퍼(num_contig_ptes·set_huge_pte_at·arch_make_huge_pte)를 vmalloc 경로에서 재사용해 arm64 PTE_CONT 연속 매핑을 적용한다.\n\n영향: vmalloc/ioremap 성능을 추적하는 mm·arm64 유지보수 담당에게 중요하며, 아직 mm-unstable 단계로 메인라인 병합 전이다.\n\n> Thanks, I've updated mm.git's mm-unstable branch to this version.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260715113759.74d68fef26f1df0c6bbcc85c@linux-foundation.org/)\n\n**riscv: mm: TLB flush 최적화 — Svinval 적용 + mm_cpumask 정리 (V2)**\n\nXu Lu(ByteDance)의 V2 3-패치 시리즈가 Svinval 확장 가용 시 local_sinval_vma 기반 페이지별 무효화를 적용하고, local_flush_tlb_all_asid() 후 mm_cpumask에서 현재 CPU 비트를 지워 불필요한 IPI를 방지한다.\n\n영향: RISC-V SMP의 mm·arch 유지보수 담당에게 실질적 성능 개선이며, 아직 리뷰/재전송 단계로 특정 릴리스 병합은 확정되지 않았다.\n\n> 1. Apply Svinval in update_mmu_cache() to avoid flushing irrelevant tlb entries.\n> 2. Clear bit of current cpu in mm_cpumask after local_flush_tlb_all_asid() to avoid potential IPIs in the future.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260715132009.10634-1-luxu.kernel@bytedance.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "mm/vmalloc: ioremap·vmalloc·vmap 가속 v7 — mm-unstable 반영 스레드",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260715113759.74d68fef26f1df0c6bbcc85c@linux-foundation.org/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: mm: TLB flush 최적화 V2 커버레터",
+      "url": "https://lore.kernel.org/linux-riscv/20260715132009.10634-1-luxu.kernel@bytedance.com/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv Svinval 패치 리뷰어 동작 확인 답신",
+      "url": "https://lore.kernel.org/linux-riscv/alfO7SMOMstFvt25@soda.int.kasm.eu/",
+      "note": "thread"
+    },
+    {
+      "title": "RISC-V Svinval(Fast TLB Invalidation) 확장 공개 리뷰",
+      "url": "https://groups.google.com/a/groups.riscv.org/g/isa-dev/c/e0rSyd6hh5Y",
+      "note": "article"
+    },
+    {
+      "title": "KVM: arm64: iommu — pKVM stage-2 섀도잉 DMA 격리 스레드",
+      "url": "https://lore.kernel.org/linux-arm-kernel/alfUyfyAIFURy39W@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM: arm64: SMMUv3 driver for pKVM (trap and emulate)",
+      "url": "https://lwn.net/Articles/1034478/",
+      "note": "article"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-15T19:27:14.446Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

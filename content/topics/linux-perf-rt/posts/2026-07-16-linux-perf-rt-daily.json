@@ -1,0 +1,111 @@
+{
+  "id": "2026-07-16-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-07-16 RISC-V resctrl 캐시 확장 — Perf/RT",
+  "headline": "RISC-V는 resctrl 캐시 할당과 IRQ off 벡터 컨텍스트를 확장하고, BPF verifier는 kfunc 메타데이터 미초기화 읽기를 수정했다.",
+  "date": "2026-07-16",
+  "summary": "RISC-V CBQRI가 resctrl 캐시 할당에, 커널 모드 벡터가 IRQ off 컨텍스트에 연결되며 플랫폼 확장이 이어졌다. BPF verifier는 kfunc arg meta 미초기화 읽기 문제를 수정했고, PREEMPT_RT는 구성 가이드 문서를 신설했다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "RISC-V",
+    "BPF",
+    "실시간"
+  ],
+  "highlights": [
+    {
+      "title": "BPF verifier kfunc arg meta 초기화 누락 수정",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF verifier 유지보수자, kfunc/헬퍼 인자 메타데이터 처리에 의존하는 개발자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260715172127.2416388-1-ameryhung@gmail.com/",
+      "if": "kfunc arg meta를 다루는 verifier 코드나 bloom filter map_peek 관련 로직을 사용 중이라면",
+      "do": "에러 경로가 읽기 전에 메타데이터를 0으로 초기화하는 이 패치셋을 적용해 미초기화 읽기 문제를 정리하세요",
+      "verify": "cover letter와 개별 패치 diff를 원문 링크에서 직접 확인하고 머지 대상 트리(bpf/bpf-next)를 확인하세요"
+    },
+    {
+      "title": "RISC-V CBQRI 캐시 할당, resctrl로 연결",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "RISC-V 플랫폼·resctrl 유지보수자, 캐시 QoS로 실시간 결정성을 튜닝하는 엔지니어",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260714-dfustini-atl-sc-cbqri-dt-v5-5-b0ae7e9c932e@kernel.org/",
+      "if": "RISC-V 플랫폼에서 resctrl 기반 캐시 파티셔닝을 검토 중이라면",
+      "do": "RDT_RESOURCE_L2/L3 schemata 연동 방식과 cap 불일치 시 해당 레벨이 노출되지 않는 동작을 패치에서 확인하세요",
+      "verify": "v5 시리즈(patch 5)의 머지 여부와 대상 커널 버전은 스레드에서 직접 재확인하세요"
+    },
+    {
+      "title": "RISC-V 커널 모드 벡터, IRQ off에서도 안전하게",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "RISC-V KVM·벡터 지원 유지보수자, 커널 모드 SIMD의 preemption/IRQ 컨텍스트에 민감한 RT 엔지니어",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260715051629.1169645-3-tchiu@tenstorrent.com/",
+      "if": "RISC-V KVM에서 벡터 컨텍스트 로드/저장 경로를 다루고 있다면",
+      "do": "get/put_cpu_vector_context 변경과 export된 심볼을 KVM 모듈에서 어떻게 호출하는지 패치에서 확인하세요",
+      "verify": "arm64 fpsimd 커밋 7137a203b251과의 대응 관계, 시리즈 전체 범위(patch 3 of N)는 원문에서 재확인하세요"
+    },
+    {
+      "title": "PREEMPT_RT 커널 구성 가이드 문서 신설",
+      "priority": "하",
+      "impactType": "project",
+      "affectedAudience": "PREEMPT_RT 커널을 구성·통합하는 시스템 개발자·인티그레이터",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260715150147.225715-1-darwi@linutronix.de/",
+      "if": "PREEMPT_RT 커널을 구성하거나 트레이서 사용 여부를 결정해야 한다면",
+      "do": "v3 문서의 efi_runtime workqueue affinity 지정, RT 태스크 CPU 분리, 트레이서 활성화 경고 항목을 참고하세요",
+      "verify": "약 313줄 분량의 실제 .rst 본문과 머지 상태는 원문 링크에서 직접 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**BPF verifier: bpf_call_arg_meta 통합 패치셋의 잔여 이슈 수정**\n\nkernel/bpf/verifier.c에서 bloom filter map_peek의 raw mode를 비활성화하고, 에러 경로가 읽기 전에 kfunc arg meta를 0으로 초기화해 미초기화 메타데이터를 읽는 문제를 막는다.\n\n영향: kfunc arg meta의 초기화 전 읽기는 verifier 정확성과 잠재적 정보 노출로 이어질 수 있어, verifier 내부를 추적하는 독자에게 중요한 안전장치 수정이다.\n\n> bpf: Zero kfunc arg meta before error paths can read it\n\n[원문 확인](https://lore.kernel.org/bpf/20260715172127.2416388-1-ameryhung@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**RISC-V CBQRI: resctrl에 캐시 할당(capacity block mask) 지원 추가**\n\nRISC-V CBQRI capacity controller를 resctrl 프레임워크의 RDT_RESOURCE_L2/L3 schemata로 연결하며, 캐시 레벨을 받치는 controller들의 cap이 불일치하면 그 레벨을 노출하지 않는다.\n\n영향: resctrl 기반 캐시 파티셔닝은 실시간 워크로드의 캐시 간섭과 지연 지터를 줄이는 QoS 도구로, RISC-V가 x86 RDT·ARM MPAM과 동일한 인터페이스로 캐시 할당을 지원하게 되는 신호다.\n\n> Wire CBQRI capacity controllers into resctrl as RDT_RESOURCE_L2 and RDT_RESOURCE_L3 schemata.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260714-dfustini-atl-sc-cbqri-dt-v5-5-b0ae7e9c932e@kernel.org/)\n\n**RISC-V vector: IRQ off 상태에서도 비선점 커널 모드 벡터 허용**\n\nget/put_cpu_vector_context를 개선해 kvm_arch_vcpu_load/put를 IRQ off와 일반 프로세스 컨텍스트 양쪽에서 안전하게 호출할 수 있게 하고, KVM 모듈이 호출할 수 있도록 두 심볼을 export한다.\n\n영향: 커널 모드 벡터를 IRQ off에서 사용하는 것은 preempt-disable 구간과 인터럽트 지연에 직결되며, RISC-V KVM이 벡터 컨텍스트를 안전히 로드/저장하기 위한 기반 변경이다.\n\n> we are upgrading get/put_cpu_vector_context such that kvm_arch_vcpu_load/put can be safely called under both irq off and regular process context.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260715051629.1169645-3-tchiu@tenstorrent.com/)\n\n**Documentation: 실시간 커널 구성 가이드 신설**\n\nDocumentation/core-api/real-time/kernel-configuration.rst(약 313줄)를 신설하는 v3 문서 패치로, efi_runtime workqueue CPU affinity 지정을 통한 RT 태스크 CPU 분리와 트레이서 활성화 경고가 추가됐다.\n\n영향: PREEMPT_RT 구성에는 만능 해법이 없어 파편화된 RT 구성 지식을 커널 트리 내 공식 문서로 모으는 작업으로, RT 커널을 튜닝·통합하는 독자에게 직접적인 참고 자료가 된다.\n\n> system integrators can now assign the efi_runtime workqueue CPU affinity, then safely pin RT tasks on a different CPU range.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260715150147.225715-1-darwi@linutronix.de/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "riscv_cbqri: resctrl: Add cache allocation via capacity block mask",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260714-dfustini-atl-sc-cbqri-dt-v5-5-b0ae7e9c932e@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "RISC-V: QoS: add CBQRI resctrl interface",
+      "url": "https://lwn.net/Articles/929553/",
+      "note": "article"
+    },
+    {
+      "title": "riscv: vector: allow non-preemptible kernel-mode vector with IRQs off",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260715051629.1169645-3-tchiu@tenstorrent.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Fix leftover issues of the unify bpf_call_arg_meta patchset",
+      "url": "https://lore.kernel.org/bpf/20260715172127.2416388-1-ameryhung@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Documentation: Add real-time kernel configuration guide",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260715150147.225715-1-darwi@linutronix.de/",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-15T19:20:54.112Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

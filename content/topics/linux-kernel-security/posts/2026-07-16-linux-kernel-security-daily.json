@@ -1,0 +1,103 @@
+{
+  "id": "2026-07-16-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-07-16 ARM32 KCFI 핸들러 — 커널 보안",
+  "headline": "ARM32 KCFI 트랩 핸들러와 skb 버킷 격리 RFC가 새로 올라왔고, ZONE_DEVICE memmap 초기화 개선안도 논의 중입니다.",
+  "date": "2026-07-16",
+  "summary": "ARM32 GCC KCFI 트랩 핸들러와 skb 데이터 할당 버킷 격리라는 두 하드닝 작업이 새로 올라왔습니다. ZONE_DEVICE memmap 초기화 속도 개선 시리즈도 함께 논의되고 있습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "ARM32 KCFI 트랩 핸들러 posted",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "GCC KCFI로 빌드하는 ARM32 커널 개발자·하드닝/CFI 유지보수자(및 Clang KCFI 사용자)",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20260715175223.make.153-kees@kernel.org/",
+      "if": "ARM32 커널을 GCC KCFI로 빌드해 forward-edge CFI를 적용하고 있다면",
+      "do": "이 패치 시리즈를 추적해 do_undefinstr() 기반 핸들러 적용 여부를 점검하세요",
+      "verify": "머지 후 CFI 위반 시 report_cfi_failure() 리포트가 정확히 나오는지 확인하세요"
+    },
+    {
+      "title": "skb 데이터 할당 kmem_buckets 격리 RFC",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "커널 네트워킹·보안/하드닝 유지보수자, 익스플로잇 완화 개발자, GFP_DMA/accounted skb 할당에 의존하는 드라이버 작성자",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/aldpAY6nXwgayHL0@pedro-suse.lan/",
+      "if": "네트워킹 데이터패스 하드닝이나 exploit mitigation을 다루고 있다면",
+      "do": "DMA/cgroup 캐시 복제 논쟁의 결론이 나올 때까지 이 RFC 스레드를 계속 확인하세요",
+      "verify": "최종 머지 여부와 버킷별 캐시 레이아웃 확정 여부를 확인하세요"
+    },
+    {
+      "title": "ZONE_DEVICE memmap 템플릿 복사 fast path",
+      "priority": "하",
+      "impactType": "performance",
+      "affectedAudience": "대형 네임스페이스를 쓰는 퍼시스턴트 메모리(pmem/fsdax/devdax) 사용자와 커널 MM/nvdimm 개발자",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/a3ce9d12-a1b2-4201-b16a-b3f98ec8abd7@bytedance.com/",
+      "if": "대형 pmem/fsdax 네임스페이스를 자주 bind/rebind 하는 환경이라면",
+      "do": "이 패치 시리즈와 리뷰 진행 상황을 주시하세요",
+      "verify": "머지 여부와 rebind 지연 개선치가 독립적으로 재현되는지 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ARM: traps: Implement KCFI trap handler for ARM32**\n\nGCC로 빌드한 ARM32 커널에서 KCFI 위반을 do_undefinstr() 경로에서 직접 디코드해 리포트하는 트랩 핸들러 패치가 posted됐습니다.\n\n영향: 지금까지 GCC ARM32 KCFI 위반은 일반 'undefined instruction' Oops로만 보여 디버깅이 어려웠는데, 이 패치로 aarch64처럼 정확한 CFI 실패 리포트를 받을 수 있게 됩니다. (LKML 인덱스 기준 v2까지만 확인되어 최종 머지 버전은 확인이 필요합니다.)\n\n> KCFI encoding: 0x8000 | (type_reg_num << 5) | (target_reg_num & 31) ... the handler can decode it and call the full report_cfi_failure() with the target and expected type.\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20260715175223.make.153-kees@kernel.org/)\n\n**net: skb: isolate skb data area allocations into a separate bucket**\n\nskb 데이터 영역 할당을 전용 kmem_buckets 캐시로 옮기는 RFC 패치 시리즈가 논의되고 있습니다. 아직 미머지 상태입니다.\n\n영향: 공격자가 영향을 줄 수 있는 skb 페이로드 할당을 별도 캐시로 격리하면 heap-spray·cross-cache 타입 혼동 공격의 난도가 올라가지만, DMA/cgroup 계정 경로와의 호환성 문제로 최종 설계는 아직 합의되지 않았습니다.\n\n> net: skb: isolate skb data area allocations into a separate bucket\n\n[원문 확인](https://lore.kernel.org/linux-hardening/aldpAY6nXwgayHL0@pedro-suse.lan/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**mm: optimize ZONE_DEVICE memmap initialization (템플릿 복사 fast path)**\n\nZONE_DEVICE의 struct page 초기화에 재사용 가능한 템플릿을 한 번 만들어 복사하는 fast path를 추가하는 패치 시리즈가 논의 중인 것으로 보이나, 접근 가능한 미러에서 독립 확증은 되지 않았습니다.\n\n영향: 대형 pmem/fsdax/devdax 네임스페이스의 bind/rebind 지연을 이 초기화 과정이 지배하는데, nd_pmem rebind 평균이 약 11퍼센트 줄었다는 언급이 있으나 확인이 필요합니다.\n\n> This reduces the average rebind time from 244.28 ms to 217.19 ms, or about 11%.\n\n[원문 확인](https://lore.kernel.org/linux-hardening/a3ce9d12-a1b2-4201-b16a-b3f98ec8abd7@bytedance.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ARM: traps: Implement KCFI trap handler for ARM32",
+      "url": "https://lore.kernel.org/linux-hardening/20260715175223.make.153-kees@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "[PATCH v2 9/9] ARM: traps: Implement KCFI trap handler for ARM32",
+      "url": "https://lkml.org/lkml/2025/9/3/2072",
+      "note": "thread"
+    },
+    {
+      "title": "GCC KCFI ROP 가젯 회피 논의",
+      "url": "https://www.mail-archive.com/gcc-patches@gcc.gnu.org/msg383955.html",
+      "note": "thread"
+    },
+    {
+      "title": "net: skb: isolate skb data area allocations into a separate bucket",
+      "url": "https://lore.kernel.org/linux-hardening/aldpAY6nXwgayHL0@pedro-suse.lan/",
+      "note": "thread"
+    },
+    {
+      "title": "kmem_buckets 하드닝 메커니즘",
+      "url": "https://lwn.net/Articles/976460/",
+      "note": "article"
+    },
+    {
+      "title": "mm: optimize ZONE_DEVICE memmap initialization",
+      "url": "https://lore.kernel.org/linux-hardening/a3ce9d12-a1b2-4201-b16a-b3f98ec8abd7@bytedance.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-15T18:51:15.705Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
