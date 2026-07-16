@@ -1,0 +1,119 @@
+{
+  "id": "2026-07-17-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-07-17 panthor FW 검증 강화 — GPU/AI 렌즈",
+  "headline": "panthor가 조작된 FW로 인한 힙 오버플로를 막는 stable 백포트 패치를 받았고, Rust 드라이버 ID 참조 방식이 전면 개편됩니다.",
+  "date": "2026-07-17",
+  "summary": "panthor GPU 드라이버는 조작된 펌웨어 섹션 크기로 인한 힙 버퍼 오버플로를 막는 stable 백포트 대상 패치를 받았습니다. 한편 Rust 드라이버 추상화 전반에서 device ID 참조 방식이 인덱스에서 포인터로 바뀌는 교차 서브시스템 변경이 병합을 앞두고 있습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "GPU"
+  ],
+  "highlights": [
+    {
+      "title": "drm/panthor FW 섹션 크기 미검증 힙 오버플로 방지",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "panthor GPU 드라이버 유지보수 담당 및 stable 백포트 대상",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260716181137.5005eb02@fedora-2.home/",
+      "if": "조작되거나 손상된 GPU 펌웨어 이미지를 panthor 드라이버로 로드하는 환경이라면",
+      "do": "해당 패치가 포함된 커널 또는 stable 백포트 버전으로 업데이트하십시오",
+      "verify": "panthor_fw_load_section_entry()에서 data_size가 section_size를 초과할 때 -EINVAL이 반환되는지 확인하십시오"
+    },
+    {
+      "title": "Rust 드라이버 추상화 device ID 참조, 인덱스→포인터 전환",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust 커널 드라이버 추상화(pci/i2c/of/usb/acpi/net) 사용자·유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/DK08KE2A3M7K.3OQDFZB94SMFC@kernel.org/",
+      "if": "acpi/i2c/of/net/usb 등 Rust 버스 추상화를 사용하는 드라이버를 유지보수 중이라면",
+      "do": "이 시리즈의 device_id/driver.rs 변경 사항을 검토하고 의견이 있으면 지금 회신하십시오",
+      "verify": "Danilo Krummrich의 픽업 여부와 병합 대상 트리(rust-next 등)를 확인하십시오"
+    },
+    {
+      "title": "gpu: host1x 소규모 수정 6건, drm-misc-next 병합",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "Tegra host1x/DRM 드라이버 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/alkodFCXR7fqj_X9@orome/",
+      "if": "Tegra host1x 기반 드라이버를 추적하고 있다면",
+      "do": "drm-misc-next에 반영된 6개 패치(timeout worker 대기, device_add 중복 방지, 스택 오버리드 방지 등)를 로컬 트리에 반영하십시오",
+      "verify": "이 커밋들이 다음 머지 윈도우에서 어느 6.x 릴리스로 흘러가는지 추적하십시오"
+    },
+    {
+      "title": "drm/bridge ti-sn65dsi83, SN65DSI84 Channel B 지원 추가",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "DRM bridge(ti-sn65dsi8x) 드라이버 및 LVDS 패널/브리지 사용자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/DK05P8X4FI5W.15SH3XRO3MXN9@bootlin.com/",
+      "if": "SN65DSI84의 두 번째 LVDS 채널(Channel B)이 필요하다면",
+      "do": "이 패치 시리즈와 panel_port/output_port 명명 논의 결과를 확인한 뒤 적용하십시오",
+      "verify": "next_bridge 기반 리팩터로 drm_of_find_panel_or_bridge() 제거 계획이 어떻게 진행되는지 확인 필요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm/panthor: 오버사이즈 펌웨어 섹션 거부 — 힙 오버플로 방지**\n\npanthor_fw_load_section_entry()에서 section->data.size를 할당된 section_size 검증 없이 계산해 조작된 FW가 힙 버퍼 오버플로와 OOB memset을 유발할 수 있었으며, 패치는 data_size > section_size일 때 -EINVAL을 반환하도록 검사를 추가합니다.\n\n영향: panthor 유지보수 대상이며 Fixes/Cc: stable 태그로 백포트 예정으로, 손상·변조된 FW 이미지에 대한 커널 힙 보호를 강화합니다.\n\n> If a crafted firmware sets data.size larger than the allocated memory, this could cause a heap buffer overflow in panthor_fw_init_section_mem()\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260716181137.5005eb02@fedora-2.home/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**rust: driver: ID info를 인덱스 대신 포인터로 — 버스 추상화 전반 정리**\n\nGary Guo의 시리즈가 Rust device_id/driver 추상화에서 ID info를 인덱스 대신 포인터로 참조하도록 재작성하며, driver.rs를 축소하고 ACPI C 헬퍼를 제거해 29개 파일에서 순 +178/−431 규모로 변경됩니다.\n\n영향: 모든 버스 추상화(acpi/i2c/of/pci/platform/usb/net)에서 device ID 테이블 관용구가 바뀌는 교차 서브시스템 변경이며, Danilo Krummrich가 곧 픽업할 예정입니다.\n\n> 29 files changed, 178 insertions(+), 431 deletions(-)\n\n[원문 확인](https://lore.kernel.org/dri-devel/DK08KE2A3M7K.3OQDFZB94SMFC@kernel.org/)\n\n**gpu: host1x: 소규모 수정 6건 — drm-misc-next 반영**\n\nMikko Perttunen의 6패치 시리즈가 timeout worker 대기, device_add 중복 방지, trace_write_gather 오프셋 수정, 디버그 출력 스택 오버리드 방지, pin_job() 반환형 수정, syncpoint 랩어라운드 명시를 포함해 Thierry Reding에 의해 drm-misc-next에 적용됐습니다.\n\n영향: Tegra host1x 유지보수 대상으로, 실재하는 로직 결함과 디버그 경로 스택 오버리드를 정리하고 정적/동적 분석 노이즈를 줄입니다.\n\n> Applied to drm-misc-next, thanks.\n\n[원문 확인](https://lore.kernel.org/dri-devel/alkodFCXR7fqj_X9@orome/)\n\n**drm/bridge: ti-sn65dsi83 — SN65DSI84 LVDS Channel B 지원 + 명명·리팩터 논의**\n\nEsben Haabendal의 패치가 SN65DSI84의 두 번째 싱글링크 LVDS Channel B 지원을 위해 DT 출력 포트 파싱을 추가했고, 리뷰에서 panel_port→output_port 개명과 next_bridge 기반 전환을 통한 drm_of_find_panel_or_bridge() 제거 계획이 논의되고 있습니다.\n\n영향: SN65DSI84 두 번째 LVDS 채널이 필요한 사용자에게 기능 확장이며, DRM bridge의 panel_bridge/next_bridge 정리 방향성을 보여줍니다.\n\n> I'm afraid I realized right now the \"panel_port\" name is not ideal because there could be another bridge at the output port and not directly a panel.\n\n[원문 확인](https://lore.kernel.org/dri-devel/DK05P8X4FI5W.15SH3XRO3MXN9@bootlin.com/)\n\n**drm/bridge: ti-sn65dsi83 — reset_work() 에러 처리, 사실상 죽은 코드 지적**\n\nEsben의 패치는 reset_pipe() 실패 시 goto err_exit로 정리 경로를 타게 하지만, 리뷰어들은 sn65dsi83_reset_pipe()가 무조건 0을 반환해 에러 처리 블록이 죽은 코드임을 지적하고 err를 그대로 전파하자고 제안합니다.\n\n영향: CRTC 리셋 실패가 조용히 삼켜지는 문제의 올바른 에러 전파를 다루는 논의이며, 아직 병합 전으로 결론이 확정되지 않았습니다.\n\n> This isn't a bug introduced by this patch, but is this error handling block actually dead code?\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260716190901.29f44aea@bootlin.com/)\n\n**drm/panthor: gpu_load debugfs 노드 제안 — 유지보수자 반대(범용 인터페이스 선호)**\n\nGuangliu Ding(NXP)이 전체 GPU 사용률(busy_time_ns, idle_time_ns, gpu_load %)을 debugfs로 노출하는 패치를 제안했으나, 유지보수자는 debugfs에 문자열로 담는 방식이 어색하다며 모든 드라이버가 구현 가능한 범용 형식을 선호합니다.\n\n영향: 디바이스 전역 GPU 텔레메트리를 원하는 panthor 사용자에게 의미가 있으나, 교차 드라이버 GPU 사용률 인터페이스 설계 논쟁이 아직 수용되지 않은 상태입니다.\n\n> But stashing it in debugfs and formatting it as a string seems odd.\n\n[원문 확인](https://lore.kernel.org/dri-devel/GVXPR04MB12158D92B532A7C71F76DE6D7F3C72@GVXPR04MB12158.eurprd04.prod.outlook.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/panthor FW 섹션 힙 오버플로 방지 패치 스레드",
+      "url": "https://lore.kernel.org/dri-devel/20260716181137.5005eb02@fedora-2.home/",
+      "note": "thread"
+    },
+    {
+      "title": "FW logical block 커밋 미러 확인",
+      "url": "https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg481747.html",
+      "note": "thread"
+    },
+    {
+      "title": "rust: driver ID info 포인터 전환 시리즈",
+      "url": "https://lore.kernel.org/dri-devel/DK08KE2A3M7K.3OQDFZB94SMFC@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "gpu: host1x 6패치 drm-misc-next 적용",
+      "url": "https://lore.kernel.org/dri-devel/alkodFCXR7fqj_X9@orome/",
+      "note": "thread"
+    },
+    {
+      "title": "ti-sn65dsi83 Channel B 지원 리뷰",
+      "url": "https://lore.kernel.org/dri-devel/DK05P8X4FI5W.15SH3XRO3MXN9@bootlin.com/",
+      "note": "thread"
+    },
+    {
+      "title": "ti-sn65dsi83 reset_work 에러 처리 리뷰",
+      "url": "https://lore.kernel.org/dri-devel/20260716190901.29f44aea@bootlin.com/",
+      "note": "thread"
+    },
+    {
+      "title": "panthor gpu_load debugfs 제안 스레드",
+      "url": "https://lore.kernel.org/dri-devel/GVXPR04MB12158D92B532A7C71F76DE6D7F3C72@GVXPR04MB12158.eurprd04.prod.outlook.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-16T19:35:24.128Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
