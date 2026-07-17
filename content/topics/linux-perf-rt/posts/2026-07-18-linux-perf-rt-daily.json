@@ -1,0 +1,94 @@
+{
+  "id": "2026-07-18-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-07-18 BPF 7.2-rc4 수정 — 리눅스 성능/RT",
+  "headline": "BPF 7.2-rc4에 소켓 UAF·verifier 하드닝 수정이, parisc JIT엔 signed div/mod 버그 수정이 올라왔습니다.",
+  "date": "2026-07-18",
+  "summary": "BPF 7.2-rc4용 수정 묶음이 소켓 clone UAF와 sockmap refcount 누수를 막고 verifier에 음수 offset 거부를 추가합니다. parisc BPF JIT의 signed div/mod 버그 수정과 eBPF 할당 시 dirty pack 우선 사용 6.6.y 백포트도 함께 올라왔습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "BPF"
+  ],
+  "highlights": [
+    {
+      "title": "BPF 7.2-rc4 수정: 소켓 UAF·verifier 하드닝",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF verifier·sockmap 유지보수 담당 및 eBPF/네트워킹 개발자, 7.2 스테이블 추적자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260717191356.3513879-1-memxor@gmail.com/",
+      "if": "7.2-rc4 이상을 사용 중이고 sockmap 또는 소켓 clone 경로를 다룬다면",
+      "do": "이번 bpf-fixes 풀 리퀘스트를 적용하고 unhashed UDP 소켓 거부 로직을 점검하세요",
+      "verify": "원문 스레드에서 base 2c7c88a412aa부터 merge 3d84d674e3a5까지 커밋 범위와 실제 merge 여부를 직접 확인하세요"
+    },
+    {
+      "title": "parisc BPF JIT의 signed div/mod 버그 수정",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "parisc(hppa) 아키텍처 및 BPF JIT 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260717190544.257306-1-main.kalliope@gmail.com/",
+      "if": "parisc(hppa) 상에서 BPF_SDIV·BPF_SMOD를 사용하는 프로그램을 운영한다면",
+      "do": "이 bpf-next 패치 2건을 검토해 signed 결과 불일치 수정을 반영하세요",
+      "verify": "qemu-system-hppa에서 test_bpf를 실행해 수정 전후 signed div/mod 케이스 결과를 비교하세요"
+    },
+    {
+      "title": "eBPF 할당에 dirty pack 우선 사용(6.6.y 백포트)",
+      "priority": "하",
+      "impactType": "backport",
+      "affectedAudience": "BPF JIT 유지보수 담당 및 6.6.y 스테이블 백포트 추적자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260717-cbpf-jit-spray-hardening-6-6-y-v1-6-e04f1b2893de@linux.intel.com/",
+      "if": "6.6.y 스테이블 커널에서 cBPF JIT-spray 하드닝 시리즈를 추적한다면",
+      "do": "이 백포트 제출을 검토해 eBPF/cBPF pack 재사용 정책 변경 반영 여부를 판단하세요",
+      "verify": "upstream 커밋 b72e29e0f7ee와 백포트 스레드를 대조해 6.6.y stable 트리 수용 여부를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**BPF fixes for 7.2-rc4**\n\nBPF 서브시스템의 7.2-rc4 대상 수정 묶음(bpf.git tags/bpf-fixes, Linus 대상 pull request)으로, 소켓 clone 조기 반환 경로의 UAF 수정, sockmap의 unhashed UDP 소켓 거부, verdict 프로그램 없는 sockmap 소켓의 FIONREAD 수신 큐 반영, verifier 버퍼 포인터 음수 상수 offset 거부, implicit 인자 kfunc의 tracing 수정을 포함합니다.\n\n영향: verifier 하드닝과 소켓/sockmap UAF·refcount 누수 수정은 eBPF·네트워킹 환경에 직접적인 보안·안정성 영향을 줍니다.\n\n> Fix a UAF in socket clone early bailout paths (Matt Bobrowski)\n\n[원문 확인](https://lore.kernel.org/bpf/20260717191356.3513879-1-memxor@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**bpf, parisc: Add support for BPF_SDIV and BPF_SMOD in the parisc JITs**\n\nparisc(hppa) BPF JIT 32/64비트가 signed BPF_SDIV/BPF_SMOD에 unsigned 나눗셈/나머지 명령을 내보내, 음수 피연산자에서 verifier·인터프리터의 signed 결과와 다른 값을 반환하던 문제를 수정하는 패치입니다. parisc64 공용 signed helper와 parisc32의 $divI/$remI signed millicode 지원을 추가합니다.\n\n영향: BPF JIT의 아키텍처별 정확성 결함으로, parisc에서 인터프리터와 다른 결과를 내는 이식성 문제이며 qemu-system-hppa test_bpf로 수정이 검증됐습니다.\n\n> Signed div/mod return an unsigned result for negative operands rather than the verifier's and the interpreter's signed result.\n\n[원문 확인](https://lore.kernel.org/bpf/20260717190544.257306-1-main.kalliope@gmail.com/)\n\n**bpf: Prefer dirty packs for eBPF allocations**\n\nBPF JIT pack 할당자가 cBPF의 dirty pack 재사용 시에만 예측기(predictor) flush를 수행하던 비대칭을 이용해, eBPF가 dirty pack을 우선 선택하고 clean pack은 cBPF용으로 남기도록 변경합니다. cBPF JIT-spray 하드닝 시리즈의 6.6.y 스테이블 백포트로 제출됐습니다.\n\n영향: JIT-spray 하드닝을 유지하면서 예측기 flush를 줄여 JIT 할당 경로 성능을 개선하는 최적화입니다.\n\n> The pack allocator only flushes predictors when reusing a dirty pack for cBPF, eBPF allocations never trigger a flush.\n\n[원문 확인](https://lore.kernel.org/bpf/20260717-cbpf-jit-spray-hardening-6-6-y-v1-6-e04f1b2893de@linux.intel.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "BPF fixes for 7.2-rc4",
+      "url": "https://lore.kernel.org/bpf/20260717191356.3513879-1-memxor@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf, parisc: Add support for BPF_SDIV and BPF_SMOD in the parisc JITs",
+      "url": "https://lore.kernel.org/bpf/20260717190544.257306-1-main.kalliope@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Prefer dirty packs for eBPF allocations (6.6.y backport)",
+      "url": "https://lore.kernel.org/bpf/20260717-cbpf-jit-spray-hardening-6-6-y-v1-6-e04f1b2893de@linux.intel.com/",
+      "note": "thread"
+    },
+    {
+      "title": "upstream commit: bpf: Prefer dirty packs for eBPF allocations",
+      "url": "https://github.com/torvalds/linux/commit/b72e29e0f7ee329d89f86db8700c8ea99b4a370a",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-17T19:43:35.581Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

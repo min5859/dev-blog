@@ -1,0 +1,129 @@
+{
+  "id": "2026-07-18-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-07-18 i.MX6 CFI 패닉 수정 — 리눅스 툴체인",
+  "headline": "CONFIG_CFI 커널에서 i.MX6 suspend가 패닉하던 버그가 수정되고 Rust miscdevice의 fops.owner UAF 위험도 해소됐습니다.",
+  "date": "2026-07-18",
+  "summary": "CONFIG_CFI=y 커널에서 i.MX6 suspend/resume이 패닉하던 버그가 __nocfi로 수정되고, Rust miscdevice의 fops.owner null 문제도 해소됐습니다. rust_binder는 spinlock 전환을 준비하는 락 리팩터와 defer_work 타입 정리가, Rust 쪽에는 serdev 버스 추상화 신규 도입이 나란히 진행됐습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "툴체인"
+  ],
+  "highlights": [
+    {
+      "title": "ARM: imx: Fix suspend/resume crash with Clang CFI",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "i.MX6/ARM mach-imx BSP 유지보수 담당 및 CONFIG_CFI로 커널을 빌드하는 엔지니어",
+      "verifyLink": "https://lore.kernel.org/llvm/20260717141648.1007059-1-linux@yoavmoshe.com/",
+      "if": "CONFIG_CFI=y로 i.MX6 계열 커널을 빌드하고 suspend/resume을 사용한다면",
+      "do": "imx6q_suspend_finish에 __nocfi를 붙여 OCRAM 함수 간접 호출을 CFI 검사에서 제외하는 이 패치를 적용하세요",
+      "verify": "패치 버전과 merge 여부·Fixes 태그가 아직 미확인이니 위 lore 스레드에서 최신 상태를 직접 확인하세요"
+    },
+    {
+      "title": "rust: miscdevice: set fops.owner from driver module pointer",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "Rust miscdevice 드라이버 작성자 및 rust/kernel 추상화 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/2026071725-unpiloted-bogus-f1de@gregkh/",
+      "if": "Rust로 miscdevice 드라이버를 작성 중이라면",
+      "do": "this_module::<T::OwnerModule>()로 fops.owner를 채우는 이 패치를 반영해 모듈 언로드 시 use-after-free 위험을 차단하세요",
+      "verify": "어느 트리(char-misc 등)에 병합됐는지 미확인이니 대상 트리 반영 여부를 확인하세요"
+    },
+    {
+      "title": "rust_binder: avoid allocating under node_refs for freeze listeners",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "rust_binder 유지보수 담당 및 Android binder 개발자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/2026071704-acorn-backstage-e0ba@gregkh/",
+      "if": "rust_binder의 node_refs 락·동시성 구조를 추적한다면",
+      "do": "char-misc-next에 병합됐다는 commit b9d17aa74ddd를 확인해 뒤이을 spinlock 전환 작업에 대비하세요",
+      "verify": "commit 해시가 스레드 진술 기반이라 독립 확인이 안 됐으니 char-misc-next에서 직접 조회해 확인하세요"
+    },
+    {
+      "title": "rust: add basic serial device bus abstractions",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust로 serdev(직렬 장치) 드라이버를 작성하려는 개발자, tty·driver-core 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/2026071717-unexposed-theorize-d707@gregkh/",
+      "if": "Rust로 serdev 드라이버를 작성할 계획이라면",
+      "do": "serdev::Driver/Device/Adapter 추상화가 tty 트리 대신 driver-core 트리로 병합될 예정이니 그 기준으로 작업하세요",
+      "verify": "2026-07 driver-core 병합 시점 최종 코드가 미확인이니 driver-core 트리에서 최신 상태를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**ARM: imx: Fix suspend/resume crash with Clang CFI**\n\nOCRAM으로 재배치된 i.MX6 suspend 코드(imx6_suspend_in_ocram_fn)는 컴파일러가 생성하는 CFI 타입 시그니처가 없어, CONFIG_CFI=y 커널에서 이 함수로의 간접 호출이 strict CFI 위반 panic을 일으킨다. 패치는 호출부 imx6q_suspend_finish에 __nocfi를 달아 이 간접 호출만 CFI 검사에서 제외한다.\n\n영향: kCFI 하드닝 커널에서 i.MX6 suspend/resume이 패닉하는 실사용 버그를 막으며, OCRAM 재배치·어셈블리 진입처럼 컴파일러 계측 밖의 간접 호출이 CFI와 충돌하는 전형적 패턴을 보여준다.\n\n> When CONFIG_CFI=y is active, the indirect call to imx6_suspend_in_ocram_fn triggers a strict CFI violation panic.\n\n[원문 확인](https://lore.kernel.org/llvm/20260717141648.1007059-1-linux@yoavmoshe.com/)\n\n**rust: miscdevice: set fops.owner from driver module pointer**\n\nRust miscdevice 추상화가 file_operations.owner 필드를 this_module::<T::OwnerModule>() 헬퍼로 드라이버 모듈 포인터에서 설정하도록 바뀐다. 이전에는 null이 기본값이었다.\n\n영향: fops.owner가 null이면 VFS가 모듈 참조를 잡지 못해 fd가 열려 있는 동안 모듈이 언로드될 경우 use-after-free 위험이 생기는데, 이 수정으로 Rust miscdevice 드라이버의 모듈 수명 안전성이 C와 동등해진다.\n\n> Set the miscdevice fops owner field from the driver module pointer via the `this_module::<T::OwnerModule>()` helper, instead of defaulting to null.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/2026071725-unpiloted-bogus-f1de@gregkh/)\n\n**rust_binder: avoid allocating under node_refs for freeze listeners**\n\nfreeze.rs가 node_refs 락 아래에서 할당하지 않도록 재구성됐다. add_freeze_listener는 재할당이 필요하면 호출자가 더 큰 vector를 미리 준비해 재시도하는 retry loop를 쓰고, remove_freeze_listener는 빈 KVVec를 반환해 락 아래 kvfree() 호출을 피한다.\n\n영향: node_refs mutex를 spinlock으로 전환하려면 락 구간에서 할당/해제가 불가능해야 하는데, 이 패치가 그 전제 조건을 정리하는 선행 작업이다.\n\n> The node_refs mutex needs to be changed to a spinlock, so in preparation for that, update freeze.rs to avoid allocating under the node_refs lock.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/2026071704-acorn-backstage-e0ba@gregkh/)\n\n**rust: add basic serial device bus abstractions**\n\nRust로 serdev(직렬 장치 버스) 드라이버를 작성할 수 있게 하는 기본 추상화가 추가된다. serdev::Driver 트레이트, C serdev_device를 감싼 serdev::Device<Ctx>, 커널 디바이스 모델과 연결하는 serdev::Adapter<T>, 대기 시간용 Timeout enum 등이 포함되며, Greg는 이 시리즈를 tty tree 대신 driver-core tree로 가져가기로 했다.\n\n영향: Rust 드라이버가 접근 가능한 버스 추상화 목록에 serdev가 새로 추가되는 것으로, 첫 소비자는 Synology 장치의 MCU를 겨냥한 드라이버다.\n\n> This abstraction will be used by a driver, which targets the MCU devices in Synology devices.\n\n[원문 확인](https://lore.gitlab.freedesktop.org/drm-ai-reviews/2026031422-shaded-matchbook-5078@gregkh/T/)\n\n**rust_binder: Update defer_work bitmaps to use kernel::impl_flags!**\n\nrust_binder의 defer_work 비트맵이 원시 u8 대신 kernel::impl_flags! 매크로 기반 타입으로 바뀐다. ProcessInner.defer_work 타입이 u8에서 DeferWorks로 바뀌고, release()/flush()는 DeferWorks::empty()로 빈 상태를 검사한다.\n\n영향: 손으로 다루던 u8 비트마스크를 타입 안전한 플래그 추상화로 바꾼 사례로, kernel::impl_flags! 매크로가 실코드(binder)에 채택되는 흐름을 보여준다. 3개 시리즈 중 이 패치만 적용됐고 나머지 2개는 rebase가 필요하다.\n\n> This is the only patch in the series that applied. Can you rebase and resend the other 2?\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/2026071741-aspirate-foothold-6645@gregkh/)\n\n**vDSO: Remove CONFIG_GENERIC_GETTIMEOFDAY ifdeffery**\n\nVDSO_CLOCKMODE_* 상수를 항상 정의하도록 만들어, clocksource 드라이버에서 CONFIG_GENERIC_GETTIMEOFDAY에 걸린 조건부 컴파일을 제거하는 v2 시리즈다.\n\n영향: clocksource 드라이버 코드의 조건부 컴파일 표면을 줄여 가독성·유지보수성을 높이는 kbuild/Kconfig 위생 작업이다.\n\n> Always provide the definitions of the VDSO_CLOCKMODE_* constants and remove some ifdeffery from the clocksource drivers.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20260717-vdso-arch-clockmodes-v2-0-756f5a5d1467@linutronix.de/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ARM: imx: Fix suspend/resume crash with Clang CFI",
+      "url": "https://lore.kernel.org/llvm/20260717141648.1007059-1-linux@yoavmoshe.com/",
+      "note": "thread"
+    },
+    {
+      "title": "i.MX6 OCRAM suspend 코드 배경 (patchwork)",
+      "url": "https://patchwork.kernel.org/patch/3474881/",
+      "note": "article"
+    },
+    {
+      "title": "rust: miscdevice: set fops.owner from driver module pointer",
+      "url": "https://lore.kernel.org/rust-for-linux/2026071725-unpiloted-bogus-f1de@gregkh/",
+      "note": "thread"
+    },
+    {
+      "title": "rust_binder: avoid allocating under node_refs for freeze listeners",
+      "url": "https://lore.kernel.org/rust-for-linux/2026071704-acorn-backstage-e0ba@gregkh/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: add basic serial device bus abstractions (v3 커버레터)",
+      "url": "https://lore.gitlab.freedesktop.org/drm-ai-reviews/2026031422-shaded-matchbook-5078@gregkh/T/",
+      "note": "thread"
+    },
+    {
+      "title": "serdev 시리즈 driver-core 트리 라우팅 결정",
+      "url": "https://lore.kernel.org/rust-for-linux/2026071717-unexposed-theorize-d707@gregkh/",
+      "note": "thread"
+    },
+    {
+      "title": "rust_binder: Update defer_work bitmaps to use kernel::impl_flags!",
+      "url": "https://lore.kernel.org/rust-for-linux/2026071741-aspirate-foothold-6645@gregkh/",
+      "note": "thread"
+    },
+    {
+      "title": "vDSO: Remove CONFIG_GENERIC_GETTIMEOFDAY ifdeffery",
+      "url": "https://lore.kernel.org/linux-kbuild/20260717-vdso-arch-clockmodes-v2-0-756f5a5d1467@linutronix.de/",
+      "note": "thread"
+    },
+    {
+      "title": "Linutronix vDSO 정리 작업 관련 메일 아카이브",
+      "url": "https://www.mail-archive.com/linux-kernel@vger.kernel.org/msg2598344.html",
+      "note": "article"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-17T19:19:51.000Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

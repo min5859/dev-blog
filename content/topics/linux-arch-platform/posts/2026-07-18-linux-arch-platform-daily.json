@@ -1,0 +1,120 @@
+{
+  "id": "2026-07-18-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-07-18 ptdump UAF 수정 — 아키텍처·플랫폼",
+  "headline": "ptdump-vmap UAF 수정과 pKVM MMIO 가드 수정이 반영됐고, RISC-V IOMMU 복구 패치는 논쟁 중입니다.",
+  "date": "2026-07-18",
+  "summary": "mm 의 ptdump-vmap use-after-free 수정과 arm64 pKVM MMIO guard 버그 수정이 각각 mm-hotfixes-unstable 과 for-next/fixes 에 반영됐습니다. RISC-V 에서는 IOMMU illegal command 복구 패치를 둘러싼 보안 이견과 원격 주소 언태그 처리 수정이 논의되고 있습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "보안",
+    "메모리안전성"
+  ],
+  "highlights": [
+    {
+      "title": "ptdump-vmap 페이지 테이블 UAF 수정",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "mm core, arm64 및 x86 페이지 테이블(CPA/ptdump) 메인테이너",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260717122908.3d9f4a8ad76a748d859b43f2@linux-foundation.org/",
+      "if": "ptdump 디버그 인터페이스를 활성화한 arm64 또는 x86 커널을 운영 중이라면",
+      "do": "mm-hotfixes-unstable 의 v5 시리즈 반영 여부를 확인하고 조기에 백포트하십시오",
+      "verify": "fa93b45fd397 부분 되돌리기와 set_memory.c 의 CPA collapse 가드가 함께 들어갔는지 커밋 로그로 확인하십시오"
+    },
+    {
+      "title": "pKVM mmio_guard_ioremap_hook 범위 계산 수정",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "arm64 KVM/pKVM 기밀 컴퓨팅 메인테이너",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/178431055337.489190.14483182757674487047.b4-ty@kernel.org/",
+      "if": "pKVM MMIO guard 를 사용하는 arm64 기밀 컴퓨팅 환경을 운영 중이라면",
+      "do": "arm64 for-next/fixes 의 커밋 62c740f823a8 반영 여부를 확인하고 적용하십시오",
+      "verify": "git.kernel.org/arm64/c/62c740f823a8 에서 end 계산 수정 내용을 직접 검토하십시오"
+    },
+    {
+      "title": "RISC-V IOMMU illegal command 복구 방식 이견",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "RISC-V IOMMU 및 DMA 매핑 메인테이너/드라이버 작성자",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/e2b13e82-f762-4fb0-83cb-d4bef57be427@linux.dev/",
+      "if": "RISC-V IOMMU 드라이버에서 이 dummy IOFENCE 복구 패치 채택을 검토 중이라면",
+      "do": "패치를 즉시 적용하지 말고 리뷰어의 use-after-free 우려와 최종 처리 결과를 먼저 확인하십시오",
+      "verify": "스레드에서 illegal command 발생 원인 규명 및 패치 재작업 여부를 추적하십시오"
+    },
+    {
+      "title": "riscv 원격 주소 언태그 수정",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "RISC-V mm 메인테이너, 포인터 마스킹 및 원격 접근(ptrace/process_vm_readv) 사용자",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260717170036.743149-3-riel@surriel.com/",
+      "if": "포인터 마스킹을 사용하는 riscv 프로세스에 대해 ptrace 또는 process_vm_readv 를 활용 중이라면",
+      "do": "__access_remote_vm() 락리스 재작업 시리즈와 함께 이 riscv 패치의 머지 상태를 확인하십시오",
+      "verify": "context.pmlen 접근에 READ_ONCE/WRITE_ONCE 가 적용됐는지 패치를 검토하십시오"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ptdump-vmap 페이지 테이블 use-after-free 수정**\n\nLorenzo Stoakes 의 v5 시리즈가 `ptdump`(`walk_page_range_debug()` 의 유일한 사용자이자 소유하지 않는 범위를 순회하는 유일한 워커)가 `vmap` 로직에 의해 동시에 해제될 수 있는 커널 페이지 테이블을 읽는 use-after-free 를 수정했습니다. `vmap` 해당 경로에서 `init_mm` mmap read lock 을 잡고, 커밋 `fa93b45fd397`(arm64: Enable vmalloc-huge with ptdump)을 부분적으로 되돌리면서 huge-vmap 활성화는 유지하고, x86 `set_memory.c` 에 동시 CPA collapse/속성 설정 레이스를 막는 가드를 추가했습니다. Andrew Morton 이 `mm-hotfixes-unstable` 에 반영했습니다.\n\n영향: debugfs ptdump 로 도달 가능한 커널 페이지 테이블 워커의 UAF 는 arm64 와 x86 CPA 경로 모두에 걸친 메모리 안전성 버그이며, 어떤 stable 트리에 백포트가 필요한지는 확인이 필요합니다.\n\n> page tables may be freed under ptdump. And indeed there is a use-after-free bug in the kernel as a result, which this series addresses.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260717122908.3d9f4a8ad76a748d859b43f2@linux-foundation.org/)\n\n---\n\n**RISC-V IOMMU illegal command 복구 방식을 둘러싼 이견**\n\nZong Li 의 패치는 정지된 RISC-V IOMMU 명령 큐(HEAD 가 illegal command 에 멈춘 상태)에서 해당 엔트리를 all-zero dummy IOFENCE(NOP)로 덮어써 하드웨어가 진행하도록 복구합니다. 리뷰어(linux.dev)는 명령을 조용히 재작성하는 방식이 근본 결함을 숨기고 시스템을 불특정 상태로 남기며, 애초에 illegal command 가 큐에 들어가서는 안 된다고 반대했습니다.\n\n영향: illegal IOMMU 명령을 가리는 것은 DMA 경로의 TLB invalidation 결함을 은폐하는 것이며, 리뷰어는 진행 중인 DMA 전송에 use-after-free 를 유발할 수 있다고 경고했습니다.\n\n> By overwriting an illegal command without any notification to the user, we are simply hiding e.g. TLB invalidation faults and likely causing use-after-free errors for DMA transfers.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/e2b13e82-f762-4fb0-83cb-d4bef57be427@linux.dev/)\n\n---\n\n**pKVM CC 플랫폼 전환과 mmio_guard_ioremap_hook 수정**\n\nMostafa Saleh 의 시리즈는 protected KVM(pKVM)을 ARM CCA 와 유사한 confidential-computing(CC) 플랫폼으로 전환하여 CC 게스트가 일관되게 탐지되고 진행 중인 DMA 재작업에 의해 깨지지 않도록 합니다. Will Deacon 은 버그 수정 패치([2/3], `drivers/virt: pkvm: Fix end calculation in mmio_guard_ioremap_hook()`)를 arm64 for-next/fixes 에 커밋 `62c740f823a8` 로 반영했습니다.\n\n영향: pKVM 의 MMIO guard 는 보호된/기밀 게스트를 위한 격리를 담당하며, end 계산 오류는 해당 신뢰 경계에서의 범위 정확성 문제이고, 일관된 CC 플랫폼 탐지는 arm64 기밀 컴퓨팅 보안의 기반입니다.\n\n> Applied second patch to arm64 (for-next/fixes), thanks!\n>\n> [2/3] drivers/virt: pkvm: Fix end calculation in mmio_guard_ioremap_hook()\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/178431055337.489190.14483182757674487047.b4-ty@kernel.org/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**riscv 원격 주소 언태그(untagged_addr_remote_unlocked) 추가**\n\n`__access_remote_vm()` 이 이제 mmap lock 을 잡지 않고 VMA 조회 전에 원격 주소의 태그를 제거하는 상황에서, riscv 는 `untagged_addr_remote_unlocked()` 가 없어 일반 `untagged_addr()` 로 대체되어 대상 mm 이 아닌 `current->mm` 을 읽고 있었습니다. Rik van Riel 의 패치는 대상 mm 을 기준으로 태그를 제거하는 riscv 용 `untagged_addr_remote_unlocked()` 를 추가하고, `context.pmlen` 접근에 `READ_ONCE()`/`WRITE_ONCE()` 를 명시하여 락 없는 읽기가 KCSAN 을 통과하도록 했습니다.\n\n영향: riscv 포인터 마스킹 프로세스에서 원격 접근을 잘못된(current) 마스크로 태그 제거하면 잘못된 태그 비트가 제거되어 프로세스 간 접근(ptrace/process_vm_readv) 중 VMA 조회를 오판할 수 있는 메모리 안전성 문제이며, `READ_ONCE`/`WRITE_ONCE` 작업은 새로운 락 없는 경로를 데이터 레이스로부터 보강합니다. 상위 락리스 `__access_remote_vm()` 재작업 시리즈의 머지 여부는 확인이 필요합니다.\n\n> Add untagged_addr_remote_unlocked(), which untags against the target mm, and annotate context.pmlen accesses with READ_ONCE() and WRITE_ONCE()\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260717170036.743149-3-riel@surriel.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "mm: fix UAF caused by race between ptdump and vmap pgtable freeing (v5 스레드)",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260717122908.3d9f4a8ad76a748d859b43f2@linux-foundation.org/",
+      "note": "thread"
+    },
+    {
+      "title": "arm64: Enable vmalloc-huge with ptdump (fa93b45fd397, RESEND v5)",
+      "url": "https://lkml.org/lkml/2025/9/16/600",
+      "note": "article"
+    },
+    {
+      "title": "iommu/riscv: Replace illegal command with dummy IOFENCE 리뷰 스레드",
+      "url": "https://lore.kernel.org/linux-riscv/e2b13e82-f762-4fb0-83cb-d4bef57be427@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "RISC-V IOMMU 스펙 문서",
+      "url": "https://docs.riscv.org/reference/iommu/_attachments/riscv-iommu.pdf",
+      "note": "article"
+    },
+    {
+      "title": "arm64/coco: Convert pKVM to a CC platform 적용 스레드",
+      "url": "https://lore.kernel.org/linux-arm-kernel/178431055337.489190.14483182757674487047.b4-ty@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "drivers/virt: pkvm: Fix end calculation in mmio_guard_ioremap_hook() 커밋",
+      "url": "https://git.kernel.org/arm64/c/62c740f823a8",
+      "note": "commit"
+    },
+    {
+      "title": "riscv/mm: add untagged_addr_remote_unlocked() 패치 스레드",
+      "url": "https://lore.kernel.org/linux-riscv/20260717170036.743149-3-riel@surriel.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-17T19:54:12.612Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,103 @@
+{
+  "id": "2026-07-18-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-07-18 SHA512 회귀 수정 — Android 커널",
+  "headline": "gki_defconfig SHA512 회귀 수정과 하드 락업 감지기 활성화, VFS simple_xattr 재작업 병합 소식을 전합니다.",
+  "date": "2026-07-18",
+  "summary": "gki_defconfig에서 CONFIG_CRYPTO_SHA512를 명시적으로 추가해 crypto/네트워크 회귀를 막았고, 하드 락업 감지기 활성화로 신뢰성 진단 기능이 강화됐습니다. ack-android-mainline에는 simple_xattr API 재작업이 병합되어 kernfs NULL 포인터 역참조 버그도 함께 해소됐습니다.",
+  "tags": [
+    "안드로이드",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "gki_defconfig CONFIG_CRYPTO_SHA512 회귀 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "GKI defconfig 유지보수 담당, crypto/네트워크 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/7eebb4e1420ffe868b6c6e50dd309ced05fe428d",
+      "if": "벤더 defconfig를 자체 커스터마이즈해 사용한다면",
+      "do": "CONFIG_CRYPTO_SHA512가 명시적으로 켜져 있는지 확인하고 빠져 있다면 추가하십시오",
+      "verify": "vts_kernel_net_tests와 SHA512 관련 crypto 셀프테스트가 통과하는지 확인하십시오"
+    },
+    {
+      "title": "gki_defconfig 하드 락업 감지기 활성화",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "GKI 배포 담당, 디바이스 신뢰성/디버깅 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/bdc8ab55a8c960214437a2174168dd21242e2d06",
+      "if": "GKI 기반 gki_defconfig를 그대로 따른다면",
+      "do": "nmi_watchdog·하드 락업 감지 활성화에 따른 동작 변화를 QA 체크리스트에 반영하십시오",
+      "verify": "ARM64에서 perf 감지기 부재 시 buddy 감지기로 동작하는지, hardlockup_panic은 아직 비활성 상태인지 확인하십시오"
+    },
+    {
+      "title": "simple_xattr API 재작업 병합, kernfs NULL 역참조 수정 포함",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "ack-android-mainline 추적 담당, VFS/SELinux/kernfs/bpffs 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/ff8747aacaff8266dd751b8a8648fb728dcc3b21",
+      "if": "ack-android-mainline을 추적하거나 simple_xattr API를 쓰는 모듈을 유지보수한다면",
+      "do": "struct simple_xattrs ** 시그니처 변경이 자기 모듈 호환성에 영향을 주는지 점검하십시오",
+      "verify": "SELinux 활성 시스템에서 첫 cgroup mkdir 시 NULL 포인터 역참조가 재현되지 않는지 확인하고, 안정 브랜치 반영 시점은 원문에서 별도로 확인하십시오"
+    },
+    {
+      "title": "kbuild 잔여 extmod_prefix 변수 제거",
+      "priority": "하",
+      "impactType": "build",
+      "affectedAudience": "커널 빌드 시스템(kbuild) 유지보수 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/b7afc9c272bd0bc9a66726a8f938508705390253",
+      "if": "scripts/Makefile.modfinal을 포크·패치해 사용한다면",
+      "do": "merge 충돌 해소 과정에서 남은 잔재가 자기 트리에도 있는지 diff로 확인하십시오",
+      "verify": "upstream kbuild와 extmod_prefix 관련 변수 정합성이 맞는지 재확인하십시오"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**gki_defconfig에서 CONFIG_CRYPTO_SHA512 명시적 추가**\n\n암묵적 의존성 체인이 upstream 변경(4061bc8c0397)으로 끊어지면서 SHA512가 조용히 빠지지 않도록 gki_defconfig에 CONFIG_CRYPTO_SHA512를 명시적으로 추가했습니다.\n\n영향: 명시 추가가 없으면 crypto/네트워크 기능과 vts_kernel_net_tests가 깨지는 회귀가 발생하므로, defconfig를 커스터마이즈하는 벤더는 자기 트리에 동일 누락이 없는지 확인해야 합니다.\n\n> CONFIG_CRYPTO_SHA512 was previously included by an implicit dependency chain. Now this chain has been broken we need to manually add it to the gki_defconfig.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/7eebb4e1420ffe868b6c6e50dd309ced05fe428d)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**gki_defconfig 하드 락업 감지기 활성화**\n\narm64/x86 gki_defconfig에서 하드 락업(NMI watchdog) 감지기를 활성화했습니다. ARM64는 perf 감지기가 없을 때 buddy 감지기를 선호하도록 했고, hardlockup_panic 자체는 별도 CL에서 데스크톱 디바이스에만 켤 예정입니다.\n\n영향: GKI 기반 디바이스 전반의 기본 동작이 바뀌므로 배포·QA 담당이 nmi_watchdog/hardlockup 동작 변화를 인지해야 합니다.\n\n> This enables hard lockup detection in Android devices. However, we'll only enable hardlockup_panic in desktop devices (in a separate CL).\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/bdc8ab55a8c960214437a2174168dd21242e2d06)\n\n**kbuild: 잔여 extmod_prefix 변수 제거**\n\nscripts/Makefile.modfinal에서 merge 충돌 해소 중 실수로 남아있던 extmod_prefix 변수를 제거해 upstream kbuild와 정합성을 맞췄습니다.\n\n영향: 기능 영향은 낮지만, kbuild를 포크·패치하는 벤더가 병합 잔재로 인한 차이를 인지하는 데 도움이 됩니다.\n\n> However, it was mistakenly kept during a merge conflict resolution. Drop it!\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/b7afc9c272bd0bc9a66726a8f938508705390253)\n\n**Merge tag 'vfs-7.2-rc1.xattr': simple_xattr API 재작업**\n\nack-android-mainline에 upstream VFS의 simple_xattr API 재작업을 병합했습니다. xattr 해시 테이블을 inode에서 per-superblock 캐시로 옮기고 인터페이스를 struct simple_xattrs **로 lazy 할당하도록 바꿨으며, kernfs xattr 직렬화 개선과 bpffs의 trusted.*/security.* xattr 지원이 포함됩니다.\n\n영향: 함께 들어온 수정으로 SELinux 활성 시스템에서 첫 cgroup mkdir 시 발생하던 NULL 포인터 역참조 버그가 해결되었습니다. simple_xattrs ** 시그니처 변경은 이 API를 쓰는 모듈의 호환성에 영향을 줄 수 있어 ack-mainline을 추적하는 팀은 안정 브랜치 반영에 대비해야 하며, 정확한 반영 시점은 확인이 필요합니다.\n\n> reproducible as a NULL pointer dereference on the first cgroup mkdir on SELinux-enabled systems.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/ff8747aacaff8266dd751b8a8648fb728dcc3b21)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ANDROID: gki_defconfig: Enable CONFIG_CRYPTO_SHA512",
+      "url": "https://android.googlesource.com/kernel/common/+/7eebb4e1420ffe868b6c6e50dd309ced05fe428d",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: gki_defconfig: Enable hard lockup detector",
+      "url": "https://android.googlesource.com/kernel/common/+/bdc8ab55a8c960214437a2174168dd21242e2d06",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: kbuild: remove leftover extmod_prefix",
+      "url": "https://android.googlesource.com/kernel/common/+/b7afc9c272bd0bc9a66726a8f938508705390253",
+      "note": "commit"
+    },
+    {
+      "title": "Merge tag 'vfs-7.2-rc1.xattr' into ack-android-mainline",
+      "url": "https://android.googlesource.com/kernel/common/+/ff8747aacaff8266dd751b8a8648fb728dcc3b21",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-17T18:13:52.910Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/android-newsletter-from-dossier-ko.md"
+  }
+}
