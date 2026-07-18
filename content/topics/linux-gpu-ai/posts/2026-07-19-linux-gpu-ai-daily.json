@@ -1,0 +1,130 @@
+{
+  "id": "2026-07-19-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-07-19 vc4 리셋 결함 수정 — 커널 GPU/AI",
+  "headline": "vc4 GPU 리셋의 binner overflow 정리 수정이 나왔지만 use-after-free 우려가 제기됐고, simple-KMS 제거 시리즈들에도 AI 리뷰의 회귀 지적이 이어졌습니다.",
+  "date": "2026-07-19",
+  "summary": "vc4 GPU 리셋 경로의 binner overflow 미정리 버그가 수정됐으나 리뷰에서 use-after-free 가능성이 제기됐고, imx-lcdc/mcde의 simple-KMS 제거 작업에도 AI 리뷰의 잠재 회귀 지적이 이어졌습니다. it6505 DP 오디오 지원 리베이스와 vga_switcheroo의 fbcon 분리 작업도 함께 진행 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "DRM",
+    "GPU"
+  ],
+  "highlights": [
+    {
+      "title": "vc4 GPU 리셋 시 binner overflow 슬롯 정리",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "vc4/Raspberry Pi DRM 드라이버 및 V3D binner 메모리 관리 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260718-vc4-bin-oom-fixes-v1-2-8cba09558c33@igalia.com/",
+      "if": "vc4(라즈베리파이) 드라이버를 유지보수하거나 V3D binner 코드를 다룬다면",
+      "do": "job_lock 아래에서 pending overflow slot 해제와 BPOA/BPOS clear 로직을 검토하고, 리뷰에서 제기된 render 큐 use-after-free 가능성을 함께 확인하세요",
+      "verify": "2017년 커밋 553c942f8b2c 이후 재큐 경로에서 stale BPOA/BPOS 참조가 재발하지 않는지 원문 스레드에서 확인하세요"
+    },
+    {
+      "title": "vga_switcheroo, fbcon 제어를 DRM client로 이관",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "amdgpu/radeon/i915/nouveau 및 DRM client·fbdev emulation, vga_switcheroo 코어 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/88fa0f85-0960-464a-a602-f797785f0c2e@gmx.de/",
+      "if": "amdgpu/radeon/i915/nouveau 중 vga_switcheroo 콜백을 다룬다면",
+      "do": "새 pre_switch/post_switch, acquire_outputs 콜백으로의 전환 범위와 nouveau의 reprobe 훅 rename 여부를 점검하세요",
+      "verify": "이 v2 시리즈가 현재 radeon(HD 4225/HD 5430)에서만 테스트됐으니 amdgpu/i915/nouveau 경로는 원문에서 검증 상태를 확인하세요"
+    },
+    {
+      "title": "it6505 DP 오디오, 공유 DAI hw_params 수정",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "it6505 DP 브리지 드라이버 및 MediaTek MT8186 오디오/ASoC 통합 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/cover.1784393979.git.daniel@makrotopia.org/",
+      "if": "MT8186 등 it6505를 I2S 코덱으로 공유하는 보드의 오디오를 다룬다면",
+      "do": "DP 디스플레이 미부착 시 -ENODEV 반환을 제거한 패치 2를 적용해 공유 백엔드 tear-down 문제를 해소하세요",
+      "verify": "실제 HDMI/DP 오디오 출력 경로는 테스트 샘플 부재로 미검증이니 배포 전 별도로 확인하세요"
+    },
+    {
+      "title": "imx-lcdc/mcde, simple-KMS 걷어내는 atomic 전환",
+      "priority": "하",
+      "impactType": "runtime",
+      "affectedAudience": "i.MX LCDC 및 ST-Ericsson MCDE DRM 드라이버 유지보수, simple-KMS 제거 마이그레이션 관계자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/DK1XPK73QJHC.JWFUMTTLOD1D@oss.qualcomm.com/",
+      "if": "i.MX LCDC 또는 MCDE 드라이버를 유지보수한다면",
+      "do": "sashiko-bot AI 리뷰가 지적한 framebuffer 없는 plane의 NULL 역참조(imx-lcdc), oneshot 모드 atomic commit 경쟁 조건(mcde)을 사람 리뷰로 재확인하세요",
+      "verify": "AI 리뷰 지적사항이 v2 이후 반영됐는지, 두 시리즈가 병합됐는지 원문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**GPU 리셋 시 vc4 binner overflow 할당자 미정리 수정**\n\nGPU 리셋 경로(vc4_irq_reset())가 소프트웨어 overflow 할당자와 하드웨어 BPOA/BPOS 레지스터를 정리하지 않아 재큐된 BIN job이 stale 포인터를 소비하던 문제를, job_lock 아래에서 pending slot 해제 및 레지스터 클리어로 고쳤습니다.\n\n영향: 2017년 CMA 256MB 우회 커밋(553c942f8b2c) 이후 장기 잠복해 온 회귀로 overflow slot 누수와 이중 OOM 인터럽트를 유발했습니다. 다만 리뷰에서 이 해제가 render 큐에 남은 job에 대한 use-after-free를 새로 유발할 수 있다는 지적이 나왔습니다.\n\n> Free the pending overflow slot, clear bin_alloc_overflow, and zero BPOA/BPOS under job_lock, so the allocator and hardware return to a clean state before submitting new jobs.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260718-vc4-bin-oom-fixes-v1-2-8cba09558c33@igalia.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**it6505 DP 오디오 지원 리베이스 및 공유 DAI hw_params 수정**\n\n정체됐던 it6505 오디오 지원 v3를 mainline에 리베이스하고, DP 디스플레이 미부착 시 -ENODEV를 반환해 공유 I2S 백엔드를 tear-down하던 동작을 제거했습니다.\n\n영향: MT8186(google,steelix) Chromebook처럼 it6505를 I2S3 코덱으로 공유하는 보드에서, DP 미부착 상태가 스피커 재생까지 깨뜨리던 문제가 해소됩니다.\n\n> Patch 2 stops it6505_audio_setup_hw_params() from returning -ENODEV when no DP display is attached, which would otherwise tear down the shared backend and break playback\n\n[원문 확인](https://lore.kernel.org/dri-devel/cover.1784393979.git.daniel@makrotopia.org/)\n\n**drm/imx: LCDC 드라이버, simple-KMS에서 표준 atomic helper로 전환**\n\ni.MX LCDC 드라이버가 drm_simple_display_pipe 의존을 걷어내고 명시적 primary plane·CRTC·encoder 객체 기반 atomic helper 경로로 전환하는 v2 리팩터입니다.\n\n영향: simple-KMS 제거 캠페인의 일환이며, sashiko-bot AI 리뷰가 framebuffer 없는 plane 구성 시 무조건 NULL 역참조, NULL CRTC state 접근, clk_per refcount 누수 등 여러 잠재 회귀를 High로 지적해 리뷰어 주의가 필요합니다.\n\n> This commit converts the i.MX LCDC driver to explicit primary plane, CRTC, and encoder objects, removing the dependency on the simple-KMS framework.\n\n[원문 확인](https://lore.kernel.org/dri-devel/DK1XPK73QJHC.JWFUMTTLOD1D@oss.qualcomm.com/)\n\n**drm/mcde: 동일 캠페인으로 simple-KMS 제거, atomic commit 경쟁 조건 지적**\n\nST-Ericsson MCDE 드라이버도 같은 v2 시리즈(3/8)로 명시적 plane·CRTC·encoder 객체로 전환하며, pending page-flip 이벤트를 commit-local CRTC state 기반으로 CRTC atomic flush 경로에서 처리하도록 바꿨습니다.\n\n영향: sashiko-bot AI 리뷰가 oneshot 모드에서 HW를 조기 시작시켜 디스플레이 행을 유발할 수 있는 atomic commit 경쟁 조건을 High로 지적했습니다.\n\n> Race condition in atomic commit causing display hang in oneshot mode due to premature hardware start.\n\n[원문 확인](https://lore.kernel.org/dri-devel/DK1W04LF68WN.3LEHUKMBX3JJO@oss.qualcomm.com/)\n\n**vga_switcheroo, fbcon 직접 제어를 DRM client로 이관**\n\nvga_switcheroo에서 fbdev/fbcon 직접 상호작용을 제거하고 pre_switch/post_switch, acquire_outputs 콜백을 도입해 fbcon 업데이트를 DRM fbdev emulation client로 옮기는 7개 패치 시리즈입니다.\n\n영향: vga_switcheroo를 지원하는 유일한 4개 드라이버(amdgpu, radeon, i915, nouveau) 전부가 새 콜백으로 갱신되어야 하며, fbdev를 쓰지 않는 신형 DRM client도 자체 지원이 가능해집니다.\n\n> Remove fbdev/fbcon from vga_switcheroo. Introduce a pre_switch callback for vga_switcheroo clients to do the fbcon update.\n\n[원문 확인](https://lore.kernel.org/dri-devel/88fa0f85-0960-464a-a602-f797785f0c2e@gmx.de/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/vc4: Reset the binner overflow allocator on GPU reset",
+      "url": "https://lore.kernel.org/dri-devel/20260718-vc4-bin-oom-fixes-v1-2-8cba09558c33@igalia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/vc4: Allow using more than 256MB of CMA memory (Fixes 대상 커밋)",
+      "url": "https://github.com/torvalds/linux/commit/553c942f8b2c",
+      "note": "commit"
+    },
+    {
+      "title": "sashiko-bot AI 리뷰 — vc4 use-after-free 지적",
+      "url": "https://lore.kernel.org/dri-devel/20260718174226.487661F000E9@smtp.kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/bridge: it6505: DP audio support 리베이스 커버레터",
+      "url": "https://lore.kernel.org/dri-devel/cover.1784393979.git.daniel@makrotopia.org/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/bridge: it6505: add audio support with DRM HDMI codec framework (이전 v3)",
+      "url": "https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg528200.html",
+      "note": "article"
+    },
+    {
+      "title": "drm/imx: replace struct drm_simple_display_pipe with regular atomic helpers",
+      "url": "https://lore.kernel.org/dri-devel/DK1XPK73QJHC.JWFUMTTLOD1D@oss.qualcomm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/mcde: replace struct drm_simple_display_pipe with regular atomic helpers",
+      "url": "https://lore.kernel.org/dri-devel/DK1W04LF68WN.3LEHUKMBX3JJO@oss.qualcomm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "vga_switcheroo, drm: Push fbcon handling into DRM clients",
+      "url": "https://lore.kernel.org/dri-devel/88fa0f85-0960-464a-a602-f797785f0c2e@gmx.de/",
+      "note": "thread"
+    },
+    {
+      "title": "vga_switcheroo/fbcon 관계 정리 관련 배경 자료",
+      "url": "https://lore.gitlab.freedesktop.org/drm-ai-reviews/20260527151551.258659-1-tzimmermann@suse.de/T/",
+      "note": "article"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-18T19:44:00.012Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

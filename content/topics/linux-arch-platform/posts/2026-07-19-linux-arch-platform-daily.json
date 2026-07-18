@@ -1,0 +1,110 @@
+{
+  "id": "2026-07-19-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-07-19 RISC-V 부팅 회귀 수정 — 아키텍처/플랫폼",
+  "headline": "RISC-V vmemmap 정렬 버그로 부팅 회귀 발생, KVM/riscv 7.2엔 Spectre-v1 등 8건 수정이 담겼다.",
+  "date": "2026-07-19",
+  "summary": "RISC-V 물리 주소 정렬 계산의 단위 불일치가 QEMU virt 등에서 부팅 경고를 유발해 stable 백포트가 진행 중이며, KVM/riscv 7.2 fixes PR에는 ONE_REG Spectre-v1 수정을 포함한 8건이 담겼다. 라즈베리 파이 5용 신규 BCM2712 IOMMU 드라이버도 generic_pt 프레임워크 통합 방식을 두고 리뷰가 진행 중이다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "RISC-V",
+    "IOMMU"
+  ],
+  "highlights": [
+    {
+      "title": "riscv/mm: use physical alignment for vmemmap_start_pfn",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "riscv 커널 및 distro/stable 유지보수 담당, 특히 DRAM base가 비정렬인 플랫폼(QEMU virt 등)에서 HugeTLB vmemmap 최적화(HVO)를 쓰는 경우",
+      "verifyLink": "https://patchwork.kernel.org/project/linux-riscv/patch/20260716115326.3466926-1-xujiakai2025@iscas.ac.cn/",
+      "if": "DRAM base가 MAX_FOLIO_NR_PAGES*PAGE_SIZE로 정렬되지 않은 플랫폼(QEMU virt 등)에서 HugeTLB vmemmap 최적화를 사용한다면",
+      "do": "이 패치를 stable 백포트 대상으로 추적해 7.1 커널에 적용하십시오.",
+      "verify": "패치워크 스레드에서 리뷰 승인 여부와 mm-hotfixes 최종 병합 커밋 해시를 확인하십시오."
+    },
+    {
+      "title": "KVM/riscv fixes for 7.2 take #1",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "riscv KVM/하이퍼바이저 유지보수, H-extension·SBI(FWFT/PMU) 추적 arch/riscv 개발자, ONE_REG ABI에 의존하는 VMM 작성자",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/CAAhSdy2iT3GmYz+n_jzbQ4V_5P7UdfFhmq=BSOgYCDEQ6PPuZA@mail.gmail.com/",
+      "if": "arch/riscv KVM(H-extension) 코드나 ONE_REG ABI에 의존하는 VMM을 유지보수한다면",
+      "do": "이 8건의 수정을 7.2 커널에 반영하고 ONE_REG 벡터 레지스터 접근 경로를 재검토하십시오.",
+      "verify": "kvm-riscv GitHub 태그 미러와 원문 스레드에서 개별 커밋 diff 및 stable 백포트 대상 여부를 확인하십시오."
+    },
+    {
+      "title": "iommu: Add Broadcom BCM2712 IOMMU driver",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "ARM64/라즈베리 파이 5 플랫폼 및 IOMMU/DMA 서브시스템 엔지니어, generic_pt/iommupt 채택 및 BCM2712 인에이블먼트 추적자",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260718143233.GE701389@ziepe.ca/",
+      "if": "라즈베리 파이 5 플랫폼이나 generic_pt/iommupt 프레임워크에서 IOMMU 드라이버를 개발한다면",
+      "do": "이 리뷰 스레드의 prefix 처리 제안을 참고해 비-0 기반 IOVA aperture 통합 방식을 검토하십시오.",
+      "verify": "원문 스레드와 Phoronix 기사에서 유지보수자의 최종 수용 여부와 드라이버 병합 상태를 확인하십시오."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**riscv/mm: use physical alignment for vmemmap_start_pfn**\n\nriscv는 phys_ram_base를 VMEMMAP_ADDR_ALIGN으로 내림해 vmemmap_start_pfn을 계산하는데, 커밋 476849b0fba4가 struct page 저장 바이트 단위인 MAX_FOLIO_VMEMMAP_ALIGN을 물리주소 정렬용 매크로에 그대로 넣어 단위 불일치가 있었고, 이 패치는 PFN_PHYS(MAX_FOLIO_VMEMMAP_ALIGN / sizeof(struct page))로 물리 정렬 값으로 변환해 바로잡는다.\n\n영향: DRAM base가 MAX_FOLIO_NR_PAGES*PAGE_SIZE로 정렬되지 않은 시스템(QEMU virt 등)에서 부팅 경고를 유발하는 실제 회귀이며, Andrew Morton이 cc:stable을 붙여 백포트 대상으로 큐잉했다.\n\n> That's in 7.1, so I'll add a cc:stable to help ensure this gets backported.\n\n[원문 확인](https://patchwork.kernel.org/project/linux-riscv/patch/20260716115326.3466926-1-xujiakai2025@iscas.ac.cn/)\n\n**KVM/riscv fixes for 7.2 take #1**\n\nAnup Patel의 KVM/riscv 7.2 fixes PR(kvm-riscv-fixes-7.2-1, 7.2-rc3 기준, top commit 8d9c9b135b5c)이 ioremap 중복 페이지테이블 할당 제거, SBI FWFT LOCK 플래그 성공 시 적용, SBI PMU 카운터 마스크 스캔 제한, Svvptc TLB flush 생략, Zicbo 블록 크기 ONE_REG 상시 노출, 언매핑 게스트 페치 명령어 접근 폴트 주입, 가상 인터럽트 pending 상태 raw spinlock 직렬화, ONE_REG 벡터 레지스터 Spectre-v1 수정 등 8건을 담았다.\n\n영향: ONE_REG 벡터 레지스터 접근의 Spectre-v1 수정과 언매핑 게스트 페치 폴트 주입은 보안 관련 수정이며, Zicbo 블록 크기를 ONE_REG에 상시 노출하는 것은 userspace VMM이 의존하는 게스트 가시 레지스터 ABI 계약 변경이다.\n\n> Fix Spectre-v1 in vector register access via ONE_REG\n\n[원문 확인](https://lore.kernel.org/linux-riscv/CAAhSdy2iT3GmYz+n_jzbQ4V_5P7UdfFhmq=BSOgYCDEQ6PPuZA@mail.gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**iommu: Add Broadcom BCM2712 IOMMU driver**\n\n라즈베리 파이 5 SoC용 신규 메인라인 IOMMU 드라이버가 리뷰 중이며 generic_pt/iommupt로 페이지테이블을 관리하는데, IOVA aperture를 base 0xA00000000에 두는 방식이 0-기반 VA 공간을 가정하는 iommupt와 충돌해 Jason Gunthorpe가 broadcom 포맷에서 pt_full_va_prefix()로 prefix를 반환하는 방식을 제안했다.\n\n영향: 널리 쓰이는 ARM64 플랫폼인 라즈베리 파이 5에 메인라인 IOMMU 드라이버가 없었으며, 이는 디스플레이 컨트롤러 메모리 관리·DMA 격리·PCIe passthrough(VFIO)를 가능케 하는 RPi5 인에이블먼트이자 비-0 기반 IOVA aperture를 generic_pt 프레임워크에 통합하는 재사용 가능한 패턴 논의다.\n\n> You can implement it in the broadcom format and return the prefix value. So long as the vasz fits within those trailing 0s. That's basically free and has no runtime cost on other formats.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260718143233.GE701389@ziepe.ca/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "riscv/mm: use physical alignment for vmemmap_start_pfn (patchwork)",
+      "url": "https://patchwork.kernel.org/project/linux-riscv/patch/20260716115326.3466926-1-xujiakai2025@iscas.ac.cn/",
+      "note": "thread"
+    },
+    {
+      "title": "Fixes 커밋 476849b0fba4",
+      "url": "https://github.com/torvalds/linux/commit/476849b0fba4",
+      "note": "commit"
+    },
+    {
+      "title": "KVM/riscv fixes for 7.2 take #1 (풀 리퀘스트 스레드)",
+      "url": "https://lore.kernel.org/linux-riscv/CAAhSdy2iT3GmYz+n_jzbQ4V_5P7UdfFhmq=BSOgYCDEQ6PPuZA@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "kvm-riscv-fixes-7.2-1 태그 미러",
+      "url": "https://github.com/kvm-riscv/linux/releases/tag/kvm-riscv-fixes-7.2-1",
+      "note": "changelog"
+    },
+    {
+      "title": "KVM: riscv: Fix Spectre-v1 vulnerabilities in register access (v2)",
+      "url": "https://lkml.org/lkml/2026/3/4/784",
+      "note": "thread"
+    },
+    {
+      "title": "BCM2712 IOMMU 드라이버 리뷰 답신 (Jason Gunthorpe)",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260718143233.GE701389@ziepe.ca/",
+      "note": "thread"
+    },
+    {
+      "title": "Raspberry Pi 5 IOMMU Driver — Phoronix",
+      "url": "https://www.phoronix.com/news/Raspberry-Pi-5-IOMMU-Driver",
+      "note": "article"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-18T19:35:01.120Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,108 @@
+{
+  "id": "2026-07-19-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-07-19 AF_UNIX 지연 제거 — 리눅스 성능·RT",
+  "headline": "AF_UNIX sendmsg의 GC 대기 제거로 실시간 지연을 줄이는 패치와 CoreSight atomic 크래시 수정, RT 구성 가이드 신설이 함께 올라왔다.",
+  "date": "2026-07-19",
+  "summary": "AF_UNIX는 sendmsg가 GC workqueue를 기다리며 생기던 우선순위 역전을 없애는 패치를 냈고, CoreSight는 PREEMPT_RT의 atomic 크래시를 고치는 패치를 두고 논의가 이어지고 있다. 여기에 PREEMPT_RT 커널 구성과 firmware 지연을 다루는 문서 두 건도 새로 올라왔다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "af_unix sendmsg의 GC 대기 제거",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "AF_UNIX/네트워킹 송신 경로를 쓰는 실시간 워크로드 및 net 서브시스템 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/cover.1784268931.git.namcao@linutronix.de/",
+      "if": "AF_UNIX 소켓으로 실시간 경로에서 sendmsg를 호출하고 있다면",
+      "do": "이 3패치 시리즈를 net-next에서 추적하고 로컬 RT 커널 백포트 여부를 검토하십시오",
+      "verify": "lore 스레드에서 net 유지보수자의 Acked-by 또는 Reviewed-by가 달렸는지 확인하십시오"
+    },
+    {
+      "title": "coresight PM notifier atomic 크래시 수정",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "PREEMPT_RT에서 Arm CoreSight 트레이싱을 쓰는 사용자 및 coresight 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260716214155.2049564-1-mohamedaymanworkspace@gmail.com/",
+      "if": "PREEMPT_RT 시스템에서 Arm CoreSight 트레이싱을 사용하고 있다면",
+      "do": "v3를 바로 적용하지 말고 Leo Yan이 제기한 UAF 우려에 대한 후속 논의를 지켜보십시오",
+      "verify": "coresight 트리에 v4가 올라오는지, UAF 우려가 해소됐는지 lore 스레드를 확인하십시오"
+    },
+    {
+      "title": "PREEMPT_RT 커널 구성 가이드 신설",
+      "priority": "중",
+      "impactType": "project",
+      "affectedAudience": "PREEMPT_RT 커널을 구성·통합하는 시스템 개발자 및 실시간 배포 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260716195716.256025-1-darwi@linutronix.de/",
+      "if": "PREEMPT_RT 커널을 구성하거나 통합하는 업무를 맡고 있다면",
+      "do": "신설된 kernel-configuration.rst 가이드를 읽고 트레이서 활성화 경고와 efi_runtime affinity 권고를 반영하십시오",
+      "verify": "이 문서가 tip 또는 RT 트리에 최종 병합됐는지 확인하십시오"
+    },
+    {
+      "title": "bpf arm64 struct_ops trampoline 오프셋 버그",
+      "priority": "하",
+      "impactType": "regression",
+      "affectedAudience": "arm64 BPF JIT 및 struct_ops 트램폴린 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/e2d160c9-903b-46f6-82e0-b3fc74aaebcb@huaweicloud.com/",
+      "if": "arm64에서 stack 인자를 쓰는 struct_ops 콜백을 추가할 계획이라면",
+      "do": "이 패치가 병합됐는지 먼저 확인한 뒤 작업을 진행하십시오",
+      "verify": "bpf-next 트리에서 Acked-by 태그와 x86 fix 참조 보완 여부를 확인하십시오"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**bpf, arm64: indirect trampoline stack 인자 오프셋 버그**\n\nPuranjay Mohan이 struct_ops 콜백용 indirect trampoline에서 stack으로 전달되는 인자를 읽는 오프셋이 FP+32가 아니라 FP+16이어야 한다는 것을 지적하고, x86에 있었다는 수정을 미러링하는 패치를 bpf-next에 올렸다.\n\n영향: 8슬롯을 넘는 stack 인자를 쓰는 struct_ops 콜백이 arm64에서 어긋나게 읽히는 코드젠 버그지만, 현재 in-tree에는 stack으로 인자를 넘기는 struct_ops 멤버가 없어 아직 실질 런타임 영향은 없다. 리뷰어가 참조할 x86 fix 커밋을 명시해달라고 요청한 상태라 수용 여부는 확인이 필요하다.\n\n> so only the FP/LR frame is pushed and the arguments start at FP + 16, not FP + 32.\n\n[원문 확인](https://lore.kernel.org/bpf/e2d160c9-903b-46f6-82e0-b3fc74aaebcb@huaweicloud.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**af_unix: 송신 경로의 우선순위 역전 수정**\n\nNam Cao가 net-next 대상 v2 3패치 시리즈를 올려, 가비지 컬렉터를 task exit 시점에 스케줄링하고 sendmsg가 workqueue로 도는 GC 완료를 기다리며 블록하던 로직을 제거했다.\n\n영향: sendmsg가 GC workqueue에 블록되면 실시간 워크로드에 우선순위 역전과 지연이 생기는데, 2008년부터 이어진 이 대기 사유가 더 이상 유효하지 않다고 보고 결합을 끊었다. 다만 net 유지보수자의 Acked-by는 아직 없어 수용 여부는 확인이 필요하다.\n\n> the sendmsg() code paths may block on the garbage collector running as workqueue. This can cause priority inversion and latency for real-time users.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/cover.1784268931.git.namcao@linutronix.de/)\n\n**coresight: CPU idle 진입 시 atomic 스케줄링 크래시 수정**\n\nMohamed Ayman이 v3 패치에서 PM notifier 경로의 get/put refcount 조작을 아예 제거하고, IRQ 비활성 상태에서 coresight_dev_lock 아래 per-cpu source 포인터를 직접 읽도록 바꿨다.\n\n영향: PREEMPT_RT에서 free_percpu가 sleeping rt-mutex를 잡기 때문에 마지막 refcount가 atomic PM 문맥에서 떨어지면 크래시가 났는데, 이를 막는 수정이다. Sebastian Andrzej Siewior는 Reviewed-by를 달았지만 Leo Yan은 v3가 UAF를 유발할 수 있다고 이견을 냈고, 이 논의는 아직 마무리되지 않았다.\n\n> On PREEMPT_RT, free_percpu() takes a sleeping rt-mutex.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260716214155.2049564-1-mohamedaymanworkspace@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "**Documentation: PREEMPT_RT 커널 구성 가이드 신설**\n\nAhmed S. Darwish가 v4 문서 패치로 Documentation/core-api/real-time/kernel-configuration.rst를 신설하고 index에 연결해, PREEMPT_RT 구성에 정답이 없다는 전제로 시스템 개발자와 통합자를 위한 최초의 in-tree 튜닝 가이드를 제공한다.\n\n영향: CONFIG_IRQSOFF_TRACER·CONFIG_PREEMPT_TRACER 활성화의 오버헤드를 경고하고, efi_runtime workqueue에 CPU affinity를 지정해 RT 태스크를 다른 CPU 범위에 고정하는 방법을 다룬다. 최종 Acked-by나 병합 여부는 아직 확인되지 않았다.\n\n> system integrators can now assign the efi_runtime workqueue CPU affinity, then safely pin RT tasks on a different CPU range.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260716195716.256025-1-darwi@linutronix.de/)\n\n**Documentation: RT 하드웨어 문서에 firmware 지연 섹션 추가**\n\nSebastian Andrzej Siewior가 RT 하드웨어 문서에 firmware 섹션을 추가해 OP-TEE secure-world 호출과 EFI runtime services가 커널을 지연시킬 수 있다는 점을 문서화하고, EFI runtime 호출을 특정 CPU로 제한하는 완화책을 정리했다.\n\n영향: 그동안 개별 도입 커밋에 흩어져 있던 firmware 기인 latency 소스를 한곳에 정리해, RT 구성 가이드의 efi_runtime affinity 완화책과 짝을 이뤄 통합자가 secure world·EFI 지연을 예측하고 회피하도록 돕는다.\n\n> EFI runtime invocations can be restricted to specific CPUs so that real-time workloads on other CPUs remain unaffected.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260718175041.QXn9iOFK@linutronix.de/)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "af_unix: Fix priority inversion issue",
+      "url": "https://lore.kernel.org/linux-rt-devel/cover.1784268931.git.namcao@linutronix.de/",
+      "note": "thread"
+    },
+    {
+      "title": "coresight: Fix scheduling while atomic in coresight_cpu_pm_notify()",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260716214155.2049564-1-mohamedaymanworkspace@gmail.com/",
+      "note": "commit"
+    },
+    {
+      "title": "Documentation: Add real-time kernel configuration guide",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260716195716.256025-1-darwi@linutronix.de/",
+      "note": "commit"
+    },
+    {
+      "title": "Documentation: Extend the real-time hardware bits with some firmware bits",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260718175041.QXn9iOFK@linutronix.de/",
+      "note": "commit"
+    },
+    {
+      "title": "bpf, arm64: Fix stack-passed arguments for indirect trampolines",
+      "url": "https://lore.kernel.org/bpf/e2d160c9-903b-46f6-82e0-b3fc74aaebcb@huaweicloud.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-18T19:22:58.863Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
