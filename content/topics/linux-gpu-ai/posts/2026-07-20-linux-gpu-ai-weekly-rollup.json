@@ -1,0 +1,127 @@
+{
+  "id": "2026-07-20-linux-gpu-ai-weekly-rollup",
+  "topic": "linux-gpu-ai",
+  "title": "2026-07-20 주간 요약",
+  "headline": "vc4/Raspberry Pi DRM 드라이버 및 V3D binner 메모리 관리 유지보수 담당 주목: drm/vc4: Reset the bin",
+  "date": "2026-07-20",
+  "summary": "오늘의 핵심: 릴리스/로드맵 0건, 회귀·보안 신호 5건, 핵심 변경 3건. 리서치 dossier 의 출처를 근거로 정리했습니다.",
+  "tags": [
+    "주간"
+  ],
+  "highlights": [
+    {
+      "title": "drm/vc4: Reset the binner overflow allocator on GPU reset",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "vc4/Raspberry Pi DRM 드라이버 및 V3D binner 메모리 관리 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260718-vc4-bin-oom-fixes-v1-2-8cba09558c33@igalia.com/",
+      "if": "vc4/Raspberry Pi DRM 드라이버 및 V3D binner 메모리 관리 유지보수 담당라면",
+      "do": "GPU 리셋 경로(vc4_irq_reset())가 소프트웨어 binner overflow 할당자와 하드웨어 overflow 레지스터를 정리하지 ",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/dri-devel/20260718-vc4-bin-oom-fixes-v1-2-8cba09558c33@igalia.com/"
+    },
+    {
+      "title": "drm/bridge: display-connector: Fix I2C adapter resource leak",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "DRM bridge (display-connector) maintainers and stable backporters; anyone using DDC-capable connector bridges",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260717184836.2017386-1-laurent.pinchart+renesas@ideasonboard.com/",
+      "if": "DRM bridge (display-connector) maintainers and stable backporters; anyone using DDC-capable connector bridges라면",
+      "do": "v2 moves the release of the DDC I2C adapter out of the remove path and into the ",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/dri-devel/20260717184836.2017386-1-laurent.pinchart+renesas@ideasonboard.com/"
+    },
+    {
+      "title": "drm/panel-edp: fix i2c adapter leak on probe failure",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "eDP panel (panel-edp) driver maintainers and stable 5.15+ backporters; boards using the 'ddc-i2c-bus' DT property",
+      "verifyLink": "https://lore.kernel.org/dri-devel/CAD=FV=X33HQcz3atmFzor2oLJzxzcRBJsnsSu_ewErduSxy0gQ@mail.gmail.com/",
+      "if": "eDP panel (panel-edp) driver maintainers and stable 5.15+ backporters; boards using the 'ddc-i2c-bus' DT property라면",
+      "do": "Adds panel_edp_put_adapter() registered via devm_add_action_or_reset() so the eD",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/dri-devel/CAD=FV=X33HQcz3atmFzor2oLJzxzcRBJsnsSu_ewErduSxy0gQ@mail.gmail.com/"
+    },
+    {
+      "title": "drm/panthor: 오버사이즈 펌웨어 섹션 거부 — 힙 오버플로 방지 (Cc: stable)",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "panthor GPU 드라이버 유지보수 담당 및 stable 백포트 대상",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260716181137.5005eb02@fedora-2.home/",
+      "if": "panthor GPU 드라이버 유지보수 담당 및 stable 백포트 대상라면",
+      "do": "panthor_fw_load_section_entry()에서 section->data.size = hdr.data.end - hdr.data.s",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/dri-devel/20260716181137.5005eb02@fedora-2.home/"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm/vc4: Reset the binner overflow allocator on GPU reset**\n\nGPU 리셋 경로(vc4_irq_reset())가 소프트웨어 binner overflow 할당자와 하드웨어 overflow 레지스터를 정리하지 않던 문제를 수정한다. job_lock 아래에서 pending overflow slot을 해제하고 bin_alloc_overflow를 0으로, \n\n영향: vc4(라즈베리파이) GPU가 리셋될 때마다 overflow slot이 하나씩 누수되고, BPOA/BPOS가 stale 포인터를 가리킨 채 재큐된 BIN job이 그 stale 포인터를 소비해 두 번째 OOM 인터럽트를 유발하던 실질적 버그다. Fixes 대상이 2017년 CMA 256\n\n> Free the pending overflow slot, clear bin_alloc_overflow, and zero BPOA/BPOS under job_lock, so the allocator and hardware return to a clean state before submitting new jobs.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260718-vc4-bin-oom-fixes-v1-2-8cba09558c33@igalia.com/)\n\n**drm/bridge: display-connector: Fix I2C adapter resource leak**\n\nv2 moves the release of the DDC I2C adapter out of the remove path and into the bridge .destroy() handler, so the reference taken during probe is always dropped\n\n영향: A leaked i2c_adapter reference on the probe error path pins the adapter device across probe retries in a very widely instantiated connector-bridge driver (HDMI/\n\n> If the probe function returns an error after getting the I2C adapter for DDC, the reference to the adapter is never released.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260717184836.2017386-1-laurent.pinchart+renesas@ideasonboard.com/)\n\n**drm/panel-edp: fix i2c adapter leak on probe failure**\n\nAdds panel_edp_put_adapter() registered via devm_add_action_or_reset() so the eDP panel driver drops its i2c adapter reference on probe failure (e.g. probe defe\n\n영향: Same class of leaked-i2c-adapter-reference bug as the display-connector fix, here in panel-edp, and long-standing since 5.15. Doug intends to route it to drm-mi\n\n> Make sure to drop the i2c adapter reference on probe failure (e.g. probe deferral) and on driver unbind also if a devicetree redundantly uses the 'ddc-i2c-bus' property\n\n[원문 확인](https://lore.kernel.org/dri-devel/CAD=FV=X33HQcz3atmFzor2oLJzxzcRBJsnsSu_ewErduSxy0gQ@mail.gmail.com/)\n\n**drm/panthor: 오버사이즈 펌웨어 섹션 거부 — 힙 오버플로 방지 (Cc: stable)**\n\npanthor_fw_load_section_entry()에서 section->data.size = hdr.data.end - hdr.data.start 를 할당된 section_size 검증 없이 계산해, 조작된 FW가 panthor_fw_init_section_mem()의 memcpy\n\n영향: panthor(Mali CSF GPU) 유지보수 대상이며 Fixes/Cc: stable 태그로 백포트 예정. FW는 통상 신뢰 경로(파일시스템)에서 로드되므로 실질 위협은 손상·변조된 FW 이미지에 대한 커널 힙 보호 강화에 있다.\n\n> If a crafted firmware sets data.size larger than the allocated memory, this could cause a heap buffer overflow in panthor_fw_init_section_mem()\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260716181137.5005eb02@fedora-2.home/)\n\n**drm/bridge: tc358767: clamp the reported AUX read size to the request**\n\ntc_aux_transfer()가 전송 후 요청 크기를 컨트롤러가 보고한 AUX_BYTES(GENMASK(15,8), 최대 255)로 덮어써 16바이트 auxrdata 스택 버퍼를 넘어 읽고 복사할 수 있었다. min_t(size_t, size, FIELD_GET(AUX_BYTES, a\n\n영향: DP 브리지의 AUX 경로 스택 버퍼 오버런 가능성으로, Fixes 태그(12dfe7c4d9c5)가 붙어 stable 백포트 대상이 될 수 있는 방어 코드다. 동일 클래스 버그가 sn65dsi86에서 이미 CVE급으로 다뤄진 만큼 DP AUX 스택을 검토하는 이들에게 참고 사례가 된다.\n\n> AUX_BYTES is GENMASK(15, 8), so it can be up to 255. Nothing clamps it back to the request.\n\n[원문 확인](https://lore.kernel.org/dri-devel/CAD=FV=VgvjtMXNdG9E-tzmv8C4hp8uoGFrYqZEfot3J6rgWZDw@mail.gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**rust: driver: ID info를 인덱스 대신 포인터로 — 버스 추상화 전반 정리**\n\nGary Guo의 시리즈가 Rust device_id/driver 추상화에서 ID info를 인덱스 대신 포인터로 참조하도록 재작성한다. driver.rs를 대폭 축소하고 ACPI C 헬퍼(rust/helpers/acpi.c, include/acpi/acpi_bus.h)를 제거하며 ac\n\n영향: Rust 드라이버 작성자에게 모든 버스 추상화에서 device ID 테이블을 표현하는 관용구가 바뀌는 교차-서브시스템 API 변경이며, 코드 순감소와 C 심(shim) 제거를 동반한다. Danilo Krummrich가 곧 병합 예정으로 acpi/i2c/of/net/usb 측 의견을 구하\n\n> 29 files changed, 178 insertions(+), 431 deletions(-)\n\n[원문 확인](https://lore.kernel.org/dri-devel/DK08KE2A3M7K.3OQDFZB94SMFC@kernel.org/)\n\n**drm/bridge: Implement generic USB Type-C DP HPD bridge**\n\nv3 1/5 adds a generic DP HPD bridge built on aux-hpd-bridge.c that watches the Type-C bus and automatically creates a DP HPD bridge for any Type-C port device a\n\n영향: Centralizes DP-over-Type-C AltMode HPD wiring so DP hotplug works even when a USB-C controller driver never implemented the bridge, cutting per-driver boilerpla\n\n> It will monitor Type-C bus events, and when a Type-C port device containing the DP svid is registered, it will create an HPD bridge for it\n\n[원문 확인](https://lore.kernel.org/dri-devel/alpeAqKo72pwOEnX@venus/)\n\n**gpu: host1x: 소규모 수정 6건 — drm-misc-next 반영**\n\nMikko Perttunen의 6패치 시리즈: (1) 채널 해제 시 timeout worker 완료 대기, (2) 클라이언트가 이미 있을 때 device_add 중복 방지, (3) trace_write_gather 오프셋 계산 수정, (4) 디버그 출력 헬퍼의 스택 오버리드 방지, (5\n\n영향: Tegra host1x 유지보수 대상으로, 발생 가능성은 낮지만 실재하는 로직 결함과 디버그 경로 스택 오버리드를 정리하고, 랩어라운드 명시로 정적/동적 분석(UBSAN 등) 노이즈를 줄인다.\n\n> Applied to drm-misc-next, thanks. Thierry\n\n[원문 확인](https://lore.kernel.org/dri-devel/alkodFCXR7fqj_X9@orome/)"
+    },
+    {
+      "heading": "기타",
+      "body": "국부 드라이버/플랫폼 패치는 본문에서 제외했습니다. 자기 영역 키워드로 lore.kernel.org에서 직접 검색하세요."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/vc4: Reset the binner overflow allocator on GPU reset",
+      "url": "https://lore.kernel.org/dri-devel/20260718-vc4-bin-oom-fixes-v1-2-8cba09558c33@igalia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/bridge: display-connector: Fix I2C adapter resource leak",
+      "url": "https://lore.kernel.org/dri-devel/20260717184836.2017386-1-laurent.pinchart+renesas@ideasonboard.com/",
+      "note": "commit"
+    },
+    {
+      "title": "drm/panel-edp: fix i2c adapter leak on probe failure",
+      "url": "https://lore.kernel.org/dri-devel/CAD=FV=X33HQcz3atmFzor2oLJzxzcRBJsnsSu_ewErduSxy0gQ@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/panthor: 오버사이즈 펌웨어 섹션 거부 — 힙 오버플로 방지 (Cc: stable)",
+      "url": "https://lore.kernel.org/dri-devel/20260716181137.5005eb02@fedora-2.home/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/bridge: tc358767: clamp the reported AUX read size to the request",
+      "url": "https://lore.kernel.org/dri-devel/CAD=FV=VgvjtMXNdG9E-tzmv8C4hp8uoGFrYqZEfot3J6rgWZDw@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: driver: ID info를 인덱스 대신 포인터로 — 버스 추상화 전반 정리",
+      "url": "https://lore.kernel.org/dri-devel/DK08KE2A3M7K.3OQDFZB94SMFC@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/bridge: Implement generic USB Type-C DP HPD bridge",
+      "url": "https://lore.kernel.org/dri-devel/alpeAqKo72pwOEnX@venus/",
+      "note": "thread"
+    },
+    {
+      "title": "gpu: host1x: 소규모 수정 6건 — drm-misc-next 반영",
+      "url": "https://lore.kernel.org/dri-devel/alkodFCXR7fqj_X9@orome/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "source": "research-dossier",
+    "bucketCounts": {
+      "릴리스/로드맵": 0,
+      "회귀·보안 신호": 5,
+      "핵심 변경": 3,
+      "기타": 0
+    },
+    "entryCount": 8
+  }
+}

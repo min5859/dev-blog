@@ -1,0 +1,129 @@
+{
+  "id": "2026-07-20-android-weekly-rollup",
+  "topic": "android",
+  "title": "2026-07-20 주간 Android 커널 요약",
+  "headline": "rust_binder 사용 GKI/벤더, RT 우선순위 민감 워크로드 담당 주목: ANDROID: rust_binder: update prio_",
+  "date": "2026-07-20",
+  "summary": "오늘의 핵심: 릴리스/로드맵 0건, 회귀·보안 신호 2건, 핵심 변경 6건. 리서치 dossier 의 출처를 근거로 정리했습니다.",
+  "tags": [
+    "안드로이드",
+    "커널",
+    "주간"
+  ],
+  "highlights": [
+    {
+      "title": "ANDROID: rust_binder: update prio_state on nested reply",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "rust_binder 사용 GKI/벤더, RT 우선순위 민감 워크로드 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/4dd097d4271efd3d8164d7f40023880a93966f0c",
+      "if": "rust_binder 사용 GKI/벤더, RT 우선순위 민감 워크로드 담당라면",
+      "do": "rust_binder(drivers/android/binder/thread.rs)에서 중첩(nested) 트랜잭션에 reply할 때 prio_s",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://android.googlesource.com/kernel/common/+/4dd097d4271efd3d8164d7f40023880a93966f0c"
+    },
+    {
+      "title": "ANDROID: drivers/virt: pkvm: Make PM driver initialization standalone",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "pKVM/virt 드라이버 담당, android16-6.12",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/b69d903ab12dd848cf96f14d950282e3c01aff3b",
+      "if": "pKVM/virt 드라이버 담당, android16-6.12라면",
+      "do": "pkvm_device_pm_init()가 setup_arch 시점(pkvm_init_hyp_services)에서 호출돼 platform bus ",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://android.googlesource.com/kernel/common/+/b69d903ab12dd848cf96f14d950282e3c01aff3b"
+    },
+    {
+      "title": "ANDROID: sched: Avoid macro redefinition of TRACE_INCLUDE_PATH (android16-6.12 백포트)",
+      "priority": "중",
+      "impactType": "backport",
+      "affectedAudience": "android16-6.12 ACK 배포 담당(백포트 추적)",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/0e0925f375430dad13c832a90bd8badb63ff88d6",
+      "if": "android16-6.12 ACK 배포 담당(백포트 추적)라면",
+      "do": "위 mainline 수정(82be0d3)의 cherry-pick 백포트로, android16-6.12 브랜치에도 동일한 sched.h #unde",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://android.googlesource.com/kernel/common/+/0e0925f375430dad13c832a90bd8badb63ff88d6"
+    },
+    {
+      "title": "ANDROID: Fix ABI issues related to changed hid_report_raw_event()",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "GKI/모듈 ABI 담당, HID 드라이버 유지보수자",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/645d9a2808286130997a39caaddfdc23bddf0b01",
+      "if": "GKI/모듈 ABI 담당, HID 드라이버 유지보수자라면",
+      "do": "upstream이 취약점 수정을 위해 hid_report_raw_event()에 원본 버퍼 크기를 전달하도록 함수 시그니처를 변경했는데, 이는 ",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://android.googlesource.com/kernel/common/+/645d9a2808286130997a39caaddfdc23bddf0b01"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ANDROID: rust_binder: update prio_state on nested reply**\n\nrust_binder(drivers/android/binder/thread.rs)에서 중첩(nested) 트랜잭션에 reply할 때 prio_state를 pending으로 갱신하도록 수정. 이전에는 갱신이 누락되어 스레드가 부모 트랜잭션의 우선순위로 복원되지 않았다.\n\n영향: Rust Binder가 GKI 모듈로 제품화되는 흐름에서 발생한 우선순위 상속(priority inheritance) 버그를 잡는 수정. RT/우선순위에 민감한 IPC 경로에서 스레드 우선순위가 잘못 유지되면 우선순위 역전·지연으로 이어질 수 있어 android16-6.12 배포 라인에\n\n> When replying to a nested transaction, the prio_state should be updated to pending. Otherwise the thread isn't restored to the parent transaction's priority.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/4dd097d4271efd3d8164d7f40023880a93966f0c)\n\n**ANDROID: drivers/virt: pkvm: Make PM driver initialization standalone**\n\npkvm_device_pm_init()가 setup_arch 시점(pkvm_init_hyp_services)에서 호출돼 platform bus 등록 전이라 platform_driver_register()가 실패하던 문제를 수정. 해당 초기화를 device_initcall로 분리해 독립 \n\n영향: pKVM(protected KVM) 게스트 디바이스 PM 드라이버가 부팅 초기 타이밍 문제로 등록에 실패하던 회귀를 고친다. pKVM 기반 보호 가상화를 쓰는 android16-6.12 기기의 전력관리 드라이버 초기화 정상화에 직접 영향.\n\n> This was too early because the platform bus is not registered yet, causing platform_driver_register() to fail.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/b69d903ab12dd848cf96f14d950282e3c01aff3b)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**ANDROID: sched: Avoid macro redefinition of TRACE_INCLUDE_PATH (android16-6.12 백포트)**\n\n위 mainline 수정(82be0d3)의 cherry-pick 백포트로, android16-6.12 브랜치에도 동일한 sched.h #undef TRACE_INCLUDE_PATH 수정이 반영됨.\n\n영향: 동일 빌드 수정이 출시 라인인 android16-6.12까지 전파됐다는 신호. 해당 ACK 배포를 기반으로 빌드하는 벤더는 이 브랜치에서도 매크로 재정의 오류가 해소됨을 확인 가능.\n\n> (cherry picked from commit 82be0d329bf2b455546a09cc84a40c9d1716b54d)\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/0e0925f375430dad13c832a90bd8badb63ff88d6)\n\n**ANDROID: Fix ABI issues related to changed hid_report_raw_event()**\n\nupstream이 취약점 수정을 위해 hid_report_raw_event()에 원본 버퍼 크기를 전달하도록 함수 시그니처를 변경했는데, 이는 KMI/ABI를 깨므로 ACK는 래퍼(wrapper)를 도입해 ABI를 유지하면서 수정을 반영한다. hid-core.c 등 HID 드라이버 10\n\n영향: GKI ABI 안정성을 유지한 채 upstream HID 보안 수정을 backport하는 전형적 패턴이다. 관련 upstream 취약점은 hid_report_raw_event()의 memset로 인한 OOB read/write(CVE-2026-43048)로, 버퍼 크기 전달 방식으로 고\n\n> Upstream recently started passing the original buffer size through hid_report_raw_event() in order to fix a few recently reported vulnerabilities.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/645d9a2808286130997a39caaddfdc23bddf0b01)\n\n**ANDROID: drivers/wrapfd: Support unaligned file/buffer offsets**\n\nwrapfd 드라이버(drivers/android/wrapfd.c)의 dmabuf 파일 로딩이 그동안 요구하던 페이지 정렬(file/buffer offset, read length) 제약을 완화. 미정렬 케이스를 최대 3부분(바운스 페이지 + 직접 로드 + 잔여 바운스 페이지)으로 분할\n\n영향: wrapfd는 VFS/블록 계층을 통해 파일 내용을 dmabuf로 직접 로드하는 Android 전용 경로로, 정렬 제약이 호출자에게 부담이었다. 미정렬 지원으로 미디어/그래픽스 버퍼 로딩 유연성이 커지지만, 정렬된 경우 대비 바운스 페이지 복사 오버헤드가 추가된다.\n\n> add support for unaligned file/buffer offsets for dmabufs and relax the requirements around those offsets.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/0fd55a309793adc6b8cddb5c29e80caa545ba4bb)\n\n**ANDROID: gki_defconfig: Enable hard lockup detector**\n\narm64/x86 gki_defconfig에서 hard lockup detector를 활성화. ARM64는 perf detector가 없을 때 buddy detector를 선호하도록 구성. hardlockup_panic 자체는 데스크톱 기기에 한해 별도 CL에서 켤 예정.\n\n영향: NMI/워치독 기반 하드 락업 탐지가 GKI 기본값으로 켜지면서 커널 데드락 진단 능력이 향상된다. 런타임 동작(워치독)이 바뀌는 변경이라 벤더의 안정성·디버깅 파이프라인(pstore/ramoops 수집 등)에 직접 영향.\n\n> This enables hard lockup detection in Android devices. However, we'll only enable hardlockup_panic in desktop devices (in a separate CL).\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/bdc8ab55a8c960214437a2174168dd21242e2d06)\n\n**ANDROID: gki_defconfig: enable CONFIG_SW_SYNC=y for debug/testing**\n\narm64/x86 gki_defconfig에서 CONFIG_SW_SYNC=y로 sw_sync 드라이버 활성화. GPU 드라이버 디버깅과 igt-gpu-tools 테스트에 사용된다.\n\n영향: sw_sync는 유저스페이스발 데드락 위험(안전하지 않은 fence 관리) 때문에 그동안 Android에서 비활성화돼 있었다. Android 4.9부터 debugfs로만 노출되고, GMS(Android 12+)가 출시 기기의 debugfs 마운트를 금지하므로 출시 빌드 위험 없이 테스트\n\n> The sw_sync driver is useful for debugging and testing GPU drivers, and is leveraged by several tests in the igt-gpu-tools test suite.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/7443a0c3c9ecfc8982003afde92e9c783c725994)\n\n**ANDROID: gki_defconfig: Enable CONFIG_CRYPTO_SHA512**\n\narm64/x86 gki_defconfig에 CONFIG_CRYPTO_SHA512를 명시적으로 추가. 기존에는 암묵적 의존성 체인으로 딸려왔으나 그 체인이 끊어져 수동 지정이 필요해졌다.\n\n영향: 암묵적 의존성 붕괴(Fixes: crypto: rng — CRYPTO_FIPS=n일 때 DRBG를 끌어오지 않음)로 SHA512가 조용히 빠질 수 있었던 상황을 방지하는 defconfig 동기화. 누락 시 vts_kernel_net_tests 등 SHA512 의존 경로가 깨질 수 있어 \n\n> CONFIG_CRYPTO_SHA512 was previously included by an implicit dependency chain. Now this chain has been broken we need to manually add it to the gki_defconfig.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/7eebb4e1420ffe868b6c6e50dd309ced05fe428d)"
+    },
+    {
+      "heading": "기타",
+      "body": "국부 드라이버/플랫폼 패치는 본문에서 제외했습니다. 자기 영역 키워드로 lore.kernel.org에서 직접 검색하세요."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ANDROID: rust_binder: update prio_state on nested reply",
+      "url": "https://android.googlesource.com/kernel/common/+/4dd097d4271efd3d8164d7f40023880a93966f0c",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: drivers/virt: pkvm: Make PM driver initialization standalone",
+      "url": "https://android.googlesource.com/kernel/common/+/b69d903ab12dd848cf96f14d950282e3c01aff3b",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: sched: Avoid macro redefinition of TRACE_INCLUDE_PATH (android16-6.12 백포트)",
+      "url": "https://android.googlesource.com/kernel/common/+/0e0925f375430dad13c832a90bd8badb63ff88d6",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: Fix ABI issues related to changed hid_report_raw_event()",
+      "url": "https://android.googlesource.com/kernel/common/+/645d9a2808286130997a39caaddfdc23bddf0b01",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: drivers/wrapfd: Support unaligned file/buffer offsets",
+      "url": "https://android.googlesource.com/kernel/common/+/0fd55a309793adc6b8cddb5c29e80caa545ba4bb",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: gki_defconfig: Enable hard lockup detector",
+      "url": "https://android.googlesource.com/kernel/common/+/bdc8ab55a8c960214437a2174168dd21242e2d06",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: gki_defconfig: enable CONFIG_SW_SYNC=y for debug/testing",
+      "url": "https://android.googlesource.com/kernel/common/+/7443a0c3c9ecfc8982003afde92e9c783c725994",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: gki_defconfig: Enable CONFIG_CRYPTO_SHA512",
+      "url": "https://android.googlesource.com/kernel/common/+/7eebb4e1420ffe868b6c6e50dd309ced05fe428d",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "source": "research-dossier",
+    "bucketCounts": {
+      "릴리스/로드맵": 0,
+      "회귀·보안 신호": 2,
+      "핵심 변경": 6,
+      "기타": 0
+    },
+    "entryCount": 8
+  }
+}

@@ -1,0 +1,93 @@
+{
+  "id": "2026-07-20-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-07-20 sockmap 더블프리 수정 — 커널 Perf/RT",
+  "headline": "sockmap sendmsg 경로의 슬랩 더블프리 UAF가 PoC로 확인되어 스테이블 백포트가 필요합니다.",
+  "date": "2026-07-20",
+  "summary": "sockmap BPF 프로그램의 sendmsg 경로에서 공격자가 도달 가능한 슬랩 더블프리가 보고되어 스테이블 백포트가 필요합니다. coresight CPU-PM 알림 수정안은 atomic 버그를 UAF 위험으로 바꿀 수 있다는 지적을 받아 재설계가 논의 중이며, amba-pl011 콘솔 클록 수명 버그도 함께 수집되었습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "sockmap sendmsg 코크 더블프리(UAF) 수정 제안",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF sockmap/skmsg maintainers, network stack and distro security/backport teams",
+      "verifyLink": "https://lore.kernel.org/bpf/20260719161630.2901208-1-nicoyip.dev@gmail.com/",
+      "if": "소켓맵(sockmap/sockhash) BPF 프로그램을 소켓에 연결해 사용 중이라면",
+      "do": "이 패치가 해당 커널에 반영되었는지 확인하고, 아직 병합되지 않았다면 백포트 계획을 세우십시오",
+      "verify": "KASAN 활성화 커널에서 PoC로 tcp_bpf_sendmsg 경로의 UAF 재현 여부를 점검하십시오"
+    },
+    {
+      "title": "coresight CPU-PM atomic 수정안, UAF 위험 지적받아 재설계 논의",
+      "priority": "중",
+      "impactType": "project",
+      "affectedAudience": "Coresight/hwtracing maintainers, PREEMPT_RT and device-lifetime reviewers",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/CABWZVhpzKpTz9A-nHFEYgAdrDWFzmjMZOPW=Zo=wD6Bv6zgfcA@mail.gmail.com/",
+      "if": "PREEMPT_RT 환경에서 coresight CPU-PM 알림 경로를 사용 중이라면",
+      "do": "raw spinlock 방식 대신 device_link_add 기반 수명 관리로 결론이 날 수 있으므로 병합 전 임시 패치 적용은 보류하십시오",
+      "verify": "coresight_cpu_pm_notify() 스레드에서 최종 합의된 구현이 나왔는지 확인하십시오"
+    },
+    {
+      "title": "amba-pl011 콘솔 클록 수명 버그 2패치 수정",
+      "priority": "하",
+      "impactType": "regression",
+      "affectedAudience": "amba-pl011/tty-serial maintainers, PREEMPT_RT and embedded-ARM integrators",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260719063502.18852-1-kmehltretter@gmail.com/",
+      "if": "amba-pl011 UART 콘솔을 등록/해제하거나 드라이버를 언바인드하는 환경이라면",
+      "do": "clk prepare 카운트 누수와 nbcon atomic 컨텍스트의 clk_enable 문제를 고치는 2패치 시리즈를 적용하십시오",
+      "verify": "QEMU bcm2835/versatilepb 환경에서 콘솔 등록/해제를 반복해 clk prepare 카운트와 RT 스플랫 재현 여부를 점검하십시오"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**bpf, sockmap: tcp_bpf_sendmsg() 코크(cork) 더블프리 수정**\n\ntcp_bpf_sendmsg()가 sk_stream_wait_memory() 호출 중 소켓 락을 놓고 다시 잡는 구간에서 msg_tx가 로컬 임시 값인지 psock->cork인지를 포인터 비교로 판단했는데, 락이 풀린 사이 동일 소켓의 다른 sender가 코크를 완료시키고 해제하면 이 낡은 포인터가 로컬 임시 값으로 오인되어 두 번 해제됩니다.\n\n영향: sockmap/sockhash BPF 프로그램이 붙은 소켓의 sendmsg() 경로에서 공격자가 도달 가능한 슬랩 UAF로, KASAN 스플랫과 PoC로 확인되었고 2019년 sk_msg 전환 커밋 이후 모든 커널이 영향권이라 스테이블 백포트가 필요합니다.\n\n> BUG: KASAN: slab-use-after-free in sk_msg_free+0x49/0x50\n> Read of size 4 at addr ffff88810c908800 by task poc/90\n\n[원문 확인](https://lore.kernel.org/bpf/20260719161630.2901208-1-nicoyip.dev@gmail.com/)\n\n**serial: amba-pl011: 콘솔 클록 수명 관리 수정**\n\npl011_console_setup()에서 준비(prepare)한 UART 클록을 콘솔 해제 시 풀어주는 코드가 없어 등록/해제 사이클마다 prepare 카운트가 한 개씩 누수되고, 두 번째 패치는 콘솔이 등록된 동안 클록을 계속 활성 상태로 유지해 pl011_console_write_atomic()이 nbcon atomic 컨텍스트에서 clk_enable()을 호출하지 않도록 합니다.\n\n영향: 드라이버 언바인드/리바인드 경로의 refcount 불균형은 자원 고갈로 이어질 수 있는 유형의 결함이며, atomic 컨텍스트의 clk_enable() 호출은 PREEMPT_RT에서 슬리핑 락을 유발할 수 있어 QEMU에서 재현 및 검증되었습니다.\n\n> nothing releases it when the console is unregistered, so the clock's prepare count leaks one reference per registration cycle (via the sysfs \"console\" attribute or a driver unbind)\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260719063502.18852-1-kmehltretter@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**coresight: CPU-PM 알림 경로의 atomic 스케줄링 버그, UAF 위험으로 재검토 중**\n\ncoresight_cpu_get_active_path()의 get_device()/put_device() 쌍을 raw spinlock으로 교체해 atomic 컨텍스트 스케줄링 문제를 고치려 했으나, 리뷰어들이 이 락은 포인터 접근만 직렬화할 뿐 소스나 상위 디바이스의 수명을 보장하지 않아 동시 언바인드 시 UAF로 이어질 수 있음을 지적했고, device_link_add 기반 수명 관리 모델이 논의 중입니다.\n\n영향: atomic-safe 수정이 오히려 UAF를 유발할 수 있는 대표적 사례로, 최종 설계(raw lock 대 device_link)가 CPU-PM 경로의 UAF 안전성을 결정합니다.\n\n> The raw spinlock (coresight_dev_lock) serializes access to the per-CPU csdev_source pointer. It does not guarantee the lifetime of the source or its _parent_ device.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/CABWZVhpzKpTz9A-nHFEYgAdrDWFzmjMZOPW=Zo=wD6Bv6zgfcA@mail.gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "bpf, sockmap: Fix cork use-after-free in tcp_bpf_sendmsg()",
+      "url": "https://lore.kernel.org/bpf/20260719161630.2901208-1-nicoyip.dev@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf, sockmap: convert to generic sk_msg interface",
+      "url": "https://github.com/torvalds/linux/commit/604326b41a6fb9b4a78b6179335decee0365cd8c",
+      "note": "commit"
+    },
+    {
+      "title": "coresight: Fix scheduling while atomic in coresight_cpu_pm_notify()",
+      "url": "https://lore.kernel.org/linux-rt-devel/CABWZVhpzKpTz9A-nHFEYgAdrDWFzmjMZOPW=Zo=wD6Bv6zgfcA@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "serial: amba-pl011: fix console clock lifetime",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260719063502.18852-1-kmehltretter@gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-19T19:13:43.622Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

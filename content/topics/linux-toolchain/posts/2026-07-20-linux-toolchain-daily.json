@@ -1,0 +1,104 @@
+{
+  "id": "2026-07-20-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-07-20 Rust API 정리 — 리눅스 커널 툴체인",
+  "headline": "Rust-for-Linux 쪽에서 IRQ 등록, Binder 비트맵, debugfs BinaryWriter까지 세 건의 API 정리 패치가 동시에 올라왔습니다.",
+  "date": "2026-07-20",
+  "summary": "Rust-for-Linux에서 IRQ 등록 추상화를 HRT 라이프타임 아키텍처에 맞추고, rust_binder 비트맵을 강타입화하며, debugfs BinaryWriter를 zerocopy로 이전하는 세 건의 정리 패치가 올라왔습니다. 모두 머지 전 리뷰 단계로 Acked-by·머지 상태 확인이 필요합니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "Rust"
+  ],
+  "highlights": [
+    {
+      "title": "rust: irq Registration, HRT 라이프타임과 정렬",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust 디바이스 드라이버·IRQ 추상화 작성자 및 Rust-for-Linux 코어",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260719153631.559341-1-dakr@kernel.org/",
+      "if": "Rust IRQ 핸들러에서 Devres 간접화를 통해 디바이스 리소스를 다루고 있다면",
+      "do": "Registration<'a,T> 기반으로 직접 request_irq()/free_irq()를 호출하는 방식으로 전환을 검토하세요",
+      "verify": "패치 스레드에서 Handler/ThreadedHandler의 'static 바운드 제거와 IrqRequest<'a> 사용 여부를 확인하세요"
+    },
+    {
+      "title": "rust_binder, 비트맵을 impl_flags!로 강타입화",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust Binder 드라이버 유지보수 담당 및 Rust 커널 API 사용자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260719-b4-rust_binder_impl_flags-v3-0-f8d0b3ea1b87@google.com/",
+      "if": "Rust Binder의 defer_work/looper_flags/flags를 raw 정수로 다루는 코드를 유지보수하고 있다면",
+      "do": "kernel::impl_flags! 기반 타입으로 교체해 플래그 교차오염을 컴파일타임에 막으세요",
+      "verify": "v3 패치 스레드에서 char-misc 트리 기반 여부와 변경된 함수 시그니처를 확인하세요"
+    },
+    {
+      "title": "rust: debugfs BinaryWriter, zerocopy로 이전",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust debugfs/바이너리 직렬화 코드 작성자 및 transmute→zerocopy 마이그레이션 추적자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260719-migrate-binarywriter-to-zerocopy-intobytes-v1-0-27ed30512e75@mailbox.org/",
+      "if": "BinaryWriter 기본 구현이 kernel::transmute::IntoBytes에 의존하는 코드를 유지보수하고 있다면",
+      "do": "zerocopy::Immutable + zerocopy::IntoBytes 요구사항으로 전환을 준비하세요",
+      "verify": "패치 스레드에서 BinaryReaderMut 등 AsBytes 의존 부분의 이전 여부를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**rust: irq: Registration을 라이프타임 기반(HRT) 드라이버와 호환되게 변경**\n\nIRQ 등록 추상화를 HRT(Higher-Ranked Lifetime Types) 드라이버 아키텍처에 맞춰, Handler/ThreadedHandler의 'static 바운드를 제거하고 Devres<RegistrationInner> 간접화 대신 생성자·PinnedDrop에서 직접 request_irq()/free_irq()를 호출하도록 바꿨습니다. Registration<'a,T>가 IrqRequest<'a>를 보관해 디바이스 바인딩 스코프에 구조적으로 묶입니다.\n\n영향: IRQ 핸들러가 pci::Bar<'bar> 같은 디바이스 리소스를 Devres 간접화 없이 직접 소유할 수 있게 되어, Rust 드라이버의 모든 등록을 컴파일타임 라이프타임으로 표현하려는 HRT 방향과 IRQ 서브시스템이 정렬됩니다. 다만 Acked-by 및 머지 상태는 아직 확인이 필요합니다.\n\n> Remove the 'static bound from Handler and ThreadedHandler and replace the Devres<RegistrationInner> indirection with direct request_irq() / free_irq() calls\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260719153631.559341-1-dakr@kernel.org/)\n\n**rust_binder: 비트맵을 kernel::impl_flags!로 마이그레이션**\n\nRust Binder 드라이버의 raw 정수 비트맵(defer_work, looper_flags, flags)을 kernel::impl_flags! 매크로 기반 강타입 비트마스크로 바꾸고, 수동 비트 연산을 안전한 메서드 호출로 대체했습니다. char-misc 트리 위에 기반한 v3 시리즈입니다.\n\n영향: 정수를 모두 동일하게 취급하던 탓에 looper 플래그를 transaction 플래그 자리에 넘겨도 경고 없이 컴파일되던 교차오염 버그를 컴파일타임 타입 검사로 차단합니다. 패치 수·Acked-by·머지 상태는 확인이 필요합니다.\n\n> it is possible to pass a thread looper flag into a function expecting a transaction flag without triggering compile-time warnings\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260719-b4-rust_binder_impl_flags-v3-0-f8d0b3ea1b87@google.com/)\n\n**rust: debugfs: BinaryWriter 요구사항을 zerocopy로 이전**\n\ndebugfs BinaryWriter 기본 구현 요구사항을 kernel::transmute::IntoBytes에서 zerocopy::Immutable + zerocopy::IntoBytes로 옮겼습니다. rust/kernel/transmute.rs를 zerocopy 크레이트로 이전하는 더 큰 흐름의 일부이며, 기여자의 첫 커널 패치입니다.\n\n영향: zerocopy의 derive는 타입 레이아웃 요구사항을 기존 kernel::transmute::AsBytes보다 더 엄격히 컴파일타임 검사해, 임시 transmute 트레이트를 검증된 외부 크레이트로 통합해가는 흐름을 실제로 진전시킵니다. BinaryReaderMut 등 나머지 이전 범위는 아직 논의 중입니다.\n\n> Migrates the `BinaryWriter` default implementation requirements from `kernel::transmute::IntoBytes` to `zerocopy::Immutable` + `zerocopy::IntoBytes`.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260719-migrate-binarywriter-to-zerocopy-intobytes-v1-0-27ed30512e75@mailbox.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "rust: irq: make Registration compatible with lifetime-bound drivers",
+      "url": "https://lore.kernel.org/rust-for-linux/20260719153631.559341-1-dakr@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "Merge patch series \"rust: device: Higher-Ranked Lifetime Types for device drivers\"",
+      "url": "https://github.com/torvalds/linux/commit/2c7c65933600",
+      "note": "commit"
+    },
+    {
+      "title": "rust_binder: Update bitmaps to use kernel::impl_flags! (v3)",
+      "url": "https://lore.kernel.org/rust-for-linux/20260719-b4-rust_binder_impl_flags-v3-0-f8d0b3ea1b87@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: debugfs: migrate BinaryWriter requirements to zerocopy",
+      "url": "https://lore.kernel.org/rust-for-linux/20260719-migrate-binarywriter-to-zerocopy-intobytes-v1-0-27ed30512e75@mailbox.org/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: zerocopy: import crate",
+      "url": "https://github.com/torvalds/linux/commit/c37398010a05",
+      "note": "commit"
+    },
+    {
+      "title": "Migrate transmute::FromBytes to zerocopy's (tracking issue)",
+      "url": "https://github.com/Rust-for-Linux/linux/issues/1241",
+      "note": "article"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-19T18:57:08.955Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
