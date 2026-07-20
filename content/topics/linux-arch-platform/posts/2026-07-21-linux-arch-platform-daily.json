@@ -1,0 +1,130 @@
+{
+  "id": "2026-07-21-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-07-21 arm64 futex UAF 대비 — 아키텍처·플랫폼",
+  "headline": "arm64 futex UAF 방지 준비, pKVM 힙 할당자 신설, i.MX6 CFI 패닉 수정, RISC-V pmlen 레이스 논쟁이 이어졌다.",
+  "date": "2026-07-21",
+  "summary": "arm64에서는 robust futex UAF 레이스를 막는 VDSO 준비 패치와 pKVM용 힙 할당자가 각각 논의됐고, ARM i.MX6은 Clang CFI 패닉 수정안이, RISC-V는 lockless 포인터 마스킹의 레이스 위험이 지적됐다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "arm64",
+    "RISC-V"
+  ],
+  "highlights": [
+    {
+      "title": "arm64 VDSO robust futex 언락 준비 패치(v6)",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "arm64 아키텍처·VDSO 유지보수 담당 및 robust futex 쓰는 유저스페이스 런타임(glibc) 관계자",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260720-tonyk-robust_arm-v6-1-7e68c122047e@igalia.com/",
+      "if": "arm64에서 glibc robust mutex나 커널 VDSO futex 코드를 유지보수하고 있다면",
+      "do": "v6 시리즈의 struct futex_mm_data 헬퍼, vdso_mremap/aarch32_mremap 분리, arch_futex_robust_unlock_get_pop() 구현을 검토하라",
+      "verify": "lore 스레드에서 x86/vdso 짝 패치(Gleixner) 대비 arm64 구현 진행 상황과 병합 대상을 확인하라"
+    },
+    {
+      "title": "i.MX6 suspend/resume에서 Clang CFI 패닉",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "i.MX/ARM 전력 관리 및 커널 CFI 활성화 담당",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/CABCJKudqGL+BFFcz3qsuoJB6S_OAt-vs2yqePC_=oy+JzmPpVw@mail.gmail.com/",
+      "if": "CONFIG_CFI=y로 i.MX6 플랫폼을 빌드하거나 OCRAM 재배치 코드를 다루고 있다면",
+      "do": "CFI 해시 프리픽스 복사안과 __nocfi 표시안 중 어느 쪽이 채택되는지 스레드를 추적하라",
+      "verify": "imx6_suspend_in_ocram_fn 관련 수정이 어느 stable 브랜치로 백포트되는지 원문에서 확인하라"
+    },
+    {
+      "title": "pKVM 하이퍼바이저용 힙 할당자 신설",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "arm64 KVM/pKVM(protected KVM) 하이퍼바이저 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260720171513.1415357-5-vdonnefort@google.com/",
+      "if": "pKVM EL2 메모리 관리나 hyp_vm 구조체 할당 경로를 다루고 있다면",
+      "do": "hyp_alloc/hyp_free, top-up/reclaim API로의 전환 여부와 시리즈 버전을 확인하라",
+      "verify": "기존 nvhe buddy page_alloc과의 계층 관계, host-hyp HVC 인터페이스 추가 여부를 원문에서 확인하라"
+    },
+    {
+      "title": "RISC-V pmlen lockless 읽기 레이스 논쟁",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "RISC-V 메모리 관리(포인터 마스킹)·아키텍처 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/e9703d2e-f815-4d96-b5ce-074aba281f76@linux.dev/",
+      "if": "RISC-V에서 원격 주소 untag나 포인터 마스킹 코드를 다루고 있다면",
+      "do": "mmap lock 없이 pmlen을 읽는 패치가 병합되기 전에 CLONE_VM·PR_SET_TAGGED_ADDR_CTRL 레이스 시나리오를 재검토하라",
+      "verify": "untagged_addr_remote_unlocked() 최종 구현이 잠금을 추가했는지 pmlen 고정 방식을 택했는지 스레드에서 확인하라"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**arm64: vdso: Prepare for robust futex unlock support**\n\nAndré Almeida(Igalia)가 robust futex의 list_op_pending 해제 레이스를 없애기 위해 arm64 VDSO에 __vdso_futex_robust_try_unlock() 구현 준비 패치(v6)를 제출했다.\n\n영향: unlock과 list_op_pending 해제가 원자적이지 않아 발생하는 use-after-free 레이스를 막는 작업으로, arm64 VDSO 유지보수자와 robust mutex를 쓰는 glibc 등 유저스페이스 런타임에 영향을 준다.\n\n> To solve the robust futex's list_pending_op clearing race condition, prepare for implement __vdso_futex_robust_try_unlock() for arm64\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260720-tonyk-robust_arm-v6-1-7e68c122047e@igalia.com/)\n\n**ARM: imx: Fix suspend/resume crash with Clang CFI**\n\nOCRAM으로 재배치되는 i.MX6 suspend 코드에 CFI 타입 시그니처가 없어 CONFIG_CFI=y에서 간접 호출이 패닉을 일으키며, CFI 해시 프리픽스 복사 또는 __nocfi 표시로 수정하는 방안이 논의 중이다.\n\n영향: SRAM/OCRAM 재배치는 ARM 전력관리의 흔한 패턴이라, CFI를 켠 i.MX 플랫폼에서 suspend/resume 시 패닉이 발생할 수 있어 재배치 함수의 CFI 처리 선례가 된다.\n\n> When CONFIG_CFI=y is active, the indirect call to imx6_suspend_in_ocram_fn triggers a strict CFI violation panic.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/CABCJKudqGL+BFFcz3qsuoJB6S_OAt-vs2yqePC_=oy+JzmPpVw@mail.gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**KVM: arm64: Add a heap allocator for the pKVM hyp**\n\npKVM 하이퍼바이저(EL2)에 hyp_alloc/hyp_free와 top-up/reclaim API를 갖춘 VA-연속 힙 할당자가 새로 추가되어, host가 물리 연속·정렬된 메모리를 미리 마련해야 했던 제약을 없앤다.\n\n영향: 기존 nvhe 페이지 단위 buddy 할당자 위에 바이트 단위 동적 할당 계층을 제공하고, 청크 메타데이터 해시로 host발 손상에 대한 강건성도 확보한다.\n\n> Create a heap allocator to manage VA-contiguous memory. This allocator grows upward, recycles unused chunks of memory and provides a simple API to allocate and free\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260720171513.1415357-5-vdonnefort@google.com/)\n\n**riscv/mm: add untagged_addr_remote_unlocked()**\n\nmmap lock 없이 mm->context.pmlen을 읽어 원격 주소를 untag하자는 제안에, RISC-V 포인터 마스킹은 ARM MTE와 달리 x86 LAM처럼 동적이라 락 없는 읽기가 레이스를 일으킨다는 반박이 제기됐다.\n\n영향: process_vm_readv·ptrace 같은 원격 메모리 접근 경로에서 lockless 포인터 마스킹을 도입하려는 RISC-V mm 유지보수자에게, pmlen 안정성 가정이 깨지면 잘못된 주소를 untag할 위험을 경고한다.\n\n> The target VMA might be at 0x12345678, but applying PMLEN 7 to that tagged pointer does not produce that address.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/e9703d2e-f815-4d96-b5ce-074aba281f76@linux.dev/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "arm64: vdso: Prepare for robust futex unlock support",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260720-tonyk-robust_arm-v6-1-7e68c122047e@igalia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "futex: Address the robust futex unlock race for real",
+      "url": "https://lwn.net/Articles/1066167/",
+      "note": "article"
+    },
+    {
+      "title": "x86/vdso: Prepare for robust futex unlock support",
+      "url": "https://lkml.org/lkml/2026/3/30/1113",
+      "note": "thread"
+    },
+    {
+      "title": "KVM: arm64: Add a heap allocator for the pKVM hyp",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260720171513.1415357-5-vdonnefort@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "arch/arm64/kvm/hyp/nvhe/page_alloc.c",
+      "url": "https://github.com/torvalds/linux/blob/master/arch/arm64/kvm/hyp/nvhe/page_alloc.c",
+      "note": "commit"
+    },
+    {
+      "title": "ARM: imx: Fix suspend/resume crash with Clang CFI",
+      "url": "https://lore.kernel.org/linux-arm-kernel/CABCJKudqGL+BFFcz3qsuoJB6S_OAt-vs2yqePC_=oy+JzmPpVw@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "arch/arm/mach-imx/suspend-imx6.S",
+      "url": "https://github.com/torvalds/linux/blob/master/arch/arm/mach-imx/suspend-imx6.S",
+      "note": "commit"
+    },
+    {
+      "title": "riscv/mm: untagged_addr_remote_unlocked() 레이스 사례",
+      "url": "https://lore.kernel.org/linux-riscv/e9703d2e-f815-4d96-b5ce-074aba281f76@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv/mm: pmlen 안정성 주장",
+      "url": "https://lore.kernel.org/linux-riscv/13ec2603d5cbfdc493939f182b71e5133c26af54.camel@surriel.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-20T19:38:10.935Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

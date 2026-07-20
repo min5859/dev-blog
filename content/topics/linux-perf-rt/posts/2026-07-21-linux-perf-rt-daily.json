@@ -1,0 +1,98 @@
+{
+  "id": "2026-07-21-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-07-21 xsk OOB read 수정 — 커널 Perf/RT",
+  "headline": "xsk 메타데이터 OOB read, LSM xattr 재작성, BPF frameno 보존까지 이번 렌즈 3건을 정리합니다.",
+  "date": "2026-07-21",
+  "summary": "AF_XDP xsk의 tx_metadata_len 하한 검사 누락이 유발하는 커널 vmalloc OOB read를 막는 패치가 나왔습니다. 이와 함께 LSM inode 보안 레이블 재작성 논의와 BPF 검증기의 프레임 번호 보존 수정도 이번 렌즈에 포함되었습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "xsk: tx_metadata_len 하한 검사 누락 OOB read 수정",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "net/xdp·AF_XDP(xsk) 서브시스템 및 배포 커널 보안 백포트 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260720155210.34229-1-blbllhy@gmail.com/",
+      "if": "AF_XDP(xsk)로 UMEM을 등록해 사용하는 환경이라면",
+      "do": "tx_metadata_len 하한 검사를 추가한 이 패치가 반영되었는지 확인하고, 미반영이면 백포트를 검토하십시오.",
+      "verify": "KASAN 커널에서 sizeof(struct xsk_tx_metadata)보다 작은 tx_metadata_len으로 UMEM을 등록해 vmalloc OOB read 재현 여부를 점검하십시오."
+    },
+    {
+      "title": "security: inode_init_security xattr 처리 재작성 논의",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "LSM·BPF LSM 서브시스템 유지보수 및 보안 프레임워크 리뷰어",
+      "verifyLink": "https://lore.kernel.org/bpf/CAEXv5_i_iHmF8n6Qf1NiVOhm2cCnVLgmwXK-b8M+hvmdO3aQdA@mail.gmail.com/",
+      "if": "BPF LSM 등으로 inode 보안 레이블(xattr)을 부여하는 코드를 유지보수하고 있다면",
+      "do": "security_lsmxattr_add() API와 NULL xattrs 처리 방향에 대한 리뷰 스레드를 계속 추적하십시오.",
+      "verify": "xattrs->xattrs가 NULL일 때 반환값이 -EINVAL인지 조기 0 반환인지 합의된 결론을 확인하십시오."
+    },
+    {
+      "title": "bpf: commuted 스택 포인터 산술의 프레임 번호 보존",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "BPF 검증기(kernel/bpf/verifier.c) 유지보수 및 커널 하드닝 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/cover.1784563939.git.chenyy23@mails.tsinghua.edu.cn/",
+      "if": "BPF 검증기 유지보수나 검증 정확성 감사를 담당하고 있다면",
+      "do": "commuted 스택 포인터 산술에서 frameno를 보존하는 패치와 verifier_basic_stack 회귀 테스트의 반영 여부를 확인하십시오.",
+      "verify": "Fixes 태그와 병합 트리가 확정되면 영향받는 커널 버전 범위를 재확인하십시오."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**xsk: reject tx_metadata_len smaller than struct xsk_tx_metadata**\n\nxdp_umem_reg()가 tx_metadata_len에 대해 상한(256바이트)과 정렬(8바이트)만 검사하고 하한은 검사하지 않아, sizeof(struct xsk_tx_metadata)인 24바이트보다 작은 값도 등록할 수 있었습니다. xsk_skb_metadata()는 이 길이만큼 떨어진 위치에서 24바이트 구조체 전체를 무조건 읽으므로, 짧은 길이를 등록하면 xsk_sendmsg 경로에서 커널 vmalloc 영역 OOB read가 발생합니다.\n\n영향: 유저스페이스가 제어하는 UMEM 설정값만으로 커널 메모리 밖을 읽을 수 있는 하드닝 이슈로, Microsoft 자동 코드 보안 스캐너가 보고했고 KASAN으로 재현되었으며 회귀 커밋을 특정하는 Fixes 태그가 붙어 있어 AF_XDP를 노출하는 배포판·엣지 시스템의 백포트 판단이 필요합니다.\n\n> BUG: KASAN: vmalloc-out-of-bounds in xsk_skb_metadata+0x4b2/0x500 / Read of size 8\n\n[원문 확인](https://lore.kernel.org/bpf/20260720155210.34229-1-blbllhy@gmail.com/)\n\n**security: rework inode_init_security xattr handling**\n\ninode_init_security 훅에서 LSM(특히 BPF LSM)이 새 inode에 xattr를 추가하는 경로를 struct lsm_xattrs와 security_lsmxattr_add() 헬퍼로 재작성하는 시리즈입니다. 리뷰 과정에서 lsm_xattrs 변경과 security_lsmxattr_add() 변경의 패치 분리, lsm_xattrs_used()의 CONFIG_BPF_LSM 브래킷 제거, xattrs->xattrs가 NULL일 때의 반환값(-EINVAL 대 조기 0 반환)이 쟁점으로 논의되고 있습니다.\n\n영향: 새 inode에 보안 레이블을 심는 LSM 코어 경로를 건드리는 변경으로, NULL 처리를 SELinux처럼 조기 반환시키면 BPF LSM에서는 메모리·디스크 어디에도 레이블이 남지 않는다는 저자의 반론이 나와 있어, xattr 처리 오류가 온디스크 보안 레이블 누락으로 이어질 수 있는지가 LSM·BPF LSM 유지보수의 관전 포인트입니다.\n\n> Returning early here from BPF would not mean the same thing: there is no label anywhere, in memory or on disk.\n\n[원문 확인](https://lore.kernel.org/bpf/CAEXv5_i_iHmF8n6Qf1NiVOhm2cCnVLgmwXK-b8M+hvmdO3aQdA@mail.gmail.com/)\n\n**bpf: Preserve stack frame number for commuted stack arithmetic**\n\nBPF 검증기는 reg->frameno로 오프셋은 같지만 다른 콜 프레임을 가리키는 스택 포인터를 구분하는데, scalar += pointer 경로가 포인터 type과 id는 대상 레지스터에 복사하면서도 frameno는 복사하지 않아 소스가 PTR_TO_STACK일 때 프레임 번호가 유실되고 있었습니다. 패치는 commuted 스택 포인터 산술에서 frameno를 보존하도록 고치고, callee가 scalar += fp로 프레임 포인터를 파생시킨 뒤 같은 스택 슬롯을 덮어쓰고 다시 읽는 verifier_basic_stack 회귀 테스트를 추가합니다.\n\n영향: BPF 검증기는 커널의 보안 경계이므로, commuted 산술에서 프레임 번호가 유실되면 프레임 간 스택 포인터가 혼동되어 검증 정확성(soundness)이 훼손될 수 있어 검증기 유지보수 및 하드닝 관점에서 추적할 항목입니다. 다만 커버레터에 Fixes 태그가 없어 회귀 도입 커밋과 실제 악용 가능성은 아직 확인되지 않았습니다.\n\n> The scalar += pointer path copies pointer type and id to the destination register, but it also needs to preserve frameno when the source pointer is PTR_TO_STACK.\n\n[원문 확인](https://lore.kernel.org/bpf/cover.1784563939.git.chenyy23@mails.tsinghua.edu.cn/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "xsk: reject tx_metadata_len smaller than struct xsk_tx_metadata",
+      "url": "https://lore.kernel.org/bpf/20260720155210.34229-1-blbllhy@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "AF_XDP TX Metadata",
+      "url": "https://docs.kernel.org/networking/xsk-tx-metadata.html",
+      "note": "changelog"
+    },
+    {
+      "title": "security: rework inode_init_security xattr handling",
+      "url": "https://lore.kernel.org/bpf/CAEXv5_i_iHmF8n6Qf1NiVOhm2cCnVLgmwXK-b8M+hvmdO3aQdA@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Check xattr name/value pair from bpf_lsm_inode_init_security()",
+      "url": "https://lore.kernel.org/bpf/CAADnVQLAXsZRNytPHG0KhYKar3K+=7bq2KPQG77VFOKbnTPHmg@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Preserve stack frame number for commuted stack arithmetic",
+      "url": "https://lore.kernel.org/bpf/cover.1784563939.git.chenyy23@mails.tsinghua.edu.cn/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-20T19:26:38.283Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

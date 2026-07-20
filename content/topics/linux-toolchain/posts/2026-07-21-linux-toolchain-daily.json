@@ -1,0 +1,103 @@
+{
+  "id": "2026-07-21-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-07-21 CFI·Rust UB 수정 — 리눅스 툴체인 렌즈",
+  "headline": "i.MX6 CFI suspend 크래시 수정과 Rust cpufreq UB 패치가 함께 올라와 하드닝 실전 사례를 보여준다.",
+  "date": "2026-07-21",
+  "summary": "i.MX6 CFI suspend 크래시, Rust cpufreq UB, kstack_erase 빌드 경로까지 이번 수집은 커널 하드닝의 세 가지 실전 사례를 다룬다. 셋 다 검토 진행 중이거나 병합 여부가 미확인 상태라 원문 확인이 필요하다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "rust cpufreq bios_limit UB 수정",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "Rust cpufreq 드라이버 작성자 및 rust-for-linux 추상화 유지보수자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/c38ed08b34af92e134f5aefc993d349bd1dd11ef.1784569723.git.pgovind2@uci.edu/",
+      "if": "Rust cpufreq 추상화의 Registration::bios_limit_callback를 쓰는 드라이버를 유지보수하고 있다면",
+      "do": "T::bios_limit이 값을 반환하도록 바뀐 v3 시그니처와 raw pointer 대입 방식을 자신의 드라이버 구현에 반영하라",
+      "verify": "링크된 lore 스레드에서 Fixes 대상 커밋 c6af9a1191d0와 v3 diff를 직접 대조해 확인하라"
+    },
+    {
+      "title": "i.MX6 CFI suspend 크래시 패치",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "i.MX6/ARM mach-imx 플랫폼 유지보수자 및 CFI·kernel hardening을 켜는 커널 빌더",
+      "verifyLink": "https://lore.kernel.org/llvm/CAKwvOd=eAC-Mz0kZhbHQMFOY=ba=WXDH6X_Zzh6KGfuq5PmJ4A@mail.gmail.com/",
+      "if": "CONFIG_CFI=y 상태로 i.MX6 플랫폼을 빌드하거나 suspend 경로를 다루고 있다면",
+      "do": "imx6_suspend_in_ocram 래퍼로 __nocfi 범위를 좁히고 ccm_base 등 전역 포인터에 __ro_after_init을 적용하는 v3 변경을 검토하라",
+      "verify": "리뷰어가 제기한 '선언부에 바로 __nocfi를 붙이는' 대안과의 최종 채택 여부를 스레드에서 확인하라"
+    },
+    {
+      "title": "kstack_erase 플러그인 경로 상대화",
+      "priority": "하",
+      "impactType": "build",
+      "affectedAudience": "KSTACK_ERASE(stackleak) 하드닝을 켜는 배포/보안 빌드 담당자 및 재현빌드 유지보수자",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20260720093545.3836066-1-jaihindy@qti.qualcomm.com/",
+      "if": "재현 가능한 빌드를 요구하면서 CONFIG_KSTACK_ERASE 하드닝도 켜고 있다면",
+      "do": "scripts/Makefile.kstack_erase의 -fplugin 경로를 상대경로로 바꾸는 패치를 적용해 절대 빌드 경로 유출을 막아라",
+      "verify": "패치가 대상으로 하는 config 심볼과 트리 버전이 자신의 빌드와 일치하는지 원문에서 확인하라"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ARM: imx: Fix suspend/resume crash with Clang CFI**\n\nOCRAM으로 재배치되는 i.MX6 suspend 코드에 CFI 타입 시그니처가 없어 CONFIG_CFI=y에서 간접호출이 strict CFI violation panic으로 무음 hang을 일으키던 문제를, v3는 __nocfi를 1줄 래퍼로 좁히고 관련 전역 포인터를 __ro_after_init으로 표시해 해결한다.\n\n영향: __nocfi를 전 함수가 아니라 최소 래퍼에만 걸어 나머지 간접호출의 CFI 보호를 지키고, 함수 포인터를 Write-What-Where 우회 타깃에서 제거하는 '기능 vs 하드닝' 균형의 실전 사례이며 CONFIG_CFI 활성 시 실제 suspend 무음 hang을 유발하던 문제라 적용 우선순위가 높다.\n\n> Relocated suspend code in OCRAM lacks compiler-generated CFI type signatures. When CONFIG_CFI=y is active, the indirect call to imx6_suspend_in_ocram_fn triggers a strict CFI violation panic.\n\n[원문 확인](https://lore.kernel.org/llvm/CAKwvOd=eAC-Mz0kZhbHQMFOY=ba=WXDH6X_Zzh6KGfuq5PmJ4A@mail.gmail.com/)\n\n**rust: cpufreq: Fix temporary write in Registration::bios_limit_callback**\n\nRust cpufreq 추상화의 Registration::bios_limit_callback가 스택 임시 사본에 대한 참조를 만들어 T::bios_limit의 쓰기가 실제 호출자 메모리로 가지 않던 unsound 버그를, v3는 T::bios_limit이 값을 반환하도록 시그니처를 바꾸고 raw pointer 직접 대입으로 수정한다.\n\n영향: 이미 병합된 Rust cpufreq 드라이버 등록 추상화의 실제 soundness/UB 버그로, 드라이버가 보고한 bios_limit 값이 조용히 유실되고 미초기화 메모리에 참조가 생기는 패턴이라 커널 Rust 표면이 넓어지는 상황에서 하드닝 독자가 주시할 사례다.\n\n> the expression `&mut (unsafe { *limit })` creates a reference to a temporary copy of the value pointed to by `limit` on the stack.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/c38ed08b34af92e134f5aefc993d349bd1dd11ef.1784569723.git.pgovind2@uci.edu/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**scripts: kstack_erase: avoid absolute stackleak plugin path**\n\nCONFIG_KSTACK_ERASE(stackleak) GCC 플러그인 호출 시 -fplugin 경로를 절대경로 대신 상대경로로 바꿔 컴파일러 스위치 메타데이터에 절대 빌드 경로가 박히는 것을 방지한다.\n\n영향: KSTACK_ERASE 하드닝을 켜면서 재현 가능한 빌드를 요구하는 배포/보안 빌드 담당자에게 유의미한 빌드 위생 개선이다.\n\n> Use a relative -fplugin path for CONFIG_KSTACK_ERASE stackleak plugin invocation to avoid embedding absolute build paths in recorded compiler switch metadata.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20260720093545.3836066-1-jaihindy@qti.qualcomm.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ARM: imx: Fix suspend/resume crash with Clang CFI",
+      "url": "https://lore.kernel.org/llvm/CAKwvOd=eAC-Mz0kZhbHQMFOY=ba=WXDH6X_Zzh6KGfuq5PmJ4A@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "arch/arm/mach-imx/pm-imx6.c (mainline)",
+      "url": "https://github.com/torvalds/linux/blob/master/arch/arm/mach-imx/pm-imx6.c",
+      "note": "commit"
+    },
+    {
+      "title": "rust: cpufreq: Fix temporary write in Registration::bios_limit_callback",
+      "url": "https://lore.kernel.org/rust-for-linux/c38ed08b34af92e134f5aefc993d349bd1dd11ef.1784569723.git.pgovind2@uci.edu/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: cpufreq: Extend abstractions for driver registration",
+      "url": "https://github.com/torvalds/linux/commit/c6af9a1191d042839e56abff69e8b0302d117988",
+      "note": "commit"
+    },
+    {
+      "title": "scripts: kstack_erase: avoid absolute stackleak plugin path",
+      "url": "https://lore.kernel.org/linux-kbuild/20260720093545.3836066-1-jaihindy@qti.qualcomm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "scripts/Makefile.kstack_erase (mainline)",
+      "url": "https://github.com/torvalds/linux/blob/master/scripts/Makefile.kstack_erase",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-20T19:08:09.282Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
