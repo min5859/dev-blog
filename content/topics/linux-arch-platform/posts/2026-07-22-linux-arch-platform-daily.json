@@ -1,0 +1,130 @@
+{
+  "id": "2026-07-22-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-07-22 pKVM·BPF 보안 수정 — 아키텍처·플랫폼",
+  "headline": "pKVM SCTLR_EL1 동기화·RISC-V BPF 정보유출 수정 병합, arm64 TLB flush 회귀 백포트 진행.",
+  "date": "2026-07-22",
+  "summary": "pKVM에서 protected guest 예외 주입 시 SCTLR_EL1을 동기화하는 수정이 kvmarm next에, RISC-V BPF arena load_acquire의 extable 누락·정보유출 수정이 bpf-next에 각각 적용되었습니다. arm64 hotplug unmap의 TLB flush 회귀는 6.18-stable로 백포트되었고, i.MX6 Clang CFI suspend 크래시와 arm64 vmalloc CONT_PTE 배치 매핑 문제는 아직 리뷰 단계입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "arm64",
+    "RISC-V"
+  ],
+  "highlights": [
+    {
+      "title": "bpf, riscv: arena load_acquire 정보유출 수정",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "riscv BPF JIT 및 BPF verifier 유지보수 담당",
+      "verifyLink": "https://git.kernel.org/bpf/bpf-next/c/5eb8921371c6",
+      "if": "RV64에서 BPF arena atomics의 load_acquire를 사용하는 경우",
+      "do": "bpf-next의 5eb8921371c6(Fixes: fb7cefabae81) 반영 여부를 확인하고 해당 커널·트리에 백포트하세요.",
+      "verify": "PROBE_ATOMIC load_acquire fault 경로에서 extable 엔트리가 정상 등록되고 rd가 0으로 클리어되는지 확인하세요."
+    },
+    {
+      "title": "KVM arm64: pVM 예외 주입 시 SCTLR_EL1 동기화",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "KVM arm64 / pKVM(protected VM) 유지보수 담당",
+      "verifyLink": "https://git.kernel.org/kvmarm/kvmarm/c/596289fe4836",
+      "if": "pKVM으로 protected guest를 운용하는 경우",
+      "do": "kvmarm next의 596289fe4836 적용 여부와 메인라인 병합 태그를 확인하세요.",
+      "verify": "guest가 SCTLR_EL1을 변경한 뒤 예외를 유발했을 때 PAN·SSBS 비트가 최신 값으로 반영되는지 확인하세요."
+    },
+    {
+      "title": "arm64/mm: hotplug unmap TLB flush 회귀 백포트",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "arm64 MM·메모리 hotplug 유지보수 담당 및 6.18-stable 백포트 추적자",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260721152538.589665393@linuxfoundation.org/",
+      "if": "6.18-stable 계열을 추적하거나 memory hotplug를 사용하는 arm64 시스템인 경우",
+      "do": "ff4c5a0de1f2 백포트(Fixes: 48478b9f7913)가 해당 stable 라인에 반영되었는지 확인하세요.",
+      "verify": "range-TLBI 미지원 코어에서 hot-remove 시 불필요한 브로드캐스트 invalidation이 사라졌는지 확인하세요."
+    },
+    {
+      "title": "ARM: imx6 suspend Clang CFI 크래시 논의",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "i.MX(ARM SoC) 플랫폼·전력관리 유지보수 담당 및 Clang CFI 사용 다운스트림",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260721180950.GA3684684@ax162/",
+      "if": "Clang CFI를 활성화한 i.MX6 플랫폼에서 suspend/resume를 사용하는 경우",
+      "do": "SYM_TYPED_FUNC_START 적용안 리뷰 진행 상황을 추적하고 병합 전까지 CFI·suspend 조합 사용에 주의하세요.",
+      "verify": "패치 병합 후 실제 기기(Kobo Clara HD 등)에서 suspend/resume 크래시 재현 여부를 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**arm64/mm: Optimize TLB flush in unmap_hotplug_[pmd|pud]_range()**\n\n6.18-stable 리뷰 백포트(upstream ff4c5a0de1f2)로, 앞선 배치 TLB flush 도입 커밋 48478b9f7913가 블록 엔트리를 지울 때 중복 TLB invalidation을 유발하던 것을 되돌리고, range 기반 invalidation을 지원하지 않는 CPU에서의 불필요한 브로드캐스트 invalidation을 제거합니다.\n\n영향: memory hotremove(unmap_hotplug_range) 경로의 회귀로, range-TLBI 미지원 arm64 코어에서 hot-remove 시 과도한 브로드캐스트 무효화가 발생해 arm64 MM·hotplug 유지보수자와 6.18 스테이블 추적자에게 직접 영향을 줍니다.\n\n> inadvertently introduced redundant TLB invalidation when clearing a block entry, resulting in unnecessary broadcast invalidation on CPUs without support for range-based invalidation.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260721152538.589665393@linuxfoundation.org/)\n\n**KVM: arm64: Sync SCTLR_EL1 when injecting an exception into a pVM**\n\npKVM이 protected guest에 동기 예외를 주입할 때 enter_exception64()가 새 PSTATE의 PAN·SSBS를 SCTLR_EL1에서 읽는데, 지금까지는 주입 직전 VBAR_EL1만 라이브 값으로 갱신하고 SCTLR_EL1은 갱신하지 않았습니다. 이제 VBAR_EL1과 함께 SCTLR_EL1도 동기화하도록 수정되어 Oliver Upton이 kvmarm next에 적용했습니다(596289fe4836).\n\n영향: pKVM 신뢰경계 안 protected VM의 예외 진입에서 PAN·SSBS 비트가 낡은 값으로 세팅되던 정확성·하드닝 결함으로, pKVM·KVM arm64 유지보수자에게 직접 영향을 줍니다.\n\n> pKVM refreshes VBAR_EL1 from the live value before injecting but not SCTLR_EL1, which is untrapped for protected guests, so a guest that updates it and then traps takes the exception with stale PAN/SS\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/178465838257.2067495.10864103489169140924.b4-ty@kernel.org/)\n\n**bpf, riscv: fix extable handling for arena load_acquire**\n\nemit_atomic_ld_st()가 sub-word load_acquire 뒤 zext 스킵을 위해 1을 반환했는데, 호출부의 예외 핸들러 등록 로직이 non-zero 반환값에서 핸들러 등록을 건너뛰어 extable 엔트리가 누락되고 faulting PROBE_ATOMIC load_acquire가 oops를 일으켰습니다. add_exception_handler 호출 전 검사를 수정하고 LOAD_ACQ에 rd를 전달해 fault 시 rd를 0으로 만들도록 했으며, v4가 bpf-next에 적용되었습니다(5eb8921371c6, Fixes: fb7cefabae81).\n\n영향: RV64 BPF arena atomics에서 커널 oops뿐 아니라 rd가 fault 후에도 stale로 남아 verifier가 로드가 덮어썼다고 오판해 프로그램이 map을 통해 정보를 유출할 수 있는 보안 결함으로, riscv BPF JIT·verifier 유지보수자에게 중요합니다.\n\n> REG_DONT_CLEAR_MARKER leaves rd stale on fault, and the verifier still thinks the load overwrote it, so a program can leak it through a map.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/178465861940.931197.3483820108983370634.git-patchwork-notify@kernel.org/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**ARM: imx: Fix suspend/resume crash with Clang CFI**\n\nOCRAM으로 재배치되는 imx6_suspend가 어셈블리(suspend-imx6.S)로 작성되어 있어 Clang이 CFI 해시 프리픽스를 방출하지 않고, 이 때문에 suspend 시 CFI 검사에서 크래시가 발생합니다. 해시 4바이트를 복사하는 방식은 실제 기기(Kobo Clara HD)에서 실패했고, 대안으로 imx6_suspend에 SYM_TYPED_FUNC_START를 적용하는 방안이 제안되어 리뷰가 진행 중입니다.\n\n영향: Clang CFI를 켠 i.MX6 플랫폼에서 suspend/resume가 깨지는 실사용 회귀로, ARM 플랫폼·전력관리 담당과 CFI 하드닝을 켠 다운스트림에 영향을 줍니다. 아직 병합된 수정은 없습니다.\n\n> Does using SYM_TYPED_FUNC_START for imx6_suspend() make that work? Something like this builds fine for me and I see __kcfi_typeid_imx6_suspend generated by Clang.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260721180950.GA3684684@ax162/)\n\n**arm64/vmalloc: Allow arch_vmap_pte_range_map_size to batch multiple CONT_PTE**\n\n제안된 배치 huge-mapping 패치에서 반환 span이 PMD_SIZE>>1로 캡되지만 CONT_PTE_SIZE 정렬만 검사하다 보니, PMD 경계가 배치를 쪼갤 때 다음 영역이 블록 중간에서 시작하며 span이 연속 구간을 넘어선다는 리뷰 지적이 나왔습니다. 그 결과 set_huge_pte_at()이 잘못된 페이지를 매핑하고 배열 꼬리는 매핑되지 않으며 경고도 없습니다. 8xx처럼 pfn 물리 정렬로 span을 클램프하는 방안이 제안되었습니다.\n\n영향: 배치 vmap huge-mapping 경로의 잠재적 오매핑·미매핑(무경고) 위험으로, arm64 CONT_PTE vmalloc 최적화를 검토하는 MM·아키텍처 담당에게 정확성 위험 신호입니다. 아직 병합 전 리뷰 단계입니다.\n\n> when a PMD boundary splits a batch the next region starts mid block and the span runs past the contiguous run - set_huge_pte_at() maps the wrong pages, tail of the array left unmapped, no warning.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260721181729.305137-1-devnexen@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "arm64/mm: Optimize TLB flush in unmap_hotplug_[pmd|pud]_range() (6.18-stable review)",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260721152538.589665393@linuxfoundation.org/",
+      "note": "thread"
+    },
+    {
+      "title": "[PATCH V3 1/2] arm64/mm: Enable batched TLB flush in unmap_hotplug_range()",
+      "url": "https://lkml.org/lkml/2026/3/3/255",
+      "note": "thread"
+    },
+    {
+      "title": "ARM: imx: Fix suspend/resume crash with Clang CFI",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260721180950.GA3684684@ax162/",
+      "note": "thread"
+    },
+    {
+      "title": "arm64/vmalloc: Allow arch_vmap_pte_range_map_size to batch multiple CONT_PTE",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260721181729.305137-1-devnexen@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM: arm64: Sync SCTLR_EL1 when injecting an exception into a pVM",
+      "url": "https://lore.kernel.org/linux-arm-kernel/178465838257.2067495.10864103489169140924.b4-ty@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM: arm64: Sync SCTLR_EL1 when injecting an exception into a pVM (commit)",
+      "url": "https://git.kernel.org/kvmarm/kvmarm/c/596289fe4836",
+      "note": "commit"
+    },
+    {
+      "title": "bpf, riscv: fix extable handling for arena load_acquire",
+      "url": "https://lore.kernel.org/linux-riscv/178465861940.931197.3483820108983370634.git-patchwork-notify@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf, riscv: fix extable handling for arena load_acquire — patchwork status",
+      "url": "https://patchwork.kernel.org/project/netdevbpf/list/?q=fix+extable+handling+for+arena+load_acquire&state=*&archive=both",
+      "note": "thread"
+    },
+    {
+      "title": "bpf, riscv: fix extable handling for arena load_acquire (commit)",
+      "url": "https://git.kernel.org/bpf/bpf-next/c/5eb8921371c6",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-21T19:11:54.983Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
