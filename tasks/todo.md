@@ -25,7 +25,7 @@ CLI 자동 업데이트/모델 별칭 드리프트가 유력.
 ## 4. 검증
 - [x] 단위 테스트 통과 (`npm test` 117/117, ai-rewrite-adapter.test.mjs 14/14)
 - [x] `--tools ""` + `claude-sonnet-5` 플래그 스모크 테스트 (에러 없이 JSON 반환 확인)
-- [ ] rewrite 단계 1회 실지 실행으로 JSON 파싱 성공 확인 (실제 npm run rewrite:* 전체 실행은 보류 — 검토 후 결정)
+- [x] rewrite 단계 1회 실지 실행으로 JSON 파싱 성공 확인 (2026-07-22 rewrite:linux, attempt1 성공, 실패 덤프 증가 없음)
 
 ---
 ## 완료(아카이브): weekly-rollup-automation #1~#5
