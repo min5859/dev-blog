@@ -12,10 +12,10 @@ This runs, in order:
 
 1. `npm run collect:linux`
 2. `npm run draft:linux`
-3. `npm run rewrite:linux:cursor` (default — Cursor Agent CLI, `agent -p`)
+3. `npm run rewrite:linux` (default — Claude CLI, `claude -p`)
 4. `npm run build`
 
-The rewrite step uses the **Cursor** adapter by default so the daily run calls the [Cursor Agent CLI](https://cursor.com/docs/cli/headless). Set `CURSOR_API_KEY` (and optionally `CURSOR_AGENT_BIN` / `CURSOR_AGENT_EXTRA_ARGS`) for headless runs. Override with `DAILY_REWRITE_ADAPTER=template` for the offline template path, or `DAILY_REWRITE_ADAPTER=claude` for the Claude CLI. `DAILY_REWRITE_ADAPTER=cursor-agent` is treated the same as `cursor`. Per-invocation override: `AI_ADAPTER=claude|cursor|template` on `npm run rewrite:*` scripts.
+The rewrite step uses the **Claude** adapter by default (`DEFAULT_AI_ADAPTER` in `scripts/lib/ai-rewrite-adapter.mjs`), invoked with all built-in tools disabled (`--tools ""`) and a cwd isolated to a temp directory, so it cannot see repo files/artifacts and can only return the rewritten JSON. Set `CLAUDE_BIN` / `CLAUDE_MODEL` to override the binary/model. Override the adapter with `DAILY_REWRITE_ADAPTER=template` for the offline template path, `DAILY_REWRITE_ADAPTER=cursor` for the Cursor Agent CLI (read-only `--mode=ask`; set `CURSOR_API_KEY` and optionally `CURSOR_AGENT_BIN` / `CURSOR_AGENT_EXTRA_ARGS`), or `DAILY_REWRITE_ADAPTER=codex` for the Codex CLI (read-only `--sandbox read-only`). `DAILY_REWRITE_ADAPTER=cursor-agent` is treated the same as `cursor`. Per-invocation override: `AI_ADAPTER=claude|cursor|codex|template` on `npm run rewrite:*` scripts.
 
 By default this command does **not** publish generated drafts into `content/`. Generated artifacts remain under `data/generated/linux/` for review.
 

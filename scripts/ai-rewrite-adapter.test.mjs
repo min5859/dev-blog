@@ -173,6 +173,58 @@ test('parseNewsletterJsonFromAiOutput skips malformed draft JSON before final ne
   assert.equal(out.id, 'final');
 });
 
+test('runAiAdapterAndParse appends 재시도 correction instruction on second attempt only', async () => {
+  const failureDir = await mkdtemp(path.join(tmpdir(), 'dev-blog-rewrite-failure-'));
+  try {
+    const newsletter = {
+      id: 'retry-ok',
+      topic: 'linux',
+      title: 't',
+      date: '2026-07-23',
+      summary: 's',
+      sections: [{ heading: 'a', body: 'b' }],
+      sources: [{ title: 'u', url: 'https://u', note: 'n' }],
+      highlights: [{ title: 'h', priority: '상', verifyLink: '없음', action: 'a' }],
+    };
+    const seenPrompts = [];
+    let call = 0;
+    const runner = async (p) => {
+      seenPrompts.push(p);
+      call += 1;
+      if (call === 1) return '이 파일은 이미 유효하니 수정할 필요가 없습니다.';
+      return JSON.stringify(newsletter);
+    };
+    const result = await runAiAdapterAndParse('원본 프롬프트', { runner, logLabel: 'retry-correction', failureDir });
+    assert.equal(call, 2);
+    assert.equal(result.post.id, 'retry-ok');
+    assert.doesNotMatch(seenPrompts[0], /재시도/);
+    assert.match(seenPrompts[1], /\[재시도\]/);
+    assert.match(seenPrompts[1], /원본 프롬프트/); // 원본 prompt 는 보존되고 뒤에 덧붙는지 확인
+  } finally {
+    await rm(failureDir, { recursive: true, force: true });
+  }
+});
+
+test('runAiAdapterAndParse failure dump records resolved adapter and model in header', async () => {
+  const failureDir = await mkdtemp(path.join(tmpdir(), 'dev-blog-rewrite-failure-'));
+  try {
+    delete process.env.AI_ADAPTER;
+    delete process.env.CLAUDE_MODEL;
+    const runner = async () => 'not json at all';
+    await assert.rejects(
+      runAiAdapterAndParse('prompt', { runner, logLabel: 'adapter-model-header', failureDir }),
+      /AI response did not contain JSON/,
+    );
+    const dumped = await readdir(failureDir);
+    assert.equal(dumped.length, 2);
+    const body = await readFile(path.join(failureDir, dumped[0]), 'utf8');
+    assert.match(body, /# adapter: claude/);
+    assert.match(body, /# model: claude-sonnet-5/);
+  } finally {
+    await rm(failureDir, { recursive: true, force: true });
+  }
+});
+
 test('runAiAdapterAndParse retries when parsed post fails validation', async () => {
   const failureDir = await mkdtemp(path.join(tmpdir(), 'dev-blog-rewrite-failure-'));
   try {

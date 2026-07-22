@@ -28,9 +28,13 @@ export function resolveAiAdapter(defaultValue = DEFAULT_AI_ADAPTER) {
   return raw;
 }
 
-function spawnCollectingStdout(command, args, prompt, { timeoutMs } = {}) {
+function spawnCollectingStdout(command, args, prompt, { timeoutMs, cwd, env } = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = spawn(command, args, {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      ...(cwd ? { cwd } : {}),
+      ...(env ? { env } : {}),
+    });
     let stdout = '';
     let stderr = '';
     let timer = null;
@@ -62,11 +66,24 @@ function spawnCollectingStdout(command, args, prompt, { timeoutMs } = {}) {
   });
 }
 
+// rewrite 전용 기본 claude 모델. 별칭('sonnet')은 배포 시점에 따라 다른 실모델로 드리프트할
+// 수 있어(7월 8일 실패 급증의 유력 원인) 고정 ID로 못박는다. CLAUDE_MODEL 로 오버라이드 가능.
+const DEFAULT_CLAUDE_REWRITE_MODEL = 'claude-sonnet-5';
+
 function runClaudeStdin(prompt) {
   const command = process.env.CLAUDE_BIN || 'claude';
-  const model = process.env.CLAUDE_MODEL || 'sonnet';
-  const args = (process.env.CLAUDE_ARGS || `-p --model ${model} --output-format text`).split(/\s+/).filter(Boolean);
-  return spawnCollectingStdout(command, args, prompt);
+  const model = process.env.CLAUDE_MODEL || DEFAULT_CLAUDE_REWRITE_MODEL;
+  // rewrite 는 판단 없이 순수 작문만 해야 하므로 `--tools ""` 로 빌트인 도구를 전부 차단한다.
+  // CLAUDE_ARGS 문자열은 공백 split 특성상 빈 문자열 인자를 표현할 수 없으므로, 오버라이드가
+  // 없을 때는 배열로 직접 구성해 `--tools` 뒤의 빈 인자가 소실되지 않게 한다.
+  const args = process.env.CLAUDE_ARGS
+    ? process.env.CLAUDE_ARGS.split(/\s+/).filter(Boolean)
+    : ['-p', '--model', model, '--output-format', 'text', '--tools', ''];
+  // 저장소 cwd 에서 실행하면 기존 산출물(CLAUDE.md, generated/*.json 등)을 발견해 JSON 대신
+  // 자연어 보고를 반환하는 사고가 반복됐다(logs/ai-rewrite-failures 89건). 빈 임시 디렉터리로
+  // 격리하고, 자동 업데이터로 인한 CLI 동작 드리프트도 차단한다.
+  const env = { ...process.env, DISABLE_AUTOUPDATER: '1' };
+  return spawnCollectingStdout(command, args, prompt, { cwd: tmpdir(), env });
 }
 
 /**
@@ -181,7 +198,9 @@ async function runCodexExec(prompt, { model = process.env.CODEX_MODEL || '' } = 
   const dir = await mkdtemp(path.join(tmpdir(), 'dev-blog-codex-'));
   const outFile = path.join(dir, 'output.md');
   try {
-    const cmd = ['codex', 'exec', '-', '-o', outFile, '--ephemeral'];
+    // 파일 시스템 쓰기/네트워크를 막아 rewrite 가 저장소 산출물을 건드리거나 조사 행동으로
+    // 빠지지 않게 한다(검증된 문법: `--sandbox read-only`).
+    const cmd = ['codex', 'exec', '-', '-o', outFile, '--ephemeral', '--sandbox', 'read-only'];
     if (model) cmd.push('-m', model);
     const output = await new Promise((resolve, reject) => {
       const child = spawn(cmd[0], cmd.slice(1), { stdio: ['pipe', 'pipe', 'pipe'] });
@@ -230,9 +249,17 @@ export async function runAiAdapterAndParse(prompt, options = {}) {
     runner = runAiAdapterPrompt,
     postValidator = null,
   } = options;
+  // 실패 덤프 헤더 기록용으로 실제 사용될 어댑터/모델을 먼저 확정해둔다.
+  const adapterName = resolveAiAdapter(defaultAdapter);
+  const modelName = resolveModelForAdapter(adapterName);
   let lastError = null;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    const raw = await runner(prompt, { defaultAdapter });
+    // attempt>=2 는 직전 실패가 JSON 이 아니었다는 뜻이므로, 원본 prompt 는 그대로 두고
+    // 지역 변수에만 교정 지시를 덧붙여 재시도한다.
+    const attemptPrompt = attempt >= 2
+      ? `${prompt}\n\n[재시도] 직전 응답이 유효한 JSON이 아니었습니다. 파일 읽기/쓰기나 도구 사용 없이, 설명 문장 없이, 유효한 JSON 객체 하나만 출력하세요.`
+      : prompt;
+    const raw = await runner(attemptPrompt, { defaultAdapter });
     if (raw === null) return null;
     try {
       const post = parseNewsletterJsonFromAiOutput(raw);
@@ -240,7 +267,9 @@ export async function runAiAdapterAndParse(prompt, options = {}) {
       return { raw, post };
     } catch (err) {
       lastError = err;
-      const dumpPath = await dumpFailedAiResponse({ label: logLabel, raw, err, attempt, dir: failureDir });
+      const dumpPath = await dumpFailedAiResponse({
+        label: logLabel, raw, err, attempt, dir: failureDir, adapter: adapterName, model: modelName,
+      });
       const where = dumpPath ? ` raw saved to ${dumpPath}` : '';
       console.warn(
         `[ai-rewrite][${logLabel}] attempt ${attempt}/${maxAttempts} parse failed: ${err.message};${where}`,
@@ -250,7 +279,15 @@ export async function runAiAdapterAndParse(prompt, options = {}) {
   throw lastError ?? new Error('AI response parse failed');
 }
 
-async function dumpFailedAiResponse({ label, raw, err, attempt, dir }) {
+/** 어댑터별로 실제 사용되는 모델 문자열을 resolve — 실패 덤프에 남겨 원인 추적을 돕는다. */
+function resolveModelForAdapter(adapterName) {
+  if (adapterName === 'claude') return process.env.CLAUDE_MODEL || DEFAULT_CLAUDE_REWRITE_MODEL;
+  if (adapterName === 'codex') return process.env.CODEX_MODEL || '(codex default)';
+  if (adapterName === 'cursor') return process.env.CURSOR_MODEL || 'claude-4.6-sonnet-medium';
+  return 'n/a';
+}
+
+async function dumpFailedAiResponse({ label, raw, err, attempt, dir, adapter, model }) {
   try {
     const root = dir || process.env.AI_REWRITE_FAILURE_DIR || path.join(process.cwd(), 'logs', 'ai-rewrite-failures');
     await mkdir(root, { recursive: true });
@@ -260,6 +297,8 @@ async function dumpFailedAiResponse({ label, raw, err, attempt, dir }) {
     const header = [
       '# ai-rewrite parse failure',
       `# label: ${label}`,
+      `# adapter: ${adapter ?? 'unknown'}`,
+      `# model: ${model ?? 'unknown'}`,
       `# attempt: ${attempt}`,
       `# timestamp: ${new Date().toISOString()}`,
       `# error: ${err.message}`,
