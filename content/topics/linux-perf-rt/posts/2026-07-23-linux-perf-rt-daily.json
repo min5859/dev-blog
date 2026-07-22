@@ -1,0 +1,120 @@
+{
+  "id": "2026-07-23-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-07-23 TCP RWND 능동경로 반영 — Linux Perf/RT 렌즈",
+  "headline": "TCP RWND 능동경로 반영, CoreSight 패닉 수정, BPF 트램펄린 WARNING 수정 등 커널 perf/RT 패치 5건이 논의됐습니다.",
+  "date": "2026-07-23",
+  "summary": "TCP 능동 연결 경로에서 BPF 초기 수신 윈도우 설정이 반영되도록 수정됐고, PREEMPT_RT 환경의 CoreSight 패닉과 BPF 트램펄린 플래그 손상 WARNING도 함께 수정됐습니다. XDP_PASS 체크섬 무효화와 KVM OOM reaper 데드락 회피 관련 논의도 진행 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "BPF",
+    "PREEMPT_RT"
+  ],
+  "highlights": [
+    {
+      "title": "TCP 능동 연결 BPF RWND_INIT 반영",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "sockops/BPF로 TCP 초기 수신 윈도우를 튜닝하는 데이터센터 운영자 및 TCP 스택 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260722170033.2763794-1-tejasbirajdar@meta.com/",
+      "if": "BPF sockops로 초기 수신 윈도우를 설정하는 환경을 운영한다면",
+      "do": "이 패치가 net-next에 반영되는지 추적하고 능동 연결 경로 동작을 재검증하세요.",
+      "verify": "패치 스레드와 packetdrill 결과를 원문에서 확인하세요."
+    },
+    {
+      "title": "CoreSight PM notify atomic 스케줄링 패닉 수정",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "PREEMPT_RT에서 ARM CoreSight 하드웨어 트레이싱을 쓰는 사용자 및 coresight 드라이버 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260722043023.6978-1-mohamedaymanworkspace@gmail.com/",
+      "if": "PREEMPT_RT 환경에서 ARM CoreSight 트레이싱을 사용한다면",
+      "do": "v4 패치를 적용해 CPU idle 진입과 디바이스 unregister 경합 패닉을 방지하세요.",
+      "verify": "v4 스레드에서 이전 버전 리뷰 반영 여부와 병합 상태를 확인하세요."
+    },
+    {
+      "title": "fexit 다중 attach 시 트램펄린 플래그 손상 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "tail-call 대상 프로그램에 fexit/tracing을 붙이는 BPF 사용자 및 bpf trampoline(x86) 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260722151909.69142-2-leon.hwang@linux.dev/",
+      "if": "tail-call 도달 가능한 프로그램에 fexit를 여러 번 붙이는 구조를 쓴다면",
+      "do": "v2 패치(플래그 |= 갱신)를 적용해 WARNING과 트램펄린 오복원을 방지하세요.",
+      "verify": "bpf-next 병합 여부와 메인테이너 승인 코멘트를 원문에서 확인하세요."
+    },
+    {
+      "title": "PREEMPT_RT KVM OOM reaper 데드락 회피 (v3)",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "PREEMPT_RT + KVM 사용자 및 mm/mmu_notifier 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260722140803.11421-1-shaikhkamal2012@gmail.com/",
+      "if": "PREEMPT_RT에서 KVM을 사용하며 OOM-kill 상황을 다룬다면",
+      "do": "v3의 call_srcu 기반 after_oom_unregister 콜백 도입 여부를 추적하세요.",
+      "verify": "Paolo Bonzini 등 리뷰어의 v3 수용 여부를 원문 스레드에서 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**bpf: Fix WARNING in bpf_tracing_link_release (v2 1/2)**\n\nverifier가 tr->flags를 무조건 대입해 트램펄린 플래그가 손상되고, tail_call_reachable 프로그램에 fexit를 여러 번 붙이면 bpf_tracing_link_release에서 WARNING이 발생합니다.\n\n영향: fexit를 tail-call 대상 프로그램에 붙이는 BPF 사용자에게 다중 attach/detach 시 트램펄린 손상과 커널 WARNING을 막습니다.\n\n> The trampoline could be corrupted by the blindly 'tr->flags = BPF_TRAMP_F_TAIL_CALL_CTX' in verifier. ... Fix the warning by updating 'tr->flags' with '|=' and lock.\n\n[원문 확인](https://lore.kernel.org/bpf/20260722151909.69142-2-leon.hwang@linux.dev/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**tcp: honor BPF_SOCK_OPS_RWND_INIT on the active connect path**\n\ntcp_connect_init()이 리스너 경로처럼 full_space를 부풀려, BPF_SOCK_OPS_RWND_INIT로 고른 초기 수신 윈도우가 능동 연결 경로에서도 적용되도록 수정합니다.\n\n영향: BPF sockops로 초기 수신 윈도우를 튜닝하는 운영자에게 클라이언트 개시 연결에서만 튜닝이 무시되던 비대칭이 사라집니다.\n\n> on the active (connect) side the value is computed and then silently discarded ... Mirror the listener-side inflation in tcp_connect_init() so both directions behave the same.\n\n[원문 확인](https://lore.kernel.org/bpf/20260722170033.2763794-1-tejasbirajdar@meta.com/)\n\n**selftests: net: add test for XDP_PASS skb checksum invalidation (v5 8/8, 리뷰 논의)**\n\nXDP_PASS 체크섬 무효화 셀프테스트 리뷰에서, NIC가 CHECKSUM_UNNECESSARY로 표시한 패킷을 XDP 프로그램이 decap할 때 인패킷 체크섬을 유지·보정할 방법이 없고 csum level을 낮출 API도 없다는 미해결 설계 공백이 드러났습니다.\n\n영향: XDP 프로그램 개발자에게 XDP_PASS와 decap 조합이 stale CHECKSUM_UNNECESSARY를 남기는 정합성 위험이 현재 해법 없이 존재함을 알립니다.\n\n> What would we be documenting? That it's a known bug and we have no idea how to address it? Or am I missing something?\n\n[원문 확인](https://lore.kernel.org/bpf/20260722113525.34092660@kernel.org/)\n\n**mm/mmu_notifier: Add async OOM cleanup via call_srcu() (v3)**\n\nmmu_notifier_ops에 선택적 after_oom_unregister 콜백과 mmu_notifier_barrier() 헬퍼를 추가해, OOM reaper가 non-blocking VMA zap 전에 구독자를 분리하고 call_srcu()로 정리를 지연시킵니다. 데드락 위험이 있던 synchronize_srcu() 대신 call_srcu()를 사용합니다.\n\n영향: PREEMPT_RT + KVM 환경에서 VM이 OOM-kill될 때 발생하던 sleeping function called from invalid context BUG와 동기 SRCU 대기로 인한 데드락을 함께 피합니다.\n\n> MMU notifier subscribers (notably KVM) acquire sleeping locks in their invalidate callbacks, which deadlocks on PREEMPT_RT where spinlock_t is a sleeping rt_mutex\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260722140803.11421-1-shaikhkamal2012@gmail.com/)\n\n**coresight: Fix scheduling while atomic in coresight_cpu_pm_notify() (v4)**\n\nIRQ 비활성 상태로 도는 coresight_cpu_pm_notify()의 get/put refcount 조작을 없애고, coresight_dev_lock 아래에서 per-cpu source 포인터를 직접 읽어 mode를 확인하도록 수정합니다.\n\n영향: PREEMPT_RT에서 CPU idle 진입 시 동시 디바이스 unregister와 경합하면 free_percpu()가 sleeping spinlock_t를 취해 패닉하던 경로를 제거합니다.\n\n> Dropping the last reference to a coresight_device can trigger a kernel panic on PREEMPT_RT builds due to a \"scheduling while atomic\" violation.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260722043023.6978-1-mohamedaymanworkspace@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "tcp: honor BPF_SOCK_OPS_RWND_INIT on the active connect path",
+      "url": "https://lore.kernel.org/bpf/20260722170033.2763794-1-tejasbirajdar@meta.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Re: tcp RWND_INIT 패치에 대한 Eric Dumazet 답장",
+      "url": "https://lore.kernel.org/bpf/CANn89i+WLbtLYNjYipH+8=6nrq-XmdYY9TgHHNpeLLeuuvbEUQ@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "selftests: net: add test for XDP_PASS skb checksum invalidation",
+      "url": "https://lore.kernel.org/bpf/20260722113525.34092660@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "mm/mmu_notifier: Add async OOM cleanup via call_srcu()",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260722140803.11421-1-shaikhkamal2012@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "coresight: Fix scheduling while atomic in coresight_cpu_pm_notify()",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260722043023.6978-1-mohamedaymanworkspace@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Fix WARNING in bpf_tracing_link_release (patch 2/2)",
+      "url": "https://lore.kernel.org/bpf/20260722151909.69142-2-leon.hwang@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Fix WARNING in bpf_tracing_link_release (cover 0/2)",
+      "url": "https://lore.kernel.org/bpf/20260722151909.69142-1-leon.hwang@linux.dev/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-22T19:21:46.411Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
