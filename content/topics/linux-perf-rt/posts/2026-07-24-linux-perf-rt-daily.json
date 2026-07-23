@@ -1,0 +1,108 @@
+{
+  "id": "2026-07-24-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-07-24 소켓맵 cork UAF — 리눅스 성능·RT",
+  "headline": "sockmap cork 소유권 혼동으로 인한 UAF가 보고됐고, RT용 kfree_rcu_sheaf v4는 데드락 우려로 리뷰 중입니다.",
+  "date": "2026-07-24",
+  "summary": "tcp_bpf_sendmsg()의 cork 소유권 혼동으로 slab-use-after-free가 발견되어 v3 패치가 리뷰 중이며, PREEMPT_RT 확장 패치들에서는 스케줄러 락 하 GFP_NOWAIT 데드락 우려가 함께 제기되고 있습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "sockmap cork UAF: tcp_bpf_sendmsg 소유권 혼동",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "sockmap/BPF·netdev 유지보수 담당, SOCKMAP+cork 사용 배포 운영자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260723162602.3275661-1-nicoyip.dev@gmail.com/",
+      "if": "SOCKMAP과 bpf_msg_cork_bytes를 함께 사용 중이라면",
+      "do": "sk_msg_xfer_full()로 소유권을 명시화하고 msg_copied를 분리 추적하는 v3 패치의 병합 여부를 추적하십시오",
+      "verify": "KASAN 활성화 환경에서 두 sender 인터리빙 시나리오로 slab-use-after-free 재현 여부를 확인하십시오"
+    },
+    {
+      "title": "kfree_rcu_sheaf RT 허용 v4: GFP_NOWAIT 데드락 우려",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "slab/RCU 유지보수 담당, PREEMPT_RT 커널 사용자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/1c7ce106-c5b0-4689-8c24-b32a0966eb02@kernel.org/",
+      "if": "PREEMPT_RT 환경에서 kfree_rcu()/kfree_rcu_sheaf() 경로를 사용 중이라면",
+      "do": "스케줄러 락 하에서 GFP_NOWAIT 할당이 실제로 호출되는 경로가 있는지 점검하십시오",
+      "verify": "linux-rt-devel 스레드에서 Vlastimil Babka의 확인 요청에 대한 후속 답변과 for-next 반영 여부를 확인하십시오"
+    },
+    {
+      "title": "mmu_notifier OOM reaper 데드락 회피 제안",
+      "priority": "하",
+      "impactType": "api-abi",
+      "affectedAudience": "mmu_notifier 구독 서브시스템(특히 KVM)·MM 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260722140803.11421-1-shaikhkamal2012@gmail.com/",
+      "if": "KVM 등 mmu_notifier 구독 코드에서 invalidate 콜백 중 sleeping lock을 잡고 있다면",
+      "do": "after_oom_unregister 콜백과 mmu_notifier_barrier() 도입 제안의 메인테이너 논의 진행 상황을 확인하십시오",
+      "verify": "Paolo Bonzini·Jason Gunthorpe 등의 리뷰 코멘트와 설계 수용 여부를 원문에서 확인하십시오"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**bpf, sockmap: Fix cork ownership in tcp_bpf_sendmsg()**\n\ntcp_bpf_sendmsg()에서 sk_stream_wait_memory()로 소켓 락을 놓았다 다시 잡는 사이 다른 스레드가 psock->cork를 완료·해제하면 에러 경로가 옛 값으로 판정해 이미 해제된 cork를 다시 free합니다. v3 패치는 공용 exit에서 스택 로컬 메시지만 해제하고 sk_msg_xfer_full()로 소유권을 명시화하며 msg_copied로 현재 메시지 바이트를 분리 추적합니다.\n\n영향: SOCKMAP+cork 사용 시 두 sender 인터리빙만으로 slab-use-after-free/이중 free가 발생하며, 동일 tcp_bpf cork 경로는 과거 CVE-2025-39913도 있었던 취약 지점입니다.\n\n> The stale cork is mistaken for the local temporary message and freed again. KASAN reported: BUG: KASAN: slab-use-after-free in sk_msg_free+0x49/0x50\n\n[원문 확인](https://lore.kernel.org/bpf/20260723162602.3275661-1-nicoyip.dev@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**mm/slab: allow kfree_rcu_sheaf() on PREEMPT_RT (v4 5/8)**\n\nkfree_rcu_sheaf()를 PREEMPT_RT에서 허용하는 slab/for-next v4 패치에서 AI 리뷰어가 스케줄러 락 하 GFP_NOWAIT 호출 시 락 재귀 데드락 가능성을 제기했고 메인테이너도 실제 이슈로 인정했습니다.\n\n영향: 슬랩 fast-path를 RT로 확장하면서 스케줄러 락 하 GFP_NOWAIT 재귀 데드락 위험이 드러나 코어 MM 할당/RCU free 경로의 락 규율에 영향을 줍니다.\n\n> This indeed looks like a real issue as kfree_rcu() can be called under scheduler locks\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/a8dc9a6b-a08c-426a-9a92-30a4014e2446@kernel.org/)\n\n**mm/mmu_notifier: Add async OOM cleanup via call_srcu()**\n\nOOM reaper가 mmap_lock을 non-blocking 컨텍스트로 잡은 채 VMA를 unmap할 때 KVM 등 mmu_notifier 구독자가 invalidate 콜백에서 sleeping lock을 잡아 PREEMPT_RT에서 데드락하는 문제를 수정하는 제안으로, after_oom_unregister 콜백과 call_srcu() 기반 지연 정리, mmu_notifier_barrier()를 도입합니다. 어제에 이어 아직 단일 제출자의 설계 제안 단계이며 메인테이너 동의 여부는 확인되지 않았습니다.\n\n영향: PREEMPT_RT에서 OOM reaper 경로의 확정적 데드락을 제거하는 코어 MM/mmu_notifier ABI 변경이지만 수용 여부는 확인이 필요합니다.\n\n> MMU notifier subscribers (notably KVM) acquire sleeping locks in their invalidate callbacks, which deadlocks on PREEMPT_RT where spinlock_t is a sleeping rt_mutex\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260722140803.11421-1-shaikhkamal2012@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "bpf, sockmap: Fix cork ownership in tcp_bpf_sendmsg() (v3)",
+      "url": "https://lore.kernel.org/bpf/20260723162602.3275661-1-nicoyip.dev@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "회귀 기점 커밋 604326b41a6f 지정 (patchwork)",
+      "url": "https://patchwork.ozlabs.org/patch/982156/",
+      "note": "commit"
+    },
+    {
+      "title": "CVE-2025-39913: tcp_bpf cork 할당 실패 시 sk_forward_alloc 미복구",
+      "url": "https://secalerts.co/vulnerability/CVE-2025-39913",
+      "note": "cve"
+    },
+    {
+      "title": "메인테이너의 서브젝트 프리픽스 정정 요청",
+      "url": "https://lore.kernel.org/bpf/20260723100030.3eee6d51@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "kfree_rcu_sheaf GFP_NOWAIT 데드락 우려 제기",
+      "url": "https://lore.kernel.org/linux-rt-devel/1c7ce106-c5b0-4689-8c24-b32a0966eb02@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "메인테이너의 실제 이슈 인정 답신",
+      "url": "https://lore.kernel.org/linux-rt-devel/a8dc9a6b-a08c-426a-9a92-30a4014e2446@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "mm/mmu_notifier: Add async OOM cleanup via call_srcu()",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260722140803.11421-1-shaikhkamal2012@gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-23T19:16:02.818Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

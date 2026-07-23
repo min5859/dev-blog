@@ -1,0 +1,128 @@
+{
+  "id": "2026-07-24-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-07-24 pKVM IOMMU 회귀 수정 — Android 커널",
+  "headline": "android16-6.12 pKVM IOMMU에서 호스트 데드락과 block pool 영구 고갈을 유발하던 두 회귀가 수정되었습니다.",
+  "date": "2026-07-24",
+  "summary": "android16-6.12 pKVM IOMMU에서 호스트 데드락과 block pool 영구 고갈을 유발하던 두 회귀가 수정되었습니다. rust_binder 우선순위 복원 버그와 벤더 모듈 빌드를 막던 sched 매크로 재정의 에러도 함께 해소되었습니다.",
+  "tags": [
+    "안드로이드",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "pKVM IOMMU reclaim 데드락 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "pKVM/GKI 통합 담당(android16-6.12 벤더 커널에서 pKVM IOMMU/CMA 사용)",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/2ee3781b8da7ef51329387b25e7e3f717cdc8ebc",
+      "if": "회수 대상 물리주소가 CMA block pool 소속이 아닌 경로를 android16-6.12 pKVM IOMMU 환경에서 사용하고 있다면",
+      "do": "커밋 2ee3781b을 반영해 hyp_spin_unlock으로 락을 해제하도록 적용하십시오",
+      "verify": "EL2 하이퍼바이저와 호스트가 회수 경로 재현 테스트에서 멈추지 않는지 확인하십시오"
+    },
+    {
+      "title": "pKVM IOMMU block pool 영구 고갈 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "pKVM/GKI 통합 담당(android16-6.12 벤더 커널에서 pKVM IOMMU/CMA block pool 사용)",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/68d34e715b21bb149ccb1955d80518d4ea0d9c77",
+      "if": "android16-6.12 pKVM IOMMU에서 CMA block pool 고갈 이력이 있는 벤더 커널을 운영 중이라면",
+      "do": "커밋 68d34e71을 반영해 __block_pools_available 복원 로직을 적용하십시오",
+      "verify": "메모리 압박 재현 시 GFP_KERNEL 무한 폴백으로 호스트가 락업되지 않는지 확인하십시오"
+    },
+    {
+      "title": "rust_binder 중첩 reply 우선순위 복원 버그 수정",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "rust_binder를 사용·평가하는 ACK/GKI·OEM 벤더 팀(특히 binder 우선순위 상속 의존)",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/4dd097d4271efd3d8164d7f40023880a93966f0c",
+      "if": "rust_binder를 사용하며 중첩 트랜잭션의 우선순위 상속·복원에 의존하는 IPC 경로가 있다면",
+      "do": "커밋 4dd097d4를 반영해 중첩 reply 시 prio_state를 pending으로 갱신하십시오",
+      "verify": "중첩 트랜잭션 reply 완료 후 스레드가 부모 트랜잭션 우선순위로 복원되는지 확인하십시오"
+    },
+    {
+      "title": "sched trace hook 매크로 재정의 빌드 에러 수정",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "include/trace/hooks/sched.h를 다른 trace hook 헤더와 같은 TU에 include하는 ACK/GKI·벤더 모듈 개발자",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/82be0d329bf2b455546a09cc84a40c9d1716b54d",
+      "if": "벤더 모듈에서 include/trace/hooks/sched.h를 다른 trace hook 헤더와 함께 같은 컴파일 단위에 include하고 있다면",
+      "do": "커밋 82be0d32의 #undef TRACE_INCLUDE_PATH 추가분을 반영하십시오",
+      "verify": "-Werror,-Wmacro-redefined로 실패하던 빌드가 정상 컴파일되는지 확인하십시오"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**pKVM IOMMU reclaim 데드락 수정**\n\nkvm_iommu_reclaim_pages()가 회수 페이지가 CMA block pool 소속이 아닐 때 이미 잡은 __block_pools_lock을 재획득해 데드락하던 문제를 hyp_spin_unlock 호출로 수정했습니다.\n\n영향: EL2의 pKVM 하이퍼바이저가 멈춰 호스트까지 다운될 수 있는 자기 데드락으로, android16-6.12에서 pKVM IOMMU와 CMA donation을 쓰는 벤더가 노출됩니다.\n\n> kvm_iommu_reclaim_pages() deadlocks if the physical address does not belong to any block pool, as it attempts to re-acquire the already held __block_pools_lock. Release the lock instead.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/2ee3781b8da7ef51329387b25e7e3f717cdc8ebc)\n\n**pKVM IOMMU block pool 영구 고갈 수정**\n\nIOMMU block pool이 한 번 고갈되면 __block_pools_available 플래그가 0으로 영구 고정되고 회수 시에도 복원되지 않던 문제를, order 0 할당 실패 시에만 pool을 full로 표시하고 페이지 반환 시 플래그를 복원하도록 수정했습니다.\n\n영향: 플래그가 0에 고정되면 이후 할당이 CMA pool을 우회해 무한정 GFP_KERNEL 폴백으로 떨어지고, 메모리 압박 시 호스트가 락업될 수 있습니다.\n\n> Exhausting the IOMMU block pools permanently clears __block_pools_available, which is never restored when pages are subsequently reclaimed.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/68d34e715b21bb149ccb1955d80518d4ea0d9c77)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**rust_binder 중첩 reply 우선순위 복원 버그 수정**\n\n중첩 트랜잭션에 reply할 때 prio_state를 pending으로 갱신하지 않아 스레드가 부모 트랜잭션 우선순위로 복원되지 않던 문제를 수정했습니다.\n\n영향: 우선순위 상속에 의존하는 rust_binder IPC 경로에서 지연 관련 회귀를 유발할 수 있어, rust_binder를 쓰는 ACK/GKI·OEM 벤더 팀에 영향을 줍니다.\n\n> When replying to a nested transaction, the prio_state should be updated to pending. Otherwise the thread isn't restored to the parent transaction's priority.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/4dd097d4271efd3d8164d7f40023880a93966f0c)\n\n**sched trace hook 매크로 재정의 빌드 에러 수정**\n\ninclude/trace/hooks/sched.h에서 #define 앞에 누락됐던 #undef TRACE_INCLUDE_PATH를 추가해, 여러 trace hook 헤더를 함께 include할 때 발생하는 -Werror,-Wmacro-redefined 빌드 에러를 방지했습니다.\n\n영향: 여러 hook 헤더를 함께 include하는 벤더 모듈의 빌드 파손을 해소해 컴파일을 다시 가능하게 합니다.\n\n> Add missing #undef TRACE_INCLUDE_PATH before #define in include/trace/hooks/sched.h to prevent -Werror,-Wmacro-redefined when multiple trace hook headers are included in the same compilation unit.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/82be0d329bf2b455546a09cc84a40c9d1716b54d)\n\n**GKI defconfig에 SW_SYNC 디버그용 활성화**\n\narm64/x86 gki_defconfig에 CONFIG_SW_SYNC=y를 추가해 sw_sync 소프트웨어 펜스 드라이버를 활성화했습니다.\n\n영향: sw_sync는 데드락 위험으로 비활성화돼 있었으나, Android 12+ GMS가 출하 기기의 debugfs 마운트를 금지하고 sw_sync가 4.9 커널부터 debugfs 전용이라 프로덕션 위험 없이 debug/test 빌드에서 GPU 테스트용 드라이버를 얻게 됩니다.\n\n> GMS requirements for Android 12 and newer disallow shipping devices with debugfs mounted. Beginning in the Android 4.9 kernel, sw_sync is only exposed through debugfs\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/7443a0c3c9ecfc8982003afde92e9c783c725994)\n\n**GKI defconfig 하드 락업 감지기 활성화**\n\ngki_defconfig에서 arm64/x86 모두 CONFIG_SOFTLOCKUP_DETECTOR=y를 CONFIG_HARDLOCKUP_DETECTOR=y로 바꾸고, arm64에는 CONFIG_HARDLOCKUP_DETECTOR_PREFER_BUDDY=y를 추가했습니다.\n\n영향: GKI 커널이 하드 락업을 감지하게 되며, panic-on-hardlockup은 아직 켜지 않아 감지·로깅만 추가되고 자동 패닉은 없습니다.\n\n> we'll only enable hardlockup_panic in desktop devices (in a separate CL). ARM64 devices prefer to use the buddy detector in case the perf detector isn't available.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/bdc8ab55a8c960214437a2174168dd21242e2d06)\n\n**GKI defconfig에서 CRYPTO_LZ4 명시 설정 제거**\n\narm64/x86 gki_defconfig에서 명시적 CONFIG_CRYPTO_LZ4=y 라인을 제거했습니다. 업스트림에서 HIBERNATION이 CRYPTO_LZ4를 암시적으로 select하게 되어 중복 항목을 정리한 defconfig 위생 변경입니다.\n\n영향: LZ4 crypto는 HIBERNATION 경유로 계속 빌드되므로 기능·ABI 손실은 없고 벤더 영향도 없습니다.\n\n> The CRYPTO_LZ4 config is now implicitly selected via HIBERNATION, so remove it from our gki_defconfig files.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/87aba67d69fd0706152ae2d9dec68c2cfc274459)\n\n**kbuild에서 잔여 extmod_prefix 변수 제거**\n\nscripts/Makefile.modfinal의 %.ko 빌드 규칙 선행조건에서 업스트림에서 이미 제거됐으나 머지 충돌 해소 중 남아있던 $(extmod_prefix) 변수를 정리했습니다.\n\n영향: ACK kbuild를 업스트림 v6.13에 재정렬하는 정리 작업으로, 빈 문자열로 확장되던 죽은 참조를 없애 향후 머지 드리프트와 혼동을 예방합니다.\n\n> This variable was removed upstream in commit bad6beb2c0bb (\"kbuild: remove extmod_prefix, MODORDER, MODULES_NSDEPS variables\"). ...it was mistakenly kept during a merge conflict resolution. Drop it!\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/b7afc9c272bd0bc9a66726a8f938508705390253)\n\n**VFS simple_xattr 개편 머지(vfs-7.2-rc1.xattr)**\n\n업스트림 태그 'vfs-7.2-rc1.xattr'를 android-mainline에 머지해, simple_xattr 해시 테이블을 per-inode에서 per-superblock 캐시로 옮기고 kernfs xattr 연산을 superblock 단위로 직렬화했으며, kernfs LSM-init NULL 역참조 수정과 bpffs의 trusted.*/security.* xattr 지원도 포함했습니다.\n\n영향: tmpfs·kernfs/cgroup·bpffs가 쓰는 핵심 VFS xattr 경로를 재작업해 오버헤드를 줄이고, SELinux 환경에서 첫 cgroup mkdir 시 발생하던 NULL 역참조를 수정해 SELinux·cgroup·BPF LSM에 의존하는 Android에 직접 관련됩니다.\n\n> The simple_xattr hash table moves from the inode into a per-superblock cache, removing the per-inode overhead for the common case of few or no xattrs.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/ff8747aacaff8266dd751b8a8648fb728dcc3b21)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ANDROID: GKI: CRYPTO_LZ4 is now implicit",
+      "url": "https://android.googlesource.com/kernel/common/+/87aba67d69fd0706152ae2d9dec68c2cfc274459",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: gki_defconfig: enable CONFIG_SW_SYNC=y for debug/testing",
+      "url": "https://android.googlesource.com/kernel/common/+/7443a0c3c9ecfc8982003afde92e9c783c725994",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: gki_defconfig: Enable hard lockup detector",
+      "url": "https://android.googlesource.com/kernel/common/+/bdc8ab55a8c960214437a2174168dd21242e2d06",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: kbuild: remove leftover extmod_prefix",
+      "url": "https://android.googlesource.com/kernel/common/+/b7afc9c272bd0bc9a66726a8f938508705390253",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: rust_binder: update prio_state on nested reply",
+      "url": "https://android.googlesource.com/kernel/common/+/4dd097d4271efd3d8164d7f40023880a93966f0c",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: sched: Avoid macro redefinition of TRACE_INCLUDE_PATH",
+      "url": "https://android.googlesource.com/kernel/common/+/82be0d329bf2b455546a09cc84a40c9d1716b54d",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: KVM: arm64: iommu: Fix deadlock in kvm_iommu_reclaim_pages",
+      "url": "https://android.googlesource.com/kernel/common/+/2ee3781b8da7ef51329387b25e7e3f717cdc8ebc",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: KVM: arm64: iommu: Fix block pool permanent exhaustion",
+      "url": "https://android.googlesource.com/kernel/common/+/68d34e715b21bb149ccb1955d80518d4ea0d9c77",
+      "note": "commit"
+    },
+    {
+      "title": "Merge tag 'vfs-7.2-rc1.xattr' of git://git.kernel.org/pub/scm/linux/kernel/git/vfs/vfs",
+      "url": "https://android.googlesource.com/kernel/common/+/ff8747aacaff8266dd751b8a8648fb728dcc3b21",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-23T18:13:37.266Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/android-newsletter-from-dossier-ko.md"
+  }
+}
