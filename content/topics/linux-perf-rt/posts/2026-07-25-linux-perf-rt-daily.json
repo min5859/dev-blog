@@ -1,0 +1,143 @@
+{
+  "id": "2026-07-25-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-07-25 AF_XDP·kCFI 수정 — 커널 perf/RT",
+  "headline": "AF_XDP NULL 역참조와 BPF task-work kCFI 불일치가 수정되고, PREEMPT_RT 종료 패닉은 두 원인으로 분리됐습니다.",
+  "date": "2026-07-25",
+  "summary": "AF_XDP 멀티버퍼 Rx의 NULL 포인터 역참조와 BPF task-work kCFI 불일치가 각각 수정됐습니다. PREEMPT_RT 종료 시 발생하는 패닉과 종료 행도 서로 다른 원인으로 분리됐습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "AF_XDP __xsk_rcv() NULL 포인터 역참조 수정",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "AF_XDP/XDP 데이터플레인 운영자 및 net/xdp(xsk) 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260724164719.99563-1-blbllhy@gmail.com/",
+      "if": "AF_XDP 멀티버퍼 Rx 경로(커밋 804627751b42 이후, v6.6~)를 사용 중이라면",
+      "do": "조작된 fill 큐 디스크립터로 인한 크래시 가능성을 인지하고 이 패치 백포트 여부를 확인하세요",
+      "verify": "lore 스레드에서 병합/ack 상태와 대상 stable 트리를 확인하세요"
+    },
+    {
+      "title": "BPF task work 콜백의 kCFI 불일치 수정",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF task-work kfunc 사용자 및 kCFI(CONFIG_CFI_CLANG) 활성 커널 빌드 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260724-task_work_cfi-v1-1-2616691781ed@meta.com/",
+      "if": "CONFIG_CFI_CLANG(kCFI) 활성 커널에서 bpf_task_work_schedule kfunc를 사용 중이라면",
+      "do": "콜백 발화 시 CFI 위반 패닉 가능성이 있으니 이 패치 적용 여부를 점검하세요",
+      "verify": "lore v1 패치의 ack/병합 상태를 확인하세요"
+    },
+    {
+      "title": "kmemleak RCU-tasks 스톨이 BPF struct_ops 해제를 지연",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "BPF struct_ops 사용자 및 RCU-tasks·디버그(kmemleak) 커널 운영자",
+      "verifyLink": "https://lore.kernel.org/bpf/39c90e82-f785-4b47-9571-dd4b1339d685@paulmck-laptop/",
+      "if": "kmemleak이 활성화된 디버그 커널에서 BPF struct_ops 맵을 사용 중이라면",
+      "do": "장시간 kmemleak 스캔이 맵 해제를 hung task로 멈추게 할 수 있음을 인지하고 대응을 검토하세요",
+      "verify": "Andrew Morton이 언급한 Fixes/Cc stable 태그 적용 여부를 확인하세요"
+    },
+    {
+      "title": "PREEMPT_RT 종료 패닉, 두 가지 별개 원인으로 분리",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "PREEMPT_RT 사용자(특히 AMD GPU 시스템) 및 amdgpu DC/스케줄러 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260724165001.2317788-3-tchiu@tenstorrent.com/",
+      "if": "v7.2-rc4 또는 next-20260722 이후 PREEMPT_RT 커널에서 AMD GPU 시스템을 운용 중이라면",
+      "do": "종료 행(mt76 napi 커밋 13b7e6a96a005)과 RT 전용 패닉(amdgpu DC의 원자적 구간 내 할당)을 별개 문제로 나눠 점검하세요",
+      "verify": "각 문제의 수정 패치 게시 여부를 lore 스레드에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**AF_XDP __xsk_rcv() NULL 포인터 역참조 수정**\n\n멀티버퍼 Rx 경로에서 사전 검사가 디스크립터 주소 유효성을 검증하지 않아 xsk_buff_alloc()이 NULL을 반환할 수 있었고, 패치는 NULL 체크와 xskq_prod_cancel_n() 롤백을 추가합니다.\n\n영향: 조작된 fill 큐 디스크립터로 유발 가능한 크래시/DoS를 막고, 불완전한 멀티버퍼 패킷이 유저스페이스로 전달되지 않도록 프로토콜 무결성도 보장합니다.\n\n> The pre-check xsk_buff_can_alloc() only counts fill queue entries without validating descriptor addresses, so it can pass while xsk_buff_alloc() rejects all entries as invalid and returns NULL.\n\n[원문 확인](https://lore.kernel.org/bpf/20260724164719.99563-1-blbllhy@gmail.com/)\n\n**BPF task work 콜백의 kCFI 불일치 수정**\n\nBPF 서브프로그램은 bpf_callback_t ABI를 쓰지만 task work가 콜백을 3-인자 함수 포인터로 호출해 kCFI가 트립되던 문제를, 콜백을 bpf_callback_t 타입으로 저장·호출하도록 고쳤습니다.\n\n영향: bpf_task_work_schedule kfunc를 kCFI(CONFIG_CFI_CLANG) 활성 커널에서 사용하면 콜백 발화 시 CFI 위반 패닉이 발생할 수 있습니다.\n\n> BPF subprograms use the bpf_callback_t ABI, but task work invokes the callback through a three-argument function pointer. This trips kCFI.\n\n[원문 확인](https://lore.kernel.org/bpf/20260724-task_work_cfi-v1-1-2616691781ed@meta.com/)\n\n**kmemleak 스캔의 RCU-tasks 스톨이 BPF struct_ops 해제를 지연**\n\n대형 디버그 커널에서 kmemleak_scan의 cond_resched()가 RCU-tasks quiescent state가 아니어서 RCU-tasks 스톨이 발생했고, cond_resched_tasks_rcu_qs()로 교체해 스캔 중에도 RCU-tasks QS를 보고하도록 수정합니다.\n\n영향: synchronize_rcu_mult로 RCU-tasks grace period를 기다리는 BPF struct_ops 맵 해제가 이 스톨에 막혀 hung task로 멈출 수 있습니다.\n\n> a BPF struct_ops map free, which waits via synchronize_rcu_mult(call_rcu, call_rcu_tasks), is stuck long enough to also trip the hung task check\n\n[원문 확인](https://lore.kernel.org/bpf/39c90e82-f785-4b47-9571-dd4b1339d685@paulmck-laptop/)\n\n**PREEMPT_RT 종료 시 amdgpu DC 경로 패닉과 별개의 종료 행**\n\nv7.2-rc4/next-20260722 PREEMPT_RT 종료 중 'scheduling while atomic' 패닉과 별개의 종료 행이 보고됐고, 리포터는 종료 행을 커밋 13b7e6a96a005(mt76 napi 비활성화)로, RT 전용 패닉은 amdgpu DC 경로가 rt_spin_lock 보유 중 메모리를 할당하는 문제로 분리했습니다.\n\n영향: AMD GPU 시스템에서 PREEMPT_RT를 쓰는 사용자와 amdgpu DC/스케줄러 유지보수 담당자에게 직접 영향을 줍니다.\n\n> BUG: scheduling while atomic: Xorg/1475/0x00000003\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260724165001.2317788-3-tchiu@tenstorrent.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**bpf: htab 해시맵 메모리 사용량 절감**\n\nBPF 해시맵 struct htab_elem에서 안 쓰는 필드(bpf_lru_node 유니온, ptr_to_pptr)를 표준/PCPU 맵에서 제거하고 작은 키 해시 캐싱을 추가하는 시리즈로, 표준·prealloc PCPU는 64B에서 32B로, non-prealloc PCPU는 64B에서 40B로 준다는 주장입니다(LRU는 변화 없음).\n\n영향: 한 리뷰어에 따르면 자사 BPF 맵 메모리의 95%가 이 대상 해시맵에서 나온다고 하나, PCPU 맵은 값 오버헤드가 커서 실제 절감이 제한적이라는 반론과 BPF_MAP_TYPE_RHASH 교차 참조가 논의되고 있어 확인이 필요합니다. 원문 인용 검증에는 실패해 수치는 참고용으로만 보세요.\n\n> Standard (key <= 8 B, val <= 8 B)   |   64 B   |   32 B   | 50.0%\n\n[원문 확인](https://lore.kernel.org/bpf/dc95818f-eb75-4389-be28-b1128126b92c@gmail.com/)\n\n**riscv: vector: IRQ-off 커널모드 벡터 허용**\n\narm64의 IRQ-off 커널모드 NEON 허용(커밋 7137a203b251)을 본떠, get/put_cpu_vector_context를 IRQ-off와 프로세스 컨텍스트 양쪽에서 안전하게 호출할 수 있도록 개선하고 KVM 모듈용으로 export합니다.\n\n영향: kvm_arch_vcpu_load/put가 두 컨텍스트에서 커널모드 RISC-V 벡터를 안전하게 쓸 수 있게 되며, RISC-V+KVM 유지보수 담당과 커널모드 벡터의 비선점 실행 지연을 추적하는 RT 엔지니어에게 유의미합니다.\n\n> we are upgrading get/put_cpu_vector_context such that kvm_arch_vcpu_load/put can be safely called under both irq off and regular process context.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260724165001.2317788-3-tchiu@tenstorrent.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "xsk: fix NULL pointer dereference in __xsk_rcv()",
+      "url": "https://lore.kernel.org/bpf/20260724164719.99563-1-blbllhy@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "xsk: add support for AF_XDP multi-buffer on Rx path",
+      "url": "https://github.com/torvalds/linux/commit/804627751b42",
+      "note": "commit"
+    },
+    {
+      "title": "bpf: Fix CFI mismatch in task work callback",
+      "url": "https://lore.kernel.org/bpf/20260724-task_work_cfi-v1-1-2616691781ed@meta.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: task work scheduling kfuncs",
+      "url": "https://github.com/torvalds/linux/commit/38aa7003e369",
+      "note": "commit"
+    },
+    {
+      "title": "mm/kmemleak: report RCU-tasks quiescent states during the scan",
+      "url": "https://lore.kernel.org/bpf/39c90e82-f785-4b47-9571-dd4b1339d685@paulmck-laptop/",
+      "note": "thread"
+    },
+    {
+      "title": "mm/kmemleak: rely on rcu for task stack scanning",
+      "url": "https://github.com/torvalds/linux/commit/c4b28963fd79",
+      "note": "commit"
+    },
+    {
+      "title": "bpf: htab: Reduce memory use of hash maps",
+      "url": "https://lore.kernel.org/bpf/dc95818f-eb75-4389-be28-b1128126b92c@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "BPF_MAP_TYPE_RHASH 교차 참조",
+      "url": "https://lore.kernel.org/all/20260605-rhash-v7-0-5b8e05f8630d@meta.com/",
+      "note": "thread"
+    },
+    {
+      "title": "kernel panic during shutdown in v7.2-rc4 and next-20260722 with PREEMPT_RT / riscv: vector patch series",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260724165001.2317788-3-tchiu@tenstorrent.com/",
+      "note": "thread"
+    },
+    {
+      "title": "shutdown hang root cause reply",
+      "url": "https://lore.kernel.org/linux-rt-devel/3c1be47abfcc907e7c1f9696cb25a24c93415a28.camel@web.de/",
+      "note": "thread"
+    },
+    {
+      "title": "wifi: mt76: Disable napi when removing device",
+      "url": "https://github.com/torvalds/linux/commit/13b7e6a96a005c656d38f3da51581deaf9866375",
+      "note": "commit"
+    },
+    {
+      "title": "arm64/fpsimd: Permit kernel mode NEON with IRQs off",
+      "url": "https://github.com/torvalds/linux/commit/7137a203b251",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-24T19:16:49.595Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

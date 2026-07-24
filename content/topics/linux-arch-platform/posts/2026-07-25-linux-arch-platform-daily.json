@@ -1,0 +1,103 @@
+{
+  "id": "2026-07-25-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-07-25 RISC-V IOMMU 격리 정비 — 아키텍처/플랫폼",
+  "headline": "RISC-V IOMMU MSI 사전매핑, KVM vector 손상 수정, hwprobe 확장 보고, arm64 ptdump 수정이 올라왔습니다.",
+  "date": "2026-07-25",
+  "summary": "RISC-V에서는 IOMMU가 IMSIC MSI 타깃을 사전매핑해 인터럽트 격리 인프라를 다지는 패치와 KVM의 vector context 오귀속으로 인한 vtype 손상 수정, hwprobe의 프로세스별 확장 보고 기능이 올라왔습니다. arm64에서는 ptdump가 마지막 주소 공간 영역을 잘못 표시하던 문제가 수정됐습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "IOMMU가 IMSIC MSI 타깃을 사전매핑",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "RISC-V IOMMU/IMSIC 인터럽트 remapping 유지보수 담당 및 플랫폼 통합 엔지니어",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260724151218.965929-11-andrew.jones@oss.qualcomm.com/",
+      "if": "RISC-V IOMMU/IMSIC 인터럽트 remapping 코드를 유지보수한다면",
+      "do": "irq_compose_msi_msg()의 O(1) 조회 경로와 domain-local IOVA 사전매핑 로직을 리뷰하세요",
+      "verify": "이 시리즈의 -11/N 패치가 어느 트리에 병합됐는지, MSI 테이블 지원 후속 패치와의 의존 관계를 lore 스레드에서 확인하세요"
+    },
+    {
+      "title": "KVM RISC-V, perf+vector 워크로드 vtype 손상 수정",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "RISC-V KVM 및 vector(kernel-mode vector) 유지보수 담당, vector 워크로드를 돌리는 KVM host 운영자",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260724165001.2317788-1-tchiu@tenstorrent.com/",
+      "if": "vector 워크로드를 KVM host에서 운영한다면",
+      "do": "kernel-mode vector가 guest vcpu context를 저장하도록 하는 RCU 콜백 등록 방식 수정을 적용하세요",
+      "verify": "cover letter에 Fixes 태그나 CVE가 없으므로 실제 악용 가능한 격리 파괴인지, 어느 stable 트리 백포트가 필요한지 lore 스레드에서 재확인하세요"
+    },
+    {
+      "title": "hwprobe, 프로세스별 확장 활성화 여부 보고",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "RISC-V 아키텍처/vector 유지보수 담당 및 hwprobe 기반 IFUNC resolver를 쓰는 libc/툴체인 개발자",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260724183646.2363114-1-tchiu@tenstorrent.com/",
+      "if": "hwprobe 기반 IFUNC resolver를 쓰는 libc나 툴체인을 유지보수한다면",
+      "do": "RISCV_HWPROBE_KEY_EXT_ENABLED 키를 적용해 V가 prctl로 비활성화된 프로세스에서 SIGILL이 발생하지 않도록 대응하세요",
+      "verify": "Closes로 참조된 bugzilla #220795 원문과 vDSO-syscall 위임에 따른 성능 영향을 직접 확인하세요"
+    },
+    {
+      "title": "arm64 ptdump, 마지막 영역 flush 누락 수정",
+      "priority": "하",
+      "impactType": "runtime",
+      "affectedAudience": "arm64/KVM mm 유지보수 담당 및 ptdump로 페이지 테이블 권한을 감사하는 보안 엔지니어",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260724185431.2990395-1-weilin.chang@arm.com/",
+      "if": "ptdump로 커널이나 KVM stage-2 페이지 테이블 권한을 감사한다면",
+      "do": "note_page_flush()를 range-aware로 만드는 수정과 KVM stage-2 ptdump의 누락된 flush 호출 보완을 적용하세요",
+      "verify": "Fixes 태그가 없어 회귀 시작 커밋과 백포트 필요 여부를 base-commit 679d7201c1f09e37fa1c12ce28d84079c17fc87f 기준으로 직접 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**IOMMU가 IMSIC MSI 타깃을 사전매핑**\n\n디바이스의 paging domain이 IMSIC-remapped IRQ를 처음 할당할 때 가능한 모든 IMSIC MSI 타깃 페이지를 domain-local IOVA 테이블에 미리 매핑해, irq_compose_msi_msg()가 IOMMU를 통해 O(1) 조회로 리다이렉트할 수 있게 합니다.\n\n영향: IOMMU 기반 MSI remapping은 악의적이거나 오류가 있는 디바이스가 임의 인터럽트를 주입하지 못하게 막는 격리·하드닝 메커니즘으로, 이번 패치는 그 기반을 다지는 단계입니다.\n\n> Prepare for irq_compose_msi_msg() to redirect IMSIC-targeted MSIs through the IOMMU with an O(1) lookup.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260724151218.965929-11-andrew.jones@oss.qualcomm.com/)\n\n**KVM RISC-V, perf+vector 워크로드 vtype 손상 수정**\n\nkernel-mode vector가 guest의 vcpu context를 user context로 오인해 발생하던 vtype 손상을, KMV가 guest를 서빙할 때 vcpu context를 올바르게 저장하도록 하고 KVM이 module init 시 등록하는 RCU 보호 콜백으로 context flush를 처리하도록 고쳤습니다.\n\n영향: guest의 vector context가 host user 상태로 잘못 귀속되면 KVM host 상에서 컨텍스트 간 상태 혼선이 발생할 수 있어, vector 워크로드를 돌리는 host의 상태 격리와 정확성에 직접 영향을 줍니다.\n\n> The root cause of the bug is that the kernel-mode vector (KMV) misattributes the guest's vcpu context as the user's context.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260724165001.2317788-1-tchiu@tenstorrent.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**hwprobe, 프로세스별 확장 활성화 여부 보고**\n\nhwprobe에 위치 기반 modifier RISCV_HWPROBE_KEY_EXT_ENABLED를 추가해, 이 키 이전은 하드웨어 존재 여부를, 이후는 호출 프로세스에서 실제 활성화됐는지를 보고합니다. V가 prctl로 비활성화되면 뒤따르는 벤더 키에서 V 및 V-의존 확장이 제거됩니다.\n\n영향: 기존에는 V를 prctl로 끈 프로세스도 여전히 present로 보고돼 IFUNC resolver가 vector 루틴으로 분기하면 SIGILL로 죽었는데, 새 키는 단일 hwprobe 호출로 present-and-enabled 상태를 얻게 해 이 크래시를 없앱니다.\n\n> An IFUNC resolver that dispatches to a vector routine on that basis then takes a SIGILL.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260724183646.2363114-1-tchiu@tenstorrent.com/)\n\n**arm64 ptdump, 마지막 영역 flush 누락 수정**\n\n마지막 행을 flush하는 note_page_flush()가 IA<64 주소 공간을 고려하지 않아 마지막 영역 속성이 1<<64까지 확장된 것처럼 보이던 문제를 range-aware로 고치고, KVM/arm64 stage-2 ptdump가 이 호출을 빠뜨렸던 부분도 보완했습니다.\n\n영향: ptdump는 페이지 테이블 권한(W^X, RO 등)을 감사하는 진단 도구라, 마지막 영역 속성이 잘못 표시되면 보안 감사자가 권한을 오판할 수 있습니다. 다만 런타임 동작이 아닌 debugfs 진단 출력만 바뀌는 수정입니다.\n\n> note_page_flush(), which flushes out the last row of ptdumps, does not account for address spacees that have IA < 64.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260724185431.2990395-1-weilin.chang@arm.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "iommu/riscv: Pre-map IMSIC MSI targets",
+      "url": "https://lore.kernel.org/linux-riscv/20260724151218.965929-11-andrew.jones@oss.qualcomm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "RISC-V: KVM: fix vcpu vector context handling",
+      "url": "https://lore.kernel.org/linux-riscv/20260724165001.2317788-1-tchiu@tenstorrent.com/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: hwprobe: report per-process extension availability",
+      "url": "https://lore.kernel.org/linux-riscv/20260724183646.2363114-1-tchiu@tenstorrent.com/",
+      "note": "thread"
+    },
+    {
+      "title": "arm64: ptdump flush fixes",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260724185431.2990395-1-weilin.chang@arm.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-24T19:24:25.774Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
