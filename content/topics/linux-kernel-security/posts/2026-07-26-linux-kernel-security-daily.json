@@ -1,0 +1,114 @@
+{
+  "id": "2026-07-26-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-07-26 vmalloc 경계검사 강화 — 커널 보안",
+  "headline": "vmalloc usercopy 경계 검사 강화와 함께 6.12.98·7.1.5·5.10.261 보안 백포트, 7.0.14 EOL 소식이 나왔다.",
+  "date": "2026-07-26",
+  "summary": "Dev Jain 의 vmalloc usercopy 경계 검사 강화 패치가 리뷰를 받는 가운데, 6.12.98 ext4 fd 누수 수정과 7.1.5 posix-cpu-timers·L2CAP UAF 수정을 포함한 stable 릴리스가 이어졌습니다. 7.0.y 계열은 7.0.14 로 종료(EOL)됐습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "보안"
+  ],
+  "highlights": [
+    {
+      "title": "vmalloc usercopy 경계 검사 강화",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "mm/hardening 유지보수 담당, CONFIG_HARDENED_USERCOPY 배포판 커널 팀, vmalloc 버퍼를 유저공간에 복사하는 드라이버 작성자",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/CAGsJ_4wetarsg0fFvNdeWrCa+Ka97jjmgdRsmPJJZbUFyUxjEw@mail.gmail.com/",
+      "if": "CONFIG_HARDENED_USERCOPY 를 켜고 vmalloc 버퍼를 유저공간에 복사하는 드라이버를 운영 중이라면",
+      "do": "패치 적용 후 슬랙 영역까지 복사하던 경로가 있는지 점검하고 회귀 여부를 확인하세요.",
+      "verify": "테스트 모듈로 vmalloc 할당 크기를 초과하는 copy_to_user() 를 호출해 usercopy_abort() 가 발생하는지 확인하세요."
+    },
+    {
+      "title": "6.12.98 ext4 fd 누수 백포트 회귀 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "6.12 LTS 기반 배포판·임베디드 벤더 커널 유지보수 담당, ext4 백포트 검증자",
+      "verifyLink": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.12.98",
+      "if": "6.12.y 기반 커널에서 74796e886ca3 커밋을 이미 픽했다면",
+      "do": "6.12.98 의 ext4 fd 누수 수정(913e7b4459d6)을 함께 반영하세요.",
+      "verify": "EXT4_IOC_MOVE_EXT 의 cross-superblock 검사 경로에서 fd 가 정상적으로 정리되는지 확인하세요."
+    },
+    {
+      "title": "7.1.5 stable UAF 다건 수정",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "최신 stable 을 추종하는 배포판 커널 팀, timer/Bluetooth/ksmbd 유지보수 담당",
+      "verifyLink": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.5",
+      "if": "7.1.y stable 을 추종 중이라면",
+      "do": "posix-cpu-timers UAF 와 L2CAP use-after-free 수정을 우선 픽하세요.",
+      "verify": "non-leader exec() 경쟁 및 l2cap_sock_new_connection_cb() 관련 재현 테스트로 수정 적용 여부를 확인하세요."
+    },
+    {
+      "title": "7.0.y 계열 7.0.14 로 종료(EOL)",
+      "priority": "중",
+      "impactType": "release",
+      "affectedAudience": "7.0.y 기반 배포판·제품 커널 운영자, AX.25/ROSE·virtiofs·ksmbd 유지보수 담당",
+      "verifyLink": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.0.14",
+      "if": "아직 7.0.y 를 운영 중이라면",
+      "do": "7.1.y 로 이관 계획을 세우고 마지막 배치의 rose 수명 관리 시리즈를 검토하세요.",
+      "verify": "releases.json 에서 7.0.y 의 iseol 플래그가 true 인지 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.0.14 — 7.0.y 계열 최종 릴리스(EOL)**\n\nkernel.org releases.json 이 7.0.14 를 iseol: true 로 표시해 7.0.y stable 계열이 2026-06-27 자로 종료됐습니다. 마지막 배치 42건에는 AX.25 ROSE 프로토콜 수명 관리 시리즈, virtiofs submount umount UAF, ksmbd 비-VALID 세션 거부, vc_screen null-ptr-deref 수정 등이 담겼습니다.\n\n영향: 7.0.y 를 유지하는 시스템은 더 이상 보안 수정을 받지 못하므로 7.1.y 로 옮기지 않으면 이후 발견되는 취약점이 그대로 남습니다. 마지막 배치의 rose 시리즈는 서브시스템 수명 관리 전반을 갈아엎은 형태라 이를 픽하지 않은 포크 커널은 통째로 검토가 필요합니다.\n\n> rose: fix race between loopback timer and module removal\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.0.14)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**mm/usercopy: vmalloc 할당 실제 크기로 usercopy 경계 검사 강화**\n\nDev Jain 의 패치가 check_vmalloc_object() 경로에서 페이지 정렬된 va_end 대신 vm_struct::requested_size 를 usercopy 경계로 사용하도록 바꿉니다. VM_ALLOC 플래그가 있고 requested_size 가 0이 아닌 경우에만 적용되며, early vm area 와 vmap/vm_map_ram 경로는 기존 검사를 그대로 씁니다.\n\n영향: 지금까지는 vmalloc(5KB) 버퍼에서 6KB 를 copy_to_user() 해도 페이지 정렬 경계 안이라 hardened usercopy 가 통과시켰습니다. Barry Song 이 재현해 패치 적용 후 경보로 잡히는 것을 확인했고 Tested-by/Reviewed-by 를 남겼습니다. CONFIG_HARDENED_USERCOPY 를 켜는 배포판·드라이버 개발자는 조용히 통과하던 슬랙 영역 노출이 앞으로 usercopy_abort() 로 바뀌므로 회귀 리스크를 점검해야 합니다.\n\n> usercopy: Kernel memory exposure attempt detected from vmalloc (offset 0, size 6144)!\n\n[원문 확인](https://lore.kernel.org/linux-hardening/CAGsJ_4wetarsg0fFvNdeWrCa+Ka97jjmgdRsmPJJZbUFyUxjEw@mail.gmail.com/)\n\n**Linux 6.12.98 longterm — ext4 fd 누수 백포트 회귀 단일 수정**\n\n6.12.98 은 커밋 1건짜리 릴리스로, EXT4_IOC_MOVE_EXT cross-superblock 검사에서 발생한 fd 누수를 고칩니다. 업스트림은 CLASS(fd) 자동 정리라 안전했지만 6.12.y 는 fdget/fdput 패턴이라 백포트 과정에서 fd 참조가 새어나갔습니다.\n\n영향: 업스트림에는 없고 stable 백포트에서만 생기는 회귀입니다. 6.12 LTS 를 기반으로 자체 커널을 굴리며 74796e886ca3 을 이미 픽한 벤더는 fd 누수를 함께 들여온 상태이므로 이번 수정을 반드시 따라가야 합니다.\n\n> the bare 'return -EXDEV' which is safe upstream because the fd is managed via CLASS(fd) with automatic cleanup\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.12.98)\n\n**Linux 7.1.5 stable — posix-cpu-timers·L2CAP UAF, ksmbd 자격증명 처리 수정**\n\n7.1.5 는 non-leader exec() 경쟁으로 발생하던 posix-cpu-timers UAF, l2cap_sock_new_connection_cb() 의 use-after-free, ksmbd 의 FSCTL 변경 시 opener 자격증명 사용 등을 수정합니다. 회귀 대응으로 'gpib: cb7210' 의 region leak 수정은 Revert 됐습니다.\n\n영향: posix-cpu-timers 와 L2CAP 두 건은 로컬 권한상승으로 이어질 수 있는 UAF 계열이라 stable 추종자는 우선 픽 대상입니다. ksmbd 경로 해석·자격증명 수정은 SMB 서버를 노출한 시스템에 직접적입니다.\n\n> posix-cpu-timers: Prevent UAF caused by non-leader exec() race\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.5)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**ACPI APEI GHES 에 NVIDIA Vera CPER 디코더와 KUnit/EINJ 테스트 추가(v2 RESEND)**\n\nKai-Heng Feng 의 4패치 시리즈가 차세대 서버 SoC Vera 의 벤더 CPER 섹션 디코더를 추가합니다. 기존 Grace 디코더에서 파싱·로깅을 분리하는 리팩터, Vera 디코더, 양쪽 KUnit 커버리지, EINJ 기반 kselftest 순으로 구성되며 총 1838줄이 추가됐습니다.\n\n영향: Vera 플랫폼에서는 펌웨어가 올린 하드웨어 오류가 수신은 되지만 디코딩되지 않아 관측이 불가능했습니다. 펌웨어가 준 신뢰할 수 없는 가변 길이 데이터를 파싱하는 코드에 KUnit 픽스처와 실기 EINJ 주입 테스트를 함께 넣는 방식은 다른 벤더 CPER 디코더가 따라갈 만한 선례입니다.\n\n> Patches 2-4 add the Vera decoder, KUnit coverage for both decoders, and an EINJ-based kselftest for end-to-end validation on real hardware.\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20260724122054.36162-1-kaihengf@nvidia.com/)\n\n**Linux 5.10.261 longterm — IPv6/MLD RCU 클러스터와 crypto/qat RSA CRT 길이 검증**\n\n5.10.261 은 IPv6 멀티캐스트(MLD) 수명·동기화 문제를 훑는 클러스터(__ipv6_dev_mc_dec() RCU 사용, ipv6_mc_down/mld_ifc_work data-race, 참조 카운트 누수 등)와 crypto/qat RSA CRT 컴포넌트 길이 검증, audit_log_n_hex() 정수 오버플로 수정을 담았습니다.\n\n영향: 5.10 은 아직 EOL 이 아니며 임베디드·안드로이드 파생 커널이 대량으로 물려 있습니다. IPv6 멀티캐스트 경로의 RCU/참조 누수는 원격에서 유발 가능한 트래픽 경로에 있고, crypto/qat 의 RSA CRT 길이 검증 누락은 신뢰할 수 없는 키 재료를 다루는 코드라 우선순위가 높습니다.\n\n> crypto: qat - validate RSA CRT component lengths\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.261)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "mm/usercopy: vmalloc 할당의 실제 요청 크기로 usercopy 경계 검사 강화 (thread)",
+      "url": "https://lore.kernel.org/linux-hardening/CAGsJ_4wetarsg0fFvNdeWrCa+Ka97jjmgdRsmPJJZbUFyUxjEw@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-6.12.98 (ext4 fd 누수 수정)",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.12.98",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-7.0.14 (7.0.y 최종 릴리스, EOL)",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.0.14",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-7.1.5 (posix-cpu-timers·L2CAP UAF 등)",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.5",
+      "note": "changelog"
+    },
+    {
+      "title": "ACPI APEI GHES: Add NVIDIA Vera CPER decoder and tests (v2 RESEND)",
+      "url": "https://lore.kernel.org/linux-hardening/20260724122054.36162-1-kaihengf@nvidia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-5.10.261 (IPv6/MLD, crypto/qat 등)",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.261",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-25T18:45:55.157Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

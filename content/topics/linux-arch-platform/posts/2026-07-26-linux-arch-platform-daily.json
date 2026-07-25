@@ -1,0 +1,143 @@
+{
+  "id": "2026-07-26-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-07-26 ptdump 회귀 수정 — 아키텍처/플랫폼",
+  "headline": "arm64/KVM ptdump 회귀 수정과 RISC-V·Apple Silicon 신규 드라이버, MediaTek 제출 품질을 둘러싼 메인테이너 경고가 겹친 하루입니다.",
+  "date": "2026-07-26",
+  "summary": "arm64 stage-2 ptdump 의 마지막 영역 누락 회귀가 v2 로 수정되고 리뷰어 테스트까지 마쳤습니다. 동시에 RISC-V SpacemiT UFS·Milk-V Duo DT, Apple M3 tipd SPMI 변종 등 플랫폼 확장이 진행되고, DT 바인딩 메인테이너는 MediaTek 제출 품질에 공개 경고를 냈습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "arm64 ptdump: KVM stage-2 마지막 영역 누락 회귀 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "KVM/arm64 및 arm64 mm ptdump 를 쓰는 커널 개발자·유지보수 담당",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-July/1154227.html",
+      "if": "KVM/arm64 stage-2 ptdump debugfs 출력으로 게스트 IPA 매핑을 디버깅하고 있다면",
+      "do": "note_page_flush() range 인식 수정과 ptdump_state.range[] 초기화가 포함된 v2 패치를 적용하십시오",
+      "verify": "적용 후 stage-2 ptdump 출력에서 ia_bits 최상단 영역까지 정상 표시되는지 nested VM 환경에서 재현 확인하십시오"
+    },
+    {
+      "title": "Milk-V Duo 256M(SG2002) DT v5: 잘못된 RTOS 예약 영역 수정",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "Sophgo CV180x/SG2002 RISC-V 보드 DT 유지보수 담당 및 U-Boot 연계 개발자",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-riscv/2026-July/095552.html",
+      "if": "Milk-V Duo 256M(SG2002) 보드 DT 를 64M Duo 에서 복사해 쓰고 있다면",
+      "do": "v5 의 예약 영역 값(0x8fe00000/0x200000)으로 즉시 교체하십시오",
+      "verify": "부팅 로그의 reserved-memory 항목이 vendor DT memory <0x80000000 0x0fe00000> 와 일치하는지 확인하십시오"
+    },
+    {
+      "title": "MT8189 SMI 바인딩 드롭 — DT 메인테이너, MediaTek 제출 품질에 공개 경고",
+      "priority": "중",
+      "impactType": "project",
+      "affectedAudience": "MediaTek arm64 SoC 상류화 담당자 및 DT 바인딩 제출자 전반",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-July/1154371.html",
+      "if": "MediaTek 계열 arm64 플랫폼 패치를 상류에 제출하거나 이를 의존하는 기능을 준비 중이라면",
+      "do": "mt8189 SMI 바인딩 재제출 일정과 v3 리뷰 응답 여부를 직접 스레드에서 확인하십시오",
+      "verify": "linux-arm-kernel 리스트에서 v4 재제출 및 Krzysztof Kozlowski 의 후속 응답이 올라오는지 추적하십시오"
+    },
+    {
+      "title": "SpacemiT K3(RISC-V) UFS 호스트 드라이버 v2 — 벤더 훅 제거로 686줄 축소",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "RISC-V 플랫폼 및 UFS 호스트 드라이버 유지보수 담당, SpacemiT 보드 사용자",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-riscv/2026-July/095537.html",
+      "if": "SpacemiT K3 보드에서 UFS 루트파일시스템 부팅을 준비 중이라면",
+      "do": "선행 조건인 UFS 클럭 드라이버 시리즈를 먼저 적용한 뒤 v2 드라이버를 테스트하십시오",
+      "verify": "고부하 시나리오에서 urgent BKOPS 인터럽트가 여전히 간헐 발생하는지 확인하고 결과를 스레드에 공유하십시오"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**arm64 ptdump flush 수정 2종: note_page_flush() range 인식 + KVM stage-2 마지막 영역 출력**\n\nv1 의 수동 note_page(addr, level=-1) 호출 방식을 버리고, v2 는 arch/arm64/mm/ptdump.c 의 note_page_flush() 를 주소공간 range 인식하도록 고치고 arch/arm64/kvm/ptdump.c 에서 ptdump_state.range[] 를 {0, BIT(mmu->pgt->ia_bits)} 로 초기화한 뒤 note_page_flush() 를 호출한다. ipa_marker[1].start_address 도 ULONG_MAX 로 바꿔 NULL 마커 이름 출력과 배열 오버런을 막았고, mmu_lock 은 guard(write_lock) 로 전환했다.\n\n영향: 게스트 IPA 공간의 마지막 영역이 stage-2 ptdump debugfs 출력에서 통째로 빠지던 버그로, KVM/arm64 메모리 매핑을 디버깅하는 사람이 잘못된 결론을 내릴 수 있었다. IA < 64 주소공간에서 마지막 영역이 1<<64 까지 뻗은 것처럼 보이던 core 결함까지 함께 고쳐 KVM 밖의 arm64 ptdump 사용자 전체에 영향을 준다.\n\n> Call note_page_flush() to dump the final region. note_page_flush() expects ptdump_state.range[] to be initialized to the range of the address space, so also do that.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-arm-kernel/2026-July/1154227.html)\n\nDev Jain 이 중첩 VM 환경에서 테스트 후 Reviewed-by/Tested-by 를 부여했고, 남은 지적은 지정 초기화자 들여쓰기 nit 뿐이다.\n\n> I have also tested by booting a Linux VM inside a Linux VM on a Mac, and I see the stage2 ptdump prints the last range upto the ia_bits correctly.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-arm-kernel/2026-July/1154378.html)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**usb: typec: tipd 를 버스 비의존 구조로 쪼개고 Apple M3 의 SPMI 변종(sn201202x/ACE3) 추가**\n\n3패치 시리즈로 tipd core.c 를 core.h 로 재구성하며 i2c 전용 코드를 drivers/usb/typec/tipd/i2c.c(86줄)로 분리해 코어를 버스 비의존으로 만들고, 그 위에 SPMI 기반 커스텀 regmap 구현인 spmi.c(297줄)와 Kconfig TYPEC_SN201202X(REGMAP_SPMI select), dt-bindings apple,sn201202x.yaml(78줄)을 추가했다.\n\n영향: Apple M3 이후 기기의 USB-PD/Type-C 컨트롤러를 상류 arm64 커널에서 처음 다루게 되는 변경이며, tipd 드라이버가 i2c 외 전송로를 갖는 첫 사례라 서브시스템 구조 자체가 바뀐다.\n\n> Add support for sn201202x (a.k.a ACE3), an Apple-specific tps6598x variant that wraps the tps6598x core register set with a SPMI based regmap-like protocol, first appearing in Apple M3 devices.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-arm-kernel/2026-July/1154358.html)\n\n**SpacemiT K3(RISC-V) UFS 호스트 드라이버 v2 — 벤더 훅 대거 제거하고 686줄로 축소**\n\nv2 는 바인딩과 드라이버 ufs-spacemit.c(686줄)/.h(79줄), K3 DT 노드를 추가한다. v1 대비 freq-table-hz → operating-points-v2 전환, dump_host_regs() 디버그 인터페이스 제거, 벤더 전용 hce_enable_notify() 제거 후 기본 동작 사용, busy delay 루프 축소, COMPILE_TEST 지원 추가가 반영됐다(v1 931줄 → v2 686줄).\n\n영향: SpacemiT K3 는 RISC-V SBC/보드에서 실사용 가능한 UFS 스토리지를 제공하는 첫 부류에 속하며, 벤더 콜백을 걷어내고 ufshcd 코어 기본 경로로 되돌린 점은 다른 RISC-V SoC UFS 제출의 기준선이 된다.\n\n> - convert freq-table-hz to operating-points-v2 ... - drop vendor specific hce_enable_notify(), fallback to default ... - add COMPILE_TEST support to Kconfig\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-July/095537.html)\n\n고부하 테스트에서 디바이스가 간헐적으로 urgent BKOPS 예외를 올리는 문제는 v2 시점에도 미해결로 남아 있다.\n\n> One known issue is that the device will occasionally raise BKOPS interrupt when doing some high load test\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-July/095537.html)\n\n**Milk-V Duo 256M(SG2002) DT v5 — 64M 보드에서 잘못 베껴온 RTOS 예약 영역 수정**\n\n3패치 시리즈(바인딩, PWR_GPIO 컨트롤러 노드, sg2002-milkv-duo256m.dts 121줄 신규)로, v5 의 핵심은 코프로세서 RTOS 예약 영역을 v4 가 64M Duo 에서 그대로 가져온 0x83f40000/0xc0000 에서 0x8fe00000/0x200000 로 바로잡은 것이다.\n\n영향: 예약 영역이 틀리면 커널이 펌웨어가 RTOS 용으로 떼어둔 DRAM 최상단을 침범하는 실제 위험이 있었고, 같은 DTSI 를 공유하는 다른 Sophgo 보드 DT 를 복사해 쓰는 관행의 함정을 보여준다.\n\n> the firmware keeps the top 2MB of the 256MB DRAM for the RTOS, so the region is 0x8fe00000/0x200000. This matches cv1812h-huashan-pi, which has the same amount of DRAM.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-July/095552.html)"
+    },
+    {
+      "heading": "기타",
+      "body": "**riscv defconfig 에 UFS 호스트 드라이버를 모듈로 넣는 문제 — 'Module sounds good' 으로 정리**\n\nK3 UFS 리뷰에서 리뷰어가 SCSI_UFSHCD_PLATFORM 과 SCSI_UFS_SPACEMIT 를 riscv defconfig 에 모듈로 추가하자고 요청했고, 작성자는 built-in 을 선호했으나 별도 패치로 모듈 추가를 수용했다.\n\n영향: SpacemiT 계열 UFS 는 해당 보드들의 루트 저장장치라, defconfig 에 들어가지 않으면 defconfig 커널이 persistent rootfs 로 부팅하지 못한다.\n\n> Can you add SCSI_UFSHCD_PLATFORM and SCSI_UFS_SPACEMIT as modules to riscv defconfig ... Module sounds good.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-July/095548.html)\n\n**MT8189 SMI 바인딩, 적용 직후 드롭 — DT 메인테이너가 MediaTek 제출 품질에 공개 경고**\n\nKrzysztof Kozlowski 가 mt8189 SMI larb/common/sub-common 바인딩 RESEND v3 를 패치 순서 오류를 지적하며 적용 중 고쳤다고 했다가, 곧바로 v3 리뷰 무응답을 이유로 드롭했다.\n\n영향: MT8189 SMI(메모리 대역 관리) 바인딩 상류화가 최소 한 사이클 밀리고, 메인테이너가 특정 벤더 제출 처리 태도를 공개 선언한 점이 같은 조직 arm64 패치 전반의 처리 속도에 영향을 줄 수 있다.\n\n> I was complaining A LOT about quality of upstream submissions of Mediatek and have now - after 2-3 years of complains - close to zero patience for this company.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-arm-kernel/2026-July/1154371.html)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "arm64 ptdump: note_page_flush() range 인식 수정 (v2 2/2)",
+      "url": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-July/1154227.html",
+      "note": "thread"
+    },
+    {
+      "title": "arm64 ptdump v2 커버레터",
+      "url": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-July/1154226.html",
+      "note": "thread"
+    },
+    {
+      "title": "Dev Jain 의 nested VM 테스트 및 Reviewed-by",
+      "url": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-July/1154378.html",
+      "note": "thread"
+    },
+    {
+      "title": "Marc Zyngier 의 guard(write_lock) 정책 코멘트",
+      "url": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-July/1151789.html",
+      "note": "thread"
+    },
+    {
+      "title": "usb: typec: tipd 버스 비의존화 + Apple sn201202x 시리즈",
+      "url": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-July/1154358.html",
+      "note": "thread"
+    },
+    {
+      "title": "TYPEC_SN201202X Kconfig 패치 (3/3)",
+      "url": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-July/1154360.html",
+      "note": "thread"
+    },
+    {
+      "title": "SpacemiT K3 UFS 드라이버 v2 커버레터",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-July/095537.html",
+      "note": "thread"
+    },
+    {
+      "title": "UFS 클럭 드라이버 선행 조건 시리즈",
+      "url": "https://lore.kernel.org/all/20260630-06-clk-ufs-support-v1-0-cf7521d1d0fe@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv defconfig UFS 모듈화 리뷰 답신",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-July/095548.html",
+      "note": "thread"
+    },
+    {
+      "title": "Milk-V Duo 256M(SG2002) DT v5 커버레터",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-July/095552.html",
+      "note": "thread"
+    },
+    {
+      "title": "MT8189 SMI 바인딩 드롭 통보",
+      "url": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-July/1154371.html",
+      "note": "thread"
+    },
+    {
+      "title": "MT8189 SMI 패치 순서 오류 지적",
+      "url": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-July/1154370.html",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-25T19:28:08.611Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

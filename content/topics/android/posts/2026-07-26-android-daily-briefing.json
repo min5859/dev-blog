@@ -1,0 +1,138 @@
+{
+  "id": "2026-07-26-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-07-26 pKVM IOMMU 회귀 수정 — Android 커널",
+  "headline": "pKVM IOMMU 회귀 두 건과 drm_crtc dma-fence 패닉 수정이 올라왔다.",
+  "date": "2026-07-26",
+  "summary": "pKVM hyp IOMMU 에서 block pool 영구 고갈과 reclaim 자기 데드락을 유발하던 회귀 두 건이 수정되었고, drm_crtc 에서는 dma-fence signal 경합으로 상시 발동하던 BUG_ON 이 제거되었다. GKI defconfig 에는 hard lockup detector 기본 활성화 등 여러 변경도 함께 반영되었다.",
+  "tags": [
+    "안드로이드",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "pKVM IOMMU CMA pool 영구 고갈 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "pKVM/IOMMU 를 활성화한 android16-6.12 벤더 트리 담당, ACK 배포 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/68d34e715b21bb149ccb1955d80518d4ea0d9c77",
+      "if": "android16-6.12 기반 트리가 CMA 도네이션 커밋(c949df871d07)을 이미 포함하고 있다면",
+      "do": "68d34e715b21 커밋을 함께 픽하여 __block_pools_available 복구 로직을 반영하세요.",
+      "verify": "메모리 압박 상황에서 hyp IOMMU 도네이션이 GFP_KERNEL 폴백으로 몰리지 않고 CMA pool 을 계속 쓰는지 확인하세요."
+    },
+    {
+      "title": "pKVM IOMMU reclaim 자기 데드락 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "pKVM/IOMMU 를 활성화한 android16-6.12 벤더 트리 담당, ACK 배포 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/2ee3781b8da7ef51329387b25e7e3f717cdc8ebc",
+      "if": "위 CMA pool 고갈 픽스(68d34e71)를 적용하는 트리라면",
+      "do": "같은 원인 커밋에서 파생된 2ee3781b8da7 데드락 수정도 함께 픽하세요.",
+      "verify": "block pool 에 속하지 않는 물리 주소를 reclaim 하는 경로에서 hyp 컨텍스트가 멈추지 않는지 확인하세요."
+    },
+    {
+      "title": "drm_crtc dma_fence BUG_ON 제거",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "DRM/KMS·디스플레이 드라이버 담당, dma-fence 를 직접 다루는 벤더 드라이버 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/57acb869490b504996ea46cbb80af49e35ec66e1",
+      "if": "벤더 트리가 upstream 541c8f2468b9(dma-buf fence ops 분리)를 포함하고 있다면",
+      "do": "57acb869490b 를 함께 적용해 drm_crtc.c 의 BUG_ON 을 제거하세요.",
+      "verify": "dma-fence 가 signal 되는 시점에 KMS 경로에서 커널 패닉이 재현되지 않는지 확인하세요."
+    },
+    {
+      "title": "GKI hard lockup detector 기본 활성화",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "ACK 배포 담당, GKI defconfig 를 추적하는 벤더 커널 담당, 디버그/크래시 분석 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/bdc8ab55a8c960214437a2174168dd21242e2d06",
+      "if": "gki_defconfig 를 그대로 추적하는 벤더 트리라면",
+      "do": "CONFIG_HARDLOCKUP_DETECTOR 와 arm64 의 PREFER_BUDDY 옵션 반영 후 CPU 핫플러그·아이들 정책과의 상호작용을 점검하세요.",
+      "verify": "지금까지 소프트락업으로만 보이던 증상이 hard lockup 경고·백트레이스로 바뀌어 나타나는지 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**pKVM hyp IOMMU CMA block pool 영구 고갈 수정**\n\nblock pool 이 한 번 고갈되면 `__block_pools_available` 이 0 으로 고정되어 복구되지 않던 문제를, 반납 시 다시 1 로 되돌리고 order 0 실패일 때만 full 로 표시하도록 고쳤다.\n\n영향: CMA 도네이션 도입 커밋(c949df871d07) 이후의 회귀로, 방치하면 hyp 도네이션이 GFP_KERNEL 폴백으로 몰려 host lockup 까지 이어진다.\n\n> iommu_block_pools[] are only full when they can't handle the smallest allocation possible.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/68d34e715b21bb149ccb1955d80518d4ea0d9c77)\n\n**pKVM hyp IOMMU reclaim 자기 데드락 수정**\n\nkvm_iommu_reclaim_pages() 가 어떤 block pool 에도 속하지 않는 물리 주소를 처리할 때 이미 잡은 __block_pools_lock 을 재획득하려던 것을, hyp_spin_unlock() 으로 바꿔 해제하도록 고쳤다.\n\n영향: hyp 컨텍스트의 스핀락 자기 재획득이라 회복 경로가 없으며, 위 CMA pool 고갈 수정과 같은 원인 커밋에서 파생되어 같은 날 함께 올라온 짝 패치다.\n\n> kvm_iommu_reclaim_pages() deadlocks if the physical address does not belong to any block pool, as it attempts to re-acquire the already held __block_pools_lock.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/2ee3781b8da7ef51329387b25e7e3f717cdc8ebc)\n\n**drm_crtc dma_fence BUG_ON 제거**\n\ndrm_crtc_fence_get_driver_name()/get_timeline_name() 안의 fence_to_crtc() 관련 BUG_ON() 을 제거했다. dma-fence 가 signal 되는 순간 ops 포인터가 NULL 로 바뀔 수 있어 이 단정이 상시 발동하던 상태였다.\n\n영향: upstream 541c8f2468b9(dma-buf fence ops 분리) 이후 생긴 회귀로 KMS 경로에서 커널 패닉으로 직결되며, Cc: stable 이 붙은 FROMLIST 이므로 벤더 디스플레이 드라이버는 원인 커밋 포함 여부부터 확인해야 한다.\n\n> Fixes: 541c8f2468b9 (\"dma-buf: detach fence ops on signal v3\")\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/57acb869490b504996ea46cbb80af49e35ec66e1)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**GKI hard lockup detector 기본 활성화**\n\narm64/x86 gki_defconfig 에 CONFIG_HARDLOCKUP_DETECTOR=y 를 추가하고, arm64 에는 CONFIG_HARDLOCKUP_DETECTOR_PREFER_BUDDY=y 도 함께 넣었다. hardlockup_panic 은 데스크톱 디바이스에서만 별도 CL 로 켤 예정이다.\n\n영향: GKI 기본값으로 nmi_watchdog 이 켜지므로 소프트락업만 보이던 트리에서 hard lockup 경고·백트레이스가 새로 나타날 수 있다.\n\n> ARM64 devices prefer to use the buddy detector in case the perf detector isn't available.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/bdc8ab55a8c960214437a2174168dd21242e2d06)\n\n**GKI defconfig 에 CONFIG_SW_SYNC 활성화**\n\narm64/x86 gki_defconfig 에 CONFIG_SW_SYNC=y 를 추가했다. sw_sync 는 debugfs 로만 노출되며, 출하 빌드는 debugfs 마운트가 금지되어 있어 위험이 없다는 논리다.\n\n영향: igt-gpu-tools 계열 fence 테스트를 GKI 커널에서 재빌드 없이 돌릴 수 있게 되지만, debugfs 를 마운트하는 엔지니어링 빌드는 유저스페이스가 fence 를 임의로 붙잡는 노출면이 늘어난다.\n\n> Test: adb shell ls /sys/kernel/debug/sync/sw_sync\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/7443a0c3c9ecfc8982003afde92e9c783c725994)\n\n**sched vendor hook 헤더 TRACE_INCLUDE_PATH 빌드 오류 수정**\n\ninclude/trace/hooks/sched.h 에서 TRACE_INCLUDE_PATH 를 #define 하기 전에 빠져 있던 #undef 를 추가해, 여러 trace hook 헤더를 함께 포함할 때 나던 -Werror,-Wmacro-redefined 를 없앴다.\n\n영향: EAS 태스크 배치 정책 vendor hook 추가(a1fc1fba460b) 이후의 빌드 회귀로, vendor hook 을 쓰는 벤더 모듈이 clang -Werror 에서 바로 깨질 수 있다. 인용 원문 검증은 확인되지 않아 세부 인과는 확인이 필요하다.\n\n> Fixes: a1fc1fba460b (\"ANDROID: sched: add restrict vendor hook to modify task placement policy in EAS\")\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/82be0d329bf2b455546a09cc84a40c9d1716b54d)\n\n**위 빌드 수정이 android16-6.12 로 체리픽**\n\nandroid-mainline 의 82be0d32 를 android16-6.12 로 그대로 체리픽했다.\n\n영향: 릴리스 브랜치에도 같은 빌드 회귀가 있었다는 뜻이므로, 이 브랜치 기반 벤더 트리가 로컬 패치를 들고 있었다면 정리할 수 있다.\n\n> (cherry picked from commit 82be0d329bf2b455546a09cc84a40c9d1716b54d)\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/0e0925f375430dad13c832a90bd8badb63ff88d6)\n\n**gki_defconfig 에서 CONFIG_CRYPTO_LZ4 제거**\n\narm64/x86 gki_defconfig 에서 CONFIG_CRYPTO_LZ4=y 를 삭제했다. upstream 이 kernel/power/Kconfig 의 HIBERNATION 아래에 select CRYPTO_LZ4 를 추가해 암시적으로 켜지기 때문이다.\n\n영향: 기능 제거가 아닌 defconfig 정리이지만, gki_defconfig 를 diff 로 추적하는 벤더는 이를 기능 제거로 오독하지 않도록 주의해야 한다.\n\n> The CRYPTO_LZ4 config is now implicitly selected via HIBERNATION, so remove it from our gki_defconfig files.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/87aba67d69fd0706152ae2d9dec68c2cfc274459)\n\n**kbuild Makefile.modfinal 의 extmod_prefix 잔재 제거**\n\nscripts/Makefile.modfinal 에서 upstream 에서 이미 삭제된 extmod_prefix 변수 참조를 제거했다. kbuild-v6.13 머지 충돌 해결 과정에서 실수로 남아 있던 것이다.\n\n영향: out-of-tree 모듈이 지나는 modfinal 단계의 잔재로, 머지 충돌 해결이 남긴 부산물을 자기 트리에서도 점검할 만한 사례다.\n\n> This variable was removed upstream in commit bad6beb2c0bb (\"kbuild: remove extmod_prefix, MODORDER, MODULES_NSDEPS variables\")\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/b7afc9c272bd0bc9a66726a8f938508705390253)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "pKVM hyp IOMMU CMA block pool 고갈 수정 커밋",
+      "url": "https://android.googlesource.com/kernel/common/+/68d34e715b21bb149ccb1955d80518d4ea0d9c77",
+      "note": "commit"
+    },
+    {
+      "title": "CMA 도네이션 도입 커밋 (회귀 원인)",
+      "url": "https://android.googlesource.com/kernel/common/+/c949df871d07",
+      "note": "commit"
+    },
+    {
+      "title": "pKVM hyp IOMMU reclaim 데드락 수정 커밋",
+      "url": "https://android.googlesource.com/kernel/common/+/2ee3781b8da7ef51329387b25e7e3f717cdc8ebc",
+      "note": "commit"
+    },
+    {
+      "title": "drm_crtc dma-fence BUG_ON 제거 커밋",
+      "url": "https://android.googlesource.com/kernel/common/+/57acb869490b504996ea46cbb80af49e35ec66e1",
+      "note": "commit"
+    },
+    {
+      "title": "dma-buf fence ops 분리 커밋 (upstream, 회귀 원인)",
+      "url": "https://github.com/torvalds/linux/commit/541c8f2468b9",
+      "note": "commit"
+    },
+    {
+      "title": "gki_defconfig hard lockup detector 활성화 커밋",
+      "url": "https://android.googlesource.com/kernel/common/+/bdc8ab55a8c960214437a2174168dd21242e2d06",
+      "note": "commit"
+    },
+    {
+      "title": "gki_defconfig CONFIG_SW_SYNC 활성화 커밋",
+      "url": "https://android.googlesource.com/kernel/common/+/7443a0c3c9ecfc8982003afde92e9c783c725994",
+      "note": "commit"
+    },
+    {
+      "title": "sched vendor hook TRACE_INCLUDE_PATH 빌드 수정 커밋",
+      "url": "https://android.googlesource.com/kernel/common/+/82be0d329bf2b455546a09cc84a40c9d1716b54d",
+      "note": "commit"
+    },
+    {
+      "title": "위 빌드 수정의 android16-6.12 체리픽 커밋",
+      "url": "https://android.googlesource.com/kernel/common/+/0e0925f375430dad13c832a90bd8badb63ff88d6",
+      "note": "commit"
+    },
+    {
+      "title": "gki_defconfig CRYPTO_LZ4 제거 커밋",
+      "url": "https://android.googlesource.com/kernel/common/+/87aba67d69fd0706152ae2d9dec68c2cfc274459",
+      "note": "commit"
+    },
+    {
+      "title": "kbuild extmod_prefix 잔재 제거 커밋",
+      "url": "https://android.googlesource.com/kernel/common/+/b7afc9c272bd0bc9a66726a8f938508705390253",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-25T18:13:59.510Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/android-newsletter-from-dossier-ko.md"
+  }
+}
