@@ -26,7 +26,7 @@ JSON 객체 하나만 출력합니다. 코드펜스도 설명도 붙이지 마�
     { "candidateId": "<그대로>", "title": "...", "whatChanged": "...", "whyItMatters": "...",
       "affectedAudience": "예: 특정 스택 도입 검토자", "impactType": "security|regression|build|runtime|api-abi|backport|performance|release|project",
       "confidence": "high|medium|low",
-      "evidence": [ { "claim": "...", "url": "https://...", "kind": "commit|thread|changelog|cve|article", "quote": "원문 200자 이내" } ],
+      "evidence": [ { "claim": "...", "url": "https://...", "kind": "commit|thread|changelog|cve|article|repo", "quote": "원문 200자 이내" } ],
       "openQuestions": ["..."] }
   ],
   "droppedCandidates": [ { "candidateId": "...", "reason": "..." } ]

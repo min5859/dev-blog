@@ -26,7 +26,7 @@ const dossier = { topic: 'linux', date: '2026-06-06', generatedAt: '2026-06-06T0
 
 test('CONFIDENCE_VALUES / EVIDENCE_KIND_VALUES 고정', () => {
   assert.deepEqual([...CONFIDENCE_VALUES].sort(), ['high', 'low', 'medium']);
-  assert.deepEqual([...EVIDENCE_KIND_VALUES].sort(), ['article', 'changelog', 'commit', 'cve', 'thread']);
+  assert.deepEqual([...EVIDENCE_KIND_VALUES].sort(), ['article', 'changelog', 'commit', 'cve', 'repo', 'thread']);
 });
 
 test('isEvidenceUrl 은 http(s) 만 허용', () => {
@@ -54,6 +54,11 @@ test('entry 에 evidence 가 비면 거부', () => {
 test('evidence.kind 가 허용 목록 밖이면 거부', () => {
   const bad = { ...evidence, kind: 'tweet' };
   assert.throws(() => validateEvidence(bad, 0, 'entries[0]'), /kind must be one of/);
+});
+
+test('evidence.kind=repo 는 GitHub 레포 근거로 허용 (opensource-curation)', () => {
+  const ok = { ...evidence, kind: 'repo', url: 'https://github.com/example/repo' };
+  assert.doesNotThrow(() => validateEvidence(ok, 0, 'entries[0]'));
 });
 
 test('quote 가 200자를 넘으면 거부', () => {

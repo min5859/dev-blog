@@ -9,7 +9,8 @@
 import { IMPACT_TYPE_VALUES } from './highlight-schema.mjs';
 
 export const CONFIDENCE_VALUES = new Set(['high', 'medium', 'low']);
-export const EVIDENCE_KIND_VALUES = new Set(['commit', 'thread', 'changelog', 'cve', 'article']);
+// 'repo' 는 GitHub 레포 자체(README/릴리스 등)를 근거로 삼을 때 사용 (opensource-curation).
+export const EVIDENCE_KIND_VALUES = new Set(['commit', 'thread', 'changelog', 'cve', 'article', 'repo']);
 
 const ENTRY_STRING_KEYS = ['candidateId', 'title', 'whatChanged', 'whyItMatters', 'affectedAudience'];
 
