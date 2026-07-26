@@ -1,0 +1,143 @@
+{
+  "id": "2026-07-27-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-07-27 pKVM IOMMU 락업 수정 — Android 커널",
+  "headline": "pKVM IOMMU 블록 풀 고갈·데드락을 같은 날 함께 수정했고 GKI엔 하드 락업 검출기가 새로 켜졌습니다.",
+  "date": "2026-07-27",
+  "summary": "android16-6.12 의 pKVM hyp IOMMU 에서 블록 풀 영구 고갈과 데드락을 유발하던 두 회귀를 같은 날 함께 수정했습니다. android-mainline gki_defconfig 에는 하드 락업 검출기와 SW_SYNC 가 새로 켜졌고, drm_crtc 의 fence BUG_ON 크래시 수정도 올라왔습니다.",
+  "tags": [
+    "안드로이드",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "pKVM IOMMU 블록 풀 영구 고갈 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "pKVM/hyp IOMMU 를 켠 ACK android16-6.12 벤더 트리 담당, GKI 배포 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/68d34e715b21bb149ccb1955d80518d4ea0d9c77",
+      "if": "pKVM/hyp IOMMU 를 켠 android16-6.12 기반 트리가 c949df871d07 를 포함하고 있다면",
+      "do": "68d34e715b21bb149ccb1955d80518d4ea0d9c77 를 함께 픽하세요",
+      "verify": "메모리 압박 상황을 재현해 블록 풀 할당이 CMA 풀로 정상 복귀하는지 확인하세요"
+    },
+    {
+      "title": "kvm_iommu_reclaim_pages 데드락 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "pKVM/hyp IOMMU 를 켠 ACK android16-6.12 벤더 트리 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/2ee3781b8da7ef51329387b25e7e3f717cdc8ebc",
+      "if": "위 블록 풀 수정을 픽하는 트리라면",
+      "do": "같은 날 머지된 2ee3781b8da7ef51329387b25e7e3f717cdc8ebc 데드락 수정도 함께 픽하세요",
+      "verify": "풀 밖 물리 주소로 reclaim 이 호출되는 경로에서 락업이 재현되지 않는지 확인하세요"
+    },
+    {
+      "title": "drm_crtc fence BUG_ON 크래시 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "DRM/dmabuf·그래픽 드라이버 담당, android-mainline 추적 팀",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/57acb869490b504996ea46cbb80af49e35ec66e1",
+      "if": "android-mainline 기반이고 sync_file 관련 ioctl 경로를 쓰는 그래픽 스택이라면",
+      "do": "57acb869490b504996ea46cbb80af49e35ec66e1 를 반영해 방어적 BUG_ON() 을 제거하세요",
+      "verify": "fence signal 과 SYNC_IOC_FILE_INFO 조회를 동시에 스트레스 테스트해 크래시가 없는지 확인하세요"
+    },
+    {
+      "title": "GKI 하드 락업 검출기 활성화",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "GKI defconfig·커널 안정화 담당, 벤더 워치독/디버그 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/bdc8ab55a8c960214437a2174168dd21242e2d06",
+      "if": "GKI defconfig 기반 커널의 안정화를 담당하고 있다면",
+      "do": "bdc8ab55a8c960214437a2174168dd21242e2d06 반영 후 하드 락업 로그·리포트 파이프라인을 점검하세요",
+      "verify": "hardlockup_panic 이 폰 빌드에는 꺼져 있고 검출·리포트만 발생하는지 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ANDROID: KVM: arm64: iommu: Fix block pool permanent exhaustion**\n\npKVM hyp IOMMU 의 CMA 블록 풀이 한 번 고갈되면 `__block_pools_available` 가 영구히 0 으로 남아 페이지가 반납돼도 복구되지 않던 문제를, 반납 시 플래그를 재설정하도록 고쳤습니다.\n\n영향: 플래그가 고착되면 이후 할당이 CMA 풀을 우회해 무제한 GFP_KERNEL 폴백으로 흐르고, 메모리 압박 상황에서 호스트 락업으로 이어집니다.\n\n> Exhausting the IOMMU block pools permanently clears __block_pools_available, which is never restored when pages are subsequently reclaimed.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/68d34e715b21bb149ccb1955d80518d4ea0d9c77)\n\n**ANDROID: KVM: arm64: iommu: Fix deadlock in kvm_iommu_reclaim_pages**\n\n`kvm_iommu_reclaim_pages()` 가 블록 풀에 속하지 않는 물리 주소 경로에서 이미 잡고 있는 `__block_pools_lock` 을 재획득하려다 데드락에 빠지던 것을 락 해제로 고쳤습니다.\n\n영향: hyp 컨텍스트의 자기 데드락이라 빠지면 회복 경로가 없고, 위 블록 풀 수정과 같은 Fixes 태그(c949df871d07)로 같은 날 머지되어 한쪽만 픽하면 반쪽 수정이 됩니다.\n\n> kvm_iommu_reclaim_pages() deadlocks if the physical address does not belong to any block pool, as it attempts to re-acquire the already held __block_pools_lock. Release the lock instead.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/2ee3781b8da7ef51329387b25e7e3f717cdc8ebc)\n\n**FROMLIST: drm/drm_crtc: fix race with dma_fence_signal() in ::get_driver_name()**\n\n업스트림 541c8f2468b9 이후 fence 가 signal 되면 `fence->ops` 가 NULL 로 바뀔 수 있는데, `fence_to_crtc()` 의 방어적 BUG_ON() 이 이 레이스에서 정기적으로 터졌습니다. 패치는 이 BUG_ON() 을 제거합니다.\n\n영향: `ioctl(SYNC_IOC_FILE_INFO)` 경로가 signal 중인 fence 의 ops 를 역참조하는 순간 커널이 죽으며, sync_file 이름 조회는 그래픽/HAL 스택이 일상적으로 쓰는 경로입니다.\n\n> using BUG_ON() and friends to take down the system is an unacceptable way to handle a failure.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/57acb869490b504996ea46cbb80af49e35ec66e1)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**ANDROID: gki_defconfig: Enable hard lockup detector**\n\narm64·x86 gki_defconfig 에서 `CONFIG_SOFTLOCKUP_DETECTOR=y` 가 빠지고 `CONFIG_HARDLOCKUP_DETECTOR=y` 가 추가됐습니다. arm64 는 `CONFIG_HARDLOCKUP_DETECTOR_PREFER_BUDDY=y` 도 함께 켜집니다.\n\n영향: 워치독 없이 조용히 멈추던 인터럽트 비활성 구간 hang 이 로그로 드러나지만, `hardlockup_panic` 은 폰이 아닌 데스크톱 디바이스에만 별도 CL 로 켠다고 명시돼 있습니다.\n\n> This enables hard lockup detection in Android devices.  However, we'll only enable hardlockup_panic in desktop devices (in a separate CL).\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/bdc8ab55a8c960214437a2174168dd21242e2d06)\n\n**ANDROID: gki_defconfig: enable CONFIG_SW_SYNC=y for debug/testing**\n\narm64·x86 gki_defconfig 에 `CONFIG_SW_SYNC=y` 를 추가해 igt-gpu-tools 로 GPU 드라이버를 시험할 수 있게 했습니다.\n\n영향: sw_sync 는 유저스페이스가 fence 를 임의로 만들 수 있어 오용 시 데드락을 유발하며, 근거는 출시 이미지가 debugfs 를 마운트하지 않는다는 전제에 의존합니다.\n\n> ANDROID: gki_defconfig: enable CONFIG_SW_SYNC=y for debug/testing\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/7443a0c3c9ecfc8982003afde92e9c783c725994)\n\n**ANDROID: sched: Avoid macro redefinition of TRACE_INCLUDE_PATH**\n\n`include/trace/hooks/sched.h` 에 빠져 있던 `#undef TRACE_INCLUDE_PATH` 를 추가해, 여러 trace hook 헤더를 함께 include 할 때 `-Werror,-Wmacro-redefined` 로 빌드가 깨지던 문제를 고쳤습니다. android-mainline 에 머지된 당일 android16-6.12 로도 체리픽됐습니다.\n\n영향: EAS 태스크 배치용 vendor hook(a1fc1fba460b)을 쓰는 벤더 모듈이 빌드 실패의 첫 피해자이며, android16-6.12 기반으로 리베이스하는 팀은 별도 로컬 패치 없이 이 지점 이후를 반영하면 됩니다.\n\n> Add missing #undef TRACE_INCLUDE_PATH before #define in include/trace/hooks/sched.h to prevent -Werror,-Wmacro-redefined\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/82be0d329bf2b455546a09cc84a40c9d1716b54d) · [android16-6.12 체리픽 확인](https://android.googlesource.com/kernel/common/+/0e0925f375430dad13c832a90bd8badb63ff88d6)\n\n**ANDROID: GKI: CRYPTO_LZ4 is now implicit**\n\n업스트림에서 `HIBERNATION` 이 `CRYPTO_LZ4` 를 select 하게 바뀌어, arm64·x86 gki_defconfig 의 명시적 `CONFIG_CRYPTO_LZ4` 항목을 제거했습니다.\n\n영향: 기능 변화는 없어야 하지만 'select 로 딸려온다'는 전제가 깨지면 하이버네이션·LZ4 crypto API 를 쓰는 벤더 모듈이 조용히 심볼을 잃을 수 있습니다.\n\n> The CRYPTO_LZ4 config is now implicitly selected via HIBERNATION, so remove it from our gki_defconfig files.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/87aba67d69fd0706152ae2d9dec68c2cfc274459)\n\n**ANDROID: kbuild: remove leftover extmod_prefix**\n\n`scripts/Makefile.modfinal` 에 남아 있던 `extmod_prefix` 참조를 제거했습니다. 업스트림에서 이미 삭제된 변수가 kbuild-v6.13 머지 충돌 해소 과정에서 실수로 남아 있었습니다.\n\n영향: 외부(벤더) 모듈 최종 링크 단계 Makefile 을 건드리는 정리이며, 자체 kbuild 패치를 얹은 벤더는 같은 잔재가 없는지 확인할 값이 있습니다.\n\n> This variable was removed upstream in commit bad6beb2c0bb (\"kbuild: remove extmod_prefix, MODORDER, MODULES_NSDEPS variables\"). However, it was mistakenly kept\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/b7afc9c272bd0bc9a66726a8f938508705390253)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ANDROID: KVM: arm64: iommu: Fix block pool permanent exhaustion",
+      "url": "https://android.googlesource.com/kernel/common/+/68d34e715b21bb149ccb1955d80518d4ea0d9c77",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: KVM: arm64: iommu: Allow donations from a CMA pool (회귀 원인)",
+      "url": "https://android.googlesource.com/kernel/common/+/c949df871d07",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: KVM: arm64: iommu: Fix deadlock in kvm_iommu_reclaim_pages",
+      "url": "https://android.googlesource.com/kernel/common/+/2ee3781b8da7ef51329387b25e7e3f717cdc8ebc",
+      "note": "commit"
+    },
+    {
+      "title": "FROMLIST: drm/drm_crtc: fix race with dma_fence_signal() in ::get_driver_name()",
+      "url": "https://android.googlesource.com/kernel/common/+/57acb869490b504996ea46cbb80af49e35ec66e1",
+      "note": "commit"
+    },
+    {
+      "title": "dma-buf: detach fence ops on signal v3 (원인 커밋)",
+      "url": "https://android.googlesource.com/kernel/common/+/541c8f2468b9",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: gki_defconfig: Enable hard lockup detector",
+      "url": "https://android.googlesource.com/kernel/common/+/bdc8ab55a8c960214437a2174168dd21242e2d06",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: gki_defconfig: enable CONFIG_SW_SYNC=y for debug/testing",
+      "url": "https://android.googlesource.com/kernel/common/+/7443a0c3c9ecfc8982003afde92e9c783c725994",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: sched: Avoid macro redefinition of TRACE_INCLUDE_PATH",
+      "url": "https://android.googlesource.com/kernel/common/+/82be0d329bf2b455546a09cc84a40c9d1716b54d",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: sched: Avoid macro redefinition of TRACE_INCLUDE_PATH (android16-6.12 체리픽)",
+      "url": "https://android.googlesource.com/kernel/common/+/0e0925f375430dad13c832a90bd8badb63ff88d6",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: GKI: CRYPTO_LZ4 is now implicit",
+      "url": "https://android.googlesource.com/kernel/common/+/87aba67d69fd0706152ae2d9dec68c2cfc274459",
+      "note": "commit"
+    },
+    {
+      "title": "PM: hibernate: select CRYPTO_LZ4 (원인 커밋)",
+      "url": "https://android.googlesource.com/kernel/common/+/2068d7715e94",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: kbuild: remove leftover extmod_prefix",
+      "url": "https://android.googlesource.com/kernel/common/+/b7afc9c272bd0bc9a66726a8f938508705390253",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-26T18:12:18.394Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/android-newsletter-from-dossier-ko.md"
+  }
+}

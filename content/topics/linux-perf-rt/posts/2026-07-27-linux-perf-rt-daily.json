@@ -1,0 +1,120 @@
+{
+  "id": "2026-07-27-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-07-27 BPF 보안 수정 2건 — Perf/RT",
+  "headline": "BPF 보안 수정 2건(getsockopt 음수 optlen, refcount NULL 검사 억제)과 PREEMPT_RT amdgpu 종료 패닉 원인 진척이 보고됐습니다.",
+  "date": "2026-07-27",
+  "summary": "cgroup getsockopt 훅의 음수 optlen 검증 누락과 refcount_acquire() 의 NULL 검사 억제라는 BPF 보안 수정안 두 건이 lore 에 올라왔습니다. 동시에 PREEMPT_RT amdgpu 종료 패닉은 dcn401_validate_bandwidth() 의 preempt_count underflow 로 원인이 좁혀졌습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "BPF",
+    "PREEMPT_RT"
+  ],
+  "highlights": [
+    {
+      "title": "bpf: cgroup getsockopt 훅의 음수 optlen 거부",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "cgroup sockopt BPF 를 운용하는 컨테이너 런타임·네트워킹 엔지니어, BPF 코어 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260726070122.2407344-1-zirajs7@gmail.com/",
+      "if": "cgroup BPF 로 getsockopt 훅을 붙여 TCP_ZEROCOPY_RECEIVE 등 커널 버퍼 변형 경로를 쓰고 있다면",
+      "do": "ctx->optlen 에 음수를 쓰는 BPF 프로그램이 없는지 점검하고 이 패치가 머지될 때까지 하한 검증을 프로그램 쪽에서 직접 추가하십시오",
+      "verify": "lore 스레드 원문에서 메인테이너 리뷰 진행 상황과 최종 수정 위치(코어 훅 vs TCP 측)를 확인하십시오"
+    },
+    {
+      "title": "bpf: borrowed RCU kptr 의 refcount_acquire NULL 안전성",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF verifier·refcounted kptr 을 쓰는 프로그램 작성자, verifier 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260726015330.705259-1-dingning04@gmail.com/",
+      "if": "RCU 로 로드한 refcounted map kptr 에 bpf_refcount_acquire() 를 호출하는 BPF 프로그램을 운용하고 있다면",
+      "do": "반환값 NULL 검사를 프로그램에서 명시적으로 넣고, verifier 가 이를 강제하지 않는 현재 버전에서는 자체 검증을 우선하십시오",
+      "verify": "봇이 제기한 PTR_UNTRUSTED 우회 가능성(Critical)에 대한 메인테이너 판단이 나왔는지 스레드에서 확인하십시오"
+    },
+    {
+      "title": "PREEMPT_RT amdgpu 종료 패닉, dcn401_validate_bandwidth 로 원인 좁혀짐",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "PREEMPT_RT + amdgpu 조합을 쓰는 데스크톱·워크스테이션 사용자, amd display(DC FPU) 및 RT 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/6e0b713cffd64b3c30eb4ff04e50721bac9cf8ca.camel@web.de/",
+      "if": "PREEMPT_RT 커널에서 amdgpu 를 쓰고 next-20260722 이후 또는 v7.2-rc4 계열에서 종료 시 hang·panic 을 겪고 있다면",
+      "do": "정식 패치가 나올 때까지 재부팅 전후 로그를 남겨 dcn401_validate_bandwidth() 구간과의 연관 여부를 직접 대조하십시오",
+      "verify": "DC_FP_START/END 제거라는 실험적 완화책이 dml2_validate() 내부 FPU 사용과 충돌하지 않는지, 회귀를 도입한 정확한 커밋이 확정됐는지 스레드에서 확인하십시오"
+    },
+    {
+      "title": "bpf, x86: indirect trampoline 스택 인자 오프셋 버그",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "struct_ops·BPF 트램폴린 JIT 유지보수 담당, sched_ext 등 struct_ops 소비자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260726013105.3689867-9-memxor@gmail.com/",
+      "if": "6개를 초과하는 인자를 스택으로 넘기는 struct_ops 콜백을 x86 에서 구현하거나 arena 인자 지원 시리즈를 추적하고 있다면",
+      "do": "이 패치가 머지되기 전까지는 6슬롯 초과 스택 인자를 쓰는 struct_ops 콜백 추가를 보류하십시오",
+      "verify": "ARM64·RISC-V·LoongArch 에 남아있다고 지적된 동일 오프셋 문제의 후속 수정 여부를 스레드에서 확인하십시오"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**bpf: Reject negative optlen in cgroup getsockopt hook**\n\nkernel/bpf/cgroup.c 의 __cgroup_bpf_run_filter_getsockopt_kern() 에 ctx.optlen 하한 검사를 추가해 sockptr 기반 훅과 맞췄습니다.\n\n영향: cgroup getsockopt BPF 프로그램이 음수 optlen 을 쓰면 copy_to_sockptr() 로 전파되어 hardened usercopy 경고가 발생할 수 있습니다.\n\n> It can then be passed to copy_to_sockptr() as a size_t and trigger the hardened usercopy bytes > INT_MAX warning. Fixes: 9cacf81f8161\n\n[원문 확인](https://lore.kernel.org/bpf/20260726070122.2407344-1-zirajs7@gmail.com/)\n\n**bpf: Keep refcount_acquire nullable for borrowed RCU kptrs**\n\nverifier 의 check_kfunc_args() 에 reg_is_referenced() 조건을 추가해, borrowed RCU kptr 을 owning 으로 오판하지 않도록 고칩니다.\n\n영향: 현재는 borrowed RCU kptr 이 owning 으로 처리되어 bpf_refcount_acquire() 의 NULL 검사가 억제되고, 검사 안 된 NULL 이 bpf_obj_drop() 으로 전달될 수 있습니다.\n\n> This sets arg_owning_ref and causes is_kfunc_ret_null() to suppress KF_RET_NULL, allowing an unchecked NULL return from bpf_refcount_acquire() to be passed to bpf_obj_drop().\n\n[원문 확인](https://lore.kernel.org/bpf/20260726015330.705259-1-dingning04@gmail.com/)\n\n**kernel panic during shutdown in v7.2-rc4 and next-20260722 with PREEMPT_RT**\n\nPREEMPT_RT 데스크톱에서 종료 시 hang·panic 이 보고됐고, mt76 shutdown hang 과 amdgpu DC FPU 관련 scheduling-while-atomic 두 문제로 분리됐습니다. 07-26 계측으로 dcn401_validate_bandwidth() 구간의 preempt_count underflow 로 원인이 좁혀졌습니다.\n\n영향: PREEMPT_RT 에서 amdgpu DC 의 FPU 가드 구간 안에서 슬립 가능한 락 경로를 타면 scheduling-while-atomic 으로 이어지며, 실제로 종료 시 panic 으로 나타납니다.\n\n> As the preempt_count_underflow happens in dcn401_validate_bandwidth() I removed the DC_FP_{START,END} macros ... With this patch I got 24 reboot cycles without any error\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/6e0b713cffd64b3c30eb4ff04e50721bac9cf8ca.camel@web.de/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**bpf: Fix RHash special-field recycling**\n\nRHash(리사이즈 가능 해시맵)의 업데이트·지연 삭제 경로에서 bpf_obj_free_fields() 대신 bpf_obj_cancel_fields() 를 쓰도록 고쳐 hash·array 맵과 동작을 맞췄습니다.\n\n영향: 지금까지는 copy_map_value() 이후 bpf_obj_free_fields() 가 호출되어 복사본이 보존해야 할 kptr 이 drop 되는 의미 불일치가 있었습니다.\n\n> However, RHash calls bpf_obj_free_fields() after copy_map_value(), dropping the kptr that the copy preserves.\n\n[원문 확인](https://lore.kernel.org/bpf/20260726-f01-23-rhash-cancel-bpf-next-v1-0-6e5e1131d885@mails.tsinghua.edu.cn/)\n\n**bpf, x86: Fix stack-passed arguments for indirect trampolines**\n\nx86 JIT 의 save_args() 가 스택 전달 인자 오프셋을 stack_args_off 로 분기해, indirect trampoline·jmp 진입 시 rbp+16 을 쓰도록 고쳤습니다(기존은 항상 rbp+24).\n\n영향: 6개 인자 슬롯을 넘는 struct_ops 콜백이 스택 인자를 한 슬롯씩 어긋나게 읽는 문제이며, arena 인자 지원이 들어오면 노출 가능성이 커집니다.\n\n> An indirect trampoline is called through a function pointer, so only the caller's return address is on the stack and the arguments start at rbp + 16, not rbp + 24.\n\n[원문 확인](https://lore.kernel.org/bpf/20260726013105.3689867-9-memxor@gmail.com/)\n\n**riscv: vector: allow non-preemptible kernel-mode vector with IRQs off**\n\nv4 로 갱신되며 get/put_cpu_vector_context() 가 IRQ off 컨텍스트에서도 안전하게 동작하도록 하고, may_use_simd() 조건을 한 줄로 단순화했으며 KVM 모듈용으로 심볼을 export 했습니다.\n\n영향: RISC-V 커널 모드 벡터의 선점·bh 규칙이 IRQ off 컨텍스트까지 확장되는 지점으로, PREEMPT_RT 빌드의 벡터 컨텍스트 선점 규칙에도 영향을 줍니다.\n\n> we are upgrading get/put_cpu_vector_context such that kvm_arch_vcpu_load/put can be safely called under both irq off and regular process context.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260725001749.2579274-3-tchiu@tenstorrent.com/)\n\n**serial: amba-pl011: fix console clock lifetime (v2)**\n\nv2 로 갱신되며 suspend/resume 관리와 no_console_suspend·RX wakeup 예외 처리가 추가됐고, 저자는 봇이 지적한 NULL 가능성에 대해 근본 원인이 serial core 에 있어 별도 시리즈에서 다룬다고 답했습니다.\n\n영향: PREEMPT_RT 의 nbcon atomic 경로에서 clk_enable() 이 sleeping lock 을 잡는 문제를 클럭을 상시 켜두는 방식으로 우회하며, 플랫폼별 전력 영향이 트레이드오프로 남습니다.\n\n> pl011_console_write_atomic() runs in nbcon atomic context but calls clk_enable(), which under RT can acquire a sleeping lock.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260724213348.77418-1-kmehltretter@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "bpf: Reject negative optlen in cgroup getsockopt hook",
+      "url": "https://lore.kernel.org/bpf/20260726070122.2407344-1-zirajs7@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Keep refcount_acquire nullable for borrowed RCU kptrs",
+      "url": "https://lore.kernel.org/bpf/20260726015330.705259-1-dingning04@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Fix RHash special-field recycling",
+      "url": "https://lore.kernel.org/bpf/20260726-f01-23-rhash-cancel-bpf-next-v1-0-6e5e1131d885@mails.tsinghua.edu.cn/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf, x86: Fix stack-passed arguments for indirect trampolines",
+      "url": "https://lore.kernel.org/bpf/20260726013105.3689867-9-memxor@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: vector: allow non-preemptible kernel-mode vector with IRQs off",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260725001749.2579274-3-tchiu@tenstorrent.com/",
+      "note": "thread"
+    },
+    {
+      "title": "serial: amba-pl011: fix console clock lifetime (v2)",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260724213348.77418-1-kmehltretter@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "kernel panic during shutdown in v7.2-rc4 and next-20260722 with PREEMPT_RT",
+      "url": "https://lore.kernel.org/linux-rt-devel/6e0b713cffd64b3c30eb4ff04e50721bac9cf8ca.camel@web.de/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-26T19:28:10.442Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

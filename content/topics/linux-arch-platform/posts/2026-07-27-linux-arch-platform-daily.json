@@ -1,0 +1,120 @@
+{
+  "id": "2026-07-27-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-07-27 arm64 Spectre 회귀 — 아키텍처/플랫폼",
+  "headline": "arm64 Spectre-BHB 커맨드라인 무시 회귀와 SpacemiT K3 이더넷 PHY dts 회귀가 v2 패치로 드러났고, RISC-V·Amlogic 신규 보드 지원이 이어졌습니다.",
+  "date": "2026-07-27",
+  "summary": "v6.18에 포함된 arm64 Spectre-BHB 커맨드라인 무시 회귀와 SpacemiT K3 이더넷 PHY 검출 실패가 각각 v2 패치로 수정됐습니다. RISC-V UFS 호스트 드라이버는 리뷰 반영이 진행됐고, Sophgo Milk-V Duo 256M 예약 메모리 정정과 Amlogic Orbbec Zora P1 신규 보드 지원이 올라왔습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "arm64",
+    "riscv"
+  ],
+  "highlights": [
+    {
+      "title": "arm64 nospectre_bhb 커맨드라인 무시 회귀",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "arm64 아키텍처 유지보수자, Spectre 완화 정책을 커맨드라인으로 제어하는 배포·성능 엔지니어",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-July/1154503.html",
+      "if": "CSV2를 가진 Cortex-A76/Neoverse N1 이후 코어에서 v6.18 이후 커널을 nospectre_bhb 또는 mitigations=off로 부팅한다면",
+      "do": "sysfs의 spectre_v2 상태와 실제 BHB loop 벡터 적용 여부를 대조 확인하고, 필요하면 spectre_bhb_mitigations_off() 헬퍼를 도입한 v2 패치를 백포트하십시오",
+      "verify": "부팅 로그의 mitigation disabled 메시지와 /sys/devices/system/cpu/vulnerabilities/spectre_v2 값이 서로 모순되는지 확인하십시오"
+    },
+    {
+      "title": "SpacemiT K3 이더넷 PHY 자동검출 실패 dts 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "RISC-V SpacemiT K3 보드(pico-itx, com260) 사용자 및 riscv dts 유지보수자",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-riscv/2026-July/095558.html",
+      "if": "SpacemiT K3 기반 pico-itx나 com260 보드에서 이더넷 PHY가 재초기화 후 살아나지 않는다면",
+      "do": "compatible을 ethernet-phy-id001c.c916으로 고정한 v2 dts 패치를 적용하십시오",
+      "verify": "PHY reset GPIO assert 이후 dmesg에서 PHY ID 검출 성공 여부를 확인하십시오"
+    },
+    {
+      "title": "Milk-V Duo 256M 코프로세서 예약 메모리 주소 정정",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "Sophgo CV180x/SG2002 플랫폼 사용자, riscv dts·U-Boot 통합 담당자",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-riscv/2026-July/095552.html",
+      "if": "Milk-V Duo 256M 보드 dts v4를 이미 적용해 두었다면",
+      "do": "v5로 갱신해 코프로세서 RTOS 예약 영역을 0x8fe00000/0x200000으로 교체하십시오",
+      "verify": "부팅 로그의 reserved mem 항목이 0x8fe00000..0x8fffffff(2048 KiB)로 나오는지 확인하십시오"
+    },
+    {
+      "title": "Amlogic A311D 기반 Orbbec Zora P1 보드 지원 추가",
+      "priority": "하",
+      "impactType": "runtime",
+      "affectedAudience": "Amlogic Meson G12B 플랫폼 유지보수자, dt-bindings 리뷰어",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-July/1154499.html",
+      "if": "Amlogic G12B 계열 보드에서 ODROID-N2 dtsi를 재사용해 신규 보드를 추가할 계획이라면",
+      "do": "이번 orbbec,zora-p1 시리즈의 벤더 프리픽스와 dtsi include 구조를 참고하십시오",
+      "verify": "amlogic.yaml 바인딩 검증과 실기 부팅 테스트로 DTB 유효성을 확인하십시오"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**arm64: proton-pack: nospectre_bhb 커맨드라인 옵션 복구 (v2)**\n\n7f1635737823에서 print 위치를 옮기며 spectre-bhb의 cpu_mitigations_off() / __nospectre_bhb 검사 분기가 통째로 사라졌고, v2 패치는 이를 spectre_bhb_mitigations_off() 헬퍼로 되살립니다.\n\n영향: CSV2를 가진 Cortex-A76/Neoverse N1 이후 코어에서 nospectre_bhb와 mitigations=off가 무시된 채 BHB loop 벡터가 항상 켜지고, sysfs 표시와 실제 상태가 어긋나는 v6.18 이후 릴리스의 실사용 회귀입니다.\n\n> spectre_bhb_enable_mitigation() therefore no longer tests __nospectre_bhb or cpu_mitigations_off() and the mitigation is enabled regardless of the command line.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-arm-kernel/2026-July/1154503.html)\n\n**riscv: dts: spacemit: K3 보드 이더넷 PHY compatible을 PHY ID로 고정 (v2)**\n\nk3-pico-itx.dts와 k3-com260.dtsi의 MDIO 노드 compatible을 ethernet-phy-id001c.c916으로 고정해 PHY ID 자동 검출을 건너뛰게 합니다.\n\n영향: PHY 재초기화 시 reset GPIO가 assert된 상태라 PHY ID를 읽지 못해 검출이 실패하던 회귀로, SpacemiT K3 보드 두 종의 이더넷이 재초기화 후 복구되지 않는 문제를 고칩니다.\n\n> Current phy framework can not re-initialize the phy correctly, as it will assert the phy reset GPIO so the phy id can not be read.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-July/095558.html)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**SpacemiT K3 SoC용 UFS 호스트 컨트롤러 드라이버 (v2)**\n\n어제 다룬 3패치 시리즈의 v2로, interrupts 프로퍼티 누락 수정, freq-table-hz에서 operating-points-v2로 전환, 벤더 hce_enable_notify() 제거 후 표준 경로 사용 등 리뷰 반영이 이뤄졌습니다.\n\n영향: 벤더 특화 훅을 걷어내고 표준 UFSHCD/OPP 경로로 편입되는 방향이 확인되어, 이후 SpacemiT 계열 드라이버가 받아들여지는 기준선을 보여줍니다.\n\n> 8 files changed, 869 insertions(+)\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-July/095537.html)\n\n**riscv: dts: sophgo: Milk-V Duo 256M 보드 지원 (v5)**\n\n어제 다룬 시리즈의 v5로, v4가 64M Duo에서 그대로 가져와 잘못 쓰던 코프로세서 RTOS 예약 영역을 0x8fe00000/0x200000으로 바로잡았습니다.\n\n영향: 예약 메모리 주소를 파생 보드에서 복사해 오다 생기는 실수를 실기 부팅으로 검증해 고쳤고, 이 dts를 canonical로 참조하는 U-Boot 시리즈의 병합 순서에도 영향을 줍니다.\n\n> v4 carried over the address from the 64M Duo (0x83f40000/0xc0000), which sits at the top of 64MB and is wrong for this board.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-July/095552.html)\n\n**arm64: dts: amlogic: Orbbec Zora P1 보드 지원**\n\nAmlogic A311D(Meson G12B) 기반 비전 개발 보드 Orbbec Zora P1의 dts와 새 벤더 프리픽스 orbbec, compatible orbbec,zora-p1을 추가하는 3패치 시리즈입니다.\n\n영향: ODROID-N2 파생 dtsi를 재사용해 최소 diff로 보드를 올리는 전형적 패턴으로, 새 벤더 프리픽스 도입이라 dt-bindings 리뷰가 필요합니다.\n\n> The DTW was built, validated against the amlogic.yaml binding (DT_SCHEMA_FILES), and the resulting DTB was boot-tested on the board.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-arm-kernel/2026-July/1154499.html)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "arm64 spectre-bhb nospectre_bhb 회귀 논의 스레드",
+      "url": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-July/1154503.html",
+      "note": "thread"
+    },
+    {
+      "title": "Fixes 대상 커밋: arm64: proton-pack: Fix hard lockup due to print in scheduler context",
+      "url": "https://github.com/torvalds/linux/commit/7f1635737823",
+      "note": "commit"
+    },
+    {
+      "title": "riscv: dts: spacemit K3 이더넷 PHY compatible 수정 스레드",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-July/095558.html",
+      "note": "thread"
+    },
+    {
+      "title": "Fixes 대상 커밋: riscv: dts: spacemit: Add ethernet device for K3",
+      "url": "https://github.com/torvalds/linux/commit/74657a376960",
+      "note": "commit"
+    },
+    {
+      "title": "SpacemiT K3 UFS 호스트 컨트롤러 드라이버 v2 커버레터",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-July/095537.html",
+      "note": "thread"
+    },
+    {
+      "title": "Sophgo Milk-V Duo 256M 예약 메모리 정정 스레드",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-July/095552.html",
+      "note": "thread"
+    },
+    {
+      "title": "Orbbec Zora P1 보드 지원 커버레터",
+      "url": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-July/1154499.html",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-26T19:37:57.633Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

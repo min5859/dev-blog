@@ -1,0 +1,129 @@
+{
+  "id": "2026-07-27-android-weekly-rollup",
+  "topic": "android",
+  "title": "2026-07-27 주간 Android 커널 요약",
+  "headline": "pKVM/hyp IOMMU 를 켠 ACK android16-6.12 벤더 트리 담당, GKI 배포 담당 주목: ANDROID: KVM: arm6",
+  "date": "2026-07-27",
+  "summary": "오늘의 핵심: 릴리스/로드맵 0건, 회귀·보안 신호 3건, 핵심 변경 5건. 리서치 dossier 의 출처를 근거로 정리했습니다.",
+  "tags": [
+    "안드로이드",
+    "커널",
+    "주간"
+  ],
+  "highlights": [
+    {
+      "title": "ANDROID: KVM: arm64: iommu: Fix block pool permanent exhaustion",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "pKVM/hyp IOMMU 를 켠 ACK android16-6.12 벤더 트리 담당, GKI 배포 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/68d34e715b21bb149ccb1955d80518d4ea0d9c77",
+      "if": "pKVM/hyp IOMMU 를 켠 ACK android16-6.12 벤더 트리 담당, GKI 배포 담당라면",
+      "do": "pKVM hyp IOMMU 의 CMA 블록 풀이 한 번 고갈되면 `__block_pools_available` 가 영구히 0 으로 남아 이후 페",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://android.googlesource.com/kernel/common/+/68d34e715b21bb149ccb1955d80518d4ea0d9c77"
+    },
+    {
+      "title": "ANDROID: KVM: arm64: iommu: Fix deadlock in kvm_iommu_reclaim_pages",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "pKVM/hyp IOMMU 를 켠 ACK android16-6.12 벤더 트리 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/2ee3781b8da7ef51329387b25e7e3f717cdc8ebc",
+      "if": "pKVM/hyp IOMMU 를 켠 ACK android16-6.12 벤더 트리 담당라면",
+      "do": "`kvm_iommu_reclaim_pages()` 가 물리 주소가 어떤 블록 풀에도 속하지 않는 경로에서 이미 잡고 있는 `__block_poo",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://android.googlesource.com/kernel/common/+/2ee3781b8da7ef51329387b25e7e3f717cdc8ebc"
+    },
+    {
+      "title": "FROMLIST: drm/drm_crtc: fix race with dma_fence_signal() in ::get_driver_name()",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "DRM/dmabuf·그래픽 드라이버 담당, android-mainline 추적 팀",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/57acb869490b504996ea46cbb80af49e35ec66e1",
+      "if": "DRM/dmabuf·그래픽 드라이버 담당, android-mainline 추적 팀라면",
+      "do": "업스트림 541c8f2468b9(\"dma-buf: detach fence ops on signal v3\") 이후 fence 가 signal 되면",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://android.googlesource.com/kernel/common/+/57acb869490b504996ea46cbb80af49e35ec66e1"
+    },
+    {
+      "title": "ANDROID: sched: Avoid macro redefinition of TRACE_INCLUDE_PATH (android16-6.12 체리픽)",
+      "priority": "중",
+      "impactType": "backport",
+      "affectedAudience": "ACK android16-6.12 기반 벤더 트리 리베이스 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/0e0925f375430dad13c832a90bd8badb63ff88d6",
+      "if": "ACK android16-6.12 기반 벤더 트리 리베이스 담당라면",
+      "do": "위 android-mainline 수정(82be0d32)을 android16-6.12 로 체리픽했다. 커밋 메시지·Change-Id 동일, `(",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://android.googlesource.com/kernel/common/+/0e0925f375430dad13c832a90bd8badb63ff88d6"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ANDROID: KVM: arm64: iommu: Fix block pool permanent exhaustion**\n\npKVM hyp IOMMU 의 CMA 블록 풀이 한 번 고갈되면 `__block_pools_available` 가 영구히 0 으로 남아 이후 페이지가 반납돼도 복구되지 않던 문제를, 블록 풀에 페이지를 되돌릴 때 플래그를 1 로 재설정해 수정했다. 덤으로 order > 0 할당 실패 시\n\n영향: 플래그가 영구 고착되면 이후 모든 할당이 CMA 풀을 우회해 무제한 GFP_KERNEL 폴백으로 흐르고, 심한 메모리 압박 상황에서 호스트 락업으로 이어진다. pKVM 을 켠 android16-6.12 기반 디바이스에서 재현 조건(메모리 압박)이 현실적이라 벤더 트리 담당자는 c949d\n\n> Exhausting the IOMMU block pools permanently clears __block_pools_available, which is never restored when pages are subsequently reclaimed.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/68d34e715b21bb149ccb1955d80518d4ea0d9c77)\n\n**ANDROID: KVM: arm64: iommu: Fix deadlock in kvm_iommu_reclaim_pages**\n\n`kvm_iommu_reclaim_pages()` 가 물리 주소가 어떤 블록 풀에도 속하지 않는 경로에서 이미 잡고 있는 `__block_pools_lock` 을 재획득하려다 데드락에 빠지던 것을, 해당 경로에서 락을 해제하도록 고쳤다. arch/arm64/kvm/hyp/nvhe/iom\n\n영향: hyp 컨텍스트에서의 자기 데드락이므로 빠지면 회복 경로가 없다. 위의 블록 풀 고갈 수정과 같은 시리즈·같은 Fixes: 태그(c949df871d07)로 같은 날 머지됐으니, 한 쪽만 픽하면 반쪽 수정이 된다.\n\n> kvm_iommu_reclaim_pages() deadlocks if the physical address does not belong to any block pool, as it attempts to re-acquire the already held __block_pools_lock. Release the lock instead.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/2ee3781b8da7ef51329387b25e7e3f717cdc8ebc)\n\n**FROMLIST: drm/drm_crtc: fix race with dma_fence_signal() in ::get_driver_name()**\n\n업스트림 541c8f2468b9(\"dma-buf: detach fence ops on signal v3\") 이후 fence 가 signal 되면 `fence->ops` 가 NULL 로 바뀔 수 있게 됐는데, drm_crtc 의 `fence_to_crtc()` 안 BUG_ON() 이 이 \n\n영향: `ioctl(SYNC_IOC_FILE_INFO)` → `sync_file_get_name()` 경로가 signal 중인 fence 의 ops 를 역참조하는 순간 커널이 BUG_ON 으로 죽는다. sync_file 이름 조회는 Android 그래픽/HAL 스택이 일상적으로 쓰는 경로이고,\n\n> using BUG_ON() and friends to take down the system is an unacceptable way to handle a failure.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/57acb869490b504996ea46cbb80af49e35ec66e1)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**ANDROID: sched: Avoid macro redefinition of TRACE_INCLUDE_PATH (android16-6.12 체리픽)**\n\n위 android-mainline 수정(82be0d32)을 android16-6.12 로 체리픽했다. 커밋 메시지·Change-Id 동일, `(cherry picked from commit 82be0d329bf2b455546a09cc84a40c9d1716b54d)` 라인이 붙었고 같은 \n\n영향: 실제로 디바이스를 출시하는 브랜치에 수정이 도착했다는 신호다. android16-6.12 기반으로 EAS vendor hook 을 쓰는 벤더는 자기 트리를 이 지점 이후로 리베이스하면 별도 로컬 패치가 필요 없다.\n\n> (cherry picked from commit 82be0d329bf2b455546a09cc84a40c9d1716b54d)\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/0e0925f375430dad13c832a90bd8badb63ff88d6)\n\n**ANDROID: gki_defconfig: Enable hard lockup detector**\n\narm64·x86 gki_defconfig 에서 `CONFIG_SOFTLOCKUP_DETECTOR=y` 줄이 빠지고 `CONFIG_HARDLOCKUP_DETECTOR=y` 가 추가됐다. arm64 는 추가로 `CONFIG_HARDLOCKUP_DETECTOR_PREFER_BUDDY=y` \n\n영향: GKI 커널에 하드 락업 검출이 기본 활성화되므로, 지금까지 워치독 없이 조용히 멈추던 인터럽트-비활성 구간 hang 이 로그·패닉으로 드러난다. 커밋은 `hardlockup_panic` 을 데스크톱 디바이스에만 별도 CL 로 켠다고 명시해, 폰에서는 우선 검출·리포트만 늘어난다는 점이\n\n> This enables hard lockup detection in Android devices. However, we'll only enable hardlockup_panic in desktop devices (in a separate CL).\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/bdc8ab55a8c960214437a2174168dd21242e2d06)\n\n**ANDROID: gki_defconfig: enable CONFIG_SW_SYNC=y for debug/testing**\n\narm64·x86 gki_defconfig 에 `CONFIG_SW_SYNC=y` 를 추가해 sw_sync 드라이버를 GKI 에 내장했다. 커밋은 igt-gpu-tools 로 GPU 드라이버를 시험하기 위한 목적이라고 밝히고, Android 4.9 커널 이후 sw_sync 가 debugf\n\n영향: GKI 로 igt-gpu-tools fence 테스트를 돌릴 수 있게 되는 대신, sw_sync 는 유저스페이스가 fence 를 임의로 만들고 signal 을 붙잡을 수 있어 잘못 쓰면 데드락을 유발한다. 안전성 논거가 'debugfs 가 마운트되지 않는다'에 전적으로 의존하므로, de\n\n> ANDROID: gki_defconfig: enable CONFIG_SW_SYNC=y for debug/testing\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/7443a0c3c9ecfc8982003afde92e9c783c725994)\n\n**ANDROID: sched: Avoid macro redefinition of TRACE_INCLUDE_PATH**\n\n`include/trace/hooks/sched.h` 에 빠져 있던 `#undef TRACE_INCLUDE_PATH` 를 `#define` 앞에 추가했다. 여러 trace hook 헤더를 같은 컴파일 유닛에서 include 하면 `-Werror,-Wmacro-redefined` 로 빌드\n\n영향: vendor hook 헤더를 여러 개 include 하는 벤더 모듈에서 빌드가 바로 실패하는 유형이라, 벤더 트리 빌드 담당에게는 즉각적인 차단 요인이다. Fixes 대상이 EAS 태스크 배치용 restrict vendor hook 추가 커밋(a1fc1fba460b)이므로, 그 훅을 쓰\n\n> Add missing #undef TRACE_INCLUDE_PATH before #define in include/trace/hooks/sched.h to prevent -Werror,-Wmacro-redefined\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/82be0d329bf2b455546a09cc84a40c9d1716b54d)\n\n**ANDROID: GKI: CRYPTO_LZ4 is now implicit**\n\n업스트림에서 `HIBERNATION` 이 `CRYPTO_LZ4` 를 select 하게 바뀌었으므로(Fixes: 2068d7715e94, kernel/power/Kconfig), arm64·x86 gki_defconfig 에서 명시적 `CONFIG_CRYPTO_LZ4` 항목을 제거했다.\n\n영향: defconfig 위생 정리라 기능 변화는 없어야 하지만, 'select 로 딸려온다'는 전제가 깨지면 하이버네이션 LZ4 압축과 LZ4 crypto API 를 쓰는 벤더 모듈이 조용히 심볼을 잃는다. defconfig 를 자체 포크해 관리하는 팀은 자기 브랜치에서 HIBERNATION\n\n> The CRYPTO_LZ4 config is now implicitly selected via HIBERNATION, so remove it from our gki_defconfig files.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/87aba67d69fd0706152ae2d9dec68c2cfc274459)"
+    },
+    {
+      "heading": "기타",
+      "body": "국부 드라이버/플랫폼 패치는 본문에서 제외했습니다. 자기 영역 키워드로 lore.kernel.org에서 직접 검색하세요."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ANDROID: KVM: arm64: iommu: Fix block pool permanent exhaustion",
+      "url": "https://android.googlesource.com/kernel/common/+/68d34e715b21bb149ccb1955d80518d4ea0d9c77",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: KVM: arm64: iommu: Fix deadlock in kvm_iommu_reclaim_pages",
+      "url": "https://android.googlesource.com/kernel/common/+/2ee3781b8da7ef51329387b25e7e3f717cdc8ebc",
+      "note": "commit"
+    },
+    {
+      "title": "FROMLIST: drm/drm_crtc: fix race with dma_fence_signal() in ::get_driver_name()",
+      "url": "https://android.googlesource.com/kernel/common/+/57acb869490b504996ea46cbb80af49e35ec66e1",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: sched: Avoid macro redefinition of TRACE_INCLUDE_PATH (android16-6.12 체리픽)",
+      "url": "https://android.googlesource.com/kernel/common/+/0e0925f375430dad13c832a90bd8badb63ff88d6",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: gki_defconfig: Enable hard lockup detector",
+      "url": "https://android.googlesource.com/kernel/common/+/bdc8ab55a8c960214437a2174168dd21242e2d06",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: gki_defconfig: enable CONFIG_SW_SYNC=y for debug/testing",
+      "url": "https://android.googlesource.com/kernel/common/+/7443a0c3c9ecfc8982003afde92e9c783c725994",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: sched: Avoid macro redefinition of TRACE_INCLUDE_PATH",
+      "url": "https://android.googlesource.com/kernel/common/+/82be0d329bf2b455546a09cc84a40c9d1716b54d",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: GKI: CRYPTO_LZ4 is now implicit",
+      "url": "https://android.googlesource.com/kernel/common/+/87aba67d69fd0706152ae2d9dec68c2cfc274459",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "source": "research-dossier",
+    "bucketCounts": {
+      "릴리스/로드맵": 0,
+      "회귀·보안 신호": 3,
+      "핵심 변경": 5,
+      "기타": 0
+    },
+    "entryCount": 8
+  }
+}
