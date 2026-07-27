@@ -9,6 +9,10 @@ set -eu
 PROJECT_DIR="${PROJECT_DIR:-/Users/wooki/project/git/wk/dev-blog}"
 NPM_BIN="${NPM_BIN:-/Users/wooki/.nvm/versions/node/v24.14.0/bin/npm}"
 
+# lens research(claude -p 도구 조사)는 평상시 ~9분이라 기본 10분 타임아웃에 상시 근접한다.
+# 크론 전체에 15분 상한을 주어 정상적으로 느린 research 가 잘리지 않게 한다(개별 실행 시 override 가능).
+export CLAUDE_RESEARCH_TIMEOUT_MS="${CLAUDE_RESEARCH_TIMEOUT_MS:-900000}"
+
 cd "${PROJECT_DIR}"
 
 # launchd.log 가 1MB 넘으면 .prev 로 회전. 매일 추가되니 두 달이면 충분히 큼.
