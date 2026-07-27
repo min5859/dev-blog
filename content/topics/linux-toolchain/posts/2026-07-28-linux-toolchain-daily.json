@@ -1,0 +1,128 @@
+{
+  "id": "2026-07-28-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-07-28 kCFI 트랩공백 노출 — 리눅스 툴체인",
+  "headline": "s390 kCFI v2가 정리됐지만 트랩 섹션 부재가 남았고, kconfirm은 RFC를 떼고 병합 문턱에 섰습니다.",
+  "date": "2026-07-28",
+  "summary": "s390 kCFI v2는 진단 없는 크래시 위험을 남긴 채 정리됐고, kconfirm v4는 RFC 태그를 떼고 in-tree 파서 기반으로 병합 논의에 들어갔습니다. Rust 쪽에서는 num::casts API와 WaitQueue 코어 추상화를 둘러싼 재작업이 동시에 진행 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "kconfirm v4, RFC 떼고 in-tree 파서로 이전",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "kbuild/Kconfig 유지보수 담당, 서브시스템 Kconfig 작성자, 배포·CI 빌드 관리자",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20260727001623.2794156-1-julianbraha@gmail.com/",
+      "if": "Kconfig 정적 분석 도구를 커널에 통합할 계획이 있다면",
+      "do": "kconfirm v4 패치 시리즈와 in-tree 파서 콜백 변경(parser.y)을 검토하세요.",
+      "verify": "make kconfirm으로 기본 검사 1282건 경보가 재현되는지, 호스트에 rustc·bindgen이 설치돼 있는지 확인하세요."
+    },
+    {
+      "title": "s390 kCFI v2, 트랩 섹션 없이 크래시로 직행",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "s390 아키텍처·bpf JIT 유지보수 담당, clang 커널 빌드/하드닝 담당",
+      "verifyLink": "https://lore.kernel.org/llvm/20260727140514.116501-1-hca@linux.ibm.com/",
+      "if": "s390에서 CONFIG_CFI_CLANG 또는 CFI_PERMISSIVE를 켤 계획이라면",
+      "do": "제네릭 kCFI 구현이 .kcfi_traps 섹션을 생성하지 않는다는 점을 감안해 CFI_PERMISSIVE에 기대지 마세요.",
+      "verify": "vmtest.sh로 bpf selftest 중 task work 스케줄링 kfunc 관련 실패가 남아있는지 확인하세요."
+    },
+    {
+      "title": "rust num::casts 제안, 비포터블 캐스트 분리 요구로 재작업 예상",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "rust/kernel 코어 추상화 유지보수 담당, Rust 드라이버 작성자(nova-core·tyr 등)",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/CANiq72nwo=NSCOaafPc_4beonpJO3x6Njj-GKcW7q3Hk8P80yA@mail.gmail.com/",
+      "if": "nova-core 등에서 num::casts API를 미리 사용할 계획이라면",
+      "do": "v2에서 usize→u32, u64→usize 같은 비포터블 변환이 별도 이름·모듈로 분리될 수 있으니 이번 v1 API에 의존하지 마세요.",
+      "verify": "Gary Guo·Miguel Ojeda·Danilo Krummrich의 합의안이 반영된 v2가 올라오는지 리뷰 스레드를 확인하세요."
+    },
+    {
+      "title": "드라이버 지역 Wait 타입 철회, 코어 WaitQueue로 수렴",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "rust/kernel sync 추상화 유지보수 담당, Rust DRM 드라이버(tyr·nova) 개발자, 기존 CondVar 사용자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260726223613.1242940-1-dakr@kernel.org/",
+      "if": "tyr·nova 등에서 드라이버 지역 대기(wait) 헬퍼를 직접 구현했다면",
+      "do": "코어 WaitQueue 시리즈(rust/kernel/sync/wait.rs) 위로 재작업하고 CondVar를 흉내내는 구현은 제거하세요.",
+      "verify": "WaitQueue의 TASK_* 상수·에러 타입 리뷰(Gary Guo)가 정리되는 v2를 기다려 병합 순서를 맞추세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**s390 kCFI 지원 v2, 제네릭 clang 경로라 트랩 섹션 없음**\n\nHeiko Carstens의 6개 패치가 s390에 ARCH_SUPPORTS_CFI를 켜되, clang 제네릭 kCFI 구현만 사용해 .kcfi_traps 섹션이 만들어지지 않는다.\n\n영향: 체크섬 불일치 시 진단 메시지 없이 커널이 바로 크래시하고 CFI_PERMISSIVE도 동작하지 않으며, 이번 작업으로 bpf task work kfunc의 실제 CFI 불일치 버그도 드러났다.\n\n> The generic kCFI implementation does not generate a .kcfi_traps section, nor is a special instruction used in case a checksum mismatch is detected.\n\n[원문 확인](https://lore.kernel.org/llvm/20260727140514.116501-1-hca@linux.ibm.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**kconfirm v4, RFC 떼고 in-tree 파서로 이전**\n\nJulian Braha가 Kconfig 정적 분석기 kconfirm을 v4로 재제출하며 RFC 태그를 없애고, 외부 crate 대신 in-tree Kconfig 파서를 쓰도록 전환했다(parser.y에 pre-finalize 콜백 추가).\n\n영향: dead code·상수 조건 등 Kconfig 오용을 in-tree 도구로 잡는 첫 사례지만, 본체가 Rust로 작성돼 호스트 rustc·bindgen이 필요하고 x86-64/v7.2-rc4 기본 검사만으로 1282건 경보가 나와 병합 관문이 될 것으로 보인다.\n\n> kconfirm now uses the in-tree parser. Making this migration required a modification to the parser that allows us to observe the parse tree before its final simplification step\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20260727001623.2794156-1-julianbraha@gmail.com/)\n\n**rust num::casts 제안, 비포터블 캐스트 분리 요구**\n\nAlexandre Courbot가 rust/kernel/num/casts.rs를 신설해 as 대신 쓸 무손실 정수 변환 함수와 FromSafeCast/IntoSafeCast 트레이트를 제안하고 nova-core를 이 위로 전환했다.\n\n영향: Gary Guo는 usize→u32, u64→usize처럼 포인터 크기 의존 변환을 코어에 두는 데 반대했고, Miguel Ojeda와 Danilo Krummrich는 비포터블 변환을 별도 이름·모듈로 분리하자고 제안해 API 표면이 v2에서 바뀔 가능성이 높다.\n\n> Something like splitting the non-portable ones into a different trait/`mod`/method name/... so that it is very clear that it makes you (i.e. the user) user pointer-size dependent\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/CANiq72nwo=NSCOaafPc_4beonpJO3x6Njj-GKcW7q3Hk8P80yA@mail.gmail.com/)\n\n**드라이버 지역 Wait 타입 철회, 코어 WaitQueue로 수렴**\n\nLaura Nao가 drm/tyr에 넣으려던 지역 Wait 타입을, Danilo Krummrich의 거꾸로라는 지적 이후 새 코어 시리즈(rust/kernel/sync/wait.rs, WaitQueue infrastructure) 위로 재작업하겠다고 밝혔다.\n\n영향: CondVar·PollCondVar가 WaitQueue 기반으로 재작성되면서 기존 CondVar 사용자에게도 영향이 있고, tyr·nova 같은 GPU 드라이버의 대기 로직 병합 순서가 이 코어 시리즈에 묶이게 됐다.\n\n> This is backwards; if I get this right at a quick glance it is basically abusing CondVar to implement a WaitQueue abstraction in your driver.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260727090450.16462-1-laura.nao@collabora.com/)\n\n**syscall 테이블 통합 RFC, Arnd가 범위 확대 요구**\n\nAndré Almeida의 scripts/syscall_common.tbl RFC에 대해 Arnd Bergmann이 시작점을 442가 아니라 403부터로 넓히라고 요구했고, x32 전용 지원 패치는 x32 자체가 linux-7.4에서 제거 제안 중이라 불필요할 수 있다고 지적했다.\n\n영향: 다음 리스핀에서 공통화 범위가 크게 확대되고 x32 대응 패치가 빠질 가능성이 크다.\n\n> It should really be anything starting at 403, not just 442 and higher.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/3a481359-72d0-4c58-8a63-b6d941a22482@app.fastmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "kconfirm v4 커버레터 (RFC 제거, in-tree 파서 전환)",
+      "url": "https://lore.kernel.org/linux-kbuild/20260727001623.2794156-1-julianbraha@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "s390 kCFI v2 커버레터",
+      "url": "https://lore.kernel.org/llvm/20260727140514.116501-1-hca@linux.ibm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "rust num::casts 커버레터",
+      "url": "https://lore.kernel.org/rust-for-linux/20260727-as_casts-v1-1-6ea704ff25d8@nvidia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Miguel Ojeda: 비포터블 변환 분리 제안",
+      "url": "https://lore.kernel.org/rust-for-linux/CANiq72nwo=NSCOaafPc_4beonpJO3x6Njj-GKcW7q3Hk8P80yA@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Danilo Krummrich: num::casts 이름 분리 동의",
+      "url": "https://lore.kernel.org/rust-for-linux/DK9BA0QUVUGT.2ZB6EESQOXCS3@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: sync: add WaitQueue infrastructure 커버레터",
+      "url": "https://lore.kernel.org/rust-for-linux/20260726223613.1242940-1-dakr@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/tyr Wait 타입 철회, WaitQueue 위로 재작업",
+      "url": "https://lore.kernel.org/rust-for-linux/20260727090450.16462-1-laura.nao@collabora.com/",
+      "note": "thread"
+    },
+    {
+      "title": "syscall_common.tbl RFC 커버레터",
+      "url": "https://lore.kernel.org/linux-kbuild/20260724-tonyk-syscall_table-v1-0-9c53188423da@igalia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Arnd Bergmann: 통합 범위를 403부터로 확대 요구",
+      "url": "https://lore.kernel.org/linux-kbuild/3a481359-72d0-4c58-8a63-b6d941a22482@app.fastmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-27T19:14:00.765Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

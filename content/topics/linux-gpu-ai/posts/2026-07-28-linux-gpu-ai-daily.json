@@ -1,0 +1,133 @@
+{
+  "id": "2026-07-28-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-07-28 nouveau GSP PM 수정 — GPU/AI 커널",
+  "headline": "nouveau GSP 런타임 PM 회귀가 GcOff 플래그 오해로 특정됐고, vmwgfx igt 수정과 drm/panel 머지에 AI 리뷰 봇 지적까지 겹쳤습니다.",
+  "date": "2026-07-28",
+  "summary": "nouveau GSP 런타임 PM 수정 시리즈가 R570 GcOff 플래그 오해를 바로잡아 stable 백포트를 앞두고 있습니다. 동시에 vmwgfx igt 수정 시리즈에는 AI 리뷰 봇 sashiko-bot이 unbalanced unlock 등 High 이슈를 제기했고, drm/panel refcount 시리즈는 머지되며 의도치 않은 .orig 파일을 남겼습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "drm/nouveau: GSP 런타임 PM r570 GcOff 되돌리기",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "nouveau/GSP 유지보수자, NVIDIA GPU 노트북 런타임 PM 회귀를 추적하는 배포판·stable 트리 담당자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260727175246.642071-1-lyude@redhat.com/",
+      "if": "NVIDIA GPU 노트북에서 nouveau 런타임 서스펜드/리줌 실패를 겪고 있다면",
+      "do": "v4 3패치 시리즈(8302d0afeaec 되돌리기, GcOff=0, PRESERVING/PM_TRANSITION 플래그 추가)를 적용해 보세요.",
+      "verify": "머지 트리(drm-misc-fixes vs nouveau/next) 확정 여부와 stable v6.16/v6.19 백포트 반영 여부를 확인하세요."
+    },
+    {
+      "title": "drm/panel refcount 머지 — 딸려온 .orig 파일",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "drm_panel/bridge 드라이버 작성자, drm-misc 커미터, 아웃오브트리 패널 드라이버 유지보수자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/DK9KRSOWRHY0.H7SC0R3BIIUZ@cknow-tech.com/",
+      "if": "of_drm_find_panel()이나 find_panel_by_fwnode()를 호출하는 드라이버를 유지보수하고 있다면",
+      "do": "이제 이 함수들이 counted reference를 반환하므로 drm_panel_put()으로 균형을 맞추세요.",
+      "verify": "drm-misc-next에 남은 drm_panel.c.orig 파일 정리 여부를 확인하세요."
+    },
+    {
+      "title": "Sashiko 봇, vmwgfx 3/4에 High 3건 제기",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "vmwgfx·TTM 리뷰어, drm-misc 커미터, 커널 자동 리뷰 도구 도입을 지켜보는 유지보수자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260727183307.A52471F000E9@smtp.kernel.org/",
+      "if": "vmwgfx v6 패치 3/4(Reserve ttm object before resv usage)를 리뷰하거나 백포트할 계획이라면",
+      "do": "ttm_bo_reserve 실패 시에도 unreserve가 무조건 호출되는 부분을 diff로 직접 확인하세요.",
+      "verify": "작성자·유지보수자의 대응(v7 여부)과 리뷰어 응답을 추적하세요."
+    },
+    {
+      "title": "drm/vmwgfx: igt 발견 4건 수정 (v6)",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "vmwgfx 유지보수자, DRM/KMS·TTM 리뷰어, 가상화 게스트 그래픽 스택 QA",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260727182622.236086-1-maaz.mombasawala@broadcom.com/",
+      "if": "vmwgfx 기반 가상화 게스트에서 커서·dumb buffer 관련 KMS 실패를 겪고 있다면",
+      "do": "v6 4패치(커서 NULL 역참조, mode_valid 콜백, ttm reserve, dumb buffer surface 참조 유지)를 적용해 보세요.",
+      "verify": "drm-misc-next 반영 여부와 sou/ldu/stdu 세 디스플레이 유형에 대한 회귀 검증 결과를 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm/nouveau: GSP 런타임 PM fixes (v4) — r570 GcOff 되돌리기와 S/R 플래그 추가**\n\nLyude Paul의 v4 3패치 시리즈로, r570 펌웨어에서 GcOff 관련 회귀를 일으킨 8302d0afeaec(\"fix suspend/resume regression on r570 firmware\")를 되돌리고 r570_fbsr_init()의 bEnteringGcoffState를 0으로 바로잡았으며, GSP suspend 시 GPU_STATE_FLAGS_PRESERVING | GPU_STATE_FLAGS_PM_TRANSITION 플래그를 추가로 설정합니다.\n\n영향: R570 GSP 펌웨어 도입 이후 지속된 런타임 PM 불안정의 원인을 GcOff 플래그 의미 오해로 특정했고, v6.16/v6.19 이후 stable 트리로 백포트될 예정이라 NVIDIA GPU 노트북 전반에 파급됩니다.\n\n> Runtime suspend/resume has been notoriously flakey since we started using the R570 GSP firmware, and possibly was also flakey for some time when we introduced GSP support initially.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260727175246.642071-1-lyude@redhat.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/vmwgfx: igt 실행에서 발견한 4건 수정 (v6)**\n\nMaaz Mombasawala(Broadcom)의 v6 4패치로 커서 플레인 NULL 역참조, mode_valid() 콜백을 통한 vrefresh 검증, ttm 예약 관련 dma_resv_assert_held 경고 제거, dumb buffer 생성 시 surface 참조 유지를 수정했습니다.\n\n영향: vmwgfx가 igt-gpu-tools 기준선을 실제로 통과하도록 만드는 작업으로, 가상화 데스크톱(VMware) 게스트의 KMS 경로 안정성에 직결됩니다.\n\n> I ran igt-gpu-tools with vmwgfx and fixed some issues I found.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260727182622.236086-1-maaz.mombasawala@broadcom.com/)\n\n**Sashiko AI 리뷰 봇, vmwgfx 3/4에 High 3건 제기 (unbalanced unlock 등)**\n\nkernel.org의 sashiko-bot이 [PATCH v6 3/4]에 대해 ttm_bo_reserve 실패 시에도 무조건 호출되는 unreserve, guest_memory_bo 경쟁 조건에 의한 NULL 역참조/UAF 가능성, crc_generate_worker() 조기 return의 surface 참조 누수 등 High 등급 이슈 3건을 지적했습니다.\n\n영향: reservation lock 상태 손상은 커널 패닉으로 이어질 수 있어 drm-misc-next 반영 전 정리가 필요하며, dri-devel에 LLM 기반 자동 리뷰 봇이 실제로 지적을 남기고 있다는 점도 새로운 워크플로 신호입니다.\n\n> Unlocking a reservation lock that was never successfully acquired can corrupt the lock state and trigger a kernel panic. Should the error path abort or skip the unlock?\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260727183307.A52471F000E9@smtp.kernel.org/)\n\n**drm/panel refcount 시리즈 drm-misc-next 머지 — 그리고 딸려 들어간 drm_panel.c.orig**\n\nAlbert Esteve의 v3 4패치를 Neil Armstrong이 drm-misc-next에 적용해 drm_panel_add/remove와 of_drm_find_panel()/find_panel_by_fwnode()가 counted reference를 관리하도록 API 계약을 바꿨습니다. 그런데 마지막 커밋에 패치에 없던 drivers/gpu/drm/drm_panel.c.orig 파일이 함께 커밋되어 현재도 드리 misc-next에 남아 있습니다.\n\n영향: 패널 조회 API의 참조 카운트 계약 변경은 트리 내외 모든 호출자에 drm_panel_put() 갱신을 요구하며, 정리되지 않은 .orig 파일은 다음 drm-misc PR로 메인라인에 그대로 유입될 수 있습니다.\n\n> That last commit resulted in an extra ``drm_panel.c.orig`` file which wasn't part of the patch and seems incorrect?\n\n[원문 확인](https://lore.kernel.org/dri-devel/DK9KRSOWRHY0.H7SC0R3BIIUZ@cknow-tech.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/nouveau: GSP runtime PM fixes (v4) — cover letter",
+      "url": "https://lore.kernel.org/dri-devel/20260727175246.642071-1-lyude@redhat.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/nouveau: revert 8302d0afeaec (runtime PM regression)",
+      "url": "https://lore.kernel.org/dri-devel/20260727175246.642071-2-lyude@redhat.com/",
+      "note": "commit"
+    },
+    {
+      "title": "drm/nouveau/gsp: fix suspend/resume regression on r570 firmware (original commit)",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=8302d0afeaec0bc57d951dd085e0cffe997d4d18",
+      "note": "commit"
+    },
+    {
+      "title": "drm/vmwgfx: igt fixes (v6) — cover letter",
+      "url": "https://lore.kernel.org/dri-devel/20260727182622.236086-1-maaz.mombasawala@broadcom.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/vmwgfx: preserve surface ref during dumb buffer creation",
+      "url": "https://lore.kernel.org/dri-devel/20260727182622.236086-5-maaz.mombasawala@broadcom.com/",
+      "note": "commit"
+    },
+    {
+      "title": "Sashiko bot review on vmwgfx v6 3/4",
+      "url": "https://lore.kernel.org/dri-devel/20260727183307.A52471F000E9@smtp.kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/vmwgfx: Reserve ttm object before resv usage (patch diff)",
+      "url": "https://lore.kernel.org/dri-devel/20260727182622.236086-4-maaz.mombasawala@broadcom.com/",
+      "note": "commit"
+    },
+    {
+      "title": "drm/panel refcount series merged to drm-misc-next",
+      "url": "https://lore.kernel.org/dri-devel/DK9KRSOWRHY0.H7SC0R3BIIUZ@cknow-tech.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm-misc-next commit ac3baea8 (find_panel_by_fwnode refcount)",
+      "url": "https://gitlab.freedesktop.org/drm/misc/kernel/-/commit/ac3baea883dab989178dd4186090d6bcf52b8d55",
+      "note": "commit"
+    },
+    {
+      "title": "drm_panel.c.orig present in drm-misc-next (GitLab API)",
+      "url": "https://gitlab.freedesktop.org/api/v4/projects/drm%2Fmisc%2Fkernel/repository/files/drivers%2Fgpu%2Fdrm%2Fdrm_panel.c.orig?ref=drm-misc-next",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-27T20:00:59.335Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

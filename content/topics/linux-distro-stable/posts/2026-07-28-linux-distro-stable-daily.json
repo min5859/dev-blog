@@ -1,0 +1,133 @@
+{
+  "id": "2026-07-28-linux-distro-stable-daily",
+  "topic": "linux-distro-stable",
+  "title": "2026-07-28 초대형 백포트 배치 — 리눅스 stable/LTS",
+  "headline": "7.1.5·5.10.261·5.15.212가 동시에 초대형 배치로 릴리스됐고 dm-integrity 유출·super 데드락 등 긴급 수정도 올라왔다.",
+  "date": "2026-07-28",
+  "summary": "7.1.5, 5.10.261, 5.15.212가 같은 리뷰 라운드에서 평소보다 4~8배 큰 배치로 릴리스됐다. 동시에 dm-integrity 정보 유출, super emergency thaw 데드락, 6.12.98 fd 누수 등 즉시 백포트가 필요한 수정들이 올라왔다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "super: emergency thaw 자기 데드락 수정",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "스토리지/파일시스템 stable 백포트 담당, sysrq emergency thaw나 스냅샷·백업 freeze 경로를 쓰는 배포",
+      "verifyLink": "https://lore.kernel.org/stable/3cjzaja7j3mw3ufzhlejsspfkylkxw2wladik2a3s3n7ztvoys@ck4dt5kckneb/",
+      "if": "sysrq emergency thaw나 백업/스냅샷 freeze 경로를 쓰는 커널을 유지보수하고 있다면",
+      "do": "s_umount 대신 active reference로 sb를 고정하도록 고친 이 패치를 백포트 대상에 포함하세요.",
+      "verify": "Fixes: 08fdc8a0138a 이후 라인에서 bdev_thaw() 루프가 s_umount 밖에서 도는지 코드 리뷰로 확인하세요."
+    },
+    {
+      "title": "dm-integrity Inline 모드 커널 메모리 유출 수정",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "dm-integrity(Inline 모드)를 쓰는 배포·스토리지 스택, 6.12 LTS 유지보수자",
+      "verifyLink": "https://lore.kernel.org/stable/20260727183957.1545701-1-sashal@kernel.org/",
+      "if": "dm-integrity를 Inline 모드로 배포하고 있다면",
+      "do": "memset 길이를 ic->tuple_size - ic->tag_size로 고친 6.12.y 백포트를 즉시 반영하세요.",
+      "verify": "Fixes: fb0987682c62 이후 다른 stable 라인에도 같은 백포트가 필요한지 점검하세요."
+    },
+    {
+      "title": "6.12.98 ext4 fd 누수 단일 커밋 릴리스",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "6.12 LTS를 베이스로 쓰는 배포·임베디드 커널 유지보수자, ext4 사용자",
+      "verifyLink": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.12.98",
+      "if": "6.12.y 라인에서 EXT4_IOC_MOVE_EXT 백포트(74796e886ca3)를 이미 받았다면",
+      "do": "6.12.98의 fdput(donor) 복원 커밋을 즉시 적용해 파일 참조 누수를 막으세요.",
+      "verify": "같은 upstream 커밋(c143957520c6)을 받은 6.18.y, 6.1.y 등 다른 LTS 라인도 fdget/fdput 패턴인지 확인하세요."
+    },
+    {
+      "title": "overlayfs FUSE/virtiofs upper ESTALE 수정 5.15.y 백포트",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "overlayfs + virtiofs/FUSE 조합을 쓰는 배포·컨테이너 인프라, 5.15 LTS 유지보수자",
+      "verifyLink": "https://lore.kernel.org/stable/20260727190937.1618998-1-sashal@kernel.org/",
+      "if": "overlayfs upper로 FUSE나 virtiofs를 쓰고 dpkg/apt 빌드 파이프라인을 돌린다면",
+      "do": "dget(upper) 캡처를 복원한 이 5.15.y 백포트를 적용해 copy-up 시 ESTALE을 막으세요.",
+      "verify": "5.15.y가 실제로 fold 커밋(6b52243f633e)을 포함하는지 확인해 백포트 적용 범위를 검증하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.1.5 stable — 2,069건 초대형 백포트**\n\n7.1.5는 직전 7.1.4(533건)·7.1.3(122건) 대비 4~17배 규모로 릴리스됐다. posix-cpu-timers UAF, Bluetooth L2CAP UAF 등 메모리 안전 수정이 한 배치에 섞여 있다.\n\n영향: 배포·제품 커널이 흡수해야 할 델타가 평소의 몇 배라 리베이스와 회귀 테스트 창을 다시 산정해야 한다.\n\n> posix-cpu-timers: Prevent UAF caused by non-leader exec() race / Bluetooth: L2CAP: Fix use-after-free in l2cap_sock_new_connection_cb()\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.5)\n\n**Linux 5.10.261 / 5.15.212 — 동시 대형 배치, 626건 공유**\n\n5.10.261은 676건(직전 대비 약 7배), 5.15.212는 812건(직전 대비 8배 이상)으로 같은 날 3분 차이로 릴리스됐고 제목 기준 626건이 겹친다. 5.15.212에는 btrfs 버퍼드 IO 폴백, ALSA seq 힙 누출 등 5.15 고유 항목이 추가로 들어갔다.\n\n영향: 5.10/5.15를 함께 유지하는 조직은 백포트 검토를 한 세트로 묶을 수 있지만, 동일 결함이 두 라인에 동시에 들어갈 위험도 커진다.\n\n> Bluetooth: L2CAP: Fix regressions caused by reusing ident\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.212)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**Linux 6.12.98 — ext4 fd 누수 단일 커밋**\n\n6.12.98은 백포트가 단 1건, EXT4_IOC_MOVE_EXT 검증 백포트가 만든 fd 누수를 fdput(donor) 복원으로 고쳤다. Fixes 태그가 upstream 커밋이 아니라 6.12.y 백포트 커밋(74796e886ca3)을 가리킨다.\n\n영향: upstream에서 안전했던 코드가 오래된 라인에서 깨지는 전형적 백포트 실패 사례로, 즉시 흡수해야 할 신호다.\n\n> However, on 6.12.y the ioctl still uses the traditional fdget/fdput pattern, so the bare return bypasses fdput(donor) at the mext_out label, leaking the file reference.\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.12.98)\n\n**dm-integrity Inline 모드 커널 메모리 유출**\n\ntag_size < tuple_size일 때 남는 공간을 채우는 memset 길이 계산이 tuple_size - tuple_size(항상 0)로 잘못돼 있었다. tuple_size - tag_size로 고친 패치가 6.12.y로 제출됐다.\n\n영향: 초기화되지 않은 커널 메모리가 integrity tag 영역을 통해 디스크에 기록되고 되읽힐 수 있는 정보 유출이다.\n\n> - memset(dio->integrity_payload + pos + ic->tag_size, 0, ic->tuple_size - ic->tuple_size); + memset(dio->integrity_payload + pos + ic->tag_size, 0, ic->tuple_size - ic->tag_size);\n\n[원문 확인](https://lore.kernel.org/stable/20260727183957.1545701-1-sashal@kernel.org/)\n\n**memory-failure unpoison_memory() hugetlb 재수정**\n\nPageHWPoison(p) 검사를 is_page_hwpoison(p)로 바꾸고 hugetlb에서 folio head의 HWPoison 플래그를 지우도록 p = &folio->page;를 추가했다. 앞선 수정 6c54312f9689이 hugetlb에서 틀렸음을 인정하는 후속 패치다.\n\n영향: a6fddef49eef나 6c54312f9689을 이미 받은 라인은 이 세 번째 커밋까지 세트로 받아야 hugetlb unpoison이 정상 동작한다.\n\n> The earlier patch (6c54312f9689) that attempted to fix unpoison_memory() was incorrect for hugetlb folios.\n\n[원문 확인](https://lore.kernel.org/stable/20260727181310.2671972-2-willy@infradead.org/)\n\n**overlayfs FUSE/virtiofs upper ESTALE 수정**\n\novl_copy_up_tmpfile()이 연결된 목적지 dentry 대신 disconnected O_TMPFILE dentry를 upper로 발행하던 문제를 dget(upper) 캡처 복원으로 고쳤다. upstream e348eecd4d8f를 5.15.y로 백포트했다.\n\n영향: FUSE/virtiofs upper에서 지속적인 ESTALE이 발생해 dpkg·apt의 rename-over-existing이 깨지는 회귀라 컨테이너 이미지 빌드 파이프라인에 직접 영향을 준다.\n\n> This causes persistent ESTALE errors for any file that was copied up via the tmpfile path, breaking dpkg, apt, and other tools that do rename-over-existing on overlayfs with a FUSE/virtiofs upper.\n\n[원문 확인](https://lore.kernel.org/stable/20260727190937.1618998-1-sashal@kernel.org/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**super: emergency thaw 자기 데드락 수정**\n\ndo_thaw_all_callback()이 s_umount를 배타적으로 쥔 채 bdev_thaw()를 호출하다 fs_bdev_thaw() 경로에서 같은 락을 다시 잡아 데드락하는 문제를, s_umount 대신 active reference로 sb를 고정하는 방식으로 고쳤다. Jan Kara가 리뷰를 승인했다.\n\n영향: 데드락에 빠지면 해당 파일시스템/블록 디바이스의 이후 umount·freeze·thaw가 전부 막힌다.\n\n> The emergency thaw worker deadlocks against itself holding both s_umount and bd_fsfreeze_mutex. That fscks any subsequent unmount, freeze, or thaw of that filesystem and block device.\n\n[원문 확인](https://lore.kernel.org/stable/3cjzaja7j3mw3ufzhlejsspfkylkxw2wladik2a3s3n7ztvoys@ck4dt5kckneb/)\n\n**thunderbolt XDomain 참조 선행 의존 커밋**\n\ntb_service_release()가 부모 XDomain의 service ID 배열을 쓰므로, service 등록 시 XDomain 참조를 잡고 해제 시 놓도록 하는 선행 커밋이 5.10.y에 Stable-dep-of로 제출됐다.\n\n영향: UAF 픽스만 취하고 이 의존 커밋을 빠뜨리면 컨텍스트가 맞지 않거나 참조 카운팅이 어긋난다.\n\n> Subject: [PATCH 5.10.y 1/3] thunderbolt: Keep XDomain reference during the lifetime of a service\n\n[원문 확인](https://lore.kernel.org/stable/20260727180528.1410603-1-sashal@kernel.org/)\n\n**openvswitch recirculation 중 skb 누수**\n\ndo_execute_actions()가 마지막 액션에서 ovs_flow_key_update() 실패 시 skb를 해제하지 않아 누수되던 문제를 last일 때 ovs_kfree_skb_reason() 호출로 고쳤다. Fixes 태그는 2014년 커밋을 가리킨다.\n\n영향: 재현 조건이 희박하지만 유지보수 중인 거의 모든 라인이 대상인 오래된 누수다.\n\n> But when the flow key update fails, the function doesn't free the skb and it ends up leaked.\n\n[원문 확인](https://lore.kernel.org/stable/20260727181851.306076-2-i.maximets@ovn.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ChangeLog-7.1.5",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.5",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-6.12.98",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.12.98",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-5.10.261",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.261",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-5.15.212",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.212",
+      "note": "changelog"
+    },
+    {
+      "title": "super: fix emergency thaw self-deadlock",
+      "url": "https://lore.kernel.org/stable/3cjzaja7j3mw3ufzhlejsspfkylkxw2wladik2a3s3n7ztvoys@ck4dt5kckneb/",
+      "note": "thread"
+    },
+    {
+      "title": "dm-integrity: fix leaking uninitialized kernel memory (6.12.y)",
+      "url": "https://lore.kernel.org/stable/20260727183957.1545701-1-sashal@kernel.org/",
+      "note": "commit"
+    },
+    {
+      "title": "mm/memory-failure: fix unpoison_memory() for hugetlb",
+      "url": "https://lore.kernel.org/stable/20260727181310.2671972-2-willy@infradead.org/",
+      "note": "commit"
+    },
+    {
+      "title": "ovl: use linked upper dentry in copy-up tmpfile (5.15.y)",
+      "url": "https://lore.kernel.org/stable/20260727190937.1618998-1-sashal@kernel.org/",
+      "note": "commit"
+    },
+    {
+      "title": "thunderbolt: keep XDomain reference during service lifetime (5.10.y)",
+      "url": "https://lore.kernel.org/stable/20260727180528.1410603-1-sashal@kernel.org/",
+      "note": "commit"
+    },
+    {
+      "title": "openvswitch: fix skb leak on flow key update failure",
+      "url": "https://lore.kernel.org/stable/20260727181851.306076-2-i.maximets@ovn.org/",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-27T19:24:37.189Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

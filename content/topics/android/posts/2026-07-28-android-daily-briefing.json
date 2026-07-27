@@ -1,0 +1,148 @@
+{
+  "id": "2026-07-28-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-07-28 pKVM IOMMU 락업 수정 — Android 커널",
+  "headline": "pKVM IOMMU 블록 풀 고갈·데드락 수정과 VFS xattr 재작업이 이번 회차 핵심입니다.",
+  "date": "2026-07-28",
+  "summary": "같은 원인 커밋에서 파생된 pKVM IOMMU 블록 풀 고갈과 데드락 버그가 나란히 수정되었고, drm_crtc 의 dma_fence BUG_ON 제거로 userspace 발 커널 패닉도 해소되었습니다. android-mainline 에는 VFS simple_xattr 재작업이 유입되어 SELinux 부팅 경로 검증이 필요합니다.",
+  "tags": [
+    "안드로이드",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "pKVM IOMMU 블록 풀 영구 고갈 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "pKVM/protected KVM 을 활성화한 arm64 벤더 커널 및 android16-6.12 ACK 배포 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/68d34e715b21bb149ccb1955d80518d4ea0d9c77",
+      "if": "pKVM IOMMU 를 켠 arm64 벤더 트리를 android16-6.12 기반으로 유지하고 있다면 확인하세요.",
+      "do": "68d34e71 커밋을 픽업해 블록 풀 도네이션 반납 시 __block_pools_available 복구 로직을 반영하세요.",
+      "verify": "메모리 압박 상황을 재현해 블록 풀 고갈 후에도 CMA 풀 도네이션이 정상 복구되는지 확인하세요."
+    },
+    {
+      "title": "kvm_iommu_reclaim_pages() 데드락 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "pKVM IOMMU 를 쓰는 arm64 벤더 커널 및 android16-6.12 ACK 배포 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/2ee3781b8da7ef51329387b25e7e3f717cdc8ebc",
+      "if": "위 블록 풀 수정과 함께 pKVM IOMMU 를 쓰는 트리라면 해당됩니다.",
+      "do": "2ee3781b 커밋을 같이 픽업해 kvm_iommu_reclaim_pages() 의 lock/unlock 오류를 수정하세요.",
+      "verify": "물리 주소가 어느 블록 풀에도 속하지 않는 에러 경로를 강제로 유도해 CPU 정지 여부를 확인하세요."
+    },
+    {
+      "title": "drm_crtc 의 dma_fence BUG_ON() 제거",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "DRM/dma-fence 를 다루는 디스플레이 드라이버 담당 및 android-mainline 추종 벤더",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/57acb869490b504996ea46cbb80af49e35ec66e1",
+      "if": "DRM/dma-fence 를 다루며 android-mainline 을 추종하는 디스플레이 드라이버 트리라면 확인하세요.",
+      "do": "57acb869 FROMLIST 커밋을 반영해 BUG_ON(fence->ops) 단정을 제거하세요.",
+      "verify": "SYNC_IOC_FILE_INFO ioctl 을 fence signal 과 경합시켜 패닉이 재현되지 않는지 확인하세요."
+    },
+    {
+      "title": "android-mainline VFS simple_xattr 재작업 유입",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "android-mainline 추종/리베이스 담당, SELinux·cgroup 초기화 경로 검증 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/ff8747aacaff8266dd751b8a8648fb728dcc3b21",
+      "if": "android-mainline 을 리베이스·추종하며 SELinux 를 쓰는 트리라면 확인하세요.",
+      "do": "vfs-7.2-rc1.xattr 머지(ff8747aa)를 반영하되 후속 kernfs/SELinux 수정 포함 여부를 먼저 확인하세요.",
+      "verify": "SELinux 활성 환경에서 부팅 후 첫 cgroup mkdir 이 NULL 역참조 없이 성공하는지 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**pKVM IOMMU 블록 풀 영구 고갈 수정**\n\npKVM IOMMU 블록 풀이 한 번 고갈되면 `__block_pools_available` 이 0으로 고정된 채 페이지 반납 시에도 복구되지 않던 문제를, 블록 풀로 페이지를 되돌릴 때 다시 1로 세팅하도록 고쳤습니다.\n\n영향: 복구 불가 상태가 되면 이후 모든 도네이션이 CMA 풀을 우회해 GFP_KERNEL fallback 으로 몰리고, 메모리 압박 상황에서 호스트 락업으로 이어집니다.\n\n> Exhausting the IOMMU block pools permanently clears __block_pools_available, which is never restored when pages are subsequently reclaimed.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/68d34e715b21bb149ccb1955d80518d4ea0d9c77)\n\n**kvm_iommu_reclaim_pages() 데드락 수정**\n\n`kvm_iommu_reclaim_pages()` 의 에러 경로에서 이미 잡고 있는 `__block_pools_lock` 을 다시 획득하던 한 줄을 해제로 교체했습니다. 위 블록 풀 고갈 버그와 같은 원인 커밋에서 파생된 같은 시리즈입니다.\n\n영향: hyp 컨텍스트의 스핀락 재획득이라 해당 경로에 들어가는 순간 CPU 가 그대로 멈춥니다.\n\n> kvm_iommu_reclaim_pages() deadlocks if the physical address does not belong to any block pool, as it attempts to re-acquire the already held __block_pools_lock. Release the lock instead.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/2ee3781b8da7ef51329387b25e7e3f717cdc8ebc)\n\n**drm_crtc 의 dma_fence BUG_ON() 제거**\n\n`drm_crtc_fence_get_driver_name()`/`drm_crtc_fence_get_timeline_name()` 에 있던 BUG_ON(fence->ops != &drm_crtc_fence_ops) 를 제거했습니다. upstream 변경 이후 fence 가 signal 되면 ops 가 NULL 로 바뀔 수 있어 단정이 더 이상 성립하지 않습니다.\n\n영향: userspace 가 SYNC_IOC_FILE_INFO ioctl 을 호출하는 것만으로 signal 스레드와 레이스가 나 커널 패닉이 납니다.\n\n> In other words, a fence's ops pointer can now change to NULL on signal, which wasn't the case before the culprit commit and hence the BUG_ON() triggers.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/57acb869490b504996ea46cbb80af49e35ec66e1)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**gki_defconfig 하드락업 디텍터 활성화**\n\ngki_defconfig 에 `CONFIG_HARDLOCKUP_DETECTOR=y` 를 추가했습니다(arm64 는 `CONFIG_HARDLOCKUP_DETECTOR_PREFER_BUDDY=y` 도 함께).\n\n영향: 그동안 GKI 는 소프트락업만 잡았는데, 인터럽트가 막힌 하드락업도 감지됩니다. 다만 hardlockup_panic 은 데스크톱 디바이스에서만 별도 CL 로 켜진다고 명시되어 있어, 모바일은 감지·로깅까지입니다.\n\n> This enables hard lockup detection in Android devices.  However, we'll only enable hardlockup_panic in desktop devices (in a separate CL).\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/bdc8ab55a8c960214437a2174168dd21242e2d06)\n\n**CONFIG_SW_SYNC=y 활성화 (디버그/테스트용)**\n\narm64·x86 gki_defconfig 에 `CONFIG_SW_SYNC=y` 를 추가했습니다. igt-gpu-tools 테스트가 요구하는 소프트웨어 sync 타임라인 드라이버로, Android 4.9 이후 debugfs 를 통해서만 노출됩니다.\n\n영향: 사용자가 fence 를 임의로 붙잡아 데드락을 유발할 수 있는 드라이버지만, Android 12+ GMS 요구사항이 출하 디바이스의 debugfs 마운트를 금지해 안전하다고 판단했습니다. debugfs 를 마운트한 개발 빌드에서는 공격면이 늘어납니다.\n\n> Beginning in the Android 4.9 kernel, sw_sync is only exposed through debugfs, so enabling in newer GKI kernels for debugging and testing no longer poses the risk to shipping builds.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/7443a0c3c9ecfc8982003afde92e9c783c725994)\n\n**android-mainline 에 VFS simple_xattr 재작업 + bpffs xattr 지원 유입**\n\nupstream 7.2 머지 윈도우의 vfs-7.2-rc1.xattr 태그가 android-mainline 으로 들어왔습니다. simple_xattr 해시 테이블이 inode 별에서 superblock 별 캐시로 이동하고, bpffs 가 trusted.*·security.* xattr 을 지원합니다.\n\n영향: tmpfs·kernfs(cgroup/sysfs)·bpffs 등 Android 가 실제로 많이 쓰는 파일시스템의 xattr 경로가 통째로 바뀝니다. 머지 메시지가 SELinux 환경 첫 cgroup mkdir 에서 NULL 포인터 역참조가 재현됐다고 명시하고 있어 SELinux 부팅 경로 검증이 필요합니다.\n\n> reproducible as a NULL pointer dereference on the first cgroup mkdir on SELinux-enabled systems\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/ff8747aacaff8266dd751b8a8648fb728dcc3b21)"
+    },
+    {
+      "heading": "기타",
+      "body": "**sched: TRACE_INCLUDE_PATH 매크로 재정의 빌드 에러 수정**\n\n`include/trace/hooks/sched.h` 에서 빠져 있던 `#undef TRACE_INCLUDE_PATH` 를 추가해, 여러 trace hook 헤더를 함께 include 할 때 나던 -Wmacro-redefined 빌드 에러를 막았습니다. android16-6.12 에도 동일 내용이 백포트(0e0925f3)되었습니다.\n\n영향: 벤더 훅을 여러 개 쓰는 SoC 벤더에서 clang 빌드가 깨지던 문제로, EAS task placement 벤더 훅 추가 커밋의 후속 정리입니다.\n\n> Add missing #undef TRACE_INCLUDE_PATH before #define in include/trace/hooks/sched.h to prevent -Werror,-Wmacro-redefined when multiple trace hook headers are included in the same compilation unit.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/82be0d329bf2b455546a09cc84a40c9d1716b54d)\n\n**gki_defconfig 에서 CONFIG_CRYPTO_LZ4 명시 제거**\n\narm64·x86 gki_defconfig 에서 `CONFIG_CRYPTO_LZ4=y` 를 삭제했습니다. upstream 변경 이후 LZ4 가 HIBERNATION 을 통해 암묵적으로 select 되기 때문입니다.\n\n영향: 기능 변화는 없지만 defconfig 를 diff 기반으로 관리하는 벤더에게는 리베이스 충돌 지점이 됩니다. 자기 트리에서 HIBERNATION 을 끄고 있다면 LZ4 가 함께 사라지지 않는지 확인이 필요합니다.\n\n> The CRYPTO_LZ4 config is now implicitly selected via HIBERNATION, so remove it from our gki_defconfig files.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/87aba67d69fd0706152ae2d9dec68c2cfc274459)\n\n**kbuild 머지 충돌로 남은 extmod_prefix 잔재 제거**\n\n`scripts/Makefile.modfinal` 에 남아 있던, upstream 에서 이미 삭제된 `extmod_prefix` 변수를 제거했습니다. ACK 의 kbuild-v6.13 머지 충돌 해소 과정에서 실수로 남았던 것입니다.\n\n영향: ACK 고유의 머지 잔재라 upstream 과 diff 뜨는 벤더에게 노이즈가 되며, 외부 모듈(M=) 빌드를 커스터마이즈한 트리는 한 번 확인해 둘 만합니다.\n\n> This variable was removed upstream in commit bad6beb2c0bb\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/b7afc9c272bd0bc9a66726a8f938508705390253)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "pKVM IOMMU 블록 풀 영구 고갈 수정",
+      "url": "https://android.googlesource.com/kernel/common/+/68d34e715b21bb149ccb1955d80518d4ea0d9c77",
+      "note": "commit"
+    },
+    {
+      "title": "CMA 풀 도네이션 도입 원인 커밋",
+      "url": "https://android.googlesource.com/kernel/common/+/c949df871d07",
+      "note": "commit"
+    },
+    {
+      "title": "kvm_iommu_reclaim_pages() 데드락 수정",
+      "url": "https://android.googlesource.com/kernel/common/+/2ee3781b8da7ef51329387b25e7e3f717cdc8ebc",
+      "note": "commit"
+    },
+    {
+      "title": "drm_crtc dma_fence BUG_ON() 제거",
+      "url": "https://android.googlesource.com/kernel/common/+/57acb869490b504996ea46cbb80af49e35ec66e1",
+      "note": "commit"
+    },
+    {
+      "title": "dma_fence ops NULL 허용 원인 upstream 커밋",
+      "url": "https://android.googlesource.com/kernel/common/+/541c8f2468b9",
+      "note": "commit"
+    },
+    {
+      "title": "drm_crtc fix2 v3 upstream 스레드",
+      "url": "https://lore.kernel.org/all/20260721-linux-drm_crtc_fix2-v3-2-afa8c71506e6@linaro.org/",
+      "note": "thread"
+    },
+    {
+      "title": "gki_defconfig 하드락업 디텍터 활성화",
+      "url": "https://android.googlesource.com/kernel/common/+/bdc8ab55a8c960214437a2174168dd21242e2d06",
+      "note": "commit"
+    },
+    {
+      "title": "gki_defconfig CONFIG_SW_SYNC=y 활성화",
+      "url": "https://android.googlesource.com/kernel/common/+/7443a0c3c9ecfc8982003afde92e9c783c725994",
+      "note": "commit"
+    },
+    {
+      "title": "VFS simple_xattr 재작업 + bpffs xattr 지원",
+      "url": "https://android.googlesource.com/kernel/common/+/ff8747aacaff8266dd751b8a8648fb728dcc3b21",
+      "note": "commit"
+    },
+    {
+      "title": "sched: TRACE_INCLUDE_PATH 수정 (android-mainline)",
+      "url": "https://android.googlesource.com/kernel/common/+/82be0d329bf2b455546a09cc84a40c9d1716b54d",
+      "note": "commit"
+    },
+    {
+      "title": "TRACE_INCLUDE_PATH 수정 android16-6.12 백포트",
+      "url": "https://android.googlesource.com/kernel/common/+/0e0925f375430dad13c832a90bd8badb63ff88d6",
+      "note": "commit"
+    },
+    {
+      "title": "gki_defconfig CONFIG_CRYPTO_LZ4 명시 제거",
+      "url": "https://android.googlesource.com/kernel/common/+/87aba67d69fd0706152ae2d9dec68c2cfc274459",
+      "note": "commit"
+    },
+    {
+      "title": "kbuild extmod_prefix 잔재 제거",
+      "url": "https://android.googlesource.com/kernel/common/+/b7afc9c272bd0bc9a66726a8f938508705390253",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-27T18:22:15.452Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/android-newsletter-from-dossier-ko.md"
+  }
+}
