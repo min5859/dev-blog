@@ -1,0 +1,138 @@
+{
+  "id": "2026-07-27-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-07-27 ARM CFI 패닉 수정 — 리눅스 툴체인",
+  "headline": "i.MX6 OCRAM suspend 의 Clang CFI 패닉 수정안, nolibc syscall·abs 버그 수정, Rust 7.2 2차 fixes 가 이번 주 핵심입니다.",
+  "date": "2026-07-27",
+  "summary": "i.MX6 OCRAM suspend 코드의 Clang CFI 패닉을 막는 v3 패치와 nolibc syscall()/abs() 버그 수정이 논의되고 있습니다. Rust 7.2 2차 fixes 와 nvmem reg_write const 화 작업도 함께 진행 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "i.MX6 suspend, Clang CFI 패닉 수정안(v3) 논의 중",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "Clang CFI·ARM PM 유지보수자, fncpy 로 코드를 재배치하는 서브시스템",
+      "verifyLink": "https://lore.kernel.org/llvm/20260718111340.159896-1-linux@yoavmoshe.com/",
+      "if": "CONFIG_CFI=y 로 i.MX6 플랫폼을 빌드한다면",
+      "do": "imx6_suspend_in_ocram_fn 간접 호출을 __nocfi 로 감싸는 v3 패치 스레드를 확인하세요",
+      "verify": "메인테이너의 Applied 여부와 최종 커밋 해시를 patchwork 에서 확인하세요"
+    },
+    {
+      "title": "nolibc syscall()·abs() 버그 수정 제안",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "nolibc·tools 유지보수자, selftest 빌더",
+      "verifyLink": "https://lore.kernel.org/llvm/20260726101306.3772237-2-ammarfaizi2@openresty.com/",
+      "if": "nolibc 기반 코드에서 인자 안에 함수호출을 포함한 syscall() 을 쓴다면",
+      "do": "GCC 가 syscall 레지스터를 reload 하지 않는 사례가 있는지 점검하세요",
+      "verify": "이 수정 패치가 v2 로 갱신되어 병합됐는지 확인하세요"
+    },
+    {
+      "title": "Rust fixes for 7.2 (2nd), rustc 1.98/1.99 대비",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "Rust-for-Linux 툴체인·빌드 담당자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260725165301.156594-1-ojeda@kernel.org/",
+      "if": "CONFIG_CC_OPTIMIZE_FOR_SIZE=y 로 Rust 를 빌드한다면",
+      "do": "zerocopy 를 v0.8.54 로 올려 modpost 에러를 회피하세요",
+      "verify": "이 PR 이 실제로 pull 되어 7.2-rc 에 반영됐는지 확인하세요"
+    },
+    {
+      "title": "nvmem reg_write, const void* 콜백으로 이전",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "nvmem 유지보수자, Rust 추상화 작성자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260726131724.15299-1-linkmauve@linkmauve.fr/",
+      "if": "nvmem reg_write 콜백을 구현하거나 호출한다면",
+      "do": "새 reg_write_const 콜백으로 옮길 준비를 하세요",
+      "verify": "v4 시리즈가 patchwork 에서 수용됐는지 추적하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**ARM: imx6 suspend, Clang CFI 패닉 수정 진행 중**\n\nOCRAM 으로 재배치되는 imx6_suspend 어셈블리 코드에 컴파일러가 만드는 KCFI 타입 시그니처가 없어서, CONFIG_CFI=y 에서 imx6_suspend_in_ocram_fn 간접 호출이 CFI 위반 패닉을 일으킵니다. v3 패치는 이 간접 호출만 __nocfi 래퍼로 감싸는 방식을 택했고, SYM_TYPED_FUNC_START 로 4바이트 해시를 OCRAM 에 복사하는 대안은 복사된 프리픽스가 해시가 아니라 padding 이어서 실패했습니다.\n\n영향: fncpy 로 코드를 재배치하는 서브시스템에서 Clang KCFI 를 쓸 때 겪는 근본적인 한계를 보여줍니다.\n\n> Relocated suspend code in OCRAM lacks compiler-generated CFI type signatures. When CONFIG_CFI=y is active, the indirect call to imx6_suspend_in_ocram_fn triggers a strict CFI violation panic.\n\n[원문 확인](https://lore.kernel.org/llvm/20260718111340.159896-1-linux@yoavmoshe.com/)\n\n**nolibc: syscall() 레지스터 clobber, abs() UB 수정 제안**\n\n__nolibc_syscallN() 매크로가 인자를 local register 변수에 담는데, GCC 가 함수호출 뒤에도 그 값이 살아있음을 보장하지 않아 인자 안에 함수호출이 있으면 이미 세팅한 syscall 레지스터가 clobber 됩니다. 인자를 arch 매크로에 넘기기 전에 임시변수로 먼저 평가하도록 고치는 패치가 올라왔고, abs/labs/llabs 도 signed 최소값을 negate 하는 UB 를 없애자는 수정안이 함께 제출됐습니다. dead 코드인 __ARCH_WANT_SYS_OLD_SELECT 를 제거하는 cleanup 패치는 이미 적용됐습니다.\n\n영향: nolibc 기반 selftest·부트스트랩 코드에서 컴파일러 동작에 따라 조용히 잘못된 syscall 이나 크래시가 날 수 있었던 버그입니다.\n\n> On x86-64, GCC doesn't reload %rax, %rdi, and %rsi after the strlen() call, so only %rdx ends up correct.\n\n[원문 확인](https://lore.kernel.org/llvm/20260726101306.3772237-2-ammarfaizi2@openresty.com/)\n\n**Rust fixes for 7.2 (2nd): rustc 1.98/1.99 대비**\n\nMiguel Ojeda 의 v7.2 Rust 2차 fixes PR 은 zerocopy 를 v0.8.54 로 올려 CONFIG_CC_OPTIMIZE_FOR_SIZE=y 에서의 modpost 에러를 고치고, rustc 1.99.0(2026-10-01 예정) 대비 objtool noreturn 함수를 추가했습니다. rustc 1.98.0(2026-08-20 예정)의 새 lint 를 로컬로 허용하고, clippy::unwrap_or_default 는 -Os 최적화 의존 문제로 전역 허용했으며, kernel::time 의 Delta::as_micros_ceil() 음수 반올림 버그도 고쳤습니다.\n\n영향: 상류 rustc 버전 전진과 -Os 빌드 상호작용을 미리 대비하는 forward-compat 신호입니다.\n\n> Fix an objtool warning by adding one more 'noreturn' function for Rust 1.99.0 (expected 2026-10-01).\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260725165301.156594-1-ojeda@kernel.org/)\n\n**nvmem: reg_write, const void* 로 이전**\n\nnvmem reg_write 콜백이 이유 없이 mutable void* 를 받아 컴파일러가 val 버퍼가 수정되지 않음을 알 수 없던 문제를, const void* 를 받는 새 reg_write_const 콜백을 도입해 해결합니다. 기존 reg_write 는 deprecate 되며, 모든 in-tree 사용자가 옮기면 새 이름을 원래 이름으로 회수할 계획입니다. firmware: meson 의 write 버퍼 constness 도 함께 고쳤습니다.\n\n영향: Rust nvmem-provider 추상화 작성 중 발견된 문제로, C 콜백 ABI 의 const-correctness 결함을 드러낸 사례입니다.\n\n> This callback used to take a mutable void * for no reason, which causes the compiler to be unaware that the val buffer should never be modified by the callback.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260726131724.15299-1-linkmauve@linkmauve.fr/)\n\n**syscalls: 모든 arch 를 위한 공유 테이블(RFC)**\n\n새 syscall 을 배선할 때 arch 별 테이블의 반복을 줄이려고, 이미 공유되는 번호의 subset 을 담는 scripts/syscall_common.tbl 을 새로 만드는 RFC 입니다. compat 문제를 피하려 442번(mount_setattr) 부터 시작했고, x86·arm64 를 이 테이블로 전환한 뒤 생성되는 syscalls_*.h·unistd_*.h 가 변경 전후 동일함을 확인했습니다.\n\n영향: syscall 배선의 kbuild 생성 파이프라인을 건드리는 제안으로, arch 별 boilerplate 를 줄이는 방향입니다.\n\n> this patchset creates yet another common syscall table with a subset of numbers that are already being shared among the syscalls. I've started from syscall 442 (mount_setattr) to avoid dealing with co\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20260724-tonyk-syscall_table-v1-0-9c53188423da@igalia.com/)\n\n**clocksource/mips-gic-timer: CONFIG_GENERIC_GETTIMEOFDAY ifdeffery 제거**\n\nvDSO 를 빌드하지 않아도 VDSO_CLOCKMODE_* 상수를 항상 정의하게 만드는 시리즈의 일부로, mips-gic-timer.c 에서 .vdso_clock_mode 대입을 감싸던 CONFIG_GENERIC_GETTIMEOFDAY ifdef 가드 2줄을 제거했습니다.\n\n영향: 생성 헤더 파이프라인을 정리해 clocksource 드라이버들의 반복되는 CONFIG 가드를 없애는 kbuild 정리 작업입니다.\n\n> Now that there is a definition of VDSO_CLOCKMODE_GIC even if no vDSO is built, the ugly ifdeffery can be removed.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20260724-vdso-arch-clockmodes-v4-4-ddbe447be860@linutronix.de/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ARM: imx: Fix suspend/resume crash with Clang CFI (v3)",
+      "url": "https://lore.kernel.org/llvm/20260718111340.159896-1-linux@yoavmoshe.com/",
+      "note": "changelog"
+    },
+    {
+      "title": "SYM_TYPED_FUNC_START 제안 스레드",
+      "url": "https://lore.kernel.org/llvm/20260721180950.GA3684684@ax162/",
+      "note": "thread"
+    },
+    {
+      "title": "OCRAM 프리픽스 padding vs 해시 불일치 논의",
+      "url": "https://lore.kernel.org/llvm/91cb0f21-e78a-4931-b123-937c6a01592c@yoavmoshe.com/",
+      "note": "thread"
+    },
+    {
+      "title": "nolibc syscall() 레지스터 clobber 수정",
+      "url": "https://lore.kernel.org/llvm/20260726101306.3772237-2-ammarfaizi2@openresty.com/",
+      "note": "changelog"
+    },
+    {
+      "title": "nolibc abs/labs/llabs UB 수정",
+      "url": "https://lore.kernel.org/llvm/20260726101306.3772237-3-ammarfaizi2@openresty.com/",
+      "note": "changelog"
+    },
+    {
+      "title": "nolibc cleanup 패치 적용 확인",
+      "url": "https://lore.kernel.org/llvm/b4b49ae5-c918-4300-891c-9f4b1ac2fe53@t-8ch.de/",
+      "note": "thread"
+    },
+    {
+      "title": "Rust fixes for 7.2 (2nd) PR",
+      "url": "https://lore.kernel.org/rust-for-linux/20260725165301.156594-1-ojeda@kernel.org/",
+      "note": "changelog"
+    },
+    {
+      "title": "nvmem reg_write const void* 이전",
+      "url": "https://lore.kernel.org/rust-for-linux/20260726131724.15299-1-linkmauve@linkmauve.fr/",
+      "note": "changelog"
+    },
+    {
+      "title": "syscalls 공유 테이블 RFC",
+      "url": "https://lore.kernel.org/linux-kbuild/20260724-tonyk-syscall_table-v1-0-9c53188423da@igalia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "mips-gic-timer ifdeffery 제거 패치",
+      "url": "https://lore.kernel.org/linux-kbuild/20260724-vdso-arch-clockmodes-v4-4-ddbe447be860@linutronix.de/",
+      "note": "changelog"
+    },
+    {
+      "title": "vDSO clockmode 시리즈 개요",
+      "url": "https://lore.kernel.org/linux-kbuild/20260724-vdso-arch-clockmodes-v4-0-ddbe447be860@linutronix.de/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-27T12:43:02.306Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
