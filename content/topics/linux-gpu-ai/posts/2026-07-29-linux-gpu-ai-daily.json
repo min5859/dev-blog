@@ -1,0 +1,153 @@
+{
+  "id": "2026-07-29-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-07-29 Tyr v10 MCU 부트 — Linux GPU/AI",
+  "headline": "Tyr v10이 CSF 펌웨어 로딩과 MCU 부트를 추가한 가운데, Rust 레지스터 타입화·UAPI 호환·wedge 이벤트 공백이 함께 불거졌습니다.",
+  "date": "2026-07-29",
+  "summary": "Tyr v10은 CSF 펌웨어 파서와 probe 시점 MCU 부트를 추가해 Mali Rust 드라이버를 잡 서브미션에 한 걸음 더 가깝게 했습니다. 동시에 typed_register 마이그레이션, cold-reset wedge의 fault-inject 공백, tyr DEV_QUERY의 UAPI 호환 쟁점이 겹치며 Rust DRM 스택 전반의 규약이 재정리되는 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "drm/tyr v10, CSF 펌웨어 로딩과 MCU 부트 추가",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "Rust DRM 드라이버·Mali/Panthor 유지보수 담당, drm_gpuvm 사용자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260728-fw-boot-b4-v10-0-9187aefa3f2f@collabora.com/",
+      "if": "Rust DRM 드라이버에서 drm_gpuvm·KernelBo 패턴을 참고하려면",
+      "do": "Tyr v10 시리즈(7패치)를 검토하고 MMU 'drm 라이프타임 명명 논쟁이 v11에 어떻게 반영되는지 지켜보십시오.",
+      "verify": "Danilo Krummrich의 리뷰 코멘트와 후속 v11 스레드 발송 여부를 확인하십시오."
+    },
+    {
+      "title": "Rust register!에 타입 있는 base 강제, relative register 삭제",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust 커널 I/O 추상화 사용자, nova-core·tyr 드라이버 개발자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260721-typed_register-v1-0-452d72b60262@garyguo.net/",
+      "if": "nova-core나 다른 Rust 드라이버에서 relative register를 쓰고 있다면",
+      "do": "PFalconRegisters/PFalcon2Registers 같은 고정 크기 영역 타입과 projection 방식으로 마이그레이션을 준비하십시오.",
+      "verify": "subregion 컴파일타임 검사 방식(별도 변형 vs 트레이트+build_assert!)에 대한 스레드 결론을 확인하십시오."
+    },
+    {
+      "title": "xe cold-reset wedge v12, fault-inject가 검증 대상 코너 케이스를 건너뛴다",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "drm/xe RAS·wedge 복구 담당, drm_dev_wedged_event 사용 드라이버 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/amkCDzvNVZOXNz9N@intel.com/",
+      "if": "probe 경로에서 drm_dev_wedged_event()를 호출하는 드라이버를 유지보수한다면",
+      "do": "등록 전 kobject_get_path()가 실제 sysfs 경로 대신 임시 경로를 반환해 uevent가 조용히 버려질 수 있는지 점검하십시오.",
+      "verify": "Rodrigo Vivi의 리뷰 코멘트와 v13 재발송 여부를 확인하십시오."
+    },
+    {
+      "title": "tyr DEV_QUERY, 작은 유저 버퍼에서 EFAULT — Panthor UAPI 호환 쟁점",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Panthor/Tyr UAPI 소비자(mesa), Rust DRM ioctl 작성자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260728185558.3AC8C1F00A3A@smtp.kernel.org/",
+      "if": "Rust DRM ioctl에서 UserSliceWriter::write()로 UAPI 구조체를 되돌린다면",
+      "do": "C 드라이버처럼 min_size 이상이면 절단 복사를 허용할지, 엄격한 크기 검사를 유지할지 결정하십시오.",
+      "verify": "이 지적에 대한 유지보수자 답신이 스레드에 달렸는지 확인하십시오."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/tyr v10, CSF 펌웨어 로딩과 MCU 부트 추가**\n\nDeborah Brouwer가 Rust Mali 드라이버 Tyr에 v10(7패치)을 보내 CSF 펌웨어 파서, KernelBo, drm_gpuvm 기반 VM, MMU/슬롯 매니저, probe 시점 MCU 부트를 추가했습니다.\n\n영향: Panthor의 Rust 대응이자 nova-core 등 후속 Rust 드라이버가 참고할 drm_gpuvm·라이프타임 패턴을 정하는 시리즈지만, Danilo Krummrich가 MMU 라이프타임 명명에 반대해 v11이 이어질 가능성이 높습니다.\n\n> This series adds firmware loading and MCU boot support to the Tyr DRM driver.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260728-fw-boot-b4-v10-0-9187aefa3f2f@collabora.com/)\n\n**Rust register!에 타입 있는 base 강제, relative register 삭제**\n\nGary Guo의 typed_register 10패치 시리즈가 register!에 타입 있는 base를 요구하도록 바꾸고, nova-core의 relative register를 고정 크기 영역 타입과 projection 방식으로 대체합니다.\n\n영향: nova-core·tyr 등 Rust로 레지스터를 정의하는 모든 드라이버가 마이그레이션 대상이며, 범위 검사를 build_assert!에 맡길지 타입 시스템으로 강제할지를 두고 Gary Guo와 Danilo Krummrich의 의견이 갈립니다.\n\n> Currently registers work for all untyped I/O regions, which is not ideal. It allows registers defined for device A to work for another device B and there is no safeguarding at all.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260721-typed_register-v1-0-452d72b60262@garyguo.net/)\n\n**xe cold-reset wedge v12, fault-inject가 검증 대상 코너 케이스를 건너뛴다**\n\nMallesh Koujalagi의 v12 cold reset recovery 시리즈(4패치)가 DRM_WEDGE_RECOVERY_COLD_RESET을 추가했지만, 4/4의 fault-inject 노브가 xe->drm.registered 조건으로 감싸져 있어 probe 중 발생하는 코너 케이스를 검증하지 못합니다.\n\n영향: probe 경로에서 drm_dev_wedged_event()를 호출하는 모든 드라이버가 등록 전 kobject_get_path()의 잘못된 경로 반환으로 uevent가 조용히 버려지는 문제를 공유할 수 있어, Rodrigo Vivi는 게이팅이 목적을 무력화한다고 반대했습니다.\n\n> That entirely defeats the purpose! :)\n\n[원문 확인](https://lore.kernel.org/dri-devel/amkCDzvNVZOXNz9N@intel.com/)\n\n**tyr DEV_QUERY, 작은 유저 버퍼에서 EFAULT — Panthor UAPI 호환 쟁점**\n\nTyr 1/7 패치가 gpu_info를 RegistrationData로 옮긴 가운데, sashiko-bot이 Rust UserSliceWriter::write()가 유저 버퍼가 작으면 EFAULT를 반환해 C panthor의 절단 복사 동작과 다르다고 지적했습니다.\n\n영향: 더 작은 drm_panthor_gpu_info로 빌드된 구형 mesa userspace가 Tyr에서 EFAULT를 받을 수 있어, Panthor UAPI 하위호환 여부를 결정해야 합니다.\n\n> The C driver permits this as long as the size is at least the documented min_size, copying only the truncated structure.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260728185558.3AC8C1F00A3A@smtp.kernel.org/)\n\n**dw-dp v7, AUX 타임아웃 시 소프트 리셋 추가, 남은 threaded IRQ 레이스 지적**\n\nSebastian Reichel의 dw-dp 개선 v7(18패치)에 AUX 전송 타임아웃 시 AUX_RESET을 토글하는 소프트 리셋 패치가 추가됐지만, sashiko-bot은 threaded IRQ와의 레이스가 완전히 닫히지 않는다고 분석했습니다.\n\n영향: wait_for_completion_timeout과 threaded IRQ complete()를 짝지은 모든 드라이버에 해당하는 패턴이며, RK3588/RK3576 DP 사용자는 v7에서 처음 생기는 AUX 오류 복구 혜택을 받습니다.\n\n> This patch resets the AUX controller when a transfer times out to prevent a delayed reply interrupt from leaking into a subsequent transfer.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260728184321.E20DC1F000E9@smtp.kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "**build_assert! 논쟁이 WG14 N3846(compile_assert)로 이어졌다**\n\nnova-core projection 스레드에서 Miguel Ojeda가 컴파일타임 단정 개념이 C 표준위원회 문서 WG14 N3846으로 논의 중이라고 알리고, Linux·GCC·Rust의 선행 사례를 저자에게 피드백했습니다.\n\n영향: build_assert!/BUILD_BUG_ON에 기대는 타입드 레지스터 범위 검사 논쟁의 배경이 되는 논의로, 표준에서 최적화 강제 단정이 정의되면 커널 Rust 추상화의 근거가 강화됩니다.\n\n> the overall concept is being discussed in the C standard committee due to paper\n\n[원문 확인](https://lore.kernel.org/dri-devel/CANiq72kqRh=ucvE8ibPmesyrWdLnwbOwcsmTx2A0iD34DdUsVA@mail.gmail.com/)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/tyr v10 fw/MCU boot 커버레터",
+      "url": "https://lore.kernel.org/dri-devel/20260728-fw-boot-b4-v10-0-9187aefa3f2f@collabora.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Danilo Krummrich, MMU 'drm 라이프타임 명명 반박",
+      "url": "https://lore.kernel.org/dri-devel/DKAGDGAGBRXN.T20HFE198R5A@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "typed_register v1 커버레터",
+      "url": "https://lore.kernel.org/dri-devel/20260721-typed_register-v1-0-452d72b60262@garyguo.net/",
+      "note": "thread"
+    },
+    {
+      "title": "typed_register 패치 08 (PFalcon 고정 크기 영역 타입)",
+      "url": "https://lore.kernel.org/dri-devel/20260721-typed_register-v1-8-452d72b60262@garyguo.net/",
+      "note": "commit"
+    },
+    {
+      "title": "Gary Guo, build_assert! 유지 입장",
+      "url": "https://lore.kernel.org/dri-devel/DKAFRETW93IW.SXUWFVB47V3B@garyguo.net/",
+      "note": "thread"
+    },
+    {
+      "title": "xe cold-reset wedge v12 패치 4/4",
+      "url": "https://lore.kernel.org/dri-devel/20260724100302.706685-6-mallesh.koujalagi@intel.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Rodrigo Vivi 리뷰 응답",
+      "url": "https://lore.kernel.org/dri-devel/amkCDzvNVZOXNz9N@intel.com/",
+      "note": "thread"
+    },
+    {
+      "title": "tyr DEV_QUERY, sashiko-bot 지적",
+      "url": "https://lore.kernel.org/dri-devel/20260728185558.3AC8C1F00A3A@smtp.kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "panthor_drv.c (C panthor DEV_QUERY 처리)",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/plain/drivers/gpu/drm/panthor/panthor_drv.c",
+      "note": "commit"
+    },
+    {
+      "title": "uaccess.rs (UserSliceWriter::write)",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/plain/rust/kernel/uaccess.rs",
+      "note": "commit"
+    },
+    {
+      "title": "dw-dp v7 AUX 소프트 리셋 패치",
+      "url": "https://lore.kernel.org/dri-devel/20260728184321.E20DC1F000E9@smtp.kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "dw-dp v7 커버레터",
+      "url": "https://lore.kernel.org/dri-devel/20260728-synopsys-dw-dp-improvements-v7-0-b7640fa8cf48@collabora.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Miguel Ojeda, WG14 N3846 언급 메일",
+      "url": "https://lore.kernel.org/dri-devel/CANiq72kqRh=ucvE8ibPmesyrWdLnwbOwcsmTx2A0iD34DdUsVA@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "WG14 N3846 (compile_assert) 문서",
+      "url": "https://www.open-std.org/jtc1/sc22/WG14/www/docs/n3846.pdf",
+      "note": "article"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-28T20:00:34.395Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,120 @@
+{
+  "id": "2026-07-29-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-07-29 ACPI LPI 타이머 회귀 — 아키텍처/플랫폼",
+  "headline": "RISC-V ACPI LPI 타이머 훅 누락 회귀와 SpacemiT K3 ACLINT DT 수정, RK3576 캐시 정보 보강을 다룹니다.",
+  "date": "2026-07-29",
+  "summary": "RISC-V ACPI LPI 상태에서 타이머 컨텍스트 손실 처리가 빠져 있던 회귀를 고치는 패치와, SpacemiT K3 의 CLINT 오기술을 ACLINT 로 정정하는 DT ABI 제안을 다룹니다. 이어 RK3576 캐시 계층 정보 보강과 RISC-V KVM gstage ptdump 디버그 기능도 함께 소개합니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "RISC-V",
+    "ARM64"
+  ],
+  "highlights": [
+    {
+      "title": "RISC-V ACPI LPI 타이머 컨텍스트 손실 처리 (v2)",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "RISC-V ACPI·cpuidle 담당, ACPI FFH LPI SoC 플랫폼 유지보수 담당, stable 백포트 검토자",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260728-riscv-acpi-lpi-timer-v2-1-5a30e0021ec9@linux.spacemit.com/",
+      "if": "ACPI FFH LPI 를 사용하는 RISC-V 플랫폼에서 hart 타이머 컨텍스트를 잃는 idle 상태를 쓰고 있다면",
+      "do": "v2 패치의 arch_get_idle_state_flags() 구현을 적용해 CPUIDLE_FLAG_TIMER_STOP 이 정상 설정되는지 확인하고 stable 백포트 범위(v6.6 이후)를 함께 검토하세요",
+      "verify": "패치 적용 전후로 깊은 idle 상태 진입 시 타이머 기반 웨이크업이 정상 동작하는지 확인하세요"
+    },
+    {
+      "title": "SpacemiT K3 CLINT 노드를 ACLINT 로 교체 (RFC)",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "RISC-V SoC DT 작성자, irqchip/timer(ACLINT) 유지보수 담당, DT 바인딩 리뷰어",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260729-k3-aclint-v1-0-aef88614d3a5@pigmoral.tech/",
+      "if": "irqchip.riscv_imsic_noipi 부팅 옵션으로 SpacemiT K3 보드를 운용하고 있다면",
+      "do": "메인라인 k3.dtsi 의 잘못된 CLINT 노드로 인한 secondary CPU 기동 실패 가능성을 점검하고 generic riscv,aclint-* fallback 제안에 대한 리뷰에 참여하세요",
+      "verify": "RFC 패치 적용 후 CPU0~7 전체가 정상적으로 alive 보고되는지 확인하세요"
+    },
+    {
+      "title": "arm64 rk3576 CPU 노드에 캐시 계층 정보 추가",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "Rockchip arm64 DT 유지보수 담당, cacheinfo/토폴로지 소비자, RK3576 보드 사용자",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/8a8f808a4c7b8325bc253add15e51b396a7d62d1.1785260742.git.Munzzyy1@proton.me/",
+      "if": "RK3576 보드에서 lscpu 나 cacheinfo 로 캐시 토폴로지를 확인해야 한다면",
+      "do": "이 패치를 적용해 CPU 노드의 캐시 크기·라인·set 정보와 클러스터별 L2 노드를 반영하세요",
+      "verify": "적용 후 lscpu 로 L1d/L1i/L2 크기와 ways·sets 가 정상 출력되고 부팅 로그의 cache 경고가 사라졌는지 확인하세요"
+    },
+    {
+      "title": "RISC-V KVM gstage 페이지테이블 덤퍼 (v3)",
+      "priority": "하",
+      "impactType": "runtime",
+      "affectedAudience": "RISC-V KVM·mm(ptdump) 유지보수 담당, gstage 매핑 디버깅 개발자",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260728161449.190058-1-fredwudi0305@gmail.com/",
+      "if": "RISC-V KVM 게스트의 2단계(gstage) 매핑을 디버깅해야 한다면",
+      "do": "CONFIG_PTDUMP_GSTAGE_DEBUGFS 를 활성화해 VM 별 debugfs 의 gstage_page_tables 파일로 매핑 상태를 확인하세요",
+      "verify": "note_page() 노출과 Kconfig 네이밍에 대한 mm 유지보수 담당 리뷰 진행 여부를 추후 스레드에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**RISC-V ACPI LPI 아키텍처 컨텍스트 손실 플래그 처리 (v2)**\n\narch/riscv/include/asm/acpi.h 에 arch_get_idle_state_flags() 를 구현해 RISCV_LPI_HART_TIMER_CTXT_LOST 플래그를 CPUIDLE_FLAG_TIMER_STOP 으로 매핑합니다.\n\n영향: RISC-V 는 2023년 아키텍처별 훅 도입 이후 훅을 구현하지 않아 기본 스텁(0 반환)이 쓰였고, 그 결과 hart 타이머 컨텍스트를 잃는 LPI 상태에서도 브로드캐스트 타이머로 전환되지 않아 깊은 idle 상태에서 타이머 기반 웨이크업을 놓칠 수 있는 조용한 회귀였습니다.\n\n> RISC-V does not implement the helper, so it falls back to the stub that returns 0. Consequently, CPUIDLE_FLAG_TIMER_STOP is not set when an LPI state loses the hart timer context\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260728-riscv-acpi-lpi-timer-v2-1-5a30e0021ec9@linux.spacemit.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**SpacemiT K3 잘못된 CLINT 노드를 ACLINT 로 교체 (RFC, 7패치)**\n\n메인라인 k3.dtsi 의 CLINT 노드가 실제로는 ACLINT SSWI 블록임이 확인되어 interrupt-controller 노드로 교체하고, 시큐어 영역에 MSWI·MTIMER 노드를 새로 추가하며 dt-bindings 의 spacemit,k3-clint 를 deprecated 로 표시합니다.\n\n영향: irqchip.riscv_imsic_noipi 부팅 시 CPU1~7 기동 실패라는 실제 회귀를 고치는 동시에, riscv,imsics·riscv,aplic 처럼 generic riscv,aclint-* fallback compatible 을 도입하자는 DT ABI 정책 제안이라 향후 RISC-V SoC DT 작성 관행의 선례가 될 수 있습니다.\n\n> This series introduces the standard generic \"riscv,aclint-*\" fallback compatibles, similar to \"riscv,imsics\" and \"riscv,aplic\", to prevent constantly updating drivers for future SoCs.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260729-k3-aclint-v1-0-aef88614d3a5@pigmoral.tech/)\n\n**arm64 rk3576 CPU 노드에 캐시 계층 정보 추가**\n\nrk3576.dtsi 의 8개 CPU 노드 전부에 캐시 크기·라인·set 정보를 넣고 클러스터별 L2 노드를 추가합니다.\n\n영향: 기존에는 캐시 프로퍼티가 전혀 없어 cache_setup_of_node() 가 -ENOENT 를 반환하고 부팅 로그에 경고가 남았으며, lscpu 등 사용자 공간 도구에서 캐시 크기 정보가 비어 있었습니다.\n\n> The RK3576 CPU nodes carry no cache properties, so cache_setup_of_node() fails with -ENOENT on the first CPU.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/8a8f808a4c7b8325bc253add15e51b396a7d62d1.1785260742.git.Munzzyy1@proton.me/)\n\n**RISC-V KVM gstage 페이지테이블 덤퍼 (v3)**\n\n기존 ptdump 구조체를 헤더로 분리하고 arch/riscv/kvm/ptdump.c 를 추가해 CONFIG_PTDUMP_GSTAGE_DEBUGFS 활성화 시 VM 별 debugfs 에 gstage_page_tables 파일을 생성합니다.\n\n영향: RISC-V KVM 의 2단계(gstage) 번역 상태를 arm64 와 유사하게 debugfs 로 직접 들여다볼 수 있게 되지만, note_page() 가 외부에 노출되고 ptdump 내부 구조가 헤더로 공개되어 mm 쪽 리팩터에 제약이 생깁니다.\n\n> This series adds support for dumping RISC-V KVM gstage (second-stage) page tables via debugfs, allowing inspection of the guest physical address translation setup.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260728161449.190058-1-fredwudi0305@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "riscv: acpi: Handle LPI architectural context loss flags (v2)",
+      "url": "https://lore.kernel.org/linux-riscv/20260728-riscv-acpi-lpi-timer-v2-1-5a30e0021ec9@linux.spacemit.com/",
+      "note": "thread"
+    },
+    {
+      "title": "arch_get_idle_state_flags 아키텍처 훅 도입 커밋 (4785aa802853)",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/patch/?id=4785aa802853",
+      "note": "commit"
+    },
+    {
+      "title": "FFH 스펙 장 번호 지적 답장",
+      "url": "https://lore.kernel.org/linux-riscv/CAB19ukHpFS-=nK6Tfjk-nY_Jz7Pi82pE4-YQkfQqoBXekOLtuw@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "spacemit: k3: 잘못된 CLINT 노드를 ACLINT 노드로 교체 (커버레터)",
+      "url": "https://lore.kernel.org/linux-riscv/20260729-k3-aclint-v1-0-aef88614d3a5@pigmoral.tech/",
+      "note": "thread"
+    },
+    {
+      "title": "메인라인 k3.dtsi (교체 대상 CLINT 노드)",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/plain/arch/riscv/boot/dts/spacemit/k3.dtsi",
+      "note": "commit"
+    },
+    {
+      "title": "arm64: dts: rockchip: rk3576: CPU 노드에 캐시 계층 정보 추가",
+      "url": "https://lore.kernel.org/linux-arm-kernel/8a8f808a4c7b8325bc253add15e51b396a7d62d1.1785260742.git.Munzzyy1@proton.me/",
+      "note": "thread"
+    },
+    {
+      "title": "RISC-V KVM gstage 페이지테이블 덤퍼 (v3, 커버레터)",
+      "url": "https://lore.kernel.org/linux-riscv/20260728161449.190058-1-fredwudi0305@gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-28T19:51:01.078Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
