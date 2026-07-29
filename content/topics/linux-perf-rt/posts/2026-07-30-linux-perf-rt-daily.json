@@ -1,0 +1,136 @@
+{
+  "id": "2026-07-30-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-07-30 call_rcu 임의컨텍스트 방어 — Linux Perf/RT",
+  "headline": "BPF·NMI 재진입으로 인한 call_rcu()/call_srcu() 데드락을 막는 RCU 패치가 이번 렌즈의 핵심 변경입니다.",
+  "date": "2026-07-30",
+  "summary": "BPF·NMI 재진입으로 call_rcu()/call_srcu() 가 데드락하는 문제를 막는 RCU/SRCU 패치와 이를 뒷받침하는 slab sheaf 확장이 나왔고, mmap 가능 BPF array map 은 지연 채움으로 mmap 비용을 낮췄습니다. 대부분 아직 인간 리뷰어 응답 전 단계입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "RCU",
+    "BPF",
+    "PREEMPT_RT"
+  ],
+  "highlights": [
+    {
+      "title": "rcu,srcu: call_rcu()/call_srcu() 를 임의 컨텍스트에서 안전하게",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "RCU/SRCU 유지보수 담당, 임의 커널 함수·NMI 에 BPF 를 붙이는 관측성 도구 개발자, PREEMPT_RT 운용자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260729162207.1567770-1-puranjay@kernel.org/",
+      "if": "임의 커널 함수나 NMI 컨텍스트에 BPF 를 붙여 객체를 해제하거나 RT 커널을 운용한다면",
+      "do": "새 히든 CONFIG_RCU_DEFER 경로와 rcutorture nmi_calls 시험 결과를 확인하고, 같은 CPU 의 srcu_data 락에 재진입해 데드락하는 조건이 자신의 워크로드에도 해당하는지 점검하세요",
+      "verify": "2026-07-29 시점 스레드에 Paul E. McKenney·Alexei Starovoitov 등의 리뷰 응답이 아직 없으므로 머지 여부는 원문 스레드에서 재확인하세요"
+    },
+    {
+      "title": "mm/slab: deferred free 기구를 rcu sheaf 까지 확장",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "slab/slub 유지보수 담당, BPF 해제 경로 개발자, PREEMPT_RT 에서 kvfree_rcu 배리어에 의존하는 서브시스템 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260729-kfree_rcu_nolock-v5-4-a28cdcda9673@kernel.org/",
+      "if": "kvfree_rcu 배리어 의미나 kfree_rcu_sheaf() 동작에 의존하는 코드를 유지보수한다면",
+      "do": "rcu_barrier() 전에 추가된 CPU 별 irq_work_sync() 가 지연시간에 미치는 영향을 자체 워크로드로 측정해보세요",
+      "verify": "v5 기준 4/8 은 Reviewed-by 를 받았지만 6·7/8 은 변경으로 재검토 중이므로 시리즈 전체 머지 시점은 원문에서 확인하세요"
+    },
+    {
+      "title": "bpf: mmap 가능 array map 을 지연 채움으로 전환",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "BPF_F_MMAPABLE array map 을 쓰는 프로파일러·메트릭 수집기 개발자, bpf arraymap·mm fault 경로 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260729192419.41331-1-song@kernel.org/",
+      "if": "mmap 가능 array map 을 자주 열고 닫거나 반대로 전 페이지를 순회하는 워크로드를 쓰고 있다면",
+      "do": "전 페이지 접근 패턴에는 MAP_POPULATE 플래그 사용을 검토하고, 자주 열고 닫는 패턴은 지연 채움의 이득을 기대하세요",
+      "verify": "커버레터 수치(220us→1.2us, 252us→537us)에 표와 본문 간 불일치가 있으므로 별도 공개 예정인 arraymap-mmap 벤치마크로 재검증하세요"
+    },
+    {
+      "title": "serial: amba-pl011 nbcon 콘솔 클럭 상시 enable 논쟁",
+      "priority": "하",
+      "impactType": "runtime",
+      "affectedAudience": "amba-pl011 콘솔을 쓰는 ARM 임베디드·RT 보드 담당, nbcon/printk 유지보수 담당, write_atomic() 구현을 검토 중인 시리얼 드라이버 작성자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/amnfcOod6ayqfNda@pathway.suse.cz/",
+      "if": "amba-pl011 을 콘솔로 쓰는 RT 보드를 운용하거나 다른 드라이버에서 write_atomic() 을 구현할 계획이라면",
+      "do": "클럭 상시 enable, Kconfig 분기, 콜백에서 제거라는 세 방향의 논의를 원문 스레드에서 따라가세요",
+      "verify": "v3 가 아직 나오지 않았고 소비전력 회귀 데이터도 없으므로 최종 방향이 확정되기 전까지는 결론을 단정하지 마세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**pahole --errno 오타로 오류 코드가 양수로 반환되던 버그 수정**\n\nprototype__stdio_fprintf_value() 의 세 오류 경로가 `-errno` 대신 `--errno` 를 써서 errno 를 감소시킨 값을 반환했다(예: errno=5 → 4, 양수라 성공으로 오인).\n\n영향: 이 자체는 pahole pretty-print 오류 종료 코드에 국한되지만, 같은 시리즈가 BTF 다차원 배열(int[2][3]) 평탄화 버그도 고쳐 BPF 검증기·bpftool 호환성에 걸리는 커널 빌드 경로를 함께 수정한다.\n\n> Before: --errno with errno=5 returns 4 (positive, looks like success)\n\n[원문 확인](https://lore.kernel.org/bpf/20260729190733.72876-12-acme@kernel.org/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**rcu,srcu: call_rcu()/call_srcu() 를 임의 컨텍스트에서 안전하게**\n\nIRQ 비활성 상태에서 call_rcu()/call_srcu() 가 호출되면 콜백을 per-CPU lockless list 에 스테이징하고 IRQ 복귀 후 irq_work 에서 재발행하며, 새 히든 CONFIG_RCU_DEFER(HAVE_NMI/KPROBES/FUNCTION_TRACER/TRACEPOINTS 중 하나)로 감싼다.\n\n영향: rcu_segcblist_enqueue() 에 붙은 BPF 프로그램의 free 가 call_srcu() 로 재진입해 srcu_data 락에서 데드락하는 사례가 동기이며, irq_work 를 IRQ_WORK_INIT_HARD 로 둔 것도 PREEMPT_RT 에서의 지연·적체 방지 목적이다.\n\n> An NMI handler can call call_rcu(), and instrumentation can reenter it.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260729162207.1567770-1-puranjay@kernel.org/)\n\n**mm/slab: deferred free 기구를 rcu sheaf 까지 확장**\n\n__kfree_rcu_sheaf() 가 spinning 금지+IRQ 비활성 상태에서 call_rcu() 를 못 부르던 제약을, 기존 IRQ work 폴백을 확장해 sheaf 자체를 call_rcu() 에 제출하도록 풀었고 rcu_barrier() 전에 CPU 별 irq_work_sync() 를 추가했다.\n\n영향: Alexei Starovoitov 가 제안한 kfree_rcu_nolock() 시리즈의 핵심 조각으로, BPF·NMI 같은 unknown context 에서의 RCU free 를 목표로 하며 Pedro Falcato·Vlastimil Babka 의 Reviewed-by 를 받았다.\n\n> __kfree_rcu_sheaf() cannot invoke call_rcu() when spinning is not allowed and IRQs are disabled.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260729-kfree_rcu_nolock-v5-4-a28cdcda9673@kernel.org/)\n\n**bpf: mmap 가능 array map 을 지연 채움으로 전환**\n\n기존에는 array_map_mmap() 이 vmalloc 메모리를 remap_vmalloc_range() 로 통째로 미리 매핑해 8MiB 맵 기준 mmap 마다 PTE 2048개를 삽입했으나, v4 는 arena map 방식대로 ->map_mmap_fault 온디맨드 핸들러와 fault-around 배치 설치로 바꿔 mmap()/munmap() 비용을 O(맵 크기)에서 O(1)로 낮췄다.\n\n영향: 자주 열고 닫는 프로파일러·메트릭 수집기에는 이득(8MiB 기준 220us → 1.2us)이지만, 전 페이지를 접근하는 워크로드는 252us → 537us 로 오히려 느려져 MAP_POPULATE 로 옮겨야 할 수 있다.\n\n> an 8MiB map inserts 2048 PTEs on each mmap() and tears them all down again on munmap(), even when user space only touches a few pages (or none at all).\n\n[원문 확인](https://lore.kernel.org/bpf/20260729192419.41331-1-song@kernel.org/)\n\n**serial: amba-pl011 nbcon 콘솔 클럭 상시 enable 논쟁**\n\nnbcon write_atomic() 을 안전하게 하려고 pl011 콘솔 클럭을 계속 켜두는 v2 패치에 대해, John Ogness 는 atomic printing 이 NMI 를 포함한 임의 컨텍스트에서 일어나 spin_lock/raw_spin_lock 모두 부적절하다고 지적했고 Petr Mladek 는 write_*() 콜백에서 클럭 enable/disable 을 아예 제거하는 쪽에 표를 던졌다.\n\n영향: ARM 임베디드·RT 보드의 기본 콘솔인 pl011 의 결론이 다른 시리얼 드라이버 write_atomic() 구현의 판례가 될 사안이다.\n\n> neither spin_locks nor raw_spin_locks are appropriate because atomic printing can occur in _any_ context (including NMI's).\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/amnfcOod6ayqfNda@pathway.suse.cz/)\n\n**slub_kunit 의 kprobe 기반 _nolock API 트리거에 AI 리뷰 지적**\n\nPREEMPT_RT 에서 kmalloc_nolock() 이 NMI·hardirq 에서 항상 실패해 테스트가 불가능하던 문제를 kprobe pre-handler 로 우회했는데, sashiko-bot 리뷰가 테스트 abort 시 전역 kprobe 로 인한 스택 use-after-free(High)와 할당기 핫패스 데이터 레이스(Medium)를 제기했다.\n\n영향: RT 커널에서 _nolock 경로 커버리지를 확보하는 실용적 수단 자체가 UAF 위험을 가진다는 지적으로, kfree_rcu_nolock 시리즈 전체의 테스트 전략에 걸린다.\n\n> [High] Manual cleanup of global kprobe leads to stack Use-After-Free if the KUnit test aborts.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260729083530.B3E2B1F00A3D@smtp.kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "rcu,srcu: call_rcu()/call_srcu() 를 임의 컨텍스트에서 안전하게 (PATCH 0/6)",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260729162207.1567770-1-puranjay@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "mm/slab: deferred free 기구를 rcu sheaf 까지 확장 (PATCH v5 4/8)",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260729-kfree_rcu_nolock-v5-4-a28cdcda9673@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "kfree_rcu_nolock() 시리즈 커버레터 (PATCH v5 0/8)",
+      "url": "https://lore.kernel.org/all/20260729-kfree_rcu_nolock-v5-0-a28cdcda9673@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: mmap 가능 array map 지연 채움 (PATCH v4 bpf-next 0/1)",
+      "url": "https://lore.kernel.org/bpf/20260729192419.41331-1-song@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "serial: amba-pl011 콘솔 클럭 수명 논의",
+      "url": "https://lore.kernel.org/linux-rt-devel/amnfcOod6ayqfNda@pathway.suse.cz/",
+      "note": "thread"
+    },
+    {
+      "title": "serial: amba-pl011: keep console clock enabled for atomic writes (PATCH v2 2/2)",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260724213348.77418-3-kmehltretter@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "slub_kunit kprobe 기반 _nolock 시험 AI 리뷰 (PATCH v5 1/8)",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260729083530.B3E2B1F00A3D@smtp.kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "pahole: --errno 버그 수정 (PATCHES 11/31)",
+      "url": "https://lore.kernel.org/bpf/20260729190733.72876-12-acme@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "pahole 커밋 9310b04854a8b709",
+      "url": "https://git.kernel.org/pub/scm/devel/pahole/pahole.git/commit/?id=9310b04854a8b709",
+      "note": "commit"
+    },
+    {
+      "title": "pahole: Bug fixes and small improvements (PATCHES 0/31)",
+      "url": "https://lore.kernel.org/bpf/20260729190733.72876-1-acme@kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-29T19:41:22.592Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

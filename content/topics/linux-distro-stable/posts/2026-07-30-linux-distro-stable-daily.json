@@ -1,0 +1,218 @@
+{
+  "id": "2026-07-30-linux-distro-stable-daily",
+  "topic": "linux-distro-stable",
+  "title": "2026-07-30 mm_access 동시 백포트 — 리눅스 stable 커널",
+  "headline": "세 LTS 라인(6.1.179/6.6.146/6.12.99)이 같은 mm_access() 리팩터 1건만 담아 동시 릴리스됐다.",
+  "date": "2026-07-30",
+  "summary": "6.1.179·6.6.146·6.12.99가 2026-07-29에 동일한 mm_access() 리팩터 1건만 담아 릴리스됐고, 이는 6.1/6.6 직전 릴리스의 proc exec_update_lock 시리즈를 보정하는 것으로 보인다. 한편 7.1.5는 리버트와 exfat iomap 준비 시리즈가 섞인 대형 백포트로 나왔고, ksmbd·vsock/virtio에서는 각각 인증 후 정보 유출과 UAF 보안 이슈가 stable로 제출됐다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "7.1.5 stable — 리버트와 exfat iomap 준비 시리즈 혼재",
+      "priority": "상",
+      "impactType": "release",
+      "affectedAudience": "7.1 stable을 추적하는 배포 커널 유지보수 담당, 리베이스 담당자",
+      "verifyLink": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.5",
+      "if": "7.1.5로 리베이스할 계획이라면",
+      "do": "체인지로그 전체를 diff로 훑어 gpib cb7210 리버트, posix-cpu-timers 콜백 시그니처 확장, exfat iomap 준비 시리즈를 별도로 표시하고 out-of-tree 패치와의 충돌 여부를 먼저 점검하세요.",
+      "verify": "ChangeLog-7.1.5에서 해당 커밋 해시들을 로컬 트리와 대조해 이미 반영된 항목인지 확인하세요."
+    },
+    {
+      "title": "ksmbd set_ntacl_dacl() num_subauth 미검증 — 인증 후 힙 OOB read",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "ksmbd를 빌드·활성화하는 배포 커널 보안 백포트 담당",
+      "verifyLink": "https://github.com/torvalds/linux/commit/47f0b34f6bc98ed85bfdc293e8f3e432ec24958d",
+      "if": "ksmbd를 활성화한 커널을 배포한다면",
+      "do": "이 stable 체리픽(47f0b34f6bc9)을 즉시 백포트하고, 동일 계열인 7.1.3의 smb_check_perm_dacl OOB read 수정도 함께 받았는지 smbacl.c 전체를 점검하세요.",
+      "verify": "패치 적용 후 sid.num_subauth가 0 또는 SID_MAX_SUB_AUTHORITIES를 넘는 값에서 거부되는지 테스트하세요."
+    },
+    {
+      "title": "vsock/virtio freeze 중 삭제된 virtqueue 사용 UAF",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "가상화 게스트 커널을 배포하는 stable 유지보수 담당, suspend/resume 지원 이미지 담당",
+      "verifyLink": "https://lore.kernel.org/stable/CANgPUi2LFBiBG1c7+s_AyzrtDdncXDXQQuphNqmC0uktvBY1dg@mail.gmail.com/",
+      "if": "suspend/hibernate를 지원하는 가상화 게스트 이미지를 유지보수한다면",
+      "do": "이 스레드의 리뷰 진행 상황을 추적하고, 최종 업스트림 커밋이 확정되는 대로 b917507e5ad9를 백포트한 모든 stable 라인에 함께 적용하세요.",
+      "verify": "KASAN 트레이스(virtqueue_add_sgs / virtio_transport_rx_work)를 재현 시나리오로 삼아 freeze-restore 사이클 테스트를 돌려보세요."
+    },
+    {
+      "title": "mm_access() 리팩터 — 6.1.179·6.6.146·6.12.99 동시 릴리스",
+      "priority": "중",
+      "impactType": "backport",
+      "affectedAudience": "6.1·6.6·6.12 LTS를 병행 유지하는 배포·임베디드 커널 담당",
+      "verifyLink": "https://github.com/torvalds/linux/commit/cd3f8467afd470ccab0de2fbc7c76664af4a0bac",
+      "if": "6.1.178/6.6.145 등 직전 proc exec_update_lock 시리즈를 이미 반영했다면",
+      "do": "179/146/99를 건너뛰지 말고 함께 적용해 mm_access() 반환값 규약 변경을 맞추세요.",
+      "verify": "6.12 라인에는 아직 proc exec_update_lock 시리즈가 안 보이므로, 다음 6.12 릴리스 체인지로그에서 해당 시리즈 유입 여부를 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.1.5 stable — 2069건 백포트, 리버트·준비 시리즈 혼재**\n\n2026-07-24 릴리스된 7.1.5는 현재 kernel.org 최신 stable이며, 파이프라인 집계로 2069건이 백포트됐다(체인지로그 직접 카운트로는 확인하지 못했다). 어제 대비 새로 확인된 지점은 체인지로그 최상단에 이전 stable 수정에 대한 리버트가 포함돼 있고, exfat iomap 전환 준비 시리즈(brelse 선언 수정·헬퍼 추가·매크로에서 static inline으로 전환)와 posix-cpu-timers의 non-leader exec() 경쟁 UAF 차단이 함께 들어갔다는 점이다.\n\n영향: 순수 버그픽스와 API 형태를 바꾸는 준비성 백포트가 섞여 있어, 단순 리베이스만으로는 안전을 담보할 수 없다.\n\n> Revert \"gpib: cb7210: Fix region leak when request_irq fails\"\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.5)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ksmbd set_ntacl_dacl() num_subauth 검증 누락 — stable 체리픽 제출**\n\nset_ntacl_dacl()이 sid.num_subauth 검사 없이 ACE를 응답 DACL로 복사해, 인증된 클라이언트가 조작한 값(예: 255)으로 약 1KB 힙 out-of-bounds read를 유발할 수 있다. 패치(47f0b34f6bc9)는 parse_dacl()과 동일한 게이트를 추가한다.\n\n영향: 이미 7.1.3에 동일 계열 결함(smb_check_perm_dacl OOB read)이 백포트된 전례가 있어, ksmbd 활성 배포는 이 패치 하나만이 아니라 smbacl.c 계열 전체를 점검해야 한다.\n\n> a crafted num_subauth (e.g. 255) drives an out-of-bounds heap read of ~1 KB with an offset fully controlled by an authenticated client.\n\n[원문 확인](https://github.com/torvalds/linux/commit/47f0b34f6bc98ed85bfdc293e8f3e432ec24958d)\n\n---\n\n**vsock/virtio freeze/restore 중 삭제된 virtqueue 사용 UAF**\n\nRX/TX/event 워커가 뮤텍스를 잡기 전에 virtqueue 포인터를 읽어, freeze가 큐를 해제한 뒤 지연 실행된 워크가 해제된 포인터를 참조하는 UAF다. Fixes 대상 b917507e5ad9는 과거 4.14 등 구 LTS까지 백포트된 이력이 있어 노출 범위가 넓다(최종 업스트림 커밋과 stable 큐 반영 여부는 아직 확인되지 않았다).\n\n영향: suspend/hibernate를 쓰는 가상화 게스트 이미지 전반이 대상이 될 수 있다.\n\n> BUG: KASAN: slab-use-after-free in virtqueue_add_sgs / Workqueue: virtio_vsock virtio_transport_rx_work\n\n[원문 확인](https://lore.kernel.org/stable/CANgPUi2LFBiBG1c7+s_AyzrtDdncXDXQQuphNqmC0uktvBY1dg@mail.gmail.com/)\n\n---\n\n**macvlan 공유 포트 설정 권한 강화 — 원 보고자는 자신의 버그가 안 고쳐진다고 반박**\n\nmacvlan이 하위 장치를 관리하지 않는 netns로 옮겨진 경우 공유 포트 필드 변경에 하위 netns의 CAP_NET_ADMIN을 요구하도록 강화하는 패치다. 다만 원 보고자 Xiang Mei는 자신이 재현한 케이스(user+net namespace unshare 후 veth 위 macvlan)는 이 패치 적용 커널에서도 동일 OOM이 재현된다고 주장한다(원문 인용 검증은 실패한 상태로, 단정하지 않는다).\n\n영향: 배포 측이 이 커밋만 픽업하고 이슈를 종결 처리하면, 컨테이너·네임스페이스 환경의 unprivileged 로컬 DoS 경로가 남을 가능성이 있다.\n\n> it's a real issue, but it's a different bug from mine. ... I proved that it's a different bug by triggering the same crash on the kernel with your patch\n\n[원문 확인](https://lore.kernel.org/stable/CAPpSM+SScNvoK-RNo40DWe1_+5WnVZN8Fwp5KGJ8uXBx5Te8JA@mail.gmail.com/)\n\n---\n\n**net: pcs: xpcs SGMII 상태 오독 수정 — stable 체리픽**\n\nxpcs_get_state_c37_sgmii()가 BMCR에서 speed/duplex를 읽던 경로를 제거하고 CL37_ANSGM_STS에서 읽도록 바꾼 수정이다(Fixes: 2a22b7ae2fa3). PHY가 있으면 phylink가 PCS 상태를 덮어써 결함이 가려져 있었다.\n\n영향: 문제 커밋을 이미 받은 stable 라인은 PHY 없는 SGMII 구성에서 조용히 오작동했을 수 있어, 해당 라인 전체에 이 수정이 따라 들어갔는지 확인이 필요하다(어느 stable 라인에 적용됐는지는 아직 확인되지 않았다).\n\n> This bug was previously masked by phylink core, which overrides the PCS link state with the PHY state when a PHY is present\n\n[원문 확인](https://lore.kernel.org/stable/20260729191107.3171986-2-coiaprant@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**6.1.179 — mm_access() 리팩터 단독 백포트**\n\n2026-07-29 릴리스된 6.1.179는 릴리스 커밋 외 업스트림 cd3f8467afd4 'mm: refactor mm_access() to not return NULL' 1건만 담았다. 직전 6.1.178(07-24)에는 mm_access()를 사용하는 proc exec_update_lock 시리즈가 들어갔다.\n\n영향: 단일 패치 긴급 릴리스는 앞선 릴리스의 백포트를 보정하는 신호로 보이며(Fixes:/Stable-dep-of 표기는 없어 인과 확인이 아닌 정황 추론이다), 6.1.178을 이미 배포한 곳은 179를 건너뛰지 말아야 한다.\n\n> mm: refactor mm_access() to not return NULL\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.1.179)\n\n---\n\n**6.6.146 — 동일한 mm_access() 리팩터 단독 릴리스**\n\n6.6.146도 같은 날 cd3f8467afd4 백포트(d8a1f7420d2d) 1건만 담았고, 직전 6.6.145에는 6.1과 같은 proc exec_update_lock 시리즈가 들어가 있었다.\n\n영향: 6.1·6.6·6.12 세 LTS 라인이 같은 날 같은 패치 하나만 릴리스했다는 점에서, 세 라인을 병행 유지하는 배포는 한 라인만 올리고 끝내면 안 된다.\n\n> [ Upstream commit cd3f8467afd470ccab0de2fbc7c76664af4a0bac ]\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.6.146)\n\n---\n\n**6.12.99 — 같은 패치, 다만 6.12에는 선행 proc 시리즈가 안 보인다**\n\n6.12.99(07-29)도 cd3f8467afd4를 백포트한 41fb1f3c8a71 1건만 담았다. 6.12.96·97·98 체인지로그에서는 6.1/6.6에 들어간 proc exec_update_lock 시리즈를 찾지 못했고, 6.12.98은 ext4 fd 누수 수정 1건짜리 릴리스였다.\n\n영향: 6.12 라인이 1건짜리 릴리스를 연달아 내는 패턴은 큰 시리즈를 나눠 넣는 중이거나 의존성 선반영 단계일 수 있어, 다음 릴리스에서 관련 후속 백포트가 들어올 가능성에 대비하는 편이 낫다.\n\n> [ Upstream commit cd3f8467afd470ccab0de2fbc7c76664af4a0bac ]\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.12.99)\n\n---\n\n**pmdomain imx93-blk-ctrl devm_* 전환 — Cc:stable 수정의 선행 의존성**\n\nSasha Levin이 업스트림 52becc142280('convert to devm_* only')을 stable로 제출했는데, 이는 Stable-dep-of로 실제 목표 수정인 99611233f8cd(MIPI DSI/CSI 공유 PHY 도메인 도입, Fixes+Cc:stable)의 선행 의존성이다.\n\n영향: 리팩터만 골라 빼면 후속 수정이 깨지고, 반대로 리팩터를 받으면 드라이버 lifetime 처리가 바뀌어 out-of-tree 패치와 충돌할 수 있어 i.MX93 지원 커널은 두 커밋을 묶어서 봐야 한다.\n\n> Stable-dep-of: 99611233f8cd (\"pmdomain: imx93-blk-ctrl: Extract PHY as shared domain for DSI/CSI\")\n\n[원문 확인](https://lore.kernel.org/stable/20260729180208.3683189-1-sashal@kernel.org/)\n\n---\n\n**KVM: x86 KVM_SET_SREGS* EFER 검증 — 저자가 Cc:stable 철회를 제안**\n\nYosry Ahmed의 EFER 유효성 검사 패치에 대해 리뷰 중 Jim Mattson이 CPUID를 SREGS보다 먼저 설정해야 한다는 요구가 문서화됐는지 물었고, 저자는 guest CPUID까지 검사하는 게 과도할 수 있다며 KVM caps만 검사하는 쪽으로 방향을 틀고 Cc:stable을 떼자고 제안했다.\n\n영향: 이 검사는 stable로 가지 않는 쪽으로 기울고 있으며, guest CPUID 기준으로 들어갈 경우 사실상 userspace ABI 변화가 되므로 오래된 VMM을 패키징하는 배포는 향후 유사 검사의 회귀 위험을 지켜봐야 한다(최종 Cc:stable 제거 여부는 아직 확인되지 않았다).\n\n> Maybe we should just drop the Cc:stable as it won't apply to any of the stable trees any way, and do this on top of the kvm_caps.supported_efer_bits changes?\n\n[원문 확인](https://lore.kernel.org/stable/CAO9r8zOrCMqBSnxqxnqj1M1Mmr5wMU0H9uVeNuOYKLwhvQA0Sg@mail.gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "kernel.org releases.json — 7.1.5 stable 등재",
+      "url": "https://www.kernel.org/releases.json",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-7.1.5",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.5",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-6.1.179",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.1.179",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-6.1.178",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.1.178",
+      "note": "changelog"
+    },
+    {
+      "title": "mm: refactor mm_access() to not return NULL (commit)",
+      "url": "https://github.com/torvalds/linux/commit/cd3f8467afd470ccab0de2fbc7c76664af4a0bac",
+      "note": "commit"
+    },
+    {
+      "title": "ChangeLog-6.6.146",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.6.146",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-6.6.145",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.6.145",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-6.12.99",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.12.99",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-6.12.98",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.12.98",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-6.12.97",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.12.97",
+      "note": "changelog"
+    },
+    {
+      "title": "ksmbd: validate num_subauth in set_ntacl_dacl (commit)",
+      "url": "https://github.com/torvalds/linux/commit/47f0b34f6bc98ed85bfdc293e8f3e432ec24958d",
+      "note": "commit"
+    },
+    {
+      "title": "ksmbd num_subauth OOB read — stable 제출 스레드",
+      "url": "https://lore.kernel.org/stable/20260729182530.31304-1-guanwentao@uniontech.com/",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-7.1.3 (ksmbd smb_check_perm_dacl 선례)",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.3",
+      "note": "changelog"
+    },
+    {
+      "title": "CVE-2026-31712 (SentinelOne)",
+      "url": "https://www.sentinelone.com/vulnerability-database/cve-2026-31712/",
+      "note": "cve"
+    },
+    {
+      "title": "vsock/virtio UAF 리포트 스레드",
+      "url": "https://lore.kernel.org/stable/CANgPUi2LFBiBG1c7+s_AyzrtDdncXDXQQuphNqmC0uktvBY1dg@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "vsock/virtio: stop workers during the .remove() (commit)",
+      "url": "https://github.com/torvalds/linux/commit/b917507e5ad9",
+      "note": "commit"
+    },
+    {
+      "title": "4.14 백포트 이력 (lkml)",
+      "url": "https://lkml.iu.edu/hypermail/linux/kernel/2010.1/03623.html",
+      "note": "thread"
+    },
+    {
+      "title": "macvlan 반박 스레드",
+      "url": "https://lore.kernel.org/stable/CAPpSM+SScNvoK-RNo40DWe1_+5WnVZN8Fwp5KGJ8uXBx5Te8JA@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "macvlan 원 보고 스레드",
+      "url": "https://lore.kernel.org/r/20260706212556.3199234-1-xmei5@asu.edu",
+      "note": "thread"
+    },
+    {
+      "title": "net: pcs: xpcs fix SGMII state reading (commit)",
+      "url": "https://github.com/torvalds/linux/commit/def9a4745e105145133e442dd8a1c126caf0f553",
+      "note": "commit"
+    },
+    {
+      "title": "xpcs 체리픽 스레드",
+      "url": "https://lore.kernel.org/stable/20260729191107.3171986-2-coiaprant@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Wangxun BMCR 확인 스레드",
+      "url": "https://lore.kernel.org/all/000c01dd1593$2ac0b0f0$804212d0$@trustnetic.com/",
+      "note": "thread"
+    },
+    {
+      "title": "pmdomain imx93-blk-ctrl devm_* 전환 (commit)",
+      "url": "https://github.com/torvalds/linux/commit/52becc142280eeef828d19f9cd01fd653b588786",
+      "note": "commit"
+    },
+    {
+      "title": "pmdomain imx93-blk-ctrl PHY 공유 도메인 (commit)",
+      "url": "https://github.com/torvalds/linux/commit/99611233f8cd",
+      "note": "commit"
+    },
+    {
+      "title": "pmdomain stable 제출 스레드",
+      "url": "https://lore.kernel.org/stable/20260729180208.3683189-1-sashal@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM EFER 검증 리뷰 스레드",
+      "url": "https://lore.kernel.org/stable/CAO9r8zOrCMqBSnxqxnqj1M1Mmr5wMU0H9uVeNuOYKLwhvQA0Sg@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM EFER kvm_cpu_cap_has 선행 작업",
+      "url": "https://lkml.iu.edu/hypermail/linux/kernel/2603.0/12576.html",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-29T19:28:24.843Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

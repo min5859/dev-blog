@@ -1,0 +1,165 @@
+{
+  "id": "2026-07-30-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-07-30 pin-init API 통합 — 리눅스 툴체인",
+  "headline": "Rust pin-init API 통합과 rpm-pkg BTF 보존 수정 등 커널 툴체인 안전 계약·빌드 회귀 대응이 이어졌습니다.",
+  "date": "2026-07-30",
+  "summary": "Rust for Linux에서는 pin-init API 통합, rcu_barrier 안전 계약 정리, tyr 드라이버 unsafe 전파 누락 지적이 이어졌습니다. kbuild에서는 rpm-pkg가 eu-strip으로 모듈 BTF를 잃어버리던 회귀를 수정했습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "Rust",
+    "kbuild"
+  ],
+  "highlights": [
+    {
+      "title": "kbuild: rpm-pkg가 eu-strip에 모듈 .BTF/.BTF.base를 남기도록 수정",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "kbuild·패키징 담당, BTF/BPF 도구를 쓰는 배포 커널 빌더",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20260728024950.44946-1-laoar.shao@gmail.com/",
+      "if": "elfutils 환경(RHEL 9 등)에서 rpm-pkg로 커널을 빌드하고 bpftool·bcc·bpftrace 등 BTF 기반 도구를 쓰고 있다면",
+      "do": "scripts/package/kernel.spec에 --keep-section .BTF --keep-section .BTF.base가 반영된 v4 패치의 머지 여부를 확인하세요",
+      "verify": "빌드 후 모듈별 BTF가 남아 있는지, bpftool btf dump로 모듈 타입이 정상 조회되는지 확인하세요"
+    },
+    {
+      "title": "rust: pin-init: __init/__pinned_init 통합 + 공개 API ptr_init/ptr_try_init 신설",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust for Linux 코어 유지보수 담당, pin-init을 직접 호출하는 in-tree/out-of-tree 드라이버 작성자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260729-merge-init-v2-0-26adf47109e7@garyguo.net/",
+      "if": "드라이버 코드가 pin-init의 __pinned_init을 직접 호출하고 있다면",
+      "do": "v2 시리즈를 추적해 ptr_init/ptr_try_init 전환 계획을 세우세요",
+      "verify": "rust-next 반영 시점과 cfg(kernel)에서 __pinned_init 제거 여부를 lore 스레드에서 확인하세요"
+    },
+    {
+      "title": "rust: sync: rcu_barrier() 안전 추상화 — \"always safe\"를 둘러싼 precondition 논쟁",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust for Linux 추상화 작성자·리뷰어, RCU 서브시스템 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260729094542.302965-5-phasta@kernel.org/",
+      "if": "sleepable C 함수를 safe Rust 추상화로 감싸는 패치를 작성 중이라면",
+      "do": "SAFETY 주석이 아니라 함수의 # Safety precondition에 실행 문맥 조건(non-atomic)을 명시하세요",
+      "verify": "v8에서 SAFETY 문구가 precondition 형태로 어떻게 재작성되는지 스레드를 확인하세요"
+    },
+    {
+      "title": "drm/tyr: Job IRQ threaded 핸들러 — unsafe 계약 전파 누락 지적으로 v3 예고",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "Rust DRM 드라이버 작성자, tyr/panthor 계열 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260729-tyr-irq-v2-v2-1-c2750fc11d59@collabora.com/",
+      "do": "request()/job_irq_init()이 unsafe로 바뀌는 v3에서 안전 요구사항 전파 여부를 확인하세요",
+      "if": "Tyr 드라이버의 threaded IRQ 등록 코드를 리뷰하거나 유사 패턴을 다른 드라이버에 적용 중이라면",
+      "verify": "v3에서 CSG 비트 처리 방향과 unsafe 전파 반영 여부를 lore에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**kbuild: rpm-pkg가 eu-strip에 모듈 .BTF/.BTF.base를 남기도록 수정**\n\nYafang Shao의 v4 패치가 scripts/package/kernel.spec의 _find_debuginfo_opts에 --keep-section .BTF --keep-section .BTF.base를 추가해, eu-strip이 모듈의 BTF 섹션을 제거하지 않도록 했습니다.\n\n영향: RHEL 9 등 elfutils 환경에서 rpm-pkg로 빌드하면 모듈 BTF가 사라져 bpftool·bcc·bpftrace가 모듈 타입을 인식하지 못하는 조용한 회귀가 있었는데, 이를 막습니다.\n\n> find-debuginfo.sh (from the debugedit package) prefers eu-strip over strip when elfutils is installed, which is the common case on RHEL 9. eu-strip removes non-allocated ELF sections, including the .B\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20260728024950.44946-1-laoar.shao@gmail.com/)\n\n**rust: pin-init: __init/__pinned_init 통합 + 공개 API ptr_init/ptr_try_init 신설**\n\nGary Guo의 v2 패치가 Init을 marker trait으로 써서 __pinned_init과 __init 진입점을 하나로 합치고, 비공개 API를 대체할 공개 ptr_init/ptr_try_init을 추가해 treewide 사용자를 전환합니다.\n\n영향: pin-init은 모든 Rust 커널 코드가 거치는 초기화 기반이라, 진행 중인 모든 Rust 드라이버 브랜치가 리베이스 시 이 API 변경을 마주치게 됩니다.\n\n> Instead of having to duplicate impl everywhere, it's simpler to just use `Init` as a marker trait that cancels out the pinning requirement on `PinInit::__pinned_init`. This also simplifies code (and s\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260729-merge-init-v2-0-26adf47109e7@garyguo.net/)\n\n**rust: sync: rcu_barrier() 안전 추상화 — \"always safe\"를 둘러싼 precondition 논쟁**\n\nPhilipp Stanner의 dma_fence 시리즈 3/5 패치가 rcu_barrier() safe 래퍼를 추가하며 SAFETY 주석에 always safe라 적었으나, Paul E. McKenney가 preempt_disable() 구간에서는 성립하지 않는다고 지적했습니다.\n\n영향: Gary Guo의 설명대로 non-preemptable 문맥에서의 sleep을 safe로 두되 버그로 간주하는 R4L 원칙이 재확인되어, 앞으로 sleepable 추상화의 SAFETY 주석 관례로 굳어집니다.\n\n> In order to avoid having to mark all sleeping function unsafe, we've decided that sleeping from non-preemptable context is \"safe\", but is a bug regardless.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/DKBA29HOEUIX.H4CDPOQQXRD0@garyguo.net/)\n\n**drm/tyr: Job IRQ threaded 핸들러 — unsafe 계약 전파 누락 지적으로 v3 예고**\n\nLaura Nao의 v2 패치가 Tyr 드라이버에 threaded IRQ 래퍼와 Job IRQ 핸들러를 추가했는데, Ewan Chorynski가 request()가 내부의 unsafe 요구사항을 상위로 전파하지 않는다고 지적했습니다.\n\n영향: Laura가 request()와 job_irq_init()을 unsafe로 바꾸겠다고 답해, HRT 드라이버 구조로 옮겨가는 다른 Rust 드라이버의 IRQ 등록 코드에도 같은 검토가 필요함을 보여줍니다.\n\n> I think your `request` function should be unsafe with the same requirements as `request_threaded_irq_by_name`, otherwise how do you guarantee that this safety justification holds ?\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260729121224.GA1@ewan/)\n\n**MAINTAINERS: Rust dma-buf/dma_fence 추상화에 공동 유지보수자 지정**\n\ndma_fence 추상화 v7 시리즈 마지막 패치가 DMA BUFFER SHARING FRAMEWORK 엔트리에 Philipp Stanner를 M:으로 추가하고 rust/kernel/dma_buf/ 등을 F:에 등록했습니다.\n\n영향: Christian König와 Sumit Semwal의 Acked-by가 확보되어, dma_fence 추상화가 머지 궤도에 올랐다는 신호로 읽힙니다.\n\n> These abstractions are quite complicated and require expertise with both the C and the Rust side. Therefore, using the existing entry also for maintenance of the Rust code appears reasonable.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260729094542.302965-7-phasta@kernel.org/)\n\n**rust: print: _printk FFI의 \"TODO.\" SAFETY 주석 제거와 # Safety 계약 축소**\n\nCian McGuire의 v4 패치가 rust/kernel/print.rs에 남아 있던 TODO SAFETY 주석 두 곳을 채우고, call_printk의 # Safety를 format_string이 non-continuation 상수여야 한다는 조건으로 좁혔습니다.\n\n영향: Gary Guo의 리뷰대로 근거 대부분을 함수의 precondition으로 옮기고 호출부 SAFETY 주석은 호출 고유 근거만 남기는 관례를 보여주는 사례입니다.\n\n> Bulk of this should be safety precondition of the function, not safety comment.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/DK9ANS6VVCNW.891MU75QMQ05@garyguo.net/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "rust: sync: rcu_barrier() 안전 추상화 패치 (dma_fence v7 3/5)",
+      "url": "https://lore.kernel.org/rust-for-linux/20260729094542.302965-5-phasta@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "Paul E. McKenney의 always safe 조건 확인 요청",
+      "url": "https://lore.kernel.org/rust-for-linux/296c71c4-4d2f-416d-bfbe-40fd911b44db@paulmck-laptop/",
+      "note": "thread"
+    },
+    {
+      "title": "Gary Guo의 non-preemptable sleep 원칙 설명",
+      "url": "https://lore.kernel.org/rust-for-linux/DKBA29HOEUIX.H4CDPOQQXRD0@garyguo.net/",
+      "note": "thread"
+    },
+    {
+      "title": "Paul의 precondition 수용 답신",
+      "url": "https://lore.kernel.org/rust-for-linux/f680fb1b-ecbc-47b4-a252-b792933bfe3e@paulmck-laptop/",
+      "note": "thread"
+    },
+    {
+      "title": "dma_fence v7 커버레터 (rcu_barrier 재편입 배경)",
+      "url": "https://lore.kernel.org/rust-for-linux/20260729094542.302965-2-phasta@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "Ewan Chorynski의 unsafe 전파 지적",
+      "url": "https://lore.kernel.org/rust-for-linux/20260729121224.GA1@ewan/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/tyr Job IRQ v2 패치 및 Laura Nao 답신",
+      "url": "https://lore.kernel.org/rust-for-linux/20260729-tyr-irq-v2-v2-1-c2750fc11d59@collabora.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Onur Özkan의 GLB/CSG 처리 질문",
+      "url": "https://lore.kernel.org/rust-for-linux/20260729195117.6f0b1e6f@nowhere/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: pin-init 통합 v2 커버레터",
+      "url": "https://lore.kernel.org/rust-for-linux/20260729-merge-init-v2-0-26adf47109e7@garyguo.net/",
+      "note": "thread"
+    },
+    {
+      "title": "MAINTAINERS dma_fence 공동 유지보수 패치",
+      "url": "https://lore.kernel.org/rust-for-linux/20260729094542.302965-7-phasta@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "dma_fence.rs 본체 패치 (1111줄)",
+      "url": "https://lore.kernel.org/rust-for-linux/20260729094542.302965-6-phasta@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: print _printk SAFETY 정리 v4 패치",
+      "url": "https://lore.kernel.org/rust-for-linux/20260729175305.723486-1-cianmcguire167@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Gary Guo의 v3 리뷰 (precondition 위치 지적)",
+      "url": "https://lore.kernel.org/rust-for-linux/DK9ANS6VVCNW.891MU75QMQ05@garyguo.net/",
+      "note": "thread"
+    },
+    {
+      "title": "Rust-for-Linux 이슈 351",
+      "url": "https://github.com/Rust-for-Linux/linux/issues/351",
+      "note": "thread"
+    },
+    {
+      "title": "kbuild: rpm-pkg BTF keep-section v4 패치",
+      "url": "https://lore.kernel.org/linux-kbuild/20260728024950.44946-1-laoar.shao@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "libbpf,bpf: Share BTF relocate-related code with kernel (8646db238997)",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/patch/?id=8646db238997",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-29T19:16:50.329Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
