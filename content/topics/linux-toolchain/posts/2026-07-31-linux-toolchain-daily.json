@@ -1,0 +1,133 @@
+{
+  "id": "2026-07-31-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-07-31 tyr 32비트 빌드실패 — 리눅스 툴체인",
+  "headline": "tyr GPU VM 32비트 빌드 실패와 dma Coherent EOF 버그 수정, debugfs 추상화 리스핀이 함께 올라왔습니다.",
+  "date": "2026-07-31",
+  "summary": "드라이버·kbuild 헤더 5건 중 32비트 빌드 실패와 dma EOF 버그 수정이 가장 시급한 이슈로 꼽힙니다. debugfs 추상화 리스핀, pci 확장 capability v6, list 계열 mutable 이터레이터 v4 도 함께 올라왔습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "rust: dma Coherent<T> EOF 읽기 -ERANGE 수정 (stable Cc)",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "rust/kernel/dma 추상화 사용자, Coherent 버퍼를 debugfs 로 노출하는 Rust 드라이버 작성자, stable 백포트 담당",
+      "verifyLink": "https://lore.kernel.org/all/20260730-fix-dma-coherent-eof-v2-1-8aff21054afa@younes.io/",
+      "if": "Coherent DMA 버퍼를 debugfs 파일로 노출하는 드라이버를 유지보수하고 있다면",
+      "do": "이 v2 패치를 적용해 EOF 이후 읽기가 -ERANGE 대신 0 을 반환하는지 확인하세요",
+      "verify": "패치 스레드에서 리뷰·Acked-by 진행 상황과 stable 백포트 여부를 계속 확인하세요"
+    },
+    {
+      "title": "drm/tyr GPU VM 32비트 빌드 실패 보고",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "Rust DRM/GPU 드라이버 작성자, rust/kernel/iommu 추상화 및 Rust 커널 CI 담당",
+      "verifyLink": "https://lore.kernel.org/all/CAH5fLgjDoWT09Kdp0Jtg=XtmWVdnUM71yT_TsQG+TX1RJ6GqaQ@mail.gmail.com/",
+      "if": "rust/kernel/iommu/pgtable.rs 의 map_pages() 나 이를 호출하는 Rust 드라이버를 유지보수하고 있다면",
+      "do": "32비트 빌드에서 물리주소 인자 타입이 좁혀지는지 직접 확인하세요",
+      "verify": "스레드에 아직 답신이 없으므로 try_into 절단과 시그니처 변경 중 어느 쪽으로 결론 나는지 지켜보세요"
+    },
+    {
+      "title": "drm/tyr debugfs v2 — seq_file 추상화 신설 및 UAF 수정",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust DRM 드라이버 작성자, rust/kernel/debugfs·seq_file 추상화 리뷰어, drm_debugfs 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/all/20260731-tyr-debugfs-v2-v2-0-aea19eccb996@linux.dev/",
+      "if": "Rust DRM 드라이버에서 debugfs 노출을 계획하고 있다면",
+      "do": "새로 도입되는 SeqShow 트레이트와 debugfs_init 콜백 호출 순서를 확인하세요",
+      "verify": "legacy drm_debugfs 경로의 UAF 수정이 이 시리즈와 별도로 먼저 흡수되는지 스레드를 확인하세요"
+    },
+    {
+      "title": "rust: pci 확장 capability 인프라 v6 리뷰",
+      "priority": "하",
+      "impactType": "api-abi",
+      "affectedAudience": "rust/kernel/pci 추상화 사용자, nova/NVIDIA GSP·vGPU 계열 Rust 드라이버 작성자",
+      "verifyLink": "https://lore.kernel.org/all/20260730182954.783568-1-zhiw@nvidia.com/",
+      "if": "rust/kernel/pci 의 확장 capability API 를 사용할 계획이 있다면",
+      "do": "Gary Guo 가 제안한 Result<Option<..>> 반환형 논의를 따라가고 v7 리스핀을 확인하세요",
+      "verify": "PCI 메인테이너의 최종 판단이 아직 스레드에 없으니 병합 전 API 변경 가능성을 염두에 두세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**rust: dma Coherent<T> EOF 이후 읽기 -ERANGE 버그 수정 (v2, stable Cc)**\n\nwrite_to_slice() 가 오프셋이 할당 크기 이상일 때도 write_dma() 를 호출해 -ERANGE 를 반환하던 문제를, offset >= size 면 write_dma() 호출 전에 Ok(0) 을 반환하도록 v2 에서 고쳤습니다.\n\n영향: Coherent DMA 버퍼를 debugfs 로 노출하는 Rust 드라이버에서 cat 같은 평범한 EOF 읽기가 실패하던 것이 바로잡히며, stable Cc 대상이라 기존 트리도 백포트 영향을 받습니다.\n\n> The latter rejects offsets beyond the allocation even when the copy length is zero, so a debugfs read past EOF returns -ERANGE.\n\n[원문 확인](https://lore.kernel.org/all/20260730-fix-dma-coherent-eof-v2-1-8aff21054afa@younes.io/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/tyr GPU VM 시리즈 32비트 빌드 실패**\n\nAlice Ryhl 이 drm/tyr GPU VM v10 4/7 패치에서 vm.rs 의 u64 물리주소를 pgtable.rs 의 map_pages() 에 넘기며 32비트 빌드가 E0308 타입 불일치로 깨진다고 보고했습니다.\n\n영향: phys_addr_t 를 그대로 투영한 Rust IOMMU 페이지테이블 추상화가 아키텍처별 인자 폭 차이를 흡수하지 못해, tyr 뿐 아니라 iommu 추상화를 쓰는 모든 Rust 드라이버의 32비트 빌드가 위협받습니다.\n\n> There's a 32-bit build failure :( error[E0308]: mismatched types --> /home/runner/work/linux/linux/linux/drivers/gpu/drm/tyr/vm.rs:873:17\n\n[원문 확인](https://lore.kernel.org/all/CAH5fLgjDoWT09Kdp0Jtg=XtmWVdnUM71yT_TsQG+TX1RJ6GqaQ@mail.gmail.com/)\n\n**rust: pci 확장 capability 인프라 및 SR-IOV 레지스터 (v6)**\n\nrust/kernel/pci/cap.rs 에 ExtCapId·ExtCapability 트레이트와 find_ext_capability(), SR-IOV VF BAR 를 읽는 read_vf_bar() 를 추가한 v6 가 올라왔고, Gary Guo 가 반환 타입과 VF BAR 인덱싱 API 에 이견을 냈습니다.\n\n영향: vGPU 를 켠 Boot GSP 계열 드라이버가 이미 이 패치를 쓰고 있어, Rust PCI 드라이버가 raw 바인딩 대신 타입이 붙은 확장 capability 접근자를 쓰게 되는 기반이 됩니다.\n\n> The signature should be Result<Option<...>> where the result is usually handled via `?` and `None` needs to be handled explicitly, rather than matching on ENODEV.\n\n[원문 확인](https://lore.kernel.org/all/DKC4MR1ZBQMP.3L7X2C96OJLFU@garyguo.net/)\n\n**drm/tyr debugfs v2 — Rust seq_file/debugfs 추상화 신설 및 UAF 수정**\n\nAlvin Sun 이 v1 의 hazptr/revocable 방식을 버리고 DRM debugfs_init 콜백과 일반 SeqShow 트레이트 기반으로 다시 쓴 9패치 v2 를 올렸고, 열린 debugfs 파일 수명 동안 drm_dev_get/put 으로 참조를 잡아 use-after-free 도 함께 고칩니다.\n\n영향: Rust DRM 드라이버의 debugfs 관례가 이 시리즈로 정해지며, UAF 수정은 Rust 와 무관한 기존 DRM 드라이버의 legacy debugfs 경로에도 적용됩니다.\n\n> Reworked the debugfs implementation per feedback from Danilo on v1: dropped the hazptr/revocable-based approach in favor of the DRM debugfs_init callback and generic seq_file abstractions.\n\n[원문 확인](https://lore.kernel.org/all/20260731-tyr-debugfs-v2-v2-0-aea19eccb996@linux.dev/)\n\n**list/hlist/llist *_mutable() 이터레이터 추가 (v4)**\n\nKaitao Cheng 이 커서를 호출자가 선언하지 않는 *_mutable() 변종을 list.h·llist.h 에 추가하고, tools·scripts 사본까지 3중으로 동기화한 v4 를 올렸습니다.\n\n영향: tools 쪽엔 __UNIQUE_ID 폴백을, scripts 쪽엔 로컬 __PASTE()/__UNIQUE_ID() 를 추가해야 해서, 커널 헤더 하나를 고치면 호스트 도구 빌드까지 함께 맞춰야 한다는 kbuild 관례가 그대로 드러납니다.\n\n> He suggested _mutable() as a clearer description of what the loop permits. Add *_mutable() iterator variants for list, hlist and llist. ... The existing *_safe() helpers remain available for compatibi\n\n[원문 확인](https://lore.kernel.org/all/20260730095041.35715-1-kaitao.cheng@linux.dev/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/tyr GPU VM 32비트 빌드 실패 보고 스레드",
+      "url": "https://lore.kernel.org/all/CAH5fLgjDoWT09Kdp0Jtg=XtmWVdnUM71yT_TsQG+TX1RJ6GqaQ@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "[PATCH v10 4/7] drm/tyr: add GPU virtual memory (VM) support",
+      "url": "https://lore.kernel.org/all/20260728-fw-boot-b4-v10-4-9187aefa3f2f@collabora.com/",
+      "note": "thread"
+    },
+    {
+      "title": "[PATCH v2] rust: dma: fix Coherent<T> EOF read -ERANGE",
+      "url": "https://lore.kernel.org/all/20260730-fix-dma-coherent-eof-v2-1-8aff21054afa@younes.io/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: dma: implement BinaryWriter for Coherent<[u8]> (Fixes 대상 커밋)",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=016818513936",
+      "note": "commit"
+    },
+    {
+      "title": "[PATCH v6 0/N] rust: pci: extended capability infrastructure",
+      "url": "https://lore.kernel.org/all/20260730182954.783568-1-zhiw@nvidia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Gary Guo 의 find_ext_capability() 반환형 리뷰",
+      "url": "https://lore.kernel.org/all/DKC4MR1ZBQMP.3L7X2C96OJLFU@garyguo.net/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/tyr debugfs v2 커버레터",
+      "url": "https://lore.kernel.org/all/20260731-tyr-debugfs-v2-v2-0-aea19eccb996@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/tyr debugfs v2 9/9 — drm_dev_get/put UAF 수정",
+      "url": "https://lore.kernel.org/all/20260731-tyr-debugfs-v2-v2-9-aea19eccb996@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/debugfs: create device-centered debugfs functions (Fixes 대상 커밋)",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=1c9cacbea8805",
+      "note": "commit"
+    },
+    {
+      "title": "[PATCH v4 0/4] list/hlist/llist: add *_mutable() iterators",
+      "url": "https://lore.kernel.org/all/20260730095041.35715-1-kaitao.cheng@linux.dev/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-30T19:05:14.280Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

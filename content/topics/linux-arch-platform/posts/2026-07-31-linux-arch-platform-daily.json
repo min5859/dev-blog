@@ -1,0 +1,149 @@
+{
+  "id": "2026-07-31-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-07-31 PMU 오버플로 수정 — RISC-V",
+  "headline": "RISC-V KVM PMU 배열 오버플로 보안 수정과 IMSIC MSI 리매핑 v3 예고를 한 번에 정리했습니다.",
+  "date": "2026-07-31",
+  "summary": "이번 주 RISC-V 소식은 게스트가 유발할 수 있는 KVM PMU 힙 오버플로를 고친 보안 수정(v2)과 IMSIC MSI 리매핑·IOMMU_DMA 활성화 시리즈의 v3 예고가 중심입니다. SBI SSE 확장 재전송과 unaligned access 빌드 실패 수정도 함께 다뤘습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "RISC-V"
+  ],
+  "highlights": [
+    {
+      "title": "RISC-V KVM PMU event info 배열 크기 오버플로 수정 (v2)",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "RISC-V KVM 유지보수 담당, RISC-V 가상화 호스트 운영자, stable 백포트 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260730091710.1366757-1-2045gemini@gmail.com/",
+      "if": "RISC-V KVM 호스트를 운영 중이라면",
+      "do": "이 v2 패치를 확인하고 e309fd113b9f 이후 커널에 적용되어 있는지 점검하세요",
+      "verify": "게스트의 SBI PMU EVENT_GET_INFO 호출 경로에서 KASAN slab-out-of-bounds 로그가 재현되지 않는지 확인하세요"
+    },
+    {
+      "title": "iommu/riscv MSI remapping·IOMMU_DMA 활성화 시리즈 (v2, v3 예고)",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "RISC-V IOMMU·IMSIC 유지보수 담당, iommufd/VFIO 및 genirq/msi 코어 리뷰어",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260724151218.965929-1-andrew.jones@oss.qualcomm.com/",
+      "if": "iommufd·VFIO나 genirq/msi 코어를 유지보수한다면",
+      "do": "새로 추가되는 iommu_dma_map_msi()/iommu_dma_sw_map_msi() API와 DOMAIN_BUS_MSI_REMAP 도입 내용을 검토하세요",
+      "verify": "곧 게시될 v3와 sashiko 봇 지적 반영 여부를 확인하세요"
+    },
+    {
+      "title": "SBI SSE 확장 v9 2/5 빌드 깨짐 교정 재전송",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "RISC-V trap entry·SSE 유지보수 담당, RAS/PMU 및 SBI 펌웨어 연동 개발자",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260730133333.54325-1-zhangzhanpeng.jasper@bytedance.com/",
+      "if": "v9 시리즈를 b4/git am으로 통째로 받아 테스트했다면",
+      "do": "이 교정된 2/5 패치로 교체 적용하고 v10 게시를 기다리세요",
+      "verify": "sbi_sse_entry.S가 더 이상 truncated 되지 않았는지, __sse_entry_task per-CPU 배열이 중첩 이벤트에서 정상 동작하는지 확인하세요"
+    },
+    {
+      "title": "riscv unaligned: check_vector_unaligned_access() 스텁 이름 오류로 for-next 빌드 실패",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "riscv for-next 기반 개발자, 배포·CI 커널 빌드 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260730131931.2066821-1-namcao@linutronix.de/",
+      "if": "CONFIG_RISCV_PROBE_VECTOR_UNALIGNED_ACCESS=n 설정으로 riscv for-next를 빌드한다면",
+      "do": "이 rename 패치를 적용하거나 f54d193db5da에 squash될 때까지 해당 config를 피하세요",
+      "verify": "gcc 9.5.0 randconfig 빌드에서 380행 undeclared 에러가 사라졌는지 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**RISC-V KVM PMU event info 배열 크기 오버플로 수정 (v2)**\n\nkvm_riscv_vcpu_pmu_event_info()가 게스트가 지정한 num_events 곱셈 결과를 int shmem_size에 담아 RV64에서 절단되던 문제를 size_t와 check_mul_overflow()로 고치고, 할당 방식도 kvcalloc(GFP_KERNEL_ACCOUNT | __GFP_NOWARN)으로 바꿨습니다.\n\n영향: SBI PMU EVENT_GET_INFO만 호출하면 게스트가 호스트 힙을 넘어 읽고 쓸 수 있던 경로로, 중첩 게스트에서 KASAN slab-out-of-bounds로 실제 재현되었습니다.\n\n> On RV64, num_events = 0x10000001 makes 0x100000010 truncate to 16. KVM then allocates one entry but loops over the original num_events, causing out-of-bounds reads and writes.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260730091710.1366757-1-2045gemini@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**iommu/riscv: MSI remapping 및 IOMMU_DMA 기본 활성화 시리즈 (v2, v3 예고)**\n\nIMSIC MSI 타깃을 DMA와 동일하게 번역해 RISC-V에서 IOMMU_DMA와 paging domain을 기본 활성화하려는 14개 패치 시리즈로, iommu_dma_map_msi()/iommu_dma_sw_map_msi() 신설과 DOMAIN_BUS_MSI_REMAP 도입을 포함합니다. 2026-07-30 저자가 sashiko 봇 지적 반영과 irqbypass 시리즈용 패치 추가로 v3를 곧 올리겠다고 예고했습니다.\n\n영향: iommufd·iommu/dma·genirq/msi 같은 공용 코어 API를 새로 추가하므로 RISC-V 외 IOMMU·IRQ 유지보수자에게도 영향이 가며, v1의 우회안이 거절된 뒤 ARM 구조를 따라 재설계된 결과물입니다.\n\n> This series adds MSI remapping for IMSIC so a device's MSI target gets translated the same way its DMA does, allowing RISC-V to enable IOMMU_DMA and paging domains by default.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260724151218.965929-1-andrew.jones@oss.qualcomm.com/)\n\n---\n\n**riscv: SBI Supervisor Software Events 확장 (v9 2/5 교정 재전송)**\n\nHimanshu Chauhan이 v9 전체를 b4/git am으로 받으면 패치가 깨진다고 보고한 뒤, truncated된 sbi_sse_entry.S를 고친 v9 2/5 교체본이 2026-07-30 재전송되었습니다. 중첩 이벤트에서 current를 찾기 위한 per-CPU __sse_entry_task 배열과 do_sse() 구간의 stvec·hstatus 보존이 핵심입니다.\n\n영향: SSE는 RAS·PMU 오버플로 같은 마스크 불가 이벤트를 전달하는 trap entry 핵심 경로라, v9가 빌드 불가 상태였다는 점과 5월에 나온 sashiko 봇 지적이 아직 정리되지 않은 채 v10을 기다리는 상황을 진입 경로 추적자는 알아야 합니다.\n\n> Please find a corrected replacement for v9 patch 2/5 below. It fixes the truncated sbi_sse_entry.S; patches 3/5 through 5/5 apply unchanged.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260730133333.54325-1-zhangzhanpeng.jasper@bytedance.com/)\n\n---\n\n**riscv: unaligned: check_vector_unaligned_access() 스텁 이름 오류로 for-next 빌드 실패**\n\nCONFIG_RISCV_PROBE_VECTOR_UNALIGNED_ACCESS=n일 때 no-op 스텁 이름이 잘못 붙어 schedule_on_each_cpu() 호출이 undeclared 에러를 내던 문제를 한 줄 rename으로 고쳤습니다. Jesse Taube가 Reviewed-by를 주었고 원 커밋 f54d193db5da에 squash하는 방안도 제안되었습니다.\n\n영향: 0-day randconfig(gcc 9.5.0)가 잡은 회귀로, riscv for-next를 기반으로 작업하며 해당 config를 쓰는 경우 빌드가 하드 에러로 깨집니다.\n\n> When CONFIG_RISCV_PROBE_VECTOR_UNALIGNED_ACCESS=n, the no-op stub for check_vector_unaligned_access() has the wrong name and causes compile failure.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260730131931.2066821-1-namcao@linutronix.de/)\n\n---\n\n**riscv: this_cpu_cmpxchg() 네이티브 지원 추가**\n\npreempt_disable_notrace() + raw_cpu_ptr() + cmpxchg_local() 조합으로 this_cpu_cmpxchg_4/_8/64를 구현하고 HAVE_CMPXCHG_LOCAL을 select합니다. 1·2바이트 연산은 기존 제네릭 폴백을 유지합니다.\n\n영향: 기존에는 로컬 인터럽트를 끄는 제네릭 폴백만 있어 percpu_counter 등이 cmpxchg 빠른 경로를 못 썼는데, 저자 측정으로 percpu_counter_add() 중위 소요시간이 77.3% 줄고 stress-ng fork 처리량이 4.6% 늘었다고 보고되었습니다(유지보수자 리뷰는 아직 없어 확인 필요).\n\n> A percpu_counter_add() benchmark using the default batch value reduced the median time per operation by 77.3% (10 runs of 5,000,000 operations).\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260730094407.16588-1-xb@ultrarisc.com/)\n\n---\n\n**riscv: KVM AIA hart-to-vCPU 매핑으로 MSI 주입 가속**\n\nMSI 주입 경로의 kvm_for_each_vcpu() 선형 탐색을 hart_index 기반 O(1) 조회 테이블로 대체합니다. 테이블은 aia_init()에서 kvm->created_vcpus 크기로 할당됩니다.\n\n영향: vCPU가 많은 AIA/IMSIC 게스트의 인터럽트 지연을 줄이는 변경이지만, hart_index가 테이블 크기를 벗어나면 MSI가 조용히 버려지는지는 확인되지 않았고 유지보수자 리뷰도 아직 없습니다(확인 필요).\n\n> Replace linear searches over all vCPUs in MSI injection paths with a direct hart_index -> vCPU lookup table. This avoids O(n) scans on every injected interrupt\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260730093614.983508-1-xiangwencheng@lanxincomputing.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "RISC-V: KVM: Fix PMU event info array size overflow (v2)",
+      "url": "https://lore.kernel.org/linux-riscv/20260730091710.1366757-1-2045gemini@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "RISC-V: KVM: Implement get event info function (Fixes 대상 커밋)",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=e309fd113b9f",
+      "note": "commit"
+    },
+    {
+      "title": "RISC-V KVM PMU event info 힙 오버플로 최초 보고",
+      "url": "https://lore.kernel.org/kvm/178345245327.72065.13249716450708539854@digiscrypt.com/",
+      "note": "thread"
+    },
+    {
+      "title": "iommu/riscv: Enable MSI remapping and IOMMU_DMA (v2 커버레터)",
+      "url": "https://lore.kernel.org/linux-riscv/20260724151218.965929-1-andrew.jones@oss.qualcomm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "iommu/riscv: Enable IOMMU_DMA (v1, 거절된 초안)",
+      "url": "https://lore.kernel.org/all/20260508212339.381933-1-andrew.jones@oss.qualcomm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "iommu/riscv MSI remapping v3 예고 메일",
+      "url": "https://lore.kernel.org/linux-riscv/fcshuujn27rutywntqixbmyvvxcsbz3yg7kk6ngnphxql6byyb@pvo6vaishsdz/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: add support for SBI SSE extension (v9 2/5 교정 재전송)",
+      "url": "https://lore.kernel.org/linux-riscv/20260730133333.54325-1-zhangzhanpeng.jasper@bytedance.com/",
+      "note": "thread"
+    },
+    {
+      "title": "v9 패치가 b4/git am에서 깨진다는 보고",
+      "url": "https://lore.kernel.org/linux-riscv/CA+Ht8=b59YDH+7jrea8PcFq3HtFaSk81O8oyQAQ1+ZP3aCb0QQ@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: unaligned: Fix check_vector_unaligned_access() stub name",
+      "url": "https://lore.kernel.org/linux-riscv/20260730131931.2066821-1-namcao@linutronix.de/",
+      "note": "thread"
+    },
+    {
+      "title": "kernel test robot 빌드 실패 리포트",
+      "url": "https://lore.kernel.org/oe-kbuild-all/202607301618.yrE3EKfS-lkp@intel.com/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: unaligned: stop using kthread (Fixes 대상 커밋)",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/riscv/linux.git/commit/?id=f54d193db5da",
+      "note": "commit"
+    },
+    {
+      "title": "riscv: Add native this_cpu_cmpxchg() support",
+      "url": "https://lore.kernel.org/linux-riscv/20260730094407.16588-1-xb@ultrarisc.com/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: KVM: Add hart-to-vCPU mapping for faster MSI injection",
+      "url": "https://lore.kernel.org/linux-riscv/20260730093614.983508-1-xiangwencheng@lanxincomputing.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-30T19:47:17.536Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
