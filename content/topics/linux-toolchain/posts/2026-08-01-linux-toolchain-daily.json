@@ -1,0 +1,133 @@
+{
+  "id": "2026-08-01-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-08-01 모듈 버전 ABI 정리 — 리눅스 툴체인",
+  "headline": "MODULE_VERSION 제거 v2 가 stable ABI sysfs 노드를 함께 삭제하고, tyr 는 32비트 빌드 깨짐을 수정했습니다.",
+  "date": "2026-08-01",
+  "summary": "MODULE_VERSION()과 srcversion 제거 v2 는 stable ABI 로 문서화된 sysfs 파일까지 함께 지우며 modpost 경로도 정리합니다. 한편 tyr GPU 드라이버는 32비트 빌드에서 물리주소 타입 불일치로 깨졌다가 drm-rust-next 에서 수정됐고, UP 빌드에서는 spinlock 배열에 ARRAY_SIZE 를 쓰다 컴파일 타임 0 나눗셈이 발생하는 사례도 나왔습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "MODULE_VERSION()·srcversion 제거 v2 — stable ABI sysfs 파일까지 삭제",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "kbuild/modpost 유지보수 담당, 모듈 패키징·DKMS·모듈 메타데이터를 읽는 도구 작성자",
+      "verifyLink": "https://patchwork.kernel.org/project/linux-modules/cover/20260731-module_ver_remove-v2-0-c9163858f382@linuxfoundation.org/",
+      "if": "모듈 메타데이터 도구가 /sys/module/<NAME>/version 이나 srcversion 필드를 읽고 있다면",
+      "do": "이 v2 패치가 병합되기 전에 대체 수단으로 전환하세요",
+      "verify": "patchwork 스레드에서 v3 게시 여부와 Petr Pavlu 의 응답을 확인하세요"
+    },
+    {
+      "title": "rust: iommu: IoPageTable 에 디바이스 lifetime 추가 — drm-rust-next 적용",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust iommu/DRM 추상화 사용자, rust/kernel 추상화 API 변경을 추적하는 드라이버 작성자",
+      "verifyLink": "https://patchwork.kernel.org/project/rust-for-linux/patch/20260703-pgtable_lt_b4-v3-1-e738e1f513a4@collabora.com/",
+      "if": "Rust 드라이버에서 IoPageTable::new_raw() 나 Devres 기반 생성을 쓰고 있다면",
+      "do": "다음 머지 윈도우에서 lifetime 파라미터가 붙은 new() 로 마이그레이션을 준비하세요",
+      "verify": "drm-rust-next 브랜치의 커밋과 rust/kernel/iommu/pgtable.rs 변경 시점을 확인하세요"
+    },
+    {
+      "title": "drm/tyr GPUVM, 32비트 빌드에서 u64→PhysAddr 타입 불일치로 깨짐",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "Rust DRM/iommu 드라이버 작성자, 32비트 크로스 빌드 CI 를 관리하는 사람",
+      "verifyLink": "https://patchwork.kernel.org/comment/27103114/",
+      "if": "IOVA·물리주소를 u64 로 가정하고 map_pages() 류 API 에 넘기고 있다면",
+      "do": "32비트 크로스 빌드로 타입 캐스팅 누락을 미리 점검하세요",
+      "verify": "drm-rust-next 에 반영된 PhysAddr 캐스팅 수정 커밋을 확인하세요"
+    },
+    {
+      "title": "UP 빌드에서 ARRAY_SIZE(spinlock 배열) 이 컴파일 타임 0 나눗셈이 되는 함정",
+      "priority": "하",
+      "impactType": "build",
+      "affectedAudience": "clang 으로 커널을 빌드하는 사람, UP/allnoconfig 계열 구성을 돌리는 CI 담당, 네트워크 드라이버 유지보수 담당",
+      "verifyLink": "https://patchwork.kernel.org/project/netdevbpf/patch/20260731-airoha-spinlock-array-fix-v1-1-863a7e239a5f@kernel.org/",
+      "if": "spinlock_t 배열 크기에 ARRAY_SIZE 를 쓰는 코드가 있다면",
+      "do": "명명 상수로 교체하거나 UP allnoconfig 빌드로 미리 검증하세요",
+      "verify": "이 패치의 net-next 병합 여부를 patchwork 에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**MODULE_VERSION()·srcversion 제거 v2 — stable ABI sysfs 파일과 modpost 경로까지 삭제**\n\nGreg Kroah-Hartman 의 v2 는 MODULE_VERSION() 을 빈 매크로로 바꾸고 버전 sysfs 노드를 지우는 패치와, srcversion 속성 전체(Kconfig 심볼·modpost 처리 포함)를 제거하는 패치 2개로 구성됩니다.\n\n영향: v1 에서 Petr Pavlu 가 stable ABI 를 근거로 반대했던 sysfs 파일을 v2 는 문서와 함께 명시적으로 지우는 방향을 택했고, 트리 안 MODULE_VERSION() 호출부는 당분간 빈 매크로로 남아 빌드는 깨지지 않습니다.\n\n> Note, for now, MODULE_VERSION() is just an \"empty\" define, to keep existing code building properly as the tree is slowly purged of the use of this over time.\n\n[원문 확인](https://patchwork.kernel.org/project/linux-modules/cover/20260731-module_ver_remove-v2-0-c9163858f382@linuxfoundation.org/)\n\n**list *_mutable() 반복자 v4 — Andrew Morton 이 사실상 반대**\n\n어제 이어진 v4 논의에서 Andrew Morton 이 커버레터에 직접 반대 의견을 남겨, 500줄에 가까운 매크로 추가와 6,000곳 이상 콜사이트 churn 을 문제로 지적했습니다.\n\n영향: 코어 리스트 헤더 병합 전망이 불투명해졌고, v3 리뷰어들의 후속 반응이나 v5 계획은 아직 확인되지 않았습니다.\n\n> It adds nearly 500 lines of tricky new macros.\n> It churns ancient interfaces which have more than 6,000 callsites.\n\n[원문 확인](https://patchwork.kernel.org/comment/26445618/)\n\n**rust: iommu: IoPageTable 에 디바이스 lifetime 추가 — drm-rust-next 적용**\n\nIoPageTable<F> 가 IoPageTable<'a, F> 로 바뀌어 PhantomData<&'a Device<Bound>> 를 갖게 되고, unsafe new_raw() 는 사라지고 safe new() 로 통합되며 Devres 기반 생성 옵션은 제거됩니다.\n\n영향: Joerg Roedel 의 Ack 이후 Alice Ryhl 이 2026-07-31 drm-rust-next 에 적용했고, tyr(Mali CSF) 펌웨어 부팅 시리즈의 선행 의존성이라 다음 머지 윈도우에서 메인라인 API 가 이 형태로 바뀔 예정입니다.\n\n> -pub struct IoPageTable<F: IoPageTableFmt> {\n> +pub struct IoPageTable<'a, F: IoPageTableFmt> {\n> +    _dev: PhantomData<&'a Device<Bound>>,\n\n[원문 확인](https://patchwork.kernel.org/project/rust-for-linux/patch/20260703-pgtable_lt_b4-v3-1-e738e1f513a4@collabora.com/)\n\n**drm/tyr GPUVM 지원, 32비트 빌드에서 u64→PhysAddr 타입 불일치로 깨짐**\n\ntyr v10 4/7 의 vm.rs 가 map_pages() 에 u64 인 curr_paddr 를 그대로 넘겼는데, 이 함수는 PhysAddr(=phys_addr_t) 를 받아 32비트에서 u32 와 타입이 맞지 않아 E0308 로 빌드가 실패했습니다.\n\n영향: 패치 작성자 Deborah Brouwer 가 32비트 회귀를 인정했고, Alice Ryhl 이 drm-rust-next 에서 curr_paddr 를 PhysAddr 로 캐스팅해 수정했습니다.\n\n> 873 |                 curr_paddr,\n>     |                 ^^^^^^^^^^ expected `u32`, found `u64`\n\n[원문 확인](https://patchwork.kernel.org/comment/27103114/)\n\n**UP 빌드에서 ARRAY_SIZE(spinlock 배열) 이 컴파일 타임 0 나눗셈이 되는 함정**\n\nairoha_alloc_gdm_device() 의 ARRAY_SIZE(dev->txq_lock) 순회를 AIROHA_NUM_NETDEV_TX_RINGS 상수로 교체하는 패치가 올라왔습니다.\n\n영향: CONFIG_SMP·CONFIG_DEBUG_SPINLOCK 이 모두 꺼진 UP 빌드에서는 arch_spinlock_t 가 빈 구조체가 되어 sizeof(spinlock_t) 가 0 이 되고, 락 배열에 ARRAY_SIZE 를 쓰면 clang 이 0 나눗셈 에러를 냅니다.\n\n> on UP builds (CONFIG_SMP unset, CONFIG_DEBUG_SPINLOCK unset) arch_spinlock_t is an empty struct, so sizeof(spinlock_t) is zero\n\n[원문 확인](https://patchwork.kernel.org/project/netdevbpf/patch/20260731-airoha-spinlock-array-fix-v1-1-863a7e239a5f@kernel.org/)\n\n**rust_binder: RBTree 선형 순회를 cursor_lower_bound 로 교체 (O(n)→O(log n))**\n\nget_node_debug_info() 의 nodes RBTree 선형 탐색을 cursor_lower_bound(&(ptr+1)) 호출 한 번으로 대체하는 v2 패치입니다.\n\n영향: BINDER_GET_NODE_DEBUG_INFO 는 유저스페이스가 반복 호출해 노드를 열거하는 인터페이스라 노드가 많으면 전체 열거가 O(n²) 이었는데, 이를 O(n log n) 으로 개선합니다.\n\n> +            if let Some(cursor) = inner.nodes.cursor_lower_bound(&(ptr+1)){\n> +                let (_, node) = cursor.current();\n\n[원문 확인](https://patchwork.kernel.org/project/rust-for-linux/patch/20260731133253.661634-1-rafael@rcpassos.me/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "MODULE_VERSION()·srcversion 제거 v2 커버레터",
+      "url": "https://patchwork.kernel.org/project/linux-modules/cover/20260731-module_ver_remove-v2-0-c9163858f382@linuxfoundation.org/",
+      "note": "thread"
+    },
+    {
+      "title": "MODULE_VERSION() 빈 매크로화 + sysfs version 삭제 패치",
+      "url": "https://patchwork.kernel.org/project/linux-modules/patch/20260731-module_ver_remove-v2-1-c9163858f382@linuxfoundation.org/",
+      "note": "commit"
+    },
+    {
+      "title": "srcversion 속성 제거 패치",
+      "url": "https://patchwork.kernel.org/project/linux-modules/patch/20260731-module_ver_remove-v2-2-c9163858f382@linuxfoundation.org/",
+      "note": "commit"
+    },
+    {
+      "title": "list *_mutable() v4 에 대한 Andrew Morton 반대 코멘트",
+      "url": "https://patchwork.kernel.org/comment/26445618/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: iommu: IoPageTable lifetime 추가 패치",
+      "url": "https://patchwork.kernel.org/project/rust-for-linux/patch/20260703-pgtable_lt_b4-v3-1-e738e1f513a4@collabora.com/",
+      "note": "commit"
+    },
+    {
+      "title": "drm-rust-next 적용 확인 코멘트",
+      "url": "https://patchwork.kernel.org/comment/27105458/",
+      "note": "thread"
+    },
+    {
+      "title": "tyr 32비트 빌드 실패 보고 코멘트",
+      "url": "https://patchwork.kernel.org/comment/27103114/",
+      "note": "thread"
+    },
+    {
+      "title": "tyr v10 4/7 GPUVM 지원 패치",
+      "url": "https://patchwork.kernel.org/project/rust-for-linux/patch/20260728-fw-boot-b4-v10-4-9187aefa3f2f@collabora.com/",
+      "note": "commit"
+    },
+    {
+      "title": "airoha ARRAY_SIZE spinlock 수정 패치",
+      "url": "https://patchwork.kernel.org/project/netdevbpf/patch/20260731-airoha-spinlock-array-fix-v1-1-863a7e239a5f@kernel.org/",
+      "note": "commit"
+    },
+    {
+      "title": "rust_binder cursor_lower_bound 최적화 패치",
+      "url": "https://patchwork.kernel.org/project/rust-for-linux/patch/20260731133253.661634-1-rafael@rcpassos.me/",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-31T19:21:14.487Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,125 @@
+{
+  "id": "2026-08-01-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-08-01 zext_dst 라이브니스 재작성 — Linux Perf/RT",
+  "headline": "BPF zext_dst 프루닝 누락 버그 수정 착수, pahole Rust 지원 착수, RT hung_task 설계 논쟁 진행",
+  "date": "2026-08-01",
+  "summary": "BPF verifier의 zext_dst 라이브니스 추론을 정적 분석으로 재작성하는 5부작이 s390 정합성 버그를 겨냥해 시작됐고, pahole은 Rust discriminated union과 dwz alternate debug file 지원에 착수했습니다. PREEMPT_RT 쪽에서는 hung_task의 rtmutex blocker 추적을 두고 비트 인코딩 확장과 rt_mutex 자체 노출 대안이 맞붙었습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "BPF",
+    "PREEMPT_RT"
+  ],
+  "highlights": [
+    {
+      "title": "zext_dst 라이브니스 분석 재작성 (bpf-next 5부작)",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "BPF verifier/JIT 유지보수 담당, s390 등 zext를 JIT에 위임하지 않는 아키텍처 사용자",
+      "verifyLink": "https://patchwork.kernel.org/project/netdevbpf/cover/20260731-static-zext-v1-0-98a4dc73e94b@gmail.com/",
+      "if": "s390 등 zext를 JIT에 맡기지 않는 아키텍처에서 32비트 BPF 연산을 다루고 있다면",
+      "do": "107e16979905 이후 zext_dst 마크가 프루닝 지점을 넘어 전달되지 않는 회귀가 있는지 veristat 등으로 점검하세요",
+      "verify": "패치워크 시리즈(1138381)와 커버레터의 버그 설명을 원문에서 확인하세요"
+    },
+    {
+      "title": "DC_RUN_WITH_PREEMPTION_ENABLED, FPU 유닛에서 빌드 에러로",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "amdgpu/DC 유지보수 담당, PREEMPT_RT에서 amdgpu를 쓰는 사용자",
+      "verifyLink": "https://github.com/torvalds/linux/blob/master/drivers/gpu/drm/amd/display/amdgpu_dm/dc_fpu.h#L51",
+      "if": "amdgpu DC 코드에서 DC_RUN_WITH_PREEMPTION_ENABLED 가드를 FPU 컴파일 유닛(CC_FLAGS_FPU) 안에 추가했다면",
+      "do": "해당 가드가 조용히 무력화되지 않는지 빌드 에러 발생 여부로 확인하세요",
+      "verify": "dc_fpu.h의 매크로 정의와 dml2_0/Makefile의 CC_FLAGS_FPU 적용 범위를 원문에서 확인하세요"
+    },
+    {
+      "title": "pahole, Rust variant_part·dwz alternate debug file 지원 착수",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "pahole/BTF 인코더 유지보수 담당, Rust 커널 코드의 BTF 소비자(CO-RE·bpftool·drgn)",
+      "verifyLink": "https://patchwork.kernel.org/project/netdevbpf/cover/20260731193102.110693-1-acme@kernel.org/",
+      "if": "Rust로 작성된 커널/드라이버 코드에서 BTF pretty print나 CO-RE 매칭이 깨지는 것을 겪었다면",
+      "do": "pahole 12부작(series 1138389)의 DW_TAG_variant_part → BTF_KIND_UNION 인코딩이 해당 사례를 고치는지 확인하세요",
+      "verify": "커버레터의 discriminated-union 인코딩 설명과 dwarf_loader.c의 현재 처리 방식을 원문에서 대조하세요"
+    },
+    {
+      "title": "hung_task rtmutex blocker 추적, 설계 논쟁 진행 중",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "PREEMPT_RT 커널 유지보수·디버깅 담당, locking/rtmutex 유지보수 담당",
+      "verifyLink": "https://github.com/torvalds/linux/blob/master/kernel/locking/rtmutex.c#L608",
+      "if": "PREEMPT_RT에서 hung task 디버깅 시 rtmutex 대기자의 실제 소유자 정보가 필요하다면",
+      "do": "BLOCKER_TYPE_RTMUTEX 비트 인코딩 확장안과 rt_mutex_owner() 재사용 대안 중 어느 쪽이 채택되는지 후속 스레드를 주시하세요",
+      "verify": "리뷰어가 제안한 rt_mutex_blocking_task() 노출 방식과 원 패치의 인코딩 확장을 원문에서 비교하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**bpf: zext_dst 추론을 정적 라이브니스 분석으로 재작성 (5부작)**\n\nEduard Zingerman의 bpf-next 5부작이 현재 상태 기반 bpf_reg_state->subreg_def 추적을 버리고, compute_live_registers()가 레지스터 상·하위 32비트 라이브니스를 각각 추적하도록 확장해 zext 마크가 프루닝 지점을 넘어 전달되지 않던 버그를 고칩니다.\n\n영향: s390 JIT은 검증기의 명시적 zero-extension 삽입을 전제하므로, 원인 커밋 107e16979905(2025-09-19) 이후의 zext_dst 누락은 w-계열 연산의 BPF 의미가 깨지는 정합성 회귀이며 백포트 범위 판단이 필요합니다.\n\n> The tl;dr of the bug is that the verifier does not carry zero extension marks across pruning points.\n\n[원문 확인](https://patchwork.kernel.org/project/netdevbpf/cover/20260731-static-zext-v1-0-98a4dc73e94b@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**pahole: Rust discriminated union·dwz alternate debug file 지원 착수 (12부작)**\n\nArnaldo Carvalho de Melo의 12부작이 DW_TAG_variant_part/variant를 discriminant 값까지 로드해 BTF_KIND_UNION으로 겹쳐 인코딩하고, DW_TAG_imported_unit·dwz alternate debug file(DW_FORM_GNU_ref_alt) 지원까지 더합니다.\n\n영향: BTF에 discriminated-union kind가 없어 잠정 인코딩이라는 미해결 논점을 남기지만, Rust 코드가 늘어나는 커널·perf 바이너리에서 BTF/pretty print가 빈 구조체로 깨지던 문제를 다룹니다.\n\n> BTF has no discriminated-union kind, so variant parts are tentatively encoded as BTF_KIND_UNION with overlapping members at offset 0. Further discussion is needed to see if we can keep that.\n\n[원문 확인](https://patchwork.kernel.org/project/netdevbpf/cover/20260731193102.110693-1-acme@kernel.org/)\n\n**drm/amd/display: DC_RUN_WITH_PREEMPTION_ENABLED, FPU 유닛에서 빌드 에러로**\n\ndc_fpu.h가 FPU 컴파일 유닛에서 DC_FP_START/END만 BUILD_BUG()로 막고 DC_RUN_WITH_PREEMPTION_ENABLED는 pass-through로 둬 왔는데, 패치는 이 매크로도 BUILD_BUG()로 바꿔 오용을 컴파일 에러로 만듭니다.\n\n영향: PREEMPT_RT의 'scheduling while atomic' 회귀를 고치려 dml21_add_phantom_plane()에 올린 가드가 CC_FLAGS_FPU로 빌드되는 파일 안에서 조용히 무효화됐던 실제 사례가 근거로, 보이는 수정이 런타임에는 아무 일도 하지 않던 함정을 없앱니다.\n\n> #define DC_FP_START()\tBUILD_BUG()\n#define DC_FP_END()\tBUILD_BUG()\n#define DC_RUN_WITH_PREEMPTION_ENABLED(code) code\n\n[원문 확인](https://github.com/torvalds/linux/blob/master/drivers/gpu/drm/amd/display/amdgpu_dm/dc_fpu.h#L51)\n\n**hung_task rtmutex blocker 추적: 비트 인코딩 확장 대신 재사용 대안 제기**\n\n어제 다룬 rtmutex blocker 추적 시리즈(BLOCKER_TYPE_RTMUTEX 추가)에 대해 리뷰어가 #ifdef 남발과 32비트 미지원을 지적하며, 비트 인코딩을 넓히는 대신 rtmutex의 기존 대기 추적을 racy public 변형(rt_mutex_blocking_task())으로 노출해 rt_mutex_owner()를 호출하는 대안을 제시했습니다.\n\n영향: 어느 설계가 채택되는지가 RT hung task 디버깅 UX와 hung_task 인프라 확장 방식을 결정하며, 현재 static 함수인 task_blocked_on_lock()을 공개 API로 승격할지가 관건입니다.\n\n> Since lock pointers are at least 4-byte aligned(32-bit) or 8-byte aligned(64-bit).\n\n[원문 확인](https://github.com/torvalds/linux/blob/master/kernel/locking/rtmutex.c#L608)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "bpf: infer zext_dst based on static register liveness analysis (cover letter)",
+      "url": "https://patchwork.kernel.org/project/netdevbpf/cover/20260731-static-zext-v1-0-98a4dc73e94b@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "commit 107e169799057bc6a379ddb625cbe1e51cfc7d72 (register chain liveness 제거)",
+      "url": "https://github.com/torvalds/linux/commit/107e169799057bc6a379ddb625cbe1e51cfc7d72",
+      "note": "commit"
+    },
+    {
+      "title": "pahole 12부작: Rust tags·dwz alternate debug file 지원 (cover letter)",
+      "url": "https://patchwork.kernel.org/project/netdevbpf/cover/20260731193102.110693-1-acme@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "dwarf_loader.c의 DW_TAG_variant_part 처리",
+      "url": "https://github.com/acmel/dwarves/blob/master/dwarf_loader.c#L2332",
+      "note": "commit"
+    },
+    {
+      "title": "include/linux/hung_task.h blocker 비트 인코딩",
+      "url": "https://github.com/torvalds/linux/blob/master/include/linux/hung_task.h#L33",
+      "note": "commit"
+    },
+    {
+      "title": "kernel/locking/rtmutex.c의 task_blocked_on_lock()",
+      "url": "https://github.com/torvalds/linux/blob/master/kernel/locking/rtmutex.c#L608",
+      "note": "commit"
+    },
+    {
+      "title": "amdgpu_dm/dc_fpu.h의 DC_RUN_WITH_PREEMPTION_ENABLED 정의",
+      "url": "https://github.com/torvalds/linux/blob/master/drivers/gpu/drm/amd/display/amdgpu_dm/dc_fpu.h#L51",
+      "note": "commit"
+    },
+    {
+      "title": "dc/dml2_0/Makefile의 CC_FLAGS_FPU 적용 범위",
+      "url": "https://github.com/torvalds/linux/blob/master/drivers/gpu/drm/amd/display/dc/dml2_0/Makefile#L27",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-31T19:48:16.969Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

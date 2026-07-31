@@ -1,0 +1,134 @@
+{
+  "id": "2026-08-01-linux-daily-briefing",
+  "topic": "linux",
+  "title": "2026-08-01 SELinux 정책 결함 — 리눅스 개발",
+  "headline": "SELinux 정책 로드 결함으로 커널 크래시 가능성이 보고됐고, 16년 된 타이머 결함도 여러 버전에서 함께 고쳐졌습니다.",
+  "date": "2026-08-01",
+  "summary": "SELinux 정책 로더의 개수 검사만으로는 막을 수 없는 NULL 역참조 결함이 보고됐고, 16년 된 POSIX 타이머 UAF(CVE-2026-64560)가 6개 longterm 브랜치에 동시 반영됐습니다. 7.2-rc5는 네트워킹 위주로 계속 커지고 있어 안정화 일정을 주시할 필요가 있습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "보안"
+  ],
+  "highlights": [
+    {
+      "title": "SELinux 정책 로드 NULL 역참조",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "SELinux 정책을 직접 컴파일·배포하거나 LSM 강화에 관여하는 보안 엔지니어",
+      "verifyLink": "https://lore.kernel.org/lkml/20260731-b4-disp-d32e997b-v1-0-0341d038ee47@proton.me/",
+      "if": "SELinux 정책을 직접 컴파일·배포한다면",
+      "do": "패치 시리즈를 검토하고 정책 로더의 값 집합 검증 적용 여부를 확인하세요",
+      "verify": "lore 스레드의 sel_make_policy_nodes() KASAN 재현 로그를 확인하세요"
+    },
+    {
+      "title": "POSIX 타이머 UAF, 6개 longterm 브랜치 동시 패치",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "5.10 계열 longterm 커널을 유지하는 임베디드·장기지원 플랫폼 담당자",
+      "verifyLink": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.262",
+      "if": "5.10 등 longterm 커널을 운영한다면",
+      "do": "5.10.262 등 해당 브랜치의 최신 버전으로 즉시 업데이트하세요",
+      "verify": "ChangeLog-5.10.262에서 posix-cpu-timers 커밋과 Fixes 태그를 확인하세요"
+    },
+    {
+      "title": "7.1.5 stable — 2069건 백포트, revert 7건 포함",
+      "priority": "중",
+      "impactType": "backport",
+      "affectedAudience": "7.1 stable 커널을 배포·운영하는 배포판 및 플랫폼 담당자",
+      "verifyLink": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.5",
+      "if": "7.1 stable 커널을 배포·운영한다면",
+      "do": "7.1.5로 업데이트하고 ksmbd·binder·L2CAP 수정 포함 여부를 확인하세요",
+      "verify": "ChangeLog-7.1.5에서 posix-cpu-timers 수정과 revert 7건 목록을 확인하세요"
+    },
+    {
+      "title": "KVM hva_to_pfn 에러 코드 통일",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "KVM MMU·메모리슬롯 경로를 다루거나 pfnmap/VM_IO 매핑을 게스트에 노출하는 VMM 개발자",
+      "verifyLink": "https://lore.kernel.org/lkml/20260731175834.1121005-1-pbonzini@redhat.com/",
+      "if": "KVM MMU나 pfnmap 매핑을 다룬다면",
+      "do": "hva_to_pfn() 에러 코드 변경이 게스트 폴트 처리에 영향 있는지 점검하세요",
+      "verify": "lore 패치 메일의 diff와 커밋 메시지를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**7.2-rc5 — 네트워킹이 3분의 1, \"새로운 정상\"이 된 대형 rc**\n\nLinus가 2026-07-26 태깅한 7.2-rc5는 전체 패치의 3분의 1 이상이 네트워킹(주로 드라이버)이고, 드물게 GPU보다 USB 변경이 더 많다.\n\n영향: rc5가 계속 커지는 패턴이 7.1에 이어 반복되고 있고, 컨퍼런스로 밀린 네트워킹 트리 작업이 원인으로 지목돼 7.2 안정화 일정과 회귀 위험 판단에 영향을 준다.\n\n> It's Sunday afternoon, and once more we have quite a massive -rc5. ... So over a third of the patch is networking, although the bulk of that is obviously on the driver side.\n\n[원문 확인](https://lore.kernel.org/lkml/CAHk-=whS0VZVKRDJL46JKLyD2BjcrMmVtOwtz4v=75t8w+QVbw@mail.gmail.com/)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**SELinux 정책 로드 — 선언된 개수만으로는 배열을 채웠다고 볼 수 없다**\n\nBryam Vargas의 4패치 시리즈가 정책 로드 시 permission·class·boolean 값 집합이 {1..nprim} 범위를 전사·단사로 채우는지 검증하도록 강제해, 개수만 맞는 경우의 NULL 역참조 3곳을 막는다.\n\n영향: /sys/fs/selinux/load에 정책을 쓸 수 있는 주체가 커널을 크래시시킬 수 있는 경로이며, 저자가 KASAN 빌드에서 세 지점 모두 재현했다.\n\n> symtab_insert() keys on the permission name, so two differently-named permissions may carry one value: nel still equals nprim, the count agrees, and one slot is written twice while another is never wr\n\n[원문 확인](https://lore.kernel.org/lkml/20260731-b4-disp-d32e997b-v1-0-0341d038ee47@proton.me/)\n\n---\n\n**POSIX 타이머 UAF(CVE-2026-64560) — 6개 longterm 브랜치 동시 패치 완료**\n\n어제 다룬 posix-cpu-timers UAF가 5.10.262·5.15.213·6.1.180·6.6.147·6.12.100·6.18.41 여섯 브랜치에 같은 커밋 한 건으로 동시 반영됐다.\n\n영향: 16년간 존재한 결함이 5.10까지 내려가는 모든 지원 브랜치에서 닫혔고, 커밋 하나뿐이라 즉시 적용 가능하다.\n\n> Wongi and Jungwoo decoded and reported a non-leader exec() related race which can result in an UAF\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.262)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**KVM — VM_READ/VM_WRITE 검사를 모든 VMA 종류보다 앞에서 수행**\n\nPaolo Bonzini의 단일 패치가 vma_is_valid() 헬퍼를 제거하고 VM_READ/VM_WRITE 검사를 VMA 분기 이전으로 옮겨, PTE 매핑 여부와 무관하게 !VM_WRITE VMA는 항상 KVM_PFN_ERR_RO_FAULT를 반환하도록 통일한다. virt/kvm/kvm_main.c 한 파일, +16/-18.\n\n영향: 같은 권한 위반이 PTE 매핑 여부에 따라 다른 에러 코드로 갈라지던 문제가 사라지지만, 저자는 PROT_READ VMA를 쓰기 가능 memslot에 두는 경우의 반환값은 mmu_stress_test가 의존하므로 API로 남긴다고 밝혔다.\n\n> This is fragile because hva_to_pfn_remapped() returns different error codes for a !VM_WRITE VMA depending on whether the PTE happens to be mapped\n\n[원문 확인](https://lore.kernel.org/lkml/20260731175834.1121005-1-pbonzini@redhat.com/)\n\n---\n\n**linux-next 20260731 — 빌드 실패 2건으로 전날 버전 대체, 충돌 8건**\n\nnfts·paulmck 두 트리가 빌드 실패로 next-20260730 버전으로 대체됐고, drm·amdgpu·nvmem 등 8건의 트리 충돌이 보고됐다. Linus 트리 기준 non-merge 커밋 10228건, 총 429개 트리 머지 중이다.\n\n영향: 빌드 실패 트리는 그날 통합 테스트를 받지 못했다는 뜻이고, drm/amdgpu와 fixes 트리의 반복 충돌은 7.2 안정화 구간 백포트 경로가 꼬일 수 있다는 신호다.\n\n> The nfts tree acquired a build failure, I used the version from next-20260730 instead. ... The paulmck tree acquired a build failure, I used the version from next-20260730 instead.\n\n[원문 확인](https://lore.kernel.org/linux-next/amzMmuasKAVRLZyP@sirena.org.uk/)\n\n---\n\n**7.1.5 stable — 2069건 백포트 중 회귀성 revert 7건 포함**\n\n어제 다룬 posix-cpu-timers UAF 수정 외에 ksmbd FSCTL 자격증명, binder secctx 버퍼 오버런, L2CAP UAF 수정이 같은 릴리스에 담겼고, 이전 백포트를 되돌리는 revert도 7건 확인됐다.\n\n영향: gpib cb7210 수정처럼 사용자 보고로 철회된 revert가 섞여 있어, 백포트 자체가 유발한 회귀도 같이 정리됐다는 뜻이다.\n\n> Revert \"gpib: cb7210: Fix region leak when request_irq fails\" — This reverts commit 5ad28496055858166eb2268344c8fda2c26d3561. Turns out not to be correct.\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.5)"
+    },
+    {
+      "heading": "기타",
+      "body": "**SEV-SNP Alternate Injection 게스트 지원 — v1 리뷰 진행 중**\n\nMelody Wang(AMD)의 7패치 시리즈가 SEV-SNP 게스트에 인터럽트 주입 제어권을 하이퍼바이저에서 게스트로 넘기는 SVSM APIC 프로토콜을 구현한다. arch/x86/kernel/apic/svsm_apic.c 신규 추가 포함 17파일 +392/-33이며, Tom Lendacky가 3/7에 함수명 변경과 검사 위치 통합을 요구했다.\n\n영향: 기밀 컴퓨팅 게스트가 악성 인터럽트 주입을 스스로 차단할 구조가 추가되지만, 아직 v1 리뷰 단계라 인터페이스는 확정되지 않았다.\n\n> s/svsm_config_vectors/svsm_config_alt_inj_vectors/ ... Might as well include the check for snp_vmpl here or put this check below where this function is called so that you don't have two spread out che\n\n[원문 확인](https://lore.kernel.org/lkml/fbc719cb-54d6-4f81-a00e-1675f0e357b9@amd.com/)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "SELinux 정책 로드 값 집합 검증 패치 시리즈",
+      "url": "https://lore.kernel.org/lkml/20260731-b4-disp-d32e997b-v1-0-0341d038ee47@proton.me/",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-5.10.262",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.262",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-7.1.5",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.5",
+      "note": "changelog"
+    },
+    {
+      "title": "CVE-2026-64560",
+      "url": "https://cve.threatint.com/CVE/CVE-2026-64560",
+      "note": "cve"
+    },
+    {
+      "title": "KVM hva_to_pfn 에러 코드 통일 패치",
+      "url": "https://lore.kernel.org/lkml/20260731175834.1121005-1-pbonzini@redhat.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Linux 7.2-rc5 발표",
+      "url": "https://lore.kernel.org/lkml/CAHk-=whS0VZVKRDJL46JKLyD2BjcrMmVtOwtz4v=75t8w+QVbw@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "linux-next 20260731 발표",
+      "url": "https://lore.kernel.org/linux-next/amzMmuasKAVRLZyP@sirena.org.uk/",
+      "note": "thread"
+    },
+    {
+      "title": "SEV-SNP Alternate Injection 리뷰",
+      "url": "https://lore.kernel.org/lkml/fbc719cb-54d6-4f81-a00e-1675f0e357b9@amd.com/",
+      "note": "thread"
+    },
+    {
+      "title": "kernel.org releases.json",
+      "url": "https://www.kernel.org/releases.json",
+      "note": "changelog"
+    },
+    {
+      "title": "LinuxCompatible — 16-year-old POSIX timer UAF",
+      "url": "https://www.linuxcompatible.org/story/linux-kernel-lts-releases-510262-515213-61180-66147-612100-and-61841-fix-16yearold-posix-timer-uaf",
+      "note": "article"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-31T18:08:40.362Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-newsletter-from-dossier-ko.md"
+  }
+}

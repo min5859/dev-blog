@@ -1,0 +1,146 @@
+{
+  "id": "2026-08-01-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-08-01 RISC-V KVM UAF 수정 — 아키텍처/플랫폼",
+  "headline": "non-Sstc RISC-V 호스트의 KVM 타이머 use-after-free와 arm64 pKVM panic 심볼화 데드락을 고치는 패치가 이번 렌즈의 핵심입니다.",
+  "date": "2026-08-01",
+  "summary": "non-Sstc RISC-V 호스트에서 게스트가 유발할 수 있는 KVM 타이머 use-after-free와 pKVM nVHE panic 시 심볼화 데드락을 고치는 보안·안정성 패치가 제출되었습니다. 동시에 RISC-V KVM hfence 최적화, kprobes 메모리 누수, perf 레거시 폴백 등 성능·사용성 개선 패치들도 함께 리뷰 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "RISC-V",
+    "arm64",
+    "KVM"
+  ],
+  "highlights": [
+    {
+      "title": "RISC-V: KVM: Synchronize hrtimer callback during teardown",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "RISC-V KVM 유지보수 담당, Sstc 미지원 RISC-V 하드웨어에서 KVM 을 돌리는 호스트 운영자",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260731163550.46991-1-mhun512@gmail.com/",
+      "if": "Sstc를 지원하지 않는 RISC-V 호스트에서 KVM을 운영 중이라면",
+      "do": "이 패치를 백포트 대상으로 검토하고 stable 반영 여부를 추적하세요",
+      "verify": "게스트가 SBI TIME 타이머 설정 후 legacy shutdown/SRST로 종료할 때 KASAN use-after-free가 재현되는지 확인하세요"
+    },
+    {
+      "title": "KVM: arm64: Drop %pB on nVHE panic when stage-2 is active",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "arm64 KVM/pKVM 유지보수 담당, 보호 nVHE 를 쓰는 Android·기밀 컴퓨팅 플랫폼 엔지니어",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260731182231.1277064-1-vdonnefort@google.com/",
+      "if": "보호 nVHE(pKVM)를 사용하는 arm64 플랫폼을 운영 중이라면",
+      "do": "hyp panic 로그가 조용히 멈추지 않는지 이 패치 적용 여부와 함께 점검하세요",
+      "verify": "CONFIG_PKVM_DISABLE_STAGE2_ON_PANIC 설정과 실제 패닉 시 %pB 심볼화 생략 여부를 확인하세요"
+    },
+    {
+      "title": "RISC-V: KVM: Optimize hfence request handling for SMP guests",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "RISC-V KVM 유지보수 담당, 다중 vCPU RISC-V 게스트를 운용하는 가상화 엔지니어",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260731093833.1551341-2-wang.yechao255@zte.com.cn/",
+      "if": "다중 vCPU RISC-V 게스트에서 TLB 무효화 성능 저하를 겪고 있다면",
+      "do": "이 v3 패치 시리즈를 적용해 hfence 큐 연쇄 포화 문제가 해소되는지 검토하세요",
+      "verify": "유지보수자 Reviewed-by 여부와 머지 상태를 lore 스레드에서 확인하세요"
+    },
+    {
+      "title": "riscv: kprobes: free insn slot in arch_remove_kprobe() to avoid memory leak",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "RISC-V 아키텍처 유지보수 담당, RISC-V 에서 kprobe/BPF 기반 tracing 을 운용하는 엔지니어",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260731100940.2330-1-yuanxiaofeng@eswincomputing.com/",
+      "if": "RISC-V에서 kprobe 기반 tracing을 반복적으로 붙였다 떼는 워크로드를 운영 중이라면",
+      "do": "이 패치를 적용해 실행 슬롯 누수를 막으세요",
+      "verify": "Fixes 태그와 Cc: stable 이 없다는 점을 감안해 백포트 범위를 직접 판단하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**RISC-V: KVM: Synchronize hrtimer callback during teardown**\n\nkvm_riscv_vcpu_timer_cancel()이 `!t->init_done || !t->next_set`로 조기 반환하던 것을 `!t->init_done`만 검사하도록 바꿔, 초기화된 타이머면 항상 hrtimer_cancel()을 먼저 호출한 뒤 next_set 검사로 -EINVAL을 유지합니다.\n\n영향: non-Sstc 경로의 hrtimer 콜백이 vCPU를 마지막으로 참조하기 전에 next_set을 지우는 레이스 때문에, 게스트가 SBI TIME으로 타이머를 걸고 SBI legacy shutdown/SRST로 종료를 요청하는 것만으로 호스트 ioctl 없이 use-after-free가 트리거될 수 있습니다. Cc: stable이 붙어 백포트 대상입니다.\n\n> Always invoke hrtimer_cancel() for an initialized timer.  Preserve the existing -EINVAL result when the timer is no longer set, but only after synchronizing with a running callback.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260731163550.46991-1-mhun512@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**KVM: arm64: Drop %pB on nVHE panic when stage-2 is active**\n\nprint_nvhe_hyp_panic()이 pKVM이 활성이고 CONFIG_PKVM_DISABLE_STAGE2_ON_PANIC이 꺼져 있으면 %pB 심볼화를 생략하고 원시 주소만 출력하도록 분기합니다.\n\n영향: 호스트 stage-2는 지연 매핑이라 kallsyms가 매핑되지 않을 수 있고, hyp panic이 호스트 stage-2 락을 잡은 상태에서 발생하면 %pB 심볼화 과정에서 데드락이 걸려 보호 nVHE(pKVM)를 쓰는 arm64 플랫폼에서 패닉 로그가 조용한 멈춤으로 나타날 수 있습니다.\n\n> Currently, the host stage-2 is lazily mapped. kallsyms, accessed with the modifier %pB is therefore potentially unmapped. If the hyp panic occured with the host stage-2 lock taken, a dead lock will oc\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260731182231.1277064-1-vdonnefort@google.com/)\n\n---\n\n**riscv: kprobes: free insn slot in arch_remove_kprobe() to avoid memory leak**\n\n빈 함수였던 arch_remove_kprobe()에 insn slot이 있으면 free_insn_slot()을 호출하고 NULL로 초기화하는 코드를 추가합니다.\n\n영향: kprobe를 등록·해제할 때마다 실행 슬롯이 누수되어 arm64/x86/powerpc와 달리 RISC-V만 동작이 달랐고, kprobe를 반복 붙였다 떼는 tracing·fault-injection 워크로드에서 실질적 영향이 있습니다.\n\n> Other architectures such as arm64, x86, and powerpc all free the slot in their arch_remove_kprobe() implementations. Add the missing free_insn_slot() call for RISC-V.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260731100940.2330-1-yuanxiaofeng@eswincomputing.com/)\n\n---\n\n**arm64: Mark set_preempt_need_resched() access to .need_resched**\n\nPaul E. McKenney의 RFC 패치가 set_preempt_need_resched()의 need_resched 필드 갱신을 WRITE_ONCE()로 감싸며, Mark Rutland의 요청에 따라 실제 KCSAN splat을 공개한 후속 논의입니다.\n\n영향: Mark Rutland는 동시 writer가 있다면 WRITE_ONCE()가 실제 버그를 가릴 수 있다고 반대했고, 공개된 splat은 rcu_exp_handler 경로의 인터럽트 문맥에서 발생해 arm64 preempt 카운터와 RCU expedited 경로의 상호작용 문제로 논점이 이동했습니다.\n\n> If we have concurrent writers, this is probably broken regardless of whether it is single-copy-atomic, and I worry WRITE_ONCE() will mask a bug.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/4fa802e7-6cfc-4cce-afee-c29b28171ad3@paulmck-laptop/)\n\n---\n\n**RISC-V: KVM: Optimize hfence request handling for SMP guests**\n\nmake_xfence_request()가 단일 vcpu_mask 대신 req_vcpu_mask와 fallback_req_vcpu_mask 두 비트맵을 유지해 kvm_make_vcpus_request_mask()를 두 번 호출하도록 바뀝니다.\n\n영향: 큐가 가득 찬 vCPU 하나 때문에 fallback이 모든 vCPU에 적용되어 정상 vCPU들의 hfence 큐까지 연쇄적으로 가득 차던 구조적 문제를 해결해, SMP 게스트의 TLB 무효화 성능 저하를 막습니다.\n\n> those healthy VCPUs will not process their already-enqueued hfence requests because no 'req' is set for them. As a result, their queues will quickly become full as well, degrading performance for SMP\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260731093833.1551341-2-wang.yechao255@zte.com.cn/)\n\n---\n\n**drivers/perf: riscv: handle legacy fallback in event check**\n\npmu_sbi_check_event_info()의 루프 시작 인덱스를 0에서 2로 바꿔 PERF_COUNT_HW_CPU_CYCLES와 PERF_COUNT_HW_INSTRUCTIONS를 -ENOENT로 표시하지 않게 합니다.\n\n영향: OpenSBI가 이 두 이벤트를 샘플링 카운터로 매핑하지 않았다고 보고해도 실제로는 레거시 카운터로 폴백 가능한데 무효로 표시되던 문제로, RISC-V 보드에서 perf stat의 기본 이벤트가 not supported로 나오는 사용성 회귀였습니다.\n\n> Common events PERF_COUNT_HW_CPU_CYCLES and PERF_COUNT_HW_INSTRUCTIONS can fall back to the legacy counters. So do not mark them as invalid if OpenSBI reports that they are not mapped to sampling count\n\n[원문 확인](https://lore.kernel.org/linux-riscv/amzOxPgM2v6O9XqD@google.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "RISC-V: KVM: Synchronize hrtimer callback during teardown",
+      "url": "https://lore.kernel.org/linux-riscv/20260731163550.46991-1-mhun512@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "RISC-V: KVM: Add timer functionality (commit 3a9f66cb25e1)",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=3a9f66cb25e18a3eeca36c08d9f823a35b3ddc22",
+      "note": "commit"
+    },
+    {
+      "title": "KVM: arm64: Drop %pB on nVHE panic when stage-2 is active",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260731182231.1277064-1-vdonnefort@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "arch/arm64/kvm/Kconfig — CONFIG_PKVM_DISABLE_STAGE2_ON_PANIC",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/arch/arm64/kvm/Kconfig",
+      "note": "commit"
+    },
+    {
+      "title": "KVM: arm64: Symbolize the nVHE HYP addresses (commit 6ccf9cb557bd)",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=6ccf9cb557bd32073b0d68baed97f1bd8a40ff1d",
+      "note": "commit"
+    },
+    {
+      "title": "riscv: kprobes: free insn slot in arch_remove_kprobe() to avoid memory leak",
+      "url": "https://lore.kernel.org/linux-riscv/20260731100940.2330-1-yuanxiaofeng@eswincomputing.com/",
+      "note": "thread"
+    },
+    {
+      "title": "arch/riscv/kernel/probes/kprobes.c",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/arch/riscv/kernel/probes/kprobes.c",
+      "note": "commit"
+    },
+    {
+      "title": "arm64: Mark set_preempt_need_resched() access to .need_resched",
+      "url": "https://lore.kernel.org/linux-arm-kernel/4fa802e7-6cfc-4cce-afee-c29b28171ad3@paulmck-laptop/",
+      "note": "thread"
+    },
+    {
+      "title": "RISC-V: KVM: Optimize hfence request handling for SMP guests",
+      "url": "https://lore.kernel.org/linux-riscv/20260731093833.1551341-2-wang.yechao255@zte.com.cn/",
+      "note": "thread"
+    },
+    {
+      "title": "RISC-V: KVM: Add remote HFENCE functions based on VCPU requests (commit 13acfec2dbcc)",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=13acfec2dbccfafff3331a3810cd7dde2fb16891",
+      "note": "commit"
+    },
+    {
+      "title": "drivers/perf: riscv: handle legacy fallback in event check",
+      "url": "https://lore.kernel.org/linux-riscv/amzOxPgM2v6O9XqD@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drivers/perf/riscv_pmu_sbi.c",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/drivers/perf/riscv_pmu_sbi.c",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-07-31T19:56:48.946Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
