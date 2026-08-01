@@ -1,0 +1,153 @@
+{
+  "id": "2026-08-02-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-08-02 Kbuild 회귀 수정 머지 — 리눅스 툴체인",
+  "headline": "Kbuild fixes PR 머지로 MO= 빌드 회귀와 rpm-pkg BTF 손실이 해결됐고, MODULE_VERSION 제거 논쟁은 v2 에서도 계속된다.",
+  "date": "2026-08-02",
+  "summary": "7.2-rc6 에 올라간 kbuild fixes 두 건이 머지되어 MO= out-of-source 빌드 회귀와 rpm-pkg 의 BTF 스트리핑 문제가 해결됐습니다. 한편 MODULE_VERSION·srcversion 제거 패치는 v2 로 갱신됐지만 stable ABI 를 둘러싼 논쟁이 이어지고 있습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "Kbuild fixes 7.2 #1 머지: MO= 회귀·rpm BTF 스트리핑 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "kbuild 유지보수자, OOT 모듈을 MO= 로 빌드하는 CI 운영자, rpm-pkg 로 커널을 패키징하는 배포판·BPF 도구 사용자",
+      "verifyLink": "https://git.kernel.org/torvalds/c/02dc699f83d04069fdabc996fc22d47cda47a4a9",
+      "if": "make M=... MO=... 로 트리 밖 모듈을 빌드하거나 rpm-pkg 로 커널을 패키징한다면",
+      "do": "머지된 39d6e68f50f4 와 e5a259d98823 커밋을 받아 적용하세요",
+      "verify": "$(KBUILD_EXTMOD_OUTPUT)/Makefile 이 정상 생성되는지, rpm debuginfo 패키지에 .BTF 섹션이 남아있는지 확인하세요"
+    },
+    {
+      "title": "MODULE_VERSION·srcversion 제거 v2: DKMS/OOT 모듈 영향 지속 논쟁",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "kbuild/modpost 유지보수자, 모듈 패키징·DKMS 를 쓰는 배포판과 OOT 모듈 벤더",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20260731-module_ver_remove-v2-0-c9163858f382@linuxfoundation.org/",
+      "if": "DKMS 나 OOT 모듈 배포 파이프라인에서 modinfo 의 version/srcversion 필드를 파싱한다면",
+      "do": "v2 패치 시리즈와 Petr Pavlu 의 반론(600건 사용처, stable ABI 문서화)을 함께 검토하세요",
+      "verify": "메인테이너 회신 여부와 완화책(경고·단계적 제거) 포함 여부를 스레드에서 확인하세요"
+    },
+    {
+      "title": "kconfig 서브메뉴 렌더링 수정 v2: negative dependency 오분류 해결",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "Kconfig/kbuild 유지보수자, menuconfig 기반으로 config 를 다루는 커널 개발자·배포판 config 관리자",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20260801145238.2140291-1-julianbraha@gmail.com/",
+      "if": "menuconfig 에서 NTFS3_FS·MTD_BLOCK_RO 같은 상호 배타 옵션의 배치를 확인해야 한다면",
+      "do": "Tested-by: Nathan Chancellor 가 붙은 v2 패치를 적용해 렌더링 변화를 직접 확인하세요",
+      "verify": "자신의 아키텍처·allmodconfig 조합에서 추가로 바뀌는 서브메뉴 항목이 있는지 점검하세요"
+    },
+    {
+      "title": "rust: warn_on 매크로 UML 빌드 에러 수정",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "Rust for Linux 개발자, ARCH=um 으로 Rust 커널 코드를 빌드·테스트하는 CI 운영자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260801022501.722493-1-tomo@flapping.org/",
+      "if": "ARCH=um 으로 Rust 커널 코드를 빌드하거나 관련 CI 를 운영한다면",
+      "do": "warn_flags! 매크로 수정 패치를 적용해 E0599 빌드 실패를 해소하세요",
+      "verify": "kernel 크레이트 내부에서 warn_on! 을 호출하는 모듈이 UML 빌드에서 통과하는지 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**Kbuild fixes for 7.2 #1 — MO= 회귀와 rpm-pkg BTF 스트리핑 수정 (머지됨)**\n\nNathan Chancellor 가 올린 첫 kbuild fixes PR 두 건이 Linus 트리에 머지됐다(머지 커밋 02dc699f). MO= out-of-source 빌드 시 $(objtree)/Makefile 을 덮어쓰던 7.1 회귀와, rpm-pkg 의 debuginfo 스트리핑이 모듈 .BTF 섹션을 지우던 문제를 각각 되돌리고 수정했다.\n\n영향: MO= 로 OOT 모듈을 CI 빌드하는 환경과, rpm 으로 커널을 패키징해 bpftool/bcc/bpftrace 를 쓰는 환경 모두 직접 영향을 받는다.\n\n> the first one was a bad regression from 7.1 and the second is localized to the .rpm package building infrastructure, so I think they are worth taking now.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20260801024558.GA3862889@ax162/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**module: MODULE_VERSION()·srcversion 제거 (v2, Greg KH)**\n\nv2 로 갱신되며 struct module 의 version/srcversion 필드, 관련 sysfs 파일 2종, __modver ELF 섹션, modpost 의 -a 플래그까지 제거 범위가 확정됐다(12파일, -176줄). MODULE_VERSION() 은 당장은 빈 매크로로만 남는다.\n\n영향: Petr Pavlu 가 stable ABI 문서화와 600건의 인트리 사용처를 근거로 반론을 제기했고, 실제 OOT 모듈 개발자도 유저스페이스 프로그램 파손을 보고한 상태다. 메인테이너 회신은 아직 없다.\n\n> Documentation/ABI/stable/sysfs-module documents /sys/module/<MODULENAME>/version as a stable ABI. Searching for '^MODULE_VERSION' in v7.0-rc4 shows 600 uses of the macro.\n\n[원문 확인](https://lore.kernel.org/all/d622c70a-f79a-4215-84fb-c5de0a8f6ce5@suse.com/)\n\n**kconfig: submenu 의 negative dependency 렌더링 수정 (v2)**\n\nexpr_contains_symbol_negated() 를 추가해 E_NOT, sym=n, sym!=y/m 형태를 인식하고, positive 의존성을 먼저 확인한 뒤 negative 면 서브메뉴 편입을 중단하도록 고쳤다. NTFS3_FS 가 NTFS_FS 서브메뉴에서, MTD_BLOCK_RO 가 MTD_BLOCK 서브메뉴에서 빠진다.\n\n영향: 상호 배타를 뜻하는 의존성 선언이 menuconfig 에서 확장 기능처럼 그려지던 문제로, Kconfig 렌더링 규칙 자체가 바뀌어 다른 서브시스템의 메뉴 배치도 조용히 바뀔 수 있다.\n\n> Note that it's actually possible to depend on both 'SYM!=y' and 'SYM=y', so we need to first check if it's a positive dependency before checking if it's a negative dependency.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20260801145238.2140291-1-julianbraha@gmail.com/)\n\n**rust: usb 엔드포인트·컨트롤 전송 추상화 RFC**\n\nAlexandru Radovici 가 RFC 2패치(+987줄)로 rust/kernel/usb/endpoint.rs 와 control.rs 를 추가했다. HostEndpoint 를 방향·전송 타입 모두 sealed 1-ZST 마커로 제네릭화하는 타입스테이트 설계를 제안했다.\n\n영향: usbsevseg 포팅을 위한 마지막 조각 중 하나로, 여기서 정해지는 결론이 이후 Rust 버스 추상화의 관례가 된다. 저자 스스로도 복잡도 대비 이득을 확신하지 못한다고 밝혔다.\n\n> I am not sure whether this earns its complexity for the drivers we expect, or whether plain run-time check would be better.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260801-rust-usb_control_msg-v1-0-655bb444b52c@wyliodrin.com/)\n\n**rust: bug: warn_on 매크로 UML 빌드 에러 수정**\n\nwarn_flags! 매크로가 c_str!(file!()).as_char_ptr() 대신 free function as_char_ptr_in_const_context() 를 쓰도록 한 줄 고쳤다. Fixes: dff64b072708.\n\n영향: UML 은 warn_flags! 가 C 문자열 포인터를 요구하는 유일한 설정이라, kernel 크레이트 내부에서 warn_on! 을 쓰는 모듈이 E0599 로 빌드에 실패했다. ARCH=um 은 Rust CI 에서 흔히 쓰는 타깃이다.\n\n> Using `warn_on!` from such a module fails to build on UML, which is the only configuration where `warn_flags!` needs a C string pointer rather than an inline asm bug entry\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260801022501.722493-1-tomo@flapping.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "module: remove MODULE_VERSION() and srcversion (v2)",
+      "url": "https://lore.kernel.org/linux-kbuild/20260731-module_ver_remove-v2-0-c9163858f382@linuxfoundation.org/",
+      "note": "thread"
+    },
+    {
+      "title": "Petr Pavlu 반론 — stable ABI 문서화/600건 사용처",
+      "url": "https://lore.kernel.org/all/d622c70a-f79a-4215-84fb-c5de0a8f6ce5@suse.com/",
+      "note": "thread"
+    },
+    {
+      "title": "OOT 모듈 유저스페이스 파손 보고 (v1)",
+      "url": "https://lore.kernel.org/all/87cy0p5ufl.fsf@yellow.woof/",
+      "note": "thread"
+    },
+    {
+      "title": "srcversion 제거 근거 — build-id 대체",
+      "url": "https://lore.kernel.org/all/2026031341-evolve-repeater-987b@gregkh/",
+      "note": "thread"
+    },
+    {
+      "title": "Kbuild fixes for 7.2 #1 PR",
+      "url": "https://lore.kernel.org/linux-kbuild/20260801024558.GA3862889@ax162/",
+      "note": "thread"
+    },
+    {
+      "title": "머지 확인 (pr-tracker-bot)",
+      "url": "https://git.kernel.org/torvalds/c/02dc699f83d04069fdabc996fc22d47cda47a4a9",
+      "note": "commit"
+    },
+    {
+      "title": "39d6e68f50f4 — MO= 회귀 수정 커밋",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=39d6e68f50f4a444a6ba23b9ea2eaee806601c6d",
+      "note": "commit"
+    },
+    {
+      "title": "e5a259d98823 — rpm-pkg BTF 스트리핑 수정 커밋",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=e5a259d98823a93459643b239b71fed7589ab669",
+      "note": "commit"
+    },
+    {
+      "title": "kconfig: fix submenu rendering of negative dependencies (v2)",
+      "url": "https://lore.kernel.org/linux-kbuild/20260801145238.2140291-1-julianbraha@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "원 보고 — NTFS_FS/NTFS3_FS 사례",
+      "url": "https://lore.kernel.org/all/cbe95c15d2760f6fce8eaf207c969ce8fd3703aa.camel@xry111.site/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: usb endpoint/control abstraction RFC",
+      "url": "https://lore.kernel.org/rust-for-linux/20260801-rust-usb_control_msg-v1-0-655bb444b52c@wyliodrin.com/",
+      "note": "thread"
+    },
+    {
+      "title": "저자 v2 반영 목록 후속 메일",
+      "url": "https://lore.kernel.org/rust-for-linux/DKD908MWMH7D.2UF27D0IWQ77P@wyliodrin.com/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: bug: fix warn_on macro build error on UML",
+      "url": "https://lore.kernel.org/rust-for-linux/20260801022501.722493-1-tomo@flapping.org/",
+      "note": "thread"
+    },
+    {
+      "title": "Fixes 대상 커밋 dff64b072708",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=dff64b072708ffef23c117fa1ee1ea59eb417807",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-01T19:00:10.465Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

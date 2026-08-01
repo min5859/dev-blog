@@ -1,0 +1,118 @@
+{
+  "id": "2026-08-02-linux-daily-briefing",
+  "topic": "linux",
+  "title": "2026-08-02 LTS 6종 UAF 긴급패치 — 리눅스 개발",
+  "headline": "장기지원 리눅스 커널 6개 버전이 프로세스 종료 시 생기는 메모리 오류를 고치는 긴급 보안 패치를 동시에 받았습니다.",
+  "date": "2026-08-02",
+  "summary": "타이머 삭제와 exec 실행이 겹칠 때 생기는 메모리 해제 후 재사용 취약점(CVE-2026-64560)이 6개 장기지원 브랜치에 동시 패치됐습니다. 한편 7.1.5는 2천 건 넘는 커밋을 담은 역대급 stable 릴리스로 나왔고, 메인라인은 7.2-rc5에서 네트워킹 비중이 3분의 1을 넘기며 다소 커진 상태입니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "posix 타이머 UAF, LTS 6개 브랜치 동시 패치",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "LTS 커널을 운영/배포하는 담당자, 멀티스레드 워크로드를 돌리는 컨테이너·호스팅 사업자",
+      "verifyLink": "https://github.com/torvalds/linux/commit/920f893f735e92ba3a1cd9256899a186b161928d",
+      "if": "LTS 커널을 운영·배포 중인 담당자라면",
+      "do": "6개 LTS 브랜치의 해당 패치 버전으로 즉시 업데이트하세요",
+      "verify": "커밋 920f893f735e 로그와 CVE-2026-64560 설명을 확인하세요"
+    },
+    {
+      "title": "역대급 물량의 stable 릴리스 7.1.5",
+      "priority": "중",
+      "impactType": "backport",
+      "affectedAudience": "stable 커널을 추적해 배포하는 배포판·제품 커널 담당자, 백포트 QA 담당자",
+      "verifyLink": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.5",
+      "if": "stable 커널을 추적해 배포하는 담당자라면",
+      "do": "2천여 건 전체를 회귀 위험 단위로 QA 재평가하세요",
+      "verify": "ChangeLog-7.1.5와 LWN 기사에서 릴리스 규모를 확인하세요"
+    },
+    {
+      "title": "7.2-rc5, 네트워킹 비중 커진 대형 rc",
+      "priority": "중",
+      "impactType": "release",
+      "affectedAudience": "mainline을 추적하는 서브시스템 개발자, 특히 네트워킹·USB 드라이버 유지보수자",
+      "verifyLink": "https://www.phoronix.com/news/Linux-7.2-rc5-Released",
+      "if": "네트워킹·USB 드라이버를 유지보수 중이라면",
+      "do": "rc5 기준으로 리베이스·테스트 범위를 재점검하세요",
+      "verify": "kernel.org 프론트페이지와 Phoronix 기사로 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.2-rc5, 예상보다 커진 안정화 구간**\n\nLinus Torvalds가 2026-07-26 7.2-rc5를 냈고, 이번에도 rc5치고 물량이 크다고 직접 밝혔다. 패치의 3분의 1 이상이 네트워킹(주로 드라이버 쪽)이며, USB 변경량이 GPU 드라이버를 앞질렀다.\n\n영향: rc5는 보통 안정화 구간이라 물량이 줄어야 하는데 이번엔 늘었다. Linus는 크기에 우려를 표하면서도 내용 자체는 문제없다고 평가했다.\n\n> So it's a bit too big for my liking, but nothing in there strikes me as particularly strange or scary.\n\n[원문 확인](https://www.phoronix.com/news/Linux-7.2-rc5-Released)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**posix 타이머 UAF, LTS 6개 브랜치 동시 긴급 패치**\n\n2026-07-30, Thomas Gleixner의 posix-cpu-timers UAF 수정 커밋 단 1건이 5.10.262 / 5.15.213 / 6.1.180 / 6.6.147 / 6.12.100 / 6.18.41 여섯 LTS 브랜치에 동시 릴리스됐다(CVE-2026-64560, CVSS 7.8).\n\n영향: sys_timer_delete()와 non-leader 스레드의 exec()가 경합하면 해제된 타이머 객체를 이후 코드가 건드릴 수 있다. kernel/exit.c, kernel/signal.c, kernel/time/posix-cpu-timers.c 세 코어 파일에 걸친 수정이라 프로세스 종료·exec 경로 전반에 영향을 준다.\n\n> This is \"harmless\" unless the deleted timer was armed and enqueued in p->signal because on exec() a TGID targeted timer is inherited. As sys_timer_delete() freed the underlying posix timer object run_\n\n[원문 확인](https://github.com/torvalds/linux/commit/920f893f735e92ba3a1cd9256899a186b161928d)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**7.1.5, 2,069커밋 담은 역대급 stable 릴리스**\n\n2026-07-24 릴리스된 7.1.5에 약 2,069~2,070건의 커밋이 담겼다. posix-cpu-timers UAF, Bluetooth L2CAP UAF(CVE-2026-64557), ksmbd 경로 탈출·credential 우회 수정과 함께 exFAT iomap 전환 준비, 일부 되돌림(revert)도 포함됐다.\n\n영향: 단일 릴리스가 2천 커밋을 넘기면 보안 패치만 골라 담기가 사실상 불가능해, 배포 담당자는 회귀 위험을 릴리스 전체 단위로 평가해야 한다. LWN도 이 배치를 \"아마 역대 최대\"라고 표현했다.\n\n> This batch of kernels includes a hefty set of updates, possibly the largest ever. 7.1.5-rc1 had over 2,000 patches and 6.18.40-rc1 contained 1,611 patches. Users are advised to upgrade.\n\n[원문 확인](https://lwn.net/Articles/1084921/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 linux-next 2026-07-31 스냅샷은 공지·머지 충돌 보고 등 근거 URL을 확인하지 못해 제외했다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ChangeLog-5.10.262",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.262",
+      "note": "changelog"
+    },
+    {
+      "title": "posix-cpu-timers UAF 수정 커밋 920f893f735e",
+      "url": "https://github.com/torvalds/linux/commit/920f893f735e92ba3a1cd9256899a186b161928d",
+      "note": "commit"
+    },
+    {
+      "title": "CVE-2026-64560 상세",
+      "url": "https://cve.threatint.com/CVE/CVE-2026-64560",
+      "note": "cve"
+    },
+    {
+      "title": "LWN, 6개 LTS 동시 릴리스 공지",
+      "url": "https://lwn.net/Articles/1086226/",
+      "note": "article"
+    },
+    {
+      "title": "ChangeLog-7.1.5",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.5",
+      "note": "changelog"
+    },
+    {
+      "title": "LWN, 역대 최대급 stable 배치",
+      "url": "https://lwn.net/Articles/1084921/",
+      "note": "article"
+    },
+    {
+      "title": "Linux 7.1.5 상세 분석",
+      "url": "https://www.linuxcompatible.org/story/linux-kernel-715-released-2070-commits-deliver-critical-security-fixes-and-resolve-driver-deadlocks/",
+      "note": "article"
+    },
+    {
+      "title": "kernel.org mainline 7.2-rc5",
+      "url": "https://www.kernel.org/",
+      "note": "changelog"
+    },
+    {
+      "title": "Phoronix, Linux 7.2-rc5 릴리스",
+      "url": "https://www.phoronix.com/news/Linux-7.2-rc5-Released",
+      "note": "article"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-01T18:06:19.365Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-newsletter-from-dossier-ko.md"
+  }
+}

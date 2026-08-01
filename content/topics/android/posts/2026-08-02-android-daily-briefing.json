@@ -1,0 +1,133 @@
+{
+  "id": "2026-08-02-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-08-02 pKVM 데드락 수정 — Android 커널",
+  "headline": "pKVM IOMMU 데드락과 block pool 고갈, SELinux bpffs 라벨링 회귀 수정이 이번 수집의 핵심이다.",
+  "date": "2026-08-02",
+  "summary": "이번 수집은 pKVM IOMMU의 데드락과 block pool 영구 고갈, SELinux bpffs 라벨링 회귀 등 android16-6.12/android-mainline의 런타임 버그 수정에 집중됐다. 그 밖에 GKI defconfig 정리와 벤더 훅 빌드 경고 수정도 함께 반영됐다.",
+  "tags": [
+    "안드로이드",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "SELinux bpffs 라벨링 초기화 순서 버그",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "ACK 보안/SELinux 담당, bpffs·BPF LSM 사용 플랫폼 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/8f0a5b31aee19510e75741c9687cf0d9321fa7ed",
+      "if": "SECURITY_SELINUX=y와 BPF_LSM=y를 함께 쓰고 genfscon으로 bpffs를 라벨링하는 빌드라면",
+      "do": "8f0a5b31aee1 FROMGIT 패치를 적용해 SBLABEL_MNT 검사를 isec 초기화 표시 이전으로 옮기세요",
+      "verify": "패치 적용 후 bpffs 위 pinned object에 대한 inode_doinit_with_dentry() 호출이 정상 동작하는지 확인하세요"
+    },
+    {
+      "title": "pKVM IOMMU reclaim 데드락",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "pKVM IOMMU 담당, pkvm,cma 예약 영역을 쓰는 벤더",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/2ee3781b8da7ef51329387b25e7e3f717cdc8ebc",
+      "if": "c949df871d07 기반 CMA block pool 경로를 켠 pKVM을 쓰고 있다면",
+      "do": "2ee3781b8da7 패치를 android16-6.12 브랜치에 반영하세요",
+      "verify": "block pool에 속하지 않는 물리 주소에 대한 reclaim 경로에서 hyp 데드락이 재현되지 않는지 확인하세요"
+    },
+    {
+      "title": "pKVM IOMMU block pool 영구 고갈",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "pKVM IOMMU 담당, pkvm,cma 예약 영역을 쓰는 벤더",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/68d34e715b21bb149ccb1955d80518d4ea0d9c77",
+      "if": "같은 c949df871d07 CMA pool 경로에서 2ee3781b8da7만 반영했다면",
+      "do": "68d34e715b21 패치도 함께 백포트하세요",
+      "verify": "메모리 압박 상황에서 GFP_KERNEL 무제한 폴백으로 인한 호스트 락업이 재현되지 않는지 확인하세요"
+    },
+    {
+      "title": "pKVM dmabuf 대용량 할당 EFAULT",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "pKVM/AVF 담당, dmabuf-VM 공유 경로 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/1a138e24e292579ddcf417ed09e78df667f51396",
+      "if": "system_heap 등 compound 할당 dmabuf를 보호 VM에 매핑하고 있다면",
+      "do": "1a138e24e292 패치로 kvm_try_get_pfn()이 compound_head(page)를 핀하도록 갱신하세요",
+      "verify": "대용량 dmabuf 매핑 시 게스트 VCPU가 EFAULT로 죽지 않는지 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**FROMGIT: selinux: bpf: check SBLABEL_MNT before isec init**\n\nsecurity/selinux/hooks.c의 selinux_inode_init_security()에서 SBLABEL_MNT 검사를 inode security를 initialized로 표시하기 전에 수행하도록 순서를 바꿨다.\n\n영향: bpffs xattr 지원 커밋 이후 genfscon으로 라벨링되는 bpffs 마운트가 SBLABEL_MNT 검사에 정상적으로 실패하면서도 isec->initialized가 세워져 이후 inode_doinit_with_dentry() 호출이 깨졌다.\n\n> selinux_inode_init_security() marks the isec as initialized before checking if mount labeling is supported (SBLABEL_MNT).\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/8f0a5b31aee19510e75741c9687cf0d9321fa7ed)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**ANDROID: GKI: CRYPTO_LZ4 is now implicit**\n\narm64/x86 gki_defconfig에서 CONFIG_CRYPTO_LZ4=y 명시 설정을 삭제했다. 업스트림이 HIBERNATION 활성화 시 CRYPTO_LZ4를 자동 select하도록 바꿔 중복이 됐기 때문이다.\n\n영향: ACK는 HIBERNATION=y가 켜져 있어 LZ4는 그대로 유지되지만, HIBERNATION을 끄고 CRYPTO_LZ4에만 의존하던 벤더 defconfig는 리베이스 시 조용히 빠질 수 있다.\n\n> The CRYPTO_LZ4 config is now implicitly selected via HIBERNATION, so remove it from our gki_defconfig files.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/87aba67d69fd0706152ae2d9dec68c2cfc274459)\n\n**ANDROID: gki_defconfig: enable CONFIG_SW_SYNC=y for debug/testing**\n\narm64/x86 gki_defconfig에서 CONFIG_SW_SYNC=y를 켰다. igt-gpu-tools 등 GPU 드라이버 테스트가 쓰는 소프트웨어 fence timeline 드라이버다.\n\n영향: sw_sync는 userspace가 잘못 다루면 시스템 데드락을 유발할 수 있어 꺼 두었지만, debugfs 전용 노출과 Android 12+ GMS의 debugfs 마운트 금지를 근거로 켰다. debugfs를 마운트하는 디버그/엔지니어링 빌드에는 여전히 위험이 남는다.\n\n> The driver carries a warning that it poses a risk of unsafe fence management that can lead to userspace-initiated system deadlocks\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/7443a0c3c9ecfc8982003afde92e9c783c725994)\n\n**ANDROID: sched: Avoid macro redefinition of TRACE_INCLUDE_PATH**\n\ninclude/trace/hooks/sched.h에 누락돼 있던 #undef TRACE_INCLUDE_PATH를 #define 앞에 추가했다.\n\n영향: 여러 trace hook 헤더를 같은 컴파일 유닛에서 include하는 벤더 모듈에서 -Werror,-Wmacro-redefined로 빌드가 깨지던 문제를 없앤다.\n\n> Add missing #undef TRACE_INCLUDE_PATH before #define in include/trace/hooks/sched.h to prevent -Werror,-Wmacro-redefined when multiple trace hook headers are included in the same compilation unit.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/82be0d329bf2b455546a09cc84a40c9d1716b54d)\n\n**ANDROID: dma-heap: restore struct dma_heap kernel-doc lost in a merge**\n\ndrivers/dma-buf/dma-heap.c의 struct dma_heap kernel-doc를 복구했다. drm-next 머지 해소 과정에서 업스트림 hunk가 조용히 빠졌던 것을 되돌렸다.\n\n영향: 기능 변화는 없고 kernel-doc 경고 5건이 0건이 되지만, android-mainline이 머지 충돌 해소 중 업스트림 변경을 잃어버린 사례라는 점에서 ACK 고유 drift를 보여준다.\n\n> scripts/kernel-doc -none drivers/dma-buf/dma-heap.c reports five warnings before this change and none after it.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/d6549754be00560c3cd7afb7f1cd3e91c14e78b0)\n\n**ANDROID: KVM: Pin compound head page in kvm_try_get_pfn**\n\nkvm_try_get_pfn()이 compound_head(page)를 기준으로 페이지를 핀하도록 바꿨다. compound 할당의 tail page는 refcount가 0이라 get_page_unless_zero()가 실패하던 문제를 우회한다.\n\n영향: system_heap 같은 대용량 compound dmabuf를 보호 VM에 매핑할 때 게스트 VCPU가 EFAULT로 죽던 문제로, Android Virtualization Framework의 dmabuf 공유 경로에 직접 영향을 준다.\n\n> kvm_try_get_pfn() fails when calling get_page_unless_zero() on any tail page (Page 1 onwards), causing the Guest VCPU to crash with EFAULT (\"Bad address\").\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/1a138e24e292579ddcf417ed09e78df667f51396)\n\n**ANDROID: KVM: arm64: iommu: Fix deadlock in kvm_iommu_reclaim_pages**\n\n물리 주소가 어느 block pool에도 속하지 않을 때 이미 잡은 __block_pools_lock을 재획득하려다 나던 데드락을 고쳤다. 해당 경로에서 락을 해제하고 빠져나온다.\n\n영향: hyp(EL2) 컨텍스트의 자기 데드락이라 복구 수단이 없어 시스템 전체가 멈춘다. CMA block pool 경로(c949df871d07)를 켠 pKVM 벤더가 대상이다.\n\n> kvm_iommu_reclaim_pages() deadlocks if the physical address does not belong to any block pool, as it attempts to re-acquire the already held __block_pools_lock. Release the lock instead.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/2ee3781b8da7ef51329387b25e7e3f717cdc8ebc)\n\n**ANDROID: KVM: arm64: iommu: Fix block pool permanent exhaustion**\n\n페이지를 block pool로 반납할 때 __block_pools_available을 다시 1로 되돌리도록 했다. order > 0 할당 실패 시 iommu_block_pools를 full로 표시하지 않게도 했다.\n\n영향: 한 번 pool이 고갈되면 플래그가 영구히 남아 이후 할당이 무제한 GFP_KERNEL 폴백으로 흘러 메모리 압박 시 호스트 락업으로 이어졌다. 2ee3781b8da7와 같은 버그(534099250)로 묶인 세트다.\n\n> Exhausting the IOMMU block pools permanently clears __block_pools_available, which is never restored when pages are subsequently reclaimed.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/68d34e715b21bb149ccb1955d80518d4ea0d9c77)\n\n**ANDROID: kunit: add backtrace-suppression test module**\n\nbazel/modules_private.bzl의 kunit 공용 모듈 목록에 lib/kunit/backtrace-suppression-test.ko를 추가했다. 업스트림이 CONFIG_KUNIT_TEST에서 기본 빌드되는 테스트 모듈을 신설한 데 대한 후속 조치다.\n\n영향: 업스트림이 kunit 테스트 모듈을 추가할 때마다 Bazel 모듈 목록을 갱신하지 않으면 빌드 산출물 목록이 어긋난다. 자체 Bazel 빌드 정의를 포크한 벤더도 같은 갱신이 필요하다.\n\n> Upstream added a new backtrace-suppression kunit test module that builds by default with CONFIG_KUNIT_TEST, so add it to the list of kunit common modules.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/b9e7d950765e906de12af00c7a931f6adcc820ca)\n\n**tls: remove dead sockmap (psock) handling from the SW path**\n\nTLS와 sockmap이 상호 배타적이 되어 net/tls의 sendmsg/recvmsg 경로에서 죽은 psock 처리 코드를 삭제하는 업스트림 변경이 android-mainline 머지로 들어왔다.\n\n영향: 주 동기는 AI 보안 스캐너의 sockmap 관련 버그 리포트를 줄이는 것이며, 통합이 복구되지 않으면 두세 릴리스 뒤 TLS의 skmsg 코드를 전부 지울 예정이라고 예고했다. ACK 기본 defconfig에는 CONFIG_TLS가 없어 GKI 영향은 없지만 kTLS를 자체로 켜는 벤더는 향후 삭제 일정에 대비해야 한다.\n\n> The main goal is to delete enough code for AI security scanners to no longer bother us with sockmap related bugs. At the same time retain the code in case someone has the cycles to fix all of this\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/79511603a65b990bed675eb4bcfd85305d3ff42a)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ANDROID: GKI: CRYPTO_LZ4 is now implicit",
+      "url": "https://android.googlesource.com/kernel/common/+/87aba67d69fd0706152ae2d9dec68c2cfc274459",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: gki_defconfig: enable CONFIG_SW_SYNC=y for debug/testing",
+      "url": "https://android.googlesource.com/kernel/common/+/7443a0c3c9ecfc8982003afde92e9c783c725994",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: sched: Avoid macro redefinition of TRACE_INCLUDE_PATH",
+      "url": "https://android.googlesource.com/kernel/common/+/82be0d329bf2b455546a09cc84a40c9d1716b54d",
+      "note": "commit"
+    },
+    {
+      "title": "FROMGIT: selinux: bpf: check SBLABEL_MNT before isec init",
+      "url": "https://android.googlesource.com/kernel/common/+/8f0a5b31aee19510e75741c9687cf0d9321fa7ed",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: dma-heap: restore struct dma_heap kernel-doc lost in a merge",
+      "url": "https://android.googlesource.com/kernel/common/+/d6549754be00560c3cd7afb7f1cd3e91c14e78b0",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: KVM: Pin compound head page in kvm_try_get_pfn",
+      "url": "https://android.googlesource.com/kernel/common/+/1a138e24e292579ddcf417ed09e78df667f51396",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: KVM: arm64: iommu: Fix deadlock in kvm_iommu_reclaim_pages",
+      "url": "https://android.googlesource.com/kernel/common/+/2ee3781b8da7ef51329387b25e7e3f717cdc8ebc",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: KVM: arm64: iommu: Fix block pool permanent exhaustion",
+      "url": "https://android.googlesource.com/kernel/common/+/68d34e715b21bb149ccb1955d80518d4ea0d9c77",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: kunit: add backtrace-suppression test module",
+      "url": "https://android.googlesource.com/kernel/common/+/b9e7d950765e906de12af00c7a931f6adcc820ca",
+      "note": "commit"
+    },
+    {
+      "title": "tls: remove dead sockmap (psock) handling from the SW path",
+      "url": "https://android.googlesource.com/kernel/common/+/79511603a65b990bed675eb4bcfd85305d3ff42a",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-01T18:14:11.277Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/android-newsletter-from-dossier-ko.md"
+  }
+}

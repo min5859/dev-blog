@@ -1,0 +1,135 @@
+{
+  "id": "2026-08-02-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-08-02 amdgpu RT 크래시 수정 — PERF·RT",
+  "headline": "amdgpu RT 크래시 수정안이 빌드 파손에 막히고, BPF 32비트 권한상승·syncookie OOB read 수정이 올라왔습니다.",
+  "date": "2026-08-02",
+  "summary": "PREEMPT_RT 종료 시 100% 재현되던 amdgpu 크래시 수정안이 리베이스됐지만 arm64 clang 빌드를 깨뜨려 아직 머지 가능한 상태가 아닙니다. BPF에서는 32비트 bloom filter 권한상승과 syncookie 힙 읽기 취약점, sockmap fwd_alloc 회귀 등 여러 보안·회귀 수정이 동시에 올라왔습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "PREEMPT_RT",
+    "BPF"
+  ],
+  "highlights": [
+    {
+      "title": "amdgpu DC FPU 가드 안 sleeping 할당 수정 (리베이스판)",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "PREEMPT_RT 커널로 amdgpu를 쓰는 사용자와 RT 배포/백포트 담당, amd display DC FPU 가드 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260801071724.12998-1-spasswolf@web.de/",
+      "if": "PREEMPT_RT 커널에서 amdgpu 사용 중 종료 시 scheduling-while-atomic 크래시가 재현된다면",
+      "do": "이 패치를 바로 적용하지 말고 CONFIG_DRM_AMD_DC_FP=n(arm64 clang) 빌드가 깨진다는 보고를 먼저 확인하십시오",
+      "verify": "Mikhail Gavrilov의 빌드 파손 재현 스레드와 후속 판 등장 여부를 확인하십시오"
+    },
+    {
+      "title": "bpf: 32비트 커널 bloom filter 크기·인덱싱 하드닝 (v2)",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "32비트(특히 x86 32비트) 커널을 유지하는 배포/임베디드 담당과 BPF 맵 관련 stable 백포트 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260801083436.4014218-1-Jeremy.Jean@oss.cyber.gouv.fr/",
+      "if": "32비트 커널에서 BPF_MAP_TYPE_BLOOM_FILTER를 CAP_BPF 권한으로 사용 중이라면",
+      "do": "bitset 크기 계산과 비트 인덱싱을 함께 고친 이 v2 패치를 적용하십시오",
+      "verify": "patchwork netdevbpf에서 이 패치의 병합 상태를 확인하십시오"
+    },
+    {
+      "title": "bpf: bpf_tcp_*_syncookie에 sk_fullsock() 검사 추가 (OOB read)",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "tc/XDP에서 syncookie 헬퍼를 쓰는 BPF 네트워킹 개발자와 stable 백포트·배포 보안 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/ca8d8c570509b02355bb4bd4e56859f3e2564c9c.1785576172.git.rakukuip@gmail.com/",
+      "if": "tc/XDP 프로그램에서 bpf_tcp_gen_syncookie나 bpf_tcp_check_syncookie를 사용 중이라면",
+      "do": "sk_fullsock() 검사가 추가된 이 패치를 적용하십시오",
+      "verify": "Fixes 태그 범위(v5.10)와 실제 결함 발생 시점(v5.2/v5.4) 사이 불일치를 백포트 전에 확인하십시오"
+    },
+    {
+      "title": "bpf, sockmap: strparser self-pass 경로 fwd_alloc 회계 수정 (v2)",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "sockmap/strparser 기반 소켓 리다이렉션을 쓰는 네트워킹·서비스 메시 개발자와 skmsg 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260801102633.1872012-2-zirajs7@gmail.com/",
+      "if": "sockmap과 strparser를 함께 써서 하나의 skb가 여러 메시지로 쪼개지는 경로가 있다면",
+      "do": "이 v2 패치로 sk_forward_alloc 회계를 정산하십시오",
+      "verify": "INET_DIAG_MEMINFO로 sk_forward_alloc이 음수가 되지 않는지 확인하십시오"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm/amd/display: fix usage of DC_FPU_{BEGIN,END} with PREEMPT_RT (next-20260729 리베이스판)**\n\ndc_create_plane_state()의 kvzalloc_obj()와 dc_create_stream_for_sink() 실패 경로의 kfree()를 DC_RUN_WITH_PREEMPTION_ENABLED()로 감싸 preempt 가능 상태로 되돌렸습니다.\n\n영향: PREEMPT_RT 종료 시 100% 재현되던 scheduling-while-atomic 크래시의 수정안이지만, 현재 판은 CONFIG_DRM_AMD_DC_FP=n(arm64 clang) 빌드를 깨뜨려 아직 머지 가능한 상태가 아닙니다.\n\n> On PREEMPT_RT kernels kvzalloc_obj() can sleep because spin_lock is converted to rt_mutex.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260801071724.12998-1-spasswolf@web.de/)\n\n**bpf: harden bloom filter sizing and indexing on 32-bit kernels (v2)**\n\nU32_MAX 폴백 시 32비트 랩어라운드로 bitmap이 할당되지 않던 문제와, u32 해시를 그대로 비트 연산에 넘기던 문제를 각각 u64 연산과 bloom_test_bit/bloom_set_bit 헬퍼로 고쳤습니다.\n\n영향: 저자는 CAP_BPF 권한만 있으면 32비트 x86 커널에서 로컬 권한 상승이 가능하다고 명시했습니다.\n\n> Exploitation note: local privilege escalation is possible on a 32-bit x86 kernel using the under-allocation bug from a binary with CAP_BPF.\n\n[원문 확인](https://lore.kernel.org/bpf/20260801083436.4014218-1-Jeremy.Jean@oss.cyber.gouv.fr/)\n\n**bpf: Check sk_fullsock() in bpf_tcp_*_syncookie (OOB read 수정)**\n\nbpf_tcp_gen_syncookie()와 bpf_tcp_check_syncookie() 양쪽에 sk->sk_protocol 접근 전 sk_fullsock(sk) 검사를 추가했습니다.\n\n영향: TCP_NEW_SYN_RECV/TCP_TIME_WAIT 미니 소켓이 들어오면 sock_common 경계를 넘는 slab-out-of-bounds read가 발생하며, 비특권 사용자가 user+net namespace만으로 재현 가능한 PoC가 첨부됐습니다.\n\n> The bug is reachable by an unprivileged user via user and net namespaces.\n\n[원문 확인](https://lore.kernel.org/bpf/cover.1785576172.git.rakukuip@gmail.com/)\n\n**bpf, sockmap: fix forward allocation accounting in strparser self-pass path (v2)**\n\nsk_psock_skb_ingress_self()에 settle_fwd_alloc 인자를 추가해 strparser SK_PASS 클론을 재큐잉할 때 sk_rmem_schedule()로 sk_forward_alloc 적자를 먼저 메우고, 회귀 테스트를 함께 추가했습니다.\n\n영향: 하나의 skb가 여러 strparser 메시지로 쪼개질 때 sk_forward_alloc이 적자가 되어 소켓 해제 시 memcg page_counter underflow가 발생하는 문제입니다.\n\n> Releasing the queued skbs can then uncharge more memcg pages than were reserved and trigger a page_counter underflow.\n\n[원문 확인](https://lore.kernel.org/bpf/20260801102633.1872012-2-zirajs7@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**hung_task: show the blocker task if the task is hung on rtmutex (2패치, 논쟁 중)**\n\ndebug_show_blocker()를 rtmutex까지 확장해 hung_task 스플랫에 rt_mutex_owner()로 읽은 소유자 태스크를 함께 출력하도록 했습니다.\n\n영향: PREEMPT_RT에서는 대부분의 락이 rtmutex 기반이라 현재 hung_task 검출기가 blocker 정보를 거의 보여주지 못하는 문제를 해결하지만, Peter Zijlstra의 기존 반대와 Petr Mladek의 대안 제안이 있어 현재 형태로 머지될 가능성은 낮습니다.\n\n> INFO: task cat:195 is blocked on a rtmutex likely owned by task cat:194.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/4dd13bdf76de6ce1e4d825af9f393a5dd59f25e8.1785376929.git.ruipengqi3@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/amd/display: fix usage of DC_FPU_{BEGIN,END} with PREEMPT_RT",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260801071724.12998-1-spasswolf@web.de/",
+      "note": "thread"
+    },
+    {
+      "title": "amdgpu PREEMPT_RT 원 보고: scheduling while atomic",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260723123449.6494-1-spasswolf@web.de/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/amd/display: Move FPU Guards From DML To DC - Part 1 (Fixes 대상)",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=3539437f354bd24c98928a80d4db3a23fa2a7b19",
+      "note": "commit"
+    },
+    {
+      "title": "bpf: harden bloom filter sizing and indexing on 32-bit kernels (v2)",
+      "url": "https://lore.kernel.org/bpf/20260801083436.4014218-1-Jeremy.Jean@oss.cyber.gouv.fr/",
+      "note": "thread"
+    },
+    {
+      "title": "patchwork: bpf bloom filter hardening v2 상태",
+      "url": "https://patchwork.kernel.org/project/netdevbpf/patch/20260801083436.4014218-1-Jeremy.Jean@oss.cyber.gouv.fr/",
+      "note": "changelog"
+    },
+    {
+      "title": "bpf, sockmap: settle sk_forward_alloc for strparser SK_PASS (1/2)",
+      "url": "https://lore.kernel.org/bpf/20260801102633.1872012-1-zirajs7@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "sockmap_strp 셀프테스트 (2/2)",
+      "url": "https://lore.kernel.org/bpf/20260801102633.1872012-3-zirajs7@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf syncookie OOB read 커버레터",
+      "url": "https://lore.kernel.org/bpf/cover.1785576172.git.rakukuip@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Check sk_fullsock() in bpf_tcp_*_syncookie",
+      "url": "https://lore.kernel.org/bpf/ca8d8c570509b02355bb4bd4e56859f3e2564c9c.1785576172.git.rakukuip@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "hung_task: show the blocker task if the task is hung on rtmutex",
+      "url": "https://lore.kernel.org/linux-rt-devel/4dd13bdf76de6ce1e4d825af9f393a5dd59f25e8.1785376929.git.ruipengqi3@gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-01T19:23:46.196Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
