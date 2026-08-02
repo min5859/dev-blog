@@ -1,0 +1,115 @@
+{
+  "id": "2026-08-03-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-08-03 KVM GPR 유출 수정 — ARM64/플랫폼",
+  "headline": "arm64 KVM CP64 읽기 UNDEF에서 호스트 스택 값이 게스트 GPR로 새던 버그가 수정되고, arch_timer erratum 로직도 개편된다",
+  "date": "2026-08-03",
+  "summary": "arm64 KVM에서 AArch32 CP64 읽기가 UNDEF를 낼 때 초기화되지 않은 호스트 스택 값이 게스트 GPR로 유출되던 버그가 패치됐다. 이와 함께 arch_timer erratum 처리 v3, Tegra v7.3-rc1 DT 풀 리퀘스트, RK3568 XPCS v2 리뷰 결론도 함께 정리했다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "ARM64",
+    "KVM"
+  ],
+  "highlights": [
+    {
+      "title": "KVM arm64: CP64 읽기 UNDEF 시 GPR 유출 수정",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "arm64 KVM 유지보수 담당, AArch32 게스트를 지원하는 하이퍼바이저·임베디드 가상화 벤더",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260802182222.2239-1-kmehltretter@gmail.com/",
+      "if": "AArch32 게스트를 구동하는 arm64 KVM 호스트를 운영 중이라면 이 패치를 눈여겨보세요",
+      "do": "CONFIG_INIT_STACK_NONE 빌드 여부를 점검하고 패치를 로컬 트리에 적용하거나 백포트를 검토하세요",
+      "verify": "lore 스레드에서 Marc Zyngier·Oliver Upton의 v2 수락 여부와 kvmarm 큐 반영 상태를 확인하세요"
+    },
+    {
+      "title": "arm64 arch_timer: erratum 처리 로직 반전 (v3, 8패치)",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "arm64 clocksource/타이머·perf 유지보수 담당, 카운터 erratum이 있는 SoC 벤더, maxcpus= 부팅을 쓰는 플랫폼 운영자",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260802165327.385217-1-maz@kernel.org/",
+      "if": "카운터 erratum이 있는 SoC나 maxcpus= 부팅 옵션을 쓰는 플랫폼을 운영 중이라면 이 시리즈를 확인하세요",
+      "do": "clocksource.arm_arch_timer.cnt_errata= 파라미터와 static key 전환 내용을 검토하세요",
+      "verify": "tip/clocksource 트리에 v3 8패치가 실제로 머지됐는지 확인하세요"
+    },
+    {
+      "title": "arm64 tegra: v7.3-rc1 DT 풀 리퀘스트",
+      "priority": "중",
+      "impactType": "release",
+      "affectedAudience": "Tegra/ARM SoC DT 유지보수 담당, GICv3 인터럽트 서술을 검토하는 플랫폼 엔지니어",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260802165148.1259649-4-thierry.reding@kernel.org/",
+      "if": "Tegra 플랫폼 DT를 유지보수하거나 v7.3 머지 윈도우를 추적 중이라면",
+      "do": "인터럽트 플래그 교정과 GICv3 PPI CPU 마스크 제거 패턴을 자신의 SoC DT에도 점검하세요",
+      "verify": "ARM SoC 트리에 tegra-for-7.3-arm64-dt 태그가 실제로 pull 됐는지 확인하세요"
+    },
+    {
+      "title": "net pcs xpcs: RK3568 SGMII 지원 v2 — C22/C45 콜백 결론",
+      "priority": "하",
+      "impactType": "runtime",
+      "affectedAudience": "Rockchip 플랫폼·stmmac/XPCS 드라이버 개발자, DW XPCS를 쓰는 SoC 글루 드라이버 작성자",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/ba5522ab-1e77-4236-89cd-9483ed1f2da0@lunn.ch/",
+      "if": "DW XPCS를 쓰는 SoC 글루 드라이버를 작성 중이라면",
+      "do": "C22/C45 콜백을 모두 유지하는 관례와 PM runtime 처리 방식을 참고하세요",
+      "verify": "패치 5/10 dtsi 노드 논의와 v3 제출 여부를 lore 스레드에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**arm64: tegra: v7.3-rc1용 디바이스트리 변경 (pull request)**\n\nThierry Reding이 ARM SoC에 tegra-for-7.3-arm64-dt 태그를(14파일, +632/-92) 요청했으며, Tegra264 CPU/L2 캐시·GTE·Host1x/VIC·GPCDMA 노드가 대폭 추가되고 신규 Lenovo ThinkEdge SE70(Tegra194 기반) 보드 DT가 포함됐다.\n\n영향: Tegra264 플랫폼이 아직 활발히 구축 중임을 보여주며, 인터럽트 플래그 교정과 GICv3 PPI CPU 마스크 제거는 다른 SoC DT에도 적용되는 반복 패턴이다.\n\n> This contains a new device tree for the Lenove ThinkEdge SE70 Edge Client device as well as a number of fixes and cleanups for Tegra234 and Tegra194. Tegra264 sees a number of additions\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260802165148.1259649-4-thierry.reding@kernel.org/)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**KVM: arm64: AArch32 CP64 읽기의 UNDEF 발생 시 GPR 보존**\n\nkvm_handle_cp_64()에서 is_write 조건을 제거해, CP64 읽기(MRRC)든 쓰기(MCRR)든 항상 Rt/Rt2에서 params.regval을 시드하도록 수정했다(arch/arm64/kvm/sys_regs.c, -4/+2).\n\n영향: 2013년 커밋(62a89c44954f0)부터 있던 잠재 버그로, CONFIG_INIT_STACK_NONE 빌드에서 초기화되지 않은 호스트 스택 값이 게스트 GPR로 유출될 수 있다. Raspberry Pi 400에서 PMCCNTR MRRC로 실제 재현됐다.\n\n> Instead, the uninitialised regval is copied into the guest GPRs. [...] With CONFIG_INIT_STACK_NONE it may be stale host stack data.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260802182222.2239-1-kmehltretter@gmail.com/)\n\n**arm64: arch_timer: erratum 처리 개선 (v3, 8패치)**\n\nMarc Zyngier의 v3 시리즈(총 +131/-56)가 카운터 erratum 처리를 static key 기반으로 전환하고, 부팅 시 완화를 기본 활성화한 뒤 모든 CPU 확인 후 전역 비활성화하는 방식으로 로직을 뒤집었다.\n\n영향: 1/8은 PMUv3의 architected timer 판별 로직이 2023년 이후 깨져 있던 것을 고치며(Fixes: 24ee7607b286b, Cc: stable), 정상 HW에서는 부팅 직후 fast 접근자로 전환돼 성능 이득도 있다.\n\n> always start with the mitigations enabled, even if we don't know of any affected CPU - once all CPUs have been seen once, and that we still haven't enabled any workaround, disable the mitigations glob\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260802165327.385217-1-maz@kernel.org/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**net: pcs: xpcs: Rockchip RK3568 XPCS/SGMII 지원 v2 — C22/C45 콜백 리뷰 결론**\n\nCoia Prant의 10패치 시리즈가 RK3568 내장 DW XPCS와 Naneng Combo SerDes로 SGMII를 지원하며, Andrew Lunn은 패치 7/10 논의에서 xpcs 코어가 C45만 쓰더라도 디버깅용 C22 콜백은 유지하라고 결론지었다.\n\n영향: PCS 라이프타임을 stmmac에서 플랫폼 드라이버로 이관하는 구조 변화가 포함돼 있어, 같은 DW XPCS를 쓰는 다른 SoC 글루 드라이버 작성자에게 참고 사례가 된다.\n\n> Keep them. I was thinking it side steps the issue of accidentally mixing up C22 registers and C45 registers. But there are useful use cases for C22.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/ba5522ab-1e77-4236-89cd-9483ed1f2da0@lunn.ch/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "KVM: arm64: Preserve GPRs for AArch32 CP64 reads generating an UNDEF",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260802182222.2239-1-kmehltretter@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "arm64: KVM: 32bit handling of coprocessor traps (Fixes 대상 커밋)",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=62a89c44954f0",
+      "note": "commit"
+    },
+    {
+      "title": "arm64: arch_timer: Improve errata handling (v3, 8 patches)",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260802165327.385217-1-maz@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "arm64/arch_timer: Provide noinstr sched_clock_read() functions (Fixes 대상 커밋)",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=24ee7607b286b",
+      "note": "commit"
+    },
+    {
+      "title": "arm64: tegra: Device tree changes for v7.3-rc1 (pull request)",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260802165148.1259649-4-thierry.reding@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "net: pcs: xpcs: Rockchip RK3568 SGMII 지원 v2 — C22/C45 콜백 리뷰",
+      "url": "https://lore.kernel.org/linux-arm-kernel/ba5522ab-1e77-4236-89cd-9483ed1f2da0@lunn.ch/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-02T19:51:10.760Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

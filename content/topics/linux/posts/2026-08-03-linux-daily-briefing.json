@@ -1,0 +1,128 @@
+{
+  "id": "2026-08-03-linux-daily-briefing",
+  "topic": "linux",
+  "title": "2026-08-03 direct I/O 락 회귀 — 리눅스 개발",
+  "headline": "커널이 파일을 직접 쓰다가 일반 쓰기로 전환될 때 보호 장치가 빠져 있던 문제가 발견되어 수정 패치가 올라왔습니다.",
+  "date": "2026-08-03",
+  "summary": "direct I/O 부분 완료 후 버퍼드 쓰기로 넘어가는 경로에 락이 빠져 있어 커널 크래시로 이어질 수 있는 문제가 발견되고 수정 패치가 제출됐습니다. CVE-2026-64560 posix-cpu-timers UAF 백포트와 stable 7.1.5 는 별다른 진전 없이 이전 상태를 유지하고 있습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "posix-cpu-timers UAF 긴급 백포트",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "LTS 커널을 유지·배포하는 배포판 및 임베디드 벤더, 멀티스레드 워크로드를 돌리는 서버 운영자",
+      "verifyLink": "https://cve.threatint.com/CVE/CVE-2026-64560",
+      "if": "5.7 이후 LTS 커널을 운영 중이라면 해당합니다.",
+      "do": "5.10.262/5.15.213/6.1.180/6.6.147/6.12.100/6.18.41 로 즉시 업그레이드하세요.",
+      "verify": "CVE-2026-64560 레코드와 해당 LTS ChangeLog 에서 패치 포함 여부를 확인하세요."
+    },
+    {
+      "title": "direct I/O 폴백 락 누락 수정",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "블록 레이어·파일시스템 개발자, 대형 섹터/LBS 장치와 O_DIRECT 를 함께 쓰는 스토리지 담당자",
+      "verifyLink": "https://patchwork.kernel.org/project/linux-block/patch/20260802-blkdev-fixes-v1-2-a82fc549fd74@columbia.edu/",
+      "if": "O_DIRECT 부분 완료 후 버퍼드 폴백이 발생하는 블록 장치를 다룬다면 해당합니다.",
+      "do": "Tal Zussman 의 [2/2] 패치(Fixes: c0e473a0d226)를 확인하고 적용 여부를 검토하세요.",
+      "verify": "patchwork 패치와 lore 스레드에서 VM_BUG_ON_FOLIO 재현 조건을 확인하세요."
+    },
+    {
+      "title": "stable 7.1.5, 2천 건대 백포트",
+      "priority": "중",
+      "impactType": "backport",
+      "affectedAudience": "7.1.x stable 커널을 추적하는 배포판 유지보수자 및 커널 업그레이드를 승인하는 플랫폼 팀",
+      "verifyLink": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.5",
+      "if": "7.1.x stable 브랜치를 추적하는 배포판·플랫폼 팀이라면 해당합니다.",
+      "do": "업그레이드 전 자기 워크로드 기준 회귀 테스트를 반드시 거치세요.",
+      "verify": "ChangeLog-7.1.5 원문에서 주요 보안 수정과 gpib cb7210 revert 를 확인하세요."
+    },
+    {
+      "title": "arm-smmu-v3, sort_nonatomic 정리",
+      "priority": "하",
+      "impactType": "api-abi",
+      "affectedAudience": "ARM SMMUv3/IOMMU 드라이버 개발자, lib/ 공용 API 를 쓰는 커널 개발자",
+      "verifyLink": "https://patchwork.kernel.org/project/linux-arm-kernel/patch/20260730181216.2709088-2-visitorckw@gmail.com/",
+      "if": "ARM SMMUv3 드라이버나 lib/sort API 를 쓴다면 해당합니다.",
+      "do": "sort_nonatomic() 의존 코드가 있다면 sort() 전환 가능성을 검토하세요.",
+      "verify": "patchwork 패치와 lore 스레드에서 Nicolin Chen 의 답변을 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.2-rc5 — 네트워킹이 3분의 1을 차지한 비대한 rc**\n\nLinus Torvalds 가 2026-07-26 에 낸 7.2-rc5 는 컨퍼런스로 밀렸던 네트워킹 작업이 한꺼번에 몰려 전체 diff 의 3분의 1 이상을 차지했고, 드라이버 쪽은 USB 변경이 GPU 보다 많았습니다. 7.2 정식은 2026-08-16 예상입니다.\n\n영향: rc5 시점의 대량 네트워킹 유입은 7.2 를 조기 도입할 계획이라면 네트워킹·USB 경로가 상대적으로 덜 검증된 상태로 들어갈 가능성을 의미합니다.\n\n> It's Sunday afternoon, and once more we have quite a massive -rc5.\n\n[원문 확인](https://www.phoronix.com/news/Linux-7.2-rc5-Released)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**direct I/O 폴백 경로에 빠졌던 i_rwsem**\n\nc0e473a0d226 의 락 변환 당시 blkdev_write_iter() 의 버퍼드 쓰기 경로는 inode_lock_shared() 로 보호됐지만, O_DIRECT 부분 성공 후 버퍼드로 넘어가는 direct_write_fallback() 경로는 락 없이 남아 있었고, Tal Zussman 이 2026-08-02 에 이를 감싸는 [2/2] 패치를 제출한 것으로 보입니다.\n\n영향: 블록 크기를 바꾸는 타이밍이 맞으면 mapping 의 최소 folio order 와 페이지 캐시 folio order 가 어긋나 VM_BUG_ON_FOLIO 로 커널이 죽을 수 있어, 락 변환 리뷰 시 모든 호출 경로를 훑어야 한다는 사례입니다.\n\n> A direct write that completes only partially then finishes as a buffered write with no protection.\n\n[원문 확인](https://lore.kernel.org/lkml/d30b6c9f-e479-4cca-8dfa-576d7562d2fc@columbia.edu/)\n\n**posix-cpu-timers UAF 백포트 (CVE-2026-64560) — 신규 진행 없음**\n\n이미 안내한 사안으로, 5.10.262 등 6개 LTS 트리가 2026-07-30 동시 릴리스한 상태 그대로이며 추가 진행 사항은 확인되지 않았습니다.\n\n영향: 5.7 이후 LTS 커널을 쓰는 배포판·임베디드 벤더는 여전히 패치 적용 여부를 점검할 대상입니다.\n\n> posix-cpu-timers: Prevent UAF caused by non-leader exec() race\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.262)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**arm-smmu-v3, sort_nonatomic() 마지막 호출자에서 손을 떼다**\n\nKuan-Wei Chiu 의 \"lib/sort: Clean up sort_nonatomic() and sort_r_nonatomic()\" 시리즈 [1/2] 가 arm_smmu_insert_master() 의 sort_nonatomic() 호출을 일반 sort() 로 교체했고, Will Deacon 의 질문에 원저자 Nicolin Chen 이 sort() 로 충분하다고 답하면서 이것이 커널 내 sort_nonatomic() 의 마지막 호출자가 됐습니다.\n\n영향: master->num_streams 가 실무상 매우 작아 cond_resched() 방어 코드가 필요 없었다는 사례로, lib/sort 중복 API 제거를 위한 사전 정리 작업입니다.\n\n> It's probably rare to have a large multi-stream array, so I think sort() would be fine.\n\n[원문 확인](https://lore.kernel.org/lkml/am+CPy4+gcGPtR3G@nvidia.com/)\n\n**stable 7.1.5 — 2천 건대 백포트, 변동 사항 없음**\n\n7.1.5 는 이미 안내한 릴리스로 새 진행 사항은 없으며, CVE-2026-64560 과 Bluetooth L2CAP UAF 등 주요 보안 수정과 gpib cb7210 revert 가 포함된 상태 그대로입니다.\n\n영향: 2천 커밋 규모 백포트가 표준이 되어가는 만큼, 업그레이드 전 자체 워크로드 기준 회귀 테스트 비용 대비 가치가 커졌습니다.\n\n> Two thousand commits in a stable branch used to take a full release cycle. Now it happens on a Tuesday.\n\n[원문 확인](https://www.linuxcompatible.org/story/linux-kernel-715-released-2070-commits-deliver-critical-security-fixes-and-resolve-driver-deadlocks/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 linux-next(next-20260731) 일일 스냅샷은 구체적 변경 사실을 확인할 수 없어 제외했습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "CVE-2026-64560 레코드",
+      "url": "https://cve.threatint.com/CVE/CVE-2026-64560",
+      "note": "cve"
+    },
+    {
+      "title": "ChangeLog-5.10.262",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.262",
+      "note": "changelog"
+    },
+    {
+      "title": "block: take i_rwsem for the direct I/O write fallback [2/2]",
+      "url": "https://patchwork.kernel.org/project/linux-block/patch/20260802-blkdev-fixes-v1-2-a82fc549fd74@columbia.edu/",
+      "note": "thread"
+    },
+    {
+      "title": "lkml: direct I/O fallback UAF/crash 스레드",
+      "url": "https://lore.kernel.org/lkml/d30b6c9f-e479-4cca-8dfa-576d7562d2fc@columbia.edu/",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-7.1.5",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.5",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux Kernel 7.1.5 Released 기사",
+      "url": "https://www.linuxcompatible.org/story/linux-kernel-715-released-2070-commits-deliver-critical-security-fixes-and-resolve-driver-deadlocks/",
+      "note": "article"
+    },
+    {
+      "title": "Linux 7.2-rc5 Released 기사",
+      "url": "https://www.phoronix.com/news/Linux-7.2-rc5-Released",
+      "note": "article"
+    },
+    {
+      "title": "lib/sort: Clean up sort_nonatomic() [1/2]",
+      "url": "https://patchwork.kernel.org/project/linux-arm-kernel/patch/20260730181216.2709088-2-visitorckw@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "lkml: arm-smmu-v3 sort_nonatomic 논의",
+      "url": "https://lore.kernel.org/lkml/am+CPy4+gcGPtR3G@nvidia.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-02T18:05:31.704Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,127 @@
+{
+  "id": "2026-08-03-linux-perf-rt-weekly-rollup",
+  "topic": "linux-perf-rt",
+  "title": "2026-08-03 주간 요약",
+  "headline": "res_spin_lock(rqspinlock)에 의존하는 BPF 코어·맵 구현 및 tracing 컨텍스트에서 락 지연을 추적하는 엔지니어 주목:",
+  "date": "2026-08-03",
+  "summary": "오늘의 핵심: 릴리스/로드맵 0건, 회귀·보안 신호 8건, 핵심 변경 0건. 리서치 dossier 의 출처를 근거로 정리했습니다.",
+  "tags": [
+    "주간"
+  ],
+  "highlights": [
+    {
+      "title": "rqspinlock: Reset tail when preserving queue on deadlock",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "res_spin_lock(rqspinlock)에 의존하는 BPF 코어·맵 구현 및 tracing 컨텍스트에서 락 지연을 추적하는 엔지니어",
+      "verifyLink": "https://lore.kernel.org/bpf/20260802021759.1139457-1-memxor@gmail.com/",
+      "if": "res_spin_lock(rqspinlock)에 의존하는 BPF 코어·맵 구현 및 tracing 컨텍스트에서 락 지연을 추적하는 엔지니어라면",
+      "do": "resilient_queued_spin_lock_slowpath()의 -EDEADLK 경로가 무조건 node->next 를 기다린 뒤 후속 wa",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/bpf/20260802021759.1139457-1-memxor@gmail.com/"
+    },
+    {
+      "title": "drm/amd/display: fix usage of DC_FPU_{BEGIN,END} with PREEMPT_RT",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "PREEMPT_RT 커널에서 amdgpu/DC 를 쓰는 사용자와 RT 회귀를 추적하는 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260801071724.12998-1-spasswolf@web.de/",
+      "if": "PREEMPT_RT 커널에서 amdgpu/DC 를 쓰는 사용자와 RT 회귀를 추적하는 유지보수 담당라면",
+      "do": "dc_create_plane_state() 의 kvzalloc_obj() 와 dc_create_stream_for_sink() 실패 경로의 kf",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/linux-rt-devel/20260801071724.12998-1-spasswolf@web.de/"
+    },
+    {
+      "title": "riscv: ftrace: Fix ftrace_modify_call failure on kprobed functions",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "riscv 에서 ftrace·kprobe·fprobe/BPF kprobe_multi 를 함께 쓰거나 riscv BPF CI 를 운영하는 엔지니어",
+      "verifyLink": "https://lore.kernel.org/bpf/20260802094929.3978390-1-pulehui@huaweicloud.com/",
+      "if": "riscv 에서 ftrace·kprobe·fprobe/BPF kprobe_multi 를 함께 쓰거나 riscv BPF CI 를 운영하는 엔지니어라면",
+      "do": "arch/riscv/kernel/ftrace.c 의 __ftrace_modify_call() 이 패치 대상 첫 명령어가 기대한 auipc 가 아",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/bpf/20260802094929.3978390-1-pulehui@huaweicloud.com/"
+    },
+    {
+      "title": "bpf: harden bloom filter sizing and indexing on 32-bit kernels (v2)",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "32비트(특히 x86 32비트) 커널을 유지하는 배포/임베디드 담당과 BPF 맵 관련 stable 백포트 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260801083436.4014218-1-Jeremy.Jean@oss.cyber.gouv.fr/",
+      "if": "32비트(특히 x86 32비트) 커널을 유지하는 배포/임베디드 담당과 BPF 맵 관련 stable 백포트 담당라면",
+      "do": "kernel/bpf/bloom_filter.c에서 (1) U32_MAX 폴백 시 BITS_TO_BYTES(U32_MAX)가 32비트 연산으로 랩",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/bpf/20260801083436.4014218-1-Jeremy.Jean@oss.cyber.gouv.fr/"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**rqspinlock: Reset tail when preserving queue on deadlock**\n\nresilient_queued_spin_lock_slowpath()의 -EDEADLK 경로가 무조건 node->next 를 기다린 뒤 후속 waiter 를 깨우던 것을, 먼저 try_cmpxchg_tail(lock, tail, 0) 로 tail 리셋을 시도하고 실패했을 때만 후속 wai\n\n영향: 7bd6e5ce5be6 이후 데드락 감지 시 큐를 파기하지 않게 되면서, ABBA 상황에서 자신이 마지막 waiter 인 경우 오지 않을 후속 waiter 를 smp_cond_load_relaxed 로 계속 기다려 간헐적 stall(이론상 무한 대기)이 발생합니다. AA 는 큐 진입 전\n\n> Not doing the tail reset, and waiting for the next waiter can lead to cases where we are the final waiter, and thus no next waiter arrives, leading to intermittent stalls in this path.\n\n[원문 확인](https://lore.kernel.org/bpf/20260802021759.1139457-1-memxor@gmail.com/)\n\n**drm/amd/display: fix usage of DC_FPU_{BEGIN,END} with PREEMPT_RT**\n\ndc_create_plane_state() 의 kvzalloc_obj() 와 dc_create_stream_for_sink() 실패 경로의 kfree() 를 DC_RUN_WITH_PREEMPTION_ENABLED() 로 감쌉니다. PREEMPT_RT 에서 spin_lock 이 rt_mu\n\n영향: v7.2-rc3/rc4 및 next-20260722 에서 PREEMPT_RT 커널이 shutdown 중 패닉하는 실사용 회귀의 수정 후보입니다. 원인이 amdgpu 개별 버그가 아니라 'RT 에서 잠들 수 있는 할당을 FPU 가드 안에서 호출'이라는 구조적 패턴이라, RT 커널을 쓰는 \n\n> On PREEMPT_RT kernels kvzalloc_obj() can sleep because spin_lock is converted to rt_mutex. dc_create_plane_state() can be called while inside an FPU-guarded region\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260801071724.12998-1-spasswolf@web.de/)\n\n**riscv: ftrace: Fix ftrace_modify_call failure on kprobed functions**\n\narch/riscv/kernel/ftrace.c 의 __ftrace_modify_call() 이 패치 대상 첫 명령어가 기대한 auipc 가 아닐 때 무조건 -EINVAL 을 내던 것을, riscv_insn_is_ebreak()/riscv_insn_is_c_ebreak() 인 경우(즉 \n\n영향: riscv 에서 ftrace 대상 함수 진입점에 kprobe 가 걸린 상태로 fprobe/kprobe_multi 를 붙이면 ftrace_bug WARNING 이 터지며 어태치가 실패합니다. 실제로 riscv BPF selftests 에서 재현되어 CI 를 흔들고 있고, echo 몇 줄(\n\n> attaching a kprobe to an ftrace-traced function entry replaces its initial auipc insn with ebreak. When ftrace_modify_call later runs, it expects auipc insn, so verification fails and triggers ftrace_\n\n[원문 확인](https://lore.kernel.org/bpf/20260802094929.3978390-1-pulehui@huaweicloud.com/)\n\n**bpf: harden bloom filter sizing and indexing on 32-bit kernels (v2)**\n\nkernel/bpf/bloom_filter.c에서 (1) U32_MAX 폴백 시 BITS_TO_BYTES(U32_MAX)가 32비트 연산으로 랩되어 비트맵을 사실상 할당하지 않던 문제를 bitset_bytes를 u64로 올리고 BITS_TO_BYTES((u64)bitset_mask + \n\n영향: BPF_MAP_TYPE_BLOOM_FILTER를 쓰는 32비트 커널에서 맵 갱신이 할당 객체 밖을 쓰는 힙 오염이며, 저자는 CAP_BPF만 있으면 32비트 x86에서 로컬 권한 상승이 가능하다고 명시했다. 두 번째 결함(상위 절반 해시가 signed long 비트 오프셋으로 넘어가 음\n\n> BITS_TO_BYTES(U32_MAX) is evaluated with 32-bit arithmetic. The addition performed by DIV_ROUND_UP wraps, so the map allocates only the fixed-size bloom filter object\n\n[원문 확인](https://lore.kernel.org/bpf/20260801083436.4014218-1-Jeremy.Jean@oss.cyber.gouv.fr/)\n\n**bpf, sockmap: fix forward allocation accounting in strparser self-pass path (v2, 2패치)**\n\nnet/core/skmsg.c의 sk_psock_skb_ingress_self()에 settle_fwd_alloc 인자를 추가해, strparser SK_PASS 클론을 같은 소켓에 다시 큐잉할 때 skb_set_owner_r() 앞에서 sk_rmem_schedule(sk, skb, 0\n\n영향: 하나의 TCP skb가 여러 strparser 메시지로 쪼개질 때 반복되는 수신 소유권 이전이 sk_forward_alloc을 적자로 만들고, 소켓 해제 시 예약보다 많은 memcg 페이지를 반환해 page_counter underflow 경고가 나는 실제 재현 버그다. sockmap+\n\n> Releasing the queued skbs can then uncharge more memcg pages than were reserved and trigger a page_counter underflow.\n\n[원문 확인](https://lore.kernel.org/bpf/20260801102633.1872012-2-zirajs7@gmail.com/)\n\n**bpf: Check sk_fullsock() in bpf_tcp_*_syncookie (OOB read 수정)**\n\nnet/core/filter.c의 bpf_tcp_gen_syncookie()와 bpf_tcp_check_syncookie() 양쪽에 sk->sk_protocol 접근 전 sk_fullsock(sk) 검사를 추가한다(각 3줄). 두 헬퍼는 ARG_PTR_TO_BTF_ID_SOCK_COMM\n\n영향: unshare -Urn 수준의 비특권 사용자가 user+net namespace로 재현 가능하다고 PoC까지 첨부된 커널 OOB read이고, 수정 자체는 3줄짜리라 백포트 판단이 쟁점이다. kernel-patches CI 봇은 Fixes 태그가 잘못됐다고 지적한다: 미니 소켓 전달은 \n\n> The bug is reachable by an unprivileged user via user and net namespaces.\n\n[원문 확인](https://lore.kernel.org/bpf/cover.1785576172.git.rakukuip@gmail.com/)\n\n**bpf: zext_dst 추론을 정적 라이브니스 분석으로 재작성 (5부작의 1/5, disasm 개행 정리)**\n\n후보는 disasm.c의 bpf_verbose_insn()에서 개행을 없애는 비기능 정리이지만, 실체는 Eduard Zingerman의 bpf-next 5부작 'bpf: infer zext_dst based on static register liveness analysis'(patchw\n\n영향: s390 JIT은 검증기가 32비트 연산 앞에 명시적 zero-extension을 삽입해 줄 것을 전제하므로, zext_dst 마크 누락은 w-계열 연산의 BPF 의미가 깨지는 정합성 버그다. 원인 커밋이 2025-09-19의 107e16979905('bpf: disable and re\n\n> At the moment there are more callsites that want bpf_verbose_insn() to not print a newline after the instruction, than callsites that want a newline.\n\n[원문 확인](https://patchwork.kernel.org/project/netdevbpf/patch/20260731-static-zext-v1-1-98a4dc73e94b@gmail.com/)\n\n**xsk: account ring allocations to RLIMIT_MEMLOCK ([PATCH net v2 1/1], 시리즈명 \"fix unaccounted ring allocations causing memory exhaustion\")**\n\nAF_XDP의 RX/TX/fill/completion 링을 할당하는 공용 헬퍼 xskq_create()가 UMEM 등록과 달리 링 백킹 페이지를 RLIMIT_MEMLOCK / user->locked_vm에 전혀 계상하지 않던 문제를 고친다. v2는 mm_account_pinned_pag\n\n영향: AF_XDP는 이 렌즈 독자의 고성능 데이터패스 그 자체다. user namespace + net namespace 안에서 CAP_NET_RAW만 얻으면 bind나 패킷 I/O 이전에 거대한 링을 요청해 커널 메모리를 대량 pin할 수 있고, 보고자 환경(2 vCPU / 2GB QEMU\n\n> A process with CAP_NET_RAW in a user and network namespace can therefore request very large rings and pin a large amount of kernel memory before bind or any packet I/O.\n\n[원문 확인](https://patchwork.kernel.org/project/netdevbpf/patch/20260730153832.11238-2-zihanx@nebusec.ai/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "국부 드라이버/플랫폼 패치는 본문에서 제외했습니다. 자기 영역 키워드로 lore.kernel.org에서 직접 검색하세요."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "rqspinlock: Reset tail when preserving queue on deadlock",
+      "url": "https://lore.kernel.org/bpf/20260802021759.1139457-1-memxor@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/amd/display: fix usage of DC_FPU_{BEGIN,END} with PREEMPT_RT",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260801071724.12998-1-spasswolf@web.de/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: ftrace: Fix ftrace_modify_call failure on kprobed functions",
+      "url": "https://lore.kernel.org/bpf/20260802094929.3978390-1-pulehui@huaweicloud.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: harden bloom filter sizing and indexing on 32-bit kernels (v2)",
+      "url": "https://lore.kernel.org/bpf/20260801083436.4014218-1-Jeremy.Jean@oss.cyber.gouv.fr/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf, sockmap: fix forward allocation accounting in strparser self-pass path (v2, 2패치)",
+      "url": "https://lore.kernel.org/bpf/20260801102633.1872012-2-zirajs7@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Check sk_fullsock() in bpf_tcp_*_syncookie (OOB read 수정)",
+      "url": "https://lore.kernel.org/bpf/cover.1785576172.git.rakukuip@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: zext_dst 추론을 정적 라이브니스 분석으로 재작성 (5부작의 1/5, disasm 개행 정리)",
+      "url": "https://patchwork.kernel.org/project/netdevbpf/patch/20260731-static-zext-v1-1-98a4dc73e94b@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "xsk: account ring allocations to RLIMIT_MEMLOCK ([PATCH net v2 1/1], 시리즈명 \"fix unaccounted ring allocations causing memory exhaustion\")",
+      "url": "https://patchwork.kernel.org/project/netdevbpf/patch/20260730153832.11238-2-zihanx@nebusec.ai/",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "source": "research-dossier",
+    "bucketCounts": {
+      "릴리스/로드맵": 0,
+      "회귀·보안 신호": 8,
+      "핵심 변경": 0,
+      "기타": 0
+    },
+    "entryCount": 8
+  }
+}

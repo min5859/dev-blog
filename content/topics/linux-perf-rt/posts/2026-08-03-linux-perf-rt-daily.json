@@ -1,0 +1,155 @@
+{
+  "id": "2026-08-03-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-08-03 rqspinlock 데드락 스톨 수정 — Linux Perf/RT",
+  "headline": "rqspinlock 데드락 stall 수정, amdgpu RT 패닉 수정 v2 대기, riscv ftrace kprobe 충돌 수정 제안.",
+  "date": "2026-08-03",
+  "summary": "res_spin_lock 데드락 감지 경로의 무한 대기 가능성을 고치는 패치와 riscv ftrace kprobe 충돌 수정이 새로 올라왔습니다. amdgpu DC FPU/RT 패닉 수정은 빌드 깨짐 지적으로 v2 를 기다리고 있고, hung_task rtmutex 추적 시도는 여전히 이견 속에 머물러 있습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "BPF",
+    "PREEMPT_RT"
+  ],
+  "highlights": [
+    {
+      "title": "rqspinlock 데드락 시 tail 리셋 유지",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "res_spin_lock(rqspinlock)에 의존하는 BPF 코어·맵 구현 및 tracing 컨텍스트에서 락 지연을 추적하는 엔지니어",
+      "verifyLink": "https://lore.kernel.org/bpf/20260802021759.1139457-1-memxor@gmail.com/",
+      "if": "res_spin_lock 을 쓰는 BPF 프로그램에서 ABBA 데드락이 발생하고 자신이 마지막 waiter 인 경우라면",
+      "do": "패치를 적용해 데드락 감지 경로에서도 tail 리셋을 먼저 시도하도록 반영해야 합니다",
+      "verify": "패치가 bpf 트리에 머지됐는지, NMI·tracing 컨텍스트의 res_spin_lock 사용에서 stall 이 재현되지 않는지 확인하세요"
+    },
+    {
+      "title": "amdgpu DC FPU 가드-RT 패닉 수정, v2 대기",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "PREEMPT_RT 커널에서 amdgpu/DC 를 쓰는 사용자와 RT 회귀를 추적하는 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260801071724.12998-1-spasswolf@web.de/",
+      "if": "PREEMPT_RT 커널에서 amdgpu DC 사용 중 shutdown 시 scheduling while atomic 패닉을 겪고 있다면",
+      "do": "CONFIG_DRM_AMD_DC_FP=n 빌드 깨짐이 지적된 v1 대신 v2 게시를 기다렸다가 적용해야 합니다",
+      "verify": "v2 가 include 누락과 정상 해제 경로 미포함 문제를 해결했는지, dcn32(RX 7900 XTX) Tested-by 가 붙었는지 확인하세요"
+    },
+    {
+      "title": "riscv ftrace, kprobe 걸린 함수 어태치 실패 수정",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "riscv 에서 ftrace·kprobe·fprobe/BPF kprobe_multi 를 함께 쓰거나 riscv BPF CI 를 운영하는 엔지니어",
+      "verifyLink": "https://lore.kernel.org/bpf/20260802094929.3978390-1-pulehui@huaweicloud.com/",
+      "if": "riscv 에서 ftrace 대상 함수에 kprobe 가 걸린 상태로 fprobe/kprobe_multi 를 붙여 ftrace_bug WARNING 이 발생한다면",
+      "do": "이 패치를 적용해 ebreak/c.ebreak 로 치환된 auipc 에 대한 검증 예외를 반영해야 합니다",
+      "verify": "riscv/ftrace 유지보수의 리뷰 응답과 bpf-next 머지 여부, stable 백포트 대상 범위를 확인하세요"
+    },
+    {
+      "title": "hung_task, rtmutex blocker 추적 시도 재점화",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "PREEMPT_RT 배포/제품에서 hung task·락 경합을 디버깅하는 커널 엔지니어와 hung_task·locking 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/4dd13bdf76de6ce1e4d825af9f393a5dd59f25e8.1785376929.git.ruipengqi3@gmail.com/",
+      "if": "PREEMPT_RT 시스템에서 hung task 리포트가 락 소유자를 보여주지 못해 디버깅이 막혀 있다면",
+      "do": "32비트 미지원과 Peter Zijlstra 의 과거 반대 이력이 있는 이번 시리즈를 머지 전제로 도입하지 말아야 합니다",
+      "verify": "Petr Mladek 이 제안한 pi_blocked_on 재활용 대안으로 v2 가 나오는지, Peter Zijlstra 본인의 답장이 이번 시리즈에 달리는지 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**rqspinlock: 데드락 감지 시 tail 리셋 유지**\n\nresilient_queued_spin_lock_slowpath() 의 -EDEADLK 경로가 이제 먼저 try_cmpxchg_tail(lock, tail, 0) 로 tail 리셋을 시도하고, 실패한 경우에만 후속 waiter 를 기다리도록 바뀝니다.\n\n영향: 7bd6e5ce5be6 이후 데드락 감지 시 큐를 유지하면서, ABBA 상황에서 자신이 마지막 waiter 이면 오지 않을 후속 waiter 를 계속 기다려 간헐적 stall 이 나던 문제를 고칩니다.\n\n> Not doing the tail reset, and waiting for the next waiter can lead to cases where we are the final waiter, and thus no next waiter arrives, leading to intermittent stalls in this path.\n\n[원문 확인](https://lore.kernel.org/bpf/20260802021759.1139457-1-memxor@gmail.com/)\n\n**amdgpu DC FPU 가드 RT 패닉 수정: v1 빌드 깨짐 확인, v2 대기**\n\n리뷰어 Mikhail Gavrilov 가 CONFIG_DRM_AMD_DC_FP=n 빌드에서 dc_surface.c 가 깨지는 것을 arm64 clang allmodconfig 로 재현해 보고했고, 자동 리뷰 봇은 정상 해제 경로가 여전히 FPU 가드 없이 남아 있다고 지적했습니다.\n\n영향: PREEMPT_RT 커널의 shutdown 패닉을 고치는 패치이지만, 이 지적들이 반영된 v2 가 아직 게시되지 않아 적용을 미뤄야 하는 상태입니다.\n\n> This hunk breaks the build when CONFIG_DRM_AMD_DC_FP=n. dc_surface.c gets DC_RUN_WITH_PREEMPTION_ENABLED only indirectly, via dc.h -> dc_types.h -> os_types.h, and there the include is guarded\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/CABXGCsMFa25HyOdcSX8QR8_=58=uJT+HMVhyus=rOFHBML25=w@mail.gmail.com/)\n\n**riscv ftrace: kprobe 걸린 함수에서 ftrace_modify_call 실패 수정**\n\nftrace 대상 함수 진입점에 kprobe 가 걸려 auipc 가 ebreak/c.ebreak 로 치환된 경우, __ftrace_modify_call() 의 검증을 건너뛰고 jalr 패치를 계속하도록 예외를 추가합니다.\n\n영향: riscv 에서 fprobe/kprobe_multi 를 ftrace 대상 함수에 붙일 때 나던 ftrace_bug WARNING 을 없애며, riscv BPF selftests·CI 에서 실제로 재현되던 문제입니다.\n\n> attaching a kprobe to an ftrace-traced function entry replaces its initial auipc insn with ebreak. When ftrace_modify_call later runs, it expects auipc insn, so verification fails and triggers ftrace_\n\n[원문 확인](https://lore.kernel.org/bpf/20260802094929.3978390-1-pulehui@huaweicloud.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**hung_task rtmutex blocker 추적: 64비트 한정 명시 요구, Zijlstra 반대 이력 재조명**\n\nZhan Xusheng 는 락 포인터 3번째 비트가 64비트에서만 가용해 rtmutex blocker 추적이 사실상 64비트 전용임을 changelog 에 명시하라고 요청했고, Lance Yang 은 Peter Zijlstra 가 이 인코딩 방식 자체에 반대해 온 2026-03-25 이력을 지적했습니다.\n\n영향: PREEMPT_RT hung task 디버깅 관측성을 바꿀 변경이지만, Peter Zijlstra 본인의 이번 시리즈에 대한 답장은 아직 없어 머지 여부가 불투명합니다.\n\n> Since the 3rd bit is only available on 64-bit, rtmutex blocker tracking is effectively 64-bit only (on 32-bit the two low bits are already taken by mutex/sem/rwsem-r/w).\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260730024448.418327-1-zhanxusheng1024@gmail.com/)\n\n**verifier 스택 깊이 통계 로그 포맷 변경**\n\nverifier 의 스택 깊이 로그가 subprog 인덱스 나열에서 'name=depth' 형태로, 총합 표기도 'max %ld' 에서 'max=%ld' 로 바뀌며, 같은 시리즈에서 veristat 의 파싱 로직도 함께 조정됩니다.\n\n영향: 구버전 커널 로그를 파싱하는 외부 도구·CI 는 이 포맷 변경으로 STACK/MAX_STACK 메트릭을 조용히 잃을 수 있으며, 작성자 스스로 하위 호환 유지 여부를 미해결 문제로 남겼습니다.\n\n> Since the verifier now outputs max=%ld instead of max %ld, and the individual depths are formatted as name=depth rather than numbers separated by a plus sign, will veristat silently fail to parse\n\n[원문 확인](https://lore.kernel.org/bpf/20260801231113.D0B711F00AC4@smtp.kernel.org/)\n\n**DC_RUN_WITH_PREEMPTION_ENABLED 오용을 빌드 에러로: 여전히 무응답**\n\nFPU 컴파일 유닛 안에서 이 매크로를 쓰면 조용히 무효화되던 것을 BUILD_BUG() 로 막는 패치이며, 2026-08-03 시점까지 스레드에 리뷰 답장이 0건입니다.\n\n영향: dml21_add_phantom_plane() 사례처럼 리뷰로 잡히지 않는 RT 가드 무력화를 막는 안전망이지만, amd-gfx 유지보수의 수용 여부는 여전히 미확인 상태입니다.\n\n> A wrap placed inside an FPU compilation unit therefore compiles cleanly, reads as correct during review, and does nothing at all.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260730065300.2056809-1-mikhail.v.gavrilov@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "rqspinlock: Reset tail when preserving queue on deadlock",
+      "url": "https://lore.kernel.org/bpf/20260802021759.1139457-1-memxor@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "rqspinlock 큐 파기 비활성화 커밋(7bd6e5ce5be6)",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/patch/?id=7bd6e5ce5be6",
+      "note": "commit"
+    },
+    {
+      "title": "drm/amd/display: fix usage of DC_FPU_{BEGIN,END} with PREEMPT_RT",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260801071724.12998-1-spasswolf@web.de/",
+      "note": "thread"
+    },
+    {
+      "title": "리뷰: CONFIG_DRM_AMD_DC_FP=n 빌드 깨짐 보고",
+      "url": "https://lore.kernel.org/linux-rt-devel/CABXGCsMFa25HyOdcSX8QR8_=58=uJT+HMVhyus=rOFHBML25=w@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "자동 리뷰 봇: 정상 해제 경로 누락 지적",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260801073526.1539C1F00AC4@smtp.kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/amd/display: Move FPU Guards From DML To DC - Part 1",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/patch/?id=3539437f354b",
+      "note": "commit"
+    },
+    {
+      "title": "riscv: ftrace: Fix ftrace_modify_call failure on kprobed functions",
+      "url": "https://lore.kernel.org/bpf/20260802094929.3978390-1-pulehui@huaweicloud.com/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: ftrace: prepare ftrace for atomic code patching(b2137c3b6d7a)",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/patch/?id=b2137c3b6d7a",
+      "note": "commit"
+    },
+    {
+      "title": "hung_task: show the blocker task if the task is hung on rtmutex",
+      "url": "https://lore.kernel.org/linux-rt-devel/4dd13bdf76de6ce1e4d825af9f393a5dd59f25e8.1785376929.git.ruipengqi3@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "리뷰: Zhan Xusheng, 64비트 한정 명시 요청",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260730024448.418327-1-zhanxusheng1024@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Peter Zijlstra 의 blocker 인코딩 반대 메일(2026-03-25)",
+      "url": "https://lore.kernel.org/lkml/20260325150336.GF3738786@noisy.programming.kicks-ass.net/",
+      "note": "thread"
+    },
+    {
+      "title": "Improve stack depth verification stats output",
+      "url": "https://lore.kernel.org/bpf/20260801230400.850271-1-memxor@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "자동 리뷰: veristat 파싱 깨짐 우려",
+      "url": "https://lore.kernel.org/bpf/20260801231113.D0B711F00AC4@smtp.kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/amd/display: make DC_RUN_WITH_PREEMPTION_ENABLED misuse a build error",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260730065300.2056809-1-mikhail.v.gavrilov@gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-02T19:42:44.962Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,160 @@
+{
+  "id": "2026-08-03-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-08-03 virtio-gpu vbuf 누수 수정 — 리눅스 GPU/DRM",
+  "headline": "virtio-gpu vbuf 회수 패치, amdgpu BT.2020 CSC 회귀 수정, AI 리뷰봇 Sashiko 등장이 겹친 하루",
+  "date": "2026-08-03",
+  "summary": "virtio-gpu의 teardown 경로에서 vbuf 누수를 막는 v2 패치가 나왔고, dri-devel에는 AI 리뷰봇 Sashiko가 인라인 지적을 게시하기 시작했다. 여기에 amdgpu BT.2020 CSC 행렬 회귀 수정과 cdns-mhdp8546 no-hpd 속성 v6도 함께 올라왔다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "GPU",
+    "DRM"
+  ],
+  "highlights": [
+    {
+      "title": "virtio-gpu vbuf 회수 패치 (v2)",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "virtio-gpu 드라이버 유지보수자, 게스트 GPU 스택(가상화/CI) 운영자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260802-virtio-gpu-reclaim-vbufs-v2-1-5767fb860691@gmail.com/",
+      "if": "virtio-gpu를 게스트 그래픽 드라이버로 쓰고 모듈 언로드나 디바이스 hot-unplug를 수행한다면",
+      "do": "이 v2 패치를 적용하거나 백포트해 virtio_gpu_deinit()의 vbuf 회수 누락으로 인한 GEM 객체 누수를 막으세요",
+      "verify": "syzbot 버그(extid=06f9b2a53ba4a5a47644)의 상태와 v3 재제출 여부를 확인하세요"
+    },
+    {
+      "title": "amdgpu BT.2020 YCbCr CSC 행렬 수정",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "amdgpu/DC 유지보수자, HDR·색관리 컴포지터 개발자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/cover.1785616749.git.nlucasgit@gmail.com/",
+      "if": "amdgpu에서 BT.2020 YCbCr HDR/PQ 출력을 캘리브레이션해 사용한다면",
+      "do": "이 패치 시리즈를 적용해 밝기·색 오차를 교정하세요",
+      "verify": "본인 하드웨어와 DCE 경로, COLOR_SPACE_2020_YCBCR_FULL 케이스까지 직접 계측해 확인하세요"
+    },
+    {
+      "title": "AI 리뷰봇 Sashiko, dri-devel 인라인 리뷰 시작",
+      "priority": "중",
+      "impactType": "project",
+      "affectedAudience": "DRM 패치 제출자·리뷰어, 서브시스템 메인테이너",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260802170840.AFEEA1F000E9@smtp.kernel.org/",
+      "if": "dri-devel에 패치를 제출하거나 리뷰한다면",
+      "do": "Sashiko의 신규 지적과 기존 지적을 구분해 대응하고 High 심각도 항목부터 검토하세요",
+      "verify": "오탐 비율(약 20% 추정)을 감안해 지적 하나하나를 원문 코드로 재확인하세요"
+    },
+    {
+      "title": "drm/bridge cdns-mhdp8546 no-hpd 속성 (v6)",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Cadence MHDP 브리지 사용자(TI K3/J721S2 보드), DRM 브리지·DT 바인딩 리뷰어",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260802155536.561381F000E9@smtp.kernel.org/",
+      "if": "HPD 라인이 연결되지 않은 TI K3/J721S2 계열 보드에서 DP 출력을 다룬다면",
+      "do": "이 v6 시리즈와 DT 바인딩 변경을 추적해 보드 지원 준비를 하세요",
+      "verify": "Sashiko가 지적한 폴링 detect의 DPMS 영향과 HDCP 인터럽트 마스킹 문제에 대한 메인테이너 답변을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/virtio: teardown 시 vbuf 회수 (v2)**\n\nvirtio_gpu_deinit()에서 reset 직후·del_vqs 이전에 새 헬퍼 virtio_gpu_reclaim_vbufs()로 남은 vbuf를 회수하는 v2 패치가 제출됐다.\n\n영향: syzbot이 재현 중인 WARNING과 GEM 객체 누수를 막아 virtio-gpu 게스트 그래픽 스택의 언로드·제거 안정성에 영향을 준다.\n\n> Drain any buffers still sitting in the control and cursor virtqueues in virtio_gpu_deinit() after the device has been reset and before the virtqueues are deleted\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260802-virtio-gpu-reclaim-vbufs-v2-1-5767fb860691@gmail.com/)\n\n**AI 리뷰봇 Sashiko, dri-devel 인라인 리뷰 시작**\n\nvirtio vbuf 패치와 cdns-mhdp8546 패치 양쪽에 Sashiko AI 리뷰가 자동 회신으로 붙어 신규 이슈와 기존 미해결 이슈를 함께 지적했다.\n\n영향: DRM 리뷰 흐름에 AI 생성 지적이 상시 유입되기 시작해, 제출자와 메인테이너가 오탐 비율을 감안해 대응해야 하는 새 관행이 생겼다.\n\n> Sashiko AI review found 5 potential issue(s) to consider: New issues: - [High] Concurrent execution of workqueue and virtio_gpu_reclaim_vbufs causes data races and potential use-after-free.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260802170840.AFEEA1F000E9@smtp.kernel.org/)\n\n**drm/amd/display: BT.2020 YCbCr CSC 행렬 수정**\n\nfull/limited range 계수가 뒤섞였던 COLOR_SPACE_YCBCR2020_TYPE 행렬을 분리하고, DCE 경로에 복제된 잘못된 계수도 교체하는 2패치 시리즈가 나왔다.\n\n영향: HDR/PQ 출력에서 캘리브레이션된 디스플레이가 과도하게 밝고 색이 틀어지는 실측 오차를 고쳐 amdgpu HDR·색관리 사용자에게 영향을 준다. DCE 경로와 FULL 케이스는 제출자도 아직 테스트하지 못해 확인이 필요하다.\n\n> Because of this, output on a calibrated display is too bright with incorrect color, although it still looks roughly correct at low luminance in my testing.\n\n[원문 확인](https://lore.kernel.org/dri-devel/cover.1785616749.git.nlucasgit@gmail.com/)\n\n**drm/bridge: cdns-mhdp8546 no-hpd 속성 (v6)**\n\nHPD 라인을 쓸 수 없는 보드를 위해 'no-hpd' DT 속성을 추가하고, no-hpd일 때 폴링으로 연결 상태를 판정하는 v6 패치가 올라왔다.\n\n영향: TI J721S2 계열처럼 HPD가 연결되지 않은 보드의 DP 출력 지원을 넓히지만, Sashiko가 폴링 detect의 DPMS 영향과 HDCP 인터럽트 마스킹 문제를 High로 지적해 설계 재검토 여지가 남아 있다(제출자·메인테이너 답변 확인 필요).\n\n> Add a 'no-hpd' boolean property to support boards where the HPD line cannot be used for hotplug detection due to hardware limitations.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260802155536.561381F000E9@smtp.kernel.org/)\n\n**drm/exynos: encoder 정리, 재전송 없이 머지 예정**\n\ndeprecated된 drm_simple_encoder_init()을 open-code로 대체하고 초기화 에러 처리를 추가하는 2패치 시리즈에 메인테이너가 직접 수정해 적용하겠다고 밝혔다.\n\n영향: DRM 코어의 simple encoder 헬퍼 제거 흐름을 따라가는 드라이버 정리 작업으로, probe 실패 진단이 명확해지고 다른 드라이버의 후속 정리 패턴을 보여준다.\n\n> Both are trivial, so no need to resend - I will fix them up myself while applying the patch.\n\n[원문 확인](https://lore.kernel.org/dri-devel/CAJpoHp69qLrMKJvhktAtZBdLuh-fDQvmPYvae2YDsua2EBDZUQ@mail.gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "WARNING in virtio_gpu_free_vbufs (syzbot)",
+      "url": "https://syzkaller.appspot.com/bug?extid=06f9b2a53ba4a5a47644",
+      "note": "thread"
+    },
+    {
+      "title": "virtgpu_kms.c (mainline)",
+      "url": "https://github.com/torvalds/linux/blob/master/drivers/gpu/drm/virtio/virtgpu_kms.c",
+      "note": "commit"
+    },
+    {
+      "title": "drm/virtio: reclaim pending vbufs (v2)",
+      "url": "https://lore.kernel.org/dri-devel/20260802-virtio-gpu-reclaim-vbufs-v2-1-5767fb860691@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Sashiko (GitHub)",
+      "url": "https://github.com/sashiko-dev/sashiko",
+      "note": "article"
+    },
+    {
+      "title": "Sashiko Launch (Phoronix)",
+      "url": "https://www.phoronix.com/news/Sashiko-Linux-AI-Code-Review",
+      "note": "article"
+    },
+    {
+      "title": "Sashiko 리뷰 회신 (virtio 패치)",
+      "url": "https://lore.kernel.org/dri-devel/20260802170840.AFEEA1F000E9@smtp.kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "commit 40df2f809e8f",
+      "url": "https://github.com/torvalds/linux/commit/40df2f809e8f",
+      "note": "commit"
+    },
+    {
+      "title": "commit 973a9c810c78",
+      "url": "https://github.com/torvalds/linux/commit/973a9c810c78",
+      "note": "commit"
+    },
+    {
+      "title": "commit 51e6668ab4ba",
+      "url": "https://github.com/torvalds/linux/commit/51e6668ab4ba",
+      "note": "commit"
+    },
+    {
+      "title": "amdgpu BT.2020 CSC 커버레터",
+      "url": "https://lore.kernel.org/dri-devel/cover.1785616749.git.nlucasgit@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "cdns-mhdp8546 no-hpd v6 + Sashiko 리뷰",
+      "url": "https://lore.kernel.org/dri-devel/20260802155536.561381F000E9@smtp.kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "cdns-mhdp8546-core.c (mainline)",
+      "url": "https://github.com/torvalds/linux/blob/master/drivers/gpu/drm/bridge/cadence/cdns-mhdp8546-core.c",
+      "note": "commit"
+    },
+    {
+      "title": "cdns-mhdp8546 no-hpd v3 (과거 이력)",
+      "url": "https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg528351.html",
+      "note": "thread"
+    },
+    {
+      "title": "drm/exynos encoder 정리 (LWN)",
+      "url": "https://lwn.net/Articles/1079115/",
+      "note": "article"
+    },
+    {
+      "title": "drm/exynos 메인테이너 회신",
+      "url": "https://lore.kernel.org/dri-devel/CAJpoHp69qLrMKJvhktAtZBdLuh-fDQvmPYvae2YDsua2EBDZUQ@mail.gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-02T19:57:51.140Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,172 @@
+{
+  "id": "2026-W32-linux-weekly",
+  "topic": "linux",
+  "title": "2026-08-03 posix 타이머 UAF 전파 — 리눅스 개발 주간",
+  "date": "2026-08-03",
+  "headline": "16년 된 posix 타이머 UAF가 LTS 6개 브랜치로 퍼졌고, 7.2 mainline은 rc6까지 몸집이 줄지 않았습니다.",
+  "summary": "이번 주는 16년 된 posix-cpu-timers UAF(CVE-2026-64560)가 7.1.5에서 시작해 LTS 6개 브랜치로 퍼진 한 주였고, 7.2 mainline은 rc6까지도 몸집을 줄이지 못했습니다. 다음 주는 rc6 이후 안정화 속도와 SELinux 정책 로더 패치의 머지 여부를 주목하세요.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "주간"
+  ],
+  "highlights": [
+    {
+      "title": "posix 타이머 UAF, LTS 6개 브랜치 동시 패치",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "LTS 커널을 운영·배포하는 담당자, out-of-tree 타이머/블루투스 코드 유지자",
+      "verifyLink": "https://github.com/torvalds/linux/commit/920f893f735e92ba3a1cd9256899a186b161928d",
+      "if": "LTS 커널(5.10~6.18)을 운영·배포하는 담당자라면",
+      "do": "해당 브랜치의 최신 버전(5.10.262 등)으로 즉시 업데이트하고 out-of-tree 타이머 코드 리베이스 여부를 점검하세요",
+      "verify": "커밋 920f893f735e 로그와 각 브랜치 ChangeLog의 posix-cpu-timers 항목을 확인하세요"
+    },
+    {
+      "title": "7.1.5, 2069커밋 담은 역대급 stable 릴리스",
+      "priority": "상",
+      "impactType": "backport",
+      "affectedAudience": "7.1 stable을 배포하는 배포판·제품 커널 담당자",
+      "verifyLink": "https://lwn.net/Articles/1084921/",
+      "if": "7.1 stable 커널을 추적해 배포한다면",
+      "do": "2069건 전체를 회귀 위험 단위로 재QA하고 L2CAP·ksmbd·binder 수정 포함 여부를 확인하세요",
+      "verify": "LWN 기사와 ChangeLog-7.1.5의 커밋 수·revert 목록으로 확인하세요"
+    },
+    {
+      "title": "7.2, rc6까지 줄지 않은 몸집",
+      "priority": "중",
+      "impactType": "release",
+      "affectedAudience": "mainline을 추적하는 통합·QA 담당자, 네트워킹·USB·사운드 서브시스템 유지보수자",
+      "verifyLink": "https://www.phoronix.com/news/Linux-7.2-rc6-Sound-Fixes",
+      "if": "mainline rc를 통합 테스트 베이스로 쓴다면",
+      "do": "rc6의 Zen 5/6 CPU ID 오식별 수정과 대형 사운드 수정을 반영해 재테스트하세요",
+      "verify": "Phoronix의 rc6 관련 기사들과 kernel.org 릴리스 메타데이터로 확인하세요"
+    },
+    {
+      "title": "SELinux 정책 로더 NULL 역참조 발견",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "SELinux 정책을 직접 컴파일·배포하는 보안 엔지니어",
+      "verifyLink": "https://lore.kernel.org/lkml/20260731-b4-disp-d32e997b-v1-0-0341d038ee47@proton.me/",
+      "if": "SELinux 정책을 직접 컴파일·배포한다면",
+      "do": "v1 패치 시리즈의 값 집합 검증 로직을 검토하고 자체 정책 컴파일러에도 유사 검증을 적용하세요",
+      "verify": "lore 스레드의 KASAN 재현 로그와 이후 버전 반영 여부를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "이번 주 릴리스",
+      "body": "7.0.14가 7.0.y 계열의 마지막 릴리스로 EOL을 맞으며 주 초반부터 7.1.y 이전이 시급해졌습니다. mainline은 정상 규모였던 7.2-rc4에서 출발해 7.2-rc5(네트워킹이 1/3 이상, USB가 GPU 드라이버보다 많음)를 거쳐 rc6까지 이어졌고, Linus는 rc5 규모를 두고 \"7.1에서도 반복된 새로운 정상\"이라 평했습니다. Phoronix 보도에 따르면 rc6은 AMD Zen 5 CPU가 Zen 6으로 오식별되던 문제와 문제 있는 Western Digital SATA 드라이브 대응을 포함했고, 사운드 수정 묶음은 \"바라던 것보다 훨씬 컸다\"고 전해졌습니다. rc4부터 rc6까지 수정량이 좀처럼 줄지 않아 7.2 안정화는 아직 평탄해지지 않은 상태입니다."
+    },
+    {
+      "heading": "이번 주 회귀·보안",
+      "body": "이번 주 최대 사건은 non-leader exec() 경쟁으로 발생하는 16년 된 posix-cpu-timers UAF(CVE-2026-64560)입니다. 7.1.5에서 처음 수정된 뒤 5.10.262에 단독 백포트됐고, 이어서 5.10.262·5.15.213·6.1.180·6.6.147·6.12.100·6.18.41 여섯 LTS 브랜치에 같은 커밋 한 건으로 동시 릴리스됐습니다. 같은 7.1.5에는 Bluetooth L2CAP UAF(CVE-2026-64557)도 함께 수정되어 ->new_connection() 콜백 구조 자체가 바뀌었고, out-of-tree 블루투스 모듈은 리베이스 충돌을 예상해야 합니다. 주 후반에는 SELinux 정책 로더가 값 개수만 검사하고 값 집합 자체는 검증하지 않아 발생하는 NULL 역참조 3곳이 보고되어 4패치 v1 시리즈가 리뷰 중입니다. 한편 page_pool의 DMA 매핑 xa_cmpxchg 경합으로 인한 UAF 수정은 v3가 메인테이너의 재작업 요청을 받아 아직 보류 상태입니다."
+    },
+    {
+      "heading": "이번 주 핵심 흐름",
+      "body": "**posix 타이머 UAF 전방위 대응** — 7.1.5에서 시작된 수정이 한 주 동안 LTS 전 브랜치로 퍼져 나가며(발견 → 7.1.5 수정 → 5.10 단독 백포트 → 6개 브랜치 동시 릴리스) 사실상 이번 주의 중심 서사가 됐고, LWN은 이 배치를 \"역대 최대 규모\"로 표현했습니다. **7.2 mainline 안정화** — rc4의 정상 규모가 rc5·rc6에서도 이어져 Linus가 직접 \"새로운 정상\"이라 언급했고, 네트워킹·USB·사운드 수정 비중이 계속 두드러집니다 — LWN·Phoronix 보도와도 일치합니다. **SELinux 정책 로더 검증 강화** — 새로 보고된 NULL 역참조 결함이 v1 패치 리뷰 단계에 있어 다음 주 반영 여부를 지켜봐야 합니다. **page_pool UAF 수정** — v3가 메인테이너 요청으로 재작업 중이라 아직 머지되지 않았습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "그 외 mm/slab obj_ext 메모리 낭비 축소 시리즈의 for-next 병합, firewire Config ROM 길이 검증의 for-next 반영, KVM hva_to_pfn 에러 코드 통일, 6.12.98·6.1.179 등 LTS 단일 커밋 백포트 같은 국부·부차적 변경들이 있었습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "AI가 일일 브리핑과 원문 후보를 요약했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "kernel.org Releases 메타데이터",
+      "url": "https://www.kernel.org/releases.json",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-7.1.5",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.5",
+      "note": "changelog"
+    },
+    {
+      "title": "5.10.262 stable 커밋 (posix-cpu-timers UAF 백포트)",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/commit/?h=v5.10.262&id=67aa823e3e8c229c6d374df79c804f6721cb83b6",
+      "note": "commit"
+    },
+    {
+      "title": "mainline posix-cpu-timers UAF 수정 커밋",
+      "url": "https://github.com/torvalds/linux/commit/920f893f735e92ba3a1cd9256899a186b161928d",
+      "note": "commit"
+    },
+    {
+      "title": "CVE-2026-64560 공지",
+      "url": "https://lore.kernel.org/linux-cve-announce/2026072908-CVE-2026-64560-3932@gregkh/",
+      "note": "cve"
+    },
+    {
+      "title": "CVE-2026-64557",
+      "url": "https://cveawg.mitre.org/api/cve/CVE-2026-64557",
+      "note": "cve"
+    },
+    {
+      "title": "LWN, 역대 최대급 stable 배치",
+      "url": "https://lwn.net/Articles/1084921/",
+      "note": "article"
+    },
+    {
+      "title": "LWN, 또 한 번의 single-fix stable 배치",
+      "url": "https://lwn.net/Articles/1086226/",
+      "note": "article"
+    },
+    {
+      "title": "Linus, v7.2-rc5 발표 메일",
+      "url": "https://lore.kernel.org/lkml/CAHk-=whS0VZVKRDJL46JKLyD2BjcrMmVtOwtz4v=75t8w+QVbw@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Phoronix: Linux 7.2-rc6 Fixing Zen-5 IDs",
+      "url": "https://www.phoronix.com/news/Linux-7.2-rc6-Fixing-Zen-5-IDs",
+      "note": "article"
+    },
+    {
+      "title": "Phoronix: Linux 7.2-rc6 Sound Fixes",
+      "url": "https://www.phoronix.com/news/Linux-7.2-rc6-Sound-Fixes",
+      "note": "article"
+    },
+    {
+      "title": "Phoronix: Linux 7.2-rc6 ATA",
+      "url": "https://www.phoronix.com/news/Linux-7.2-rc6-ATA",
+      "note": "article"
+    },
+    {
+      "title": "SELinux 정책 로드 값 집합 검증 패치 시리즈",
+      "url": "https://lore.kernel.org/lkml/20260731-b4-disp-d32e997b-v1-0-0341d038ee47@proton.me/",
+      "note": "thread"
+    },
+    {
+      "title": "page_pool xa_cmpxchg UAF 패치 스레드",
+      "url": "https://lore.kernel.org/lkml/20260729110249.2824835-1-shaojijie@huawei.com/",
+      "note": "thread"
+    },
+    {
+      "title": "mm/slab: objext split v3 커버레터",
+      "url": "https://lore.kernel.org/all/20260727-b4-objext_split-v3-0-c29ef0f1f257@kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "generatedAt": "2026-08-02T20:00:28.245Z",
+    "generator": "scripts/weekly-linux.mjs",
+    "adapter": "claude",
+    "coveredDates": [
+      "2026-07-27",
+      "2026-07-28",
+      "2026-07-29",
+      "2026-07-30",
+      "2026-07-31",
+      "2026-08-01",
+      "2026-08-02"
+    ],
+    "year": 2026,
+    "week": 32,
+    "mainlineMergeMatches": 0,
+    "externalSignalCount": 47
+  }
+}
