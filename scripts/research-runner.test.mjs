@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { verifyDossier } from './lib/research-runner.mjs';
+import { verifyDossier, normalizeDossier } from './lib/research-runner.mjs';
+import { validateDossier } from './lib/dossier-schema.mjs';
 
 function withFetch(text, ok = true) {
   return async () => ({ ok, text: async () => text });
@@ -65,4 +66,48 @@ test('verifyDossier: fetch 실패는 강등이지 throw 아님 (best-effort)', a
   } finally {
     global.fetch = orig;
   }
+});
+
+test('normalizeDossier: enum 밖의 evidence.kind 는 "other" 로 강등되고 validateDossier 를 통과한다', () => {
+  const dossier = {
+    topic: 'linux',
+    date: '2026-06-06',
+    entries: [
+      {
+        candidateId: 'a',
+        title: 't',
+        whatChanged: 'w',
+        whyItMatters: 'y',
+        affectedAudience: 'devs',
+        impactType: 'runtime',
+        confidence: 'medium',
+        evidence: [{ claim: 'c', url: 'https://x', kind: 'blahblah' }],
+      },
+    ],
+  };
+  normalizeDossier(dossier);
+  assert.equal(dossier.entries[0].evidence[0].kind, 'other');
+  assert.doesNotThrow(() => validateDossier(dossier));
+});
+
+test('normalizeDossier: 이미 유효한 evidence.kind(patch)는 그대로 유지된다', () => {
+  const dossier = {
+    topic: 'linux',
+    date: '2026-06-06',
+    entries: [
+      {
+        candidateId: 'a',
+        title: 't',
+        whatChanged: 'w',
+        whyItMatters: 'y',
+        affectedAudience: 'devs',
+        impactType: 'runtime',
+        confidence: 'medium',
+        evidence: [{ claim: 'c', url: 'https://x', kind: 'patch' }],
+      },
+    ],
+  };
+  normalizeDossier(dossier);
+  assert.equal(dossier.entries[0].evidence[0].kind, 'patch');
+  assert.doesNotThrow(() => validateDossier(dossier));
 });

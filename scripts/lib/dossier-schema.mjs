@@ -10,7 +10,10 @@ import { IMPACT_TYPE_VALUES } from './highlight-schema.mjs';
 
 export const CONFIDENCE_VALUES = new Set(['high', 'medium', 'low']);
 // 'repo' 는 GitHub 레포 자체(README/릴리스 등)를 근거로 삼을 때 사용 (opensource-curation).
-export const EVIDENCE_KIND_VALUES = new Set(['commit', 'thread', 'changelog', 'cve', 'article', 'repo']);
+// 'patch'/'release' 는 research adapter 가 흔히 내는 변형 라벨, 'other' 는 그 외 미분류 catch-all.
+// evidence.kind 는 표시 라벨일 뿐 다운스트림 분기가 없으므로(dossier-to-post.mjs), enum 확장은
+// research-runner.mjs 의 normalizeDossier 강등과 함께 topic 전체 drop 을 막는 안전장치다.
+export const EVIDENCE_KIND_VALUES = new Set(['commit', 'thread', 'changelog', 'cve', 'article', 'repo', 'patch', 'release', 'other']);
 
 const ENTRY_STRING_KEYS = ['candidateId', 'title', 'whatChanged', 'whyItMatters', 'affectedAudience'];
 

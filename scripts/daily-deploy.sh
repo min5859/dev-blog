@@ -21,32 +21,44 @@ if [ -f "${LAUNCHD_LOG}" ] && [ "$(wc -c < "${LAUNCHD_LOG}")" -gt 1048576 ]; the
   mv "${LAUNCHD_LOG}" "${LAUNCHD_LOG}.prev"
 fi
 
+# research 타임아웃/claude exit 1/research non-JSON 같은 외부의존 transient 실패를 자동
+# 회복하기 위해, 실패한 커맨드는 20초 대기 후 1회만 재시도한다. 재시도까지 실패하면 그
+# 실패 상태를 그대로 돌려주므로 호출부의 기존 "continuing" 격리 로직은 그대로 동작한다.
+retry_once() {
+  if "$@"; then
+    return 0
+  fi
+  echo "  -> retrying once after 20s: $*"
+  sleep 20
+  "$@"
+}
+
 # Failure-isolated for every topic so a single topic's adapter glitch does not
 # block the rest of the day's content from being pushed.
-if ! "${NPM_BIN}" run daily:linux:publish; then
+if ! retry_once "${NPM_BIN}" run daily:linux:publish; then
   echo "linux daily run failed; continuing"
 fi
 
-if ! "${NPM_BIN}" run daily:android:publish; then
+if ! retry_once "${NPM_BIN}" run daily:android:publish; then
   echo "android daily run failed; continuing"
 fi
 
-if ! "${NPM_BIN}" run daily:opensource:publish; then
+if ! retry_once "${NPM_BIN}" run daily:opensource:publish; then
   echo "opensource daily run failed; continuing"
 fi
 
-if ! "${NPM_BIN}" run daily:opensource-curation:publish; then
+if ! retry_once "${NPM_BIN}" run daily:opensource-curation:publish; then
   echo "opensource-curation daily run failed; continuing"
 fi
 
-if ! "${NPM_BIN}" run daily:ai-coding-agents:publish; then
+if ! retry_once "${NPM_BIN}" run daily:ai-coding-agents:publish; then
   echo "ai-coding-agents daily run failed; continuing"
 fi
 
 # 6 Linux lens topics. Iterate per-topic so one bad lens doesn't sink the rest;
 # run-all-kernel-lenses bails on the first failure, which is why we don't use it here.
 for LENS in linux-kernel-security linux-toolchain linux-distro-stable linux-perf-rt linux-arch-platform linux-gpu-ai; do
-  if ! PUBLISH_DAILY=1 node scripts/run-daily-lore-lens.mjs "${LENS}"; then
+  if ! retry_once env PUBLISH_DAILY=1 node scripts/run-daily-lore-lens.mjs "${LENS}"; then
     echo "${LENS} daily run failed; continuing"
   fi
 done

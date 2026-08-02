@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { runResearchAdapterPrompt, extractJsonObject } from './ai-rewrite-adapter.mjs';
-import { validateDossier } from './dossier-schema.mjs';
+import { validateDossier, EVIDENCE_KIND_VALUES } from './dossier-schema.mjs';
 import { IMPACT_TYPE_VALUES } from './highlight-schema.mjs';
 
 // Design Ref: docs/RESEARCH-WRITE-SPLIT.md §2 — 토픽-범용 research 실행기.
@@ -83,6 +83,13 @@ export function normalizeDossier(dossier) {
   for (const entry of dossier.entries || []) {
     for (const ev of entry.evidence || []) {
       if (typeof ev.quote === 'string' && ev.quote.length > 200) ev.quote = ev.quote.slice(0, 200);
+      // research adapter 가 enum 밖의 kind(예: "patch", "blog")를 낼 수 있다. evidence.kind 는
+      // 다운스트림에서 표시 라벨로만 쓰이므로(dossier-to-post.mjs, 분기 없음), throw 로 topic 전체를
+      // drop 하는 대신 'other' 로 강등해 validateDossier 를 통과시킨다.
+      if (typeof ev.kind === 'string' && !EVIDENCE_KIND_VALUES.has(ev.kind)) {
+        console.warn(`[research] coerced unknown evidence.kind "${ev.kind}" -> other`);
+        ev.kind = 'other';
+      }
     }
   }
   return dossier;

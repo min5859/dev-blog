@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { foreignCjkRatio } from './opensource-curation/discover.mjs';
+// opensource-curation/discover.mjs 와 draft-opensource.mjs(트렌딩) 가 공유하는
+// CJK 필터 유틸. 두 파이프라인 모두 이 모듈을 통해 동일한 임계값/판정을 사용한다.
+import { foreignCjkRatio } from './lib/foreign-cjk.mjs';
 
 test('foreignCjkRatio returns 0 for pure English text', () => {
   assert.equal(foreignCjkRatio('Dive into LLMs: a hands-on tutorial'), 0);

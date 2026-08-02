@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 import { enrichCandidatesWithReadme } from './lib/github-readme.mjs';
+import { foreignCjkRatio, FOREIGN_CJK_MAX_RATIO } from './lib/foreign-cjk.mjs';
 
 const root = process.cwd();
 const topic = 'opensource';
@@ -69,8 +70,27 @@ function scoreRecord(record) {
   return { ...record, score, scoreReasons: reasons };
 }
 
+// GitHub 트렌딩(HN/검색)에 중국어권 레포가 섞여 들어오면 rewrite 후 quality-guard 의
+// FOREIGN_CJK 검사(scripts/lib/quality-guard.mjs)에 걸려 topic 전체가 게시 누락된다.
+// opensource-curation 과 동일하게, 스코어링 전에 이름+설명 기준으로 걸러낸다.
+function filterOutForeignCjk(records) {
+  const kept = [];
+  const excluded = [];
+  for (const record of records) {
+    const text = `${record.metadata?.fullName || record.title || ''} ${record.metadata?.description || ''}`;
+    if (foreignCjkRatio(text) > FOREIGN_CJK_MAX_RATIO) excluded.push(record);
+    else kept.push(record);
+  }
+  if (excluded.length) {
+    console.warn(
+      `Filtered ${excluded.length} repo(s) by foreign-CJK ratio: ${excluded.map((r) => r.metadata?.fullName || r.title).join(', ')}`
+    );
+  }
+  return kept;
+}
+
 function pickCandidates(records) {
-  const scored = records.map(scoreRecord);
+  const scored = filterOutForeignCjk(records).map(scoreRecord);
   scored.sort((a, b) => b.score - a.score || (b.metadata?.stars || 0) - (a.metadata?.stars || 0));
   // Keep up to 12 candidates: prioritize HN-tagged ones first, then top-scored.
   const hnTagged = scored.filter((r) => r.metadata?.hn);
@@ -238,4 +258,4 @@ if (isMainModule) {
   });
 }
 
-export { scoreRecord, pickCandidates, daysSince, ageDescriptor, languageBucket };
+export { scoreRecord, pickCandidates, filterOutForeignCjk, daysSince, ageDescriptor, languageBucket };
