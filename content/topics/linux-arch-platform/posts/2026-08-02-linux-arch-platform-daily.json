@@ -1,0 +1,138 @@
+{
+  "id": "2026-08-02-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-08-02 KVM AArch32 레지스터 보존 — 아키텍처/플랫폼",
+  "headline": "arm64 KVM AArch32 레지스터 노출 수정, RK3568 XPCS dtsi 리뷰, StarFive pinctrl v4 정리",
+  "date": "2026-08-02",
+  "summary": "거부된 AArch32 CP64 읽기에서 게스트 레지스터에 남던 스택 잔여값 노출을 고치는 arm64 KVM 패치가 나왔습니다. RK3568 XPCS dtsi의 fixed-clock 리뷰, StarFive JHB100 pinctrl v4, s35390a RTC 알람 버그 수정도 함께 살펴봅니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "KVM arm64: 거부된 CP64 읽기에서 AArch32 레지스터 값 노출 수정",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "arm64 KVM 유지보수 담당 및 AArch32 게스트를 운용하는 가상화 플랫폼 엔지니어",
+      "verifyLink": "https://patchwork.kernel.org/project/linux-arm-kernel/patch/20260801153616.71960-1-kmehltretter@gmail.com/",
+      "if": "arm64 호스트에서 AArch32 게스트를 KVM으로 운용 중이라면",
+      "do": "이 패치를 적용해 kvm_handle_cp_64()가 거부된 읽기에서도 Rt/Rt2를 시드하도록 반영하십시오",
+      "verify": "CONFIG_INIT_STACK_NONE 구성에서 write-only GIC SGI 레지스터나 거부되는 PMU 카운터 읽기 경로를 재현해 게스트 레지스터에 스택 잔여값이 노출되지 않는지 확인하십시오"
+    },
+    {
+      "title": "Rockchip RK3568 XPCS dtsi: fixed-clock 표현 두고 리뷰 보류",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Rockchip 플랫폼·arm64 DTS 유지보수 담당, stmmac/XPCS 기반 네트워킹을 쓰는 보드 지원 엔지니어",
+      "verifyLink": "https://patchwork.kernel.org/project/linux-arm-kernel/patch/20260801142244.679437-7-coiaprant@gmail.com/",
+      "if": "RK3568 기반 보드에서 1000BASE-X/SGMII/QSGMII를 위해 이 XPCS 시리즈를 추적 중이라면",
+      "do": "Heiko Stübner의 리뷰 코멘트와 제출자의 status=\"disabled\" 절충안 논의를 확인한 뒤 병합하십시오",
+      "verify": "다음 버전에서 fixed-clock 표현 방식이 dtsi 유지로 확정되는지 아니면 보드 레벨로 이동하는지 스레드를 확인하십시오"
+    },
+    {
+      "title": "pinctrl: StarFive JHB100 sys0 드라이버 + 8도메인 공용 프레임워크 v4",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "RISC-V 플랫폼·StarFive 보드 지원 담당, pinctrl 서브시스템 및 DT 바인딩 리뷰어",
+      "verifyLink": "https://patchwork.kernel.org/project/linux-riscv/list/?series=1138543",
+      "if": "StarFive JHB100 SoC 보드 지원 작업 중이거나 pinconf-generic 확장에 관심이 있다면",
+      "do": "v4 21패치 시리즈에서 1~2번 pinconf-generic 'input-debounce-ns' 속성 추가 부분을 우선 검토하십시오",
+      "verify": "Linus Walleij·Conor Dooley의 v4 리뷰 응답이 스레드에 달렸는지 확인하십시오"
+    },
+    {
+      "title": "rtc: s35390a INT1 지원 추가 및 알람 비활성화 버그 수정 v2",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "Marvell kirkwood/armada 계열 ARM 보드(특히 Synology NAS) 유지 담당 및 RTC 서브시스템 리뷰어",
+      "verifyLink": "https://patchwork.kernel.org/project/linux-arm-kernel/patch/20260801-rtc_s35390a_int1-v2-3-f10c99ad1d6c@posteo.de/",
+      "if": "Synology NAS 등 s35390a RTC를 쓰는 kirkwood/armada 보드에서 wakealarm을 사용한다면",
+      "do": "3/5 패치의 alarm_irq_enable 구현이 542dd33a4925 이후의 알람 비활성화 버그를 고치는지 실기에서 검증하십시오",
+      "verify": "제출자가 명시한 대로 ignore/disable/wakeup 외 pinctrl 모드는 검증되지 않았으니 해당 모드 사용 전 직접 테스트하십시오"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**KVM: arm64: 거부된 CP64 읽기에서 AArch32 Rt/Rt2 레지스터 보존**\n\narch/arm64/kvm/sys_regs.c의 kvm_handle_cp_64()가 지금까지 쓰기(is_write)일 때만 params.regval을 Rt/Rt2로 시드했는데, 패치는 조건문을 제거해 읽기 경로에서도 항상 목적지 레지스터 값으로 시드합니다.\n\n영향: write-only GIC SGI 레지스터와 거부되는 PMU 카운터 읽기에서 초기화되지 않은 스택 값이 게스트 레지스터로 그대로 복사되며, CONFIG_INIT_STACK_NONE 구성에서는 호스트 스택 잔여 데이터가 AArch32 게스트에 노출됩니다.\n\n> This can happen for write-only GIC SGI registers and for rejected PMU counter reads. ... With CONFIG_INIT_STACK_NONE it may be stale host stack data.\n\n[원문 확인](https://patchwork.kernel.org/project/linux-arm-kernel/patch/20260801153616.71960-1-kmehltretter@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**pinctrl: starfive: JHB100 sys0 컨트롤러 드라이버와 도메인 공용 프레임워크 (v4, 21패치)**\n\nStarFive JHB100 SoC의 sys0 핀컨트롤 도메인 드라이버를 추가하면서, sys1/sys2/per0~per3 등 나머지 도메인이 공유할 범용 등록 프레임워크(pinctrl-starfive-jhb100.c, 1456줄)를 함께 도입합니다.\n\n영향: 새 RISC-V SoC 지원이 8개 도메인 + 공용 코어 구조로 들어오고, 앞의 두 패치가 pinconf-generic이라는 아키텍처 중립 공통 계층에 'input-debounce-ns' 속성을 확장합니다.\n\n> Add pinctrl driver for StarFive JHB100 SoC System-0(sys0) pinctrl controller. Simultaneously add a generic pinctrl driver framework for registering the pinctrl of other domains (sys1, sys2, and so on)\n\n[원문 확인](https://patchwork.kernel.org/project/linux-riscv/patch/20260801072711.153217-5-changhuang.liang@starfivetech.com/)\n\n---\n\n**arm64: dts: rockchip rk3568 XPCS 노드 — fixed-clock 표현을 두고 Heiko가 제동**\n\nCoia Prant의 stmmac/XPCS v2 시리즈(10패치) 중 5번째 패치가 RK3568 dtsi에 pcs 노드와 GMAC용 125MHz fixed-clock 2개를 추가했는데, Heiko Stübner는 fixed-clock을 SoC dtsi에 두는 방식을 거부하고 보드 레벨의 실제 클록 기술을 요구했습니다.\n\n영향: 제출자는 해당 125MHz가 Naneng Combo PHY(SerDes)의 출력이라며 dtsi 유지 + status=\"disabled\" 절충안을 제안했고, 결과에 따라 RK3568에서 1000BASE-X/SGMII/QSGMII를 쓰려는 보드 지원 경로 전체가 좌우됩니다.\n\n> the 125 MHz clocks (`xpcs_gmac0_clk` / `xpcs_gmac1_clk`) are actually outputs of the Naneng Combo PHY (SerDes) when it's initialized for SGMII/QSGMII mode, rather than independent board-level oscillat\n\n[원문 확인](https://patchwork.kernel.org/project/linux-arm-kernel/patch/20260801142244.679437-7-coiaprant@gmail.com/)\n\n---\n\n**arm64: dts exynos/google/fsd — dt-check-style strict 경고 정리 8패치 머지**\n\nKrzysztof Kozlowski의 v2 8패치가 자신의 트리에 적용되어, status 속성 위치 이동과 프로퍼티 정렬, exynos5433 thermal zone phandle 오버라이드 등을 정리했습니다.\n\n영향: dt-check-style strict 경고 기준이 실제로 트리에 강제되기 시작했다는 신호로, 진행 중인 패치를 들고 있으면 공백·정렬 변경으로 리베이스 충돌이 생길 수 있고 앞으로 제출하는 DTS도 같은 스타일 기준을 맞춰야 합니다.\n\n> arm64: dts: exynos: Move 'status' to the end to match coding style\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/krzk/linux.git/commit/?id=bf1aee1ad1c087ffda617207890dc92042a28c96)\n\n---\n\n**rtc: s35390a — INT1 출력 핀 지원과 알람 비활성화 버그 수정 (v2, 5패치)**\n\nv2 시리즈 5패치가 s35390a RTC에 pinctrl 기반 출력 모드 선택과 interrupt signal 1 사용을 추가하고, 3/5에서 alarm_irq_enable 콜백을 구현해 알람이 비활성화되지 않던 버그를 고칩니다(Fixes: 542dd33a4925).\n\n영향: 제출자는 다수의 Marvell kirkwood/armada Synology DTS에서 wakealarm이 현재 동작하지 않을 것으로 추정하지만, 본인도 pinctrl 경로 일부만 테스트했다고 밝혀 DTS 반영 전 실기 검증이 필요합니다.\n\n> Implement alarm_irq_enable callback to disable alarm if requested. On reenable restore last used alarm time. Fixes: 542dd33a4925 (\"drivers/rtc/rtc-s35390a.c: add wakealarm support for rtc-s35390A rtc\n\n[원문 확인](https://patchwork.kernel.org/project/linux-arm-kernel/patch/20260801-rtc_s35390a_int1-v2-3-f10c99ad1d6c@posteo.de/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "KVM: arm64: 거부된 CP64 읽기에서 Rt/Rt2 레지스터 보존 패치",
+      "url": "https://patchwork.kernel.org/project/linux-arm-kernel/patch/20260801153616.71960-1-kmehltretter@gmail.com/",
+      "note": "patch"
+    },
+    {
+      "title": "arm64: KVM: add SGI generation register emulation (Fixes 대상 커밋)",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=6d52f35af10cf24d59b43f3fd8c938ad23cab543",
+      "note": "commit"
+    },
+    {
+      "title": "pinctrl: starfive: JHB100 sys0 드라이버 + 공용 프레임워크 패치",
+      "url": "https://patchwork.kernel.org/project/linux-riscv/patch/20260801072711.153217-5-changhuang.liang@starfivetech.com/",
+      "note": "patch"
+    },
+    {
+      "title": "pinctrl: starfive JHB100 v4 21패치 시리즈 목록",
+      "url": "https://patchwork.kernel.org/project/linux-riscv/list/?series=1138543",
+      "note": "thread"
+    },
+    {
+      "title": "arm64: dts: rockchip rk3568 XPCS dtsi 패치 및 Heiko 리뷰",
+      "url": "https://patchwork.kernel.org/project/linux-arm-kernel/patch/20260801142244.679437-7-coiaprant@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "net: stmmac: move XPCS lifetime management to platform drivers (v2 1/10)",
+      "url": "https://patchwork.kernel.org/project/linux-arm-kernel/patch/20260801142244.679437-3-coiaprant@gmail.com/",
+      "note": "patch"
+    },
+    {
+      "title": "arm64: dts: exynos: status 속성 위치 정리 커밋",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/krzk/linux.git/commit/?id=bf1aee1ad1c087ffda617207890dc92042a28c96",
+      "note": "commit"
+    },
+    {
+      "title": "arm64: dts: fsd 프로퍼티 정렬 정리 커밋",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/krzk/linux.git/commit/?id=302937941c38b0e46c61ff5c77dd26d1ecaed524",
+      "note": "commit"
+    },
+    {
+      "title": "rtc: s35390a INT1 지원/버그 수정 v2 5패치 시리즈 목록",
+      "url": "https://patchwork.kernel.org/project/linux-arm-kernel/list/?series=1138702",
+      "note": "thread"
+    },
+    {
+      "title": "rtc: s35390a 알람 비활성화 버그 수정 패치 (3/5)",
+      "url": "https://patchwork.kernel.org/project/linux-arm-kernel/patch/20260801-rtc_s35390a_int1-v2-3-f10c99ad1d6c@posteo.de/",
+      "note": "patch"
+    },
+    {
+      "title": "drivers/rtc/rtc-s35390a.c: add wakealarm support (Fixes 대상 커밋)",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=542dd33a4925757c93b2c811b19434822a6c1a73",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-02T11:55:10.700Z",
+    "rewriteAdapter": "claude",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
