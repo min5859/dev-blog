@@ -168,8 +168,9 @@ tool access; the write agent stays closed (and safer for it).
     scheduler (`CLAUDE_RESEARCH_TIMEOUT_MS`, `CODEX_TIMEOUT_MS`,
     `CURSOR_RESEARCH_TIMEOUT_MS`).
   - **Model split (B)**: research uses a heavier model than write by default.
-    The default adapter is selected only in `config/ai-provider.json`. Cursor
-    uses `CURSOR_RESEARCH_MODEL` for research and `CURSOR_MODEL` for rewrite.
+    The default adapter and its model defaults are selected in
+    `config/ai-provider.json`. Cursor uses `CURSOR_RESEARCH_MODEL` for a
+    one-off research override and `CURSOR_MODEL` for a one-off rewrite override.
     Claude research defaults to **opus**
     (`CLAUDE_RESEARCH_MODEL` overrides), claude write defaults to **sonnet**
     (`CLAUDE_MODEL` overrides). Codex remains available through

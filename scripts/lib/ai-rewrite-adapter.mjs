@@ -31,6 +31,11 @@ if (!SUPPORTED_AI_ADAPTERS.has(DEFAULT_AI_ADAPTER)) {
   );
 }
 
+const DEFAULT_CURSOR_REWRITE_MODEL =
+  aiProviderConfig.adapters?.cursor?.rewriteModel || 'auto';
+const DEFAULT_CURSOR_RESEARCH_MODEL =
+  aiProviderConfig.adapters?.cursor?.researchModel || DEFAULT_CURSOR_REWRITE_MODEL;
+
 export function normalizeDailyRewriteAdapter(raw) {
   const v = normalizeAdapterName(raw);
   if (!v) return DEFAULT_AI_ADAPTER;
@@ -128,7 +133,9 @@ function runClaudeResearch(prompt) {
  */
 async function runCursorResearch(prompt) {
   const command = process.env.CURSOR_AGENT_BIN || 'agent';
-  const model = process.env.CURSOR_RESEARCH_MODEL || process.env.CURSOR_MODEL || 'claude-sonnet-5-high';
+  const model = process.env.CURSOR_RESEARCH_MODEL
+    || process.env.CURSOR_MODEL
+    || DEFAULT_CURSOR_RESEARCH_MODEL;
   const extra = (process.env.CURSOR_AGENT_EXTRA_ARGS || '').split(/\s+/).filter(Boolean);
   const timeoutMs = Number(process.env.CURSOR_RESEARCH_TIMEOUT_MS ?? 600000);
   const dir = await mkdtemp(path.join(tmpdir(), 'dev-blog-research-'));
@@ -172,7 +179,7 @@ export async function runResearchAdapterPrompt(prompt, { defaultAdapter = DEFAUL
 
 async function runCursorAgentFilePrompt(prompt) {
   const command = process.env.CURSOR_AGENT_BIN || 'agent';
-  const model = process.env.CURSOR_MODEL || 'claude-sonnet-5-high';
+  const model = process.env.CURSOR_MODEL || DEFAULT_CURSOR_REWRITE_MODEL;
   const extra = (process.env.CURSOR_AGENT_EXTRA_ARGS || '').split(/\s+/).filter(Boolean);
   const dir = await mkdtemp(path.join(tmpdir(), 'dev-blog-rewrite-'));
   const promptFile = path.join(dir, 'prompt.md');
@@ -322,7 +329,7 @@ export async function runAiAdapterAndParse(prompt, options = {}) {
 function resolveModelForAdapter(adapterName) {
   if (adapterName === 'claude') return process.env.CLAUDE_MODEL || DEFAULT_CLAUDE_REWRITE_MODEL;
   if (adapterName === 'codex') return process.env.CODEX_MODEL || '(codex default)';
-  if (adapterName === 'cursor') return process.env.CURSOR_MODEL || 'claude-sonnet-5-high';
+  if (adapterName === 'cursor') return process.env.CURSOR_MODEL || DEFAULT_CURSOR_REWRITE_MODEL;
   return 'n/a';
 }
 

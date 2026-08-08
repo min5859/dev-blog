@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -11,8 +12,13 @@ import {
   runAiAdapterAndParse,
 } from './lib/ai-rewrite-adapter.mjs';
 
+const aiProviderConfig = JSON.parse(
+  readFileSync(new URL('../config/ai-provider.json', import.meta.url), 'utf8'),
+);
+
 test('configured default adapter is supported and cursor-agent alias is normalized', () => {
   assert.ok(['template', 'claude', 'codex', 'cursor'].includes(DEFAULT_AI_ADAPTER));
+  assert.equal(DEFAULT_AI_ADAPTER, aiProviderConfig.defaultAdapter);
   assert.equal(normalizeDailyRewriteAdapter(''), DEFAULT_AI_ADAPTER);
   assert.equal(normalizeDailyRewriteAdapter('cursor-agent'), 'cursor');
   assert.equal(normalizeDailyRewriteAdapter('cursor'), 'cursor');
@@ -220,7 +226,7 @@ test('runAiAdapterAndParse failure dump records resolved adapter and model in he
     assert.equal(dumped.length, 2);
     const body = await readFile(path.join(failureDir, dumped[0]), 'utf8');
     assert.match(body, /# adapter: cursor/);
-    assert.match(body, /# model: claude-sonnet-5-high/);
+    assert.ok(body.includes(`# model: ${aiProviderConfig.adapters.cursor.rewriteModel}`));
   } finally {
     delete process.env.AI_ADAPTER;
     await rm(failureDir, { recursive: true, force: true });

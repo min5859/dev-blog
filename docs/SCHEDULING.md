@@ -17,8 +17,10 @@ This runs, in order:
 5. `npm run build`
 
 Research and rewrite use the adapter selected by `defaultAdapter` in
-`config/ai-provider.json`. The adapter layer owns provider-specific commands,
-models, permissions, and timeouts; the daily pipeline and scheduler are shared.
+`config/ai-provider.json`. Provider model defaults are configured in the same
+file; provider-specific environment variables remain available as one-off
+overrides. The adapter layer owns provider-specific commands, permissions, and
+timeouts; the daily pipeline and scheduler are shared.
 Supported values are `claude`, `codex`, `cursor`, and `template`.
 
 For a one-off full daily run, override the configured value with

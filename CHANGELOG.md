@@ -11,6 +11,8 @@
   (`2843b78`, `1b13e6e`).
 - 매일 실행 시 Codex 토큰 사용량이 큰 점을 고려해 최종 기본 provider를 Cursor
   Agent CLI로 변경했습니다.
+- 매일 실행하는 Cursor research/rewrite 기본 모델을 비용 효율적인
+  `composer-2.5`로 설정했습니다.
 - Claude, Codex, Cursor, deterministic template 중 기본 provider를
   `config/ai-provider.json` 한 곳에서 선택하도록 통합했습니다. 환경 변수
   `AI_ADAPTER`와 `DAILY_REWRITE_ADAPTER`는 일회성 override로만 사용합니다.

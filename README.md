@@ -46,7 +46,8 @@ Draft artifacts are written under `data/generated/linux/`. They are not publishe
 
 Rewrite the metadata draft into a more readable Korean newsletter. The default
 adapter is selected in `config/ai-provider.json`; supported values are
-`claude`, `codex`, `cursor`, and the deterministic `template` adapter:
+`claude`, `codex`, `cursor`, and the deterministic `template` adapter. The
+same file also contains the configured provider's default research/rewrite models:
 
 ```bash
 npm run rewrite:linux
