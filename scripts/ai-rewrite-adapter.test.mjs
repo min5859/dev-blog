@@ -11,8 +11,8 @@ import {
   runAiAdapterAndParse,
 } from './lib/ai-rewrite-adapter.mjs';
 
-test('normalizeDailyRewriteAdapter falls back to DEFAULT_AI_ADAPTER and maps cursor-agent alias', () => {
-  assert.equal(DEFAULT_AI_ADAPTER, 'codex');
+test('configured default adapter is supported and cursor-agent alias is normalized', () => {
+  assert.ok(['template', 'claude', 'codex', 'cursor'].includes(DEFAULT_AI_ADAPTER));
   assert.equal(normalizeDailyRewriteAdapter(''), DEFAULT_AI_ADAPTER);
   assert.equal(normalizeDailyRewriteAdapter('cursor-agent'), 'cursor');
   assert.equal(normalizeDailyRewriteAdapter('cursor'), 'cursor');
@@ -209,8 +209,8 @@ test('runAiAdapterAndParse appends 재시도 correction instruction on second at
 test('runAiAdapterAndParse failure dump records resolved adapter and model in header', async () => {
   const failureDir = await mkdtemp(path.join(tmpdir(), 'dev-blog-rewrite-failure-'));
   try {
-    delete process.env.AI_ADAPTER;
-    delete process.env.CODEX_MODEL;
+    process.env.AI_ADAPTER = 'cursor';
+    delete process.env.CURSOR_MODEL;
     const runner = async () => 'not json at all';
     await assert.rejects(
       runAiAdapterAndParse('prompt', { runner, logLabel: 'adapter-model-header', failureDir }),
@@ -219,9 +219,10 @@ test('runAiAdapterAndParse failure dump records resolved adapter and model in he
     const dumped = await readdir(failureDir);
     assert.equal(dumped.length, 2);
     const body = await readFile(path.join(failureDir, dumped[0]), 'utf8');
-    assert.match(body, /# adapter: codex/);
-    assert.match(body, /# model: \(codex default\)/);
+    assert.match(body, /# adapter: cursor/);
+    assert.match(body, /# model: claude-sonnet-5-high/);
   } finally {
+    delete process.env.AI_ADAPTER;
     await rm(failureDir, { recursive: true, force: true });
   }
 });

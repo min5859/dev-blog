@@ -2,16 +2,12 @@
 # Daily LaunchAgent entrypoint:
 #   1. Run the Linux pipeline with auto-publish
 #   2. If content/ changed, commit and push so GitHub Pages rebuilds
-# Designed to run from launchd; relies on PATH (or CODEX_BIN) injected by the plist.
+# Designed to run from launchd; relies on PATH injected by the plist.
 
 set -eu
 
 PROJECT_DIR="${PROJECT_DIR:-/Users/wooki/project/git/wk/dev-blog}"
 NPM_BIN="${NPM_BIN:-/Users/wooki/.nvm/versions/node/v24.18.0/bin/npm}"
-export CODEX_BIN="${CODEX_BIN:-/Users/wooki/.nvm/versions/node/v24.18.0/bin/codex}"
-
-# Codex research 가 느려져 스케줄 실행을 무기한 점유하지 않도록 15분 상한을 둔다.
-export CODEX_TIMEOUT_MS="${CODEX_TIMEOUT_MS:-900000}"
 
 cd "${PROJECT_DIR}"
 
@@ -21,7 +17,7 @@ if [ -f "${LAUNCHD_LOG}" ] && [ "$(wc -c < "${LAUNCHD_LOG}")" -gt 1048576 ]; the
   mv "${LAUNCHD_LOG}" "${LAUNCHD_LOG}.prev"
 fi
 
-# research 타임아웃/Codex CLI exit 1/research non-JSON 같은 외부의존 transient 실패를 자동
+# research 타임아웃/AI CLI exit 1/research non-JSON 같은 외부의존 transient 실패를 자동
 # 회복하기 위해, 실패한 커맨드는 20초 대기 후 1회만 재시도한다. 재시도까지 실패하면 그
 # 실패 상태를 그대로 돌려주므로 호출부의 기존 "continuing" 격리 로직은 그대로 동작한다.
 retry_once() {

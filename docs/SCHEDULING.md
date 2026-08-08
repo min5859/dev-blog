@@ -12,13 +12,19 @@ This runs, in order:
 
 1. `npm run collect:linux`
 2. `npm run draft:linux`
-3. `npm run research:linux` (default — Codex CLI with web search)
-4. `npm run rewrite:linux` (default — Codex CLI, closed rewrite)
+3. `npm run research:linux` (configured AI adapter, tool-capable mode)
+4. `npm run rewrite:linux` (same adapter, closed rewrite mode)
 5. `npm run build`
 
-Research and rewrite use the **Codex** adapter by default (`DEFAULT_AI_ADAPTER` in `scripts/lib/ai-rewrite-adapter.mjs`). Both run non-interactively through `codex exec --ephemeral --sandbox read-only`; research uses `codex --search exec`, while rewrite stays a closed transform. The CLI reuses the local ChatGPT subscription login shown by `codex login status`, so no metered API key is required. Set `CODEX_BIN`, `CODEX_MODEL`, `CODEX_RESEARCH_MODEL`, or `CODEX_TIMEOUT_MS` (default 15 minutes, `0` disables the timeout) to override execution.
+Research and rewrite use the adapter selected by `defaultAdapter` in
+`config/ai-provider.json`. The adapter layer owns provider-specific commands,
+models, permissions, and timeouts; the daily pipeline and scheduler are shared.
+Supported values are `claude`, `codex`, `cursor`, and `template`.
 
-Override the whole daily AI path with `DAILY_REWRITE_ADAPTER=template` for the offline deterministic path, `DAILY_REWRITE_ADAPTER=claude` for Claude CLI, or `DAILY_REWRITE_ADAPTER=cursor` for Cursor Agent CLI. Research and rewrite receive the same selected adapter. `DAILY_REWRITE_ADAPTER=cursor-agent` is treated the same as `cursor`. For a single research/rewrite command, use `AI_ADAPTER=claude|cursor|codex|template`.
+For a one-off full daily run, override the configured value with
+`DAILY_REWRITE_ADAPTER=claude|codex|cursor|template`. Research and rewrite
+receive the same selected adapter. For one research/rewrite command, use
+`AI_ADAPTER=claude|codex|cursor|template`.
 
 By default this command does **not** publish generated drafts into `content/`. Generated artifacts remain under `data/generated/linux/` for review.
 
@@ -48,13 +54,14 @@ The status JSON is intended for monitoring or notification hooks.
 
 ## macOS — use launchd, not cron
 
-On macOS, use a user LaunchAgent so the scheduled process runs in the same
-login session as the Codex CLI authentication cache. Confirm the exact
-LaunchAgent environment before enabling publication:
+On macOS, use one user LaunchAgent for every AI provider. It runs in the same
+login session as the selected CLI's authentication cache. Before enabling
+publication, verify the configured provider manually from the project directory.
+The LaunchAgent only needs a `PATH` containing the selected CLI:
 
 ```bash
-codex login status
-env -i HOME="$HOME" PATH="<plist PATH>" codex login status
+npm run rewrite:linux
+env -i HOME="$HOME" PATH="<plist PATH>" npm run rewrite:linux
 ```
 
 A ready-to-use template lives at
@@ -67,7 +74,7 @@ cp docs/launchd/com.user.dev-blog.daily.plist.template \
    ~/Library/LaunchAgents/com.user.dev-blog.daily.plist
 
 # 2. Edit paths in the copied plist if your layout differs
-#    (npm path, project path, Codex path, log path).
+#    (npm path, project path, AI CLI directories, log path).
 
 # 3. Load it. The job will fire daily at the StartCalendarInterval time.
 launchctl load ~/Library/LaunchAgents/com.user.dev-blog.daily.plist
@@ -96,7 +103,7 @@ committed and pushed to GitHub.
 ### Falling back to the template adapter
 
 Set `DAILY_REWRITE_ADAPTER=template` in `EnvironmentVariables` of the
-plist if Codex CLI auth ever breaks. The pipeline will produce a
+plist if the configured AI CLI authentication ever breaks. The pipeline will produce a
 deterministic, AI-free briefing for the day instead of failing.
 
 ## Linux cron (no Keychain involved)
@@ -106,13 +113,12 @@ works directly. Example:
 
 ```cron
 PATH=/home/wooki/.local/bin:/home/wooki/.nvm/versions/node/v24.18.0/bin:/usr/local/bin:/usr/bin:/bin
-CODEX_BIN=/home/wooki/.nvm/versions/node/v24.18.0/bin/codex
 0 7 * * * cd /home/wooki/project/git/wk/dev-blog && /home/wooki/.nvm/versions/node/v24.18.0/bin/npm run daily:linux:publish >> logs/daily/cron.log 2>&1
 ```
 
-`PATH` must include the directory holding `codex`, or `CODEX_BIN` must point
-to it. Authenticate that same user with `codex login` before enabling the
-job. Runtime data (`data/raw/`, `data/normalized/`, `data/generated/`,
+`PATH` must include the directory holding the CLI selected in
+`config/ai-provider.json`. Authenticate that same user before enabling the job.
+Runtime data (`data/raw/`, `data/normalized/`, `data/generated/`,
 `logs/daily/`) is reproducible and gitignored.
 
 ## 오픈소스 큐레이션 (`opensource-curation`)

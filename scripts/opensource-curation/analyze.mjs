@@ -47,7 +47,6 @@ async function main() {
   const promptPath = path.join(root, promptRel);
   const defaultAdapter = process.env.OPENSOURCE_CURATION_ANALYZE_ADAPTER?.trim()
     || process.env.AI_ADAPTER?.trim()
-    || config.analysis?.adapter
     || DEFAULT_AI_ADAPTER;
 
   await mkdir(curationDataDir, { recursive: true });

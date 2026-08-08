@@ -39,13 +39,15 @@ After creating the repo and pushing for the first time:
    the build* — easiest is to commit it to the repo root and copy it
    into the build via a small extra step. Skip for now if not needed.
 
-## Daily Codex rewrite + auto deploy
+## Daily AI rewrite + auto deploy
 
-The Codex research/rewrite happens on the operator's local machine (the GitHub
-Actions runner does not have the operator's ChatGPT subscription session). The flow:
+The configured AI research/rewrite happens on the operator's local machine (the
+GitHub Actions runner does not have the operator's CLI subscription session).
+The provider is selected in `config/ai-provider.json`; deployment and scheduling
+do not change when the provider changes. The flow:
 
 1. Local cron runs `npm run daily:linux:publish`. This collects,
-   researches and rewrites with Codex, publishes the new post under
+   researches and rewrites with the configured provider, publishes the new post under
    `content/topics/linux/posts/`, and rebuilds locally.
 2. The cron line then commits the change under `content/` and pushes
    to `main`.
@@ -55,7 +57,6 @@ Example cron entry (replace paths):
 
 ```cron
 PATH=/Users/wooki/.local/bin:/Users/wooki/.nvm/versions/node/v24.18.0/bin:/usr/local/bin:/usr/bin:/bin
-CODEX_BIN=/Users/wooki/.nvm/versions/node/v24.18.0/bin/codex
 0 7 * * * cd /Users/wooki/project/git/wk/dev-blog && /Users/wooki/.nvm/versions/node/v24.18.0/bin/npm run daily:linux:publish >> logs/daily/cron.log 2>&1 && git add content/ && (git diff --cached --quiet || git commit -m "daily: $(date +\%Y-\%m-\%d) Linux briefing") && git push >> logs/daily/cron.log 2>&1
 ```
 

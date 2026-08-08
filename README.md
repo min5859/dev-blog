@@ -20,7 +20,7 @@ Read the durable plan first:
 - Generate a daily Linux development newsletter.
 - Track kernel patches, roadmap signals, and major version history.
 - Publish output as a shareable web/blog site.
-- Prefer subscription-based AI execution such as `codex exec` or OpenClaw workflows.
+- Prefer subscription-based AI execution through interchangeable CLI providers or OpenClaw workflows.
 - Keep the system topic-extensible from the start.
 
 ## Source Collection
@@ -44,22 +44,22 @@ npm run draft:linux
 
 Draft artifacts are written under `data/generated/linux/`. They are not published automatically.
 
-Rewrite the metadata draft into a more readable Korean newsletter. The default adapter is Codex CLI using the signed-in ChatGPT subscription:
+Rewrite the metadata draft into a more readable Korean newsletter. The default
+adapter is selected in `config/ai-provider.json`; supported values are
+`claude`, `codex`, `cursor`, and the deterministic `template` adapter:
 
 ```bash
 npm run rewrite:linux
 ```
 
-Check the local subscription session with `codex login status`. To run without AI, use the deterministic template adapter explicitly:
+Use `AI_ADAPTER` only for a one-off override without changing the configured
+default:
 
 ```bash
+AI_ADAPTER=claude npm run rewrite:linux
+AI_ADAPTER=codex npm run rewrite:linux
+AI_ADAPTER=cursor npm run rewrite:linux
 AI_ADAPTER=template npm run rewrite:linux
-```
-
-Claude remains available as an explicit fallback adapter:
-
-```bash
-npm run rewrite:linux:claude
 ```
 
 The prompt template lives at `prompts/linux-newsletter-ko.md`.

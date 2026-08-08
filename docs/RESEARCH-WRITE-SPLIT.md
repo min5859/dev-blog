@@ -164,14 +164,16 @@ tool access; the write agent stays closed (and safer for it).
   - `codex` — `codex exec --ephemeral --sandbox read-only`; research는
     `codex --search exec`로 웹 검색 활성화
   - `cursor` — `--force` tool mode (vs `--mode=ask` for the closed rewrite)
-  - Codex uses `CODEX_TIMEOUT_MS` (default 15 min); Claude/Cursor retain
-    `CLAUDE_RESEARCH_TIMEOUT_MS` (default 10 min).
+  - Provider-specific timeouts stay inside the adapter layer rather than the
+    scheduler (`CLAUDE_RESEARCH_TIMEOUT_MS`, `CODEX_TIMEOUT_MS`,
+    `CURSOR_RESEARCH_TIMEOUT_MS`).
   - **Model split (B)**: research uses a heavier model than write by default.
-    Default adapter is now **codex**, reusing the signed-in ChatGPT
-    subscription session. Codex uses the CLI's default model unless
-    `CODEX_RESEARCH_MODEL` / `CODEX_MODEL` overrides it. Claude research defaults to **opus**
+    The default adapter is selected only in `config/ai-provider.json`. Cursor
+    uses `CURSOR_RESEARCH_MODEL` for research and `CURSOR_MODEL` for rewrite.
+    Claude research defaults to **opus**
     (`CLAUDE_RESEARCH_MODEL` overrides), claude write defaults to **sonnet**
-    (`CLAUDE_MODEL` overrides); Cursor research uses `CURSOR_RESEARCH_MODEL`.
+    (`CLAUDE_MODEL` overrides). Codex remains available through
+    `CODEX_RESEARCH_MODEL` / `CODEX_MODEL`.
 
 Determinism / audit:
 
@@ -210,8 +212,8 @@ Determinism / audit:
   the existing 4-highlight / ~8-candidate cap, so this stays small.
 - **Tool risk**: granting fetch/shell to an agent. Mitigated by a read-only
   allowlist, no write tools, and a network budget. Never grant publish.
-- **Provider lock**: research needs a tool-capable CLI. Codex is the default;
-  `template` keeps an explicit deterministic fallback.
+- **Provider lock**: research needs a tool-capable CLI. The provider is selected
+  in one config file; `template` keeps an explicit deterministic fallback.
 - **Failure mode**: if research yields nothing for an item, the writer must
   degrade gracefully to the deterministic draft body, never fabricate.
 

@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { mkdir, mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -9,22 +10,36 @@ import path from 'node:path';
  * Codex: CODEX_BIN, CODEX_MODEL, CODEX_TIMEOUT_MS, `codex exec -` (stdin) + `-o` 임시 파일
  * Cursor CLI: CURSOR_AGENT_BIN (기본 `agent`), CURSOR_AGENT_EXTRA_ARGS — 프롬프트는 임시 파일 + file 경로 안내
  *
- * 기본 어댑터는 아래 DEFAULT_AI_ADAPTER 한 곳에서만 바꾼다.
- * 모든 ai-rewrite-*.mjs / run-daily-*.mjs 는 이 상수를 통해 default를 받는다.
+ * 기본 어댑터는 config/ai-provider.json 한 곳에서만 바꾼다.
+ * 모든 ai-rewrite-*.mjs / run-daily-*.mjs 는 이 설정을 통해 default를 받는다.
  */
-export const DEFAULT_AI_ADAPTER = 'codex';
+const SUPPORTED_AI_ADAPTERS = new Set(['template', 'claude', 'codex', 'cursor']);
+const aiProviderConfig = JSON.parse(
+  readFileSync(new URL('../../config/ai-provider.json', import.meta.url), 'utf8'),
+);
+
+function normalizeAdapterName(raw) {
+  const value = typeof raw === 'string' ? raw.trim() : '';
+  return value === 'cursor-agent' ? 'cursor' : value;
+}
+
+export const DEFAULT_AI_ADAPTER = normalizeAdapterName(aiProviderConfig.defaultAdapter);
+if (!SUPPORTED_AI_ADAPTERS.has(DEFAULT_AI_ADAPTER)) {
+  throw new Error(
+    `Invalid config/ai-provider.json defaultAdapter: ${aiProviderConfig.defaultAdapter}. `
+    + 'Use template, claude, codex, or cursor.',
+  );
+}
 
 export function normalizeDailyRewriteAdapter(raw) {
-  const v = typeof raw === 'string' ? raw.trim() : '';
-  if (v === 'cursor-agent') return 'cursor';
+  const v = normalizeAdapterName(raw);
   if (!v) return DEFAULT_AI_ADAPTER;
   return v;
 }
 
 export function resolveAiAdapter(defaultValue = DEFAULT_AI_ADAPTER) {
-  const raw = process.env.AI_ADAPTER?.trim();
+  const raw = normalizeAdapterName(process.env.AI_ADAPTER);
   if (!raw) return defaultValue;
-  if (raw === 'cursor-agent') return 'cursor';
   return raw;
 }
 
@@ -115,7 +130,7 @@ async function runCursorResearch(prompt) {
   const command = process.env.CURSOR_AGENT_BIN || 'agent';
   const model = process.env.CURSOR_RESEARCH_MODEL || process.env.CURSOR_MODEL || 'claude-sonnet-5-high';
   const extra = (process.env.CURSOR_AGENT_EXTRA_ARGS || '').split(/\s+/).filter(Boolean);
-  const timeoutMs = Number(process.env.CLAUDE_RESEARCH_TIMEOUT_MS ?? 600000);
+  const timeoutMs = Number(process.env.CURSOR_RESEARCH_TIMEOUT_MS ?? 600000);
   const dir = await mkdtemp(path.join(tmpdir(), 'dev-blog-research-'));
   const promptFile = path.join(dir, 'prompt.md');
   try {
