@@ -1,0 +1,123 @@
+{
+  "id": "2026-08-08-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-08-08 펜스 패닉 경쟁 수정 — Android 커널",
+  "headline": "DRM 펜스 패닉 경쟁과 KVM 메모리 매핑 회귀를 막는 ACK 변경을 우선 점검하세요.",
+  "date": "2026-08-08",
+  "summary": "DRM CRTC fence 이름 조회와 signal 사이의 패닉 경쟁, KVM compound page 참조 오류를 다루는 수정이 확인됐습니다. SELinux BPF 라벨 초기화 순서와 Android 16 6.12 GKI의 DPM watchdog 설정도 함께 살펴봐야 합니다.",
+  "tags": [
+    "안드로이드",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "DRM CRTC fence 패닉 경쟁 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "DRM·GPU·디스플레이 벤더 드라이버 및 ACK 안정화 담당",
+      "verifyLink": "https://lore.kernel.org/all/20260721-linux-drm_crtc_fix2-v3-2-afa8c71506e6@linaro.org/",
+      "if": "제품 브랜치가 해당 dma_fence 동작을 포함한다면 이름 조회 경쟁 경로를 점검하세요.",
+      "do": "ACK 및 제품 브랜치에 해당 수정이 포함됐는지 우선 확인하세요.",
+      "verify": "최종 upstream 커밋과 stable 백포트 채택 여부를 원문에서 추적하세요."
+    },
+    {
+      "title": "KVM compound head page 고정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Android Virtualization Framework·pKVM 및 벤더 메모리 매핑 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/1a138e24e292579ddcf417ed09e78df667f51396",
+      "if": "IO 또는 PFNMAP 매핑이 compound page의 tail PFN을 가리킬 수 있다면 영향 여부를 점검하세요.",
+      "do": "kvm_try_get_pfn이 head page를 고정하는 수정을 제품 브랜치와 대조하세요.",
+      "verify": "folio split 경쟁에 대한 retry 또는 같은 수준의 동기화가 있는지 실제 diff로 확인하세요."
+    },
+    {
+      "title": "SELinux BPF 라벨 초기화 순서 수정",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "ACK 보안 백포트 담당, SELinux·BPF LSM 및 파일시스템 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/8f0a5b31aee19510e75741c9687cf0d9321fa7ed",
+      "if": "BPF LSM 기반 원자적 inode 라벨링을 사용한다면 초기화 순서를 점검하세요.",
+      "do": "SBLABEL_MNT 검사를 isec 초기화보다 먼저 수행하는 수정의 백포트 여부를 확인하세요.",
+      "verify": "정확한 upstream SHA와 Fixes 대상, 관련 테스트의 CI 상태를 원문에서 확인하세요."
+    },
+    {
+      "title": "Android 16 6.12 DPM watchdog",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "Android 16 GKI 배포 담당, 전원관리·서스펜드 드라이버 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/31c9bd1f6b945792e2ba9c9919f30f01cf4b1bbd",
+      "if": "Android 16 6.12 GKI에서 suspend 또는 resume 멈춤을 추적한다면 watchdog 설정을 점검하세요.",
+      "do": "적용 defconfig와 timeout, user 빌드 적용 여부를 확인하세요.",
+      "verify": "최신 gki_defconfig에서 설정의 유지, 되돌림 또는 이동 여부를 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**AppleTalk 프로토콜 구현을 커널 트리 밖으로 이전**\n\nmainline 네트워크 트리에서 AppleTalk 구현과 관련 설정·문서를 제거하고 linux-netdev의 mod-orphan 저장소로 이전했습니다.\n\n영향: ACK가 변경을 흡수하면 CONFIG_ATALK과 커널 트리 안의 AppleTalk 모듈에 의존하는 벤더 트리는 외부 모듈 유지 또는 기능 제거를 검토해야 합니다. 실제 사용 여부와 외부 모듈 정책 호환성은 확인이 필요합니다.\n\n> This tiny series moves appletalk out of tree, to: https://github.com/linux-netdev/mod-orphan\n\n[원문 확인](https://www.mail-archive.com/linuxppc-dev%40lists.ozlabs.org/msg255644.html)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**DRM CRTC fence 이름 조회와 signal 간 커널 패닉 경쟁 수정**\n\ndma_fence signal과 동시에 DRM CRTC fence의 driver 또는 timeline 이름을 조회할 때 발생하던 BUG_ON을 제거했습니다.\n\n영향: sync_file 메타데이터 조회가 fence signal과 경쟁하면 시스템 패닉으로 이어질 수 있어 ACK 및 제품 브랜치의 수정 포함 여부를 우선 점검해야 합니다. 최종 upstream 커밋과 stable 백포트 상태는 확인이 필요합니다.\n\n> drm/drm_crtc: fix race with dma_fence_signal() in ::get_driver_name()\n\n[원문 확인](https://lore.kernel.org/all/20260721-linux-drm_crtc_fix2-v3-2-afa8c71506e6@linaro.org/)\n\n**KVM PFN 획득 시 compound head page 고정**\n\nkvm_try_get_pfn이 compound page의 tail page 대신 head page를 고정하도록 Android KVM 경로를 변경했습니다.\n\n영향: IO 또는 PFNMAP 매핑의 tail PFN 때문에 KVM 매핑이 거부되거나 잘못된 참조를 다루는 문제를 피워 Android 가상화 메모리 매핑 안정성을 높입니다. folio split 경쟁 대처 여부는 확인이 필요합니다.\n\n> ANDROID: KVM: Pin compound head page in kvm_try_get_pfn\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/1a138e24e292579ddcf417ed09e78df667f51396)\n\n**SELinux BPF inode 라벨 초기화 전에 SBLABEL_MNT 검사**\n\nSELinux의 BPF 연동 inode 보안 초기화 경로에서 SBLABEL_MNT 검사를 isec 초기화보다 먼저 수행하도록 순서를 조정했습니다.\n\n영향: 라벨을 지원하지 않는 마운트에서 SELinux 내부 상태를 먼저 바꾸지 않도록 하는 수정입니다. 정확한 upstream SHA와 Fixes 대상, 재현 절차 및 관련 테스트의 CI 해결 여부는 확인이 필요합니다.\n\n> FROMGIT: selinux: bpf: check SBLABEL_MNT before isec init\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/8f0a5b31aee19510e75741c9687cf0d9321fa7ed)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**GKI 디버그 빌드에서 SW_SYNC 활성화**\n\narm64와 x86 GKI defconfig에 CONFIG_SW_SYNC=y를 추가해 IGT 등 GPU 테스트에서 소프트웨어 fence를 사용할 수 있게 했습니다.\n\n영향: 디스플레이와 GPU 드라이버의 동기화 테스트 범위가 넓어집니다. 제품 빌드에서는 커밋이 전제한 debugfs 비마운트 정책을 지키는지 확인이 필요합니다.\n\n> The sw_sync driver is useful for debugging and testing GPU drivers, and is leveraged by several tests in the igt-gpu-tools test suite.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/7443a0c3c9ecfc8982003afde92e9c783c725994)\n\n**스케줄러 vendor hook 헤더의 TRACE_INCLUDE_PATH 재정의 오류 수정**\n\nsched.h에서 TRACE_INCLUDE_PATH를 정의하기 전에 기존 정의를 해제해 여러 trace hook 헤더를 함께 포함할 때의 매크로 재정의를 막았습니다.\n\n영향: Werror를 사용하는 GKI와 벤더 모듈 빌드가 헤더 포함 순서에 따라 실패하던 문제를 제거하며, 스케줄러나 EAS의 실행 동작은 바꾸지 않습니다.\n\n> Add missing #undef TRACE_INCLUDE_PATH before #define in include/trace/hooks/sched.h to prevent -Werror,-Wmacro-redefined\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/82be0d329bf2b455546a09cc84a40c9d1716b54d)\n\n**Android 16 6.12 GKI에 DPM watchdog 포함**\n\nandroid16-6.12 GKI defconfig에서 DPM watchdog을 빌드하도록 설정한 변경입니다.\n\n영향: suspend 또는 resume 중 멈춘 드라이버를 찾고 pstore 단서를 남기는 데 유용합니다. 적용 defconfig와 timeout, user 빌드 적용 여부 및 최신 설정 유지 여부는 확인이 필요합니다.\n\n> ANDROID: gki_defconfig: Build with DPM watchdog\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/31c9bd1f6b945792e2ba9c9919f30f01cf4b1bbd)\n\n**kTLS 소프트웨어 경로에서 사용 불가능해진 sockmap 처리 제거**\n\nTLS와 sockmap의 동시 사용이 금지된 뒤 도달할 수 없게 된 kTLS 소프트웨어 sendmsg와 recvmsg 경로의 psock 처리를 삭제했습니다.\n\n영향: kTLS와 sockmap 결합이 ACK 기준선에서 더 이상 지원되지 않는다는 신호입니다. 해당 조합을 쓰는 사내 eBPF 프로그램과 벤더 확장이 있는지는 확인이 필요합니다.\n\n> TLS and sockmap are now mutually exclusive. Try to delete the code from sendmsg and recvmsg path which is now obviously dead.\n\n[원문 확인](https://linux.googlesource.com/linux/kernel/git/torvalds/linux/+/79511603a65b990bed675eb4bcfd85305d3ff42a)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "DRM CRTC fence 경쟁 수정 스레드",
+      "url": "https://lore.kernel.org/all/20260721-linux-drm_crtc_fix2-v3-2-afa8c71506e6@linaro.org/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM compound head page 고정",
+      "url": "https://android.googlesource.com/kernel/common/+/1a138e24e292579ddcf417ed09e78df667f51396",
+      "note": "commit"
+    },
+    {
+      "title": "SELinux BPF 초기화 순서 수정",
+      "url": "https://android.googlesource.com/kernel/common/+/8f0a5b31aee19510e75741c9687cf0d9321fa7ed",
+      "note": "commit"
+    },
+    {
+      "title": "Android 16 6.12 DPM watchdog 설정",
+      "url": "https://android.googlesource.com/kernel/common/+/31c9bd1f6b945792e2ba9c9919f30f01cf4b1bbd",
+      "note": "commit"
+    },
+    {
+      "title": "GKI SW_SYNC 활성화",
+      "url": "https://android.googlesource.com/kernel/common/+/7443a0c3c9ecfc8982003afde92e9c783c725994",
+      "note": "commit"
+    },
+    {
+      "title": "스케줄러 trace hook 헤더 수정",
+      "url": "https://android.googlesource.com/kernel/common/+/82be0d329bf2b455546a09cc84a40c9d1716b54d",
+      "note": "commit"
+    },
+    {
+      "title": "kTLS sockmap 처리 제거",
+      "url": "https://linux.googlesource.com/linux/kernel/git/torvalds/linux/+/79511603a65b990bed675eb4bcfd85305d3ff42a",
+      "note": "commit"
+    },
+    {
+      "title": "AppleTalk 트리 밖 이전 스레드",
+      "url": "https://www.mail-archive.com/linuxppc-dev%40lists.ozlabs.org/msg255644.html",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-08T08:40:31.744Z",
+    "rewriteAdapter": "codex",
+    "promptTemplate": "prompts/android-newsletter-from-dossier-ko.md"
+  }
+}

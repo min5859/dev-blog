@@ -1,0 +1,126 @@
+{
+  "id": "2026-08-08-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-08-08 Rust 시간 타입 전환 — 도구 체인 렌즈",
+  "headline": "Rust 시간 단위 안전성과 타이머 안전성을 높이는 변경이 이어지고 modpost 형식 변경이 다음 트리에 들어갔습니다.",
+  "date": "2026-08-08",
+  "summary": "Rust 커널의 timeout API를 `Delta<Jiffy>`로 전환하는 v6과 `HrTimer::expires()`의 경쟁 읽기를 제한하는 v4가 제안됐습니다. modpost 진단 형식 변경은 `kbuild-next-unstable`에 적용됐으며 관련 도구의 호환성 점검이 필요합니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "도구 체인",
+    "Rust",
+    "kbuild"
+  ],
+  "highlights": [
+    {
+      "title": "Rust timeout API 단위 안전성 강화",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust 커널 API·workqueue·CondVar 및 Binder 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260808062839.1159990-1-tomo@flapping.org/",
+      "if": "raw jiffies 기반 Rust timeout API를 사용한다면 호출부를 점검하세요.",
+      "do": "`Delta<Jiffy>` 기반 인자와 결과로 전환할 준비를 하세요.",
+      "verify": "병합 대상 트리와 트리 밖 모듈의 변경 범위를 원문에서 확인하세요."
+    },
+    {
+      "title": "HrTimer 경쟁 읽기 제한",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Rust-for-Linux hrtimer API 및 Rust 타이머 사용자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260807233039.1091842-1-tomo@flapping.org/",
+      "if": "`HrTimer::expires()`를 호출한다면 현재 호출 컨텍스트를 점검하세요.",
+      "do": "독점 접근이나 timer callback 컨텍스트를 증명할 수 있도록 호출부를 준비하세요.",
+      "verify": "stable 계열 반영 여부와 추가 변경이 필요한 사용자를 원문에서 확인하세요."
+    },
+    {
+      "title": "modpost 진단 형식 통일",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "커널 빌드·CI·외부 모듈 패키징 담당",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/178613342521.4123747.1957099013575804476.b4-ty@b4/",
+      "if": "modpost 출력을 정규식이나 스냅샷으로 검사한다면 형식 의존성을 점검하세요.",
+      "do": "새 모듈명 접두사와 인용 형식을 처리하도록 검사 규칙을 준비하세요.",
+      "verify": "`kbuild-next-unstable` 적용 상태와 linux-next 테스트 결과를 원문에서 확인하세요."
+    },
+    {
+      "title": "교차 아키텍처 rusttest 빌드 수정",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "Rust-for-Linux 빌드·CI 및 아키텍처 지원 담당",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260808022608.1125174-1-tomo@flapping.org/",
+      "if": "호스트와 다른 `ARCH`로 `make rusttest`를 실행한다면 실패 여부를 점검하세요.",
+      "do": "`testlib`에서 아키텍처 전용 asm이 제외되는 변경을 검토하세요.",
+      "verify": "arm64와 riscv64를 포함한 교차 아키텍처 테스트 결과와 수용 상태를 원문에서 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**[PATCH v4 1/2] Rust HrTimer::expires()를 안전한 호출 컨텍스트로 제한**\n\n경쟁 가능한 `node.expires` 직접 읽기를 없애고 `hrtimer_get_expires()`를 사용하며, 안전한 `expires()`와 callback 전용 접근자를 분리합니다.\n\n영향: 기존 safe Rust API의 경쟁 읽기를 타입과 callback 컨텍스트 조건으로 제한하므로 사용자는 독점 접근이나 올바른 호출 컨텍스트를 증명해야 합니다.\n\n> HrTimer::expires() previously read node.expires via a volatile load, which can race with C-side updates.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260807233039.1091842-1-tomo@flapping.org/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**[PATCH v1] rust: bug: testlib 빌드에서 아키텍처 전용 asm 제외**\n\n`testlib` 구성에서는 대상 아키텍처의 `warn_flags!` asm 대신 빈 구현을 선택해 호스트 어셈블러로 잘못 전달되는 일을 막도록 제안합니다.\n\n영향: 교차 아키텍처 Rust 테스트와 CI가 ARM64의 `brk` 같은 비호스트 명령 때문에 실패할 가능성을 줄입니다.\n\n> The reason is that `rusttest` builds the `kernel` crate as a host library\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260808022608.1125174-1-tomo@flapping.org/)\n\n**[PATCH v6 0/7] Rust timeout API를 raw jiffies에서 Delta로 전환**\n\n`Delta`를 `Nsec`와 `Jiffy` 단위에 대해 제네릭하게 만들고 workqueue와 CondVar의 timeout 인자와 결과를 `Delta<Jiffy>`로 전환합니다.\n\n영향: 시간 단위 혼동을 컴파일 단계에서 줄이고 변환 결과가 요청 시간보다 짧아지는 일을 피합니다.\n\n> rounds up so the resulting timeout is never shorter than the requested span\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260808062839.1159990-5-tomo@flapping.org/)\n\n**[PATCH RFC v3 0/8] syscall 403 이후를 위한 공통 아키텍처 테이블**\n\n403번 이후 공통 syscall을 `scripts/syscall_common.tbl`에 모아 여러 아키텍처 테이블의 중복을 줄이는 RFC이며, v3에서는 x86과 alpha가 포함되지 않았습니다.\n\n영향: 포함된 아키텍처의 새 syscall wiring 누락을 줄일 수 있지만 생성된 UAPI 헤더와 compat entry의 동등성 및 alpha의 두 offset 처리는 확인이 필요합니다.\n\n> The generic table starts from 403 (clock_gettime64), the first common syscall.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20260807-tonyk-syscall_table-v3-0-7c45a23c50b5@igalia.com/)\n\n**modpost 오류·경고 출력 형식 통일**\n\n`mod_warn()`과 `mod_error()`를 도입해 모듈명 접두사와 심볼·섹션·네임스페이스 인용 형식을 통일했으며 두 패치는 `kbuild-next-unstable`에 적용됐습니다.\n\n영향: 진단은 명확해지지만 기존 modpost 문자열을 파싱하는 CI와 외부 모듈 패키징 도구는 호환성을 확인해야 합니다.\n\n> Applied to kbuild/linux.git (kbuild-next-unstable), thanks!\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/178613342521.4123747.1957099013575804476.b4-ty@b4/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "중간",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "교차 아키텍처 rusttest 수정 제안",
+      "url": "https://lore.kernel.org/rust-for-linux/20260808022608.1125174-1-tomo@flapping.org/",
+      "note": "thread"
+    },
+    {
+      "title": "Rust timeout API 전환 v6",
+      "url": "https://lore.kernel.org/rust-for-linux/20260808062839.1159990-1-tomo@flapping.org/",
+      "note": "thread"
+    },
+    {
+      "title": "Delta의 jiffies 변환 규칙",
+      "url": "https://lore.kernel.org/rust-for-linux/20260808062839.1159990-5-tomo@flapping.org/",
+      "note": "thread"
+    },
+    {
+      "title": "공통 syscall 테이블 RFC v3",
+      "url": "https://lore.kernel.org/linux-kbuild/20260807-tonyk-syscall_table-v3-0-7c45a23c50b5@igalia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "modpost 진단 형식 변경",
+      "url": "https://lore.kernel.org/linux-kbuild/f27bd8810f0ef12fb86068f0190e4e0afa81e0fa.1786120005.git.jani.nikula@intel.com/",
+      "note": "thread"
+    },
+    {
+      "title": "modpost 패치 적용 알림",
+      "url": "https://lore.kernel.org/linux-kbuild/178613342521.4123747.1957099013575804476.b4-ty@b4/",
+      "note": "thread"
+    },
+    {
+      "title": "Rust HrTimer 안전성 수정 v4",
+      "url": "https://lore.kernel.org/rust-for-linux/20260807233039.1091842-1-tomo@flapping.org/",
+      "note": "thread"
+    },
+    {
+      "title": "HrTimer expires 도입 커밋",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=4b0147494275",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-08T09:22:52.571Z",
+    "rewriteAdapter": "codex",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
