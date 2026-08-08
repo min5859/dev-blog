@@ -1,0 +1,128 @@
+{
+  "id": "2026-08-09-linux-distro-stable-daily",
+  "topic": "linux-distro-stable",
+  "title": "2026-08-09 Safe-RET 교체 — Distro Stable",
+  "headline": "LTS Safe-RET 백포트가 연속 교체되고, cls_flower·ksmbd·emergency thaw stable 패치가 동시에 제출됐습니다.",
+  "date": "2026-08-09",
+  "summary": "5.10.264·5.15.215·6.1.182가 잘못된 Safe-RET 백포트를 되돌리고 수정본을 적용했으며, 7.1.7에는 upstream 대응 백포트가 포함됐습니다. stable 큐에는 net/sched UAF·ksmbd 메모리 누수·emergency thaw 이중 unlock·KASAN hotplug 경합 수정이 올라왔습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "net/sched: qdisc_rtab_list 동시 get/put 직렬화",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "tc/cls_flower·net/sched를 쓰는 네트워크 스택 stable 백포트 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20260808161611.432858-1-sashal@kernel.org/",
+      "if": "flower+police 필터를 RTM_NEWTFILTER로 동시에 추가하는 tc 경로를 운영 중이라면,",
+      "do": "qdisc_rtab_list 직렬화 패치의 stable 백포트 반영 여부를 배포 큐에서 우선 확인하세요.",
+      "verify": "KASAN slab-use-after-free 리포트가 qdisc_put_rtab() 경로에서 재현되는지 테스트 환경에서 점검하세요."
+    },
+    {
+      "title": "ksmbd: DACL overflow 시 SID 메모리 누수 수정",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "ksmbd(SMB 서버)를 활성화한 stable 배포·보안 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20260808171424.498621-1-sashal@kernel.org/",
+      "if": "ksmbd를 외부에 노출한 stable 배포를 운영 중이라면,",
+      "do": "6.1.y stable 시리즈 제출 패치의 반영 일정을 추적하고 우선 업데이트를 검토하세요.",
+      "verify": "POSIX ACL overflow 경로에서 sid 누수가 반복 요청마다 발생하는지 패치 전후 메모리 사용량을 비교하세요."
+    },
+    {
+      "title": "fs/super: emergency thaw 시 s_umount 이중 unlock 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "파일시스템 freeze/thaw 및 stable 백포트 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20260808154852.370323-5-sashal@kernel.org/",
+      "if": "sysrq emergency thaw를 장애 대응 절차에 포함하고 있다면,",
+      "do": "6.12.y stable에 제출된 s_umount 이중 unlock 수정 백포트를 추적하세요.",
+      "verify": "emergency thaw 실행 후 DEBUG_RWSEMS 경고와 rwsem 상태가 정상인지 재현 테스트하세요."
+    },
+    {
+      "title": "KASAN: 캐시 shrink와 CPU hotplug 경합 수정",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "KASAN·SLAB 및 CPU hotplug를 다루는 stable 백포트·테스트 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20260808031459.3032812-1-sh_def@163.com/raw",
+      "if": "KASAN 기반 CI에서 CPU hotplug와 kmem_cache_shrink()를 함께 검증한다면,",
+      "do": "cond_resched()와 quarantine_size 회계 수정의 분리 패치 제출 이후 stable 머지를 관찰하세요.",
+      "verify": "virtio-9p teardown 및 kmem_cache_destroy() 결과가 패치 후 정상화되는지 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 5.10.264: 잘못된 Safe-RET 백포트 교체**\n\nLinux 5.10.264는 5.10.263의 Safe-RET 백포트(9de1a49e8f1f)를 잘못된 구현이라 명시하며 되돌린 뒤 수정본 dfefa3c51370을 적용했습니다.\n\n영향: 직전 5.10.263의 보안 완화 백포트가 하루 만에 철회·교체됐습니다. 5.10.263을 이미 배포한 팀은 5.10.264에서 SRSO 완화 동작을 재검증해야 합니다.\n\n> It was incorrect, a more correct fix will be applied next.\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.264)\n\n**Linux 5.15.215: 잘못된 Safe-RET 백포트 교체**\n\nLinux 5.15.215는 5.15.214의 Safe-RET 백포트(9c0b8105e919)를 되돌리고 수정본 52db77a13be2를 적용했습니다.\n\n영향: SRSO 완화 백포트가 즉시 교체됐습니다. 5.15.214를 쓰는 배포는 5.15.215로 Safe-RET·인터럽트 복귀 경로를 다시 검증해야 합니다.\n\n> avoid executing a RET instruction after returning from the interrupt.\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.215)\n\n**Linux 6.1.182: Safe-RET 백포트 긴급 수정**\n\nLinux 6.1.182는 6.1.181의 Safe-RET 백포트(95b08cdd603f)를 되돌린 뒤 upstream 7e7f81cf6f5c에 대응하는 d0208e08d64d를 적용했습니다.\n\n영향: 6.1 LTS의 직전 릴리스 보안 완화가 잘못 적용됐음을 바로잡는 후속 릴리스입니다. 6.1.181을 배포한 팀은 6.1.182에서 SRSO 완화 상태를 우선 재검증해야 합니다.\n\n> commit 7e7f81cf6f5ca3311e526308f55d7c54d3ba71f9 upstream.\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.1.182)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**Linux 7.1.7: Safe-RET 인터럽트 주입 하드닝**\n\nLinux 7.1.7은 upstream 7e7f81cf6f5c를 61649a2d61cb으로 백포트해 SRSO 영향 x86에서 Safe-RET 완료 상태를 에뮬레이션하고 인터럽트 복귀 뒤 RET 실행을 피합니다.\n\n영향: 공식 changelog는 인터럽트 주입이 안전한 반환 시퀀스를 무력화해 추측 실행 경로의 데이터 유출로 이어질 수 있다고 명시합니다. AMD SRSO 완화를 쓰는 stable 배포는 이 단일 커밋 릴리스를 우선 검토해야 합니다. 별도 CVE 배정 여부는 확인이 필요합니다.\n\n> An attacker injecting interrupts while the Safe-RET mitigation executes on machines affected by SRSO can neutralize the safe return sequence\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.7)\n\n**net/sched: qdisc_rtab_list 동시 get/put 직렬화**\n\ncls_flower의 TCF_PROTO_OPS_DOIT_UNLOCKED 경로가 RTNL 없이 tcf_police_init()에서 qdisc_get_rtab()/qdisc_put_rtab()를 호출하면서 전역 qdisc_rtab_list와 비원자 refcnt가 경합합니다. 패치는 전용 spinlock으로 리스트·refcount 접근을 보호합니다.\n\n영향: 동시 RTM_NEWTFILTER 요청이 flower+police 필터를 추가할 때 kmalloc-2k qdisc_rate_table에서 use-after-free/double-free가 재현됐고, qdisc_rtab_list는 per-netns가 아닌 전역이라 손상이 시스템 전체에 퍼질 수 있습니다.\n\n> BUG: KASAN: slab-use-after-free in qdisc_put_rtab+0x12f/0x160\n\n[원문 확인](https://lore.kernel.org/stable/20260808161611.432858-1-sashal@kernel.org/)\n\n**ksmbd: DACL overflow 시 SID 메모리 누수 수정**\n\ncheck_add_overflow()로 DACL 크기 래핑을 막는 299f962c0b02 이후 overflow 감지 시 break가 루프 끝 kfree(sid)를 건너뛰어 struct smb_sid가 누수됩니다. 패치는 break 전에 sid를 해제합니다.\n\n영향: POSIX ACL 항목이 많은 악성·손상 파일이 overflow 검사를 트리거할 때마다 요청마다 sid가 누수되어 커널 메모리 고갈 경로가 됩니다. ksmbd를 노출한 배포판은 stable 큐에 우선 반영 여부를 봐야 합니다.\n\n> providing a trivial kernel memory exhaustion vector.\n\n[원문 확인](https://lore.kernel.org/stable/20260808171424.498621-1-sashal@kernel.org/)\n\n**fs/super: emergency thaw 시 s_umount 이중 unlock 수정**\n\n__iterate_supers(SUPER_ITER_EXCL)가 콜백 전후로 s_umount를 잡는데 do_thaw_all_callback()의 thaw_super_locked()가 모든 경로에서 s_umount를 해제해 __iterate_supers()가 두 번째 unlock을 시도합니다.\n\n영향: sysrq emergency thaw 경로에서 DEBUG_RWSEMS 경고와 rwsem 상태 손상이 발생해 frozen 파일시스템 복구 신뢰성이 떨어집니다. 장애 대응·복구 절차에 emergency thaw를 쓰는 배포는 백포트 반영을 추적해야 합니다.\n\n> thaw_super_locked() which unconditionally releases s_umount on every code path. This results in a second unlock attempt in __iterate_supers()\n\n[원문 확인](https://lore.kernel.org/stable/20260808154852.370323-5-sashal@kernel.org/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**KASAN: 캐시 shrink와 CPU hotplug 경합 수정**\n\nv2 패치는 kmem_cache_shrink()가 CPU 오프라인과 교차할 때 KASAN quarantine의 shrink_qlist가 누락되는 경합을 막으려 합니다. Andrew Morton은 quarantine 전체 스캔에 cond_resched() 추가와 별도 quarantine_size 회계 수정을 각각 분리 패치로 보내달라고 요청했습니다.\n\n영향: 누락된 quarantine 객체는 slab allocator로 돌아가지 않아 kmem_cache_shrink()·kmem_cache_destroy() 결과가 왜곡될 수 있고, virtio-9p에서 간헐적 teardown 실패가 관측됐습니다. KASAN 기반 CI와 CPU hotplug 테스트 환경의 신뢰성에 직접 영향합니다. quarantine_size 회계 결함의 실제 버그 여부는 확인이 필요합니다.\n\n> The objects left on CPU1's shrink_qlist are not returned to the slab allocator.\n\n[원문 확인](https://lore.kernel.org/stable/20260808031459.3032812-1-sh_def@163.com/raw)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ChangeLog-7.1.7",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.7",
+      "note": "changelog"
+    },
+    {
+      "title": "KASAN quarantine shrink vs CPU hotplug",
+      "url": "https://lore.kernel.org/stable/20260808031459.3032812-1-sh_def@163.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "Andrew Morton review: separate patches",
+      "url": "https://lore.kernel.org/stable/20260808095347.d9335a79ea6513d613784d48@linux-foundation.org/",
+      "note": "thread"
+    },
+    {
+      "title": "net/sched: serialize qdisc_rtab_list access",
+      "url": "https://lore.kernel.org/stable/20260808161611.432858-1-sashal@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "ksmbd: fix SID memory leak on DACL overflow",
+      "url": "https://lore.kernel.org/stable/20260808171424.498621-1-sashal@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "fs/super: fix emergency thaw double-unlock",
+      "url": "https://lore.kernel.org/stable/20260808154852.370323-5-sashal@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-5.10.264",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.264",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-5.15.215",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.215",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-6.1.182",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.1.182",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-08T18:25:56.525Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

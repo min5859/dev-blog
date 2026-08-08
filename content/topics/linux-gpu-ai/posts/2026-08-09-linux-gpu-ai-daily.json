@@ -1,0 +1,118 @@
+{
+  "id": "2026-08-09-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-08-09 DRM Rust·VM·PM — GPU·AI",
+  "headline": "DRM Rust v7.3-rc1 대규모 전진, amdgpu VM 보안 논쟁, fbdev 회귀 수정 PR, nouveau·xe·Tegra runtime PM teardown 누락 패치",
+  "date": "2026-08-09",
+  "summary": "Danilo Krummrich의 DRM Rust v7.3-rc1 PR이 nova-core TLV·vGPU·GSP 부트와 Tyr MCU 부트를 한꺼번에 제출했고, amdgpu VM 업데이트 오버런 수정안은 maintainer 검토에서 교착 상태입니다. fbdev 코어 7.2-rc7 수정 PR과 nouveau·xe·Tegra nvdec의 pm_runtime_dont_use_autosuspend() 누락 패치도 함께 추적 대상입니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "amdgpu VM 업데이트 오버런 수정안 maintainer 검토 교착",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "drm/amdgpu VM·GEM VA 유지보수 담당 및 64K 페이지 커널에서 AMD GPU를 운용하는 배포 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/88f614f4-5001-4cf1-ad2a-00802508a4f6@amd.com/",
+      "if": "64K 페이지 커널에서 AMD GPU를 운용하는 배포·검증 환경을 담당한다면",
+      "do": "amdgpu_vm_update_range() num_entries 반올림 경로와 maintainer가 요구하는 pages_addr 소비 불변식 정합성을 먼저 확인하세요",
+      "verify": "lore 스레드에서 min() 클램프 거부·-EINVAL 대안·64K 커널 4K 매핑 기존 동작 질문을 대조하세요"
+    },
+    {
+      "title": "DRM Rust v7.3-rc1 — nova-core·Tyr 대규모 통합",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust DRM·nova-core·Tyr 드라이버, linux-firmware·driver-core Rust I/O 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/DKJQQUOS0PVO.3JPR3MYK4PDVZ@kernel.org/",
+      "if": "Rust DRM·nova-core·Tyr 드라이버 스택을 추적한다면",
+      "do": "driver-core rust-io-7.3-rc1 선행 의존과 TLV 개발용 펌웨어 요구사항을 검토하세요",
+      "verify": "RegistrationGuard·MCU 부트·vGPU·GSP 부트 통합 범위를 PR 원문과 대조하세요"
+    },
+    {
+      "title": "fbdev 코어 7.2-rc7 수정 PR",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "fbdev·fbcon 코어 및 sysfb를 쓰는 임베디드·서버 콘솔 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/anc0HhpSwT_c7CTg@carbonx1/",
+      "if": "early boot·fallback 콘솔이나 sysfb 경로를 다룬다면",
+      "do": "v7.2-rc7 fbdev 코어 PR의 stable 태그 패치 6건을 배포 트래킹 목록에 반영하세요",
+      "verify": "폰트 리사이즈 후 회전 OOB·sysfs 잠금 수정이 포함됐는지 PR 원문을 확인하세요"
+    },
+    {
+      "title": "nouveau·xe·Tegra nvdec runtime PM teardown 누락",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "drm/nouveau·drm/xe·drm/tegra nvdec runtime PM 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260808134137.2864847-1-lgs201920130244@gmail.com/",
+      "if": "nouveau·xe·Tegra nvdec에서 모듈 언로드·재바인딩 시나리오를 다룬다면",
+      "do": "pm_runtime_dont_use_autosuspend() 추가 패치 3건의 머지·stable 백포트 상태를 확인하세요",
+      "verify": "autosuspend delay 음수 설정에서 usage_count 불균형 재현 로그가 있는지 점검하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**amdgpu VM 업데이트 오버런 수정안, 64K 페이지 호스트에서 maintainer 검토 교착**\n\nJunrui Luo의 [PATCH 2/3]은 64K CPU 페이지 커널에서 amdgpu_vm_update_range()의 num_entries 반올림이 커서 잔량을 넘어 amdgpu_res_next()의 BUG_ON(size > cur->remaining)에 도달할 수 있다고 주장하며 min()으로 상한을 둡니다. Christian König은 pages_addr가 CPU 페이지 단위로 완전히 소비되어야 한다며 min() 접근을 거부하고, num_entries % AMDGPU_GPU_PAGES_IN_CPU_PAGE != 0이면 -EINVAL을 반환하는 대안을 제시했고, Luo는 64K 커널에서 4K 매핑 시에도 pages_addr가 전체 CPU 페이지를 소비하지 않는 기존 동작과의 정합성을 질문했습니다.\n\n영향: AMDGPU_GEM_VA는 DRM_RENDER_ALLOW이고 map_size는 AMDGPU_GPU_PAGE_SIZE 배수만 요구하므로, 비특권 사용자가 4K 페이지 호스트에서는 재현되지 않는 이 경로에 도달할 수 있다는 주장이 있습니다. 64K 페이지 호스트에서 AMD GPU를 쓰는 배포·검증 환경은 패치가 머지되기 전에 maintainer가 요구하는 pages_addr 소비 불변식과의 정합성을 먼저 확인해야 합니다. Christian König이 제안한 num_entries % AMDGPU_GPU_PAGES_IN_CPU_PAGE 검사가 64K 커널의 4K 매핑 등 기존 허용 경로와 어떻게 공존하는지는 확인이 필요합니다.\n\n> On 4K page hosts AMDGPU_GPU_PAGES_IN_CPU_PAGE is 1, tmp >= 2 always holds, and the bug is unreachable.\n\n[원문 확인](https://lore.kernel.org/dri-devel/88f614f4-5001-4cf1-ad2a-00802508a4f6@amd.com/)\n\n**fbdev 코어 7.2-rc7 수정 PR — 폰트 변경·화면 회전·sysfs 잠금**\n\nHelge Deller의 v7.2-rc7 pull request는 fbcon 폰트 변경·화면 회전 후 텍스트 렌더링 안정화, sysfb 그래픽 모드 DB 수정 시 잠금, fb_io_read() 포인터 동기화, bit_cursor() 글리프 인덱스 경계 검사 등 fbdev 코어 6개 패치(5파일, +91/-15)를 stable 태그와 함께 제출했습니다.\n\n영향: KMS가 주류인 환경에서도 early boot·fallback 콘솔과 sysfb 경로는 여전히 fbdev 코어에 의존하며, 폰트 리사이즈 후 회전 시 OOB나 sysfs 경쟁은 콘솔 깨짐·크래시로 이어질 수 있습니다. 대부분 for-next에 수주간 있었고 stable 백포트가 표시되어 있어 배포 트래킹에 해당합니다. Linus가 이 PR을 7.2-rc7에 실제로 pull했는지는 확인이 필요합니다.\n\n> Fix out-of-bounds access when rotating console after font resize\n\n[원문 확인](https://lore.kernel.org/dri-devel/anc0HhpSwT_c7CTg@carbonx1/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**DRM Rust v7.3-rc1 — nova-core TLV·vGPU·Tyr MCU 부트와 I/O 투영**\n\nDanilo Krummrich의 pull request는 driver-core의 rust-io-7.3-rc1 태그(I/O 타입 재설계, io_project!(), io_read!/io_write!)에 의존하며, DRM 측 RegistrationGuard/RegistrationData로 ioctl 수명 주석 리소스를 안전하게 노출하고, nova-core에 TLV 펌웨어·vGPU 부트·GSP 부트 통합을, Tyr에 Mali CSF 펌웨어 파서·MCU 부트·drm_gpuvm 기반 VM을 추가합니다.\n\n영향: Rust 기반 NVIDIA nova-core와 Arm Mali Tyr 드라이버 스택이 한 사이클에 대규모로 전진하며, TLV 펌웨어는 linux-firmware에 없는 개발용 이미지를 요구하고 driver-core PR 선행이 필요합니다. nova-drm↔nova-core 크레이트 의존은 빌드 시스템 한계를 Makefile 워크어라운드로 우회하는 구조라 통합·리뷰 범위가 넓습니다.\n\n> TLV firmware images, vGPU boot support, and GSP boot process consolidation for nova-core; and firmware loading with MCU boot for Tyr.\n\n[원문 확인](https://lore.kernel.org/dri-devel/DKJQQUOS0PVO.3JPR3MYK4PDVZ@kernel.org/)\n\n**nouveau teardown에서 pm_runtime_dont_use_autosuspend() 누락 수정**\n\nGuangshuo Li 패치는 nouveau_drm_device_init()에서 켠 pm_runtime_use_autosuspend()에 대응하는 pm_runtime_dont_use_autosuspend()가 nouveau_drm_device_fini()에 없어, autosuspend delay가 음수일 때 runtime PM usage_count가 teardown 후에도 불균형해질 수 있다고 지적하고 teardown 경로에 한 줄을 추가합니다.\n\n영향: nouveau는 하이브리드·노트북 환경에서 runtime PM을 적극 쓰며, 드라이버 언로드·재바인딩 시 usage_count 누수는 이후 suspend/resume나 모듈 재로드에서 교착·경고를 유발할 수 있습니다. Cc: stable@vger.kernel.org로 백포트 후보입니다.\n\n> Without calling pm_runtime_dont_use_autosuspend() during teardown, this reference is not dropped and usage_count remains unbalanced.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260808134137.2864847-1-lgs201920130244@gmail.com/)\n\n**Intel xe teardown에서 pm_runtime_dont_use_autosuspend() 누락 수정**\n\nGuangshuo Li 패치는 xe_pm_runtime_init()이 pm_runtime_use_autosuspend()를 켠 뒤 xe_pm_runtime_fini()에서 pm_runtime_dont_use_autosuspend()를 호출하지 않아, autosuspend delay가 음수일 때 usage_count 참조가 teardown 시 해제되지 않을 수 있다고 지적하고 xe_pm_runtime_fini()에 호출을 추가합니다.\n\n영향: xe는 Intel 통합·디스크리트 GPU의 주 DRM 드라이버로 runtime PM 경로가 핫하고, VF 경로는 fini에서 조기 반환하므로 PF teardown 순서가 중요합니다. nouveau/tegra와 동일 패턴의 정리 누락으로 stable 백포트 후보입니다.\n\n> xe_pm_runtime_init() calls pm_runtime_use_autosuspend(), but xe_pm_runtime_fini() does not call the matching pm_runtime_dont_use_autosuspend()\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260808144907.2918746-1-lgs201920130244@gmail.com/)\n\n**Tegra nvdec remove 경로 autosuspend 정리 누락 수정**\n\nGuangshuo Li 패치는 nvdec_probe()에서 pm_runtime_use_autosuspend()를 켠 뒤 nvdec_remove()에서 pm_runtime_dont_use_autosuspend()가 없어 teardown 시 usage_count가 불균형해질 수 있다고 지적하고 remove 경로에 호출을 추가합니다.\n\n영향: Tegra nvdec는 Jetson 등에서 하드웨어 디코딩 가속에 쓰이며, 드라이버 언로드·재바인딩 시 runtime PM refcount 누수는 디코더 서브시스템 전체 suspend에 영향을 줄 수 있습니다. Cc: stable로 백포트가 표시되어 있습니다.\n\n> nvdec_probe() calls pm_runtime_use_autosuspend(), but nvdec_remove() does not call the matching pm_runtime_dont_use_autosuspend()\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260808142756.2898271-1-lgs201920130244@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "amdgpu VM 업데이트 오버런 수정안 스레드",
+      "url": "https://lore.kernel.org/dri-devel/88f614f4-5001-4cf1-ad2a-00802508a4f6@amd.com/",
+      "note": "thread"
+    },
+    {
+      "title": "amdgpu VM pages_addr 소비 불변식 질문",
+      "url": "https://lore.kernel.org/dri-devel/B5DD8C80-AB11-4D23-A602-EBEACD6EE04A@outlook.com/",
+      "note": "thread"
+    },
+    {
+      "title": "fbdev 코어 7.2-rc7 수정 PR",
+      "url": "https://lore.kernel.org/dri-devel/anc0HhpSwT_c7CTg@carbonx1/",
+      "note": "thread"
+    },
+    {
+      "title": "DRM Rust v7.3-rc1 pull request",
+      "url": "https://lore.kernel.org/dri-devel/DKJQQUOS0PVO.3JPR3MYK4PDVZ@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "nouveau pm_runtime_dont_use_autosuspend() 패치",
+      "url": "https://lore.kernel.org/dri-devel/20260808134137.2864847-1-lgs201920130244@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Intel xe pm_runtime_dont_use_autosuspend() 패치",
+      "url": "https://lore.kernel.org/dri-devel/20260808144907.2918746-1-lgs201920130244@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Tegra nvdec pm_runtime_dont_use_autosuspend() 패치",
+      "url": "https://lore.kernel.org/dri-devel/20260808142756.2898271-1-lgs201920130244@gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-08T18:36:51.058Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
