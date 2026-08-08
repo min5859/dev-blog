@@ -15,13 +15,10 @@ const rewriteScript = {
   cursor: 'rewrite:linux:cursor',
 }[rewriteAdapter] || `rewrite:linux:${DEFAULT_AI_ADAPTER}`;
 
-// research 단계: 도구 기반 조사는 claude 만 지원, 그 외 어댑터는 deterministic dossier 로 폴백.
-const researchScript = rewriteAdapter === 'claude' ? 'research:linux:claude' : 'research:linux';
-
 const steps = [
   ['collect',  'npm', ['run', 'collect:linux']],
   ['draft',    'npm', ['run', 'draft:linux']],
-  ['research', 'npm', ['run', researchScript]],
+  ['research', 'npm', ['run', 'research:linux'], { AI_ADAPTER: rewriteAdapter }],
   ['rewrite',  'npm', ['run', rewriteScript]],
   ...(shouldPublish ? [['publish', 'npm', ['run', 'publish:linux']]] : []),
   ['build',    'npm', ['run', 'build']],

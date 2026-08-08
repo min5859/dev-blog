@@ -12,12 +12,10 @@ const rewriteScript = {
   cursor: 'rewrite:android:cursor',
 }[rewriteAdapter] || `rewrite:android:${DEFAULT_AI_ADAPTER}`;
 
-const researchScript = rewriteAdapter === 'claude' ? 'research:android:claude' : 'research:android';
-
 const steps = [
   ['collect',  'npm', ['run', 'collect:android']],
   ['draft',    'npm', ['run', 'draft:android']],
-  ['research', 'npm', ['run', researchScript]],
+  ['research', 'npm', ['run', 'research:android'], { AI_ADAPTER: rewriteAdapter }],
   ['rewrite',  'npm', ['run', rewriteScript]],
   ...(shouldPublish ? [['publish', 'npm', ['run', 'publish:android']]] : []),
   ['build',    'npm', ['run', 'build']],

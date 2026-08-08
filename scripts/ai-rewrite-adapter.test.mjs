@@ -12,6 +12,7 @@ import {
 } from './lib/ai-rewrite-adapter.mjs';
 
 test('normalizeDailyRewriteAdapter falls back to DEFAULT_AI_ADAPTER and maps cursor-agent alias', () => {
+  assert.equal(DEFAULT_AI_ADAPTER, 'codex');
   assert.equal(normalizeDailyRewriteAdapter(''), DEFAULT_AI_ADAPTER);
   assert.equal(normalizeDailyRewriteAdapter('cursor-agent'), 'cursor');
   assert.equal(normalizeDailyRewriteAdapter('cursor'), 'cursor');
@@ -209,7 +210,7 @@ test('runAiAdapterAndParse failure dump records resolved adapter and model in he
   const failureDir = await mkdtemp(path.join(tmpdir(), 'dev-blog-rewrite-failure-'));
   try {
     delete process.env.AI_ADAPTER;
-    delete process.env.CLAUDE_MODEL;
+    delete process.env.CODEX_MODEL;
     const runner = async () => 'not json at all';
     await assert.rejects(
       runAiAdapterAndParse('prompt', { runner, logLabel: 'adapter-model-header', failureDir }),
@@ -218,8 +219,8 @@ test('runAiAdapterAndParse failure dump records resolved adapter and model in he
     const dumped = await readdir(failureDir);
     assert.equal(dumped.length, 2);
     const body = await readFile(path.join(failureDir, dumped[0]), 'utf8');
-    assert.match(body, /# adapter: claude/);
-    assert.match(body, /# model: claude-sonnet-5/);
+    assert.match(body, /# adapter: codex/);
+    assert.match(body, /# model: \(codex default\)/);
   } finally {
     await rm(failureDir, { recursive: true, force: true });
   }

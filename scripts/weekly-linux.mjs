@@ -13,7 +13,7 @@ const generatedDir = path.join(root, 'data', 'generated', topic);
 const promptTemplatePath = path.join(root, 'prompts', 'linux-newsletter-weekly-ko.md');
 const todayKst = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date());
 const runDate = process.env.NEWSLETTER_DATE || todayKst();
-const adapter = resolveAiAdapter('cursor');
+const adapter = resolveAiAdapter();
 const generatedAt = new Date().toISOString();
 
 function isoWeek(dateStr) {
@@ -268,7 +268,7 @@ async function main() {
   await writeFile(path.join(generatedDir, 'weekly-prompt-latest.md'), prompt);
 
   const aiResult = await runAiAdapterAndParse(prompt, {
-    defaultAdapter: 'cursor',
+    defaultAdapter: adapter,
     logLabel: 'weekly-linux',
     postValidator: (candidate) => {
       validateWeekly(candidate, meta);

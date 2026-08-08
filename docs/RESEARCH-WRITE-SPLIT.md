@@ -161,14 +161,17 @@ tool access; the write agent stays closed (and safer for it).
 - Keep the write call exactly as the current closed transform.
 - Research adapters (all tool-capable; `template` → deterministic fallback):
   - `claude` — read-only `--allowedTools WebFetch,WebSearch,Bash(git log:*)`
-  - `codex` — `codex exec` sandbox tools
+  - `codex` — `codex exec --ephemeral --sandbox read-only`; research는
+    `codex --search exec`로 웹 검색 활성화
   - `cursor` — `--force` tool mode (vs `--mode=ask` for the closed rewrite)
-  - all three share the `CLAUDE_RESEARCH_TIMEOUT_MS` wall-clock budget.
+  - Codex uses `CODEX_TIMEOUT_MS` (default 15 min); Claude/Cursor retain
+    `CLAUDE_RESEARCH_TIMEOUT_MS` (default 10 min).
   - **Model split (B)**: research uses a heavier model than write by default.
-    Default adapter is now **claude**; claude research defaults to **opus**
+    Default adapter is now **codex**, reusing the signed-in ChatGPT
+    subscription session. Codex uses the CLI's default model unless
+    `CODEX_RESEARCH_MODEL` / `CODEX_MODEL` overrides it. Claude research defaults to **opus**
     (`CLAUDE_RESEARCH_MODEL` overrides), claude write defaults to **sonnet**
-    (`CLAUDE_MODEL` overrides). codex/cursor research models via
-    `CODEX_RESEARCH_MODEL` / `CURSOR_RESEARCH_MODEL`.
+    (`CLAUDE_MODEL` overrides); Cursor research uses `CURSOR_RESEARCH_MODEL`.
 
 Determinism / audit:
 
@@ -207,8 +210,8 @@ Determinism / audit:
   the existing 4-highlight / ~8-candidate cap, so this stays small.
 - **Tool risk**: granting fetch/shell to an agent. Mitigated by a read-only
   allowlist, no write tools, and a network budget. Never grant publish.
-- **Provider lock**: research needs a tool-capable CLI; `template`/`codex`
-  paths keep working via the deterministic fallback (see Step 2).
+- **Provider lock**: research needs a tool-capable CLI. Codex is the default;
+  `template` keeps an explicit deterministic fallback.
 - **Failure mode**: if research yields nothing for an item, the writer must
   degrade gracefully to the deterministic draft body, never fabricate.
 
@@ -222,12 +225,11 @@ Determinism / audit:
       missing-URL, empty-evidence, quote length, confidence, ctx prefix…).
 - Exit met: `npm test` passes; validator rejects a claim with no evidence URL.
 
-### Step 2 — Research stage (claude adapter, fallback-safe) ✅
+### Step 2 — Research stage (tool-capable adapter, fallback-safe) ✅
 - [x] `scripts/research-linux.mjs`: input = `candidates-latest.json`, output
-      = `research-latest.json`. `AI_ADAPTER=claude` runs the tool-enabled
-      prompt via `runResearchAdapterPrompt`; otherwise a deterministic
-      dossier is built from the candidate records (so `template`/`codex` run
-      end-to-end).
+      = `research-latest.json`. `AI_ADAPTER=codex|claude|cursor` runs the
+      tool-enabled prompt via `runResearchAdapterPrompt`; `template` builds a
+      deterministic dossier from the candidate records.
 - [x] `prompts/linux-research-ko.md`: investigation instructions + dossier
       contract + read-only tool guidance.
 - [x] adapter: `runResearchAdapterPrompt` (claude `--allowedTools
@@ -249,7 +251,7 @@ Determinism / audit:
 
 ### Step 4 — Wire into daily pipeline + before/after ✅
 - [x] `scripts/run-daily-linux.mjs`: inserted `research` between `draft` and
-      `rewrite` (`researchScript` = claude tools or deterministic fallback).
+      `rewrite`; both stages receive the selected daily adapter.
 - [x] Captured PoC before/after (see Status block).
 - Exit met: `node scripts/run-daily-linux.mjs` ran `collect → draft →
       research → rewrite → build`, all ok; after-post URLs 10/10 grounded in

@@ -2,16 +2,16 @@
 # Daily LaunchAgent entrypoint:
 #   1. Run the Linux pipeline with auto-publish
 #   2. If content/ changed, commit and push so GitHub Pages rebuilds
-# Designed to run from launchd; relies on PATH and CLAUDE_BIN injected by the plist.
+# Designed to run from launchd; relies on PATH (or CODEX_BIN) injected by the plist.
 
 set -eu
 
 PROJECT_DIR="${PROJECT_DIR:-/Users/wooki/project/git/wk/dev-blog}"
-NPM_BIN="${NPM_BIN:-/Users/wooki/.nvm/versions/node/v24.14.0/bin/npm}"
+NPM_BIN="${NPM_BIN:-/Users/wooki/.nvm/versions/node/v24.18.0/bin/npm}"
+export CODEX_BIN="${CODEX_BIN:-/Users/wooki/.nvm/versions/node/v24.18.0/bin/codex}"
 
-# lens research(claude -p 도구 조사)는 평상시 ~9분이라 기본 10분 타임아웃에 상시 근접한다.
-# 크론 전체에 15분 상한을 주어 정상적으로 느린 research 가 잘리지 않게 한다(개별 실행 시 override 가능).
-export CLAUDE_RESEARCH_TIMEOUT_MS="${CLAUDE_RESEARCH_TIMEOUT_MS:-900000}"
+# Codex research 가 느려져 스케줄 실행을 무기한 점유하지 않도록 15분 상한을 둔다.
+export CODEX_TIMEOUT_MS="${CODEX_TIMEOUT_MS:-900000}"
 
 cd "${PROJECT_DIR}"
 
@@ -21,7 +21,7 @@ if [ -f "${LAUNCHD_LOG}" ] && [ "$(wc -c < "${LAUNCHD_LOG}")" -gt 1048576 ]; the
   mv "${LAUNCHD_LOG}" "${LAUNCHD_LOG}.prev"
 fi
 
-# research 타임아웃/claude exit 1/research non-JSON 같은 외부의존 transient 실패를 자동
+# research 타임아웃/Codex CLI exit 1/research non-JSON 같은 외부의존 transient 실패를 자동
 # 회복하기 위해, 실패한 커맨드는 20초 대기 후 1회만 재시도한다. 재시도까지 실패하면 그
 # 실패 상태를 그대로 돌려주므로 호출부의 기존 "continuing" 격리 로직은 그대로 동작한다.
 retry_once() {
@@ -65,7 +65,7 @@ done
 
 # Mondays (KST) get an additional weekly digest covering the past 7 days.
 if [ "$(TZ=Asia/Seoul date +%u)" = "1" ]; then
-  if ! "${NPM_BIN}" run weekly:linux:claude; then
+  if ! "${NPM_BIN}" run weekly:linux; then
     echo "weekly run failed; continuing with daily-only push"
   fi
   # dossier 기반 전 토픽 weekly-rollup 생성+발행(best-effort, 일부 토픽 실패해도 계속).

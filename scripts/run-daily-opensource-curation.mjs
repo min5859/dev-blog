@@ -19,16 +19,14 @@ const skipUpstream = process.env.OPENSOURCE_CURATION_SKIP_UPSTREAM === '1';
 const upstreamSteps = skipUpstream ? [] : [
   ['discover', 'node', [path.join(root, 'scripts', 'opensource-curation', 'discover.mjs')]],
   ['fetch',    'node', [path.join(root, 'scripts', 'opensource-curation', 'fetch.mjs')]],
-  ['analyze',  'node', [path.join(root, 'scripts', 'opensource-curation', 'analyze.mjs')]],
+  ['analyze',  'node', [path.join(root, 'scripts', 'opensource-curation', 'analyze.mjs')], { AI_ADAPTER: rewriteAdapter }],
 ];
-
-const researchScript = rewriteAdapter === 'claude' ? 'research:opensource-curation:claude' : 'research:opensource-curation';
 
 const steps = [
   ...upstreamSteps,
   ['collect',  'npm', ['run', 'collect:opensource-curation']],
   ['draft',    'npm', ['run', 'draft:opensource-curation']],
-  ['research', 'npm', ['run', researchScript]],
+  ['research', 'npm', ['run', 'research:opensource-curation'], { AI_ADAPTER: rewriteAdapter }],
   ['rewrite',  'npm', ['run', rewriteScript]],
   ...(shouldPublish ? [['publish', 'npm', ['run', 'publish:opensource-curation']]] : []),
   ['build',    'npm', ['run', 'build']],

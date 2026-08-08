@@ -20,7 +20,7 @@ Read the durable plan first:
 - Generate a daily Linux development newsletter.
 - Track kernel patches, roadmap signals, and major version history.
 - Publish output as a shareable web/blog site.
-- Prefer subscription-based AI execution such as `claude -p` or OpenClaw workflows.
+- Prefer subscription-based AI execution such as `codex exec` or OpenClaw workflows.
 - Keep the system topic-extensible from the start.
 
 ## Source Collection
@@ -44,13 +44,19 @@ npm run draft:linux
 
 Draft artifacts are written under `data/generated/linux/`. They are not published automatically.
 
-Rewrite the metadata draft into a more readable Korean newsletter. The default `template` adapter is deterministic and offline-safe:
+Rewrite the metadata draft into a more readable Korean newsletter. The default adapter is Codex CLI using the signed-in ChatGPT subscription:
 
 ```bash
 npm run rewrite:linux
 ```
 
-If Claude CLI is available and approved for the environment, use the subscription-style adapter:
+Check the local subscription session with `codex login status`. To run without AI, use the deterministic template adapter explicitly:
+
+```bash
+AI_ADAPTER=template npm run rewrite:linux
+```
+
+Claude remains available as an explicit fallback adapter:
 
 ```bash
 npm run rewrite:linux:claude

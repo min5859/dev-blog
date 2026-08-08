@@ -12,12 +12,10 @@ const rewriteScript = {
   cursor: 'rewrite:ai-coding-agents:cursor',
 }[rewriteAdapter] || `rewrite:ai-coding-agents:${DEFAULT_AI_ADAPTER}`;
 
-const researchScript = rewriteAdapter === 'claude' ? 'research:ai-coding-agents:claude' : 'research:ai-coding-agents';
-
 const steps = [
   ['collect',  'npm', ['run', 'collect:ai-coding-agents']],
   ['draft',    'npm', ['run', 'draft:ai-coding-agents']],
-  ['research', 'npm', ['run', researchScript]],
+  ['research', 'npm', ['run', 'research:ai-coding-agents'], { AI_ADAPTER: rewriteAdapter }],
   ['rewrite',  'npm', ['run', rewriteScript]],
   ...(shouldPublish ? [['publish', 'npm', ['run', 'publish:ai-coding-agents']]] : []),
   ['build',    'npm', ['run', 'build']],

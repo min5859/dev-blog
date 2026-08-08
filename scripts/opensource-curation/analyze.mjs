@@ -1,7 +1,7 @@
 import { appendFile, mkdir, readFile, stat, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-import { runAiAdapterPrompt } from '../lib/ai-rewrite-adapter.mjs';
+import { DEFAULT_AI_ADAPTER, runAiAdapterPrompt } from '../lib/ai-rewrite-adapter.mjs';
 import { analysisDir, curationDataDir, loadConfig, logsDir, reposJson, root } from './paths.mjs';
 
 function sleep(ms) {
@@ -45,7 +45,10 @@ async function main() {
   const maxAttempts = maxRetries + 1;
   const promptRel = config.analysis?.promptFile || 'prompts/opensource-curation-analyze-ko.md';
   const promptPath = path.join(root, promptRel);
-  const defaultAdapter = process.env.OPENSOURCE_CURATION_ANALYZE_ADAPTER?.trim() || config.analysis?.adapter || 'cursor';
+  const defaultAdapter = process.env.OPENSOURCE_CURATION_ANALYZE_ADAPTER?.trim()
+    || process.env.AI_ADAPTER?.trim()
+    || config.analysis?.adapter
+    || DEFAULT_AI_ADAPTER;
 
   await mkdir(curationDataDir, { recursive: true });
   await mkdir(analysisDir, { recursive: true });

@@ -12,12 +12,10 @@ const rewriteScript = {
   cursor: 'rewrite:opensource:cursor',
 }[rewriteAdapter] || `rewrite:opensource:${DEFAULT_AI_ADAPTER}`;
 
-const researchScript = rewriteAdapter === 'claude' ? 'research:opensource:claude' : 'research:opensource';
-
 const steps = [
   ['collect',  'npm', ['run', 'collect:opensource']],
   ['draft',    'npm', ['run', 'draft:opensource']],
-  ['research', 'npm', ['run', researchScript]],
+  ['research', 'npm', ['run', 'research:opensource'], { AI_ADAPTER: rewriteAdapter }],
   ['rewrite',  'npm', ['run', rewriteScript]],
   ...(shouldPublish ? [['publish', 'npm', ['run', 'publish:opensource']]] : []),
   ['build',    'npm', ['run', 'build']],

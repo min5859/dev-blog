@@ -6,13 +6,13 @@ import path from 'node:path';
 /**
  * AI_ADAPTER: template | claude | codex | cursor (별칭 cursor-agent → cursor)
  * Claude: CLAUDE_BIN, CLAUDE_ARGS (기본 `-p`), stdin으로 프롬프트 전달
- * Codex: `codex exec -` (stdin) + `-o` 임시 파일로 출력 수집
+ * Codex: CODEX_BIN, CODEX_MODEL, CODEX_TIMEOUT_MS, `codex exec -` (stdin) + `-o` 임시 파일
  * Cursor CLI: CURSOR_AGENT_BIN (기본 `agent`), CURSOR_AGENT_EXTRA_ARGS — 프롬프트는 임시 파일 + file 경로 안내
  *
  * 기본 어댑터는 아래 DEFAULT_AI_ADAPTER 한 곳에서만 바꾼다.
  * 모든 ai-rewrite-*.mjs / run-daily-*.mjs 는 이 상수를 통해 default를 받는다.
  */
-export const DEFAULT_AI_ADAPTER = 'claude';
+export const DEFAULT_AI_ADAPTER = 'codex';
 
 export function normalizeDailyRewriteAdapter(raw) {
   const v = typeof raw === 'string' ? raw.trim() : '';
@@ -145,7 +145,12 @@ async function runCursorResearch(prompt) {
 export async function runResearchAdapterPrompt(prompt, { defaultAdapter = DEFAULT_AI_ADAPTER } = {}) {
   const adapter = resolveAiAdapter(defaultAdapter);
   if (adapter === 'claude') return runClaudeResearch(prompt);
-  if (adapter === 'codex') return runCodexExec(prompt, { model: process.env.CODEX_RESEARCH_MODEL || process.env.CODEX_MODEL || '' });
+  if (adapter === 'codex') {
+    return runCodexExec(prompt, {
+      model: process.env.CODEX_RESEARCH_MODEL || process.env.CODEX_MODEL || '',
+      search: true,
+    });
+  }
   if (adapter === 'cursor') return runCursorResearch(prompt);
   return null;
 }
@@ -194,22 +199,41 @@ async function runCursorAgentFilePrompt(prompt) {
   }
 }
 
-async function runCodexExec(prompt, { model = process.env.CODEX_MODEL || '' } = {}) {
+async function runCodexExec(prompt, {
+  model = process.env.CODEX_MODEL || '',
+  search = false,
+} = {}) {
+  const command = process.env.CODEX_BIN || 'codex';
+  const timeoutMs = Number(process.env.CODEX_TIMEOUT_MS ?? 900000);
   const dir = await mkdtemp(path.join(tmpdir(), 'dev-blog-codex-'));
   const outFile = path.join(dir, 'output.md');
   try {
-    // 파일 시스템 쓰기/네트워크를 막아 rewrite 가 저장소 산출물을 건드리거나 조사 행동으로
-    // 빠지지 않게 한다(검증된 문법: `--sandbox read-only`).
-    const cmd = ['codex', 'exec', '-', '-o', outFile, '--ephemeral', '--sandbox', 'read-only'];
-    if (model) cmd.push('-m', model);
+    // 파일 시스템 쓰기를 막아 산출물을 건드리지 못하게 한다. research 만 `--search`로
+    // Codex 웹 검색 도구를 켜고, rewrite 는 네트워크 없이 닫힌 변환으로 유지한다.
+    // `--search`는 exec 하위 옵션이 아니라 Codex CLI 전역 옵션이다(0.141+).
+    const args = search ? ['--search', 'exec'] : ['exec'];
+    args.push('--ephemeral', '--sandbox', 'read-only', '-o', outFile);
+    if (model) args.push('-m', model);
+    args.push('-');
     const output = await new Promise((resolve, reject) => {
-      const child = spawn(cmd[0], cmd.slice(1), { stdio: ['pipe', 'pipe', 'pipe'] });
+      const child = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'] });
       let stderr = '';
+      let timer = null;
+      if (timeoutMs > 0) {
+        timer = setTimeout(() => {
+          child.kill('SIGTERM');
+          reject(new Error(`${command} timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
+      }
       child.stderr.on('data', (chunk) => { stderr += chunk; });
-      child.on('error', reject);
+      child.on('error', (error) => {
+        if (timer) clearTimeout(timer);
+        reject(error);
+      });
       child.on('close', (code) => {
+        if (timer) clearTimeout(timer);
         if (code !== 0) {
-          reject(new Error(`codex exited with ${code}: ${stderr}`));
+          reject(new Error(`${command} exited with ${code}: ${stderr}`));
           return;
         }
         readFile(outFile, 'utf8').then(resolve).catch(reject);
