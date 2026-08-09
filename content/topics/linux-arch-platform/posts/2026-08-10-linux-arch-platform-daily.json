@@ -1,0 +1,111 @@
+{
+  "id": "2026-08-10-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-08-10 SpacemiT·KVM — 아키텍처·플랫폼",
+  "headline": "SpacemiT K3·StarFive JHB100 RISC-V 브링업이 진행되는 가운데, arm64 nested KVM에서 TLBI·S2 MMU 초기화 회귀가 수정 논의 중입니다.",
+  "date": "2026-08-10",
+  "summary": "SpacemiT K3 디스플레이 17패치 v2와 StarFive JHB100 syscon v4가 RISC-V 플랫폼 upstream 브링업을 이어갑니다. arm64 nested KVM은 VA 공간 끝 TLBI 무효화 누락과 S2 MMU 할당 실패 경로 Oops가 보고됐습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "RISC-V",
+    "arm64",
+    "KVM"
+  ],
+  "highlights": [
+    {
+      "title": "arm64 KVM TTBR1 VA 끝 TLBI 무효화 회귀",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "arm64 KVM nested virtualization 담당",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/86wltz9n6u.wl-maz@kernel.org/",
+      "if": "nested KVM S1 TLB invalidation을 TTBR1 상단 VA 범위에서 검증할 때",
+      "do": "Marc Zyngier 수정안과 decode_range_tlbi() range cap 후속 패치 진행을 추적하세요",
+      "verify": "스레드에서 inclusive end 비교와 scope_end overflow 관련 논의를 원문으로 확인하세요"
+    },
+    {
+      "title": "nested shadow S2 MMU 할당 실패 cleanup 버그",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "arm64 KVM nested virtualization·메모리 관리 담당",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/anizGXThM-haqQXU@gmail.com/",
+      "if": "init_nested_s2_mmu() 실패 경로를 failslab 등으로 테스트할 때",
+      "do": "for 루프 increment로 미초기화 엔트리가 cleanup에 포함되는 수정 패치 merge 여부를 확인하세요",
+      "verify": "kvm_free_stage2_pgd paging request Oops 재현 로그와 revised patch를 대조하세요"
+    },
+    {
+      "title": "SpacemiT K3 디스플레이 upstream 브링업",
+      "priority": "중",
+      "impactType": "project",
+      "affectedAudience": "RISC-V SpacemiT K3·DRM/디스플레이 스택 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260809-k3-display-v2-0-327d7910bf71@gmail.com/",
+      "if": "Pico-ITX·CoM260-IFX 등 K3 보드에서 eDP/DisplayPort 출력을 준비할 때",
+      "do": "Saturn DPU DRM·Innosilicon DP/eDP·PHY 17패치 v2 리뷰와 bindings 변경을 추적하세요",
+      "verify": "v2의 모듈 unload 견고화·port@1 필수·reset bulk 처리가 반영됐는지 스레드를 확인하세요"
+    },
+    {
+      "title": "StarFive JHB100 syscon·클럭 인프라",
+      "priority": "중",
+      "impactType": "project",
+      "affectedAudience": "RISC-V StarFive JHB100 플랫폼·clk/reset/syscon 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260809015054.210577-1-changhuang.liang@starfivetech.com/",
+      "if": "JHB100에서 PCIe·USB·GPU·NPU 등 후속 드라이버를 계획할 때",
+      "do": "28개 syscon 모듈·PLL·reset·socinfo 8패치 v4 merge 상태와 선행 base 시리즈 의존을 확인하세요",
+      "verify": "v4의 PLL prepare/unprepare 전환과 sys2_syscon reg overlap 수정을 원문에서 대조하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**KVM: arm64: Correctly handle end of VA space TLBI invalidation**\n\nMarc Zyngier의 nested KVM S1 TLB invalidation 수정이 TTBR1 VA 공간 끝에서 base+size 비교가 0으로 롤오버해 TLB 무효화가 실패하던 버그를 inclusive end 비교로 고칩니다. Wei-Lin Chang이 scope_end overflow를 추가 지적했고, Marc는 decode_range_tlbi()에서 range를 주소 공간 절반에 cap하는 후속 수정을 제안했습니다.\n\n영향: TTBR1 상단 VA 범위에서 nested KVM TLB range invalidation이 누락되면 stale TLB로 게스트 메모리 일관성이 깨질 수 있어, arm64 KVM nested virt 담당자에게 correctness 이슈입니다. Cc: stable@vger.kernel.org 포함.\n\n> this expression represent the last page/block in the TTBR1 VA space, as the result is a big fat 0. And a failed TLB invalidation.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/86wltz9n6u.wl-maz@kernel.org/)\n\n**KVM: arm64: nv: Allocate the shadow S2 MMUs individually**\n\nMarc Zyngier의 nested shadow S2 MMU 개별 할당 패치에서, init_nested_s2_mmu() 실패 시 for 루프 increment가 계속 실행돼 미초기화 tmp[i]를 kvm_free_stage2_pgd()에 넘기는 cleanup 버그가 Karl Mehltretter에 의해 failslab로 재현됐습니다.\n\n영향: 메모리 할당 실패 경로에서 커널 Oops(paging request at fffffffffffff650)가 발생하므로, nested KVM S2 MMU 초기화 코드를 다루는 arm64 KVM 담당자에게 즉각적인 correctness 수정이 필요합니다.\n\n> The increment expression of the for loop still runs after an error.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/anizGXThM-haqQXU@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/spacemit: add SpacemiT K3 display support**\n\nSpacemiT K3 RISC-V SoC용 17패치 시리즈 v2가 Saturn DPU DRM, Innosilicon DP/eDP·PHY, 클럭 바인딩, DTS를 추가합니다. v2에서는 모듈 unload 안정화, bindings의 port@1 필수화, 5개 DPU reset line bulk 처리, bridge teardown devres 정리가 반영됐습니다.\n\n영향: K3 보드(Pico-ITX, CoM260-IFX)에서 eDP/DisplayPort 출력을 upstream으로 가져오는 첫 디스플레이 서브시스템 브링업으로, RISC-V SpacemiT 플랫폼·DRM 담당자에게 직접적입니다. eDP 패널 DTS enablement 일정과 u-boot 디스플레이 지원 이후 upstream merge 시점은 확인이 필요합니다.\n\n> This series adds display support for the SpacemiT K3 [2], a RISC-V SoC: a new DRM driver, a new PHY driver and three new bindings.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260809-k3-display-v2-0-327d7910bf71@gmail.com/)\n\n**Add StarFive JHB100 syscon modules**\n\nStarFive JHB100 RISC-V SoC의 28개 syscon 모듈 바인딩, sys0/per0/per1 PLL 클럭, PCIe RP reset, socinfo 드라이버, DTS를 8패치 v4로 제출합니다. v4에서는 PLL ops를 prepare/unprepare로 전환해 CCF spinlock 하 sleeping regmap 접근을 제거하고, sys2_syscon reg overlap 버그를 수정합니다.\n\n영향: JHB100 플랫폼의 클럭·리셋·SoC 정보 기반 인프라를 upstream에 올리는 핵심 시리즈로, PCIe·USB·GPU·NPU 등 후속 드라이버가 syscon에 의존하는 RISC-V StarFive 담당자에게 선행 작업입니다. 선행 base 시리즈 merge 상태와 Reviewed-by·Acked-by 수령 여부는 확인이 필요합니다.\n\n> StarFive JHB100 has many syscon modules, as listed below: - pcieep0_ecsr_syscon ... - sfc2_filter_syscon\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260809015054.210577-1-changhuang.liang@starfivetech.com/)\n\n**drivers/base, mm: move arch_numa.c to mm/**\n\nMike Rapoport 패치가 GENERIC_ARCH_NUMA(arm64·riscv) 부팅 시 NUMA topology 초기화 코드 arch_numa.c를 drivers/base/에서 mm/로 이동하고 MAINTAINERS F: 항목을 갱신합니다. Andrew Morton이 mm 트리에 수령했고 Mike가 동의했습니다.\n\n영향: arm64·riscv 공통 NUMA 초기화 코드의 위치를 MM 서브시스템에 정렬하는 리팩터로, 두 아키텍처 플랫폼의 NUMA bring-up·backport 담당자가 파일 경로 변경을 추적해야 합니다. mm-stable의 nodes_clear() 제거 변경과의 merge 충돌 해소 방식은 확인이 필요합니다.\n\n> arch_numa.c implements boot time discovery and initialization of NUMA topology on architectures that select GENERIC_ARCH_NUMA (currently arm64 and riscv).\n\n[원문 확인](https://lore.kernel.org/linux-riscv/angVYX5owaXkZ3sG@kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/spacemit: add SpacemiT K3 display support",
+      "url": "https://lore.kernel.org/linux-riscv/20260809-k3-display-v2-0-327d7910bf71@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Add StarFive JHB100 syscon modules",
+      "url": "https://lore.kernel.org/linux-riscv/20260809015054.210577-1-changhuang.liang@starfivetech.com/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM: arm64: Correctly handle end of VA space TLBI invalidation",
+      "url": "https://lore.kernel.org/linux-arm-kernel/86wltz9n6u.wl-maz@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM: arm64: nv: Allocate the shadow S2 MMUs individually",
+      "url": "https://lore.kernel.org/linux-arm-kernel/anizGXThM-haqQXU@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drivers/base, mm: move arch_numa.c to mm/",
+      "url": "https://lore.kernel.org/linux-riscv/angVYX5owaXkZ3sG@kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-09T18:36:02.439Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

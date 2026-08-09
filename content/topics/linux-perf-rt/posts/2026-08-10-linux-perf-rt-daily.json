@@ -1,0 +1,121 @@
+{
+  "id": "2026-08-10-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-08-10 BPF arena fault-in — linux-perf-rt",
+  "headline": "PREEMPT_RT에서 BPF arena fault-in이 memory.max에서 reclaim 없이 실패해 SIGSEGV로 오인될 수 있어 sleepable allocator 패치가 제안됐습니다.",
+  "date": "2026-08-10",
+  "summary": "BPF arena fault-in 경로에 sleepable page allocator를 도입하는 v3 패치가 linux-rt-devel에 올라왔습니다. KCOV·hung task·kfree_nolock RFC는 maintainer 피드백 단계에서 진척 여부를 확인해야 합니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "PREEMPT_RT",
+    "BPF",
+    "스케줄러"
+  ],
+  "highlights": [
+    {
+      "title": "BPF arena fault-in의 memory.max·OOM 처리",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "PREEMPT_RT에서 BPF arena·memcg 경로를 운영·유지보수하는 개발자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260808140720.293604-1-jiayuan.chen@linux.dev/",
+      "if": "PREEMPT_RT에서 BPF arena를 memcg memory.max 아래에서 fault-in하는 워크로드를 운영한다면",
+      "do": "memory.max 도달 시 reclaim·OOM 없이 실패하고 SIGSEGV로 잘못 보고되는지 재현 테스트를 수행하세요",
+      "verify": "v3 selftest의 memory.events oom_kill 검증과 lore 스레드 원문을 확인하세요"
+    },
+    {
+      "title": "KCOV 스케줄러·타이머 coverage 누수 억제",
+      "priority": "중",
+      "impactType": "project",
+      "affectedAudience": "KCOV·syzkaller 및 PREEMPT_RT 스케줄러·타이머 경로를 유지보수하는 개발자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260807205027.31972-1-kmehltretter@gmail.com/",
+      "if": "PREEMPT_RT VM에서 syzkaller corpus·coverage 노이즈를 줄이려 한다면",
+      "do": "CONFIG_KCOV_SELFTEST를 포함한 완전한 5개 패치 시리즈 재전송 여부를 추적하세요",
+      "verify": "Peter Zijlstra의 부분 시리즈 거절 답신과 corpus·coverage 중간값 수치를 원문에서 대조하세요"
+    },
+    {
+      "title": "hung task detector의 rtmutex blocker 표시",
+      "priority": "중",
+      "impactType": "project",
+      "affectedAudience": "PREEMPT_RT hung task 디버깅·rtmutex 경로를 유지보수하는 개발자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/cover.1786193045.git.ruipengqi3@gmail.com/",
+      "if": "PREEMPT_RT에서 rtmutex 대기로 hung된 태스크의 blocker를 찾아야 한다면",
+      "do": "Peter Zijlstra 승인 없이 locking 디버그 코드 확장 버전이 재전송되지 않는지 확인하세요",
+      "verify": "v2 패치의 rt_mutex_task_owner() 예시 로그와 Lance Yang 요청 스레드를 확인하세요"
+    },
+    {
+      "title": "set_cpus_allowed_force()의 kfree_nolock() 전환 RFC",
+      "priority": "하",
+      "impactType": "runtime",
+      "affectedAudience": "PREEMPT_RT 스케줄러·SLAB 경로를 유지보수하는 개발자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260807-kfree_nolock_kmalloc-v1-0-ba993cbf7a60@kernel.org/",
+      "if": "pi_lock 보유 중 kfree_rcu()로 인한 RCU grace period 지연을 줄이려 한다면",
+      "do": "KFENCE·kmemleak·대형 kmalloc 처리를 포함한 전체 RFC의 merge window 진입 시점을 추적하세요",
+      "verify": "7.4 대상 초기 RFC 선언과 kfree_nolock() 전환 설명을 lore 스레드에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**sched: use kfree_nolock() instead of kfree_rcu()**\n\nkfree_nolock()이 일반 kmalloc() 객체까지 처리하도록 확장하는 RFC 시리즈 5/5 패치로, set_cpus_allowed_force()에서 pi_lock 보유 중 kfree_rcu() 대신 kfree_nolock()을 사용합니다.\n\n영향: PREEMPT_RT에서 pi_lock 아래 kfree()는 unsafe라 RCU grace period 지연이 필요했으며, 전환은 스케줄러 CPU affinity 갱신 경로의 불필요한 지연을 줄일 수 있습니다.\n\n> This is an initial RFC for something that could target 7.4 and definitely not earlier merge window.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260807-kfree_nolock_kmalloc-v1-0-ba993cbf7a60@kernel.org/)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**bpf: arena: handle memory.max on fault-in with reclaim/OOM**\n\nBPF arena fault-in 경로에 sleepable page allocator를 도입하고 페이지 선할당을 spinlock 밖으로 옮겨 reclaim·memcg OOM 경로를 쓰게 합니다. v3는 selftest가 memory.events oom_kill로 memcg OOM을 검증합니다.\n\n영향: PREEMPT_RT에서 can_alloc_pages()가 BPF 컨텍스트에서 항상 non-blocking allocator를 강제하면 memory.max 도달 시 reclaim 없이 실패하고, 그 실패가 유효 arena 주소에 SIGSEGV로 잘못 보고됩니다.\n\n> can_alloc_pages() is a conservative guess for BPF program context and always forces the non-blocking allocator under PREEMPT_RT.\n\n> That failure is turned into VM_FAULT_SIGSEGV, which is misleading: the faulting address is a perfectly valid arena address.\n\n> Preallocate the page outside the lock (patch 2), the way do_anonymous_page() does, so the allocation can sleep and go through reclaim and the OOM path.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260808140720.293604-1-jiayuan.chen@linux.dev/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**kcov: suppress timer and scheduler coverage leaks**\n\n중첩 가능한 KCOV_PAUSED 비트와 kcov_pause()/kcov_resume()을 추가하고 deferred hrtimer rearm, __schedule(), try_to_wake_up(), wake_up_new_task()에서 스케줄러·타이머 경로의 간접 coverage 기록을 잠시 멈춥니다.\n\n영향: PREEMPT_RT에서 syscall coverage에 hrtimer·스케줄러 wake 경로가 섞이면 syzkaller·KCOV 분석이 노이즈에 묶이며, 제안자는 corpus·coverage 중간값이 각각 약 28.8%·7.7% 늘었다고 보고했습니다. Peter Zijlstra는 selftest를 포함한 전체 시리즈 없이는 검토하지 않겠다고 답했습니다.\n\n> Add a nestable KCOV_PAUSED bit. Use it around deferred hrtimer rearm, __schedule(), try_to_wake_up() and wake_up_new_task().\n\n> At ~110k executions, the five-run median was 4,142 vs. 3,216 corpus entries (+28.8%) and 54,872 vs. 50,940 coverage (+7.7%).\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260807205027.31972-1-kmehltretter@gmail.com/)\n\n**sched: use kfree_nolock() instead of kfree_rcu()**\n\nkfree_nolock() 전환으로 불필요한 RCU grace period 지연을 피할 수 있으며, alloc_user_cpus_ptr()도 cpumask_size()만 kmalloc합니다.\n\n영향: irq_work()로 지연되는 해제가 일부 있을 수 있으나 pi_lock 경로의 지연 감소가 기대됩니다.\n\n> we can switch to kfree_nolock() and avoid the unnecessary rcu grace period delay. Only in some cases the freeing might be deferred to irq_work().\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260807-kfree_nolock_kmalloc-v1-5-ba993cbf7a60@kernel.org/)\n\n**hung_task: show the blocker task if the task is hung on rtmutex**\n\nv2 패치는 rt_mutex_task_owner()를 추가하고 hung task detector가 rtmutex 기반 lock에서 blocker 태스크를 식별·출력합니다.\n\n영향: PREEMPT_RT에서 rtmutex 대기로 hung된 태스크는 기존 debug_show_blocker()가 mutex·semaphore·rwsem만 추적해 blocker를 못 보여줍니다. Lance Yang은 Peter Zijlstra 승인 없이 재전송하지 말라고 요청했습니다.\n\n> Currently, debug_show_blocker() only tracks mutex, semaphore and rwsem lock types. Extend it to also cover rtmutex or rt_mutex-based lock\n\n> INFO: task cat:195 is blocked on a rtmutex likely owned by task cat:194.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/cover.1786193045.git.ruipengqi3@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "bpf: arena: handle memory.max on fault-in with reclaim/OOM",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260808140720.293604-1-jiayuan.chen@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "kcov: suppress timer and scheduler coverage leaks",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260807205027.31972-1-kmehltretter@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Peter Zijlstra on KCOV partial series",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260808084431.GS687043@noisy.programming.kicks-ass.net/",
+      "note": "thread"
+    },
+    {
+      "title": "sched: kfree_nolock RFC cover",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260807-kfree_nolock_kmalloc-v1-0-ba993cbf7a60@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "sched: kfree_nolock set_cpus_allowed_force",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260807-kfree_nolock_kmalloc-v1-5-ba993cbf7a60@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "hung_task: rtmutex blocker v2 cover",
+      "url": "https://lore.kernel.org/linux-rt-devel/cover.1786193045.git.ruipengqi3@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Lance Yang on hung_task resubmit",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260808153416.49698-1-lance.yang@linux.dev/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-09T18:31:34.647Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

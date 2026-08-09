@@ -1,0 +1,128 @@
+{
+  "id": "2026-08-10-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-08-10 KVM·SELinux 수정 — Android 커널",
+  "headline": "SELinux BPF inode 초기화 순서 수정, KVM compound page EFAULT 크래시 방어, DRM fence 레이스·TLS dead code 정리가 ACK에 반영됐다.",
+  "date": "2026-08-10",
+  "summary": "ACK mainline·android16-6.12에 SELinux BPF 보안 회귀 수정과 KVM protected VM 크래시 방어가 포함됐다. 신규로 upstream backtrace-suppression KUnit self-test 모듈이 ACK CI 목록에 추가됐다.",
+  "tags": [
+    "안드로이드",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "SELinux BPF: SBLABEL_MNT 검사 순서 수정",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "SELinux·BPF·보안 서브시스템 ACK 백포트 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/8f0a5b31aee19510e75741c9687cf0d9321fa7ed",
+      "if": "bpffs 등 xattr가 없는 genfscon 마운트에서 SELinux inode 초기화 경로를 다룬다면",
+      "do": "selinux_inode_init_security()에서 SBLABEL_MNT 검사를 isec initialized 표시 전에 수행하도록 한 커밋을 벤더 트리에 반영할 것",
+      "verify": "genfscon bpffs 마운트에서 inode_doinit_with_dentry() 등 후속 SELinux 경로가 정상 동작하는지 확인할 것"
+    },
+    {
+      "title": "KVM: compound head page refcount pin",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "pKVM·protected VM·DMA-BUF 연동 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/1a138e24e292579ddcf417ed09e78df667f51396",
+      "if": "DMA-BUF 영역을 protected VM Stage-2에 매핑하는 워크로드를 운용한다면",
+      "do": "kvm_try_get_pfn()에서 compound_head(page)로 head page refcount를 pin하도록 한 수정을 머지할 것",
+      "verify": "tail page에서 get_page_unless_zero() 실패로 Guest VCPU가 EFAULT로 크래시하지 않는지 재현 테스트할 것"
+    },
+    {
+      "title": "DRM CRTC: dma_fence_signal() 레이스 대응",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "DRM/KMS·dmabuf fence 연동 드라이버 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/57acb869490b504996ea46cbb80af49e35ec66e1",
+      "if": "dma-buf fence signal 이후 CRTC fence 이름 조회 경로가 실행된다면",
+      "do": "drm_crtc_fence_get_driver_name()·get_timeline_name()에서 BUG_ON()을 제거한 패치를 검토·적용할 것",
+      "verify": "fence signal 후 시스템 패닉이 발생하지 않는지 디스플레이·dmabuf 스택에서 확인할 것"
+    },
+    {
+      "title": "TLS SW 경로 dead sockmap 코드 제거",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "네트워킹 스택 ACK 머지·보안 스캔 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/79511603a65b990bed675eb4bcfd85305d3ff42a",
+      "if": "TLS SW 경로 코드를 머지하거나 보안 스캔 대상으로 관리한다면",
+      "do": "sendmsg/recvmsg 경로의 사용되지 않는 sockmap(psock) 분기 제거 커밋을 반영할 것",
+      "verify": "AI 보안 스캐너의 sockmap 관련 false positive가 줄었는지 스캔 결과를 확인할 것"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**FROMGIT: selinux: bpf: check SBLABEL_MNT before isec init**\n\nselinux_inode_init_security()에서 inode 보안 구조체를 initialized로 표시하기 전에 마운트가 SBLABEL_MNT를 지원하는지 먼저 확인하도록 순서를 바꿨다.\n\n영향: genfscon bpffs처럼 xattr가 없는 마운트에서 SBLABEL_MNT 검사가 실패하면 isec 초기화 상태가 깨져 inode_doinit_with_dentry() 등 후속 SELinux 경로가 망가진다.\n\n> selinux_inode_init_security() marks the isec as initialized before checking if mount labeling is supported (SBLABEL_MNT). This was fine until commit 9722955b5430\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/8f0a5b31aee19510e75741c9687cf0d9321fa7ed)\n\n**ANDROID: KVM: Pin compound head page in kvm_try_get_pfn**\n\nkvm_try_get_pfn()에서 compound allocation의 tail page 대신 compound_head(page)를 참조해 head page refcount를 pin하도록 수정했다.\n\n영향: DMA-BUF 영역을 protected VM Stage-2에 매핑할 때 tail page refcount가 0이라 get_page_unless_zero()가 실패하고 Guest VCPU가 EFAULT(Bad address)로 크래시하던 버그를 막는다.\n\n> kvm_try_get_pfn() fails when calling get_page_unless_zero() on any tail page (Page 1 onwards), causing the Guest VCPU to crash with EFAULT (\"Bad address\").\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/1a138e24e292579ddcf417ed09e78df667f51396)\n\n**FROMLIST: drm/drm_crtc: fix race with dma_fence_signal() in ::get_driver_name()**\n\ndrm_crtc_fence_get_driver_name()과 get_timeline_name()에서 fence ops가 signal 시 NULL로 바뀔 수 있는 레이스에 대응해 BUG_ON() 검사를 제거했다.\n\n영향: dma-buf fence signal v3 이후 fence ops 포인터가 signal 경로에서 NULL이 될 수 있어, BUG_ON()이 시스템 전체 다운으로 이어지던 크래시를 방지한다. Android 디스플레이·dmabuf 스택에 직접 영향이 있다.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/57acb869490b504996ea46cbb80af49e35ec66e1)\n\n**tls: remove dead sockmap (psock) handling from the SW path**\n\nTLS SW 경로(sendmsg/recvmsg)에서 사용되지 않는 sockmap(psock) 분기 코드를 삭제했다. TLS와 sockmap은 상호 배타다.\n\n영향: 기능 변화는 없는 dead code 정리이나, AI 보안 스캐너가 sockmap 관련 버그로 오탐하는 노이즈를 줄인다. Android GKI 출하 커널에서 TLS SW 경로와 sockmap을 동시에 쓰는 실제 워크로드가 있는지는 확인되지 않았다.\n\n> TLS and sockmap are now mutually exclusive. Try to delete the code from sendmsg and recvmsg path which is now obviously dead.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/79511603a65b990bed675eb4bcfd85305d3ff42a)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**ANDROID: kunit: add backtrace-suppression test module**\n\nupstream backtrace-suppression KUnit self-test 모듈을 ACK의 공통 KUnit 테스트 모듈 목록에 추가했다.\n\n영향: 런타임 동작 변경은 없지만 ACK CI가 upstream KUnit self-test 커버리지를 따라가도록 맞춘다. KUnit 기반 회귀 테스트를 쓰는 팀에 영향이 있다.\n\n> Upstream added a new backtrace-suppression kunit test module that builds by default with CONFIG_KUNIT_TEST, so add it to the list of kunit common modules.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/b9e7d950765e906de12af00c7a931f6adcc820ca)\n\n**ANDROID: gki_defconfig: Build with DPM watchdog**\n\nandroid16-6.12 GKI defconfig에 DPM watchdog를 컴파일하되 CONFIG_DPM_WATCHDOG_ENABLED는 unset으로 기본 비활성을 유지하고, timeout 25초·warning 10초를 설정했다.\n\n영향: suspend/resume 중 lockup을 ChromeOS 경험치 기반으로 조기 감지·패닉 덤프할 수 있으나 기본 off라 기존 디바이스에는 영향이 없다. 플랫폼은 boot 파라미터로 opt-in한다.\n\n> Compile the DPM watchdog into the kernel to detect lockups during suspend/resume, but leave it disabled by default.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/31c9bd1f6b945792e2ba9c9919f30f01cf4b1bbd)\n\n**ANDROID: GKI: CRYPTO_LZ4 is now implicit**\n\nGKI defconfig에서 CONFIG_CRYPTO_LZ4 항목을 제거했다. HIBERNATION Kconfig가 LZ4 압축을 암묵적으로 선택하게 된 upstream 변경에 맞춘 정리다.\n\n영향: ACK defconfig 드리프트를 줄이고 hibernate LZ4 가용성 변경과 정렬한다. 벤더가 gki_defconfig를 포크·병합할 때 불필요한 CONFIG 충돌을 피할 수 있다.\n\n> The CRYPTO_LZ4 config is now implicitly selected via HIBERNATION, so remove it from our gki_defconfig files.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/87aba67d69fd0706152ae2d9dec68c2cfc274459)\n\n**ANDROID: gki_defconfig: enable CONFIG_SW_SYNC=y for debug/testing**\n\nGKI defconfig에 CONFIG_SW_SYNC=y를 켜 sw_sync 드라이버를 빌드에 포함했다. 런타임 노출은 여전히 debugfs 경로에 한정된다.\n\n영향: igt-gpu-tools 등 GPU 드라이버 디버그·테스트에 필요하지만, unsafe fence 관리 위험이 있어 출하 이미지에서는 debugfs 미마운트가 전제다. Android 12+ GMS는 debugfs 마운트 출하를 금지한다.\n\n> The sw_sync driver is useful for debugging and testing GPU drivers, and is leveraged by several tests in the igt-gpu-tools test suite.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/7443a0c3c9ecfc8982003afde92e9c783c725994)\n\n**ANDROID: sched: Avoid macro redefinition of TRACE_INCLUDE_PATH**\n\ninclude/trace/hooks/sched.h에 #undef TRACE_INCLUDE_PATH를 추가해 동일 컴파일 단위에서 trace hook 헤더가 중복 포함될 때 매크로 재정의를 막았다.\n\n영향: ACK의 -Werror 빌드에서 -Wmacro-redefined로 스케줄러/EAS trace hook 통합 시 빌드가 깨지는 회귀를 방지한다.\n\n> Add missing #undef TRACE_INCLUDE_PATH before #define in include/trace/hooks/sched.h to prevent -Werror,-Wmacro-redefined when multiple trace hook headers are included in the same compilation unit.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/82be0d329bf2b455546a09cc84a40c9d1716b54d)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "high",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "FROMGIT: selinux: bpf: check SBLABEL_MNT before isec init",
+      "url": "https://android.googlesource.com/kernel/common/+/8f0a5b31aee19510e75741c9687cf0d9321fa7ed",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: KVM: Pin compound head page in kvm_try_get_pfn",
+      "url": "https://android.googlesource.com/kernel/common/+/1a138e24e292579ddcf417ed09e78df667f51396",
+      "note": "commit"
+    },
+    {
+      "title": "FROMLIST: drm/drm_crtc: fix race with dma_fence_signal() in ::get_driver_name()",
+      "url": "https://android.googlesource.com/kernel/common/+/57acb869490b504996ea46cbb80af49e35ec66e1",
+      "note": "commit"
+    },
+    {
+      "title": "tls: remove dead sockmap (psock) handling from the SW path",
+      "url": "https://android.googlesource.com/kernel/common/+/79511603a65b990bed675eb4bcfd85305d3ff42a",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: kunit: add backtrace-suppression test module",
+      "url": "https://android.googlesource.com/kernel/common/+/b9e7d950765e906de12af00c7a931f6adcc820ca",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: gki_defconfig: Build with DPM watchdog",
+      "url": "https://android.googlesource.com/kernel/common/+/31c9bd1f6b945792e2ba9c9919f30f01cf4b1bbd",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: GKI: CRYPTO_LZ4 is now implicit",
+      "url": "https://android.googlesource.com/kernel/common/+/87aba67d69fd0706152ae2d9dec68c2cfc274459",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: gki_defconfig: enable CONFIG_SW_SYNC=y for debug/testing",
+      "url": "https://android.googlesource.com/kernel/common/+/7443a0c3c9ecfc8982003afde92e9c783c725994",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: sched: Avoid macro redefinition of TRACE_INCLUDE_PATH",
+      "url": "https://android.googlesource.com/kernel/common/+/82be0d329bf2b455546a09cc84a40c9d1716b54d",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-09T18:06:33.178Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/android-newsletter-from-dossier-ko.md"
+  }
+}
