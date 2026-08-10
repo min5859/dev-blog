@@ -1,0 +1,121 @@
+{
+  "id": "2026-08-11-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-08-11 tc BPF skb 회귀 — Perf·RT",
+  "headline": "tc BPF action echo skb 크기 과소추정 회귀와 call_rcu/call_srcu defer, ARM64 BRBE 분기 스냅샷이 linux-perf-rt 렌즈의 핵심입니다.",
+  "date": "2026-08-11",
+  "summary": "net/sched tc action에 get_fill_size()가 없어 echo skb가 넘치고 userspace는 -EINVAL인데 커널 action은 이미 설치되는 회귀가 보고되었습니다. RCU/SRCU defer·ARM64 BRBE·BPF atomic 레지스터 통합도 함께 추적할 가치가 있습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "BPF",
+    "PREEMPT_RT",
+    "perf"
+  ],
+  "highlights": [
+    {
+      "title": "tc BPF action echo skb 크기 회귀",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "tc BPF action·netlink TC 제어 경로를 운영·개발하는 네트워킹/BPF 엔지니어",
+      "verifyLink": "https://lore.kernel.org/bpf/20260810164357.1653956-1-victor@mojatatu.com/",
+      "if": "tc netlink로 BPF action을 RTM_NEWACTION+NLM_F_ECHO로 추가·갱신한다면",
+      "do": "userspace -EINVAL과 커널 action 설치 상태 불일치 가능성을 점검하고 get_fill_size() 패치 반영 여부를 추적하세요",
+      "verify": "lore 패치 스레드와 4e76e75d6aba 회귀 원인 커밋을 확인하세요"
+    },
+    {
+      "title": "call_rcu()/call_srcu() any-context 안전화",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "BPF tracing·RCU/SRCU·PREEMPT_RT 교차 경로를 다루는 커널 개발자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260810122758.183765-1-puranjay@kernel.org/",
+      "if": "BPF tracing·RCU 계측·PREEMPT_RT를 함께 쓴다면",
+      "do": "call_rcu()/call_srcu() 재진입 deadlock 가능성과 CONFIG_RCU_DEFER defer 모델 영향을 평가하세요",
+      "verify": "linux-rt-devel 패치 시리즈와 call_srcu() re-entry selftest를 확인하세요"
+    },
+    {
+      "title": "ARM64 BRBE로 bpf_get_branch_snapshot()",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "ARM64에서 BPF tracing·perf branch snapshot을 쓰는 성능/디버깅 엔지니어",
+      "verifyLink": "https://lore.kernel.org/bpf/20260810164622.1829843-1-puranjay@kernel.org/",
+      "if": "ARMv9 BRBE가 있는 ARM64에서 bpf_get_branch_snapshot()을 쓴다면",
+      "do": "PERF_SAMPLE_BRANCH_STACK perf event 활성화 전제와 v6 raw_local_daif_save/restore 수정을 추적하세요",
+      "verify": "bpf 패치 스레드에서 BRBE static call 구현 상태를 확인하세요"
+    },
+    {
+      "title": "BPF atomic load 레지스터 통합",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "BPF verifier·atomic/probe instruction 경로를 유지보수하는 개발자",
+      "verifyLink": "https://lore.kernel.org/bpf/5137fc02-06f6-4c00-aa51-60704d05be12@iogearbox.net/",
+      "if": "BPF_PROBE_ATOMIC·BPF_LOAD_ACQ 등 atomic 경로를 유지보수한다면",
+      "do": "bpf_atomic_load_reg() 통합안과 insn_def_regno() 중복 제거 검토를 follow하세요",
+      "verify": "maintainer 리뷰 스레드에서 merge 반영 여부를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**net/sched: add get_fill_size callbacks for actions missing them**\n\nact_bpf·act_pedit·act_police 등 여러 tc action에 get_fill_size()를 추가하고, tcf_action_shared_attrs_size()가 tcf_t를 nla_total_size_64bit()로 계산하도록 보정합니다. RTM_NEWACTION+NLM_F_ECHO skb 크기 과소추정으로 tca_get_fill()이 -EINVAL을 내지만 tcf_idr_insert_many()로 action은 이미 설치되는 버그를 막습니다.\n\n영향: act_bpf는 TCA_ACT_BPF_OPS만으로 action당 최대 32KB(BPF_MAXINSNS)까지 dump될 수 있어 tc BPF action을 두 개만 추가해도 echo skb가 넘칩니다. tc/netlink로 BPF action을 배포·감시하는 팀은 userspace 실패와 커널 설치 상태 불일치를 반드시 알아야 합니다.\n\n> act_bpf is the clearest case: TCA_ACT_BPF_OPS alone reaches 32KB per action (BPF_MAXINSNS), so two actions are enough to overrun the allocation.\n\n> tca_get_fill() then fails and the request returns -EINVAL, but tcf_action_init() has already committed the actions via tcf_idr_insert_many().\n\n[원문 확인](https://lore.kernel.org/bpf/20260810164357.1653956-1-victor@mojatatu.com/)\n\n회귀 원인은 4e76e75d6aba의 action add/delete 이벤트 메시지 크기 계산 커밋으로 지적됩니다. [net] 안정 브랜치 백포트 대상인지는 확인이 필요합니다.\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=4e76e75d6aba)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**rcu,srcu: Make call_rcu()/call_srcu() safe from any context**\n\n인터럽트 비활성 컨텍스트(NMI·계측 재진입 포함)에서 call_rcu()/call_srcu()가 들어오면 per-CPU lockless deferred list에 stage하고 irq_work로 재발행합니다. CONFIG_RCU_DEFER 뒤에 숨기며 rcu_barrier()/srcu_barrier()·CPU offline 경로가 deferred list를 drain합니다. BPF rcu_segcblist_enqueue() 재진입 deadlock 재현 selftest를 포함합니다.\n\n영향: BPF가 rcu_segcblist_enqueue()에 붙어 free 시 call_rcu_tasks_trace()(call_srcu)로 같은 CPU·이미 잡힌 srcu_data lock에서 deadlock이 납니다. RCU 계측·BPF tracing·PREEMPT_RT를 같이 쓰는 환경에서는 이번 시리즈가 call_rcu/call_srcu 안전 전제를 바꿉니다.\n\n> stage the callback on a per-CPU lockless list and re-issue it from an irq_work once interrupts are back on, going straight to the enqueue helper so the re-issue cannot defer again.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260810122758.183765-1-puranjay@kernel.org/)\n\n**arm64: Add BRBE support for bpf_get_branch_snapshot()**\n\nARM64 BRBE(Branch Record Buffer Extension)용 perf_snapshot_branch_stack static call을 구현해 bpf_get_branch_snapshot()을 x86 LBR와 같이 ARM64에서도 씁니다. v6는 raw_local_daif_save/restore 추가, BRBE pause/freeze 경쟁 수정, selftest 임계값을 BRBE waste/hit limit에서 유도합니다.\n\n영향: bpf_get_branch_snapshot()은 함수 내부 분기 경로를 스택트레이스보다 정밀하게 보여 retsnoop 같은 BPF 진단 도구에 핵심입니다. ARMv9 BRBE가 있는 플랫폼에서 perf+BPF 분기 스냅샷 기능 격차가 줄어듭니다.\n\n> This series enables the bpf_get_branch_snapshot() BPF helper on ARM64 by implementing the perf_snapshot_branch_stack static call for ARM's Branch Record Buffer Extension (BRBE).\n\n[원문 확인](https://lore.kernel.org/bpf/20260810164622.1829843-1-puranjay@kernel.org/)\n\n**bpf: Derive the atomic load register in one place**\n\ninclude/linux/filter.h에 bpf_atomic_load_reg() 인라인을 추가해 BPF_ATOMIC/BPF_PROBE_ATOMIC이 메모리 operand에서 읽어 넣는 레지스터 번호를 한곳에서 계산합니다. BPF_PROBE_ATOMIC fault 시 지울 레지스터 결정과 BPF_LOAD_ACQ·BPF_CMPXCHG·BPF_FETCH 케이스를 switch로 처리합니다.\n\n영향: BPF_PROBE_ATOMIC fault 처리와 verifier/fixup 경로가 atomic load 대상 레지스터를 일관되게 알아야 합니다. Eduard Zingerman이 fixups.c:insn_def_regno()와 중복 가능성을 지적했고 Daniel Borkmann이 통합을 검토 중으로 보입니다.\n\n> Note that there is already a very similar fixups.c:insn_def_regno(). Should we try to avoid duplication?\n\n[원문 확인](https://lore.kernel.org/bpf/5137fc02-06f6-4c00-aa51-60704d05be12@iogearbox.net/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "high",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "net/sched: add get_fill_size callbacks for actions missing them",
+      "url": "https://lore.kernel.org/bpf/20260810164357.1653956-1-victor@mojatatu.com/",
+      "note": "thread"
+    },
+    {
+      "title": "net sched actions: calculate add/delete event message size",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=4e76e75d6aba",
+      "note": "commit"
+    },
+    {
+      "title": "rcu,srcu: Make call_rcu()/call_srcu() safe from any context",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260810122758.183765-1-puranjay@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: arena: handle memory.max on fault-in with reclaim/OOM",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260808140720.293604-1-jiayuan.chen@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "arm64: Add BRBE support for bpf_get_branch_snapshot()",
+      "url": "https://lore.kernel.org/bpf/20260810164622.1829843-1-puranjay@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Derive the atomic load register in one place",
+      "url": "https://lore.kernel.org/bpf/5137fc02-06f6-4c00-aa51-60704d05be12@iogearbox.net/",
+      "note": "thread"
+    },
+    {
+      "title": "hung_task: show the blocker task if the task is hung on rtmutex",
+      "url": "https://lore.kernel.org/linux-rt-devel/cover.1786193045.git.ruipengqi3@gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-10T18:48:08.023Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

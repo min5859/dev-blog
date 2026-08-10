@@ -1,0 +1,116 @@
+{
+  "id": "2026-08-11-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-08-11 iMX6 PCI 회귀·RISC-V Vector — 아키텍처/플랫폼",
+  "headline": "Apalis iMX6 PCIe 2차 회귀가 보고됐고, RISC-V는 syscall Vector 최적화·gtrace AUX·Zalrsc atomic 논의가 진행 중이다.",
+  "date": "2026-08-11",
+  "summary": "i.MX6 PCIe PHY 전원 시퀀스 수정 이후 Apalis 보드에서 PCI 링크 초기화 실패가 재발했다. RISC-V는 Vector 컨텍스트 fast path 최적화와 perf AUX 복사 API, Zalrsc-only 코어 atomic 처리 방식을 두고 maintainer 검토가 이어진다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "arm64",
+    "riscv",
+    "아키텍처"
+  ],
+  "highlights": [
+    {
+      "title": "Apalis iMX6 PCI 링크 2차 회귀",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "i.MX6/Apalis Toradex·PCI imx6 드라이버 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/3hxiy6aaiagt5zunntpidaeqc4or4wrebf7mu7asvyyibqmvo2@xhvasdqp64rw/",
+      "if": "Apalis iMX6 또는 imx6q-pcie 기반 보드를 mainline/master에서 검증 중이라면",
+      "do": "부팅 수정(7678e81498e2) 적용 트리에서 PCI 장치 링크업과 probe 결과를 재확인하세요",
+      "verify": "dmesg에서 LTSSM POLL_CONFIG 실패나 probe error -110 여부를 원문 스레드와 대조하세요"
+    },
+    {
+      "title": "RISC-V syscall Vector 컨텍스트 최적화",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "RISC-V Vector·syscall·KVM 경로 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260810172255.1532787-1-tchiu@tenstorrent.com/",
+      "if": "RISC-V Vector 워크로드에서 syscall 오버헤드가 병목이라면",
+      "do": "CONFIG_RISCV_VSTATE_OPT의 성능 이득과 불법 vector·stale vstate 탐지 포기 트레이드오프를 벤치마크로 검토하세요",
+      "verify": "getpid 약 80 cycle·nginx 3.5% reqps 수치와 선행 KVM vector context 패치 미머지 의존성을 스레드에서 확인하세요"
+    },
+    {
+      "title": "gtrace perf AUX 버퍼 복사 API",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "RISC-V 트레이스·perf·gtrace 드라이버 개발자",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260810152223.3946743-8-mayuresh.chitale@oss.qualcomm.com/",
+      "if": "RISC-V 하드웨어 트레이스를 perf로 연동하는 경로를 설계 중이라면",
+      "do": "gtrace_path_copyto_auxbuf()와 copyto_auxbuf 콜백 추가 패치를 ramsink·PMU 연동 계획에 반영하세요",
+      "verify": "ramsink 드라이버 후속 구현 일정은 이 스레드만으로는 확인되지 않으니 관련 패치 큐를 추적하세요"
+    },
+    {
+      "title": "Zalrsc-only 코어 atomic 처리 논의",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "RISC-V atomic·errata·MIPS P8700 플랫폼 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260810-preoccupy-earwig-c8d98044c1da@spud/",
+      "if": "MIPS P8700 등 Zaamo 미지원·Zalrsc 기반 SBI 에뮬레이션 코어를 지원한다면",
+      "do": "errata 메커니즘 대신 alternatives로 LR/SC-only atomic을 처리하는 방향을 검토하세요",
+      "verify": "ERRATA_MIPS_P8700_AMO_ZALRSC default n과 최종 합의 여부는 maintainer 답변을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**[REGRESSION] mainline/master: Apalis iMX6 no longer boots**\n\n부팅 회귀 수정(7678e81498e2, imx6 PCIe PHY 전원 시퀀스) 이후 Apalis iMX6에서 PCI 링크가 LTSSM POLL_CONFIG에서 실패(error -110)하는 2차 회귀가 보고됐다.\n\n영향: i.MX6 PCIe PHY 전원 시퀀스 변경은 부팅 hang은 고치지만 연결된 PCI 장치 링크업을 깨뜨릴 수 있어, ARM 플랫폼·PCI 담당자는 보드별 재검증이 필요하다.\n\n> That patch might have introduced/exposed a second regression where PCI devices are not linked properly during the initialization.\n\n> imx6q-pcie 1ffc000.pcie: Link failed to come up. LTSSM: POLL_CONFIG imx6q-pcie 1ffc000.pcie: probe with driver imx6q-pcie failed with error -110\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/3hxiy6aaiagt5zunntpidaeqc4or4wrebf7mu7asvyyibqmvo2@xhvasdqp64rw/)\n\n[원문 확인](https://lore.kernel.org/all/bl7i3obu2clzsgeoct2a4mtfhv6typcjdqmgneropf3hpgwve6@n2m5uhlduw57/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**arm64: Mark set_preempt_need_resched() access to .need_resched**\n\nKCSAN이 __delay와 겹치는 watchpoint 때문에 arm64에서 need_resched 접근에 대한 오탐이 난 것으로 확인됐고, x86과 같이 delay 구현에서 KCSAN을 끄는 방향으로 정리됐다. Paul McKenney는 arm64 전용 패치를 되돌리고 이 수정을 적용 중이며 Will Deacon은 arm64 트리에 큐잉했다.\n\n영향: arm64에서 KCSAN/RCU 스케줄링 경로를 디버깅하는 엔지니어는 실제 레이스가 아닌 delay 재귀 때문에 보고가 깨질 수 있어, x86과 동일한 Makefile 예외가 필요하다.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/213a34d0-9ac5-4afd-88b6-0b7594439078@paulmck-laptop/)\n\ndelay.o에 대한 arm64 Makefile KCSAN_SANITIZE 예외가 mainline에 머지되는 시점은 아직 확인되지 않았다.\n\n**riscv: optimize Vector context restore on syscall**\n\nv5 시리즈는 syscall·컨텍스트 스위치 경로의 벡터 상태 관리를 최적화하고 CSR 읽기를 줄이며 selftest를 추가한다. 패치 7은 CONFIG_RISCV_VSTATE_OPT로 syscall fast path에서 user vector context nulling을 건너뛰는 선택적 최적화를 도입한다.\n\n영향: RISC-V Vector를 쓰는 워크로드는 syscall 오버헤드가 병목이 될 수 있어, ~80 cycle·nginx 3.5% 개선과 커널 내 불법 vector 사용 탐지 포기라는 트레이드오프를 아키텍처 담당자가 검토해야 한다.\n\n> That cuts ~80 cycles on getpid and improves 3.5% reqps on a nginx workload, but it gives up the ability to catch illegal use of vector in the kernel space and stale-vstate bugs in the user code.\n\n> This series is based on [1], which has not been applied yet.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260810172255.1532787-1-tchiu@tenstorrent.com/)\n\nCONFIG_RISCV_VSTATE_OPT 기본값 여부와 선행 KVM vector context fix의 mainline 머지 시점은 maintainer 결정이 남아 있다.\n\n**gtrace: Add function to copy into perf AUX buffer**\n\nRISC-V trace ramsink가 perf AUX 버퍼로 데이터를 복사할 수 있도록 gtrace_path_copyto_auxbuf() API와 gtrace_driver::copyto_auxbuf 콜백이 gtrace-core에 추가된다.\n\n영향: RISC-V 하드웨어 트레이스를 perf로내려면 AUX 버퍼 복사 경로가 필요하며, 이후 ramsink·PMU 연동의 기반이 된다.\n\n> The RISC-V trace ramsink will need a mechanism to copy trace data into the perf AUX buffer. Add gtrace_path_copyto_auxbuf() function and corresponding trace driver callback copyto_auxbuf() for this pu\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260810152223.3946743-8-mayuresh.chitale@oss.qualcomm.com/)\n\nramsink 드라이버가 이 콜백을 실제로 구현하는 후속 패치의 머지 일정은 이 스레드만으로는 확인되지 않는다.\n\n**riscv: Use Zalrsc extension to implement atomic functions**\n\nMIPS P8700은 Zaamo를 Zalrsc 기반 SBI 트랩으로 에뮬레이션하므로, 패치 제안자는 커널 atomic을 LR/SC만 쓰도록 errata 메커니즘으로 바꾸려 했다. Conor Dooley는 실제 erratum이 아니라 alternatives로 처리해야 한다고 반박했다.\n\n영향: Zalrsc-only 코어 지원 방식은 multiplatform 커널의 errata 기본 활성화 정책과 충돌할 수 있어, RISC-V atomic·alternatives 설계에 영향을 준다.\n\n> MIPS P8700 does not natively support Zaamo instructions. They are emulated with Zalrsc extension instructions instead\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260810-preoccupy-earwig-c8d98044c1da@spud/)\n\n최종 합의는 alternatives 기반 LR/SC 대체인지, errata Kconfig를 유지하는지 아직 확정되지 않았다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "arm64 KCSAN need_resched false positive",
+      "url": "https://lore.kernel.org/linux-arm-kernel/213a34d0-9ac5-4afd-88b6-0b7594439078@paulmck-laptop/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv Vector context restore on syscall v5",
+      "url": "https://lore.kernel.org/linux-riscv/20260810172255.1532787-1-tchiu@tenstorrent.com/",
+      "note": "thread"
+    },
+    {
+      "title": "gtrace perf AUX buffer copy API",
+      "url": "https://lore.kernel.org/linux-riscv/20260810152223.3946743-8-mayuresh.chitale@oss.qualcomm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv Zalrsc atomic functions debate",
+      "url": "https://lore.kernel.org/linux-riscv/20260810-preoccupy-earwig-c8d98044c1da@spud/",
+      "note": "thread"
+    },
+    {
+      "title": "Apalis iMX6 PCI regression report",
+      "url": "https://lore.kernel.org/linux-arm-kernel/3hxiy6aaiagt5zunntpidaeqc4or4wrebf7mu7asvyyibqmvo2@xhvasdqp64rw/",
+      "note": "thread"
+    },
+    {
+      "title": "imx6q-pcie LTSSM POLL_CONFIG failure details",
+      "url": "https://lore.kernel.org/all/bl7i3obu2clzsgeoct2a4mtfhv6typcjdqmgneropf3hpgwve6@n2m5uhlduw57/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-10T18:51:12.928Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
