@@ -1,0 +1,133 @@
+{
+  "id": "2026-08-12-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-08-12 Rust vtable·jiffies — Linux Toolchain",
+  "headline": "slab ZERO_SIZE_PTR 정렬 수정과 Rust for Linux vtable·매크로 스코핑 개선, 32비트 jiffies 타임아웃 회귀 수정이 llvm·rust-for-linux 리스트에 올라왔습니다.",
+  "date": "2026-08-12",
+  "summary": "slab 서브시스템은 ZERO_SIZE_PTR 정렬과 ZERO_OR_NULL_PTR() 정확 비교를 다루는 v2 3패치 시리즈로 Clang UBSAN_ALIGNMENT(armv5) 위반을 해소하려 합니다. Rust for Linux는 #[vtable] #[optional]·#[macro_export_scoped]·Delta::to_jiffies_timeout()을 각각 제안해 API 정리와 32비트 HZ=1000 타임아웃 버그 수정을 추진합니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "Delta::to_jiffies_timeout() 32비트 jiffies 포화 버그 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Rust for Linux time 모듈·타임아웃을 Rust로 구현하는 드라이버 작성자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260811150147.1360102-1-tomo@flapping.org/",
+      "if": "32비트 보드에서 HZ=1000으로 Rust 드라이버 wait/timeout 경로를 쓰고 있다면",
+      "do": "Delta::to_jiffies_timeout()이 MAX_JIFFY_OFFSET을 넘지 않도록 jiffies.min() 클램프가 들어간 2패치 시리즈 원문을 확인하세요",
+      "verify": "C __msecs_to_jiffies() 포화 동작과 맞는지 해당 보드에서 타임아웃 변환 결과를 검증하세요"
+    },
+    {
+      "title": "slab: ZERO_SIZE_PTR 정렬 및 ZERO_OR_NULL_PTR() 정확 비교",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "slab/mm 유지보수 담당과 Clang/GCC로 다아키텍처 커널을 빌드·검증하는 개발자",
+      "verifyLink": "https://lore.kernel.org/llvm/20260811141240.62519-1-kmehltretter@gmail.com/",
+      "if": "armv5 등에서 Clang UBSAN_ALIGNMENT로 kmalloc 정렬 불일치가 보이거나 GCC/Clang 간 ZERO_OR_NULL_PTR() 최적화 차이를 추적 중이라면",
+      "do": "v2 3패치 시리즈의 ZERO_SIZE_PTR ARCH_KMALLOC_MINALIGN 맞춤·KUnit 테스트·hardened usercopy 변경을 리뷰하세요",
+      "verify": "GCC 15.2·Clang 21 타깃 빌드와 slub KUnit 결과를 원문 스레드 기준으로 대조하세요"
+    },
+    {
+      "title": "rust: #[vtable] #[optional]로 선택적 C NULL 슬롯 표준화",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust for Linux #[vtable] 매크로·miscdevice 등 C vtable 바인딩 작성자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260811-vtable_macro-v1-0-50c5aab3c211@garyguo.net/",
+      "if": "Rust for Linux에서 C vtable 바인딩에 build_error!(VTABLE_DEFAULT_ERROR) 보일러플레이트를 반복 쓰고 있다면",
+      "do": "3패치 시리즈의 #[optional] 속성과 miscdevice vtable 전환 패치를 참고해 vtable 정의를 정리하세요",
+      "verify": "필수 메서드용 HAS_ 상수가 #[doc(hidden)] 처리됐는지 패치 1/3 원문을 확인하세요"
+    },
+    {
+      "title": "rust: #[macro_export_scoped]로 크레이트 루트 오염 완화",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust for Linux 매크로·크레이트 구조 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260811-macro_export_scoped-v1-0-e7782b102819@garyguo.net/",
+      "if": "#[macro_export] 때문에 커널 Rust 매크로가 크레이트 루트에 노출되는 구조를 정리하려 한다면",
+      "do": "4패치 시리즈의 #[macro_export_scoped]와 build_assert·list·io 등 11파일 전환 방식을 검토하세요",
+      "verify": "doc(hidden)만으로 루트 경로 참조가 막히는지 커버레터 한계를 염두에 두고 원문을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**Add Delta::to_jiffies_timeout() with tests**\n\n2패치 시리즈가 Delta::as_millis_ceil() 예제·KUnit 테스트를 추가하고 Delta::to_jiffies_timeout()을 도입해 32비트 HZ=1000에서 MAX_JIFFY_OFFSET 초과 반환 버그를 jiffies.min() 클램프로 수정합니다.\n\n영향: Rust 커널 시간 API가 C __msecs_to_jiffies() 포화 동작과 어긋나면 32비트 고-HZ 보드에서 잘못된 타임아웃이 생기므로, Rust 드라이버의 wait/timeout 변환 경로를 바로잡습니다.\n\n> on 32 bit with HZ=1000, to_jiffies_timeout() could return a value larger than MAX_JIFFY_OFFSET.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260811150147.1360102-1-tomo@flapping.org/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**slab: ZERO_SIZE_PTR alignment and exact matching**\n\nv2 3패치 시리즈가 ZERO_SIZE_PTR을 ARCH_KMALLOC_MINALIGN에 맞추고 ZERO_OR_NULL_PTR()을 NULL·센티널 정확 비교로 바꾸며, slub KUnit 테스트를 추가합니다. hardened usercopy의 check_bogus_address() 동작도 함께 바뀝니다.\n\n영향: __assume_kmalloc_alignment 주석과 0바이트 kmalloc 반환값 불일치가 Clang UBSAN_ALIGNMENT(armv5)에서 잡히고 GCC/Clang이 매크로를 다르게 최적화하므로, llvm 리스트 독자에게 크로스 타깃·UBSAN 검증 포인트입니다. Catalin Marinas가 v1에서 제기한 static_assert 상한 관련 우려가 v2의 0x100 표현으로 충분히 해소됐는지는 추가 리뷰가 필요합니다.\n\n> Patch 2 makes ZERO_OR_NULL_PTR() match only NULL and the sentinel, so increasing the sentinel does not widen the set it matches. Patch 3 adds KUnit coverage.\n\n[원문 확인](https://lore.kernel.org/llvm/20260811141240.62519-1-kmehltretter@gmail.com/)\n\n**rust: macros: vtable: hide generated `HAS_` constants for required methods**\n\n3패치 시리즈가 #[vtable]에 #[optional] 속성을 추가해 build_error!(VTABLE_DEFAULT_ERROR) 보일러플레이트를 대체하고, 필수 메서드용 HAS_ 상수를 #[doc(hidden)]으로 숨기며 miscdevice vtable을 전환합니다.\n\n영향: Rust for Linux vtable 매크로의 선택적 C NULL 슬롯 패턴을 표준화해 드라이버 작성자가 매크로 생성 상수 노출·기본 구현 중복 없이 vtable을 정의할 수 있습니다. miscdevice 외 다른 서브시스템 전환 범위는 추가 확인이 필요합니다.\n\n> Add an `#[optional]` attribute that injects the same default implementation to avoid duplicating this everywhere.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260811-vtable_macro-v1-0-50c5aab3c211@garyguo.net/)\n\n**rust: add `#[macro_export_scoped]` for scoped declarative macro**\n\n4패치 시리즈가 #[macro_export_scoped] 속성을 도입해 #[doc(hidden)]+비추측 가능한 내부 이름+의도 모듈 재export 패턴을 자동화하고, build_assert·list·io 등 기존 매크로를 이 방식으로 전환합니다.\n\n영향: #[macro_export]가 크레이트 루트를 오염시키는 Rust 매크로 스코핑 한계를 Macro 2.0 없이 완화해, 커널 Rust 매크로를 모듈 경계에 맞게 배치할 수 있습니다. doc(hidden)만으로 크레이트 루트 경로 참조를 완전히 막지 못한다는 커버레터 한계가 실사용에서 문제가 되는지는 불명확합니다.\n\n> Create a macro `#[macro_export_scoped]`, that automates these definition and re-export and also give these macro unique and non-guessable names.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260811-macro_export_scoped-v1-0-e7782b102819@garyguo.net/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "slab ZERO_SIZE_PTR v2 — Clang UBSAN_ALIGNMENT (armv5)",
+      "url": "https://lore.kernel.org/llvm/20260811141240.62519-2-kmehltretter@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "slab ZERO_SIZE_PTR v2 커버레터",
+      "url": "https://lore.kernel.org/llvm/20260811141240.62519-1-kmehltretter@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "slab ZERO_OR_NULL_PTR() 정확 비교 패치",
+      "url": "https://lore.kernel.org/llvm/20260811141240.62519-3-kmehltretter@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "rust #[vtable] #[optional] 커버레터",
+      "url": "https://lore.kernel.org/rust-for-linux/20260811-vtable_macro-v1-0-50c5aab3c211@garyguo.net/",
+      "note": "thread"
+    },
+    {
+      "title": "rust #[vtable] HAS_ 상수 숨김",
+      "url": "https://lore.kernel.org/rust-for-linux/20260811-vtable_macro-v1-1-50c5aab3c211@garyguo.net/",
+      "note": "thread"
+    },
+    {
+      "title": "rust #[vtable] #[optional] NULL 슬롯",
+      "url": "https://lore.kernel.org/rust-for-linux/20260811-vtable_macro-v1-2-50c5aab3c211@garyguo.net/",
+      "note": "thread"
+    },
+    {
+      "title": "rust #[macro_export_scoped] 커버레터",
+      "url": "https://lore.kernel.org/rust-for-linux/20260811-macro_export_scoped-v1-0-e7782b102819@garyguo.net/",
+      "note": "thread"
+    },
+    {
+      "title": "rust #[macro_export_scoped] 정의",
+      "url": "https://lore.kernel.org/rust-for-linux/20260811-macro_export_scoped-v1-1-e7782b102819@garyguo.net/",
+      "note": "thread"
+    },
+    {
+      "title": "Delta::to_jiffies_timeout() 커버레터",
+      "url": "https://lore.kernel.org/rust-for-linux/20260811150147.1360102-1-tomo@flapping.org/",
+      "note": "thread"
+    },
+    {
+      "title": "Delta::to_jiffies_timeout() 구현",
+      "url": "https://lore.kernel.org/rust-for-linux/20260811150147.1360102-3-tomo@flapping.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-11T18:15:41.021Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
