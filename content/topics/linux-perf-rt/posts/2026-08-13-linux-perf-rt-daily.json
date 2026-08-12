@@ -1,0 +1,123 @@
+{
+  "id": "2026-08-13-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-08-13 KCOV·멀티캐스트 UAF — 성능·RT",
+  "headline": "PREEMPT_RT KCOV 타이머·스케줄러 유출 억제 v2, hrtimer ktimersd 문서, 멀티캐스트 UAF 수정, connect_socket·verifier 정리",
+  "date": "2026-08-13",
+  "summary": "linux-rt-devel에 KCOV v2와 PREEMPT_RT hrtimer 만료 모드 문서가 올라왔고, bpf 쪽에는 connect_socket() 헬퍼·verifier special_kfunc_list 정리·멀티캐스트 포워딩 UAF 수정이 제안됐습니다. KCOV 패치는 syzkaller A/B에서 실행 수·corpus·커버리지 증가를 보고했으며, merge 일정과 RT 핫패스 오버헤드는 확인이 필요합니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "kcov: Suppress timer and scheduler coverage leaks",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "PREEMPT_RT·KCOV·syzkaller로 커널 퍼징·관측성을 운영하는 개발자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260812103621.GJ776954@noisy.programming.kicks-ass.net/",
+      "if": "PREEMPT_RT 커널에서 syzkaller KCOV 트레이스가 syscall 입력 의존성을 잃는다면",
+      "do": "v2 6-패치 시리즈의 kcov_pause 가드와 CONFIG_KCOV_SELFTEST 3종 유출 검증을 리뷰 스레드에서 추적하세요",
+      "verify": "패치 적용 후 syzkaller A/B에서 실행 수·corpus·커버리지 변화와 Bradley Morgan Reviewed-by 반영 여부를 확인하세요"
+    },
+    {
+      "title": "ip: orphan prefetched skbs before multicast forwarding",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "bpf_sk_assign·UDP early demux·멀티캐스트 포워딩 경로를 운영·개발하는 네트워킹/BPF 엔지니어",
+      "verifyLink": "https://lore.kernel.org/bpf/0c52eb3d7532aaf8bccf37e0f7c922143c639735.1786552223.git.zhilinz@nebusec.ai/",
+      "if": "bpf_sk_assign() 또는 UDP early demux와 비로컬 멀티캐스트 포워딩을 함께 쓰는 배포라면",
+      "do": "ip_mr_input·ip6_mc_input 직전 skb_orphan(skb) 패치를 적용 대상 트리에 cherry-pick할지 검토하세요",
+      "verify": "prefetch된 소켓 파괴 뒤 sock_pfree() stale skb->sk dereference 재현 경로와 Cc: stable@vger.kernel.org 백포트 범위를 확인하세요"
+    },
+    {
+      "title": "docs: timers: hrtimers: clarify expiry modes and ktimersd on PREEMPT_RT",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "PREEMPT_RT에서 hrtimer·ktimersd 동작을 설계·디버깅하는 스케줄러/실시간 개발자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260812145440.23528-1-haohlliang@gmail.com/",
+      "if": "RT 워크로드에서 타이머 콜백 우선순위·컨텍스트를 무장 태스크와 동일하다고 가정하고 있다면",
+      "do": "Documentation/timers/hrtimers.rst의 \"Expiry modes and PREEMPT_RT\" 절을 읽고 HRTIMER_MODE_HARD·전용 kthread 웨이크업 필요 조건을 설계에 반영하세요",
+      "verify": "표시 없는 타이머가 ktimers/%u 최저 SCHED_FIFO에서 만료되고 hrtimer_setup_sleeper()만 HARD 예외인지 문서 인용과 대조하세요"
+    },
+    {
+      "title": "net: Add connect_socket() helper",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "BPF·네트워크·LSM이 교차하는 connect 경로를 다루는 커널 개발자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260812154328.72834-2-mahe.tardy@gmail.com/",
+      "if": "connect 경로에서 LSM 훅을 포함한 공통 헬퍼가 필요하다면",
+      "do": "security_socket_connect() 후 sock->ops->connect()를 호출하는 connect_socket()과 __sys_connect_file() 리팩터를 bpf-next v6 5-패치 시리즈 1/5부터 추적하세요",
+      "verify": "나머지 4개 패치의 BPF·네트워크 연결 경로와 Song Liu·Stanislav Fomichev Acked-by 반영 여부를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ip: orphan prefetched skbs before multicast forwarding**\n\nbpf_sk_assign()·UDP early demux가 RCU 하에 skb->sk를 prefetch만 하고 ref를 보장하지 않는 상태에서, 비로컬 멀티캐스트 포워딩(ip_mr_input, ip6_mc_input) 직전에 skb_orphan(skb)를 호출합니다.\n\n영향: BPF socket assign·UDP early demux와 멀티캐스트 라우팅이 겹치는 배포에서 use-after-free가 날 수 있습니다. Fixes 태그는 bpf_sk_assign 도입(cf7fbe660f2d)과 UDP early demux refcnt 변경(08842c43d016)을 가리키며 Cc: stable@vger.kernel.org가 붙어 있습니다.\n\n> After the prefetched socket is destroyed, a later skb free invokes sock_pfree() and dereferences the stale skb->sk.\n\n[원문 확인](https://lore.kernel.org/bpf/0c52eb3d7532aaf8bccf37e0f7c922143c639735.1786552223.git.zhilinz@nebusec.ai/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**kcov: Suppress timer and scheduler coverage leaks**\n\nv2 6-패치 시리즈는 중첩 가능한 KCOV_PAUSED 비트와 kcov_pause 가드를 추가해 deferred hrtimer rearm, __schedule(), try_to_wake_up() 웨이크업 본문, wake_up_new_task()에서 instrumented callee 커버리지 유출을 억제합니다. CONFIG_KCOV_SELFTEST는 PREEMPT_RT 웨이크업 등 타이머·스케줄러 경로 유출 3가지를 노출합니다.\n\n영향: PREEMPT_RT에서 스케줄러·타이머 경로가 syscall KCOV 트레이스를 오염시켜 syzkaller 커버리지가 입력 의존성을 잃습니다. v2 벤치마크는 PREEMPT_RT VM에서 실행 수 22–51% 증가, 동일 실행 수 기준 corpus 42–54%·커버리지 14–19% 증가를 보고합니다. linux-rt-devel 교차 포스팅 후 mainline merge 경로와 일정, __schedule()/try_to_wake_up()에 추가되는 ~90–117바이트 오버헤드 허용 여부는 확인이 필요합니다.\n\n> Add a nestable KCOV_PAUSED bit and a kcov_pause guard. Use the guard for deferred hrtimer rearm, __schedule(), the try_to_wake_up() wakeup body and wake_up_new_task().\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260812103621.GJ776954@noisy.programming.kicks-ass.net/)\n\n**docs: timers: hrtimers: clarify expiry modes and ktimersd on PREEMPT_RT**\n\nDocumentation/timers/hrtimers.rst에 PREEMPT_RT 전용 \"Expiry modes and PREEMPT_RT\" 절을 추가합니다. HRTIMER_MODE_HARD로 표시되지 않은 타이머는 softirq 만료로 강제되며 콜백이 per-CPU ktimers/%u 스레드(최저 SCHED_FIFO)에서 실행되고, 무장 태스크 우선순위를 상속하지 않습니다. hrtimer_setup_sleeper()는 RT/DL 무장 시 HRTIMER_MODE_HARD 예외입니다.\n\n영향: RT 워크로드에서 타이머 콜백 우선순위·컨텍스트를 잘못 가정하면 latency 목표를 놓칩니다. 문서는 PI가 cancel handshake용이며 무장 경로에는 쓰이지 않는다는 점과 RT 우선순위가 필요하면 HRTIMER_MODE_HARD 또는 전용 kthread 웨이크업이 필요함을 명시합니다.\n\n> a SCHED_FIFO task running at priority 99 that starts an unmarked timer still expires on ktimers/%u (lowest SCHED_FIFO priority), not at priority 99.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260812145440.23528-1-haohlliang@gmail.com/)\n\n**net: Add connect_socket() helper**\n\nsecurity_socket_connect() LSM 훅을 호출한 뒤 sock->ops->connect()로 이어지는 connect_socket() 헬퍼를 추가하고 __sys_connect_file()이 이를 재사용하도록 리팩터합니다. bind/accept 등 다른 소켓 연산과 같이 LSM 훅이 있는 재사용 가능한 헬퍼 패턴을 맞춥니다.\n\n영향: BPF·kprobe·LSM 연동 코드가 connect 경로를 직접 복제하지 않고 LSM 검사를 포함한 공통 헬퍼를 쓸 수 있습니다. bpf-next v6 5-패치 시리즈 1/5로 Acked-by Song Liu·Reviewed-by Kuniyuki Iwashima 등이 있습니다. 나머지 4개 패치의 BPF/네트워크 경로 연결과 bpf-next merge 일정은 확인이 필요합니다.\n\n> Other socket operations have equivalent helpers that trigger the appropriate LSM hooks that can be reused, this one was the only one missing.\n\n[원문 확인](https://lore.kernel.org/bpf/20260812154328.72834-2-mahe.tardy@gmail.com/)\n\n**bpf: Trim special_kfunc_list in verifier**\n\n7619a0ee9340(\"bpf: Mark existing lock-safe kfuncs with KF_SPINLOCK_SAFE\") 이후 verifier에서 특수 처리가 사라진 bpf_arena_reserve_pages, bpf_stream_vprintk, bpf_stream_print_stack를 special_kfunc_list enum·BTF_ID 목록에서 제거합니다.\n\n영향: verifier의 special_kfunc_list가 실제 특수 검증 경로와 어긋나면 dead entry가 남아 유지보수·향후 kfunc 추가 시 혼동을 줍니다. arena·stream 관련 kfunc 정리는 BPF verifier 추적 대상입니다. bpf_arena_reserve_pages 등이 일반 kfunc로 완전히 대체된 뒤 사용자 공간 ABI·selftest 영향은 확인이 필요합니다.\n\n> The commit 7619a0ee9340 dropped some helpers in verifier, which also eliminated the use of the following kfuncs from the special_kfunc_list: bpf_arena_reserve_pages, bpf_stream_vprintk, bpf_stream_pri\n\n[원문 확인](https://lore.kernel.org/bpf/20260812164843.55601-1-leon.hwang@linux.dev/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "kcov: Suppress timer and scheduler coverage leaks",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260812103621.GJ776954@noisy.programming.kicks-ass.net/",
+      "note": "thread"
+    },
+    {
+      "title": "docs: timers: hrtimers: clarify expiry modes and ktimersd on PREEMPT_RT",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260812145440.23528-1-haohlliang@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "net: Add connect_socket() helper",
+      "url": "https://lore.kernel.org/bpf/20260812154328.72834-2-mahe.tardy@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Trim special_kfunc_list in verifier",
+      "url": "https://lore.kernel.org/bpf/20260812164843.55601-1-leon.hwang@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Mark existing lock-safe kfuncs with KF_SPINLOCK_SAFE",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=7619a0ee9340",
+      "note": "commit"
+    },
+    {
+      "title": "ip: orphan prefetched skbs before multicast forwarding",
+      "url": "https://lore.kernel.org/bpf/0c52eb3d7532aaf8bccf37e0f7c922143c639735.1786552223.git.zhilinz@nebusec.ai/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Add socket assign support",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=cf7fbe660f2d",
+      "note": "commit"
+    },
+    {
+      "title": "udp: no longer touch sk->sk_refcnt in early demux",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=08842c43d016",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-12T18:41:53.234Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

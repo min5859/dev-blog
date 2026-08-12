@@ -1,0 +1,115 @@
+{
+  "id": "2026-08-13-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-08-13 syscall ABI 공통화 — 아키텍처·플랫폼",
+  "headline": "syscall 공통 테이블 v5와 x86 shadow stack prctl 통합, RISC-V B hwprobe·KVM PMU 파티셔닝이 멀티 아키텍처 ABI 정렬을 추진합니다.",
+  "date": "2026-08-13",
+  "summary": "syscall 번호 403 이후 동기화된 아키텍처를 scripts/syscall_common.tbl 하나로 묶는 v5 시리즈와 x86 shadow stack의 범용 prctl 핸들러 연결이 제출됐습니다. RISC-V B 확장 hwcap 노출과 KVM selftest·arm64 PMU 파티셔닝 논의도 병행 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "아키텍처",
+    "ABI"
+  ],
+  "highlights": [
+    {
+      "title": "x86 shadow stack 범용 prctl 연결",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "x86 CET/shadow stack·크로스 아키텍처 libc/런타임 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260812171940.1046116-1-bill.roberts@arm.com/",
+      "if": "x86 CET shadow stack 상태를 조회·설정하는 userspace·libc 코드를 담당한다면",
+      "do": "범용 prctl(PR_SET/GET/LOCK_SHADOW_STACK_STATUS) 경로 지원 여부와 arch_prctl 호환 계획을 패치 스레드에서 확인하세요",
+      "verify": "PR_SHADOW_STACK_ENABLE/DISABLE/LOCK 매핑과 arch_set_shadow_stack_status() 연산자 우선순위 리뷰 논의를 원문에서 확인하세요"
+    },
+    {
+      "title": "syscall 공통 테이블 v5",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "멀티 아키텍처 syscall 번호·kbuild syscallhdr 생성 담당",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260812-tonyk-syscall_table-v5-0-3d383927c609@igalia.com/",
+      "if": "신규 syscall 추가 시 아키텍처별 syscall.tbl을 반복 편집하고 있다면",
+      "do": "arm·arm64·mips·s390·sparc·alpha 공통 테이블 이전 범위와 x86 제외 사유를 v5 스레드에서 확인하세요",
+      "verify": "생성 헤더 동등성 주장과 merge 후 syscall_common.tbl 단일 편집 워크플로 정착 여부를 원문에서 확인하세요"
+    },
+    {
+      "title": "RISC-V B 확장 hwcap·hwprobe",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "RISC-V userspace feature detection·KVM VMM 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/536fd5e22856840296db301e99b6fa01.guodong.xu@oss.qualcomm.com/",
+      "if": "RISC-V userspace 또는 VMM에서 B 확장 가용성을 판별한다면",
+      "do": "hwcap·hwprobe 노출과 Zba·Zbb·Zbs 동시 설정 동작을 패치 시리즈에서 확인하세요",
+      "verify": "KVM ONE_REG ISA에서 B 비트 무시 여부와 후속 KVM guest 노출 시리즈 일정을 원문에서 확인하세요"
+    },
+    {
+      "title": "arm64 KVM PMU 동적 카운터 예약",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "arm64 KVM PMU 파티셔닝·perf 상호작용 담당",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260612192909.1153907-15-coltonlewis@google.com/",
+      "if": "arm64 KVM에서 게스트 PMU 파티셔닝과 호스트 perf 이벤트를 함께 운용한다면",
+      "do": "게스트 카운터 마스크 충돌 시 perf_pmu_resched_update() 호출 경로를 패치에서 확인하세요",
+      "verify": "arm_pmu->cntr_mask 공유 범위에 대한 maintainer 답변과 21패치 시리즈 merge 여부를 원문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**x86/shstk: support via prctl**\n\nx86 shadow stack 제어를 arch_prctl(ARCH_SHSTK_*) 전용에서 벗어나 arm64·riscv와 동일한 범용 prctl(PR_SET/GET/LOCK_SHADOW_STACK_STATUS) 핸들러로 연결하는 v2 패치가 제출됐습니다. PR_SHADOW_STACK_ENABLE/DISABLE/LOCK 비트를 기존 CET shstk_prctl() 경로에 매핑합니다.\n\n영향: libc·런타임·툴체인이 아키텍처별 syscall 없이 shadow stack(CFI) 상태를 조회·설정할 수 있게 되어, 크로스 아키텍처 userspace ABI 정렬에 직접 영향을 줍니다.\n\n> wire up the generic shadow stack prctl handlers for x86.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260812171940.1046116-1-bill.roberts@arm.com/)\n\n**syscalls: Add a shared table for all archs**\n\nsyscall 번호 403(clock_gettime64)부터 동기화된 아키텍처들을 scripts/syscall_common.tbl 하나로 묶는 v5 13패치 시리즈입니다. arm·arm64·mips·s390·sparc·alpha가 공통 테이블로 이전되고, x86은 x32 종료를 기다려 제외됐습니다.\n\n영향: 신규 syscall 추가 시 아키텍처별 syscall.tbl에 동일 항목을 반복 등록하던 유지보수 부담을 줄이고, 공통 번호 공간의 ABI 일관성을 강화합니다.\n\n> Since syscall number 403, all architectures are on sync regarding the number (except alpha), which make things a lot easier but more repetitive as well.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260812-tonyk-syscall_table-v5-0-3d383927c609@igalia.com/)\n\n**KVM: selftests: riscv: Add lazy V extension enablement for guests**\n\nRISC-V KVM selftest 프레임워크가 -march에 V 포함·-O2 자동벡터화 시 게스트 EXC_INST_ILLEGAL을 OS식 lazy V enablement(sstatus.VS Initial 설정 후 재실행)로 처리하도록 v9에서 processor.c를 확장합니다. per-vCPU epc 배열은 KVM_CAP_MAX_VCPU_ID 기준으로 크기를 잡습니다.\n\n영향: 호스트 KVM selftest 20개 바이너리가 V 확장 기본 march 빌드에서 전부 실패하던 문제를 풀지만, Anup Patel이 모든 illegal trap을 V lazy enable로 취급하는 접근이 부적절하다고 지적해 설계 논의가 열려 있습니다.\n\n> Treating all illegal exceptions as V instruction traps is not the right the way.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/CAAhSdy0K5H23AC9X_OA-cj6wppcw7fWPEHQZFzkTR+Rjnv6jBw@mail.gmail.com/)\n\n**KVM: arm64: Apply dynamic guest counter reservations**\n\nKVM arm64 PMU direct 경로에 게스트 카운터 마스크가 호스트 perf 이벤트와 충돌하면 perf_pmu_resched_update()로 cntr_mask를 동적으로 갱신하는 kvm_pmu_set_guest_counters()가 추가됐습니다. Zide Chen이 arm_pmu->cntr_mask가 perf 드라이버·다른 vCPU와 공유되는지 추가 질문을 올렸습니다.\n\n영향: 게스트 PMU 파티셔닝 시 호스트 perf 이벤트와 하드웨어 카운터가 겹치면 스케줄 재조정이 필요하며, 마스크 구조체 공유 범위가 불명확하면 호스트·게스트 간 카운터 충돌 위험이 남을 수 있습니다.\n\n> call into perf_pmu_resched_update if a reschedule is required.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260612192909.1153907-15-coltonlewis@google.com/)\n\n**riscv: Add B to hwcap and hwprobe**\n\nRISC-V B(base) 확장을 hwcap에 추가하고 B 존재 시 Zba·Zbb·Zbs를 함께 설정하며 hwprobe로 userspace가 B를 직접 조회할 수 있게 하는 v5 시리즈가 리뷰 중입니다. Sashiko-bot은 KVM guest ISA 노출(KVM_RISCV_ISA_EXT_B) 누락을 지적했고, Guodong Xu는 별도 시리즈로 KVM 지원을 추가하겠다고 답했습니다.\n\n영향: 호스트 userspace는 B 확장을 probe할 수 있게 되지만, KVM ONE_REG ISA 설정은 아직 B 비트를 무시하므로 VMM이 게스트에 B를 넘기려면 후속 KVM 패치가 필요합니다.\n\n> Add B to hwcap and ensure when B is present that Zba, Zbb, and Zbs are all set.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/536fd5e22856840296db301e99b6fa01.guodong.xu@oss.qualcomm.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "x86/shstk: support via prctl",
+      "url": "https://lore.kernel.org/linux-riscv/20260812171940.1046116-1-bill.roberts@arm.com/",
+      "note": "patch"
+    },
+    {
+      "title": "syscalls: Add a shared table for all archs",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260812-tonyk-syscall_table-v5-0-3d383927c609@igalia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM: selftests: riscv: Add lazy V extension enablement for guests",
+      "url": "https://lore.kernel.org/linux-riscv/CAAhSdy0K5H23AC9X_OA-cj6wppcw7fWPEHQZFzkTR+Rjnv6jBw@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM: arm64: Apply dynamic guest counter reservations",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260612192909.1153907-15-coltonlewis@google.com/",
+      "note": "patch"
+    },
+    {
+      "title": "KVM arm64 PMU cntr_mask 공유 범위 질문",
+      "url": "https://lore.kernel.org/linux-arm-kernel/16296d40-67f3-4e50-923c-5b26fc122121@intel.com/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: Add B to hwcap and hwprobe",
+      "url": "https://lore.kernel.org/linux-riscv/536fd5e22856840296db301e99b6fa01.guodong.xu@oss.qualcomm.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-12T18:44:26.343Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,123 @@
+{
+  "id": "2026-08-13-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-08-13 SMC 보안 3패치 — 커널 보안",
+  "headline": "SMC-Rv2 LLC 3패치 stable 태그, slab sentinel 정리, 7.1.8·다중 LTS 백포트가 이번 보안 렌즈의 핵심입니다.",
+  "date": "2026-08-13",
+  "summary": "SMC-Rv2 LLC 처리 3패치는 stable 태그와 함께 UAF·범위 검증·초과 메시지 tail 보관을 묶어 IBM Z·Alibaba 호스트에 세트 백포트가 필요합니다. 7.1.8 stable과 6.6·6.18·6.12 LTS 포인트 릴리스에는 vmwgfx·userfaultfd·MPTCP·HDCP 등 보안 백포트가 대량 포함됐습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "net/smc: SMC-Rv2 LLC UAF·OOB 3패치",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "SMC-R·SMC-Rv2(RDMA over RoCE) 네트워크 스택 운영·유지보수자",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20260811231902.47089-1-yhlee@isslab.korea.ac.kr/",
+      "if": "SMC-Rv2(RDMA over RoCE)를 IBM Z·Alibaba 호스트에서 운영 중이라면",
+      "do": "LLC 큐 UAF·rkey count·초과 v2 메시지 tail 관련 세 패치를 함께 백포트하세요",
+      "verify": "패치 1·2만 적용한 트리가 공유 수신 버퍼 잔여 rkey를 삭제하는지 스레드 원문과 stable 병합 순서를 확인하세요"
+    },
+    {
+      "title": "Linux 7.1.8 stable",
+      "priority": "상",
+      "impactType": "release",
+      "affectedAudience": "7.1 stable 커널 배포·vmwgfx·Type-C UCSI 플랫폼 유지보수자",
+      "verifyLink": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.8",
+      "if": "7.1.x stable·VMware guest 그래픽·UCSI Type-C 스택을 운영한다면",
+      "do": "2026-08-09 태그 7.1.8(437건 백포트)로 vmwgfx prime/DMA·UCSI teardown 동시성 수정을 적용하세요",
+      "verify": "ChangeLog-7.1.8에서 vmw_external_bo_copy() 경계 검증과 ucsi_init() 오류 경로 teardown 순서 수정을 대조하세요"
+    },
+    {
+      "title": "Linux 6.6.151 longterm",
+      "priority": "중",
+      "impactType": "backport",
+      "affectedAudience": "6.6 LTS 배포·MPTCP/SCTP 네트워크·ath6kl Wi-Fi·Intel i915 HDCP 운영자",
+      "verifyLink": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.6.151",
+      "if": "6.6 LTS에서 MPTCP userspace PM·SCTP auth_enable·ath6kl·i915 HDCP를 쓴다면",
+      "do": "260건 백포트에 포함된 UAF·streams[] overflow 수정 적용 여부를 배포 보안 공지에서 추적하세요",
+      "verify": "ChangeLog-6.6.151의 mptcp get_local_id·sctp auth_enable·aggr_reset_state·i915 hdcp 항목을 원문으로 확인하세요"
+    },
+    {
+      "title": "slab: ZERO_SIZE_PTR 정확 비교",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "SLAB·hardened usercopy·ARCH_KMALLOC_MINALIGN 큰 아키텍처 메모리 관리 담당자",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20260811141240.62519-3-kmehltretter@gmail.com/",
+      "if": "ARCH_KMALLOC_MINALIGN이 128인 아키텍처에서 hardened usercopy를 추적한다면",
+      "do": "ZERO_OR_NULL_PTR() 대신 NULL·ZERO_SIZE_PTR 명시 비교와 check_bogus_address() 변경을 리뷰하세요",
+      "verify": "Kees Cook의 ERR_PTR 범위 통합 제안 스레드와 maintainer 합의 여부를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.1.8 stable**\n\n안정 브랜치 7.1.8(2026-08-09)에 437건 백포트가 포함됐습니다. 보안 관련으로 drm/vmwgfx 외부 BO 복사·DMA·셰이더 경계 검증 다수와 usb/typec/ucsi 포트 해제·초기화 오류 경로 race/UAF 수정이 눈에 띕니다.\n\n영향: 7.1.x stable·VMware guest 그래픽·UCSI Type-C 스택 사용자는 이번 포인트 릴리스로 vmwgfx prime/DMA 경로와 UCSI teardown 동시성 수정을 받아야 합니다.\n\n> vmw_external_bo_copy() trusts caller-supplied offsets, strides, and heights and operates on imported dma-buf vmaps\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.8)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**net/smc: fix out-of-bounds and use-after-free in SMC-Rv2 LLC processing**\n\nSMC-Rv2 LLC 처리 3패치가 smc_llc_srv_add_link()의 LLC 큐 엔트리 use-after-free, 피어 rkey count 범위 검증, 초과 크기 v2 메시지 tail을 큐 엔트리에 보관해 공유 수신 버퍼 밖 읽기를 막습니다. v6은 stable 태그·DELETE_RKEY_V2 레이아웃 assert·피어가 큐 엔트리 크기를 정하지 못하게 tail 복사 상한을 추가했습니다.\n\n영향: 패치 1·2만 적용한 stable 트리는 패치 3 없이 공유 수신 버퍼에 남은 rkey를 삭제할 수 있어, SMC-Rv2를 쓰는 IBM Z·Alibaba 호스트는 세 패치를 함께 백포트해야 합니다.\n\n> Patch 1 fixes a use-after-free of the LLC queue entry in smc_llc_srv_add_link(), patch 2 bounds the peer's rkey counts, and patch 3 carries the tail of an oversized v2 message in the queue entry\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20260811231902.47089-1-yhlee@isslab.korea.ac.kr/)\n\nnetdev·stable 병합 순서와 CVE 배정 여부는 확인이 필요합니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**slab: check for ZERO_SIZE_PTR by exact match**\n\nKarl Mehltretter v2 시리즈는 ZERO_SIZE_PTR를 ARCH_KMALLOC_MINALIGN에 맞추고 ZERO_OR_NULL_PTR()를 NULL·sentinel 정확 비교로 바꿉니다. hardened usercopy의 check_bogus_address()는 ZERO_SIZE_PTR 아래 비영 주소를 null-address abort 대상에서 제외합니다. Kees Cook은 ZERO_SIZE_PTR가 ERR_PTR 범위까지 덮도록 확장하는 후속 논의를 제안했습니다.\n\n영향: ARCH_KMALLOC_MINALIGN이 128인 아키텍처에서 기존 ZERO_OR_NULL_PTR()는 실제 포인터를 sentinel로 오인할 수 있고, usercopy 하드닝 경로의 bogus-address 판별도 함께 바뀝니다.\n\n> ZERO_OR_NULL_PTR() returns true for every value less than or equal to ZERO_SIZE_PTR. With the sentinel raised to ARCH_KMALLOC_MINALIGN, up to 128 on some architectures\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20260811141240.62519-3-kmehltretter@gmail.com/)\n\n**[PATCHv2] phy: mediatek: tphy: simplify main allocation**\n\nMediaTek tphy 드라이버가 kzalloc+kcalloc 이중 할당을 struct_size()+FAM __counted_by(nphys) 단일 kzalloc로 바꿉니다. __counted_by 요구에 맞게 nphys를 먼저 대입하고 of_get_match_data()의 불필요 NULL 검사를 제거합니다.\n\n영향: __counted_by와 struct_size()로 배열 길이·할당 크기를 묶어 드라이버 probe 경로의 크기 불일치·경계 오류 클래스를 줄이는 하드닝 정리입니다.\n\n> Use a flexible array member to replace kzalloc + kcalloc with a single kzalloc. Shuffled some code around as __counted_by requires the counting variable to be assigned first.\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20260812181857.64544-1-rosenp@gmail.com/)\n\n**Linux 6.6.151 longterm**\n\n6.6 LTS 6.6.151(260건 백포트)에는 mptcp userspace PM get_local_id UAF, sctp auth_enable sysctl netns teardown UAF, wifi/ath6kl aggr_reset_state() UAF, drm/i915/hdcp streams[] bounds overflow 수정이 포함됩니다.\n\n영향: 6.6 LTS는 엔터프라이즈·클라우드에서 널리 쓰이므로 MPTCP·SCTP·Wi-Fi·HDCP 경로 UAF/overflow 백포트 적용 여부를 배포 보안 공지에서 확인해야 합니다.\n\n> mptcp: pm: userspace: fix use-after-free in get_local_id\n\nBUG: KASAN: slab-use-after-free in mptcp_userspace_pm_get_local_id\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.6.151)\n\n**Linux 6.18.44 longterm**\n\n6.18 LTS 6.18.44(395건 백포트)에는 userfaultfd가 shadow stack·VM_SPECIAL VMA 등록 차단, drm/xe/guc steered register list 할당 buffer overflow, drm/vmwgfx 경계 검증 일련이 포함됩니다.\n\n영향: 6.18 LTS 사용자는 userfaultfd 공격면 축소와 Intel Xe GuC heap corruption·vmwgfx DMA 경로 하드닝을 이번 릴리스로 받을 수 있습니다.\n\n> userfaultfd: prevent registration of special VMAs\n\nuserfaultfd allows registration on shadow stack VMAs. With userfaultfd access, you can register on the shadow stack, discard a page ... and inject a \n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.18.44)\n\n**Linux 6.12.103 longterm**\n\n6.12 LTS 6.12.103(337건 백포트)에는 drm/i915/hdcp streams[] bounds overflow 수정, mm/kmemleak per-cpu checksum 버그, can/isotp TX 상태 race·rxrpc irq-disabled 경로 수정이 포함됩니다.\n\n영향: 6.12 LTS 환경에서 HDCP 스트림 목록 overflow와 kmemleak 오탐·누락, CAN-ISOTP/rxrpc 동시성 버그가 보안·안정성 리스크로 남을 수 있어 백포트 적용을 추적해야 합니다.\n\n> drm/i915/hdcp: check streams[] bounds before overflow\n\nMove the overflow check before the write.\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.12.103)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "net/smc: fix out-of-bounds and use-after-free in SMC-Rv2 LLC processing",
+      "url": "https://lore.kernel.org/linux-hardening/20260811231902.47089-1-yhlee@isslab.korea.ac.kr/",
+      "note": "thread"
+    },
+    {
+      "title": "slab: check for ZERO_SIZE_PTR by exact match",
+      "url": "https://lore.kernel.org/linux-hardening/20260811141240.62519-3-kmehltretter@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "ZERO_SIZE_PTR ERR_PTR range follow-up",
+      "url": "https://lore.kernel.org/linux-hardening/202608111716.0FA9DB17@keescook/",
+      "note": "thread"
+    },
+    {
+      "title": "[PATCHv2] phy: mediatek: tphy: simplify main allocation",
+      "url": "https://lore.kernel.org/linux-hardening/20260812181857.64544-1-rosenp@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Linux 7.1.8 stable",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.8",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 6.6.151 longterm",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.6.151",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 6.18.44 longterm",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.18.44",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 6.12.103 longterm",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.12.103",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-12T18:29:54.892Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

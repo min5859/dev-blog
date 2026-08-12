@@ -1,0 +1,148 @@
+{
+  "id": "2026-08-13-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-08-13 syscall 공통 테이블 — Linux 도구체인",
+  "headline": "syscall 403 이후 공통 테이블 v5, Clang FORTIFY·kCFI ftrace, slab sentinel 비교가 도구체인 스레드에서 겹쳐 진행됩니다.",
+  "date": "2026-08-13",
+  "summary": "v5 패치 시리즈가 scripts/syscall_common.tbl로 멀티아키 syscall 번호 공간을 통합하고, Clang 빌드 경로에서는 FORTIFY 오탐·kCFI ftrace·slab hardened usercopy가 동시에 논의됩니다. changes.rst 정리와 Rust PCI IRQ lifetime API도 빌드 기준점·바인딩 모델에 영향을 줍니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "syscalls: Add a shared table for all archs",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "kbuild·syscall 테이블 유지보수 담당과 멀티아키 커널·user API 번호를 맞춰야 하는 개발자",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20260812-tonyk-syscall_table-v5-0-3d383927c609@igalia.com/",
+      "if": "syscall 번호 403 이후 멀티아키 kbuild·syscall ABI를 추적하거나 새 syscall 추가 경로를 맞추는 경우",
+      "do": "v5의 scripts/syscall_common.tbl 도입과 arm·s390·sparc·mips·alpha 전환 diff, alpha·mips ABI 정리 및 --offset/--compat-offset 혼용 버그 수정을 lore에서 확인하세요.",
+      "verify": "x86 제외 상태와 mainline merge 전 아키별 생성 헤더 동등성은 lore 리뷰와 빌드로 추가 확인하세요."
+    },
+    {
+      "title": "arm64: ftrace: support DIRECT_CALLS without CALL_OPS",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "arm64 kCFI·ftrace·BPF 개발자와 clang 21 기반 커널 빌드 담당",
+      "verifyLink": "https://lore.kernel.org/llvm/anxxPkqbVgnikp6R@linux.dev/",
+      "if": "CONFIG_CFI=y arm64에서 ftrace direct call이나 BPF trampoline이 -ENOTSUPP로 막히는 경우",
+      "do": "8/12 업데이트의 CALL_OPS+kCFI 로컬 시리즈 방향과 clang 21 -fpatchable-function-entry section 인자만으로 커널 변경만으로 구현 가능하다는 설명을 lore에서 추적하세요.",
+      "verify": "RFC 발송 전 DIRECT_CALLS-without-CALL_OPS 접근과의 관계는 lore 스레드에서 확인하세요."
+    },
+    {
+      "title": "slab: check for ZERO_SIZE_PTR by exact match",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "slab/mm·linux-hardening 유지보수 담당과 Clang/GCC로 다아키 빌드를 검증하는 개발자",
+      "verifyLink": "https://lore.kernel.org/llvm/20260811141240.62519-3-kmehltretter@gmail.com/",
+      "if": "hardened usercopy나 Clang UBSAN으로 slab·kfree 경로를 크로스 컴파일 검증하는 경우",
+      "do": "ZERO_OR_NULL_PTR()을 NULL·ZERO_SIZE_PTR exact match로 바꾸는 v2 패치 2와 Kees Cook의 ERR_PTR 범위 확장 제안을 lore에서 비교하세요.",
+      "verify": "Clang UBSAN_ALIGNMENT armv5와 21타깃 IR에서 exact sentinel 비교가 유지되는지 빌드로 확인하세요."
+    },
+    {
+      "title": "arch_numa: Avoid false positive fortify warning in setup_node_to_cpumask_map()",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "clang+FORTIFY로 NUMA/메모리 서브시스템을 빌드하는 개발자와 stable backport 담당",
+      "verifyLink": "https://lore.kernel.org/llvm/20260811224746.fdb85bcf47533e12d365b182@linux-foundation.org/",
+      "if": "riscv 등에서 CONFIG_FORTIFY_SOURCE·UBSAN_BOUNDS·NR_CPUS>64 조합으로 clang 빌드가 fortify 경고로 깨지는 경우",
+      "do": "setup_node_to_cpumask_map()에 nr_node_ids > MAX_NUMNODES 조기 return을 넣는 패치와 stable 후보·ClangBuiltLinux 이슈 #2174 클로즈 표기를 lore에서 확인하세요.",
+      "verify": "mm-unstable의 arch_numa.c 경로 이동과 맞춘 backport 범위는 lore에서 추가 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**slab: check for ZERO_SIZE_PTR by exact match**\n\nKarl Mehltretter v2 시리즈 패치 2가 ZERO_OR_NULL_PTR()을 NULL·ZERO_SIZE_PTR 정확 비교로 바꾸고 hardened usercopy check_bogus_address() 동작을 바꿉니다. Kees Cook은 ZERO_SIZE_PTR을 ERR_PTR 범위까지 덮도록 확장하는 후속 방향을 제안했습니다.\n\n영향: ARCH_KMALLOC_MINALIGN 상향 시 범위 비교가 가짜 sentinel 매칭을 만들고 Clang이 exact 비교를 제거할 수 있어, llvm 리스트 독자의 UBSAN·hardened usercopy·크로스 컴파일러 검증에 직접 해당합니다.\n\n> Compare explicitly against NULL and ZERO_SIZE_PTR... This also changes check_bogus_address() in hardened usercopy\n\n[원문 확인](https://lore.kernel.org/llvm/20260811141240.62519-3-kmehltretter@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**syscalls: Add a shared table for all archs**\n\nv5 13패치 시리즈가 syscall 번호 403(clock_gettime64) 이후 공통 구간을 scripts/syscall_common.tbl로 통합하고 arm·s390·sparc·mips·alpha가 이 테이블을 공유하도록 kbuild syscallhdr/syscalltbl 생성 경로를 바꿉니다. v5는 alpha·mips ABI 정리와 --offset/--compat-offset 혼용 버그를 수정합니다.\n\n영향: 새 syscall 추가 시 아키별 syscall.tbl에 동일 항목을 반복 넣던 부담을 줄이고, 공통 번호 공간을 한곳에서 관리하게 되어 kbuild·syscall ABI를 추적하는 도구체인 독자에게 직접적인 빌드·ABI 영향이 있습니다.\n\n> Since syscall number 403, all architectures are on sync regarding the number (except alpha)... The generic table starts from 403 (clock_gettime64), the first common syscall.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20260812-tonyk-syscall_table-v5-0-3d383927c609@igalia.com/)\n\n**Docs: changes.rst: Rework**\n\n5패치 시리즈가 Documentation/process/changes.rst(커널 빌드 요구 도구·버전 문서)의 이름·언어 정확성·누락 소프트웨어·번역·선택적 소프트웨어 표기 방식을 순차 수정합니다. merge window 전 피드백용으로 7.3 타깃은 아닙니다.\n\n영향: changes.rst는 최소 GCC·Clang·Rust 등 도구체인 요구를 정의하는 1차 문서라, 문서·표기 정리는 빌드 실패·환경 불일치를 줄이는 도구체인 렌즈 독자의 기준점을 바꿉니다.\n\n> I send this now to get some feedback before the merge window not because I'm aiming at 7.3\n\n[원문 확인](https://lore.kernel.org/llvm/20260812120805.1631430-3-manuelebnerli@mailbox.org/)\n\n**arch_numa: Avoid false positive fortify warning in setup_node_to_cpumask_map()**\n\nNathan Chancellor 패치가 setup_node_to_cpumask_map()에 nr_node_ids > MAX_NUMNODES 조기 return을 넣어 clang FORTIFY_SOURCE가 루프 언롤 후 가상 5번째 노드 접근을 오탐하지 않게 합니다. Andrew Morton은 스타일 nit 외 lgtm입니다.\n\n영향: riscv 등에서 CONFIG_FORTIFY_SOURCE·UBSAN_BOUNDS·NR_CPUS>64 조합의 clang 빌드가 fortify 경고로 깨지는 문제를 없애 ClangBuiltLinux·FORTIFY 검증 경로에 직접 해당합니다.\n\n> MAX_NUMNODES is 4. clang unrolls the for loop in setup_node_to_cpumask_map() past this, which triggers the fortify check on the theoretical fifth loop iteration\n\n[원문 확인](https://lore.kernel.org/llvm/20260811224746.fdb85bcf47533e12d365b182@linux-foundation.org/)\n\n**arm64: ftrace: support DIRECT_CALLS without CALL_OPS**\n\nJose Fernandez(8/12 업데이트)는 in-range trampoline 선호 대신 kCFI 커널에 CALL_OPS를 직접 넣는 로컬 시리즈로 방향을 바꿨고, clang 21의 -fpatchable-function-entry section 인자만으로 커널 변경만으로 구현 가능하다고 밝혔습니다. RFC는 수 주 내 발송 예정입니다.\n\n영향: arm64 kCFI 빌드에서 ftrace direct call·BPF trampoline이 -ENOTSUPP로 막히는 문제와 clang patchable-function-entry·kCFI 레이아웃 충돌이 한 스레드로 엮여, Clang 21 도구체인 기능이 런타임 추적·보안 모니터링 경로를 열 수 있습니다.\n\n> adding CALL_OPS support on kCFI kernels directly... The section argument Sami added to -fpatchable-function-entry in clang 21 turns out to be enough to do it with kernel changes only.\n\n[원문 확인](https://lore.kernel.org/llvm/anxxPkqbVgnikp6R@linux.dev/)\n\n**rust: pci: convert IrqVectorRegistration to a lifetime-managed owning type**\n\nDanilo Krummrich v2 5패치가 PCI IrqVectorRegistration을 devres 대신 lifetime 소유 타입으로 바꾸고 alloc_irq_vectors()가 IrqVectorRegistration을 반환합니다. Gary Guo 리뷰는 vector() Err vs Option·NonZero 처리 등 API 세부를 논의합니다.\n\n영향: Rust PCI IRQ API가 devres 자동 해제에서 명시 lifetime으로 전환되면 net/block 런타임 재할당 드라이버와 nova-core 계열 Rust 드라이버의 빌드·안전성 모델이 바뀝니다.\n\n> Convert IrqVectorRegistration to a lifetime-managed owning type, replacing the devres-based approach... preventing the allocation from being dropped while any handler is live.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260811233952.3000968-1-dakr@kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "중",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "syscalls: Add a shared table for all archs",
+      "url": "https://lore.kernel.org/linux-kbuild/20260812-tonyk-syscall_table-v5-0-3d383927c609@igalia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Docs: changes.rst: Rework",
+      "url": "https://lore.kernel.org/llvm/20260812120805.1631430-3-manuelebnerli@mailbox.org/",
+      "note": "thread"
+    },
+    {
+      "title": "arch_numa: Avoid false positive fortify warning",
+      "url": "https://lore.kernel.org/llvm/20260811224746.fdb85bcf47533e12d365b182@linux-foundation.org/",
+      "note": "thread"
+    },
+    {
+      "title": "arch_numa fortify warning v1",
+      "url": "https://lore.kernel.org/llvm/20260811-arch_numa-avoid-fortify-warning-v1-1-59ce3e689f3a@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "arm64 ftrace DIRECT_CALLS 8/12 update",
+      "url": "https://lore.kernel.org/llvm/anxxPkqbVgnikp6R@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "arm64 ftrace direct calls v1",
+      "url": "https://lore.kernel.org/llvm/20260609-arm64-ftrace-direct-calls-v1-0-4a46f266697f@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "clang patchable-function-entry section parameter",
+      "url": "https://lists.llvm.org/pipermail/cfe-commits/Week-of-Mon-20250310/684261.html",
+      "note": "article"
+    },
+    {
+      "title": "slab ZERO_SIZE_PTR Kees Cook reply",
+      "url": "https://lore.kernel.org/llvm/202608111716.0FA9DB17@keescook/",
+      "note": "thread"
+    },
+    {
+      "title": "slab ZERO_SIZE_PTR patch 2/3",
+      "url": "https://lore.kernel.org/llvm/20260811141240.62519-3-kmehltretter@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "slab ZERO_SIZE_PTR v2 cover letter",
+      "url": "https://lore.kernel.org/llvm/20260811141240.62519-1-kmehltretter@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "rust pci IrqVectorRegistration v2 cover",
+      "url": "https://lore.kernel.org/rust-for-linux/20260811233952.3000968-1-dakr@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "rust pci IrqVectorRegistration patch 1/5",
+      "url": "https://lore.kernel.org/rust-for-linux/20260811233952.3000968-2-dakr@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "rust pci alloc_irq_vectors NonZero discussion",
+      "url": "https://lore.kernel.org/rust-for-linux/DKN5C359PZP3.2BPH5HLM9H0HY@kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-12T18:34:16.698Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
