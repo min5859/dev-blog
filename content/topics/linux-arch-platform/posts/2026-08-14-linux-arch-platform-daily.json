@@ -1,0 +1,133 @@
+{
+  "id": "2026-08-14-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-08-14 RISC-V KVM·RHCT — 아키텍처·플랫폼",
+  "headline": "RISC-V KVM selftest V 확장 복구, ACPI RHCT 검증 강화, CPU hotplug 회귀 수정, SMMU RIL invalidation 논쟁이 8/14 렌즈 핵심입니다.",
+  "date": "2026-08-14",
+  "summary": "8/13~14 linux-riscv·linux-arm-kernel 스레드에서 RISC-V KVM lazy V enablement, ACPI RHCT 중첩 노드 검증, CPU hotplug spurious warning 수정이 진행됐습니다. arm-smmu-v3 RIL range invalidation 최적화는 over-invalidation 우려를 둘러싼 리뷰 논쟁이 이어지고 있습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "ACPI RHCT 중첩 노드 참조 검증",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "RISC-V ACPI RHCT·firmware 테이블 파싱 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260813154600.58861-1-pengpeng@iscas.ac.cn/",
+      "if": "ACPI 기반 RISC-V 플랫폼 RHCT 파싱 경로를 유지보수한다면",
+      "do": "v2 3패치의 envelope·offset·ISA/CMO payload 계층 검증 변경을 검토하세요",
+      "verify": "malformed node 이후 CMO 값 부분 노출이 차단되는지 KUnit 결과와 원문을 확인하세요"
+    },
+    {
+      "title": "RISC-V CPU hotplug spurious warning 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "RISC-V CPU hotplug·SBI HSM 백엔드 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260813130357.1144775-2-qirui.001@bytedance.com/",
+      "if": "RISC-V SBI HSM hotplug offlining마다 spurious warning이 반복된다면",
+      "do": "2b2b207e1162 bool 변환 회귀 수정과 read_poll_timeout() 폴링 패치를 추적하세요",
+      "verify": "cpu_is_stopped 콜백 NULL 시 경고 소거와 AP dead 레이스 해소를 offlining 테스트로 확인하세요"
+    },
+    {
+      "title": "KVM RISC-V selftest lazy V enablement",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "RISC-V KVM selftest·V extension 가상화 검증 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20EA6EE00884FB87+20260813102930.3892251-1-jinrui@haiwei.tech/",
+      "if": "-march에 V 포함·-O2 자동벡터화로 RISC-V KVM selftest가 EXC_INST_ILLEGAL로 전면 실패한다면",
+      "do": "v13 lazy V enablement와 IALIGN=16 halfword 디코딩 수정 적용 후 selftest를 재실행하세요",
+      "verify": "insn_is_vector() 분기 후 sstatus.VS Off→Initial 전환과 게스트 재실행 동작을 확인하세요"
+    },
+    {
+      "title": "hwpoison-panic 수동 VM 테스트 도구",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "memory failure·RISC-V/x86 MM 유지보수 및 virtme-ng 기반 검증 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260813-memory_failure_rewrite_test-v3-1-f9fb6542cbff@debian.org/",
+      "if": "vm.panic_on_unrecoverable_memory_failure 정책 회귀를 수동 VM에서 재현해야 한다면",
+      "do": "v3 hwpoison-panic 도구와 --yes-panic-my-kernel 플래그로 rodata·slab·pgtable 변형을 시험하세요",
+      "verify": "get_any_page()가 -ENOTRECOVERABLE 대신 -EIO로 무너지는 회귀를 잡는지 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ACPI: RHCT: validate nested node references**\n\nv2 3패치가 drivers/acpi/riscv/rhct.c에 RHCT 테이블·노드 envelope, hart-info offset 배열, ISA/CMO payload 검증을 계층적으로 추가하고 malformed node 이후 CMO 값 부분 노출을 막습니다. KUnit harness로 경계 케이스를 검증했으나 실제 플랫폼 RHCT boot path는 아직 미검증입니다.\n\n영향: RISC-V ACPI RHCT 소비자가 firmware offset을 검증 없이 따라가던 경로를 닫아, ACPI 기반 RISC-V 플랫폼 부팅·확장 정보 파싱의 견고성과 보안 여지를 줄입니다.\n\n> RHCT consumers walk the firmware-provided node area and follow hart-info offsets without proving the corresponding extents.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260813154600.58861-1-pengpeng@iscas.ac.cn/)\n\n**riscv: Fix cpu hotplug warnings**\n\n2패치 시리즈가 CPU offlining 시 spurious warning 두 건을 수정합니다. 1/2는 commit 2b2b207e1162 bool 변환 회귀로 cpu_is_stopped 콜백 부재 시에도 경고가 나는 조건을 고치고, 2/2는 AP가 cpu_stop() 전에 dead를 보고해 SBI HSM이 STARTED로 보이는 레이스를 read_poll_timeout() 폴링으로 해결합니다.\n\n영향: RISC-V SBI HSM hotplug 경로에서 bool 의미 변경이 숨겨왔던 타이밍 버그를 드러냈고, arm64 cpu_psci_cpu_kill()과 같은 폴링 패턴으로 실제 offlining 신뢰성을 높입니다.\n\n> when the cpu_is_stopped callback is NULL (the callback is optional), ret remains 0 and if (!ret) evaluates to true, causing a spurious \"CPU%u may not have stopped\" warning on every CPU offlining.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260813130357.1144775-2-qirui.001@bytedance.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**tools/mm: add hwpoison-panic tool**\n\nv3 패치가 tools/mm/memory-failure/hwpoison-panic.c를 추가해 vm.panic_on_unrecoverable_memory_failure를 켠 뒤 rodata·slab·pgtable 커널 소유 페이지에 hard_offline_page로 hwpoison을 주입해 의도적 패닉을 유발합니다. CI 대신 수동 VM 테스트용이며 --yes-panic-my-kernel 플래그가 필수입니다.\n\n영향: RISC-V·x86 rodata 경로와 slab/pgtable의 get_any_page()→-ENOTRECOVERABLE 회귀를 재현·검증할 수 있어, memory failure 패닉 정책을 아키텍처 공통으로 추적하는 엔지니어에게 실용적입니다.\n\n> Add a tool that enables the vm.panic_on_unrecoverable_memory_failure sysctl, picks a kernel-owned PFN and writes its physical address to hard_offline_page.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260813-memory_failure_rewrite_test-v3-1-f9fb6542cbff@debian.org/)\n\n**KVM: selftests: riscv: Add lazy V extension enablement for guests**\n\nv13이 KVM RISC-V selftest processor.c에 lazy V enablement를 넣어, -march에 V 포함·-O2 자동벡터화로 게스트가 vector 명령을 실행할 때 sstatus.VS Off→Initial 전환 후 재실행합니다. v13에서는 IALIGN=16 환경을 위해 stval을 16비트 halfword 두 번 읽어 32비트 명령을 조립합니다.\n\n영향: V 확장 기본 toolchain으로 RISC-V KVM selftest 전체가 EXC_INST_ILLEGAL로 깨지던 문제를 풀어, 가상화·벡터 확장 검증 파이프라인 복구에 직접 영향을 줍니다.\n\n> Executing such an instruction with sstatus.VS Off raises EXC_INST_ILLEGAL (scause=2); KVM's hedeleg forwards it to the guest, but the bare-metal selftest cannot handle it, so all guest tests fail.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20EA6EE00884FB87+20260813102930.3892251-1-jinrui@haiwei.tech/)\n\n**dt-bindings: riscv: Require block-size for Zicbom, Zicbop, and Zicboz**\n\nQualcomm v6 02/11 패치가 riscv,isa-extensions에 zicbom/zicbop/zicboz를 선언한 노드에 각각 riscv,cbom/cbop/cboz-block-size를 dtbs_check에서 필수로 만듭니다. 8/13 Conor Dooley가 Acked-by를 달았습니다.\n\n영향: Zicbo* 확장은 기본 cache block size가 없어 DT 누락이 런타임까지 가면 디버깅이 어렵고, riscv,isa-extensions 기반 플랫폼 DT 검증 강도가 올라갑니다.\n\n> Zicbom, Zicbop, and Zicboz have no default cache block size, so a devicetree that declares one must also provide the matching riscv,cbom/cbop/cboz-block-size property.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260812-rva23u64-hwprobe-v2-v6-2-c985af3256b8@oss.qualcomm.com/)\n\n**iommu/arm-smmu-v3: Optimize range invalidation for latency**\n\nJason Gunthorpe v2 시리즈의 RIL 기반 range invalidation 최적화에 Robin Murphy가 인접 버퍼 over-invalidation을 우려했고, Jason은 non-RIL 경로도 ~2M에서 invalidate-all로 넘어가며 soft lockup과 대규모 over-invalidation이 이미 있다고 반박합니다. Robin은 RIL 겹침을 이용한 2-command precise invalidation 알고리즘 시도 의사를 밝혔습니다.\n\n영향: 모바일·SVA 워크load에서 SMMU TLB invalidation latency와 정밀도 trade-off는 arm64 IOMMU 성능과 직접 연결되며, RIL 지원 확산 속에서 upstream 알고리즘 선택이 플랫폼별 회귀를 좌우할 수 있습니다.\n\n> the main concern is over-invalidation of adjacent in-use buffers due to rounding up; non-RIL absolutely does not have that issue and never has.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/1791d7da-ecd9-4475-8f27-c8857477b442@arm.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "tools/mm: add hwpoison-panic tool v3",
+      "url": "https://lore.kernel.org/linux-riscv/20260813-memory_failure_rewrite_test-v3-1-f9fb6542cbff@debian.org/",
+      "note": "thread"
+    },
+    {
+      "title": "hwpoison-panic v3 Reviewed-by: Miaohe Lin",
+      "url": "https://lore.kernel.org/linux-riscv/2641f4d4-c08b-e9b2-1e8a-c91ce1f41d58@huawei.com/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM: selftests: riscv: lazy V extension enablement v13",
+      "url": "https://lore.kernel.org/linux-riscv/20EA6EE00884FB87+20260813102930.3892251-1-jinrui@haiwei.tech/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: Fix cpu hotplug warnings 1/2",
+      "url": "https://lore.kernel.org/linux-riscv/20260813130357.1144775-2-qirui.001@bytedance.com/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: Fix cpu hotplug warnings 2/2",
+      "url": "https://lore.kernel.org/linux-riscv/20260813130357.1144775-3-qirui.001@bytedance.com/",
+      "note": "thread"
+    },
+    {
+      "title": "dt-bindings: riscv: Require block-size for Zicbom, Zicbop, and Zicboz",
+      "url": "https://lore.kernel.org/linux-riscv/20260812-rva23u64-hwprobe-v2-v6-2-c985af3256b8@oss.qualcomm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Zicbo* block-size dt-bindings Acked-by: Conor Dooley",
+      "url": "https://lore.kernel.org/linux-riscv/20260813-mold-fresh-29e1760a301a@spud/",
+      "note": "thread"
+    },
+    {
+      "title": "ACPI: RHCT: validate nested node references v2",
+      "url": "https://lore.kernel.org/linux-riscv/20260813154600.58861-1-pengpeng@iscas.ac.cn/",
+      "note": "thread"
+    },
+    {
+      "title": "iommu/arm-smmu-v3: RIL over-invalidation 우려 (Robin Murphy)",
+      "url": "https://lore.kernel.org/linux-arm-kernel/1791d7da-ecd9-4475-8f27-c8857477b442@arm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "iommu/arm-smmu-v3: RIL invalidation 논쟁 후속 (Jason Gunthorpe)",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260813180102.GH730363@nvidia.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-13T18:39:07.193Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

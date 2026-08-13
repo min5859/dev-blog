@@ -1,0 +1,116 @@
+{
+  "id": "2026-08-14-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-08-14 KCOV irq_exit 대안 — Linux Perf/RT",
+  "headline": "Peter Zijlstra가 KCOV·deferred rearm에 irq_exit 대안을 제안했고, hrtimer RT 문서·kfree_nolock kmemleak·imx_rproc 직접 콜백도 논의됐습니다.",
+  "date": "2026-08-14",
+  "summary": "PREEMPT_RT·KCOV 시리즈는 kcov_pause 가드와 irq/softirq preempt_count 수정 중 하나로 좁혀졌고, hrtimer 만료 모드 문서와 펌웨어 지연 가이드가 보강됐습니다. kfree_nolock() kmemleak 연동과 i.MX remoteproc 직접 콜백은 저지연 경로 설계에 직접 영향을 줍니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "PREEMPT_RT",
+    "hrtimer",
+    "KCOV"
+  ],
+  "highlights": [
+    {
+      "title": "hrtimer deferred rearm KCOV — irq_exit preempt_count 대안",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "PREEMPT_RT·KCOV·syzkaller로 커널 퍼징·관측성을 운영하는 개발자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260813130826.GW687043@noisy.programming.kicks-ass.net/",
+      "if": "PREEMPT_RT·syzkaller 환경에서 KCOV 커버리지로 deferred rearm 경로를 추적 중이라면",
+      "do": "Peter Zijlstra의 softirq·__irq_exit_rcu() preempt_count 대안 패치 논의와 Karl Mehltretter kcov_pause 시리즈를 병행 추적하세요",
+      "verify": "irq_exit 대안이 kcov_pause를 대체할지, 병행 검토될지 메일링 리스트 후속을 확인하세요"
+    },
+    {
+      "title": "hrtimer PREEMPT_RT 만료 모드 문서화",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "PREEMPT_RT에서 hrtimer·ktimersd 동작을 설계·디버깅하는 스케줄러/실시간 개발자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260813145746.26612-1-haohlliang@gmail.com/",
+      "if": "PREEMPT_RT에서 무표시 hrtimer의 콜백 우선순위·컨텍스트를 무장 태스크와 동일하다고 가정하고 있다면",
+      "do": "HRTIMER_MODE_HARD 또는 전용 kthread 웨이크업이 필요한지 Documentation/timers/hrtimers.rst v3 초안을 검토하세요",
+      "verify": "SCHED_FIFO 99 태스크가 시작한 무표시 타이머가 ktimers/%u 최저 우선순위에서 만료된다는 문서 설명과 실제 워크로드를 대조하세요"
+    },
+    {
+      "title": "kfree_nolock() kmemleak 연동 RFC",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "슬랩·kmemleak·락 없는 할당 경로를 다루는 메모리/실시간 개발자",
+      "verifyLink": "https://lore.kernel.org/bpf/an4DOrvgdJcfOVvb@arm.com/",
+      "if": "PREEMPT_RT·BPF 등 저지연 경로에서 kfree_nolock() 확대를 검토 중이라면",
+      "do": "Catalin Marinas의 SLAB_TYPESAFE_BY_RCU 조기 poison 우려와 kmemleak 스캔 중 trylock 실패 지연 논의를 추적하세요",
+      "verify": "허용 slab 타입에서 kfree_nolock() 경로가 SLAB_TYPESAFE_BY_RCU 객체를 어떻게 배제할지 RFC 후속을 확인하세요"
+    },
+    {
+      "title": "imx_rproc threaded IRQ 직접 콜백",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "i.MX remoteproc·rpmsg·PREEMPT_RT latency를 다루는 임베디드/실시간 개발자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260813-imx_mbox_rproc-v6-1-6903a93b0456@linutronix.de/",
+      "if": "i.MX remoteproc·rpmsg 경로에서 PREEMPT_RT 완료 지연이 kworker 스케줄링에서 비롯된다면",
+      "do": "imx_rproc_notified_idr_cb()를 kworker 대신 threaded IRQ 핸들러에서 직접 호출하는 v6 패치를 검토하세요",
+      "verify": "mailbox v7.2-rc1 머지 이후 mainline 적용 일정은 확인이 필요합니다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**hrtimer: Pause KCOV during deferred rearm — Peter Zijlstra irq_exit 대안**\n\nPeter Zijlstra가 Karl Mehltretter의 kcov_pause 접근에 대해, x86 irq_exit_rcu()가 HARDIRQ_OFFSET를 빼고 hrtimer_rearm_deferred()를 호출해 in_task()가 true가 되며 KCOV가 타이머 재프로그래밍 서브트리를 current에 기록하는 문제를 인정했습니다. noinstr 전환은 공유 hrtimer·tick·clockevent 경로에 과도하다고 보며, softirq_handle_begin/end와 __irq_exit_rcu()의 preempt_count 처리를 바꿔 KCOV 구멍을 막는 미검증 대안 패치를 제안했습니다.\n\n영향: PREEMPT_RT·syzkaller KCOV 시리즈의 핵심 쟁점이 kcov_pause 가드 vs irq/softirq preempt_count 수정으로 좁혀졌습니다. Peter의 제안이 채택되면 deferred rearm·PREEMPT_RT wakeup 유출 억제 방식이 근본적으로 달라질 수 있습니다.\n\n> hrtimer_rearm_deferred(), so check_kcov_mode() sees in_task() and records callee coverage for current.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260813130826.GW687043@noisy.programming.kicks-ass.net/)\n\n**docs: timers: hrtimers: clarify expiry modes and ktimersd on PREEMPT_RT**\n\nv3는 Documentation/timers/hrtimers.rst에 PREEMPT_RT 전용 \"Expiry modes and PREEMPT_RT\" 절을 추가합니다. HRTIMER_MODE_HARD 미표시 타이머는 ktimers/%u 스레드(최저 SCHED_FIFO)에서 만료되며 무장 태스크 우선순위를 상속하지 않습니다. v3는 슬리퍼 예외 함수명을 hrtimer_setup_sleeper_on_stack()으로 정정했습니다.\n\n영향: RT 워크로드가 타이머 콜백 우선순위·컨텍스트를 잘못 가정하면 latency 목표를 놓칩니다. PI가 cancel handshake용이며 무장 경로에는 쓰이지 않는다는 점과 RT 우선순위가 필요하면 HRTIMER_MODE_HARD 또는 전용 kthread 웨이크업이 필요함을 문서가 명시합니다.\n\n> a SCHED_FIFO task running at priority 99 that starts an unmarked timer still expires on ktimers/%u (lowest SCHED_FIFO priority), not at priority 99.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260813145746.26612-1-haohlliang@gmail.com/)\n\n**mm/slab, kmemleak: handle kmemleak freeing in kfree_nolock()**\n\nVlastimil Babka RFC 시리즈 3/5는 kmemleak_may_need_free()로 kfree_nolock()에서 등록 객체 여부를 raw_spin_trylock_irqsave()로 조회하고, 실패 시 irq_work로 해제를 지연합니다. Catalin Marinas는 kmemleak 변경을 Reviewed-by로 승인했으나 kmemleak 스캔 중 scan_block()이 락을 수 분간 잡으면 kfree_nolock() 지연이 늘 수 있다고 지적했고, SLAB_TYPESAFE_BY_RCU slab이 이 경로에서 조기 poison될 위험을 제기했습니다.\n\n영향: kfree_nolock()/kmalloc_nolock()은 락 없는 핫패스용이며 PREEMPT_RT·BPF 등 저지연 경로 확대 시 kmemleak·KASAN 상호작용이 latency·안전성에 영향을 줍니다. SLAB_TYPESAFE_BY_RCU 제약은 허용 slab 타입 설계에 직접 닿습니다.\n\n> Thus introduce kmemleak_may_need_free() that can check if the object is registered. This is done using __lookup_object() performed under a raw_spin_trylock_irqsave()\n\n[원문 확인](https://lore.kernel.org/bpf/20260807-kfree_nolock_kmalloc-v1-3-ba993cbf7a60@kernel.org/)\n\n**remoteproc: imx_rproc: Invoke the callback directly**\n\nimx mailbox 드라이버가 콜백을 threaded IRQ 핸들러에서 호출하도록 바뀌면서, imx_rproc_notified_idr_cb()를 kworker 대신 직접 호출하도록 v6 패치가 workqueue 처리를 제거합니다. Peng Fan·Mathieu Poirier Reviewed-by가 붙었고 imx93 rpmsg-tty로 테스트됐습니다.\n\n영향: PREEMPT_RT에서 kworker 경유는 threaded IRQ의 높은 우선순위를 잃고 SCHED_OTHER와 경쟁해 rpmsg 완료 지연이 커질 수 있습니다. threaded IRQ 직접 콜백은 remoteproc·mailbox RT 지연을 줄이는 실무 패턴입니다.\n\n> By scheduling a kworker the high task priority from the threaded handler is lost and the kworker competes for CPU ressources with every SCHED_OTHER task\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260813-imx_mbox_rproc-v6-1-6903a93b0456@linutronix.de/)\n\n**Documentation: Extend the real-time hardware bits with some firmware bits**\n\nSebastian Siewior가 v2 패치(OP-TEE·EFI runtime 지연 문서화)에 gentle ping을 보냈습니다. Documentation/core-api/real-time/hardware.rst에 Firmware 절을 추가해 EFI runtime은 PREEMPT_RT에서 기본 비활성·cpumask로 housekeeping CPU에 제한 가능함을, OP-TEE는 secure world가 normal world 인터럽트를 막을 수 있고 선점이 보장되지 않음을 기록합니다.\n\n영향: 펌웨어·secure world 호출은 커널 밖에서 수 마이크로초~수십 밀리초 지연을 만들 수 있어 RT 튜닝에서 blind spot입니다. 문서화는 OP-TEE·EFI 경로를 latency 예산·CPU 격리 설계에 반영하게 합니다.\n\n> For these reasons, EFI runtime services are disabled by default on a PREEMPT_RT kernel.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260718175041.QXn9iOFK@linutronix.de/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "hrtimer KCOV deferred rearm — Peter Zijlstra irq_exit 대안",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260813130826.GW687043@noisy.programming.kicks-ass.net/",
+      "note": "thread"
+    },
+    {
+      "title": "docs: timers: hrtimers: clarify expiry modes and ktimersd on PREEMPT_RT",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260813145746.26612-1-haohlliang@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "mm/slab, kmemleak: handle kmemleak freeing in kfree_nolock()",
+      "url": "https://lore.kernel.org/bpf/20260807-kfree_nolock_kmalloc-v1-3-ba993cbf7a60@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "kfree_nolock() SLAB_TYPESAFE_BY_RCU 우려 — Catalin Marinas",
+      "url": "https://lore.kernel.org/bpf/an4DOrvgdJcfOVvb@arm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "remoteproc: imx_rproc: Invoke the callback directly",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260813-imx_mbox_rproc-v6-1-6903a93b0456@linutronix.de/",
+      "note": "thread"
+    },
+    {
+      "title": "Documentation: Extend the real-time hardware bits with some firmware bits",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260718175041.QXn9iOFK@linutronix.de/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-13T18:35:04.851Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

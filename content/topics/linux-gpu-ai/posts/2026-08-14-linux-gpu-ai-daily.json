@@ -1,0 +1,113 @@
+{
+  "id": "2026-08-14-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-08-14 nouveau atomic 기본화 — Linux GPU·AI",
+  "headline": "nouveau NV50+ atomic 기본 활성화 제안과 amdxdna SYNC_BO 정확성 수정, AMD DCN blend mode 회귀 수정이 dri-devel에서 논의됐습니다.",
+  "date": "2026-08-14",
+  "summary": "Lyude Paul v6 시리즈가 NV50 이상 nouveau에서 atomic modesetting을 기본 켜고, Taimuraz Kaitmazov v3가 amdxdna SYNC_BO ioctl 경로의 매핑·flush·overflow 문제를 수정합니다. AMD display 쪽에서는 Melissa Wen v3 blend mode property 시리즈가 promotion 재투입과 IGT alpha-basic 통과 보고를 받았습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "accel/amdxdna SYNC_BO correctness fixes",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "accel/amdxdna·AMD XDNA NPU 드라이버 및 userspace 런타임 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260813164700.43960-1-taimuraz@kaitmazov.com/",
+      "if": "accel/amdxdna SYNC_BO ioctl로 AI 워크로드 BO 동기화를 다룬다면",
+      "do": "Taimuraz Kaitmazov v3(3패치)의 imported BO I/O 매핑 거부·zero-length flush 조기 반환·sync range overflow 검사 수정을 검토하세요.",
+      "verify": "스레드에서 compile-tested only·하드웨어 미검증 한계와 Christian NAK로 드롭된 imported dma-buf flush 패치 여부를 원문에서 확인하세요."
+    },
+    {
+      "title": "drm/nouveau: Enable atomic modesetting by default",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "drm/nouveau·NVIDIA OSS GPU 드라이버 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260813174416.1812656-1-lyude@redhat.com/",
+      "if": "drm/nouveau NV50 이상 장비에서 display 설정을 유지한다면",
+      "do": "Lyude Paul v6 시리즈의 atomic 기본 활성화·NV50 미만 강제 비활성화·nouveau.atomic 모듈 파라미터 변경을 점검하세요.",
+      "verify": "머지 전 리뷰·CI 피드백 상태와 desktop screen flashing 버그와 atomic 기본값 전환의 인과 관계는 아직 확인이 필요합니다."
+    },
+    {
+      "title": "drm/amd/display: fix missing blend-mode-prop warning for DCN",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "drm/amd/display·AMD DCN GPU display 테스트·드라이버 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/bcbd2ce2-d668-4992-8ba9-8d20a0065b18@amd.com/",
+      "if": "AMD DCN universal primary plane의 blend mode property 경고 회귀를 추적 중이라면",
+      "do": "Melissa Wen v3 패치(2/3) 적용 후 IGT kms_plane_alpha_blend alpha-basic 통과 보고를 확인하세요.",
+      "verify": "DCN 외 DCE 세대 PIXEL_NONE-only 패치(3/3)의 하드웨어 검증 범위와 upstream 머지 일정은 아직 확인이 필요합니다."
+    },
+    {
+      "title": "gpu: nova-core: add ChannelIdPool",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "gpu/nova-core·NVIDIA Rust GPU 드라이버 개발자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/an4NvQBt3389jP6E@yury/",
+      "if": "NVIDIA Rust nova-core GPU 드라이버의 채널 ID 할당 API를 설계·리뷰한다면",
+      "do": "Yury Norov의 plain usize 인터페이스 제안과 Eliot Courtney의 NonZero·Alignment 유지 반론을 비교 검토하세요.",
+      "verify": "다음 패치 버전의 UnusedArea 레이어 제거 여부와 ChannelIdPool 최종 API 형태·maintainer 합의는 아직 확정되지 않았습니다."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**accel/amdxdna: SYNC_BO correctness fixes**\n\nTaimuraz Kaitmazov v3(3패치)가 amdxdna_drm_sync_bo_ioctl() 주변에서 imported BO I/O 메모리 매핑 거부, zero-length flush 조기 반환, sync range overflow 검사를 각각 독립적으로 수정합니다.\n\n영향: AMD XDNA NPU 가속 드라이버 SYNC_BO ioctl 경로의 잘못된 주소 처리·전체 scatterlist flush·산술 overflow 위험이 있어, AI 워크로드 BO 동기화 ioctl 사용자에게 직접적인 정확성·안전성 이슈입니다. v3에서는 imported dma-buf flush 패치가 Christian NAK로 드롭됐으며, compile-tested only이고 하드웨어 부팅·실기 테스트는 하지 않았습니다.\n\n> Patch 1 refuses an I/O memory mapping of an imported BO... a zero length reaching drm_clflush_virt_range()... offset and size added... without an overflow check\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260813164700.43960-1-taimuraz@kaitmazov.com/)\n\n**drm/amd/display: fix missing blend-mode-prop warning for DCN**\n\nAlex Hung(AMD)이 Melissa Wen v3의 DCN primary plane blend mode property 추가 패치(2/3) 적용 후 IGT kms_plane_alpha_blend --run-subtest alpha-basic가 더 이상 실패하지 않는다고 보고했습니다.\n\n영향: 860e748bddcc Fixes 대상 경고를 없애는 DCN universal primary plane blend mode property 노출이 IGT alpha 테스트 통과 보고를 받아, AMD GPU display regression 수정의 실증 근거가 마련된 것으로 보입니다. DCE 세대 PIXEL_NONE-only 패치(3/3)의 하드웨어 검증 범위는 아직 확인이 필요합니다.\n\n> I can confirm IGT's \"kms_plane_alpha_blend --run-subtest alpha-basic\" no longer fails with v3.\n\n[원문 확인](https://lore.kernel.org/dri-devel/bcbd2ce2-d668-4992-8ba9-8d20a0065b18@amd.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/nouveau: Enable atomic modesetting by default**\n\nLyude Paul v6 시리즈(5패치)가 NV50 이상 nouveau에서 atomic modesetting을 기본 활성화하고, NV50 미만은 강제 비활성화하며 nouveau.atomic 모듈 파라미터를 debug 출력에 추가합니다.\n\n영향: 거의 유일하게 atomic이 기본 꺼진 모던 DRM 드라이버였던 nouveau가 userspace atomic 표준과 맞춰지며, Lyude는 개발 머신에서 이미 상당히 안정적이라고 보고합니다.\n\n> This patch series enables atomic modesetting by default, at least for NV50 and newer. NV04 is left unchanged\n\n> atomic modesetting is very much the norm - and support in userspace for non-atomic drivers is starting to bitrot\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260813174416.1812656-1-lyude@redhat.com/)\n\n**drm/atomic-state-helper: fixes for blend-mode-prop warning**\n\nAMD Display SW Display 팀 Dan Wheeler가 Melissa Wen v3 blend-mode-prop 경고 수정 시리즈에 대해 다음 주 promotion에 재투입하고 재테스트하겠다고 확인했습니다.\n\n영향: 860e748bddcc 이후 AMD primary·cursor plane blend mode property 누락 경고를 고치는 시리즈가 AMD 내부 promotion 파이프라인으로 재진입해, DCN·DCE 세대 AMD GPU DRM plane UAPI 정합성 수정이 곧 재검증될 예정으로 보입니다. promotion 재테스트 결과 및 upstream 제출·머지 일정은 아직 확인이 필요합니다.\n\n> Thanks for the fixes Melissa, we'll re-add them to next week's promotion and re-test.\n\n[원문 확인](https://lore.kernel.org/dri-devel/DS0PR12MB65342A796015C57DCD287AB99CDB2@DS0PR12MB6534.namprd12.prod.outlook.com/)\n\n**gpu: nova-core: add ChannelIdPool**\n\nnova-core ChannelIdPool::alloc_area API 리뷰에서 Yury Norov가 NonZero·Alignment 타입 인자 대신 plain usize 인터페이스와 내부 검증 패턴을 제안했고, Eliot Courtney는 타입 안전성·런타임 인자 특성상 현재 설계를 유지하며 반론했습니다.\n\n영향: NVIDIA Rust nova-core GPU 드라이버의 채널 ID 할당 API 형태가 확정되기 전이며, 커널 Rust 드라이버의 공개 인터페이스 단순성 vs 타입 안전성 트레이드오프가 드라이버 전반 패턴에 영향을 줍니다.\n\n> Is it possible to make it somehow simpler: let c = pool.alloc_area(8, 8)? All the parameters checking must be a part of implementations, not the interface.\n\n> Having the separate types (NonZero, Alignment) also makes easier to not mix up the order.\n\n[원문 확인](https://lore.kernel.org/dri-devel/an4NvQBt3389jP6E@yury/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/nouveau: Enable atomic modesetting by default",
+      "url": "https://lore.kernel.org/dri-devel/20260813174416.1812656-1-lyude@redhat.com/",
+      "note": "thread"
+    },
+    {
+      "title": "accel/amdxdna: SYNC_BO correctness fixes",
+      "url": "https://lore.kernel.org/dri-devel/20260813164700.43960-1-taimuraz@kaitmazov.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/atomic-state-helper: fixes for blend-mode-prop warning (AMD promotion)",
+      "url": "https://lore.kernel.org/dri-devel/DS0PR12MB65342A796015C57DCD287AB99CDB2@DS0PR12MB6534.namprd12.prod.outlook.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/atomic-state-helper: fixes for blend-mode-prop warning (Melissa Wen v3)",
+      "url": "https://lore.kernel.org/dri-devel/20260813143605.106104-1-mwen@igalia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "gpu: nova-core: add ChannelIdPool",
+      "url": "https://lore.kernel.org/dri-devel/an4NvQBt3389jP6E@yury/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/amd/display: fix missing blend-mode-prop warning for DCN",
+      "url": "https://lore.kernel.org/dri-devel/bcbd2ce2-d668-4992-8ba9-8d20a0065b18@amd.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-13T18:41:24.309Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

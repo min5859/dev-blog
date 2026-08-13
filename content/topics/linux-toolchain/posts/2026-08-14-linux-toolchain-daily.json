@@ -1,0 +1,116 @@
+{
+  "id": "2026-08-14-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-08-14 RV64 BPF 스택인자 — Linux Toolchain",
+  "headline": "RV64 BPF JIT 스택 인자 이식, 외부 모듈 DWARF 절대경로 누출 차단, Rust PCI IRQ·fwctl API 개편이 제안됐습니다.",
+  "date": "2026-08-14",
+  "summary": "RISC-V BPF JIT에 x86·arm64와 맞춘 스택 인자 지원이 v2로 올라왔고, stackleak 외부 모듈 빌드의 DWARF producer 절대경로 누출을 막는 kbuild 수정이 제안됐습니다. Rust for Linux에서는 binder THIS_MODULE 마이그레이션, PCI IRQ 벡터 lifetime 재작업, fwctl 추상화 도입이 이어집니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "툴체인",
+    "Rust",
+    "BPF"
+  ],
+  "highlights": [
+    {
+      "title": "RV64 BPF JIT 스택 인자 지원",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "RISC-V BPF JIT·kfunc 개발자와 arch/riscv/net/bpf_jit* 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/llvm/20260813-bpf-riscv-stack-args-v2-1-efea8f9b3fe1@kylinos.cn/",
+      "if": "RISC-V에서 BPF 서브프로그램·kfunc가 레지스터 5개를 넘는 인자를 쓰는 경우",
+      "do": "v2 패치 시리즈의 bpf_jit_supports_stack_args()와 스택 kfunc 32비트 부호 확장·selftest 가드를 검토하세요.",
+      "verify": "lore 스레드에서 riscv64 QEMU·LLVM main BPF-to-BPF·kfunc selftest 통과 보고를 확인하세요."
+    },
+    {
+      "title": "외부 모듈 stackleak DWARF 절대경로 누출 차단",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "CONFIG_GCC_PLUGIN_STACKLEAK·KBUILD_EXTMOD 외부 모듈 빌드·QA 경로 누출 검사 담당",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20260813082949.1622045-1-jaihindy@qti.qualcomm.com/",
+      "if": "CONFIG_GCC_PLUGIN_STACKLEAK로 KBUILD_EXTMOD 외부 모듈을 빌드하는 경우",
+      "do": "v2 패치의 KBUILD_EXTMOD 전용 -gno-record-gcc-switches 적용으로 stackleak 계측은 유지하면서 DWARF producer 누출을 막으세요.",
+      "verify": "빌드 산출물 DWARF producer 문자열에 stackleak 플러그인 절대경로가 남지 않는지 QA 검사로 확인하세요."
+    },
+    {
+      "title": "Rust PCI IRQ 벡터 lifetime 재작업",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust for Linux PCI·IRQ 바인딩 작성자와 nova-core 계열 드라이버 개발자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260813165234.620555-1-dakr@kernel.org/",
+      "if": "Rust PCI IrqVectorRegistration 또는 MSI-X 재구성 드라이버를 작성·유지보수하는 경우",
+      "do": "v3 시리즈의 lifetime 소유 IrqVectorRegistration, len/index API, pci_irq_type() C 함수 추가에 맞춰 코드를 갱신하세요.",
+      "verify": "lore 스레드에서 Device request_irq() 래퍼 제거 범위와 nova-core 통합 순서를 확인하세요."
+    },
+    {
+      "title": "fwctl Rust 추상화 도입",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "fwctl·Rust for Linux 드라이버 작성자와 vGPU 등 fwctl 소비자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260813152312.1311142-1-zhiw@nvidia.com/",
+      "if": "fwctl로 펌웨어·설정 데이터를 올리는 Rust 드라이버를 검토하는 경우",
+      "do": "CONFIG_RUST_FWCTL_ABSTRACTIONS와 Operations·Registration·Device<T>·RpcScope API를 검토하세요.",
+      "verify": "v8 리베이스와 KVVec RPC 응답·pinning 불변식 변경을 lore 원문에서 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**bpf, riscv: Add BPF stack arguments support for RV64 JIT**\n\nv2 2패치 시리즈가 RV64 BPF JIT에 bpf_jit_supports_stack_args()를 추가해 BPF 서브프로그램·kfunc가 레지스터 5개를 넘는 인자를 스택(BPF_REG_PARAMS/r11)으로 전달하게 합니다. v2는 스택 kfunc 인자 32비트 부호 확장과 RV64 selftest 가드를 보강했습니다.\n\n영향: x86·arm64에 이미 있는 BPF 스택 인자 기능을 RISC-V JIT에 맞추면 kfunc·BPF-to-BPF 호출 ABI가 아키 간으로 정렬되어, RISC-V BPF·LLVM JIT 검증 경로와 selftest 커버리지가 확장됩니다.\n\n> Add bpf_jit_supports_stack_args() for the RV64 JIT so BPF subprograms and kfuncs can receive more than 5 arguments via the stack (BPF_REG_PARAMS / r11).\n\n[원문 확인](https://lore.kernel.org/llvm/20260813-bpf-riscv-stack-args-v2-1-efea8f9b3fe1@kylinos.cn/)\n\n**kstack_erase: suppress -grecord-gcc-switches for external module builds**\n\nv2 패치가 CONFIG_GCC_PLUGIN_STACKLEAK·kstack_erase로 외부 모듈(KBUILD_EXTMOD) 빌드 시 stackleak GCC 플러그인 경로가 -grecord-gcc-switches로 DWARF producer 문자열에 절대경로로 새는 문제를 -gno-record-gcc-switches 추가로 막습니다.\n\n영향: vendor 외부 모듈 빌드에서 stackleak 계측은 유지하면서 QA 절대경로 누출 검사를 통과하게 해, GCC 플러그인·kbuild 플래그를 추적하는 도구체인·CI 담당자에게 직접적인 빌드·메타데이터 영향이 있습니다.\n\n> recording gcc switches can embed this host/build specific plugin path into module DWARF producer strings, which trips QA checks looking for absolute path leakage.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20260813082949.1622045-1-jaihindy@qti.qualcomm.com/)\n\n**rust_binder: use `LocalModule` for `THIS_MODULE`**\n\nGary Guo 패치가 binder netlink Family 등록의 THIS_MODULE 정적 참조를 kernel::module::this_module::<LocalModule>()로 바꿔 ModuleMetadata 트레이트로 THIS_MODULE이 이동한 Rust API와 맞춥니다. rust-next와 char-misc-next 시맨틱 충돌 해소 목적입니다.\n\n영향: Rust 모듈 메타데이터 API 전환에 맞춘 소규모이지만 필수 마이그레이션이라, rust_binder·ModuleMetadata를 쓰는 Rust 드라이버 빌드가 next 트리 병합 시 깨지지 않게 합니다.\n\n> Replace the `THIS_MODULE` static reference in the binder netlink code with `this_module::<LocalModule>()`, consistent with the move of `THIS_MODULE` into the `ModuleMetadata` trait.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260813163951.1102583-1-gary@kernel.org/)\n\n**Rework PCI IRQ vector code**\n\nDanilo Krummrich v3 5패치가 Rust PCI IrqVectorRegistration을 lifetime 소유 타입으로 재작업하고 IrqVector에 IrqRequest를 내장합니다. v3는 count/vector API를 len/index로 바꾸고 Device의 request_irq() 래퍼를 제거하며 C pci_irq_type()을 include/linux/pci.h에 추가합니다.\n\n영향: nova-core 등 MSI-X 재구성 Rust 드라이버가 devres 대신 컴파일 타임 IRQ 수명을 쓰게 되고, C·Rust 양쪽 PCI IRQ 타입 조회 API가 정리되어 Rust PCI·IRQ 바인딩 작성자의 ABI·안전성 모델이 바뀝니다.\n\n> Convert IrqVectorRegistration to a lifetime-managed owning type, replacing the devres-based approach... The request_irq()/request_threaded_irq() wrappers on Device are removed\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260813165234.620555-1-dakr@kernel.org/)\n\n**rust: introduce abstractions for fwctl**\n\nZhi Wang v8 단일 패치가 fwctl 서브시스템용 Rust 추상화(Operations GAT·Registration·Device<T>·RpcScope/FwRpcResponse)를 도입하고 CONFIG_RUST_FWCTL_ABSTRACTIONS로 조건부 포함합니다. v8은 fwctl for-next 리베이스·KVVec RPC 응답·pinning 불변식 보강을 포함합니다.\n\n영향: NVIDIA vGPU RFC 등 fwctl 기반 펌웨어·설정 업로드 드라이버가 안전한 Rust 바인딩으로 작성될 수 있어, fwctl UAPI·Rust 드라이버 생태계 확장에 직접 해당합니다.\n\n> fwctl is a more natural fit for this use case, as it is designed for uploading configuration or firmware data required before the device becomes operational.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260813152312.1311142-1-zhiw@nvidia.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "mainline bpf-next merge 시점·RV32 JIT 지원 범위, 인커널(비 EXTMOD) 빌드의 동일 DWARF 누출 여부, ModuleMetadata 전환 follow-up 범위, nova-core 인터럽트 시리즈 통합 순서, fwctl for-next mainline 경로와 vGPU RFC 채택 시점은 각 스레드만으로는 확인이 필요합니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "bpf, riscv: Add BPF stack arguments support for RV64 JIT (v2-1)",
+      "url": "https://lore.kernel.org/llvm/20260813-bpf-riscv-stack-args-v2-1-efea8f9b3fe1@kylinos.cn/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf, riscv: Add BPF stack arguments support for RV64 JIT (v2-0)",
+      "url": "https://lore.kernel.org/llvm/20260813-bpf-riscv-stack-args-v2-0-efea8f9b3fe1@kylinos.cn/",
+      "note": "thread"
+    },
+    {
+      "title": "kstack_erase: suppress -grecord-gcc-switches for external module builds",
+      "url": "https://lore.kernel.org/linux-kbuild/20260813082949.1622045-1-jaihindy@qti.qualcomm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "rust_binder: use LocalModule for THIS_MODULE",
+      "url": "https://lore.kernel.org/rust-for-linux/20260813163951.1102583-1-gary@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "Rework PCI IRQ vector code (v3)",
+      "url": "https://lore.kernel.org/rust-for-linux/20260813165234.620555-1-dakr@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: introduce abstractions for fwctl (v8)",
+      "url": "https://lore.kernel.org/rust-for-linux/20260813152312.1311142-1-zhiw@nvidia.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-13T18:28:42.638Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
