@@ -1,0 +1,118 @@
+{
+  "id": "2026-08-15-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-08-15 kbuild·syscall 공통화 — Linux Toolchain",
+  "headline": "kbuild .cmd 메타데이터·Rust fentry·syscall 공통 테이블·BPF selftest 통합 등 빌드·ABI 변경이 llvm·linux-kbuild 리스트에 올라왔습니다.",
+  "date": "2026-08-15",
+  "summary": "kbuild가 .cmd에 real-prereqs를 기록하고 Rust fentry 계측 경로가 열렸으며, syscall 403번 이후 공통 구간을 scripts/syscall_common.tbl로 묶는 v5 시리즈가 진행 중입니다. RISC-V clang FORTIFY 경고 수정, BPF selftest lib.bpf.mk 통합, RV64 BPF 스택 인자 JIT도 함께 추적할 가치가 있습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "kbuild: record real-prereqs in .cmd files",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "kbuild·fixdep·SBOM·FIT 빌드 스크립트 유지보수자",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20260814112134.832243-2-luis.augenstein@tngtech.com/",
+      "if": "FIT 이미지 생성이나 SBOM 도구가 .cmd 메타데이터를 파싱한다면",
+      "do": "make_prereqs_<target> 필드 추가와 make_fit.py의 savedcmd_* 전용 읽기 변경을 반영해 스크립트를 점검하세요",
+      "verify": "선행 시리즈 머지 순서와 KernelSbom 외 .cmd 소비자 호환 여부를 lore 스레드에서 확인하세요"
+    },
+    {
+      "title": "rust: enable fentry support",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "Rust-for-Linux·ftrace/mcount 빌드 설정 담당",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20260812201613.1783592-1-murp@redhat.com/",
+      "if": "CONFIG_HAVE_FENTRY=y로 C·Rust 혼합 커널을 ftrace/mcount로 프로파일링한다면",
+      "do": "rustc가 호환 fentry 옵션을 지원하는지와 Rust 1.98의 x86·s390x -Zinstrument-mcount=fentry 지원 범위를 빌드 설정에 맞춰 검토하세요",
+      "verify": "FTRACE_MCOUNT_USE_CC 설정 시 v2 extended fentry 분기 동작을 lore 스레드 원문으로 확인하세요"
+    },
+    {
+      "title": "syscalls: Add a shared table for all archs",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "syscall 테이블·kbuild scripts/syscallhdr 유지보수자",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20260812-tonyk-syscall_table-v5-0-3d383927c609@igalia.com/",
+      "if": "arm·s390·sparc·mips·alpha에서 신규 syscall 번호를 추가하거나 syscallhdr를 생성한다면",
+      "do": "403(clock_gettime64) 이후 공통 구간이 scripts/syscall_common.tbl로 이동했는지와 아키별 syscall.tbl diff를 v5 시리즈 기준으로 대조하세요",
+      "verify": "x86/x32 제외 상태와 생성된 syscalls_*.h·unistd_*.h 동등성 검증 범위를 스레드에서 확인하세요"
+    },
+    {
+      "title": "bpf, riscv: Add BPF stack arguments support for RV64 JIT",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "RISC-V BPF JIT·LLVM selftest 유지보수자",
+      "verifyLink": "https://lore.kernel.org/llvm/20260814-bpf-riscv-stack-args-v3-0-2160de56fea3@kylinos.cn/",
+      "if": "RISC-V에서 kfunc나 BPF-to-BPF 호출로 5개를 넘는 인자를 쓰는 프로그램을 검증한다면",
+      "do": "RV64 JIT의 bpf_jit_supports_stack_args()와 BPF_REG_PARAMS/r11 스택 전달 경로가 x86·arm64와 맞는지 v3 selftest로 확인하세요",
+      "verify": "v3 시리즈 머지 여부와 LLVM main 의존 selftest가 배포 LLVM에서 재현되는지 lore 스레드를 추적하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**arch_numa: Avoid false positive fortify warning in setup_node_to_cpumask_map()**\n\nv2 패치가 setup_node_to_cpumask_map()에 nr_node_ids > MAX_NUMNODES 조기 반환 검사를 넣어, clang이 루프를 언롤할 때 FORTIFY_SOURCE가 node_to_cpumask_map에 대한 거짓 양성 경고를 내지 않게 합니다.\n\n영향: RISC-V에서 clang·CONFIG_FORTIFY_SOURCE·CONFIG_UBSAN_BOUNDS·CONFIG_NR_CPUS>64 조합으로 빌드하는 ClangBuiltLinux·CI 경로에서 경고 없는 클린 빌드를 유지하려는 툴체인 독자에게 직접적인 빌드 이슈입니다.\n\n> In this configuration, MAX_NUMNODES is 4. clang unrolls the for loop in setup_node_to_cpumask_map() past this, which triggers the fortify check\n\n[원문 확인](https://lore.kernel.org/llvm/20260813-arch_numa-avoid-fortify-warning-v2-1-093ad97a78df@kernel.org/)\n\n**kbuild: record real-prereqs in .cmd files**\n\nkbuild가 .cmd 파일에 make_prereqs_<target> 메타데이터 필드를 추가해 $(real-prereqs)를 기록하고, scripts/make_fit.py는 전체 .cmd 파싱 대신 savedcmd_*만 읽도록 바뀝니다. KernelSbom은 make_prereqs_*를 무시합니다.\n\n영향: 컴파일 의존성 그래프·FIT 이미지·SBOM 도구가 .cmd 메타데이터에 의존하므로, prereq 기록 방식 변경은 kbuild·재현 빌드·공급망 추적 워크플로에 영향을 줍니다.\n\n> Record $(real-prereqs), the non-phony prerequisites of the target, in a new metadata field: make_prereqs_<target> := <prerequisites>\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20260814112134.832243-2-luis.augenstein@tngtech.com/)\n\n**selftests: shared lib.bpf.mk for building BPF progs and skeletons**\n\nv3 4패치 시리즈가 selftests/{bpf,sched_ext,hid}에 흩어진 BPF 빌드 규칙을 tools/testing/selftests/lib.bpf.mk로 통합하고, cgroup memcg_stat_cross_cpu 교차 CPU flush 정확도 selftest를 추가합니다.\n\n영향: BPF selftest·libbpf·bpftool 서브메이크에 USERCFLAGS/OPT_FLAGS가 일관 전달되면 Clang/LLVM 기반 BPF 프로그램 빌드·스켈레톤 생성 설정이 단순해지고 신규 selftest 추가 비용이 줄어듭니다.\n\n> Unify them into a single includable fragment, the tools/testing/selftests/lib.bpf.mk, and wires up three consumers.\n\n[원문 확인](https://lore.kernel.org/llvm/20260814075054.507089-1-ziyang.meme@gmail.com/)\n\n**rust: enable fentry support**\n\nv2 패치가 CONFIG_HAVE_FENTRY=y이고 rustc가 호환 fentry 옵션을 지원할 때 Rust 커널 빌드에 fentry 계측을 켜며, Rust 1.98은 x86·s390x에서 -Zinstrument-mcount=fentry를 지원합니다.\n\n영향: GCC -mfentry와 동등한 Rust fentry 경로가 생기면 ftrace/mcount 기반 프로파일링에서 C와 Rust 코드의 계측 일관성을 맞출 수 있어 Rust-for-Linux·LLVM 백엔드 제약을 추적하는 독자에게 중요합니다.\n\n> Turn it on if CONFIG_HAVE_FENTRY=y and rustc supports a compatible fentry option.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20260812201613.1783592-1-murp@redhat.com/)\n\n**syscalls: Add a shared table for all archs**\n\nv5 13패치 시리즈가 syscall 번호 403(clock_gettime64) 이후 공통 구간을 scripts/syscall_common.tbl로 통합하고 arm·s390·sparc·mips·alpha가 이 테이블을 공유하도록 kbuild syscallhdr/syscalltbl 생성 경로를 바꿉니다.\n\n영향: 신규 syscall 추가 시 아키별 syscall.tbl에 동일 common 행을 반복 넣던 부담을 줄이고, 공통 번호 공간을 한곳에서 관리하게 되어 kbuild·syscall ABI를 추적하는 도구체인 독자에게 직접적인 빌드·ABI 영향이 있습니다.\n\n> Since syscall number 403, all architectures are on sync regarding the number (except alpha)... The generic table starts from 403 (clock_gettime64)\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20260812-tonyk-syscall_table-v5-0-3d383927c609@igalia.com/)\n\n**bpf, riscv: Add BPF stack arguments support for RV64 JIT**\n\nv3 리뷰 답장 기준으로, 시리즈는 RV64 BPF JIT에 bpf_jit_supports_stack_args()를 추가해 BPF 서브프로그램·kfunc가 레지스터 5개를 넘는 인자를 스택(BPF_REG_PARAMS/r11)으로 전달하게 합니다. v3는 RV64 selftest 가드와 exceptions.c 변경을 정리했습니다.\n\n영향: x86·arm64에 있는 BPF 스택 인자 기능을 RISC-V JIT에 맞추면 kfunc·BPF-to-BPF 호출 ABI가 아키 간으로 정렬되어 RISC-V BPF·LLVM JIT 검증 경로와 selftest 커버리지가 확장됩니다.\n\n> Port the BPF stack argument feature (BPF_REG_PARAMS / r11) to the RV64 JIT, matching what x86 and arm64 already do.\n\n[원문 확인](https://lore.kernel.org/llvm/20260814-bpf-riscv-stack-args-v3-0-2160de56fea3@kylinos.cn/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "arch_numa: Avoid false positive fortify warning in setup_node_to_cpumask_map()",
+      "url": "https://lore.kernel.org/llvm/20260813-arch_numa-avoid-fortify-warning-v2-1-093ad97a78df@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "kbuild: record real-prereqs in .cmd files",
+      "url": "https://lore.kernel.org/linux-kbuild/20260814112134.832243-2-luis.augenstein@tngtech.com/",
+      "note": "thread"
+    },
+    {
+      "title": "selftests: shared lib.bpf.mk for building BPF progs and skeletons",
+      "url": "https://lore.kernel.org/llvm/20260814075054.507089-1-ziyang.meme@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: enable fentry support",
+      "url": "https://lore.kernel.org/linux-kbuild/20260812201613.1783592-1-murp@redhat.com/",
+      "note": "thread"
+    },
+    {
+      "title": "syscalls: Add a shared table for all archs",
+      "url": "https://lore.kernel.org/linux-kbuild/20260812-tonyk-syscall_table-v5-0-3d383927c609@igalia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf, riscv: Add BPF stack arguments support for RV64 JIT (v3 review)",
+      "url": "https://lore.kernel.org/llvm/ff8e2f00-0d44-408a-8724-36bfa78911d4@kylinos.cn/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf, riscv: Add BPF stack arguments support for RV64 JIT (v3 series)",
+      "url": "https://lore.kernel.org/llvm/20260814-bpf-riscv-stack-args-v3-0-2160de56fea3@kylinos.cn/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-14T18:27:03.432Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

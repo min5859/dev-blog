@@ -1,0 +1,108 @@
+{
+  "id": "2026-08-15-linux-distro-stable-daily",
+  "topic": "linux-distro-stable",
+  "title": "2026-08-15 stable 보안 큐 — 배포판 Stable",
+  "headline": "stable 큐에 NVMe ZNS·USB-CAN·amdgpu UAF 백포트가 제출됐고, Realtek DSA reset GPIO 논의가 이어집니다.",
+  "date": "2026-08-15",
+  "summary": "이번 수집은 8월 9일 stable 릴리스 이후 제출된 백포트 후보에 초점을 맞췄습니다. NVMe ZNS zone info 실패 처리, USB-CAN 수신 경계, amdgpu pp_table UAF, AMD perf MSR dump 회귀, Realtek DSA GPIO 수정이 핵심입니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "NVMe zoned namespace zone info 실패 거부",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "NVMe/NVMe-oF·ZNS 스토리지 스택 운영자·stable 백포트 추적자",
+      "verifyLink": "https://lore.kernel.org/stable/20260814160954.2839507-1-coshi036@gmail.com/",
+      "if": "ZNS NVMe 장치나 NVMe-oF 타깃을 노출하는 배포를 운영한다면",
+      "do": "stable 백포트 채택 전까지 해당 커널 버전의 ZNS 노출 범위를 검토하세요",
+      "verify": "배포 보안 공지와 stable 큐 merge 여부를 확인하세요"
+    },
+    {
+      "title": "USB-CAN esd_usb·kvaser_usb_hydra 수신 경계 수정",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "esd_usb·kvaser_usb_hydra USB-CAN 사용자·stable 백포트 추적자",
+      "verifyLink": "https://lore.kernel.org/stable/20260815-can-esd-hydra-fixes-v1-0-de644cbeaec2@ikuyo.dev/",
+      "if": "배포 이미지에 esd_usb 또는 kvaser_usb_hydra 드라이버가 포함돼 있다면",
+      "do": "stable 백포트 적용 전까지 해당 USB-CAN 하드웨어 노출을 점검하세요",
+      "verify": "stable 큐 패치 채택 일정을 추적하세요"
+    },
+    {
+      "title": "amdgpu sysfs pp_table use-after-free",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "amdgpu/powerplay·sysfs pp_table 운영자·stable 백포트 추적자",
+      "verifyLink": "https://lore.kernel.org/stable/20260814172454.176686-1-sashal@kernel.org/",
+      "if": "amdgpu sysfs pp_table 읽기와 GPU 워크로드가 동시에 겹칠 수 있다면",
+      "do": "백포트 merge 전까지 pp_table sysfs 접근 빈도를 줄이세요",
+      "verify": "제출된 [PATCH 6.1.y] 백포트의 다른 stable 브랜치 확장 여부를 확인하세요"
+    },
+    {
+      "title": "AMD PerfMonV2 MSR dump 회귀",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "AMD x86 perf/PMU·SysRq 디버깅 운영자·stable 백포트 추적자",
+      "verifyLink": "https://lore.kernel.org/stable/d83896ecfd6e98424c2053298fbb10a3d91592f9.1786728929.git.sandipan.das@amd.com/",
+      "if": "AMD 서버에서 SysRq-P나 perf debug dump를 자주 쓴다면",
+      "do": "오탐 MSR 경고와 거짓 0 출력을 인지하고 백포트 채택을 기다리세요",
+      "verify": "stable 큐 merge 일정을 추적하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**nvme: reject zoned namespaces whose zone info query failed**\n\nnvme_update_ns_info_block()가 nvme_query_zone_info()의 양수 NVMe status만 통과시켜 zone size 0의 zoned 큐가 구성되고, 이후 I/O에서 ilog2(0) shift-out-of-bounds가 발생합니다. stable 큐에 \"if (ret)\" 검사 복원 패치가 제출됐습니다.\n\n영향: 악의적 NVMe·NVMe-oF 타깃이 Identify 실패만으로 zoned 큐를 0 zone size로 열 수 있어, 배포판은 stable 백포트 채택 전까지 해당 커널 버전의 NVMe ZNS 노출을 검토해야 합니다.\n\n> so the queue ends up marked zoned with a zone size of zero. This is reachable by a malicious NVMe device, a buggy firmware, or an attacker-controlled NVMe-oF target\n\n[원문 확인](https://lore.kernel.org/stable/20260814160954.2839507-1-coshi036@gmail.com/)\n\n**can: fix two missed siblings of the kvaser_usb_leaf receive-walk fix**\n\nkvaser_usb_leaf 수신 경로 수정(0293dd153f9d)과 동일한 unbounded receive-buffer walk가 esd_usb(힙 infoleak+soft lockup)와 kvaser_usb_hydra(soft lockup)에 남아 있어 stable 백포트 2건이 제출됐습니다.\n\n영향: 악의적·에뮬레이티드 USB CAN 주변기가 probe 시 자동 바인딩되므로, USB CAN 하드웨어·배포 이미지에 해당 드라이버가 포함된 경우 stable 백포트 적용을 추적해야 합니다.\n\n> Both are reachable by a malicious or emulated USB CAN peripheral with no user privileges (the driver auto-binds on probe)\n\n[원문 확인](https://lore.kernel.org/stable/20260815-can-esd-hydra-fixes-v1-0-de644cbeaec2@ikuyo.dev/)\n\n**drm/amd/pm: fix pptable use-after-free**\n\namdgpu_dpm_get_pp_table()가 mutex 해제 뒤 driver-owned pptable 포인터를 sysfs 경로에 노출해, 동시 pp_table 갱신 시 copy 중 use-after-free가 발생합니다. mutex 보유 중 caller 버퍼로 복사하도록 DPM 인터페이스를 바꾸는 stable 백포트가 제출됐습니다.\n\n영향: amdgpu sysfs pp_table 읽기 경로의 UAF는 GPU 워크로드와 sysfs 접근이 겹치는 서버·데스크톱에서 메모리 안전 리스크이므로, 해당 amdgpu 커널을 쓰는 배포는 백포트 채택을 모니터링해야 합니다.\n\n> A concurrent pp_table write can replace and free the allocation during the copy, causing a use-after-free.\n\n[원문 확인](https://lore.kernel.org/stable/20260814172454.176686-1-sashal@kernel.org/)\n\n**perf/x86: Move MSR_CORE_PERF_GLOBAL_* dump to vendor code**\n\nAMD PerfMonV2에서 x86_pmu.version=2 설정 후 공통 debug dump가 Intel 전용 MSR_CORE_PERF_GLOBAL_*를 읽어 #GP·unchecked MSR access 경고와 거짓 0 출력이 발생합니다. Intel/Zhaoxin PMU 전용 print_debug로 옮기는 stable 백포트가 제출됐습니다.\n\n영향: AMD 서버에서 SysRq-P·perf debug가 오탐 경고를 쏟아내고 잘못된 레지스터 값을 보여 디버깅을 방해하며, 근본 원인은 PerfMonV2 감지 커밋의 회귀이므로 LTS 배포는 백포트를 추적해야 합니다.\n\n> MSR_CORE_PERF_GLOBAL_{CTRL,STATUS} and MSR_ARCH_PERFMON_FIXED_CTR_CTRL are Intel Architectural PerfMon registers that are not available on AMD processors.\n\n[원문 확인](https://lore.kernel.org/stable/d83896ecfd6e98424c2053298fbb10a3d91592f9.1786728929.git.sandipan.das@amd.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**net: dsa: realtek: use gpiod_set_value_cansleep for reset GPIO**\n\nRealtek DSA rtl83xx reset helper가 gpiod_set_value()를 쓰면 I2C GPIO expander 등 sleeping controller에서 WARN이 발생합니다. stable 큐에서 Andrew Lunn은 회귀가 아니라 net-next 기능으로 보내야 한다고, Jakub Kicinski는 실제 플랫폼 WARN이면 수정이라고 논의합니다.\n\n영향: I2C 확장 GPIO로 Realtek 스위치 reset을 묶는 임베디드·산업 보드는 stable 큐 채택 여부에 따라 WARN 스팸·reset 동작이 달라질 수 있어, 배포 담당자는 maintainer 합의를 추적해야 합니다.\n\n> This is one of those fuzzy cases. It never worked, so this is not a regression. Nobody has needed it up until now.\n\n[원문 확인](https://lore.kernel.org/stable/20260814100014.1122e66a@kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "nvme: reject zoned namespaces whose zone info query failed",
+      "url": "https://lore.kernel.org/stable/20260814160954.2839507-1-coshi036@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "can: fix two missed siblings of the kvaser_usb_leaf receive-walk fix",
+      "url": "https://lore.kernel.org/stable/20260815-can-esd-hydra-fixes-v1-0-de644cbeaec2@ikuyo.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/amd/pm: fix pptable use-after-free",
+      "url": "https://lore.kernel.org/stable/20260814172454.176686-1-sashal@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "perf/x86: Move MSR_CORE_PERF_GLOBAL_* dump to vendor code",
+      "url": "https://lore.kernel.org/stable/d83896ecfd6e98424c2053298fbb10a3d91592f9.1786728929.git.sandipan.das@amd.com/",
+      "note": "thread"
+    },
+    {
+      "title": "net: dsa: realtek: use gpiod_set_value_cansleep for reset GPIO",
+      "url": "https://lore.kernel.org/stable/20260814100014.1122e66a@kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-14T18:30:26.555Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

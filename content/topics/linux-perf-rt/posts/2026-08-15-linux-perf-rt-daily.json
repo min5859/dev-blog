@@ -1,0 +1,88 @@
+{
+  "id": "2026-08-15-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-08-15 ARM64 HW BP 지연 — linux-perf-rt",
+  "headline": "ARM64 PREEMPT_RT HW breakpoint WARN을 task_work 지연으로 해소하는 v2 패치가 제출됐고, RT hrtimer sleeper HARD 경로 문서가 differences.rst로 정리됐습니다.",
+  "date": "2026-08-15",
+  "summary": "ARM·ARM64·LoongArch에서 HW breakpoint perf overflow 콜백을 task_work_add()까지 미루는 수정이 linux-rt-devel에 올라왔습니다. hrtimer 만료·sleeper 경로 문서는 리뷰 반영으로 differences.rst 한곳에 통합·보강됐습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "ARM64 HW breakpoint task_work 지연",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "PREEMPT_RT에서 ARM/ARM64/LoongArch HW breakpoint·perf 이벤트를 사용·유지보수하는 개발자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260814085118.OPEA_Ssn@linutronix.de/",
+      "if": "PREEMPT_RT ARM64 등에서 gdb·perf HW breakpoint를 쓰며 \"sleeping while atomic\" WARN이 나는 경우",
+      "do": "v2 패치의 perf_arch_hwbp_notify()와 overflow 콜백의 task_work_add() 지연 경로를 검토하고 머지·linux-rt 반영 시점을 추적하세요.",
+      "verify": "동일 워크로드에서 HW breakpoint 트리거 시 WARN 재현 여부와 userland 복귀 직전 지연의 체감 영향을 확인하세요."
+    },
+    {
+      "title": "RT sleeper hrtimer HARD 경로 문서화",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "PREEMPT_RT 타이머·나노슬립 경로를 운영·디버깅하는 개발자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260814161240.33774-1-haohlliang@gmail.com/",
+      "if": "clock_nanosleep() 등 sleeper 경로의 PREEMPT_RT 타이머 지연·우선순위를 분석하는 경우",
+      "do": "Documentation/core-api/real-time/differences.rst Timers 절의 HRTIMER_MODE_HARD wakeup 설명과 ktimers/%u 명칭 정정을 읽으세요.",
+      "verify": "RT·DEADLINE 태스크에서 hrtimer_setup_sleeper_on_stack()이 hardirq wakeup을 쓰는지 문서와 대조하세요."
+    },
+    {
+      "title": "hrtimer 만료 모드·ktimers/%u 문서",
+      "priority": "하",
+      "impactType": "runtime",
+      "affectedAudience": "PREEMPT_RT hrtimer·스케줄러 동작을 설계·디버깅하는 커널 개발자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260813145746.26612-1-haohlliang@gmail.com/",
+      "if": "SCHED_FIFO 99 태스크의 일반 hrtimer가 같은 우선순위로 만료된다고 가정해 지연을 진단하는 경우",
+      "do": "미표시 타이머는 ktimers/%u(최저 SCHED_FIFO)에서 만료되며 arming 우선순위를 상속하지 않는다는 v3 설명을 확인하세요.",
+      "verify": "해당 주제는 v4에서 differences.rst 통합으로 이어졌는지 최신 패치 스레드를 대조하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ARM, ARM64, LONGARCH: Delay HW BP notification to task_work()**\n\nARM·ARM64·LoongArch에서 HW breakpoint perf overflow 콜백이 원자적 문맥에서 sighand_struct::siglock(수면 가능 spinlock)을 잡아 PREEMPT_RT에서 \"sleeping while atomic\" WARN이 나던 문제를, perf_arch_hwbp_notify()로 실제 처리를 task_work_add()까지 지연하는 v2 패치로 수정합니다.\n\n영향: gdb·perf HW breakpoint를 PREEMPT_RT ARM64 등에서 쓰는 디버깅·프로파일링 워크플로가 원자적 문맥 WARN 없이 동작해야 하며, perf·시그널 경로와 RT 잠금 모델 충돌의 대표 사례입니다. 머지 여부·linux-rt 트리 반영 시점, x86 등 다른 아키텍처 적용 필요 여부, task_work 지연의 디버거 체감 지연·레이스 영향은 확인이 필요합니다.\n\n> HW breakpoints on ARM64 trigger \"sleeping while atomic\" warnings on PREEMPT_RT.\n\n> Delay the event callback until the return to userland. Add perf_arch_hwbp_notify(), a generic perf callback which delayes the actual callback invocation to task_work_add() callback.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260814085118.OPEA_Ssn@linutronix.de/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**docs: real-time: mention the hrtimer sleeper HARD path**\n\nDocumentation/core-api/real-time/differences.rst Timers 절에 hrtimer_setup_sleeper_on_stack()이 RT/DEADLINE 태스크에서 HRTIMER_MODE_SOFT 미요청 시 HRTIMER_MODE_HARD로 표시해 wakeup이 hardirq에서 처리된다는 내용을 추가하고, 스레드 명칭을 ktimersd에서 ktimers/%u로 정정합니다. v4는 hrtimers.rst 중복 절을 빼고 differences.rst만 확장합니다.\n\n영향: clock_nanosleep() 등 sleeper 경로는 ktimers/%u가 아닌 hardirq wakeup을 쓰므로, PREEMPT_RT 타이머 지연 분석 시 일반 hrtimer와 혼동하면 잘못된 우선순위·컨텍스트 가정이 생깁니다.\n\n> hrtimer_setup_sleeper_on_stack() marks the timer HRTIMER_MODE_HARD when the current task is RT or DEADLINE and HRTIMER_MODE_SOFT was not requested, so the wakeup runs in hard interrupt context.\n\n> drop the Documentation/timers/hrtimers.rst section; extend differences.rst instead, per review\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260814161240.33774-1-haohlliang@gmail.com/)\n\n**docs: timers: hrtimers: clarify expiry modes and ktimersd on PREEMPT_RT (진척)**\n\n어제 다룬 hrtimers.rst PREEMPT_RT 만료 모드 문서화는 리뷰 반영으로 v4에서 differences.rst 통합 방향으로 정리됐습니다. v3에서 명시한 동작(미표시 타이머는 ktimers/%u에서 최저 SCHED_FIFO로 만료, arming 우선순위 비상속)은 여전히 RT 타이머 진단의 핵심 맥락입니다.\n\n영향: SCHED_FIFO 99 태스크가 일반 hrtimer를 걸어도 콜백이 같은 우선순위로 실행되지 않는다는 점을 모르면 지연·우선순위 역전을 잘못 진단할 수 있습니다.\n\n> A SCHED_FIFO task running at priority 99 that starts an unmarked timer still expires on ktimers/%u (lowest SCHED_FIFO priority), not at priority 99.\n\n> hrtimer_setup_sleeper_on_stack() marks RT/DL-armed timers HRTIMER_MODE_HARD, so their wakeups do not go through ktimers/%u.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260813145746.26612-1-haohlliang@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "high",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "docs: timers: hrtimers: clarify expiry modes and ktimersd on PREEMPT_RT",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260813145746.26612-1-haohlliang@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "ARM, ARM64, LONGARCH: Delay HW BP notification to task_work()",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260814085118.OPEA_Ssn@linutronix.de/",
+      "note": "thread"
+    },
+    {
+      "title": "docs: real-time: mention the hrtimer sleeper HARD path",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260814161240.33774-1-haohlliang@gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-14T18:32:44.346Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

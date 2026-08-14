@@ -1,0 +1,130 @@
+{
+  "id": "2026-08-15-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-08-15 NMI dump_tasks — Android 커널",
+  "headline": "ACK mainline에 NMI 컨텍스트 dump_tasks() 안전화가 신규 반영되고, pKVM VLPI·SELinux bpffs 등 보안·회귀 패치가 이어집니다.",
+  "date": "2026-08-15",
+  "summary": "오늘 dossier의 유일한 신규 항목은 메모리 압박·LMKD 경로에서 NMI로 task 덤프 시 데드락을 피하도록 dump_tasks()를 바꾼 커밋입니다. GICv4 VLPI 호스트 MMIO 차단·SELinux bpffs 초기화 순서 수정·TLS dead code 정리 등은 어제와 동일하게 ACK에 머지 중입니다.",
+  "tags": [
+    "안드로이드",
+    "커널",
+    "메모리",
+    "pKVM"
+  ],
+  "highlights": [
+    {
+      "title": "NMI 컨텍스트 dump_tasks() 안전화",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "ACK 메모리 서브시스템·LMKD 연동 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/db2acc01b75f9a30bfef0f4d2a6f413542cc32ac",
+      "if": "메모리 압박·LMKD 경로에서 NMI로 task/메모리 상태를 덤프하는 ACK 빌드를 유지한다면",
+      "do": "spin_trylock과 memcg OOM 덤프 조기 반환을 적용한 dump_tasks() 패치를 mainline ACK에 반영하세요",
+      "verify": "원문 커밋에서 find_lock_task_mm()·mem_cgroup_scan_tasks() 경로 변경을 직접 확인하세요"
+    },
+    {
+      "title": "pKVM GICv4 VLPI 호스트 MMIO 차단",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "Android Virtualization Framework·pKVM·KVM/arm64 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/18b623c9490c5519d40209efb05770d61b3d3c84",
+      "if": "Android 16/AVF·pKVM arm64 배포 트리에서 GICv4 VLPI 경로를 사용한다면",
+      "do": "VLPI_base 호스트 MMIO를 pkvm_handle_vlpi_emulation() no-op 핸들러로 라우팅하는 패치를 android16-6.12에 머지하세요",
+      "verify": "VFIO MSI/vLPI forwarding과 충돌하는 플랫폼 조합이 있는지 확인이 필요합니다"
+    },
+    {
+      "title": "SELinux bpffs inode 초기화 순서 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "SELinux·BPF·ACK security backport 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/8f0a5b31aee19510e75741c9687cf0d9321fa7ed",
+      "if": "genfscon bpffs 마운트가 SBLABEL_MNT 없이 실패한 뒤 inode가 initialized로 남는 회귀가 의심된다면",
+      "do": "SBLABEL_MNT 검사를 isec initialized 표시 전에 수행하도록 바꾼 커밋을 ACK security backport 경로로 추적하세요",
+      "verify": "inode_do_init_with_dentry() 등 후속 SELinux 경로가 정상 동작하는지 bpffs 마운트 테스트로 확인하세요"
+    },
+    {
+      "title": "TLS SW 경로 dead sockmap 코드 삭제",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "ACK merge·네트워크/TLS 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/79511603a65b990bed675eb4bcfd85305d3ff42a",
+      "if": "ACK mainline TLS 스택을 upstream과 동기화 중이라면",
+      "do": "TLS와 sockmap이 상호 배타적임을 반영해 sendmsg/recvmsg SW 경로 dead psock 분기를 제거하세요",
+      "verify": "기능 변화 없이 dead code만 삭제됐는지 원문 커밋 diff를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**ANDROID: mm: Make dump_tasks() safe in NMI context**\n\nNMI 컨텍스트에서 dump_tasks()가 spin_trylock과 memcg OOM 덤프 조기 반환을 사용하도록 바꿔, find_lock_task_mm()·mem_cgroup_scan_tasks()의 비-NMI-safe 락 사용을 피합니다.\n\n영향: 메모리 압박·LMKD 경로에서 NMI로 task/메모리 상태를 덤프할 때 데드락 없이 동작해 온디바이스 메모리 디버깅 신뢰성이 올라갈 것으로 보입니다. 커밋 인용문은 아직 검증되지 않았으므로 원문 확인이 필요합니다.\n\n> Fix these by:\n> - Using spin_trylock(&t->alloc_lock) in find_lock_task_mm() when in_nmi().\n> - Returning early if a memcg oom dump is requested in NMI context.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/db2acc01b75f9a30bfef0f4d2a6f413542cc32ac)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ANDROID: mm: Make dump_tasks() safe in NMI context",
+      "url": "https://android.googlesource.com/kernel/common/+/db2acc01b75f9a30bfef0f4d2a6f413542cc32ac",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: GKI: CRYPTO_LZ4 is now implicit",
+      "url": "https://android.googlesource.com/kernel/common/+/87aba67d69fd0706152ae2d9dec68c2cfc274459",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: KVM: arm64: Block host MMIO accesses to GICv4 VLPI region",
+      "url": "https://android.googlesource.com/kernel/common/+/18b623c9490c5519d40209efb05770d61b3d3c84",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: gki_defconfig: enable CONFIG_SW_SYNC=y for debug/testing",
+      "url": "https://android.googlesource.com/kernel/common/+/7443a0c3c9ecfc8982003afde92e9c783c725994",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: sched: Avoid macro redefinition of TRACE_INCLUDE_PATH",
+      "url": "https://android.googlesource.com/kernel/common/+/82be0d329bf2b455546a09cc84a40c9d1716b54d",
+      "note": "commit"
+    },
+    {
+      "title": "FROMGIT: selinux: bpf: check SBLABEL_MNT before isec init",
+      "url": "https://android.googlesource.com/kernel/common/+/8f0a5b31aee19510e75741c9687cf0d9321fa7ed",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: block: Use block driver queue depth if ZWOR is supported",
+      "url": "https://android.googlesource.com/kernel/common/+/b91dd6e2a8fd652410ba348a03f966abed1fb817",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: block: Remove a warning from blk_mq_insert_request()",
+      "url": "https://android.googlesource.com/kernel/common/+/f9d2f7b96f685e51f71d9a369082156801aea550",
+      "note": "commit"
+    },
+    {
+      "title": "tls: remove dead sockmap (psock) handling from the SW path",
+      "url": "https://android.googlesource.com/kernel/common/+/79511603a65b990bed675eb4bcfd85305d3ff42a",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-14T18:04:50.457Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/android-newsletter-from-dossier-ko.md"
+  }
+}

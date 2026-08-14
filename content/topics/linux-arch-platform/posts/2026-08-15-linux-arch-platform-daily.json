@@ -1,0 +1,128 @@
+{
+  "id": "2026-08-15-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-08-15 RISC-V KVM·패치 v5 — linux-arch-platform",
+  "headline": "RISC-V 패치 fixmap v5가 최소 구성 회귀를 고치고, KVM PRE_FAULT_MEMORY·G-stage hugepage 수정이 제안되었다.",
+  "date": "2026-08-15",
+  "summary": "RISC-V 쪽은 fixmap·kprobe 슬롯 쓰기 회귀를 v5 시리즈로 분리 수정하고, KVM은 PRE_FAULT_MEMORY ioctl과 G-stage huge leaf 덮어쓰기 방지 패치가 올라왔다. ARM64는 Tegra264 PCIe DT reg 순서 정렬, RISC-V에는 Rambus CMH v3 플랫폼 드라이버 골격이 추가되었다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "RISC-V patch fixmap v5 회귀 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "RISC-V 커널 패치·livepatch·STRICT_KERNEL_RWX 비활성 구성 사용자",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260814082742.148403-3-xiaofengmian@163.com/",
+      "if": "CONFIG_STRICT_KERNEL_RWX가 꺼진 최소 구성에서 patch_map()이 불필요한 fixmap을 만들거나 v4 조기 반환이 CONFIG_MODULES=n·STRICT_KERNEL_RWX=y에서 패닉을 유발한다면",
+      "do": "v5 2/2의 early return 분리 수정을 리뷰·테스트하고 최소 구성 CI에서 patch 경로를 재검증하세요",
+      "verify": "STRICT_KERNEL_RWX 비활성 시 fixmap 오버헤드·페이지 폴트가 사라지고, CONFIG_MODULES=n·STRICT_KERNEL_RWX=y에서 패닉이 재현되지 않는지 확인하세요"
+    },
+    {
+      "title": "KVM G-stage huge leaf 덮어쓰기 방지",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "RISC-V KVM G-stage·hugepage 사용자",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260814105752.565325-1-jinyu.tang@linux.dev/",
+      "if": "hugepage를 쓰는 RISC-V KVM에서 G-stage 매핑 변경·페이지 테이블 누수 의심이 있다면",
+      "do": "kvm_riscv_gstage_set_pte()가 non-leaf PTE를 leaf로 교체하지 않고 4K 폴백으로 남는 패치를 적용·리뷰하세요",
+      "verify": "huge leaf 설치 시 기존 non-leaf G-stage PTE가 유지되고 게스트 매핑이 끊기지 않는지 hugepage 워크로드로 확인하세요"
+    },
+    {
+      "title": "RISC-V KVM_PRE_FAULT_MEMORY 지원",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "RISC-V KVM·가상화 selftest 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260814114507.583424-1-jinyu.tang@linux.dev/",
+      "if": "RISC-V KVM에서 vCPU 실행 전 GPA 사전 매핑으로 첫 터치 폴트를 줄이려면",
+      "do": "v3 3패치 시리즈의 KVM_PRE_FAULT_MEMORY ioctl·Sv57 selftest 수정을 리뷰하고 selftest를 실행하세요",
+      "verify": "generic KVM selftest의 pre_fault_memory_test가 RISC-V에서 활성화되고 G-stage 매핑 성공 후 PTE가 없을 때 내부 재시도가 동작하는지 확인하세요"
+    },
+    {
+      "title": "Rambus CMH v3 플랫폼 드라이버 골격",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "RISC-V/ARM64 플랫폼·crypto 드라이버 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260806195519.2703224-3-skrishnamoorthy@rambus.com/",
+      "if": "rambus,cmh-v1030 DT 플랫폼 장치로 CMH 하드웨어 가속기를 붙일 계획이 있다면",
+      "do": "19패치 시리즈 02/19의 probe/remove·MQI/VCQ·DMA·debugfs/sysfs 골격을 추적하고 후속 알고리즘 등록 패치를 기다리세요",
+      "verify": "RISC-V·ARM64 QEMU 및 VMK180 실측 스레드와 커버레터에서 알고리즘 등록은 후속 패치임을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**riscv: patch: skip fixmap mapping when kernel text is already writable**\n\nv5 2/2가 CONFIG_STRICT_KERNEL_RWX가 꺼져 커널 텍스트가 이미 쓰기 가능할 때 patch_map()이 불필요한 fixmap 임시 매핑을 만들지 않도록 early return을 추가한다.\n\n영향: 최소 구성(embedded/CI)에서 불필요한 fixmap이 페이지 폴트를 유발했고, v4의 !CONFIG_STRICT_MODULE_RWX 조기 반환이 CONFIG_MODULES=n·STRICT_KERNEL_RWX=y에서 패닉을 냈던 회귀를 v5가 분리 수정한다.\n\n> This is unnecessary overhead at best, and on minimal configurations it can cause page faults.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260814082742.148403-3-xiaofengmian@163.com/)\n\n**riscv: mm: make EXECMEM_KPROBES writable without CONFIG_STRICT_MODULE_RWX**\n\nv5 1/2가 CONFIG_STRICT_MODULE_RWX 미설정 시 EXECMEM_KPROBES 범위 pgprot를 PAGE_KERNEL_READ_EXEC 대신 PAGE_KERNEL_EXEC로 바꿔 kprobe 슬롯 쓰기가 페이지 폴트를 내지 않게 한다.\n\n영향: STRICT_MODULE_RWX 없는 임베디드 RISC-V에서 kprobe·ftrace 계열 동적 패치가 instruction slot 쓰기 시 폴트나는 실측 버그를 고치며, fixmap 패치와 같은 v5 시리즈로 최소 구성 안정성을 함께 다룬다.\n\n> Currently EXECMEM_KPROBES unconditionally uses PAGE_KERNEL_READ_EXEC, which causes kprobe instruction slot writes to trigger page faults on systems where CONFIG_STRICT_MODULE_RWX is not enabled.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260814082742.148403-2-xiaofengmian@163.com/)\n\n**KVM: riscv: Avoid overwriting existing G-stage tables with huge leaves**\n\n단일 패치가 huge leaf 설치 시 기존 non-leaf G-stage PTE를 leaf로 덮어쓰지 않도록 kvm_riscv_gstage_set_pte()에서 거부하고, 충돌 시 4K 폴백 매핑으로 남는다.\n\n영향: 기존 코드는 하위 페이지 테이블을 끊어 게스트 매핑이 바뀌거나 페이지 테이블 페이지가 누수될 수 있어, hugepage를 쓰는 RISC-V KVM 워크로드에서 보안·정합성 리스크를 줄인다.\n\n> kvm_riscv_gstage_set_pte() can replace the non-leaf entry with a leaf PTE. This disconnects the lower-level page table and can change guest-visible mappings or leak the page-table page.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260814105752.565325-1-jinyu.tang@linux.dev/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**crypto: cmh - add core platform driver**\n\nRambus CryptoManager Hub(CMH) v3 19패치 시리즈의 02/19가 플랫폼 드라이버 골격(probe/remove, MQI·VCQ, 트랜잭션 매니저, threaded IRQ, DMA, debugfs/sysfs)을 추가하지만 이 패치만으로는 암호 알고리즘 등록은 없다.\n\n영향: DT compatible \"rambus,cmh-v1030\" 플랫폼 장치로 붙는 하드웨어 가속기 IP이며, 커버레터에 RISC-V·ARM64 QEMU 및 VMK180 FPGA 실측이 있어 RISC-V SoC에 CMH가 탑재될 때 선행 인프라가 된다.\n\n> No crypto algorithms are registered yet -- those follow in subsequent patches.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260806195519.2703224-3-skrishnamoorthy@rambus.com/)\n\n**arm64: tegra: Reorder reg and reg-names to match bindings**\n\nTegra264 PCIe v10 시리즈 4/5가 tegra264.dtsi의 PCIe 노드 reg/reg-names 순서를 ECAM을 첫 항목이 아닌 뒤로 옮겨 unit-address와 첫 reg 엔트리가 일치하도록 바인딩을 맞춘다.\n\n영향: ECAM은 글로벌 영역이라 노드 순서만 바꿀 수 없고, 잘못된 reg 순서는 DT 파싱·PCI 호스트 초기화 오류로 이어질 수 있어 Tegra264 플랫폼 bring-up 담당자에게 직접적이다.\n\n> The ECAM region cannot be the first entry in the \"reg\" property, because in that case the unit-address wouldn't match the first entry.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260814-tegra264-pcie-v10-4-05d08c592b05@nvidia.com/)\n\n**KVM: riscv: Add KVM_PRE_FAULT_MEMORY support**\n\nv3 3패치 시리즈가 RISC-V에 KVM_PRE_FAULT_MEMORY vcpu ioctl 훅을 구현하고, Sv57 게스트 모드용 selftest 페이지 테이블 워커 수정과 pre_fault_memory_test 활성화를 포함한다.\n\n영향: x86에 있는 사전 G-stage 매핑 ioctl이 RISC-V에도 생기면 userspace가 vCPU 실행 전 GPA 범위를 채워 첫 터치 폴트 지연을 줄일 수 있고, Sv57 기본 게스트 모드 selftest 커버도 맞춰진다.\n\n> This series adds RISC-V support for the generic KVM_PRE_FAULT_MEMORY vcpu ioctl and enables the existing generic KVM selftest for RISC-V.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260814114507.583424-1-jinyu.tang@linux.dev/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "high",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "crypto: cmh - add core platform driver (02/19)",
+      "url": "https://lore.kernel.org/linux-riscv/20260806195519.2703224-3-skrishnamoorthy@rambus.com/",
+      "note": "thread"
+    },
+    {
+      "title": "crypto: cmh v3 series cover letter",
+      "url": "https://lore.kernel.org/linux-riscv/20260806195519.2703224-1-skrishnamoorthy@rambus.com/",
+      "note": "thread"
+    },
+    {
+      "title": "arm64: tegra264 PCIe reg reorder (v10 4/5)",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260814-tegra264-pcie-v10-4-05d08c592b05@nvidia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: patch fixmap v5 2/2",
+      "url": "https://lore.kernel.org/linux-riscv/20260814082742.148403-3-xiaofengmian@163.com/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM: riscv: KVM_PRE_FAULT_MEMORY v3",
+      "url": "https://lore.kernel.org/linux-riscv/20260814114507.583424-1-jinyu.tang@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: mm EXECMEM_KPROBES v5 1/2",
+      "url": "https://lore.kernel.org/linux-riscv/20260814082742.148403-2-xiaofengmian@163.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Renault BP platform Tested-by reply",
+      "url": "https://lore.kernel.org/linux-riscv/CA+V-a8snwsAHGF6RSmS+uwurcW3oOsW=-=NXwioB9x8A4e-RLQ@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM: riscv: G-stage huge leaf fix",
+      "url": "https://lore.kernel.org/linux-riscv/20260814105752.565325-1-jinyu.tang@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "RISC-V KVM stage2 page table programming",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=9d05c1fee837",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-14T18:35:33.929Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
