@@ -1,0 +1,121 @@
+{
+  "id": "2026-08-16-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-08-16 BPF·i.MX RT — linux-perf-rt",
+  "headline": "BPF stream capacity 회귀 수정과 lockdown kfunc 제안, i.MX remoteproc RT 지연 개선이 이번 주 linux-perf-rt 렌즈의 핵심입니다.",
+  "date": "2026-08-16",
+  "summary": "BPF standard stream 할당 실패 시 capacity가 영구 고갈되는 회귀 수정과, lockdown 상태를 결정 시점에 질의하는 kfunc가 제안됐습니다. PREEMPT_RT 쪽에서는 i.MX remoteproc 콜백 직접 호출과 hrtimer·HW breakpoint 문서·패치가 이어지고 있습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "PREEMPT_RT",
+    "BPF",
+    "perf"
+  ],
+  "highlights": [
+    {
+      "title": "BPF stream capacity 할당 실패 롤백",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "BPF stream·tracing 프로그램·verifier 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/tencent_6B540E4B95A9AD4DBF8C928942E95A23AB0A@qq.com/",
+      "if": "BPF standard stream push가 반복 실패해 이후 로그 출력이 막히면",
+      "do": "bpf_stream_push_str() capacity 선차감 롤백 패치와 Fixes 5ab154f1463a 회귀 수정을 추적하세요.",
+      "verify": "할당 실패 후 capacity가 BPF 프로그램 해제 전까지 복구되지 않는지 selftest와 함께 확인하세요."
+    },
+    {
+      "title": "bpf_security_locked_down() kfunc",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF LSM·lockdown 정책·보안 tracing 프로그램 작성자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260815112041.1248855-1-utilityemal77@gmail.com/",
+      "if": "userspace /sys/kernel/security/lockdown 캐시로 lockdown-aware BPF를 작성 중이면",
+      "do": "결정 시점 security_locked_down() verdict를 반환하는 bpf_security_locked_down() kfunc 패치를 검토하세요.",
+      "verify": "런타임 lockdown 강화 시 TOCTOU 없이 verdict가 반영되는지, locked_down LSM hook 재귀 거부 동작을 확인하세요."
+    },
+    {
+      "title": "i.MX remoteproc mbox 콜백 직접 호출",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "i.MX remoteproc·rpmsg·PREEMPT_RT 임베디드 플랫폼 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260813-imx_mbox_rproc-v6-1-6903a93b0456@linutronix.de/",
+      "if": "PREEMPT_RT i.MX 플랫폼에서 rpmsg 완료 지연이 커지면",
+      "do": "workqueue·kworker 경유를 제거하고 imx_rproc_notified_idr_cb()를 mbox 콜백에서 직접 호출하는 패치를 추적하세요.",
+      "verify": "threaded IRQ handler의 RT 우선순위가 kworker 스케줄링 없이 유지되는지 imx-mailbox 변경과 함께 확인하세요."
+    },
+    {
+      "title": "ARM64 HW breakpoint task_work 지연",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "ARM/ARM64/LoongArch PREEMPT_RT·perf HW breakpoint·ptrace 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260814085118.OPEA_Ssn@linutronix.de/",
+      "if": "ARM64 PREEMPT_RT에서 HW breakpoint 사용 시 sleeping while atomic 경고가 나면",
+      "do": "perf_arch_hwbp_notify()로 SIGTRAP 전달을 task_work_add()까지 지연하는 v2 패치를 확인하세요.",
+      "verify": "xchg 기반 중복 task_work_add() 방지가 리뷰에서 충분한지, mainline perf/core 반영 일정을 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**docs: timers: hrtimers: clarify expiry modes and ktimersd on PREEMPT_RT**\n\nDocumentation/timers/hrtimers.rst에 PREEMPT_RT hrtimer 만료 컨텍스트를 설명하는 \"Expiry modes and PREEMPT_RT\" 절을 추가합니다.\n\n영향: PREEMPT_RT에서 hrtimer 콜백 우선순위·만료 경로를 잘못 가정하면 RT 지연·우선순위 역전 디버깅이 어려워지므로, 타이머·스케줄러 추적자에게 동작 의미를 고정하는 문서 보강입니다. mainline·PREEMPT_RT 트리 merge 여부와 differences.rst v4 패치와의 중복 서술 정리는 확인이 필요합니다.\n\n> A SCHED_FIFO task running at priority 99 that starts an unmarked timer still expires on ktimers/%u (lowest SCHED_FIFO priority), not at priority 99.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260813145746.26612-1-haohlliang@gmail.com/)\n\n**docs: real-time: mention the hrtimer sleeper HARD path**\n\nDocumentation/core-api/real-time/differences.rst Timers 절에 hrtimer_setup_sleeper_on_stack() sleeper 예외를 추가하고, 스레드 이름을 ktimersd에서 ktimers/%u로 정정합니다.\n\n영향: clock_nanosleep 등 sleeper 경로는 기본 ktimers/%u softirq 모델과 다른 HARD 만료 경로를 타므로, PREEMPT_RT 타이머 문서를 읽는 RT 개발자가 wakeup 지연 원인을 구분하는 데 필요합니다. hrtimers.rst v3 패치와의 중복·통합 방향과 mainline Documentation merge 여부는 확인이 필요합니다.\n\n> hrtimer_setup_sleeper_on_stack() marks the timer HRTIMER_MODE_HARD when the current task is RT or DEADLINE and HRTIMER_MODE_SOFT was not requested, so the wakeup runs in hard interrupt context.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260814161240.33774-1-haohlliang@gmail.com/)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**bpf: roll back stream capacity when allocation fails**\n\nbpf_stream_push_str()가 요소 할당 전에 capacity를 선차감하는데, __bpf_stream_push_str() 실패 시 롤백이 없어 stream capacity가 영구 고갈될 수 있습니다. bpf_stream_release_capacity()를 길이 인자 기반으로 바꾸고 할당 실패 시 차감분을 되돌립니다.\n\n영향: BPF standard stream을 쓰는 tracing·관측 프로그램에서 반복적인 push 실패가 capacity를 소진하면 이후 로그 출력이 막히므로, eBPF stream API 사용자·verifier 담당이 회귀 수정 추적이 필요합니다. bpf-next merge 및 selftest 시리즈(1/5) 후속 패치 포함 여부는 확인이 필요합니다.\n\n> Repeated failures can exhaust the stream capacity permanently until the BPF program is freed.\n\n[원문 확인](https://lore.kernel.org/bpf/tencent_6B540E4B95A9AD4DBF8C928942E95A23AB0A@qq.com/)\n\n**lsm: give BPF programs a way to query locked_down state**\n\nBPF 프로그램이 security_locked_down()을 직접 호출할 수 있는 bpf_security_locked_down() kfunc를 security/lsm_kfuncs.c에 추가합니다. out-of-range reason은 -EINVAL로 거부하고 locked_down LSM hook에 붙은 프로그램에서는 재귀를 막기 위해 kfunc 사용을 거부합니다.\n\n영향: userspace가 /sys/kernel/security/lockdown 값을 map에 캐시하는 방식은 런타임 lockdown 강화 시 TOCTOU가 생기므로, lockdown-aware BPF·LSM 프로그램 작성자에게 결정 시점 질의 API가 필요합니다. bpf-next·lsm 트리 중 어디에 먼저 merge될지, Lockdown LSM 활성 시 kmsg notice 출력이 hot path에 미치는 영향은 확인이 필요합니다.\n\n> That is a time-of-check/time-of-use race: a security_locked_down verdict can be raised at runtime, so the cached answer can be stale by the time the program acts on it.\n\n[원문 확인](https://lore.kernel.org/bpf/20260815112041.1248855-1-utilityemal77@gmail.com/)\n\n**ARM, ARM64, LONGARCH: Delay HW BP notification to task_work()**\n\nARM64 PREEMPT_RT에서 HW breakpoint perf overflow 콜백이 원자 컨텍스트에서 sighand_struct::siglock(sleeping lock)을 잡아 \"sleeping while atomic\" 경고가 납니다. perf_arch_hwbp_notify()로 실제 SIGTRAP 전달을 task_work_add()까지 지연하고 ARM·ARM64·LoongArch ptrace 경로를 변환합니다.\n\n영향: PREEMPT_RT에서 perf HW breakpoint·ptrace 디버깅 경로는 원자 컨텍스트 제약과 충돌하기 쉬워, ARM 계열 RT 사용자·perf maintainer가 회귀 경고 없는 breakpoint 동작을 추적해야 합니다. v2의 xchg 기반 중복 task_work_add() 방지가 리뷰에서 충분한지, mainline perf/core 반영 일정은 확인이 필요합니다.\n\n> Delay the event callback until the return to userland. Add perf_arch_hwbp_notify(), a generic perf callback which delayes the actual callback invocation to task_work_add() callback.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260814085118.OPEA_Ssn@linutronix.de/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**remoteproc: imx_rproc: Invoke the callback directly**\n\nimx-mailbox 드라이버가 콜백을 threaded IRQ handler에서 호출하게 되면서 preemptible context가 보장되어, imx_rproc의 workqueue·kworker 경유를 제거하고 imx_rproc_notified_idr_cb()를 mbox 콜백에서 직접 호출합니다.\n\n영향: PREEMPT_RT에서 kworker로 내리면 threaded handler의 높은 RT 우선순위가 잃혀 busy 시스템에서 rpmsg 완료 지연이 커질 수 있어, i.MX remoteproc·rpmsg RT latency를 추적하는 팀에 직접 영향이 있습니다. imx-mailbox threaded handler 변경과의 merge 순서·의존성, mainline remoteproc 트리 반영 여부는 확인이 필요합니다.\n\n> The imx-mailbox driver moved the callback invocation into the threaded IRQ handler. This means the callback is invoked in preemptible context and there is no need to schedule the kworker.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260813-imx_mbox_rproc-v6-1-6903a93b0456@linutronix.de/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "docs: timers: hrtimers: clarify expiry modes and ktimersd on PREEMPT_RT",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260813145746.26612-1-haohlliang@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: roll back stream capacity when allocation fails",
+      "url": "https://lore.kernel.org/bpf/tencent_6B540E4B95A9AD4DBF8C928942E95A23AB0A@qq.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Introduce BPF standard streams",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=5ab154f1463a",
+      "note": "commit"
+    },
+    {
+      "title": "lsm: give BPF programs a way to query locked_down state",
+      "url": "https://lore.kernel.org/bpf/20260815112041.1248855-1-utilityemal77@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "ARM, ARM64, LONGARCH: Delay HW BP notification to task_work()",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260814085118.OPEA_Ssn@linutronix.de/",
+      "note": "thread"
+    },
+    {
+      "title": "docs: real-time: mention the hrtimer sleeper HARD path",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260814161240.33774-1-haohlliang@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "remoteproc: imx_rproc: Invoke the callback directly",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260813-imx_mbox_rproc-v6-1-6903a93b0456@linutronix.de/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-15T18:27:09.786Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

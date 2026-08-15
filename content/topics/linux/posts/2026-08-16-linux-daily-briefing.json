@@ -1,0 +1,143 @@
+{
+  "id": "2026-08-16-linux-daily-briefing",
+  "topic": "linux",
+  "title": "2026-08-16 crypto 타이밍 누출 수정 — 리눅스 개발",
+  "headline": "하드웨어 가속 crypto 드라이버 세 곳에서 MAC·HMAC 비교의 타이밍 누출을 고치는 패치가 올라왔고, schedutil·khugepaged 회귀 수정도 진행 중입니다.",
+  "date": "2026-08-16",
+  "summary": "ccree·OcteonTX·OcteonTX2 crypto 드라이버가 memcmp() 대신 crypto_memneq()로 바꾸는 보안 패치를 lkml에 올렸습니다. 32-bit ARM schedutil rate limit overflow와 khugepaged tracepoint UAF 수정도 함께 추적할 가치가 있습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "ccree AEAD 태그 비교 상수 시간화",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "crypto 서브시스템 개발자, ccree/crypto accelerator 사용자, 보안 대응 담당자",
+      "verifyLink": "https://lore.kernel.org/lkml/aoCdZiqJjb5XDHHz@david.gall/",
+      "if": "ccree 하드웨어 가속 crypto를 쓰는 경우",
+      "do": "타이밍 누출 표면을 인지하고 패치 추적·백포트 여부를 점검하세요",
+      "verify": "lkml 스레드에서 crypto_memneq() 교체 내용을 확인하세요"
+    },
+    {
+      "title": "OcteonTX2 cipher_null HMAC 타이밍",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "Marvell OcteonTX2/crypto offload 사용자, crypto 드라이버·보안 담당자",
+      "verifyLink": "https://lore.kernel.org/lkml/aoCdBZ-kLQ0rciFi@david.gall/",
+      "if": "OcteonTX2 crypto offload를 운영하는 경우",
+      "do": "cipher_null authenc 경로의 인증 위조 위험을 평가하고 패치를 추적하세요",
+      "verify": "lkml 스레드의 validate_hmac_cipher_null() 변경을 확인하세요"
+    },
+    {
+      "title": "schedutil rate_limit 32비트 overflow",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "32-bit ARM/embedded 배포 담당자, cpufreq/schedutil 튜닝·벤치마크 담당자",
+      "verifyLink": "https://lore.kernel.org/lkml/20260805143942.805176-1-sh_def@163.com/",
+      "if": "32-bit ARM에서 schedutil rate_limit_us를 튜닝하는 경우",
+      "do": "큰 rate_limit_us 값 설정 시 실제 지연·주파수 변경 빈도를 재측정하세요",
+      "verify": "lkml 패치와 maintainer 7.3 material 적용 답변을 확인하세요"
+    },
+    {
+      "title": "khugepaged tracepoint UAF",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "mm/khugepaged 개발자, ftrace/tracepoint 사용자, huge page 운영·디버깅 담당자",
+      "verifyLink": "https://lore.kernel.org/lkml/20260815051924.194810-1-vernon2gm@gmail.com/",
+      "if": "khugepaged tracepoint를 켜고 huge page를 운영하는 경우",
+      "do": "SPARSEMEM 환경에서 trace 활성화 전 패치 v2 적용 여부를 확인하세요",
+      "verify": "lkml v2 시리즈와 pfn 캡처 방식 변경을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux next-20260814 linux-next**\n\n2026-08-14 Mark Brown이 linux-next 통합 트리에 next-20260814 스냅샷을 올렸다.\n\n영향: 머지 윈도우 전 통합·회귀 테스트 기준점으로, 곧 mainline에 들어올 변경을 미리 추적하는 데 쓰인다.\n\n> Add linux-next specific files for 20260814\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/next/linux-next.git/commit/?h=next-20260814)\n\n**Linux 7.2-rc7 mainline**\n\nEXTRAVERSION이 -rc6에서 -rc7로 올라갔다(코드명 Baby Opossum Posse).\n\n영향: 7.2 정식 릴리스 직전 일곱 번째 RC로, 배포·QA·드라이버 호환 검증 시점을 가늠하는 기준점이다.\n\n> -EXTRAVERSION = -rc6\n+EXTRAVERSION = -rc7\n NAME = Baby Opossum Posse\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?h=v7.2-rc7)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**crypto: ccree - use crypto_memneq() to compare AEAD tag**\n\ncc_aead_complete()가 MAC/ICV 비교에 memcmp() 대신 crypto_memneq()를 쓰도록 바꾸는 패치가 2026-08-15 lkml에 게시됐다.\n\n영향: AEAD 복호화 검증의 타이밍 누출은 원격 공격자가 태그를 한 바이트씩 추측하는 side-channel 표면을 만든다.\n\n> cc_aead_complete() compares the computed MAC against the received ICV\nwith memcmp(), which short-circuits on the first differing byte and\nleaks tag-match length via timing. Use crypto_memneq() instead\n\n[원문 확인](https://lore.kernel.org/lkml/aoCdZiqJjb5XDHHz@david.gall/)\n\n**crypto: octeontx2 - use crypto_memneq() to check HMAC for cipher_null authenc**\n\nMarvell octeontx2 CPT 드라이버 validate_hmac_cipher_null()이 HMAC 비교를 crypto_memneq()로 바꾸는 패치가 2026-08-15 게시됐다.\n\n영향: cipher_null 경로에서 타이밍 누출이 authenticated message forgery로 이어질 수 있어 하드웨어 offload crypto 보안 영향이 크다.\n\n> Because for cipher_null the validated payload is un-encrypted, this\nvalid prefix leak allows for authenticated message forgery.\n\n[원문 확인](https://lore.kernel.org/lkml/aoCdBZ-kLQ0rciFi@david.gall/)\n\n**crypto: octeontx - use crypto_memneq() to check HMAC**\n\nMarvell octeontx(1세대) CPT 드라이버도 동일하게 memcmp() HMAC 비교를 crypto_memneq()로 교체하는 패치가 2026-08-15 게시됐다.\n\n영향: octeontx2와 별도 드라이버지만 같은 클래스의 timing side-channel·위조 취약 패턴이라 해당 하드웨어 배포는 함께 추적해야 한다.\n\n> validate_hmac_cipher_null() compares the computed and received HMAC\nwith memcmp(), which short-circuits on the first differing byte and\nleaks tag-match length via timing. Use crypto_memneq() instead.\n\n[원문 확인](https://lore.kernel.org/lkml/aoCdOiyhQZZsFm5S@david.gall/)\n\n**cpufreq: schedutil: Fix rate limit overflow**\n\nschedutil governor의 rate_limit_us를 32-bit unsigned로 곱할 때 overflow가 나 지연이 의도보다 훨씬 짧아지는 버그를 sugov_update_rate_limit_us() 헬퍼로 고친다.\n\n영향: 32-bit ARM 등에서 cpufreq rate limit tunable이 무력화되면 schedutil이 설정보다 훨씬 자주 주파수를 바꿔 전력·성능·지터에 영향을 준다.\n\n> For example, writing 4294968 to rate_limit_us wraps the delay from\n4294968000 ns to 704 ns. This makes schedutil update far more often\nthan configured.\n\n[원문 확인](https://lore.kernel.org/lkml/20260805143942.805176-1-sh_def@163.com/)\n\n**mm: khugepaged: fix tracepoint UAF**\n\nkhugepaged tracepoint가 folio 해제 이후 folio_pfn()을 호출해 UAF·잘못된 pfn이 발생하는 문제를, pin된 시점의 pfn을 tracepoint에 직접 넘기도록 v2에서 고친다.\n\n영향: classic SPARSEMEM에서 trace event를 켜면 khugepaged가 oops할 수 있어 huge page/tracing 디버깅·프로덕션 관측 모두에 직접적인 안정성 이슈다.\n\n> On classic SPARSEMEM, dereferencing it oopses\nkhugepaged as soon as the trace event is enabled; on other memory models\nit merely prints a bogus pfn.\n\n[원문 확인](https://lore.kernel.org/lkml/20260815051924.194810-1-vernon2gm@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "Linux 7.1.8 stable과 Linux 6.12.103 longterm은 이전 수집과 동일한 2026-08-09 릴리스 기준입니다. crypto 보안 패치의 mainline 머지·CVE 할당, schedutil stable 백포트, khugepaged classic SPARSEMEM 재현 여부는 확인이 필요합니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Linux 7.2-rc7 mainline commit",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?h=v7.2-rc7",
+      "note": "commit"
+    },
+    {
+      "title": "Linux 7.1.8 stable commit",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/commit/?h=v7.1.8",
+      "note": "commit"
+    },
+    {
+      "title": "ChangeLog-7.1.8",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.8",
+      "note": "changelog"
+    },
+    {
+      "title": "linux-next next-20260814 commit",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/next/linux-next.git/commit/?h=next-20260814",
+      "note": "commit"
+    },
+    {
+      "title": "crypto: ccree AEAD crypto_memneq()",
+      "url": "https://lore.kernel.org/lkml/aoCdZiqJjb5XDHHz@david.gall/",
+      "note": "thread"
+    },
+    {
+      "title": "crypto: octeontx2 HMAC crypto_memneq()",
+      "url": "https://lore.kernel.org/lkml/aoCdBZ-kLQ0rciFi@david.gall/",
+      "note": "thread"
+    },
+    {
+      "title": "crypto: octeontx HMAC crypto_memneq()",
+      "url": "https://lore.kernel.org/lkml/aoCdOiyhQZZsFm5S@david.gall/",
+      "note": "thread"
+    },
+    {
+      "title": "cpufreq: schedutil rate limit overflow",
+      "url": "https://lore.kernel.org/lkml/20260805143942.805176-1-sh_def@163.com/",
+      "note": "thread"
+    },
+    {
+      "title": "schedutil 7.3 material maintainer reply",
+      "url": "https://lore.kernel.org/lkml/CAJZ5v0h=9nMsQU9nnYi-tVHPd7erHi-a+EEMAmTEq-ZueebZhA@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "mm: khugepaged tracepoint UAF v2",
+      "url": "https://lore.kernel.org/lkml/20260815051924.194810-1-vernon2gm@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "khugepaged Tested-by Lance Yang",
+      "url": "https://lore.kernel.org/lkml/20260815174444.4164-1-lance.yang@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-6.12.103",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.12.103",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-15T18:02:56.381Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-newsletter-from-dossier-ko.md"
+  }
+}

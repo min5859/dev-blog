@@ -1,0 +1,115 @@
+{
+  "id": "2026-08-16-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-08-16 slab 지표 검사 — 커널 보안",
+  "headline": "ZERO_SIZE_PTR ERR_PTR 확장 제안에 아키텍처 충돌 반대가 올라왔고, krb5 파생 키 버퍼는 kfree_sensitive()로 전환됐습니다.",
+  "date": "2026-08-16",
+  "summary": "linux-hardening에서 slab·hardened usercopy의 ZERO_SIZE_PTR 범위 설계가 재논의 중이며, crypto/krb5는 파생 키 버퍼 해제를 kfree_sensitive()로 바꿨습니다. LTS·stable 백포트 항목은 어제와 동일하므로 배포 추적을 유지하세요.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "보안",
+    "하드닝"
+  ],
+  "highlights": [
+    {
+      "title": "slab: check for ZERO_SIZE_PTR by exact match",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "slab/mm·linux-hardening·hardened usercopy 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/an-yHQe938PS-Opz@gmail.com/",
+      "if": "slab·hardened usercopy 경계 검사 변경을 추적한다면",
+      "do": "Kees Cook의 ERR_PTR 범위 확장 제안과 Karl Mehltretter의 exact-match 유지·IS_ERR() 분리 추가안을 lore에서 대조하세요",
+      "verify": "v2 exact-match 패치 mainline merge 여부와 kfree()/usercopy에 IS_ERR() 후속 패치 상승 여부를 확인하세요"
+    },
+    {
+      "title": "crypto/krb5: use kfree_sensitive() for derived key buffers",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "crypto/krb5·네트워크 파일시스템·Kerberos 스택 담당",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/an_ALPtrIGVPoGhh@gondor.apana.org.au/",
+      "if": "Kerberos crypto 경로(rxrpc·AFS·Ceph)를 운영한다면",
+      "do": "crypto_krb5_prepare_encryption()/prepare_checksum()의 kfree_sensitive() 전환 패치가 배포 커널에 포함됐는지 추적하세요",
+      "verify": "적용된 mainline 커밋 해시와 stable 백포트 태그를 lore·git에서 확인하세요"
+    },
+    {
+      "title": "Linux 6.18.44 longterm",
+      "priority": "중",
+      "impactType": "backport",
+      "affectedAudience": "6.18 LTS·userfaultfd·Intel xe GPU 스택 담당",
+      "verifyLink": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.18.44",
+      "if": "6.18 LTS에서 userfaultfd·Intel xe GPU를 운영한다면",
+      "do": "userfaultfd shadow stack VMA 거부와 xe GuC steered register list overflow 수정의 백포트 적용을 배포 보안 공지에서 확인하세요",
+      "verify": "ChangeLog-6.18.44에서 UFFDIO_COPY 반환 주소 주입·slab corruption 수정 항목을 배포 패키지와 대조하세요"
+    },
+    {
+      "title": "Linux 6.6.151 longterm",
+      "priority": "중",
+      "impactType": "backport",
+      "affectedAudience": "6.6 LTS 배포·네트워크·Wi-Fi·Intel i915 HDCP 담당",
+      "verifyLink": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.6.151",
+      "if": "6.6 LTS에서 MPTCP·SCTP·Wi-Fi·i915 HDCP를 쓴다면",
+      "do": "get_local_id UAF·auth_enable sysctl UAF·ath6kl aggregation UAF·HDCP streams[] overflow 백포트 적용을 확인하세요",
+      "verify": "ChangeLog-6.6.151의 KASAN·netns teardown·timer_delete 항목을 배포 패키지와 대조하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**slab: check for ZERO_SIZE_PTR by exact match**\n\nKees Cook가 ZERO_SIZE_PTR을 ERR_PTR 범위까지 확장하자는 KSPP 이슈에 Karl Mehltretter가 PowerPC KVM·m68k·OpenRISC 충돌과 krealloc() 부작용을 이유로 전역 확장을 반대하고 kfree()/hardened usercopy에 IS_ERR()를 별도 추가하자고 제안했습니다.\n\n영향: slab·hardened usercopy 경계 검사 설계가 바뀌면 ERR_PTR를 kfree()에 넘기는 실수나 usercopy 우회 논쟁이 재개될 수 있어, 메모리 하드닝·MM 유지보수자는 최종 패치 형태를 추적해야 합니다. v2 exact-match ZERO_SIZE_PTR 패치 mainline merge와 IS_ERR() 분리 추가 후속 패치 여부는 확인이 필요합니다.\n\n> Can we move ZERO_SIZE_PTR to cover the ERR_PTR range too? See this issue: https://github.com/KSPP/linux/issues/93\n\n[원문 확인](https://lore.kernel.org/linux-hardening/an-yHQe938PS-Opz@gmail.com/)\n\n**crypto/krb5: use kfree_sensitive() for derived key buffers**\n\ncrypto_krb5_prepare_encryption()/prepare_checksum()가 파생 키 버퍼를 plain kfree()로 해제하던 것을 kfree_sensitive()로 바꿔 slab에 키 재료가 남지 않게 합니다. Herbert Xu가 패치 적용을 확인했습니다.\n\n영향: Kerberos crypto 경로는 rxrpc·AFS·Ceph 등에서 쓰이므로, 키 재료가 freed slab에 남으면 동일 CPU에서 후속 할당이 민감 데이터를 노출할 수 있습니다. 적용된 mainline 커밋 해시와 stable 백포트 태그는 확인이 필요합니다.\n\n> free the buffer holding the freshly derived keys with plain kfree(), leaving the key material behind in the freed slab object.\n\n[원문 확인](https://lore.kernel.org/linux-hardening/an_ALPtrIGVPoGhh@gondor.apana.org.au/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "slab: ZERO_SIZE_PTR ERR_PTR 범위 확장 논의",
+      "url": "https://lore.kernel.org/linux-hardening/an-yHQe938PS-Opz@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "crypto/krb5: kfree_sensitive() 파생 키 버퍼 해제",
+      "url": "https://lore.kernel.org/linux-hardening/an_ALPtrIGVPoGhh@gondor.apana.org.au/",
+      "note": "thread"
+    },
+    {
+      "title": "Linux 6.18.44 longterm 릴리스",
+      "url": "https://git.kernel.org/stable/h/v6.18.44",
+      "note": "release"
+    },
+    {
+      "title": "ChangeLog-6.18.44",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.18.44",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 6.6.151 longterm 릴리스",
+      "url": "https://git.kernel.org/stable/h/v6.6.151",
+      "note": "release"
+    },
+    {
+      "title": "ChangeLog-6.6.151",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.6.151",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-15T18:19:42.007Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
