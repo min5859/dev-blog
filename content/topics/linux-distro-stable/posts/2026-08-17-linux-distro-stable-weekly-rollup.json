@@ -1,0 +1,127 @@
+{
+  "id": "2026-08-17-linux-distro-stable-weekly-rollup",
+  "topic": "linux-distro-stable",
+  "title": "2026-08-17 주간 요약",
+  "headline": "USB/xHCI·ACPI S3 resume·AMD 플랫폼 담당 주목: usb: pci-quirks: always assert xHCI OS ow",
+  "date": "2026-08-17",
+  "summary": "오늘의 핵심: 릴리스/로드맵 0건, 회귀·보안 신호 8건, 핵심 변경 0건. 리서치 dossier 의 출처를 근거로 정리했습니다.",
+  "tags": [
+    "주간"
+  ],
+  "highlights": [
+    {
+      "title": "usb: pci-quirks: always assert xHCI OS ownership",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "USB/xHCI·ACPI S3 resume·AMD 플랫폼 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20260816181519.88865-1-rishabh.jain1198@gmail.com/",
+      "if": "USB/xHCI·ACPI S3 resume·AMD 플랫폼 담당라면",
+      "do": "quirk_usb_handoff_xhci()가 BIOS Owned가 이미 설정된 경우에만 HC OS Owned를 assert해, 양쪽 owner",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/stable/20260816181519.88865-1-rishabh.jain1198@gmail.com/"
+    },
+    {
+      "title": "drm/amdgpu/userq: fix a leaked fence driver and an unlocked doorbell walk",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "drm/amdgpu·MES user queue·ROCm 스택 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20260817-amdgpu-fixes-v1-0-36d5298da646@outlook.com/",
+      "if": "drm/amdgpu·MES user queue·ROCm 스택 유지보수 담당라면",
+      "do": "패치 1은 큐 해제 시 fence driver에 남은 fence를 취소해 refcount가 0에 도달하지 못하는 누수를 막고, 패치 2는 mes",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/stable/20260817-amdgpu-fixes-v1-0-36d5298da646@outlook.com/"
+    },
+    {
+      "title": "ice: fix metadata_dst refcount handling on representor teardown",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "Intel ice·switchdev·eswitch representor 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20260816135510.1015041-1-tristmd@gmail.com/",
+      "if": "Intel ice·switchdev·eswitch representor 담당라면",
+      "do": "ice_eswitch_release_repr()가 metadata_dst_free()로 representor metadata_dst를 즉시 해제",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/stable/20260816135510.1015041-1-tristmd@gmail.com/"
+    },
+    {
+      "title": "dmaengine: fix kref underflow and UAF in dma_chan_put()",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "dmaengine 코어·SDXI·DMA 클라이언트 드라이버 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20260816-dmaengine-kref-fix-v3-1-7e76187145df@amd.com/",
+      "if": "dmaengine 코어·SDXI·DMA 클라이언트 드라이버 담당라면",
+      "do": "3건 패치로 dma_chan_put()의 device kref underflow, dma_chan_put()/dma_release_channel",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/stable/20260816-dmaengine-kref-fix-v3-1-7e76187145df@amd.com/"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**usb: pci-quirks: always assert xHCI OS ownership**\n\nquirk_usb_handoff_xhci()가 BIOS Owned가 이미 설정된 경우에만 HC OS Owned를 assert해, 양쪽 ownership 세마포어가 모두 clear인 상태로 xHC를 사용할 수 있었습니다. Legacy Support capability가 있으면 항상 OS \n\n영향: AMD PROM21 xHCI(1022:43fc)에서 S3 resume마다 Controller Restore State가 USBSTS 0x401로 실패하고 HC·루트허브·Bluetooth가 리셋되는 회귀가 재현됐으므로, 노트북·데스크톱 stable 백포트 추적이 필요합니다.\n\n> If firmware leaves BIOS Owned clear, Linux uses the xHC while both ownership semaphores remain clear.\n\n[원문 확인](https://lore.kernel.org/stable/20260816181519.88865-1-rishabh.jain1198@gmail.com/)\n\n**drm/amdgpu/userq: fix a leaked fence driver and an unlocked doorbell walk**\n\n패치 1은 큐 해제 시 fence driver에 남은 fence를 취소해 refcount가 0에 도달하지 못하는 누수를 막고, 패치 2는 mes_userq_detect_and_reset()의 doorbell xarray walk 동안 xa_lock_irqsave()를 유지해 타 drm_\n\n영향: fence driver 누수는 디바이스 수명 동안 seq64 슬롯이 고갈되고, doorbell walk 경쟁은 다른 프로세스 큐 UAF로 이어질 수 있어 AMDGPU MES user queue 운영 환경에서 stable 백포트가 필요합니다.\n\n> Each of them holds a reference on the driver, so its refcount never reaches zero and the seq64 slot stays allocated for the lifetime of the device.\n\n[원문 확인](https://lore.kernel.org/stable/20260817-amdgpu-fixes-v1-0-36d5298da646@outlook.com/)\n\n**ice: fix metadata_dst refcount handling on representor teardown**\n\nice_eswitch_release_repr()가 metadata_dst_free()로 representor metadata_dst를 즉시 해제해, qdisc 등에 패킷이 남아 dst_hold() 참조가 있을 때 UAF가 발생했습니다. dst_release()로 refcount 기반 해\n\n영향: Intel ice switchdev representor teardown과 slow path xmit이 겹치면 slab UAF로 이어질 수 있어, OVS/Kubernetes 네트워킹 환경에서 stable 백포트 적용 여부를 확인해야 합니다.\n\n> metadata_dst_free() directly frees the underlying memory without checking the dst_entry refcount.\n\n[원문 확인](https://lore.kernel.org/stable/20260816135510.1015041-1-tristmd@gmail.com/)\n\n**dmaengine: fix kref underflow and UAF in dma_chan_put()**\n\n3건 패치로 dma_chan_put()의 device kref underflow, dma_chan_put()/dma_release_channel() UAF, dma_device 해제 전 RCU reader 대기(synchronize_rcu)를 수정합니다. SDXI 테스트 중 발견됐습니다\n\n영향: dmaengine 참조 카운팅 버그는 kref underflow와 dma_device UAF로 이어져, SDXI 등 신규 DMA 클라이언트와 범용 dmaengine 사용자 모두에 stable 백포트가 필요합니다.\n\n> dma_chan_get() takes chan->device->ref only on the slow path\n\n[원문 확인](https://lore.kernel.org/stable/20260816-dmaengine-kref-fix-v3-1-7e76187145df@amd.com/)\n\n**net: openvswitch: fix flow mask use-after-free on flow deletion**\n\nCMD_DEL 처리 중 ovs_flow_tbl_remove()가 ovs_flow_cmd_fill_info()보다 먼저 호출되면 flow->mask가 RCU grace period 후 해제된 뒤에도 netlink 응답 채우기가 mask를 dereference해 UAF가 발생합니다. rem\n\n영향: OVS flow 삭제 경로에서 짧은 경쟁 창으로 KASAN slab UAF가 재현됐고 ZDI-CAN-32042로 보고됐으므로, Open vSwitch·클라우드 네트워킹 환경에서 stable 백포트가 필요합니다.\n\n> This leads to use-after-free if the RCU grace period passes between removal and the filling.\n\n[원문 확인](https://lore.kernel.org/stable/f7t5x1anmmm.fsf@aconole-thinkpadt14gen4.rmtusnh.csb/)\n\n**drm/amdkfd: Add bounds check for CRAT subtype length**\n\namdkfd CRAT 파서가 subtype 헤더 위치만 검증하고 advertised length는 확인하지 않아, malformed CRAT의 oversized length가 kfd_parse_subtype() OOB read를 유발합니다. subtype 전체가 image 경계 안에 들\n\n영향: CRAT는 AMD GPU/KFD 초기화 시 파싱되므로, 길이 필드 조작으로 커널 OOB read가 가능해 ROCm·APU 환경 stable 백포트 추적이 필요합니다.\n\n> A malformed CRAT table with an oversized length field causes out-of-bounds reads when kfd_parse_subtype() casts the header to specific subtype structures.\n\n[원문 확인](https://lore.kernel.org/stable/20260815155532.787421-1-sashal@kernel.org/)\n\n**net: openvswitch: fix nf_connlabels leak in ovs_ct_init**\n\novs_ct_init()가 connlabels 참조를 잡은 뒤 ovs_ct_limit_init() 실패 시 pernet exit 콜백 없이 반환해 labels_used가 누적됩니다. limit 초기화 오류 경로에서 nf_connlabels_put()을 호출합니다.\n\n영향: Open vSwitch pernet 등록 실패 후에도 conntrack label 확장이 허용되면 netns별 conntrack 상태가 오염될 수 있어, OVS·netfilter 운영 환경에서 stable 백포트가 필요합니다.\n\n> The pernet core does not invoke the exit callback for the operation whose initialization failed, so ovs_ct_exit() cannot drop the reference.\n\n[원문 확인](https://lore.kernel.org/stable/20260815151729.3757984-1-ruoyuw560@gmail.com/)\n\n**media: fix four memory-safety bugs in vicodec and v4l2-mem2mem**\n\nv4l2-mem2mem REMOVE_BUFS 직렬화 부재 UAF, vicodec 차원 반올림·S_FMT 클램프·인코더 CAPTURE 크기 불일치 등 4건의 userspace reachable 메모리 안전 버그를 수정합니다.\n\n영향: vicodec는 테스트 드라이버지만 unprivileged userspace에서 KASAN 재현됐으므로, media/mem2mem 경로를 쓰는 CI·QEMU 환경은 stable 백포트 적용을 검토해야 합니다.\n\n> Each is reachable from unprivileged userspace and was reproduced under KASAN in QEMU.\n\n[원문 확인](https://lore.kernel.org/stable/20260815-vicodec-fixes-v1-0-12101572eba7@outlook.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "국부 드라이버/플랫폼 패치는 본문에서 제외했습니다. 자기 영역 키워드로 lore.kernel.org에서 직접 검색하세요."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "usb: pci-quirks: always assert xHCI OS ownership",
+      "url": "https://lore.kernel.org/stable/20260816181519.88865-1-rishabh.jain1198@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/amdgpu/userq: fix a leaked fence driver and an unlocked doorbell walk",
+      "url": "https://lore.kernel.org/stable/20260817-amdgpu-fixes-v1-0-36d5298da646@outlook.com/",
+      "note": "thread"
+    },
+    {
+      "title": "ice: fix metadata_dst refcount handling on representor teardown",
+      "url": "https://lore.kernel.org/stable/20260816135510.1015041-1-tristmd@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "dmaengine: fix kref underflow and UAF in dma_chan_put()",
+      "url": "https://lore.kernel.org/stable/20260816-dmaengine-kref-fix-v3-1-7e76187145df@amd.com/",
+      "note": "thread"
+    },
+    {
+      "title": "net: openvswitch: fix flow mask use-after-free on flow deletion",
+      "url": "https://lore.kernel.org/stable/f7t5x1anmmm.fsf@aconole-thinkpadt14gen4.rmtusnh.csb/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/amdkfd: Add bounds check for CRAT subtype length",
+      "url": "https://lore.kernel.org/stable/20260815155532.787421-1-sashal@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "net: openvswitch: fix nf_connlabels leak in ovs_ct_init",
+      "url": "https://lore.kernel.org/stable/20260815151729.3757984-1-ruoyuw560@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "media: fix four memory-safety bugs in vicodec and v4l2-mem2mem",
+      "url": "https://lore.kernel.org/stable/20260815-vicodec-fixes-v1-0-12101572eba7@outlook.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "source": "research-dossier",
+    "bucketCounts": {
+      "릴리스/로드맵": 0,
+      "회귀·보안 신호": 8,
+      "핵심 변경": 0,
+      "기타": 0
+    },
+    "entryCount": 8
+  }
+}

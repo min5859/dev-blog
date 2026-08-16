@@ -1,0 +1,128 @@
+{
+  "id": "2026-08-17-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-08-17 pKVM VLPI 보안 — Android 커널",
+  "headline": "ACK에 pKVM GICv4 VLPI MMIO 차단, SELinux bpf_fs 회귀 수정, ZWOR 스토리지 데드락 방지 패치가 반영됐습니다.",
+  "date": "2026-08-17",
+  "summary": "Android Common Kernel mainline·android16-6.12에 pKVM VLPI 보안 강화, SELinux inode 초기화 순서 수정, ZWOR 블록 큐 깊이 제한 등이 수집됐습니다. GKI defconfig 정리와 빌드·NMI 경로 회귀 수정도 함께 포함됐습니다.",
+  "tags": [
+    "안드로이드",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "pKVM GICv4 VLPI MMIO 차단",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "Android KVM·pKVM·arm64 GIC 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/18b623c9490c5519d40209efb05770d61b3d3c84",
+      "if": "pKVM arm64 GICv4 VLPI 환경을 다루는 경우",
+      "do": "호스트 MMIO가 pkvm_handle_vlpi_emulation() no-op 핸들러로 라우팅되는 패치가 ACK에 포함됐는지 확인하세요.",
+      "verify": "커밋 18b623c9490c5519d40209efb05770d61b3d3c84 원문과 Bug 357781595 트래킹을 대조하세요."
+    },
+    {
+      "title": "SELinux bpf_fs SBLABEL_MNT 검사 순서 수정",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "ACK SELinux·BPF 파일시스템 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/8f0a5b31aee19510e75741c9687cf0d9321fa7ed",
+      "if": "bpf_fs genfscon 마운트와 SELinux inode 보안 초기화 경로를 다루는 경우",
+      "do": "SBLABEL_MNT 검사가 isec initialized 설정보다 먼저 수행되도록 순서가 바뀐 패치 적용 여부를 확인하세요.",
+      "verify": "Bug 529733987 및 upstream stable-7.2 cherry-pick 커밋 8f0a5b31aee19510e75741c9687cf0d9321fa7ed를 확인하세요."
+    },
+    {
+      "title": "NMI 컨텍스트 dump_tasks() 안전화",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "ACK 메모리 서브시스템·LMKD 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/db2acc01b75f9a30bfef0f4d2a6f413542cc32ac",
+      "if": "LMKD·OOM 디버깅에서 NMI 경로 dump_tasks() 호출을 사용하는 경우",
+      "do": "spin_trylock과 memcg OOM 덤프 조기 반환 수정이 mm/oom_kill.c에 반영됐는지 확인하세요.",
+      "verify": "Bug 538262381 및 커밋 db2acc01b75f9a30bfef0f4d2a6f413542cc32ac 원문을 확인하세요."
+    },
+    {
+      "title": "ZWOR 블록 큐 깊이 제한",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "Android 16 ACK·블록 레이어·Zoned 스토리지 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/b91dd6e2a8fd652410ba348a03f966abed1fb817",
+      "if": "Android 16 ACK에서 Zoned 스토리지(ZWOR)를 지원하는 경우",
+      "do": "ZWOR 지원 시 큐 깊이가 tag set queue_depth로 제한되는 패치를 벤더 트리에 반영하세요.",
+      "verify": "Bug 449729210 및 관련 blk_mq 경고 제거 커밋 f9d2f7b96f685e51f71d9a369082156801aea550를 함께 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ANDROID: KVM: arm64: Block host MMIO accesses to GICv4 VLPI region**\n\n호스트가 GICv4 redistributor VLPI 프레임에 MMIO 쓰기를 하면 하드웨어 대신 no-op 핸들러(pkvm_handle_vlpi_emulation)로 라우팅해 차단합니다.\n\n영향: pKVM에서 VLPI 영역 미검증 MMIO가 hypervisor·보호 VM 보안을 깨뜨릴 수 있어, Android 16 ACK의 KVM/pKVM 보안 경계를 강화합니다.\n\n> Route host MMIO accesses targeting the GICv4 redistributor VLPI frame (VLPI_base) to a no-op handler, pkvm_handle_vlpi_emulation(), instead of forwarding them directly to hardware.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/18b623c9490c5519d40209efb05770d61b3d3c84)\n\n**FROMGIT: selinux: bpf: check SBLABEL_MNT before isec init**\n\nselinux_inode_init_security()에서 isec initialized 설정 전에 SBLABEL_MNT(마운트 라벨링 지원) 검사를 수행하도록 순서를 바꿨습니다.\n\n영향: genfscon bpf_fs 마운트 시 inode 보안 초기화가 조기 완료되어 inode_doinit_with_dentry() 후속 호출이 깨지는 SELinux 회귀를 수정합니다.\n\n> selinux_inode_init_security() marks the isec as initialized before checking if mount labeling is supported (SBLABEL_MNT).\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/8f0a5b31aee19510e75741c9687cf0d9321fa7ed)\n\n**ANDROID: mm: Make dump_tasks() safe in NMI context**\n\nNMI 컨텍스트에서 dump_tasks() 호출 시 spin_trylock과 memcg OOM 덤프 조기 반환으로 비 NMI-safe 락 사용·데드락을 피하도록 mm/oom_kill.c를 수정했습니다.\n\n영향: LMKD·OOM 디버깅 등 NMI 경로에서 태스크/메모리 상태를 덤프할 때 커널이 걸리거나 크래시할 수 있는 회귀를 막습니다.\n\n> dump_tasks() can be called from NMI context to dump memory status of all tasks. However, calling from NMI context has safety issues\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/db2acc01b75f9a30bfef0f4d2a6f413542cc32ac)\n\n**ANDROID: sched: Avoid macro redefinition of TRACE_INCLUDE_PATH**\n\ninclude/trace/hooks/sched.h에서 TRACE_INCLUDE_PATH 재정의 전 #undef를 추가해 -Wmacro-redefined 빌드 오류를 방지합니다.\n\n영향: EAS vendor hook 등 여러 trace hook 헤더를 한 컴파일 유닛에 포함할 때 ACK 빌드가 -Werror로 깨지는 회귀를 막습니다.\n\n> Add missing #undef TRACE_INCLUDE_PATH before #define in include/trace/hooks/sched.h to prevent -Werror,-Wmacro-redefined when multiple trace hook headers are included in the same compilation unit.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/82be0d329bf2b455546a09cc84a40c9d1716b54d)\n\n**tls: remove dead sockmap (psock) handling from the SW path**\n\nTLS SW 경로 sendmsg/recvmsg에서 sockmap(psock) 관련 죽은 코드를 삭제했습니다. TLS와 sockmap은 상호 배타적입니다.\n\n영향: AI 보안 스캐너가 sockmap 관련 dead code를 계속 플래그하는 문제를 줄이고 TLS SW 스택 유지보수 부담을 낮춥니다. Android 디바이스에서 TLS SW 경로와 sockmap 조합의 실사용 여부는 확인이 필요합니다.\n\n> TLS and sockmap are now mutually exclusive. Try to delete the code from sendmsg and recvmsg path which is now obviously dead.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/79511603a65b990bed675eb4bcfd85305d3ff42a)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**ANDROID: block: Use block driver queue depth if ZWOR is supported**\n\nZWOR 지원 시 블록 레이어 큐 깊이를 tag set queue_depth로 제한해 zone write pointer 순서 위반·태그 고갈 데드락을 방지합니다.\n\n영향: Zoned 스토리지(ZWOR) Android 16 디바이스에서 I/O 스케줄링 시 커널이 영구 대기하는 스토리지 데드락을 막습니다.\n\n> Prevent this deadlock by reducing the queue depth.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/b91dd6e2a8fd652410ba348a03f966abed1fb817)\n\n**ANDROID: block: Remove a warning from blk_mq_insert_request()**\n\nI/O 스케줄러 활성 시 재제출(resubmit) 요청에 대해 blk_mq_insert_request()의 부정확한 경고를 제거했습니다.\n\n영향: ZWOR zone write order 복원 패치 이후 정상 재제출 경로에서 dmesg 경고 노이즈가 사라져 스토리지 회귀 triage가 쉬워집니다.\n\n> Resubmitting a request to an I/O scheduler is safe since commit b30645688d77 (\"FROMLIST: blk-mq: Restore the zone write order when requeuing\") added RQF_DONTPREP to RQF_NOMERGE_FLAGS.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/f9d2f7b96f685e51f71d9a369082156801aea550)\n\n**ANDROID: GKI: CRYPTO_LZ4 is now implicit**\n\nHIBERNATION Kconfig가 CRYPTO_LZ4를 암묵적으로 선택하므로 gki_defconfig에서 CONFIG_CRYPTO_LZ4 항목을 제거했습니다.\n\n영향: GKI defconfig 중복·드리프트를 줄이고, 하이버네이션 LZ4 압축 의존성이 upstream Kconfig 선택에 맞게 정리됩니다.\n\n> The CRYPTO_LZ4 config is now implicitly selected via HIBERNATION, so remove it from our gki_defconfig files.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/87aba67d69fd0706152ae2d9dec68c2cfc274459)\n\n**ANDROID: gki_defconfig: enable CONFIG_SW_SYNC=y for debug/testing**\n\nGKI defconfig에 CONFIG_SW_SYNC=y를 켜 GPU 드라이버·igt-gpu-tools 테스트용 sw_sync를 빌드에 포함시켰습니다.\n\n영향: 프로덕션 노출 위험은 debugfs 경유로 제한되지만, ACK/GKI CI에서 GPU 펜스 디버깅·테스트 커버리지를 회복합니다.\n\n> Beginning in the Android 4.9 kernel, sw_sync is only exposed through debugfs, so enabling in newer GKI kernels for debugging and testing no longer poses the risk to shipping builds.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/7443a0c3c9ecfc8982003afde92e9c783c725994)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ANDROID: KVM: arm64: Block host MMIO accesses to GICv4 VLPI region",
+      "url": "https://android.googlesource.com/kernel/common/+/18b623c9490c5519d40209efb05770d61b3d3c84",
+      "note": "commit"
+    },
+    {
+      "title": "FROMGIT: selinux: bpf: check SBLABEL_MNT before isec init",
+      "url": "https://android.googlesource.com/kernel/common/+/8f0a5b31aee19510e75741c9687cf0d9321fa7ed",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: mm: Make dump_tasks() safe in NMI context",
+      "url": "https://android.googlesource.com/kernel/common/+/db2acc01b75f9a30bfef0f4d2a6f413542cc32ac",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: sched: Avoid macro redefinition of TRACE_INCLUDE_PATH",
+      "url": "https://android.googlesource.com/kernel/common/+/82be0d329bf2b455546a09cc84a40c9d1716b54d",
+      "note": "commit"
+    },
+    {
+      "title": "tls: remove dead sockmap (psock) handling from the SW path",
+      "url": "https://android.googlesource.com/kernel/common/+/79511603a65b990bed675eb4bcfd85305d3ff42a",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: block: Use block driver queue depth if ZWOR is supported",
+      "url": "https://android.googlesource.com/kernel/common/+/b91dd6e2a8fd652410ba348a03f966abed1fb817",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: block: Remove a warning from blk_mq_insert_request()",
+      "url": "https://android.googlesource.com/kernel/common/+/f9d2f7b96f685e51f71d9a369082156801aea550",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: GKI: CRYPTO_LZ4 is now implicit",
+      "url": "https://android.googlesource.com/kernel/common/+/87aba67d69fd0706152ae2d9dec68c2cfc274459",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: gki_defconfig: enable CONFIG_SW_SYNC=y for debug/testing",
+      "url": "https://android.googlesource.com/kernel/common/+/7443a0c3c9ecfc8982003afde92e9c783c725994",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-16T18:05:32.762Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/android-newsletter-from-dossier-ko.md"
+  }
+}

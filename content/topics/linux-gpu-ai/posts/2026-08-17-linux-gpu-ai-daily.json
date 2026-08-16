@@ -1,0 +1,105 @@
+{
+  "id": "2026-08-17-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-08-17 GPU 복구·안정화 — Linux GPU AI",
+  "headline": "amdgpu fence·doorbell race, pagemap migration unmap, vc4 reset, nova GSP 로그 보존 패치가 dri-devel에 올라왔습니다.",
+  "date": "2026-08-17",
+  "summary": "amdgpu MES user queue의 fence driver 누수와 doorbell walk lock 부재, drm_pagemap migration 실패 시 DMA unmap 순서 오류가 회귀 수정으로 제출됐습니다. vc4 V3D 하드웨어 reset 전환과 nova-core GSP-RM 로그 retained 보존은 Raspberry Pi·NVIDIA 오픈 GPU 디버깅 워크플로를 개선합니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "GPU",
+    "drm"
+  ],
+  "highlights": [
+    {
+      "title": "amdgpu userq fence 누수·doorbell walk lock",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "amdgpu MES user queue·compute 스택 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260817-amdgpu-fixes-v1-0-36d5298da646@outlook.com/",
+      "if": "MES user queue hang reset·queue 해제 경로를 운영 중이라면",
+      "do": "linked fence cancel과 xa_lock_irqsave() doorbell walk 패치의 백포트 필요 여부를 검토하세요",
+      "verify": "원문 스레드에서 stable Cc 범위와 mes_userq_detect_and_reset() 변경을 확인하세요"
+    },
+    {
+      "title": "drm/pagemap migration DMA unmap 순서",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "drm_pagemap·GPU SVM/migration·Intel Xe 등 pagemap 사용자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/9e986d7c-d561-4a63-8b14-6380ac289db5@intel.com/",
+      "if": "GPU devmem migration 실패 경로를 다루는 스택을 유지보수한다면",
+      "do": "unlock_put_pages()와 unmap 호출 순서 교정 패치를 리뷰하고 Fixes f86ad0ed620c 연계를 확인하세요",
+      "verify": "원문에서 stable Cc·Intel 리뷰어 LGTM 여부를 대조하세요"
+    },
+    {
+      "title": "vc4 V3D 하드웨어 reset 전환",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "drm/vc4·Broadcom V3D·Raspberry Pi 커널 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260816-vc4-reset-control-v1-0-896444373716@igalia.com/",
+      "if": "BCM2835·Raspberry Pi에서 vc4 hang 복구 경로를 추적 중이라면",
+      "do": "BCM2835 PM reset line 채택과 private refcount 제거 4패치 시리즈를 검토하세요",
+      "verify": "원문에서 optional reset line·Raspberry Pi 3B·3B+ 테스트 범위를 확인하세요"
+    },
+    {
+      "title": "nova-core GSP-RM 로그 retained 보존",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "nova-core·NVIDIA GSP-RM·Rust GPU 드라이버 개발자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260815050826.306717-1-vladazaharova2018@gmail.com/",
+      "if": "probe 실패 직후 GSP 로그가 필요한 nova-core 디버깅을 한다면",
+      "do": "gsp_keep_logs 모듈 파라미터로 retained/<BDF>/ 로그 보존 v2 패치 적용 가능성을 검토하세요",
+      "verify": "GB203 probe 실패(-EINVAL) 주입 시 로그 readable 여부와 u8 파라미터·dma_rmb() barrier 별도 제출 예정 사항을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm/amdgpu/userq: fix a leaked fence driver and an unlocked doorbell walk**\n\nuser queue 해제 시 fence driver에 남은 linked fence를 cancel해 refcount·seq64 슬롯 누수를 막고(Patch 1), mes_userq_detect_and_reset()의 device-wide doorbell xarray walk에 xa_lock_irqsave()를 잡는 2패치 수정입니다.\n\n영향: fence driver 누수는 디바이스 수명 동안 seq64 슬롯이 해제되지 않고, doorbell walk는 다른 drm_file 소유 queue를 lock 없이 역참조해 hang reset 경로에서 race·UAF 위험이 있습니다.\n\n> Each of them holds a reference on the driver, so its refcount never reaches zero and the seq64 slot stays allocated for the lifetime of the device.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260817-amdgpu-fixes-v1-0-36d5298da646@outlook.com/)\n\n**drm/pagemap: dma-unmap pages before handling migration errors**\n\ndrm_pagemap migration 오류 처리에서 drm_pagemap_migration_unlock_put_pages()가 pages 배열을 먼저 비운 뒤 drm_pagemap_migrate_unmap_pages()가 호출되던 순서를 바꿔 DMA unmap 시 유효한 page 정보를 보장합니다.\n\n영향: GPU devmem migration 실패 경로에서 DMA mapping이 정리되지 않으면 IOMMU·메모리 누수나 후속 migration 오류로 이어질 수 있어 drm_pagemap/gpusvm 스택 전반의 안정성에 영향이 있습니다.\n\n> drm_pagemap_migration_unlock_put_pages() clears the array as part of its cleanup, leaving drm_pagemap_migrate_unmap_pages() with no valid page information if it is called afterward.\n\n[원문 확인](https://lore.kernel.org/dri-devel/9e986d7c-d561-4a63-8b14-6380ac289db5@intel.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/vc4: Reset the V3D block through the reset controller**\n\nvc4 GPU hang 복구를 runtime PM usage count를 강제로 0으로 만드는 방식 대신 BCM2835 PM 블록의 V3D reset line을 쓰도록 바꾸고, 이를 위해 유지하던 private refcount·mutex를 제거하는 4패치 시리즈입니다.\n\n영향: Raspberry Pi 등 BCM2835 플랫폼에서 hang 복구가 더 직접적인 하드웨어 reset을 쓰게 되어 PM refcount 추적 부담이 줄고, reset line이 없는 DT는 기존처럼 소프트웨어 경로만 유지합니다.\n\n> This series switches vc4 over to it and drops the private refcount, leaving vc4_v3d_pm_get/put() as plain runtime PM wrappers.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260816-vc4-reset-control-v1-0-896444373716@igalia.com/)\n\n**gpu: nova-core: retain the GSP-RM log buffers**\n\nGSP-RM debugfs 로그 버퍼가 unbind·probe 실패 시 사라지는 문제를 gsp_keep_logs 모듈 파라미터로 모듈 소유 메모리에 복사해 retained/<BDF>/ 아래에 남기는 v2 2패치 시리즈입니다.\n\n영향: probe 실패 직후가 GSP 로그가 가장 필요한 시점인데 기존에는 DMA 버퍼가 디바이스 수명에 묶여 사라져, nova-core(NVIDIA 오픈 GPU) 디버깅·장애 분석 워크플로에 직접 영향이 있습니다. Rust module_param bool 미지원으로 u8(0/1) 파라미터를 쓰며, dma_rmb() barrier 패치는 tip tree backmerge 후 별도 제출 예정인지 확인이 필요합니다.\n\n> with a failure injected after the GSP has booted, probe() fails with -EINVAL, the driver stays unbound, and the logs of that attempt are still readable;\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260815050826.306717-1-vladazaharova2018@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/vc4: Reset the V3D block through the reset controller",
+      "url": "https://lore.kernel.org/dri-devel/20260816-vc4-reset-control-v1-0-896444373716@igalia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "gpu: nova-core: retain the GSP-RM log buffers",
+      "url": "https://lore.kernel.org/dri-devel/20260815050826.306717-1-vladazaharova2018@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/amdgpu/userq: fix a leaked fence driver and an unlocked doorbell walk",
+      "url": "https://lore.kernel.org/dri-devel/20260817-amdgpu-fixes-v1-0-36d5298da646@outlook.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/pagemap: dma-unmap pages before handling migration errors",
+      "url": "https://lore.kernel.org/dri-devel/9e986d7c-d561-4a63-8b14-6380ac289db5@intel.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-16T18:39:10.208Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

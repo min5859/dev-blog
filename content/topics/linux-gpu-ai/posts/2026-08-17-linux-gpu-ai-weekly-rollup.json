@@ -1,0 +1,127 @@
+{
+  "id": "2026-08-17-linux-gpu-ai-weekly-rollup",
+  "topic": "linux-gpu-ai",
+  "title": "2026-08-17 주간 요약",
+  "headline": "amdgpu MES user queue·compute 스택 유지보수 담당 주목: drm/amdgpu/userq: fix a leaked fenc",
+  "date": "2026-08-17",
+  "summary": "오늘의 핵심: 릴리스/로드맵 0건, 회귀·보안 신호 8건, 핵심 변경 0건. 리서치 dossier 의 출처를 근거로 정리했습니다.",
+  "tags": [
+    "주간"
+  ],
+  "highlights": [
+    {
+      "title": "drm/amdgpu/userq: fix a leaked fence driver and an unlocked doorbell walk",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "amdgpu MES user queue·compute 스택 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260817-amdgpu-fixes-v1-0-36d5298da646@outlook.com/",
+      "if": "amdgpu MES user queue·compute 스택 유지보수 담당라면",
+      "do": "user queue 해제 시 fence driver에 남은 linked fence를 cancel해 refcount·seq64 슬롯 누수를 막고(",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/dri-devel/20260817-amdgpu-fixes-v1-0-36d5298da646@outlook.com/"
+    },
+    {
+      "title": "drm/pagemap: dma-unmap pages before handling migration errors",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "drm_pagemap·GPU SVM/migration·Intel Xe 등 pagemap 사용자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/9e986d7c-d561-4a63-8b14-6380ac289db5@intel.com/",
+      "if": "drm_pagemap·GPU SVM/migration·Intel Xe 등 pagemap 사용자라면",
+      "do": "drm_pagemap migration 오류 처리에서 drm_pagemap_migration_unlock_put_pages()가 pages 배열",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/dri-devel/9e986d7c-d561-4a63-8b14-6380ac289db5@intel.com/"
+    },
+    {
+      "title": "drm/nouveau: Fix NULL pointer dereferences in GETPARAM and GET_ZCULL_INFO ioctls",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "Nouveau 드라이버·Mesa/디스플레이 서버 통합 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260815-null-fixes-v1-0-0df9dda951fb@gmail.com/",
+      "if": "Nouveau 드라이버·Mesa/디스플레이 서버 통합 담당라면",
+      "do": "Nouveau 초기화가 불완전할 때 GETPARAM·GET_ZCULL_INFO ioctl 핸들러가 gr/gr->func/nvkm_device->",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/dri-devel/20260815-null-fixes-v1-0-0df9dda951fb@gmail.com/"
+    },
+    {
+      "title": "drm: check for NULL master in drm_getunique() and drm_getmagic()",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "DRM core·compute/accel 스택·/dev/accel 사용자 공간 도구 개발자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260815-drm-accel-null-master-v1-1-93bdd3ba52f1@outlook.com/",
+      "if": "DRM core·compute/accel 스택·/dev/accel 사용자 공간 도구 개발자라면",
+      "do": "DRM_MINOR_ACCEL 전용 minor는 master가 NULL인데 drm_getunique()/drm_getmagic()이 이를 검사하지",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/dri-devel/20260815-drm-accel-null-master-v1-1-93bdd3ba52f1@outlook.com/"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm/amdgpu/userq: fix a leaked fence driver and an unlocked doorbell walk**\n\nuser queue 해제 시 fence driver에 남은 linked fence를 cancel해 refcount·seq64 슬롯 누수를 막고(Patch 1), mes_userq_detect_and_reset()의 device-wide doorbell xarray walk에 xa_loc\n\n영향: fence driver 누수는 디바이스 수명 동안 seq64 슬롯이 해제되지 않고, doorbell walk는 다른 drm_file 소유 queue를 lock 없이 역참조해 hang reset 경로에서 race·UAF 위험이 있습니다.\n\n> Each of them holds a reference on the driver, so its refcount never reaches zero and the seq64 slot stays allocated for the lifetime of the device.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260817-amdgpu-fixes-v1-0-36d5298da646@outlook.com/)\n\n**drm/pagemap: dma-unmap pages before handling migration errors**\n\ndrm_pagemap migration 오류 처리에서 drm_pagemap_migration_unlock_put_pages()가 pages 배열을 먼저 비운 뒤 drm_pagemap_migrate_unmap_pages()가 호출되던 순서를 바꿔 DMA unmap 시 유효한 page 정보\n\n영향: GPU devmem migration 실패 경로에서 DMA mapping이 정리되지 않으면 IOMMU·메모리 누수나 후속 migration 오류로 이어질 수 있어 drm_pagemap/gpusvm 스택 전반의 안정성에 영향이 있습니다.\n\n> drm_pagemap_migration_unlock_put_pages() clears the array as part of its cleanup, leaving drm_pagemap_migrate_unmap_pages() with no valid page information if it is called afterward.\n\n[원문 확인](https://lore.kernel.org/dri-devel/9e986d7c-d561-4a63-8b14-6380ac289db5@intel.com/)\n\n**drm/nouveau: Fix NULL pointer dereferences in GETPARAM and GET_ZCULL_INFO ioctls**\n\nNouveau 초기화가 불완전할 때 GETPARAM·GET_ZCULL_INFO ioctl 핸들러가 gr/gr->func/nvkm_device->func를 검사 없이 역참조해 커널 NULL dereference가 나던 두 경로를 -ENODEV 반환으로 막는 2패치 시리즈입니다.\n\n영향: 펌웨어·그래픽 엔진 초기화 실패 후에도 GNOME/Mesa 같은 userspace가 capability를 probe하면 데스크톱 기동 중 커널 패닉으로 이어질 수 있어, Nouveau·Mesa 통합 테스트와 장애 재현 환경에서 즉시 영향이 있습니다.\n\n> When Nouveau initialization is incomplete... userspace display servers (GNOME/Mesa) probing device capabilities trigger fatal kernel NULL pointer dereferences in the Nouveau ioctl handlers.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260815-null-fixes-v1-0-0df9dda951fb@gmail.com/)\n\n**drm: check for NULL master in drm_getunique() and drm_getmagic()**\n\nDRM_MINOR_ACCEL 전용 minor는 master가 NULL인데 drm_getunique()/drm_getmagic()이 이를 검사하지 않아 생기던 NULL dereference를 master==NULL 시 -EINVAL로 처리합니다.\n\n영향: accel 전용 /dev/accel 노드 사용자·QA가 GET_UNIQUE/GET_MAGIC ioctl을 호출하면 master_mutex를 잡은 채 커널 oops가 날 수 있어, 가속기 minor 도입(2c204f3d5321) 이후 회귀·stable 백포트 후보입니다.\n\n> Issuing DRM_IOCTL_GET_UNIQUE or DRM_IOCTL_GET_MAGIC on /dev/accel/accel* leads to a NULL pointer dereference, in drm_getunique() with dev->master_mutex held.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260815-drm-accel-null-master-v1-1-93bdd3ba52f1@outlook.com/)\n\n**[BUG] nouveau: drm_panic get_scanout_buffer() maps the BO from panic context (ioremap + sleeping locks)**\n\n패치가 아니라 버그 리포트로, nv50_wndw_get_scanout_buffer()가 panic 컨텍스트에서 nouveau_bo_map()→sleeping lock·ioremap()을 호출해 x86에서 BUG_ON(in_interrupt())로 이중 oops를 유발할 수 있음을 지적합\n\n영향: drm_panic 계약(잠금·할당·sleep 금지)을 nv50+ Nouveau 전 세대가 위반할 수 있어 패닉 화면 대신 핸들러 내부 oops가 나며, 기존 panic-safe helper는 iomem VRAM scanout을 커버하지 않습니다.\n\n> nv50_wndw_get_scanout_buffer() calls nouveau_bo_map(), which takes two sleeping locks and then, for a VRAM buffer, calls ioremap(). On x86 that ends in __get_vm_area_node(), which BUG_ON()s when it is\n\n[원문 확인](https://lore.kernel.org/dri-devel/178681005908.3524476.7115000150741026287@gmail.com/)\n\n**drm/bridge: ti-sn65dsi86: retrain DP link directly on cable replug**\n\nYashas D 패치가 ti-sn65dsi86 DSI-DSI bridge에서 케이블 재연결 시 CRTC가 살아 있는 상태에서 HPD work handler가 DRM atomic commit 없이 DP link retrain·비디오 스트림 재활성화를 시도합니다(+179/-36줄). Dou\n\n영향: TI SN65DSI86 bridge를 쓰는 임베디드·Chromebook류 DSI→DP 경로에서 케이블 재연결 복구 UX를 개선하려는 시도이나, atomic KMS 우회와 hpd_work·modeset 동시 실행이 하드웨어 상태 손상·잘못된 타이밍 구동 위험을 키워 maintainer 리\n\n> the bridge can retrain the DP link and re-enable the video stream directly from the HPD interrupt work handler without requiring a full DRM atomic commit\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260814120304.887993-1-y-d@ti.com/)\n\n**accel/amdxdna: SYNC_BO correctness fixes**\n\nTaimuraz Kaitmazov v3(3패치)가 amdxdna_drm_sync_bo_ioctl() 주변에서 imported BO I/O 메모리 매핑 거부, zero-length flush 조기 반환, sync range overflow 검사를 각각 독립적으로 수정합니다.\n\n영향: AMD XDNA NPU 가속 드라이버의 SYNC_BO ioctl 경로에서 잘못된 주소 처리·전체 scatterlist flush·산술 overflow 위험이 있어, AI 워크로드 BO 동기화 ioctl 사용자에게 직접적인 정확성·안전성 이슈입니다.\n\n> Patch 1 refuses an I/O memory mapping of an imported BO... a zero length reaching drm_clflush_virt_range()... offset and size added... without an overflow check\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260813164700.43960-1-taimuraz@kaitmazov.com/)\n\n**drm/verisilicon: Switch to drm_fb_dma_get_addr() for framebuffer addresses**\n\nChen-Yu Tsai RFC v2가 vs_fb_get_dma_addr()를 drm_fb_dma_get_gem_addr()로 교체하고 커스텀 헬퍼를 삭제합니다. Icenowy Zheng은 커서 plane은 HW가 클리핑하므로 clipped 좌표로 FB 주소를 계산하는 현재 구현이 bro\n\n영향: offset 필드 미설정 버그가 클리핑된 FB 주소 계산과 상쇄돼 숨겨졌고, 헬퍼만 적용하면 커서가 전혀 클리핑되지 않습니다. X -retro 테스트에서 glitch가 재현됩니다.\n\n> Yes this is right and the current state of the cursor plane is broken.\n\n[원문 확인](https://lore.kernel.org/dri-devel/6c2b92efec2b8ed58da9b85b63935ba2e7f2a6ed.camel@iscas.ac.cn/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "국부 드라이버/플랫폼 패치는 본문에서 제외했습니다. 자기 영역 키워드로 lore.kernel.org에서 직접 검색하세요."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/amdgpu/userq: fix a leaked fence driver and an unlocked doorbell walk",
+      "url": "https://lore.kernel.org/dri-devel/20260817-amdgpu-fixes-v1-0-36d5298da646@outlook.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/pagemap: dma-unmap pages before handling migration errors",
+      "url": "https://lore.kernel.org/dri-devel/9e986d7c-d561-4a63-8b14-6380ac289db5@intel.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/nouveau: Fix NULL pointer dereferences in GETPARAM and GET_ZCULL_INFO ioctls",
+      "url": "https://lore.kernel.org/dri-devel/20260815-null-fixes-v1-0-0df9dda951fb@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm: check for NULL master in drm_getunique() and drm_getmagic()",
+      "url": "https://lore.kernel.org/dri-devel/20260815-drm-accel-null-master-v1-1-93bdd3ba52f1@outlook.com/",
+      "note": "thread"
+    },
+    {
+      "title": "[BUG] nouveau: drm_panic get_scanout_buffer() maps the BO from panic context (ioremap + sleeping locks)",
+      "url": "https://lore.kernel.org/dri-devel/178681005908.3524476.7115000150741026287@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/bridge: ti-sn65dsi86: retrain DP link directly on cable replug",
+      "url": "https://lore.kernel.org/dri-devel/20260814120304.887993-1-y-d@ti.com/",
+      "note": "thread"
+    },
+    {
+      "title": "accel/amdxdna: SYNC_BO correctness fixes",
+      "url": "https://lore.kernel.org/dri-devel/20260813164700.43960-1-taimuraz@kaitmazov.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/verisilicon: Switch to drm_fb_dma_get_addr() for framebuffer addresses",
+      "url": "https://lore.kernel.org/dri-devel/6c2b92efec2b8ed58da9b85b63935ba2e7f2a6ed.camel@iscas.ac.cn/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "source": "research-dossier",
+    "bucketCounts": {
+      "릴리스/로드맵": 0,
+      "회귀·보안 신호": 8,
+      "핵심 변경": 0,
+      "기타": 0
+    },
+    "entryCount": 8
+  }
+}

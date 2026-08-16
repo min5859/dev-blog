@@ -1,0 +1,155 @@
+{
+  "id": "2026-08-17-linux-distro-stable-daily",
+  "topic": "linux-distro-stable",
+  "title": "2026-08-17 OVS·xHCI 백포트 — Distro Stable",
+  "headline": "AMD PROM21 xHCI S3 회귀와 Open vSwitch flow mask UAF 등 stable 백포트 후보가 올라왔습니다.",
+  "date": "2026-08-17",
+  "summary": "lore-stable에 USB xHCI ownership quirk, OVS flow 삭제 UAF, AMDGPU user queue·dmaengine·ice 수정 등 백포트 후보가 제출됐습니다. 8월 9일 태그된 LTS·stable 릴리스는 이전 수집 항목이며 배포판 채택 일정은 확인이 필요합니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "stable",
+    "백포트"
+  ],
+  "highlights": [
+    {
+      "title": "usb: pci-quirks: always assert xHCI OS ownership",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "USB/xHCI·ACPI S3 resume·AMD 플랫폼 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20260816181519.88865-1-rishabh.jain1198@gmail.com/",
+      "if": "AMD PROM21 xHCI(1022:43fc) 노트북·데스크톱에서 S3 resume마다 USB·Bluetooth가 리셋된다면",
+      "do": "stable 트리 merge 범위와 영향 받는 stable 브랜치를 추적하세요",
+      "verify": "S3 resume 후 Controller Restore State와 USBSTS 0x401 발생 여부를 해당 기기에서 확인하세요"
+    },
+    {
+      "title": "net: openvswitch: fix flow mask use-after-free on flow deletion",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "Open vSwitch·netfilter·클라우드 네트워킹 담당",
+      "verifyLink": "https://lore.kernel.org/stable/f7t5x1anmmm.fsf@aconole-thinkpadt14gen4.rmtusnh.csb/",
+      "if": "OVS flow 삭제 경로에서 KASAN slab-use-after-free가 보고된다면",
+      "do": "ZDI-CAN-32042 관련 stable 백포트 merge 일정을 추적하세요",
+      "verify": "패치 적용 후 flow 삭제 시 __ovs_nla_put_key 경로에서 UAF가 재현되지 않는지 확인하세요"
+    },
+    {
+      "title": "drm/amdgpu/userq: fix a leaked fence driver and an unlocked doorbell walk",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "drm/amdgpu·MES user queue·ROCm 스택 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20260817-amdgpu-fixes-v1-0-36d5298da646@outlook.com/",
+      "if": "MES user queue 환경에서 seq64 슬롯 고갈이나 큐 관련 크래시가 관측된다면",
+      "do": "stable 트리 merge 일정과 영향 받는 AMDGPU 세대를 확인하세요",
+      "verify": "큐 해제·doorbell walk 경로에서 fence driver refcount와 xa_lock 보호가 패치대로 동작하는지 검증하세요"
+    },
+    {
+      "title": "dmaengine: fix kref underflow and UAF in dma_chan_put()",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "dmaengine 코어·SDXI·DMA 클라이언트 드라이버 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20260816-dmaengine-kref-fix-v3-2-7e76187145df@amd.com/",
+      "if": "dmaengine 클라이언트에서 kref underflow나 dma_device UAF가 의심된다면",
+      "do": "v3 패치 3건의 stable backport 범위를 upstream 외 stable 브랜치별로 추적하세요",
+      "verify": "dma_chan_put() 경로에서 synchronize_rcu() 포함 수정이 적용됐는지 원문 스레드를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "8월 9일 태그 Linux 7.1.8·6.6.151·6.12.103·6.18.44는 이전 수집에서 다룬 릴리스입니다. 배포판별 7.1.8·6.6.151·6.12.103·6.18.44 채택 일정은 아직 확인되지 않았습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**usb: pci-quirks: always assert xHCI OS ownership**\n\nquirk_usb_handoff_xhci()가 BIOS Owned가 이미 설정된 경우에만 HC OS Owned를 assert해, 양쪽 ownership 세마포어가 모두 clear인 상태로 xHC를 사용할 수 있었습니다. Legacy Support capability가 있으면 항상 OS Owned를 assert하도록 수정합니다.\n\n영향: AMD PROM21 xHCI(1022:43fc)에서 S3 resume마다 Controller Restore State가 USBSTS 0x401로 실패하고 HC·루트허브·Bluetooth가 리셋되는 회귀가 재현됐으므로, 노트북·데스크톱 stable 백포트 추적이 필요합니다.\n\n> If firmware leaves BIOS Owned clear, Linux uses the xHC while both ownership semaphores remain clear.\n\n> On an AMD PROM21 xHCI controller (1022:43fc), this caused every S3 resume to terminate Controller Restore State with USBSTS 0x401.\n\n[원문 확인](https://lore.kernel.org/stable/20260816181519.88865-1-rishabh.jain1198@gmail.com/)\n\n**drm/amdgpu/userq: fix a leaked fence driver and an unlocked doorbell walk**\n\n패치 1은 큐 해제 시 fence driver에 남은 fence를 취소해 refcount가 0에 도달하지 못하는 누수를 막고, 패치 2는 mes_userq_detect_and_reset()의 doorbell xarray walk 동안 xa_lock_irqsave()를 유지해 타 drm_file 큐를 잠금 없이 dereference하는 경쟁을 막습니다.\n\n영향: fence driver 누수는 디바이스 수명 동안 seq64 슬롯이 고갈되고, doorbell walk 경쟁은 다른 프로세스 큐 UAF로 이어질 수 있어 AMDGPU MES user queue 운영 환경에서 stable 백포트가 필요합니다.\n\n> Each of them holds a reference on the driver, so its refcount never reaches zero and the seq64 slot stays allocated for the lifetime of the device.\n\n> That xarray is device wide, so the walk dereferences queues owned by other drm_files, and nothing keeps them alive for its duration.\n\n[원문 확인](https://lore.kernel.org/stable/20260817-amdgpu-fixes-v1-0-36d5298da646@outlook.com/)\n\n**ice: fix metadata_dst refcount handling on representor teardown**\n\nice_eswitch_release_repr()가 metadata_dst_free()로 representor metadata_dst를 즉시 해제해, qdisc 등에 패킷이 남아 dst_hold() 참조가 있을 때 UAF가 발생했습니다. dst_release()로 refcount 기반 해제로 교체합니다.\n\n영향: Intel ice switchdev representor teardown과 slow path xmit이 겹치면 slab UAF로 이어질 수 있어, OVS/Kubernetes 네트워킹 환경에서 stable 백포트 적용 여부를 확인해야 합니다.\n\n> metadata_dst_free() directly frees the underlying memory without checking the dst_entry refcount.\n\n> If the representor is torn down while packets are still queued on the lower device (e.g. in a qdisc), the metadata_dst is freed while references are still held.\n\n[원문 확인](https://lore.kernel.org/stable/20260816135510.1015041-1-tristmd@gmail.com/)\n\n**dmaengine: fix kref underflow and UAF in dma_chan_put()**\n\n3건 패치로 dma_chan_put()의 device kref underflow, dma_chan_put()/dma_release_channel() UAF, dma_device 해제 전 RCU reader 대기(synchronize_rcu)를 수정합니다. SDXI 테스트 중 발견됐습니다.\n\n영향: dmaengine 참조 카운팅 버그는 kref underflow와 dma_device UAF로 이어져, SDXI 등 신규 DMA 클라이언트와 범용 dmaengine 사용자 모두에 stable 백포트가 필요합니다.\n\n> Two paths still read that memory after the put: - dma_chan_put() reads chan->device->owner via dma_chan_to_owner() for the trailing module_put().\n\n> Add patch 3: add synchronize_rcu() to wait for RCU readers to prevent use-after-free.\n\n[원문 확인](https://lore.kernel.org/stable/20260816-dmaengine-kref-fix-v3-2-7e76187145df@amd.com/)\n\n**net: openvswitch: fix flow mask use-after-free on flow deletion**\n\nCMD_DEL 처리 중 ovs_flow_tbl_remove()가 ovs_flow_cmd_fill_info()보다 먼저 호출되면 flow->mask가 RCU grace period 후 해제된 뒤에도 netlink 응답 채우기가 mask를 dereference해 UAF가 발생합니다. remove 호출 순서를 뒤집습니다.\n\n영향: OVS flow 삭제 경로에서 짧은 경쟁 창으로 KASAN slab UAF가 재현됐고 ZDI-CAN-32042로 보고됐으므로, Open vSwitch·클라우드 네트워킹 환경에서 stable 백포트가 필요합니다.\n\n> This leads to use-after-free if the RCU grace period passes between removal and the filling.\n\n> BUG: KASAN: slab-use-after-free in __ovs_nla_put_key net/openvswitch/flow_netlink.c:1996\n\n[원문 확인](https://lore.kernel.org/stable/f7t5x1anmmm.fsf@aconole-thinkpadt14gen4.rmtusnh.csb/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**kbuild: rust: preserve unreachable traps with inline helpers**\n\nCONFIG_RUST_INLINE_HELPERS=y에서 Clang이 unreachable IR을 trap하지 않아 objtool이 Rust enum 패딩을 통해 다음 함수로 fallthrough한다고 경고합니다. 최종 Clang 호출에 -mllvm -trap-unreachable을 전달해 rustc 동작과 맞춥니다.\n\n영향: Rust-for-Linux 빌드가 objtool 경고로 실패하거나 검증을 통과하지 못할 수 있어, in-kernel Rust를 켠 배포·CI는 stable 백포트와 LLVM 18+ 전제를 확인해야 합니다.\n\n> objtool follows compiler-generated impossible Rust enum paths through alignment padding into the next function, resulting in fallthrough warnings.\n\n> Thus pass the LLVM trap-unreachable option to the final Clang invocation and suppress traps immediately after noreturn calls, which objtool already recognizes as dead ends.\n\n[원문 확인](https://lore.kernel.org/stable/20260816133233.197500-1-ojeda@kernel.org/)\n\nstable 트리 merge 일정과 CONFIG_RUST_INLINE_HELPERS 기본값은 확인이 필요합니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "usb: pci-quirks: always assert xHCI OS ownership",
+      "url": "https://lore.kernel.org/stable/20260816181519.88865-1-rishabh.jain1198@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "net: openvswitch: fix flow mask use-after-free on flow deletion",
+      "url": "https://lore.kernel.org/stable/f7t5x1anmmm.fsf@aconole-thinkpadt14gen4.rmtusnh.csb/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/amdgpu/userq: fix a leaked fence driver and an unlocked doorbell walk",
+      "url": "https://lore.kernel.org/stable/20260817-amdgpu-fixes-v1-0-36d5298da646@outlook.com/",
+      "note": "thread"
+    },
+    {
+      "title": "dmaengine: fix kref underflow and UAF in dma_chan_put()",
+      "url": "https://lore.kernel.org/stable/20260816-dmaengine-kref-fix-v3-2-7e76187145df@amd.com/",
+      "note": "thread"
+    },
+    {
+      "title": "ice: fix metadata_dst refcount handling on representor teardown",
+      "url": "https://lore.kernel.org/stable/20260816135510.1015041-1-tristmd@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "kbuild: rust: preserve unreachable traps with inline helpers",
+      "url": "https://lore.kernel.org/stable/20260816133233.197500-1-ojeda@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "Linux 7.1.8 stable",
+      "url": "https://git.kernel.org/stable/h/v7.1.8",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-7.1.8",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.8",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 6.12.103 longterm",
+      "url": "https://git.kernel.org/stable/h/v6.12.103",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-6.12.103",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.12.103",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 6.18.44 longterm",
+      "url": "https://git.kernel.org/stable/h/v6.18.44",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-6.18.44",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.18.44",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 6.6.151 longterm",
+      "url": "https://git.kernel.org/stable/h/v6.6.151",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-6.6.151",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.6.151",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-16T18:32:25.399Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

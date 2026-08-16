@@ -1,0 +1,127 @@
+{
+  "id": "2026-08-17-linux-perf-rt-weekly-rollup",
+  "topic": "linux-perf-rt",
+  "title": "2026-08-17 주간 요약",
+  "headline": "ARM/ARM64/LoongArch PREEMPT_RT·perf HW breakpoint·ptrace 담당 주목: ARM, ARM64, LONG",
+  "date": "2026-08-17",
+  "summary": "오늘의 핵심: 릴리스/로드맵 0건, 회귀·보안 신호 6건, 핵심 변경 1건. 리서치 dossier 의 출처를 근거로 정리했습니다.",
+  "tags": [
+    "주간"
+  ],
+  "highlights": [
+    {
+      "title": "ARM, ARM64, LONGARCH: Delay HW BP notification to task_work()",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "ARM/ARM64/LoongArch PREEMPT_RT·perf HW breakpoint·ptrace 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260814085118.OPEA_Ssn@linutronix.de/",
+      "if": "ARM/ARM64/LoongArch PREEMPT_RT·perf HW breakpoint·ptrace 담당라면",
+      "do": "ARM64 PREEMPT_RT에서 HW breakpoint perf overflow 콜백이 원자 컨텍스트에서 sighand_struct::sig",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/linux-rt-devel/20260814085118.OPEA_Ssn@linutronix.de/"
+    },
+    {
+      "title": "bpf: roll back stream capacity when allocation fails",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "BPF stream·tracing 프로그램·verifier 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/tencent_6B540E4B95A9AD4DBF8C928942E95A23AB0A@qq.com/",
+      "if": "BPF stream·tracing 프로그램·verifier 유지보수 담당라면",
+      "do": "bpf_stream_push_str()가 요소 할당 전에 capacity를 선차감하는데, __bpf_stream_push_str() 실패 시 롤",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/bpf/tencent_6B540E4B95A9AD4DBF8C928942E95A23AB0A@qq.com/"
+    },
+    {
+      "title": "lsm: give BPF programs a way to query locked_down state",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF LSM·lockdown 정책·보안 tracing 프로그램 작성자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260815112041.1248855-1-utilityemal77@gmail.com/",
+      "if": "BPF LSM·lockdown 정책·보안 tracing 프로그램 작성자라면",
+      "do": "BPF 프로그램이 security_locked_down()을 직접 호출할 수 있는 bpf_security_locked_down() kfunc를 ",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/bpf/20260815112041.1248855-1-utilityemal77@gmail.com/"
+    },
+    {
+      "title": "ip: orphan prefetched skbs before multicast forwarding",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "bpf_sk_assign·UDP early demux·멀티캐스트 포워딩 경로를 운영·개발하는 네트워킹/BPF 엔지니어",
+      "verifyLink": "https://lore.kernel.org/bpf/0c52eb3d7532aaf8bccf37e0f7c922143c639735.1786552223.git.zhilinz@nebusec.ai/",
+      "if": "bpf_sk_assign·UDP early demux·멀티캐스트 포워딩 경로를 운영·개발하는 네트워킹/BPF 엔지니어라면",
+      "do": "bpf_sk_assign()·UDP early demux가 RCU 하에 skb->sk를 prefetch만 하고 ref를 보장하지 않는 상태에서,",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/bpf/0c52eb3d7532aaf8bccf37e0f7c922143c639735.1786552223.git.zhilinz@nebusec.ai/"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ARM, ARM64, LONGARCH: Delay HW BP notification to task_work()**\n\nARM64 PREEMPT_RT에서 HW breakpoint perf overflow 콜백이 원자 컨텍스트에서 sighand_struct::siglock(sleeping lock)을 잡아 \"sleeping while atomic\" 경고가 납니다. v2는 perf_arch_hwbp_noti\n\n영향: PREEMPT_RT에서 perf HW breakpoint·ptrace 디버깅 경로는 원자 컨텍스트 제약과 충돌하기 쉬워, ARM 계열 RT 사용자·perf maintainer가 회귀 경고 없는 breakpoint 동작을 추적해야 합니다.\n\n> HW breakpoints on ARM64 trigger \"sleeping while atomic\" warnings on PREEMPT_RT.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260814085118.OPEA_Ssn@linutronix.de/)\n\n**bpf: roll back stream capacity when allocation fails**\n\nbpf_stream_push_str()가 요소 할당 전에 capacity를 선차감하는데, __bpf_stream_push_str() 실패 시 롤백이 없어 stream capacity가 영구 고갈될 수 있습니다. bpf_stream_release_capacity()를 길이 인자 기반으로 \n\n영향: BPF standard stream을 쓰는 tracing·관측 프로그램에서 반복적인 push 실패가 capacity를 소진하면 이후 로그 출력이 막히므로, eBPF stream API 사용자·verifier 담당이 회귀 수정 추적이 필요합니다.\n\n> Repeated failures can exhaust the stream capacity permanently until the BPF program is freed.\n\n[원문 확인](https://lore.kernel.org/bpf/tencent_6B540E4B95A9AD4DBF8C928942E95A23AB0A@qq.com/)\n\n**lsm: give BPF programs a way to query locked_down state**\n\nBPF 프로그램이 security_locked_down()을 직접 호출할 수 있는 bpf_security_locked_down() kfunc를 security/lsm_kfuncs.c에 추가합니다. out-of-range reason은 -EINVAL로 거부하고 locked_down LSM\n\n영향: userspace가 /sys/kernel/security/lockdown 값을 map에 캐시하는 방식은 런타임 lockdown 강화 시 TOCTOU가 생기므로, lockdown-aware BPF·LSM 프로그램 작성자에게 결정 시점 질의 API가 필요합니다.\n\n> That is a time-of-check/time-of-use race: a security_locked_down verdict can be raised at runtime, so the cached answer can be stale by the time the program acts on it.\n\n[원문 확인](https://lore.kernel.org/bpf/20260815112041.1248855-1-utilityemal77@gmail.com/)\n\n**ip: orphan prefetched skbs before multicast forwarding**\n\nbpf_sk_assign()·UDP early demux가 RCU 하에 skb->sk를 prefetch만 하고 ref를 보장하지 않는 상태에서, 비로컬 멀티캐스트 포워딩(ip_mr_input, ip6_mc_input) 직전에 skb_orphan(skb)를 호출합니다. 소켓이 파괴된 뒤 \n\n영향: BPF socket assign·UDP early demux와 멀티캐스트 라우팅이 겹치는 배포에서 use-after-free가 날 수 있습니다. Fixes 태그는 bpf_sk_assign 도입(cf7fbe660f2d)과 UDP early demux refcnt 변경(08842c43d01\n\n> After the prefetched socket is destroyed, a later skb free invokes sock_pfree() and dereferences the stale skb->sk.\n\n[원문 확인](https://lore.kernel.org/bpf/0c52eb3d7532aaf8bccf37e0f7c922143c639735.1786552223.git.zhilinz@nebusec.ai/)\n\n**net/sched: add get_fill_size callbacks for actions missing them**\n\nact_bpf·act_pedit·act_police 등 여러 tc action에 get_fill_size()를 추가하고, tcf_action_shared_attrs_size()가 tcf_t를 nla_total_size_64bit()로 계산하도록 보정합니다. RTM_NEWACTION+NL\n\n영향: act_bpf는 TCA_ACT_BPF_OPS만으로 action당 최대 32KB(BPF_MAXINSNS)까지 dump될 수 있어 tc BPF action을 두 개만 추가해도 echo skb가 넘칩니다. tc/netlink로 BPF action을 배포·감시하는 팀은 userspace 실패와\n\n> act_bpf is the clearest case: TCA_ACT_BPF_OPS alone reaches 32KB per action (BPF_MAXINSNS), so two actions are enough to overrun the allocation.\n\n[원문 확인](https://lore.kernel.org/bpf/20260810164357.1653956-1-victor@mojatatu.com/)\n\n**bpf: arena: handle memory.max on fault-in with reclaim/OOM**\n\nBPF map용 sleepable page allocator를 추가하고 arena fault-in 페이지를 spinlock 밖에서 선할당해 reclaim·memcg OOM 경로를 태웁니다. OOM은 VM_FAULT_OOM으로, 비복구 fault는 VM_FAULT_SIGBUS로 구분하고 \n\n영향: PREEMPT_RT에서 can_alloc_pages()가 BPF 컨텍스트를 non-blocking allocator로 강제하면 memory.max 도달 시 reclaim 없이 실패하고, 유효 arena 주소에 SIGSEGV가 납니다. RT·memcg 아래 BPF arena를 쓰는 팀은 \n\n> The fault-in allocation runs under arena->spinlock, so it can only use the non-blocking allocator, which never reclaims. Once memory.current is at memory.max the allocation simply fails.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260808140720.293604-1-jiayuan.chen@linux.dev/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**docs: timers: hrtimers: clarify expiry modes and ktimersd on PREEMPT_RT**\n\nDocumentation/timers/hrtimers.rst에 PREEMPT_RT 전용 \"Expiry modes and PREEMPT_RT\" 절을 추가합니다. HRTIMER_MODE_HARD로 표시되지 않은 타이머는 softirq 만료로 강제되며 콜백이 per-CPU ktimers/%u\n\n영향: RT 워크로드에서 타이머 콜백 우선순위·컨텍스트를 잘못 가정하면 latency 목표를 놓칩니다. 문서는 PI가 cancel handshake용이며 무장 경로에는 쓰이지 않는다는 점과 RT 우선순위가 필요하면 HRTIMER_MODE_HARD 또는 전용 kthread 웨이크업이 필요함을 명\n\n> a SCHED_FIFO task running at priority 99 that starts an unmarked timer still expires on ktimers/%u (lowest SCHED_FIFO priority), not at priority 99.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260812145440.23528-1-haohlliang@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "**docs: timers: hrtimers: clarify expiry modes and ktimersd on PREEMPT_RT**\n\nDocumentation/timers/hrtimers.rst에 PREEMPT_RT hrtimer 만료 컨텍스트를 설명하는 \"Expiry modes and PREEMPT_RT\" 절(v3)을 추가합니다. HRTIMER_MODE_HARD가 아닌 타이머는 ktimers/%u 스레드(최저 SCH\n\n영향: PREEMPT_RT에서 hrtimer 콜백 우선순위·만료 경로를 잘못 가정하면 RT 지연·우선순위 역전 디버깅이 어려워지므로, 타이머·스케줄러 추적자에게 동작 의미를 고정하는 문서 보강입니다.\n\n> A SCHED_FIFO task running at priority 99 that starts an unmarked timer still expires on ktimers/%u (lowest SCHED_FIFO priority), not at priority 99.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260813145746.26612-1-haohlliang@gmail.com/)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ARM, ARM64, LONGARCH: Delay HW BP notification to task_work()",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260814085118.OPEA_Ssn@linutronix.de/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: roll back stream capacity when allocation fails",
+      "url": "https://lore.kernel.org/bpf/tencent_6B540E4B95A9AD4DBF8C928942E95A23AB0A@qq.com/",
+      "note": "thread"
+    },
+    {
+      "title": "lsm: give BPF programs a way to query locked_down state",
+      "url": "https://lore.kernel.org/bpf/20260815112041.1248855-1-utilityemal77@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "ip: orphan prefetched skbs before multicast forwarding",
+      "url": "https://lore.kernel.org/bpf/0c52eb3d7532aaf8bccf37e0f7c922143c639735.1786552223.git.zhilinz@nebusec.ai/",
+      "note": "thread"
+    },
+    {
+      "title": "net/sched: add get_fill_size callbacks for actions missing them",
+      "url": "https://lore.kernel.org/bpf/20260810164357.1653956-1-victor@mojatatu.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: arena: handle memory.max on fault-in with reclaim/OOM",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260808140720.293604-1-jiayuan.chen@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "docs: timers: hrtimers: clarify expiry modes and ktimersd on PREEMPT_RT",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260812145440.23528-1-haohlliang@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "docs: timers: hrtimers: clarify expiry modes and ktimersd on PREEMPT_RT",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260813145746.26612-1-haohlliang@gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "source": "research-dossier",
+    "bucketCounts": {
+      "릴리스/로드맵": 0,
+      "회귀·보안 신호": 6,
+      "핵심 변경": 1,
+      "기타": 1
+    },
+    "entryCount": 8
+  }
+}
