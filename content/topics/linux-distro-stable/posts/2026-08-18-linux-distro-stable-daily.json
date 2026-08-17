@@ -1,0 +1,135 @@
+{
+  "id": "2026-08-18-linux-distro-stable-daily",
+  "topic": "linux-distro-stable",
+  "title": "2026-08-18 OVS·NVMe stable — 배포 Stable",
+  "headline": "8월 17일 stable 스레드에서 Open vSwitch flow 삭제 UAF·NVMe zoned limits·HMM migrate OOB가 백포트 후보로 올라왔습니다.",
+  "date": "2026-08-18",
+  "summary": "이번 수집의 신규는 stable 큐 백포트 후보 4건이며, OVS flow mask UAF와 device migration OOB가 보안 우선 확인 대상입니다. 8월 9일 공개된 7.1.8·6.6.151·6.12.103·6.18.44 포인트 릴리스는 전일과 동일합니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "stable",
+    "LTS"
+  ],
+  "highlights": [
+    {
+      "title": "Open vSwitch flow 삭제 시 mask use-after-free",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "Open vSwitch·클라우드 네트워킹 커널 운영자",
+      "verifyLink": "https://lore.kernel.org/stable/20260815005915.1097270-1-i.maximets@ovn.org/",
+      "if": "OVS datapath에서 flow 삭제 netlink(CMD_DEL) 경로를 운영 중이라면",
+      "do": "ovs_flow_tbl_remove() 순서 수정 패치의 stable 백포트 편입 여부를 큐에서 확인하세요",
+      "verify": "KASAN이 __ovs_nla_put_key에서 slab-use-after-free를 보고하는지 패치 적용 전후 로그를 대조하세요"
+    },
+    {
+      "title": "mm/migrate_device compound folio OOB write",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "HMM·device memory migration 개발·운영자",
+      "verifyLink": "https://lore.kernel.org/stable/20260817120758.669807-3-sh_def@163.com/",
+      "if": "HMM·device migration 경로에서 compound folio를 다루는 워크로드를 검증 중이라면",
+      "do": "folio가 npages 배열 범위를 넘을 때 수집을 중단하는 v2 패치의 stable 머지 여부를 추적하세요",
+      "verify": "KASAN QEMU에서 HMM migrate_anon_huge_zero selftest 종료 경로 재현 여부를 원문 스레드와 대조하세요"
+    },
+    {
+      "title": "NVMe zone info 조회 실패 후 zoned limits 갱신",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "NVMe/zoned namespace 드라이버·스토리지 운영자",
+      "verifyLink": "https://lore.kernel.org/stable/20260817175859.2966055-1-coshi036@gmail.com/",
+      "if": "Identify Namespace/Controller가 실패하는 NVMe·NVMe-oF zoned 타깃을 운영 중이라면",
+      "do": "zone info 조회 실패 시 limits 갱신을 건너뛰는 v3 패치(Fixes: c85c9ab926a5)의 stable 큐 상태를 확인하세요",
+      "verify": "zone_size=0 큐에서 disk_zone_no() UBSAN shift-out-of-bounds가 발생하는지 dmesg를 점검하세요"
+    },
+    {
+      "title": "i.MX6 suspend/resume Clang CFI panic",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "i.MX6 임베디드·Clang CFI 빌드 운영자",
+      "verifyLink": "https://lore.kernel.org/stable/20260718111340.159896-1-linux@yoavmoshe.com/",
+      "if": "CONFIG_CFI=y로 i.MX6 계열 suspend/resume를 빌드·운영 중이라면",
+      "do": "OCRAM 호출 전용 __nocfi wrapper v3 패치와 8월 17일 maintainer ping 응답을 추적하세요",
+      "verify": "imx6_suspend_in_ocram_fn indirect call에서 strict CFI violation panic이 재현되는지 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 신규 stable/LTS 포인트 릴리스는 없습니다. Linux 7.1.8·6.6.151·6.12.103·6.18.44는 2026-08-09 공개분으로 전일 보도와 동일합니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**net: openvswitch: fix flow mask use-after-free on flow deletion**\n\nCMD_DEL 처리에서 flow table 제거 후 ovs_flow_cmd_fill_info()가 flow->mask를 읽는데 RCU read lock이 늦게 잡혀, grace period가 먼저 지나면 mask가 slab-use-after-free로 해제됩니다. 패치는 ovs_flow_tbl_remove()를 fill_info 이후로 옮깁니다.\n\n영향: Open vSwitch datapath에서 flow 삭제 netlink 경로의 짧은 레이스로 커널 크래시가 가능해, OVS/Kubernetes 노드·stable 백포트 추적자가 net 패치 적용 여부를 봐야 합니다.\n\n> This leads to use-after-free if the RCU grace period passes between removal and the filling.\n\n[원문 확인](https://lore.kernel.org/stable/20260815005915.1097270-1-i.maximets@ovn.org/)\n\n**mm/migrate_device: avoid out-of-bounds writes for compound folios**\n\nmigrate_device_range()/migrate_device_pfns()가 범위 끝을 넘는 compound folio를 만나면 npages 배열 밖 PFN 슬롯을 지워 OOB write가 납니다. v2 패치는 folio가 남은 배열에 완전히 들어오지 않으면 수집을 중단합니다.\n\n영향: HMM·device migration 경로의 배열 경계 버그는 메모리 손상으로 이어질 수 있어, GPU/HMM selftest·stable 백포트 담당자가 compound folio 경계 처리를 확인해야 합니다. selftest 외 프로덕션 워크로드에서의 사용자 가시적 영향과 stable 머지 여부는 확인 필요합니다.\n\n> the loops clear all following folio entries without limiting them to the number of slots remaining in the npages-sized array, causing an out-of-bounds write.\n\n[원문 확인](https://lore.kernel.org/stable/20260817120758.669807-3-sh_def@163.com/)\n\n**ARM: imx: Fix suspend/resume crash with Clang CFI**\n\nOCRAM으로 옮긴 imx6 suspend 코드에 CFI type signature가 없어 CONFIG_CFI=y에서 indirect call이 strict CFI panic을 유발합니다. v3는 최소 __nocfi wrapper로 OCRAM 호출만 예외 처리하고 ccm_base 등 포인터를 __ro_after_init로 고정합니다.\n\n영향: Clang CFI 빌드의 i.MX6 계열 suspend/resume는 패치 없이 hang·CFI panic이 나며, __nocfi 범위를 좁혀 CFI 우회 공격면을 줄이는 stable 백포트 논의가 진행 중으로 보입니다. Sascha/Frank maintainer ack 및 stable 큐 편입 시점은 확인 필요합니다.\n\n> When CONFIG_CFI=y is active, the indirect call to imx6_suspend_in_ocram_fn triggers a strict CFI violation panic.\n\n[원문 확인](https://lore.kernel.org/stable/20260718111340.159896-1-linux@yoavmoshe.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**nvme: skip the zoned limits update if the zone info query failed**\n\nnvme_query_zone_info()가 양수 NVMe status를 반환할 때도 zoned limits 갱신이 진행되어 zone_size=0 큐가 살아남고, disk_zone_no()에서 ilog2(0) UBSAN shift-out-of-bounds가 발생합니다. v3 패치는 zi.zone_size가 0이면 limits 갱신을 건너뛰고 실패를 로그합니다.\n\n영향: Identify Namespace/Controller가 실패하는 NVMe·NVMe-oF 타깃에서 조용한 설정 오류 뒤 쓰기 I/O 경로가 UBSAN·비정상 zoned 큐로 이어질 수 있어, zoned 스토리지 운영·stable 백포트 큐에서 우선 확인이 필요합니다. stable 큐에 머지·백포트된 브랜치 여부는 확인 필요합니다.\n\n> nvme0n1: Invalid non power of two zone size (0)\n> UBSAN: shift-out-of-bounds in include/linux/blkdev.h:747:16\n> shift exponent -1 is negative\n\n[원문 확인](https://lore.kernel.org/stable/20260817175859.2966055-1-coshi036@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "medium",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Linux 7.1.8 ChangeLog",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.8",
+      "note": "changelog"
+    },
+    {
+      "title": "nvme: skip the zoned limits update if the zone info query failed",
+      "url": "https://lore.kernel.org/stable/20260817175859.2966055-1-coshi036@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "net: openvswitch: fix flow mask use-after-free on flow deletion",
+      "url": "https://lore.kernel.org/stable/20260815005915.1097270-1-i.maximets@ovn.org/",
+      "note": "thread"
+    },
+    {
+      "title": "mm/migrate_device: avoid out-of-bounds writes for compound folios",
+      "url": "https://lore.kernel.org/stable/20260817120758.669807-3-sh_def@163.com/",
+      "note": "thread"
+    },
+    {
+      "title": "mm/migrate_device changelog feedback (Andrew Morton)",
+      "url": "https://lore.kernel.org/stable/20260817112150.aa6cc927cf501d687336c0ef@linux-foundation.org/",
+      "note": "thread"
+    },
+    {
+      "title": "ARM: imx: Fix suspend/resume crash with Clang CFI",
+      "url": "https://lore.kernel.org/stable/20260718111340.159896-1-linux@yoavmoshe.com/",
+      "note": "thread"
+    },
+    {
+      "title": "i.MX6 CFI stable 백포트 ping",
+      "url": "https://lore.kernel.org/stable/2056b473-4175-4383-926d-d15b566f0dd5@yoavmoshe.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Linux 6.12.103 ChangeLog",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.12.103",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 6.18.44 ChangeLog",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.18.44",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 6.6.151 ChangeLog",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.6.151",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-17T18:55:42.070Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

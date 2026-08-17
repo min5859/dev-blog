@@ -1,0 +1,111 @@
+{
+  "id": "2026-08-18-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-08-18 amdxdna·drm atomic — GPU·AI",
+  "headline": "drm/atomic dead code 정리와 amdxdna import BO 보안·SYNC_BO 동기화 논의가 dri-devel에서 이어졌습니다.",
+  "date": "2026-08-18",
+  "summary": "prepare_signaling()의 unreachable file_priv 검사 제거 v2와 Sashiko AI가 지적한 out-fence 오류 경로 누수 가능성이 병행 논의됐습니다. amdxdna는 imported BO의 I/O 매핑 거부와 SYNC_BO·flush 정책이 maintainer 피드백을 받았습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "GPU",
+    "NPU",
+    "drm"
+  ],
+  "highlights": [
+    {
+      "title": "Sashiko AI: out-fence 오류 시 drm_pending_vblank_event 누수 가능성",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "drm/atomic UAPI·compositor·보안 백포트 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260817185754.0E7191F00A3D@smtp.kernel.org/",
+      "if": "DRM_MODE_PAGE_FLIP_EVENT 없이 OUT_FENCE_PTR만 설정해 setup_out_fence()가 실패하는 userspace 호출 경로를 다룬다면,",
+      "do": "complete_signaling()의 event 해제 조건과 prepare_signaling() 할당·정리 경로를 코드 리뷰하세요.",
+      "verify": "실제 재현·CVE 분류 여부와 maintainer 응답을 lore 스레드에서 확인하세요."
+    },
+    {
+      "title": "accel/amdxdna: imported BO의 I/O 메모리 매핑 거부",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "amdxdna·AMD XDNA NPU·dma-buf import/export 드라이버 개발자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260813164700.43960-2-taimuraz@kaitmazov.com/",
+      "if": "amdxdna에서 dma-buf import 후 vmap하는 경로를 유지보수한다면,",
+      "do": "is_iomem 검사를 amdxdna_gem_vmap()으로 옮기는 maintainer 요청과 follow-up 패치 제출 여부를 추적하세요.",
+      "verify": "nouveau·radeon exporter와 NPU 조합 재현 환경 확보 여부를 확인하세요."
+    },
+    {
+      "title": "accel/amdxdna: SYNC_BO 범위·imported flush 정책",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "amdxdna·AMD XDNA/XRT·dma-buf cache sync 스택 개발자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/1aba31b8-36a6-d3f0-8624-a603d319c54d@amd.com/",
+      "if": "npu4에서 amdgpu import 버퍼에 CPU·NPU가 함께 접근하는 워크로드를 운영한다면,",
+      "do": "imported BO flush 초입 -EOPNOTSUPP 추가 패치와 foreign dma-buf 사용 모델 변화를 검토하세요.",
+      "verify": "DMA_BUF_IOCTL_SYNC 대비 SYNC_BO 동작 차이를 동일 버퍼에서 재확인하세요."
+    },
+    {
+      "title": "drm/atomic: prepare_signaling() bogus file_priv 검사 제거",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "drm/atomic·compositor·GPU 드라이버 UAPI 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260817-drm_atomic_bogus_check-v2-1-2b9e60f32a7e@igalia.com/",
+      "if": "drm_mode_atomic_ioctl()의 page-flip 이벤트·out-fence 설정 공통 코드를 리뷰한다면,",
+      "do": "v2에서 제거하는 unreachable NULL 검사와 별도 out-fence 누수 이슈의 범위를 구분해 읽으세요.",
+      "verify": "Sashiko AI가 지적한 별도 경로에 대한 maintainer 응답 여부를 lore에서 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**Sashiko AI review: prepare_signaling() out-fence 오류 시 drm_pending_vblank_event 누수**\n\n동일 drm/atomic v2 패치 리뷰에서, 제거 대상 NULL 검사와 별개로 DRM_MODE_PAGE_FLIP_EVENT 없이 OUT_FENCE_PTR만 쓰다 setup_out_fence()가 실패하면 complete_signaling()이 event를 해제하지 않는 기존(pre-existing) 누수 가능성이 High로 표시됐습니다.\n\n영향: 악의적 userspace가 해당 실패를 반복해 커널 메모리를 고갈시킬 수 있다는 주장으로, atomic ioctl의 out-fence·이벤트 정리 경로에 대한 보안·안정성 리뷰가 필요합니다. 실제 재현·CVE 분류 여부는 확인이 필요합니다.\n\n> If userspace calls DRM_IOCTL_MODE_ATOMIC without the DRM_MODE_PAGE_FLIP_EVENT flag, but with an OUT_FENCE_PTR property pointing to an invalid memory address, prepare_signaling() allocates the event\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260817185754.0E7191F00A3D@smtp.kernel.org/)\n\n**accel/amdxdna: refuse an I/O memory mapping of an imported BO**\n\nimported BO의 dma_buf_vmap() 결과가 is_iomem이면 -EOPNOTSUPP로 거부하는 v3 패치 1/3이며, maintainer Lizhi Hou는 is_iomem 검사를 amdxdna_gem_obj_vmap()이 아니라 amdxdna_gem_vmap()으로 옮겨 모든 경로를 덮으라고 요청했습니다.\n\n영향: amdxdna가 I/O 매핑 포인터를 일반 커널 주소처럼 memset/memcpy하는 버그는 unprivileged ioctl로 도달 가능해, NPU+dma-buf import 스택의 메모리 안전·보안 경계에 직접 영향이 있습니다.\n\n> an exporter answering with an I/O mapping leaves a void __iomem pointer in abo->mem.kva, which amdxdna_cmd_set_error() memsets and memcpys through.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260813164700.43960-2-taimuraz@kaitmazov.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/atomic: remove bogus check for file_priv**\n\nprepare_signaling()에서 drm_mode_atomic_ioctl() 경로상 도달 불가능한 file_priv NULL 검사 3줄을 제거하는 v2 패치입니다. v2 커밋 메시지는 해당 분기가 실제로는 unreachable이라 이 검사에서 유발되는 누수는 없었다고 명시합니다.\n\n영향: DRM atomic UAPI의 page-flip 이벤트·out-fence 설정 경로를 다루는 공통 코드 정리로, dead code 제거와 함께 오해 소지가 있던 누수 서술을 바로잡아 drm/atomic 유지보수·리뷰 논의의 기준을 맞춥니다.\n\n> Since file_priv can never be NULL at prepare_signaling() as it is only called by drm_mode_atomic_ioctl(), remove the check.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260817-drm_atomic_bogus_check-v2-1-2b9e60f32a7e@igalia.com/)\n\n**accel/amdxdna: honour the SYNC_BO range**\n\nSYNC_BO 범위·캐시 일관성 논의에서 v3는 패치 1·3·4만 제출되고 범위별 flush(패치 5)는 dropped됐으며, Lizhi Hou는 imported BO에 대해 amdxdna_flush_bo() 초입에서 무조건 -EOPNOTSUPP를 반환하는 추가 패치를 요청했습니다.\n\n영향: legacy npu4는 비 coherent라 import된 amdgpu 버퍼에 DMA_BUF_IOCTL_SYNC가 동작하지 않고 SYNC_BO만 유효했는데, imported flush를 막으면 CPU가 함께 읽는 foreign dma-buf 사용 모델이 바뀌어 XRT·NPU 워크로드 설계에 영향을 줍니다.\n\n> On npu4, without a flush the CPU reads what the buffer held before the NPU wrote it, and the NPU reads what DRAM held before the CPU wrote it.\n\n[원문 확인](https://lore.kernel.org/dri-devel/1aba31b8-36a6-d3f0-8624-a603d319c54d@amd.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/atomic bogus file_priv check v2",
+      "url": "https://lore.kernel.org/dri-devel/20260817-drm_atomic_bogus_check-v2-1-2b9e60f32a7e@igalia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Sashiko AI review: prepare_signaling() out-fence leak",
+      "url": "https://lore.kernel.org/dri-devel/20260817185754.0E7191F00A3D@smtp.kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "amdxdna refuse I/O memory mapping of imported BO",
+      "url": "https://lore.kernel.org/dri-devel/20260813164700.43960-2-taimuraz@kaitmazov.com/",
+      "note": "thread"
+    },
+    {
+      "title": "amdxdna is_iomem check placement (maintainer feedback)",
+      "url": "https://lore.kernel.org/dri-devel/5933effe-ef28-9838-1dd5-dc904be0a3bd@amd.com/",
+      "note": "thread"
+    },
+    {
+      "title": "amdxdna SYNC_BO range and imported flush policy",
+      "url": "https://lore.kernel.org/dri-devel/1aba31b8-36a6-d3f0-8624-a603d319c54d@amd.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-17T19:08:16.969Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

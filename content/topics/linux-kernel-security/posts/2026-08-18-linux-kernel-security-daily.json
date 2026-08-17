@@ -1,0 +1,119 @@
+{
+  "id": "2026-08-18-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-08-18 SMC-Rv2 LLC 수정 — 커널 보안",
+  "headline": "SMC-Rv2 LLC 3패치는 세트 백포트가 필수이며, PXA DMA는 kmalloc_obj 회귀로 nb_desc 이중 증가가 확인됐습니다.",
+  "date": "2026-08-18",
+  "summary": "Yehyeong Lee의 SMC-Rv2 LLC 3패치 시리즈가 UAF·경계 검증·oversized v2 메시지 tail 처리를 수정했으며 8/17 maintainer 리뷰가 요청됐습니다. PXA DMA 엔진은 kmalloc_obj 전환 이후 nb_desc 이중 증가 회귀가 보고됐고, 패치 1·2만 적용 시 공유 수신 버퍼 잔여 데이터로 rkey가 삭제될 수 있습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "보안"
+  ],
+  "highlights": [
+    {
+      "title": "net/smc: SMC-Rv2 LLC UAF·OOB·oversized 메시지 수정",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "net/smc·SMC-R 운영자, stable 백포트 담당",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20260811231902.47089-1-yhlee@isslab.korea.ac.kr/",
+      "if": "IBM Z·Linux on Z 등 SMC-Rv2 RDMA 경로를 운영 중이면 LLC 처리 버그 노출 여부를 확인하세요.",
+      "do": "세 패치를 한 세트로 리뷰·백포트 대상에 포함하고, netdev/mainline 머지 여부는 확인이 필요합니다.",
+      "verify": "8/17 maintainer 리뷰 요청 스레드와 원문 3패치 시리즈를 확인하세요."
+    },
+    {
+      "title": "dmaengine: pxa: hw descriptor 이중 카운트 회귀",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "PXA/MMP DMA 드라이버 사용자, treewide kmalloc_obj 마이그레이션 추적자",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20260817-dmaengine-pxa-v1-1-850c215c1196@pengutronix.de/",
+      "if": "PXA/MMP DMA를 쓰거나 kmalloc_obj 마이그레이션 영향 범위를 추적 중이면 nb_desc 이중 증가 회귀 가능성을 점검하세요.",
+      "do": "pxad_alloc_desc() 수정 패치를 추적하고, 다른 dmaengine 드라이버에 동일 패턴이 있는지 확인이 필요합니다.",
+      "verify": "lore 스레드에서 오류 경로 nb_desc 설정과 Fixes 커밋(69050f8d6d075) 연관성을 확인하세요."
+    },
+    {
+      "title": "Linux 6.18.44: userfaultfd shadow stack 차단",
+      "priority": "중",
+      "impactType": "release",
+      "affectedAudience": "6.18 LTS 커널 운영·보안 백포트 담당",
+      "verifyLink": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.18.44",
+      "if": "6.18 LTS 기반 배포를 운영 중이면 userfaultfd+shadow stack 조합 취약점 노출 여부를 점검하세요.",
+      "do": "6.18.44에 포함된 userfaultfd·drm/xe GuC steered register 수정의 백포트 반영 시점을 추적하세요.",
+      "verify": "ChangeLog-6.18.44에서 userfaultfd shadow stack VMA 등록 차단 항목을 확인하세요."
+    },
+    {
+      "title": "Linux 6.12.103: i915 HDCP·mptcp UAF 백포트",
+      "priority": "중",
+      "impactType": "release",
+      "affectedAudience": "6.12 LTS 커널 유지보수·배포 담당",
+      "verifyLink": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.12.103",
+      "if": "6.12 LTS를 엔터프라이즈·CIP 기준선으로 쓰면 HDCP·MPTCP·GPU 관련 백포트 반영 여부를 확인하세요.",
+      "do": "6.12.103 ChangeLog의 i915 HDCP streams[] 오버플로·mptcp userspace PM UAF 수정이 배포 큐에 포함됐는지 재평가하세요.",
+      "verify": "ChangeLog-6.12.103에서 Intel Product Security 확인 HDCP 수정과 KASAN UAF 스택을 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**net/smc: fix out-of-bounds and use-after-free in SMC-Rv2 LLC processing**\n\nYehyeong Lee의 v6 3패치 시리즈가 SMC-Rv2 LLC 처리에서 smc_llc_srv_add_link() UAF, peer rkey count 미검증, oversized v2 메시지 tail 처리 부재를 수정합니다. 세 패치 모두 stable 태그가 달려 있으며 8/17 Breno Leitao가 maintainer 리뷰를 요청했습니다.\n\n영향: SMC-R은 IBM Z·Linux on Z 등 RDMA 경로에서 쓰이며, 패치 1·2만 백포트하면 공유 수신 버퍼 잔여 데이터로 잘못된 rkey 삭제가 가능해 세 패치를 한 세트로 봐야 합니다. netdev/mainline 머지 여부와 CVE 할당 여부는 확인이 필요합니다.\n\n> Patch 1 fixes a use-after-free of the LLC queue entry in smc_llc_srv_add_link(), patch 2 bounds the peer's rkey counts, and patch 3 carries the tail of an oversized v2 message in the queue entry\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20260811231902.47089-1-yhlee@isslab.korea.ac.kr/)\n\n**dmaengine: pxa: fix double counting of the hw descriptors**\n\nkmalloc_obj/kzalloc_flex 전환(69050f8d6d075) 이후 pxad_alloc_desc()가 __alloc_flex()가 이미 설정한 nb_desc를 루프에서 다시 증가시켜 실제 descriptor 수의 두 배로 기록하는 회귀를 수정합니다. 오류 경로에서는 i까지 할당된 수만 nb_desc에 남기도록 바꿉니다.\n\n영향: nb_desc가 실제보다 크면 pxad_free_desc()가 미할당 슬롯을 해제해 힙 손상·use-after-free로 이어질 수 있어, treewide kmalloc_obj 마이그레이션의 2차 보안 영향을 점검해야 합니다. 패치의 mainline 머지 여부와 다른 dmaengine 서브시스템의 동일 패턴 존재 여부는 확인이 필요합니다.\n\n> The error path has to set nb_desc to the number of descriptors allocated so far, otherwise pxad_free_desc() would free entries that were never allocated.\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20260817-dmaengine-pxa-v1-1-850c215c1196@pengutronix.de/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "high",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "net/smc: fix out-of-bounds and use-after-free in SMC-Rv2 LLC processing",
+      "url": "https://lore.kernel.org/linux-hardening/20260811231902.47089-1-yhlee@isslab.korea.ac.kr/",
+      "note": "thread"
+    },
+    {
+      "title": "SMC maintainers review request",
+      "url": "https://lore.kernel.org/linux-hardening/20260817112900.35172251@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "dmaengine: pxa: fix double counting of the hw descriptors",
+      "url": "https://lore.kernel.org/linux-hardening/20260817-dmaengine-pxa-v1-1-850c215c1196@pengutronix.de/",
+      "note": "thread"
+    },
+    {
+      "title": "Linux 6.18.44 ChangeLog",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.18.44",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 6.12.103 ChangeLog",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.12.103",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 7.1.8 ChangeLog",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.8",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 6.6.151 ChangeLog",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.6.151",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-17T18:47:27.548Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

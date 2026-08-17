@@ -1,0 +1,114 @@
+{
+  "id": "2026-08-18-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-08-18 sparx5 RT 슬립 수정 — PREEMPT_RT",
+  "headline": "sparx5/lan969x netdev v3가 MAC 테이블 atomic 슬립을 제거하고, ARM HW breakpoint·i.MX remoteproc·hrtimer 문서도 RT 경로를 정리합니다.",
+  "date": "2026-08-18",
+  "summary": "Microchip sparx5/lan969x 드라이버 v3가 ndo_set_rx_mode_async 전환으로 PREEMPT_RT에서 관측되던 sleeping-while-atomic 경로를 수정했습니다. hrtimer·HW breakpoint·imx_rproc 항목은 v2~v6 리비전과 differences.rst v4 통합 방향으로 진척이 이어졌습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "PREEMPT_RT"
+  ],
+  "highlights": [
+    {
+      "title": "sparx5/lan969x MAC 테이블 atomic 슬립 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Microchip sparx5/lan969x netdev·PREEMPT_RT 네트워크 드라이버 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260817-misc-fixes-sparx5-lan969x-v3-2-c7c7fef723a8@microchip.com/",
+      "if": "sparx5/lan969x에서 PREEMPT_RT·락 디버깅 환경으로 ip 등 RX multicast 설정 시 sleeping-while-atomic이 재현된다면",
+      "do": "v3 시리즈의 ndo_set_rx_mode_async 전환과 VCAP debugfs 포트 이름 정정 패치를 추적하고 netdev mainline merge 일정을 확인하세요",
+      "verify": "lore 스레드에서 sparx5_set_rx_mode()의 mutex·readx_poll_timeout() 슬립 제거와 프로세스 컨텍스트 MAC 테이블 갱신 경로를 원문으로 대조하세요"
+    },
+    {
+      "title": "ARM64 HW breakpoint task_work 지연 v2",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "ARM/ARM64/LoongArch PREEMPT_RT·perf HW breakpoint·ptrace 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260814085118.OPEA_Ssn@linutronix.de/",
+      "if": "ARM64 PREEMPT_RT에서 perf HW breakpoint 사용 시 sleeping-while-atomic 경고가 발생한다면",
+      "do": "v2의 perf_arch_hwbp_notify()와 xchg 기반 중복 task_work_add() 방지가 리뷰에서 충분한지 추적하고 mainline perf/core 반영 일정을 확인하세요",
+      "verify": "overflow 콜백이 userland 복귀까지 task_work_add()로 지연되는지 lore 원문을 확인하세요"
+    },
+    {
+      "title": "imx_rproc mbox 콜백 직접 호출 v6",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "i.MX remoteproc·rpmsg·PREEMPT_RT 임베디드 플랫폼 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260813-imx_mbox_rproc-v6-1-6903a93b0456@linutronix.de/",
+      "if": "i.MX PREEMPT_RT 플랫폼에서 rpmsg 완료 지연이 busy 시스템에서 커진다면",
+      "do": "imx-mailbox threaded IRQ handler 변경과의 merge 순서·의존성을 확인하고 v6 패치의 imx93 rpmsg-tty 테스트 결과를 추적하세요",
+      "verify": "workqueue·kworker 경유 제거 후 mbox 콜백에서 imx_rproc_notified_idr_cb()가 직접 호출되는지 lore 스레드를 확인하세요"
+    },
+    {
+      "title": "hrtimer 문서 differences.rst v4 통합",
+      "priority": "중",
+      "impactType": "project",
+      "affectedAudience": "PREEMPT_RT 타이머·나노슬립 경로를 다루는 커널·RT 애플리케이션 개발자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260814161240.33774-1-haohlliang@gmail.com/",
+      "if": "clock_nanosleep 등 sleeper 경로와 기본 ktimers/%u softirq 모델의 wakeup 지연이 혼동된다면",
+      "do": "differences.rst v4가 hrtimers.rst v3 절을 제거하고 differences.rst만 확장하는 최종 merge 방향을 추적하세요",
+      "verify": "hrtimer_setup_sleeper_on_stack()의 RT/DL HARD 경로와 ktimers/%u 스레드 이름 정정이 differences.rst v4에 반영됐는지 원문을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**net: sparx5: misc fixes for sparx5 and lan969x**\n\nv3 시리즈는 sparx5/lan969x 공유 VCAP debugfs 이름을 안정적인 포트 번호(p%u)로 바꾸고, sparx5_set_rx_mode()를 ndo_set_rx_mode_async로 전환해 MAC 테이블 접근 중 mutex·readx_poll_timeout() 슬립이 원자 컨텍스트에서 발생하던 경로를 제거합니다.\n\n영향: PREEMPT_RT·락 디버깅 환경에서 ip 등으로 RX multicast 설정 시 sleeping-while-atomic이 실제로 관측됐고, lan969x/sparx5 네트워크 스택을 RT로 운용하는 플랫폼은 이 수정 없이 MAC 학습 경로가 불안정합니다. netdev·mainline merge 일정은 확인이 필요합니다.\n\n> A mutex may block, which is not allowed from atomic context.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260817-misc-fixes-sparx5-lan969x-v3-2-c7c7fef723a8@microchip.com/)\n\n**ARM, ARM64, LONGARCH: Delay HW BP notification to task_work()**\n\nARM64 PREEMPT_RT에서 HW breakpoint perf overflow 콜백이 원자 컨텍스트에서 sighand_struct::siglock(sleeping lock)을 잡아 sleeping-while-atomic 경고가 납니다. v2는 perf_arch_hwbp_notify()로 SIGTRAP 전달을 task_work_add()까지 지연하고, xchg 기반 플래그로 중복 task_work_add()를 방지하며 ARM·ARM64·LoongArch ptrace 경로를 변환합니다.\n\n영향: PREEMPT_RT에서 perf HW breakpoint·ptrace 디버깅 경로는 원자 컨텍스트 제약과 충돌하기 쉬워, ARM 계열 RT 사용자·perf maintainer가 회귀 경고 없는 breakpoint 동작을 추적해야 합니다. v2 xchg 기반 중복 방지가 리뷰에서 충분한지와 mainline perf/core 반영 일정은 확인이 필요합니다.\n\n> Delay the event callback until the return to userland. Add perf_arch_hwbp_notify(), a generic perf callback which delayes the actual callback invocation to task_work_add() callback.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260814085118.OPEA_Ssn@linutronix.de/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**remoteproc: imx_rproc: Invoke the callback directly**\n\nimx-mailbox 드라이버가 콜백을 threaded IRQ handler에서 호출하게 되면서 preemptible context가 보장되어, imx_rproc의 workqueue·kworker 경유를 제거하고 imx_rproc_notified_idr_cb()를 mbox 콜백에서 직접 호출합니다(v6, imx93 rpmsg-tty로 테스트, Reviewed-by 포함).\n\n영향: PREEMPT_RT에서 kworker로 내리면 threaded handler의 높은 RT 우선순위가 잃혀 busy 시스템에서 rpmsg 완료 지연이 커질 수 있어, i.MX remoteproc·rpmsg RT latency를 추적하는 팀에 직접 영향이 있습니다. imx-mailbox threaded handler 변경과의 merge 순서·의존성은 확인이 필요합니다.\n\n> The imx-mailbox driver moved the callback invocation into the threaded IRQ handler. This means the callback is invoked in preemptible context and there is no need to schedule the kworker.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260813-imx_mbox_rproc-v6-1-6903a93b0456@linutronix.de/)\n\n**docs: real-time: mention the hrtimer sleeper HARD path**\n\nDocumentation/core-api/real-time/differences.rst Timers 절 v4에 hrtimer_setup_sleeper_on_stack()이 RT/DL 태스크에서 HRTIMER_MODE_SOFT 미요청 시 HARD로 표시돼 hardirq에서 wakeup한다는 sleeper 예외를 추가하고, 스레드 이름을 ktimersd에서 ktimers/%u로 정정합니다. 리뷰 반영으로 hrtimers.rst 절은 제거하고 differences.rst만 확장합니다.\n\n영향: clock_nanosleep 등 sleeper 경로는 기본 ktimers/%u softirq 모델과 다른 HARD 만료 경로를 타므로, PREEMPT_RT 타이머 문서를 읽는 RT 개발자가 wakeup 지연 원인을 구분하는 데 필요합니다. hrtimers.rst v3와 differences.rst v4 중 최종 merge 대상은 확인이 필요합니다.\n\n> hrtimer_setup_sleeper_on_stack() marks the timer HRTIMER_MODE_HARD when the current task is RT or DEADLINE and HRTIMER_MODE_SOFT was not requested, so the wakeup runs in hard interrupt context.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260814161240.33774-1-haohlliang@gmail.com/)\n\n**docs: timers: hrtimers: clarify expiry modes and ktimersd on PREEMPT_RT**\n\nDocumentation/timers/hrtimers.rst v3에 PREEMPT_RT 만료 모드 절을 추가합니다. 비-HARD hrtimer는 ktimers/%u에서 최저 SCHED_FIFO로 만료되며 arming 태스크 우선순위를 상속하지 않고, hrtimer_setup_sleeper_on_stack()은 RT/DL에서 HARD로 표시돼 ktimers/%u를 거치지 않는다고 명시합니다. 코드 변경 없음.\n\n영향: PREEMPT_RT에서 타이머 콜백 우선순위·만료 경로를 잘못 가정하면 RT 지연·우선순위 역전 디버깅이 어려워집니다. differences.rst v4가 hrtimers.rst 절을 제거·통합한 뒤 v3 패치의 merge 방향은 확인이 필요합니다.\n\n> A SCHED_FIFO task running at priority 99 that starts an unmarked timer still expires on ktimers/%u (lowest SCHED_FIFO priority), not at priority 99.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260813145746.26612-1-haohlliang@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "net: sparx5: misc fixes for sparx5 and lan969x v3-2",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260817-misc-fixes-sparx5-lan969x-v3-2-c7c7fef723a8@microchip.com/",
+      "note": "thread"
+    },
+    {
+      "title": "net: sparx5: misc fixes for sparx5 and lan969x v3-0",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260817-misc-fixes-sparx5-lan969x-v3-0-c7c7fef723a8@microchip.com/",
+      "note": "thread"
+    },
+    {
+      "title": "docs: timers: hrtimers: clarify expiry modes and ktimersd on PREEMPT_RT",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260813145746.26612-1-haohlliang@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "ARM, ARM64, LONGARCH: Delay HW BP notification to task_work()",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260814085118.OPEA_Ssn@linutronix.de/",
+      "note": "thread"
+    },
+    {
+      "title": "docs: real-time: mention the hrtimer sleeper HARD path",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260814161240.33774-1-haohlliang@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "remoteproc: imx_rproc: Invoke the callback directly v6",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260813-imx_mbox_rproc-v6-1-6903a93b0456@linutronix.de/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-17T19:00:25.399Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

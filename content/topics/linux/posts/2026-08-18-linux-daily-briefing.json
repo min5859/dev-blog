@@ -1,0 +1,141 @@
+{
+  "id": "2026-08-18-linux-daily-briefing",
+  "topic": "linux",
+  "title": "2026-08-18 7.2 정식 출시 — 리눅스 개발",
+  "headline": "메인라인 7.2가 RC에서 정식으로 전환됐고, NVMe ZNS 회귀 수정과 AMD XDNA 보안 패치가 리뷰 중입니다.",
+  "date": "2026-08-18",
+  "summary": "리눅스 7.2가 Baby Opossum Posse 코드명으로 정식 릴리스됐습니다. NVMe zone info 쿼리 실패 회귀와 AMD XDNA dma-buf 매핑 문제가 메일링 리스트에서 논의 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "릴리스",
+    "NVMe",
+    "보안"
+  ],
+  "highlights": [
+    {
+      "title": "Linux 7.2 mainline 정식 릴리스",
+      "priority": "상",
+      "impactType": "release",
+      "affectedAudience": "메인라인 커널을 추적하는 배포 담당자, 벤더 QA, 서브시스템 개발자",
+      "verifyLink": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tag/?h=v7.2",
+      "if": "메인라인 커널을 추적하는 배포·QA 담당자",
+      "do": "CI와 벤더 QA 기준선을 7.2 GA로 옮기세요",
+      "verify": "git.kernel.org v7.2 태그와 Makefile EXTRAVERSION 변경을 확인하세요"
+    },
+    {
+      "title": "NVMe ZNS zone info 쿼리 실패 회귀",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "NVMe/ZNS 드라이버·블록 레이어 개발자, stable 커널 배포 담당자",
+      "verifyLink": "https://lore.kernel.org/lkml/20260817175859.2966055-1-coshi036@gmail.com/",
+      "if": "ZNS NVMe·NVMe-oF를 운영하는 스토리지 담당자",
+      "do": "zone info 쿼리 실패 시 zoned 큐 오동작 경로를 점검하세요",
+      "verify": "lore 스레드와 c85c9ab926a5 회귀 원인 커밋을 확인하세요"
+    },
+    {
+      "title": "amdxdna import BO I/O 메모리 매핑 거부",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "AMD XDNA·DRM dma-buf 개발자, 가속기 드라이버 보안 리뷰어",
+      "verifyLink": "https://lore.kernel.org/lkml/5933effe-ef28-9838-1dd5-dc904be0a3bd@amd.com/",
+      "if": "AMD XDNA·DRM dma-buf를 다루는 개발자",
+      "do": "import BO의 I/O 메모리 매핑 거부 패치 진행을 추적하세요",
+      "verify": "AMD 메일 스레드에서 is_iomem 검사 위치 변경을 확인하세요"
+    },
+    {
+      "title": "mv88e6xxx DSA TX 큐 설계 리뷰",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "DSA 스위치 드라이버·traffic control 개발자",
+      "verifyLink": "https://lore.kernel.org/lkml/20260817105024.65be6d55@kernel.org/",
+      "if": "DSA 스위치·traffic control 개발자",
+      "do": "다중 TX 큐 대신 PRIO qdisc 오프로드 방향을 염두에 두세요",
+      "verify": "netdev maintainer 리뷰 스레드에서 설계 의견을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.2 mainline**\n\nLinus Torvalds가 2026-08-16에 v7.2 태그를 달았고, Makefile의 EXTRAVERSION가 -rc7에서 빈 문자열로 바뀌며 7.2.0 정식 릴리스가 확정됐다. 릴리스 코드명은 Baby Opossum Posse다.\n\n영향: 메인라인 기준선이 RC에서 GA로 넘어갔으므로, 배포·벤더·CI가 새 기능·회귀 기준점을 7.2로 옮길 시점이다.\n\n> tag date\t2026-08-16 14:32:26 -0700\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tag/?h=v7.2)\n\n**Linux next-20260817 linux-next**\n\nMark Brown이 2026-08-17 18:07:44 +0100에 linux-next 통합 트리에 next-20260817 태그를 달았다. 이 스냅샷은 다음 머지 윈도우 전 서브시스템 패치 통합·회귀 테스트용 기준점이다.\n\n영향: linux-next를 따라가는 개발자와 CI는 이 태그에서 서브시스템 간 상호작용 회귀를 조기에 잡을 수 있다.\n\n> tag date\t2026-08-17 18:07:44 +0100\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/next/linux-next.git/tag/?h=next-20260817)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**nvme: skip the zoned limits update if the zone info query failed**\n\nChao Shi의 v3 패치는 nvme_query_zone_info()가 양수 NVMe status를 반환할 때 zone info가 0으로 남아 zoned 큐가 chunk_sectors=0으로 커밋되는 회귀를 막는다. zi.zone_size가 0이면 zoned limits 갱신을 건너뛰고 경고를 남기며, revalidation 시에는 이전 zone geometry를 유지한다. Fixes: c85c9ab926a5(\"nvme: split nvme_update_zone_info\").\n\n영향: ZNS NVMe·NVMe-oF 타깃에서 zone info 쿼리 실패 시 UBSAN shift-out-of-bounds와 I/O 오동작으로 이어질 수 있어, 스토리지 스택과 stable 백포트 대상이다. v3 패치의 mainline·stable 머지 여부는 아직 확인되지 않음.\n\n> I/O keeps being submitted to a zoned queue with a zero zone size and\ndisk_zone_no() shifts by ilog2(0):\n\n  UBSAN: shift-out-of-bounds in include/linux/blkdev.h:747:16\n\n[원문 확인](https://lore.kernel.org/lkml/20260817175859.2966055-1-coshi036@gmail.com/)\n\n**accel/amdxdna: refuse an I/O memory mapping of an imported BO**\n\nTaimuraz Kaitmazov 패치(v3)는 amdxdna가 import된 dma-buf를 vmap할 때 map->is_iomem이면 -EOPNOTSUPP로 거부한다. VRAM resident TTM exporter(nouveau·radeon 등)가 I/O mapping을 반환하면 abo->mem.kva에 __iomem 포인터가 들어가 unprivileged ioctl 경로에서 memset/memcpy가 깨질 수 있다. AMD maintainer Lizhi Hou는 is_iomem 검사를 amdxdna_gem_vmap()으로 옮겨 모든 경로를 덮으라고 답했다. maintainer 피드백 반영 후 v4 제출·머지 일정은 미확정.\n\n영향: AMD XDNA NPU와 타 GPU dma-buf 공유 시 커널 메모리 접근 버그·잠재적 보안 이슈로 이어질 수 있어 accel/DRM 통합 환경에서 우선 검토 대상이다.\n\n> Refuse the mapping. vmw_gem_vmap() does the same; unlike that one this\npath is reachable from an unprivileged ioctl, so it does not warn.\n\n[원문 확인](https://lore.kernel.org/lkml/5933effe-ef28-9838-1dd5-dc904be0a3bd@amd.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**net: dsa: mv88e6xxx: use the hw tx queues**\n\nCedric Jehasse의 mv88e6xxx DSA 하드웨어 TX 큐 패치(v8)에 대해 Jakub Kicinski(netdev maintainer)가 2026-08-17에 설계 반대 의견을 냈다. 스택에 다중 TX 큐를 노출하는 대신 mlxsw처럼 PRIO 루트 qdisc 오프로드를 쓰고 rate limiter를 PRIO 자식으로 붙이라고 지적했다. 패치 시리즈가 maintainer 피드백 반영 후 재제출·머지될지는 미확정.\n\n영향: Marvell DSA 스위치 QoS/CBS 구현 방향이 maintainer 리뷰에서 바뀔 수 있어, DSA·tc 개발자는 패치 시리즈 재설계 가능성을 염두에 둬야 한다.\n\n> Pretending that a DSA device has multiple Tx queues _from the stack_\nmakes no sense. You should be offloading PRIO as the root qdisc,\nlike mlxsw does.\n\n[원문 확인](https://lore.kernel.org/lkml/20260817105024.65be6d55@kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "Linux 7.1.8 stable과 Linux 6.12.103 longterm 태그는 이전 수집과 동일하며 추가 진척이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Linux v7.2 tag",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tag/?h=v7.2",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux v7.2 release commit",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?h=v7.2",
+      "note": "commit"
+    },
+    {
+      "title": "Linux v7.1.8 stable tag",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tag/?h=v7.1.8",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 7.1.y v7.1.7..v7.1.8 changelog",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/log/?h=linux-7.1.y&qt=range&q=v7.1.7..v7.1.8",
+      "note": "changelog"
+    },
+    {
+      "title": "linux-next next-20260817 tag",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/next/linux-next.git/tag/?h=next-20260817",
+      "note": "changelog"
+    },
+    {
+      "title": "mv88e6xxx DSA TX queues review thread",
+      "url": "https://lore.kernel.org/lkml/20260817105024.65be6d55@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "NVMe zoned limits regression fix thread",
+      "url": "https://lore.kernel.org/lkml/20260817175859.2966055-1-coshi036@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "nvme: split nvme_update_zone_info",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=c85c9ab926a5",
+      "note": "commit"
+    },
+    {
+      "title": "amdxdna import BO I/O mapping fix thread",
+      "url": "https://lore.kernel.org/lkml/5933effe-ef28-9838-1dd5-dc904be0a3bd@amd.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Linux v6.12.103 longterm tag",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tag/?h=v6.12.103",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 6.12.y v6.12.102..v6.12.103 changelog",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/log/?h=linux-6.12.y&qt=range&q=v6.12.102..v6.12.103",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-17T18:13:04.001Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-newsletter-from-dossier-ko.md"
+  }
+}
