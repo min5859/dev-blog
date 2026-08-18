@@ -1,0 +1,113 @@
+{
+  "id": "2026-08-19-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-08-19 KUnit·objtool — linux-toolchain",
+  "headline": "Rust configfs 등록 실패 패닉 수정, KUnit Kconfig·lockdep 강화, inline helper trap 복원, Kbuild 7.3 pull 진행",
+  "date": "2026-08-19",
+  "summary": "Rust for Linux에서 configfs 등록 실패 시 패닉 버그 수정, KUnit Kconfig 강제·lockdep/tainting 실패 옵션, inline helper trap 복원 패치가 올라왔습니다. Kbuild/Kconfig 7.3 pull과 DRM panic helper Kconfig 의존성 경고도 함께 추적해야 합니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "rust: configfs: skip unregister after failed registration",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Rust configfs 바인딩·Subsystem 초기화 경로 유지보수자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260818-fix-rust-configfs-registration-state-v1-v2-1-9acedd3070f7@younes.io/",
+      "if": "중복 이름으로 configfs Subsystem 등록이 실패하는 초기화 경로를 유지·테스트하는 경우",
+      "do": "Younes Akhouayri v2 패치의 등록 순서 변경과 실패 시 mutex destroy 경로를 리뷰·추적하세요",
+      "verify": "lore 스레드에서 -EEXIST 시 ci_dentry NULL 역참조 패닉 재현 여부와 Fixes: 446cafc295bf stable 백포트 논의를 확인하세요"
+    },
+    {
+      "title": "kbuild: rust: preserve unreachable traps with inline helpers",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "CONFIG_RUST_INLINE_HELPERS·Rust 모듈 objtool 검증 담당",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20260816133233.197500-1-ojeda@kernel.org/",
+      "if": "CONFIG_RUST_INLINE_HELPERS 빌드에서 objtool fallthrough 경고가 보이는 경우",
+      "do": "Miguel Ojeda 패치의 trap-unreachable·no-trap-after-noreturn Clang 옵션 적용을 빌드에 반영해 테스트하세요",
+      "verify": "W=1·objtool CI에서 Rust enum 패딩 경로 fallthrough 경고가 사라졌는지 lore 스레드와 빌드 로그로 확인하세요"
+    },
+    {
+      "title": "rust: kunit: enforce test configurability",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "Rust KUnit·nova-core 테스트 작성·유지보수자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260818152324.587932-1-ynorov@nvidia.com/",
+      "if": "randconfig·모듈 빌드에 Rust KUnit 스위트가 Kconfig 없이 항상 포함되는 경우",
+      "do": "Yury Norov 시리즈의 kunit_tests 매크로 #[cfg] 강제와 Nova Core 전용 Kconfig 옵션 도입을 적용 방향으로 검토하세요",
+      "verify": "Nova continuation 스위트 등 매크로만 쓰던 스위트가 Kconfig로 게이트되는지 lore 스레드를 확인하세요"
+    },
+    {
+      "title": "rust: kunit: add optional assertions to catch taint and lockdep warnings",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "Rust KUnit·lockdep/tainting 검증을 쓰는 테스트 작성자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260818-lockdep-kunit-v1-0-66ceb1a272e3@gmail.com/",
+      "if": "KUnit에서 lockdep·TAINT_WARN 경고가 조용히 지나가 Rust 바인딩 회귀를 놓칠 수 있는 경우",
+      "do": "Malte Wechter 패치의 lockdep·TAINT_WARN 실패 Kconfig 옵션을 테스트 파이프라인에 검토·적용하세요",
+      "verify": "동시성 관련 경고 subset이 KUnit 실패로 승격되는지 lore 스레드에서 옵션 기본값·Norov 매크로 변경과의 통합 순서를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Kbuild and Kconfig updates for 7.3**\n\nNicolas Schier의 v7.3 GIT PULL은 kbuild-7.3-1 태그로 모듈 링크 --force-group-allocation, UAPI __ASSEMBLER__ 정규화, modpost 로깅 정리, link-vmlinux.sh 3-pass 감지, make tags Rust 소스 지원·바이너리 제외, subdir-rustflags-y 초기값, modules.builtin 타깃 정리 등을 Linus에게 제안합니다. Linus 머지 여부·시점은 아직 확인 필요합니다.\n\n영향: 7.3에 들어가는 Kbuild/Kconfig 변경은 Rust 빌드·모듈 링크·심볼 태깅 워크플로에 직접 영향을 줍니다. -next 여러 사이클 무문제라고 하지만 머지 후 distro·CI 재검증이 필요합니다.\n\n> please pull these changes to Kbuild and Kconfig for v7.3. All changes have been in -next for several cycles without reported problems.\n\n> Use --force-group-allocation when linking modules. Have the linker resolve the COMDAT groups and place their members as regular sections instead of possibly leaving multiple copies.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/aoC62sXUrC5okGsd@levanger/)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**rust: configfs: skip unregister after failed registration**\n\nYounes Akhouayri v2 패치는 configfs_register_subsystem()을 try_pin_init! 끝으로 옮기고, 등록 실패 시 su_mutex를 destroy한 뒤 에러를 반환합니다. 등록 전에 Subsystem이 drop되며 PinnedDrop이 configfs_unregister_subsystem()을 호출하던 경로를 제거합니다.\n\n영향: 중복 이름 등록(-EEXIST) 시 ci_dentry가 NULL인 상태에서 unregister가 NULL 역참조로 패닉하는 버그를 막습니다. Rust configfs 바인딩을 쓰는 드라이버·서브시스템 개발자는 머지 전 이 수정을 추적해야 합니다.\n\n> Registering a duplicate name returns -EEXIST before ci_dentry is set. configfs_unregister_subsystem() dereferences ci_dentry, causing a NULL pointer dereference and kernel panic.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260818-fix-rust-configfs-registration-state-v1-v2-1-9acedd3070f7@younes.io/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**rust: kunit: enforce test configurability**\n\nYury Norov 2패치 시리즈는 Nova Core 전용 KUnit Kconfig 옵션을 추가하고, kunit_tests 매크로가 대응 #[cfg]를 강제 적용하게 합니다. Nova continuation 스위트 등 매크로만 쓰던 스위트도 Kconfig로 게이트합니다.\n\n영향: Rust KUnit 스위트가 Kconfig 없이 빌드에 묶이면 randconfig·모듈 빌드에서 불필요한 테스트가 항상 포함됩니다. 매크로 수준 강제는 Rust 테스트 인프라 일관성의 기준점입니다.\n\n> Make every Rust KUnit test suite require the Kconfig option that controls it, and let the `kunit_tests` macro apply the corresponding `#[cfg]` attribute.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260818152324.587932-1-ynorov@nvidia.com/)\n\n**rust: kunit: add optional assertions to catch taint and lockdep warnings**\n\nMalte Wechter 2패치는 lib/kunit/Kconfig에 lockdep 경고·TAINT_WARN 시 KUnit 실패를 켜는 옵션을 추가하고, rust/macros/kunit.rs에 해당 검사를 넣습니다.\n\n영향: 동시성·lockdep 경고가 KUnit에서 조용히 지나가면 Rust 바인딩 회귀를 놓칩니다. 선택적 assertion은 C KUnit의 엄격 모드와 맞춰 Rust 테스트 신뢰도를 올립니다.\n\n> Add configs that enable extra assertions to be emitted to KUnit test cases. This makes a subset of concurrency related warnings fail unit test cases, and not stay as silent warnings.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260818-lockdep-kunit-v1-0-66ceb1a272e3@gmail.com/)\n\n**kbuild: rust: preserve unreachable traps with inline helpers**\n\nMiguel Ojeda 패치는 CONFIG_RUST_INLINE_HELPERS 빌드에서 Clang 최종 codegen에 -mllvm -trap-unreachable와 -mllvm -no-trap-after-noreturn를 넘겨 rustc의 unreachable trap 동작을 복원합니다. Makefile·rust/Makefile·scripts/Makefile.build의 Clang 호출에 CC_FLAGS_RUST_INLINE_HELPERS를 적용합니다.\n\n영향: inline helper 경로에서 trap이 사라지면 objtool이 Rust enum 패딩을 따라 다음 함수로 fallthrough 경고를 냅니다. Nova cmdq 등 inline helper 사용자의 W=1·objtool CI가 깨질 수 있습니다.\n\n> With inline helpers, Clang performs code generation from the linked bitcode instead, so request the same behavior explicitly. Otherwise `objtool` may follow an impossible Rust path into the next funct\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20260816133233.197500-1-ojeda@kernel.org/)\n\n**drm/panic: Move panic display code into helper library**\n\nThomas Zimmermann 12패치 시리즈가 panic 표시 코드를 DRM_PANIC_HELPER로 분리하고 DRM_KMS_HELPER가 DRM_PANIC 시 select DRM_PANIC_HELPER를 추가합니다. Randy Dunlap은 DRM_PANIC_HELPER가 DRM_TTM에 의존하는데 DRM_KMS_HELPER에 동일 의존이 없어 unmet direct dependencies 경고가 난다고 지적했습니다.\n\n영향: DRM_PANIC_HELPER는 TTM에 묶여 있어 TTM 비활성 빌드에서 Kconfig 의존성 경고가 뜹니다. Kconfig 정리 없이 머지하면 randconfig·warn-on-unmet 경고가 새로 깨질 수 있습니다.\n\n> but DRM_PANIC_HELPER depends on DRM_TTM so DRM_KMS_HELPER should also depend on DRM_TTM. Otherwise: WARNING: unmet direct dependencies detected for DRM_PANIC_HELPER\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/916c4bd5-c73f-466e-8e9b-aee9d4d7d742@infradead.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "rust: configfs: skip unregister after failed registration",
+      "url": "https://lore.kernel.org/rust-for-linux/20260818-fix-rust-configfs-registration-state-v1-v2-1-9acedd3070f7@younes.io/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: kunit: enforce test configurability",
+      "url": "https://lore.kernel.org/rust-for-linux/20260818152324.587932-1-ynorov@nvidia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: kunit: add optional assertions to catch taint and lockdep warnings",
+      "url": "https://lore.kernel.org/rust-for-linux/20260818-lockdep-kunit-v1-0-66ceb1a272e3@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "kbuild: rust: preserve unreachable traps with inline helpers",
+      "url": "https://lore.kernel.org/linux-kbuild/20260816133233.197500-1-ojeda@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "Kbuild and Kconfig updates for 7.3",
+      "url": "https://lore.kernel.org/linux-kbuild/aoC62sXUrC5okGsd@levanger/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/panic: Move panic display code into helper library",
+      "url": "https://lore.kernel.org/rust-for-linux/916c4bd5-c73f-466e-8e9b-aee9d4d7d742@infradead.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-18T18:41:19.534Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,122 @@
+{
+  "id": "2026-08-19-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-08-19 XDP ZC 메모리 오염 — Perf/RT",
+  "headline": "AF_XDP zero-copy·cpumap 조합에서 skb_shared_info 침범과 KASAN 패닉이 재현되고, stmmac AF_XDP TX ring 정합성 논쟁이 이어집니다.",
+  "date": "2026-08-19",
+  "summary": "xdp_convert_zc_to_xdp_frame()의 headroom·크기 검사 버그와 bpf_sock_from_file NULL 역참조가 lore에 올라왔습니다. stmmac taprio queueMaxSDU 검사 제거안은 maintainer 리뷰에서 xsk_tx_completed() 대안과 EST HLBF 재발 가능성이 질문되었습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "PREEMPT_RT",
+    "AF_XDP",
+    "BPF",
+    "XDP"
+  ],
+  "highlights": [
+    {
+      "title": "xdp: AF_XDP zero-copy 프레임 레이아웃 수정",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "AF_XDP zero-copy·BPF cpumap·XDP redirect 경로 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260818154516.793517-1-bestswngs@gmail.com/",
+      "if": "AF_XDP zero-copy 패킷을 cpumap 리다이렉트·GRO 경로로 처리하는 스택을 운용하는 경우",
+      "do": "stable@vger.kernel.org Cc 포함 백포트 대상 브랜치를 lore 스레드에서 추적하세요",
+      "verify": "cpumap kthread GRO 경로에서 KASAN slab-out-of-bounds·panic_on_warn이 재현되지 않는지 확인하세요"
+    },
+    {
+      "title": "bpf: bpf_sock_from_file NULL 역참조 수정",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "eBPF tracing·bpf_sock_from_file 헬퍼 사용자·네트워크 BPF 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260818174253.492196-1-s.mahnur.a@gmail.com/",
+      "if": "fentry/fexit 추적을 __mmap_region·file_map_prot_check 등 file 경로에 붙이는 경우",
+      "do": "NULL file 검사 후 sock_from_file()을 호출하는 패치 merge 일정을 lore에서 확인하세요",
+      "verify": "KASAN null-ptr-deref가 fentry/fexit 부착 시 재현되지 않는지 테스트하세요"
+    },
+    {
+      "title": "net: stmmac AF_XDP ZC TX queueMaxSDU 검사 논쟁",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "stmmac·AF_XDP zero-copy·tc-taprio TSN 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260818162442.3980697-1-kuba@kernel.org/",
+      "if": "stmmac에서 AF_XDP zero-copy TX와 taprio queueMaxSDU 오프로드를 함께 쓰는 경우",
+      "do": "검사 제거 대신 xsk_tx_completed()로 completion 슬롯을 반환하는 대안이 maintainer 선호인지 스레드를 추적하세요",
+      "verify": "EST-gated queue에서 oversized frame 시 MTL_EST_STATUS.HLBF와 ring 불균형이 재발하지 않는지 확인하세요"
+    },
+    {
+      "title": "net: sparx5/lan969x RT sleeping-while-atomic 수정",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "Microchip sparx5/lan969x netdev·PREEMPT_RT 네트워크 드라이버 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260817-misc-fixes-sparx5-lan969x-v3-2-c7c7fef723a8@microchip.com/",
+      "if": "CONFIG_DEBUG_ATOMIC_SLEEP로 sparx5/lan969x에서 ip 등 RX multicast 설정을 테스트하는 경우",
+      "do": "v3 시리즈의 ndo_set_rx_mode_async 전환과 netdev mainline merge 일정을 추적하세요",
+      "verify": "sparx5_set_rx_mode() 경로에서 mutex·readx_poll_timeout() 슬립이 원자 컨텍스트에서 호출되지 않는지 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**xdp: fix zero-copy frame layout**\n\nxdp_convert_zc_to_xdp_frame()가 order-0 페이지 복제 시 SKB_WITH_OVERHEAD(PAGE_SIZE) 한도와 메타데이터 길이를 headroom에 반영하지 않아, AF_XDP zero-copy 패킷이 cpumap 리다이렉트·GRO 경로에서 skb_shared_info 영역을 침범하거나 페이지 밖으로 나가 KASAN slab-out-of-bounds·패닉을 유발합니다. 패치는 크기 검사를 SKB_WITH_OVERHEAD(PAGE_SIZE)로 제한하고 headroom에 metasize를 기록합니다.\n\n영향: AF_XDP zero-copy와 BPF cpumap를 조합한 고성능 패킷 처리 경로에서 메모리 오염·패닉이 재현됐으므로, XDP/AF_XDP 성능 스택을 RT·프로덕션에서 운용하는 엔지니어는 stable 백포트 여부를 추적해야 합니다.\n\n> An AF_XDP zero-copy packet redirected through cpumap can therefore make the skb overlap skb_shared_info or place it beyond the allocated page.\n\n[원문 확인](https://lore.kernel.org/bpf/20260818154516.793517-1-bestswngs@gmail.com/)\n\n**bpf: Fix NULL pointer dereference in bpf_sock_from_file**\n\nbpf_sock_from_file 헬퍼가 file 포인터 NULL 검사 없이 sock_from_file()을 호출합니다. __mmap_region·file_map_prot_check 등에 fentry/fexit 추적 프로그램을 붙이면 컨텍스트에서 NULL file이 전달되어 KASAN null-ptr-deref가 발생하므로, NULL이면 0을 반환하는 최소 수정을 제안합니다.\n\n영향: eBPF tracing이 네트워크 외 file 경로까지 확장될 때 헬퍼 안전성은 프로그램 크래시·감사 실패로 직결되며, RT 환경에서 tracing·네트워크 스택을 동시에 쓰는 팀도 영향을 받습니다.\n\n> KASAN detects a null-ptr-deref when eBPF tracing fentry/fexit programs are attached to points such as __mmap_region and file_map_prot_check kernel functions.\n\n[원문 확인](https://lore.kernel.org/bpf/20260818174253.492196-1-s.mahnur.a@gmail.com/)\n\n**net: sparx5: misc fixes for sparx5 and lan969x**\n\nv3 2패치 시리즈는 sparx5/lan969x VCAP debugfs 이름을 netdev 등록 전 (unnamed net_device) 충돌을 피해 하드웨어 포트 번호 p%u로 바꾸고, sparx5_set_rx_mode()를 ndo_set_rx_mode_async로 옮겨 netif_addr_lock_bh 원자 컨텍스트에서 mutex·readx_poll_timeout() 슬립을 제거합니다.\n\n영향: CONFIG_DEBUG_ATOMIC_SLEEP 등 RT 디버깅 설정에서 ip 등으로 RX multicast 설정 시 sleeping-while-atomic이 실제 관측됐고, lan969x/sparx5를 PREEMPT_RT로 운용하는 플랫폼은 MAC 학습 경로가 불안정합니다.\n\n> BUG: sleeping function called from invalid context at kernel/locking/mutex.c:591 ... sparx5_mact_learn\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260817-misc-fixes-sparx5-lan969x-v3-2-c7c7fef723a8@microchip.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**[Intel-wired-lan] [PATCH net v2 3/3] net: stmmac: skip queueMaxSDU check for AF_XDP**\n\nStanislav Fomichev 패치는 stmmac AF_XDP zero-copy TX에서 queueMaxSDU 길이 검사를 제거합니다. xsk_tx_peek_desc()가 completion ring 슬롯을 예약한 뒤 continue만 하면 완료가 안 돼 ring이 불균형해지므로 검사를 없애고, AF_XDP ZC가 qdisc를 우회한다는 가정을 따릅니다. Jakub Kicinski 리뷰는 xsk_tx_completed()로 슬롯을 돌려주며 검사를 유지하는 대안, XDP_TX 경로와의 일관성, EST HLBF 하드웨어 오류 시 ring 재불균형 가능성을 질문합니다.\n\n영향: AF_XDP zero-copy TX ring 정합성과 taprio queueMaxSDU 오프로드는 TSN·실시간 네트워킹에서 직접 충돌하며, 검사 제거만으로는 하드웨어·통계 경로가 바뀌어 성능·정책 디버깅이 어려워집니다.\n\n> xsk_tx_peek_desc() reserves a completion entry. Continuing without queuing or completing the descriptor leaves the AF_XDP rings imbalanced, so remove the check from the zero-copy path.\n\n[원문 확인](https://lore.kernel.org/bpf/20260813190800.222527-4-sdf@fomichev.me/)"
+    },
+    {
+      "heading": "기타",
+      "body": "**docs: timers: hrtimers: clarify expiry modes and ktimersd on PREEMPT_RT**\n\nDocumentation/timers/hrtimers.rst v3에 PREEMPT_RT 만료 모드 절을 추가합니다. 비-HARD hrtimer는 ktimers/%u에서 최저 SCHED_FIFO로 만료되며 arming 태스크 우선순위를 상속하지 않고, hrtimer_setup_sleeper_on_stack()은 RT/DL에서 HARD로 표시돼 ktimers/%u를 거치지 않습니다. 문서만 변경, 코드 동작 변경 없습니다.\n\n영향: PREEMPT_RT에서 타이머 콜백 우선순위·만료 경로를 잘못 가정하면 RT 지연·우선순위 역전 디버깅이 어려워지므로 hrtimer 추적자에게 동작 의미를 고정하는 문서 보강입니다.\n\n> A SCHED_FIFO task running at priority 99 that starts an unmarked timer still expires on ktimers/%u (lowest SCHED_FIFO priority), not at priority 99.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260813145746.26612-1-haohlliang@gmail.com/)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "xdp: fix zero-copy frame layout",
+      "url": "https://lore.kernel.org/bpf/20260818154516.793517-1-bestswngs@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Fix NULL pointer dereference in bpf_sock_from_file",
+      "url": "https://lore.kernel.org/bpf/20260818174253.492196-1-s.mahnur.a@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "net: stmmac: skip queueMaxSDU check for AF_XDP",
+      "url": "https://lore.kernel.org/bpf/20260813190800.222527-4-sdf@fomichev.me/",
+      "note": "thread"
+    },
+    {
+      "title": "Review: stmmac AF_XDP queueMaxSDU",
+      "url": "https://lore.kernel.org/bpf/20260818162442.3980697-1-kuba@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "sparx5/lan969x VCAP debugfs naming fix v3",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260817-misc-fixes-sparx5-lan969x-v3-1-c7c7fef723a8@microchip.com/",
+      "note": "thread"
+    },
+    {
+      "title": "sparx5 ndo_set_rx_mode_async conversion v3",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260817-misc-fixes-sparx5-lan969x-v3-2-c7c7fef723a8@microchip.com/",
+      "note": "thread"
+    },
+    {
+      "title": "docs: hrtimers expiry modes on PREEMPT_RT",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260813145746.26612-1-haohlliang@gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-18T18:56:35.002Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,121 @@
+{
+  "id": "2026-08-19-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-08-19 amdgpu 백라이트 회귀 — Linux GPU·AI",
+  "headline": "amdgpu 7.1.8 백라이트 회귀가 재보고됐고, nouveau GETPARAM·NV04 커서 경로 보안 패치가 dri-devel에서 논의 중입니다.",
+  "date": "2026-08-19",
+  "summary": "drm/nouveau GETPARAM ioctl의 gr NULL 역참조 가드와 NV04 커서 BO 크기 검증이 보안 리뷰를 받고 있으며, amdgpu 백라이트 max_brightness 회귀는 7.1.8에서도 재현 보고가 이어집니다. drm/panic 헬퍼 Kconfig 의존성 누락과 panthor IRQ 인라인 헬퍼 리팩터링도 병행 논의 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "drm",
+    "nouveau",
+    "amdgpu"
+  ],
+  "highlights": [
+    {
+      "title": "drm/nouveau: Fix NULL pointer dereferences in GETPARAM ioctl",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "drm/nouveau·NVIDIA 오픈소스 스택 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/CAJfuBxyGobBD_=p8Lmv6F2mPJNe-SJ9+fHxW3jMS3CtRXM30oA@mail.gmail.com/",
+      "if": "nouveau 스택을 유지보수하거나 gr 초기화 실패 환경을 다룬다면",
+      "do": "GETPARAM_GRAPH_UNITS 가드와 GET_ZCULL_INFO 경로 수정 범위, PATCH 2/2 적용 여부를 확인하세요",
+      "verify": "lore 스레드에서 gr NULL 역참조 수정 범위와 Sashiko AI 지적 내용을 대조하세요"
+    },
+    {
+      "title": "[Bug 221827] Backlight regression with 7.1.6",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "drm/amd/display·amdgpu 백라이트·stable/backport 담당",
+      "verifyLink": "https://bugzilla.kernel.org/show_bug.cgi?id=221827",
+      "if": "amdgpu 백라이트·7.1.y 백포트를 담당한다면",
+      "do": "Bug 221827 revert가 사용 중인 7.1.y 정식 태그에 포함됐는지 확인하세요",
+      "verify": "bugzilla 221827과 dri-devel 재보고 스레드에서 revert 포함 여부를 대조하세요"
+    },
+    {
+      "title": "drm/nouveau/nv04: check cursor buffer object size before upload",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "drm/nouveau·레거시 NVIDIA 하드웨어 지원 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/25ccdb08f6d84982fb211444dd766d054258e41c.camel@redhat.com/",
+      "if": "nouveau 레거시 NV04 커서 ioctl 경로를 다룬다면",
+      "do": "overflow-safe 곱셈 검사가 포함된 follow-up 패치 제출 여부를 확인하세요",
+      "verify": "Lyude Paul 리뷰 코멘트와 패치 diff에서 width·height 오버플로우 우회 가능성을 대조하세요"
+    },
+    {
+      "title": "drm/panic: Move panic display code into helper library",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "drm/panic·drm_kms_helper·Kconfig 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/916c4bd5-c73f-466e-8e9b-aee9d4d7d742@infradead.org/",
+      "if": "drm_kms_helper·Kconfig 의존성을 유지한다면",
+      "do": "DRM_KMS_HELPER가 DRM_PANIC_HELPER를 select할 때 DRM_TTM 의존 누락으로 unmet direct dependencies 경고가 나는지 확인하세요",
+      "verify": "Randy Dunlap 지적 스레드와 패치 11/12 Kconfig diff를 대조하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm/nouveau: Fix NULL pointer dereferences in GETPARAM ioctl**\n\nJim Cromie PATCH 1/2가 nouveau_abi16_ioctl_getparam()의 NOUVEAU_GETPARAM_GRAPH_UNITS 등에서 gr 엔진 초기화 실패 시 NULL 역참조 대신 -ENODEV를 반환하도록 가드를 추가했으나, Sashiko AI는 인접한 nouveau_abi16_ioctl_get_zcull_info()에도 동일한 gr NULL 역참조가 남아 있다고 지적했습니다.\n\n영향: 그래픽 엔진 초기화 실패 후에도 DRM_RENDER_ALLOW 권한의 userspace가 ioctl로 커널 Oops를 유발할 수 있는 경로는 nouveau 안정성·보안 리뷰에서 높은 우선순위입니다. PATCH 2/2가 zcull 경로까지 수정하는지, 실제 gr 초기화 실패 환경에서 재현·CVE 분류 여부는 확인이 필요합니다.\n\n> an unprivileged userspace process could still trigger an Oops by calling the DRM_IOCTL_NOUVEAU_GET_ZCULL_INFO ioctl\n\n[원문 확인](https://lore.kernel.org/dri-devel/CAJfuBxyGobBD_=p8Lmv6F2mPJNe-SJ9+fHxW3jMS3CtRXM30oA@mail.gmail.com/)\n\n**drm/nouveau/nv04: check cursor buffer object size before upload**\n\nZhenhao Wan 패치가 nv04 커서 업로드 전 gem->size < width * height * 4 검사를 추가했으나, Lyude Paul이 width/height가 UINT32_MAX일 때 곱셈 오버플로로 검사를 우회할 수 있다며 overflow-safe multiply 검사 추가를 요청했습니다.\n\n영향: 레거시 NV04 커서 ioctl 경로의 BO 크기 검증은 잘못된 userspace 인자로 커널 메모리 범위 밖 접근을 막는 1차 방어선이며, 정수 오버플로우는 검사 자체를 무력화할 수 있습니다. overflow-safe size 검사가 포함된 follow-up 패치 제출 여부는 확인이 필요합니다.\n\n> width and/or height could be UINT32_MAX, so a caller could still overflow width or height. Would you mind adding an overflow multiply check?\n\n[원문 확인](https://lore.kernel.org/dri-devel/25ccdb08f6d84982fb211444dd766d054258e41c.camel@redhat.com/)\n\n**[Bug 221827] Backlight regression with 7.1.6**\n\nAMD Strix G15 등에서 7.1.6 백라이트 회귀(bisect 1191285ecb42, drm/amd/display max_brightness 수정)가 RESOLVED ANSWERED로 닫혔으나, Muhammad Abdullah가 Fedora 44·7.1.8에서도 최대 밝기가 98%·최저가 99%로 뒤바뀐 동일 증상을 재보고했습니다. Mario Limonciello는 7.1.y에 revert가 있으나 regression tracker는 아직 정식 7.1.y 릴리스에는 revert가 없다고 답했습니다.\n\n영향: amdgpu 백라이트 sysfs 범위 매핑 회귀는 노트북 사용자에게 직접적인 런타임 영향이 있고, revert가 -rc에만 있으면 안정 브랜치·배포판 사용자는 계속 피해를 볼 수 있습니다. Fedora 44 7.1.8이 revert 미포함 빌드인지, revert가 다음 7.1.y 정식 태그에 포함되는 시점은 확인이 필요합니다.\n\n> The issue is marked resolved but I still have the EXACT issue on Fedora 44 with linux kernal 7.1.8 Max brightness at 98% Lowest at 99%\n\n[원문 확인](https://bugzilla.kernel.org/show_bug.cgi?id=221827)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/panic: Move panic display code into helper library**\n\nThomas Zimmermann 12패치 시리즈 11/12에서 panic 표시 코드를 drm_panic_helper.c로 옮기고 DRM_KMS_HELPER가 DRM_PANIC 시 DRM_PANIC_HELPER를 select하도록 Kconfig를 추가했으나, Randy Dunlap이 DRM_PANIC_HELPER가 DRM_TTM에 의존하는데 DRM_KMS_HELPER에는 TTM 의존이 없어 unmet direct dependencies 경고가 난다고 지적했습니다.\n\n영향: DRM panic QR·화면 출력 헬퍼를 KMS helper 모듈로 통합하는 리팩터링은 거의 모든 DRM 드라이버가 링크하는 공통 경로라, Kconfig 의존성 누락은 TTM 없이 KMS helper만 켠 구성에서 빌드 경고·잘못된 심볼 링크로 이어질 수 있습니다. DRM_KMS_HELPER에 depends on DRM_TTM을 추가할지, 아니면 select 체인을 재설계할지 maintainer 응답 여부는 확인이 필요합니다.\n\n> but DRM_PANIC_HELPER depends on DRM_TTM so DRM_KMS_HELPER should also depend on DRM_TTM. Otherwise: WARNING: unmet direct dependencies detected for DRM_PANIC_HELPER\n\n[원문 확인](https://lore.kernel.org/dri-devel/916c4bd5-c73f-466e-8e9b-aee9d4d7d742@infradead.org/)\n\n**drm/panthor: Replace the panthor_irq macro machinery by inline helpers**\n\nBoris Brezillon v6 시리즈 3/9가 PANTHOR_IRQ_HANDLER() 매크로 생성 로직을 panthor_irq_default_raw_handler·panthor_irq_default_threaded_handler 등 인라인 헬퍼로 대체하고, IRQ 핸들러 프로토타입을 panthor_device 대신 panthor_irq를 받도록 바꿉니다. Liviu Dudau가 Reviewed-by를 추가했습니다.\n\n영향: ARM Mali Panthor 드라이버의 job/gpu/mmu/pwr 네 IRQ 경로가 공통 인라인 헬퍼로 수렴해 가독성·컴파일러 최적화 여지가 커지며, panthor_irq에 iomem이 포함된 이후 매크로 보일러플레이트가 불필요해진 구조 정리입니다. v6 시리즈 전체 머지 일정 및 signal-from-irq 관련 나머지 패치와의 의존 관계는 확인이 필요합니다.\n\n> Now that panthor_irq contains the iomem region, there's no real need for the macro-based panthor_irq helper generation logic.\n\n[원문 확인](https://lore.kernel.org/dri-devel/aoSRcD1EZ_Q0-NiR@e142607/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "high",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/panic: Move panic display code into helper library (패치 11/12)",
+      "url": "https://lore.kernel.org/dri-devel/20260818125012.468092-12-tzimmermann@suse.de/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/panic: DRM_KMS_HELPER·DRM_TTM 의존성 지적",
+      "url": "https://lore.kernel.org/dri-devel/916c4bd5-c73f-466e-8e9b-aee9d4d7d742@infradead.org/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/panthor: Replace the panthor_irq macro machinery by inline helpers",
+      "url": "https://lore.kernel.org/dri-devel/aoSRcD1EZ_Q0-NiR@e142607/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/nouveau: Fix NULL pointer dereferences in GETPARAM ioctl",
+      "url": "https://lore.kernel.org/dri-devel/CAJfuBxyGobBD_=p8Lmv6F2mPJNe-SJ9+fHxW3jMS3CtRXM30oA@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/nouveau/nv04: check cursor buffer object size before upload",
+      "url": "https://lore.kernel.org/dri-devel/25ccdb08f6d84982fb211444dd766d054258e41c.camel@redhat.com/",
+      "note": "thread"
+    },
+    {
+      "title": "[Bug 221827] Backlight regression with 7.1.6",
+      "url": "https://bugzilla.kernel.org/show_bug.cgi?id=221827",
+      "note": "article"
+    },
+    {
+      "title": "Bug 221827 재보고 (Fedora 44·7.1.8)",
+      "url": "https://lore.kernel.org/dri-devel/bug-221827-2300-51DLPaTIZT@https.bugzilla.kernel.org%2F/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-18T19:06:52.846Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,135 @@
+{
+  "id": "2026-08-19-linux-distro-stable-daily",
+  "topic": "linux-distro-stable",
+  "title": "2026-08-19 stable 보안 백포트 — Linux Distro Stable",
+  "headline": "fscrypt idmap 권한 오류·usx2y mmap 유출·panic_force_cpu 레이스 등 stable 큐 신규 백포트가 집중됐다.",
+  "date": "2026-08-19",
+  "summary": "stable 메일링 리스트에 fscrypt idmapped mount 권한 검사 오류, ALSA usx2y mmap 미초기화 유출, panic_force_cpu= 리다이렉트 레이스·NMI 우회 수정 시리즈가 올라왔다. mlx5e HW-GRO 패딩 회귀와 Open vSwitch conntrack label 누수도 main 머지 후 stable 반영 시점 추적이 필요하다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "stable",
+    "LTS"
+  ],
+  "highlights": [
+    {
+      "title": "fscrypt idmapped mount 소유자 검사 오류",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "fscrypt·idmapped mount 운영·stable 5.15 백포트 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20260818184052.80142-1-ebiggers@kernel.org/",
+      "if": "ext4·f2fs idmapped mount에서 fscrypt_ioctl_set_policy()로 암호화 정책을 설정하는 경우",
+      "do": "stable 5.15 백포트 큐에 해당 패치가 포함됐는지 배포 패치 목록을 재평가하세요",
+      "verify": "원문에서 file_mnt_user_ns(filp) 기반 idmap 사용 수정과 -EACCES 오판·비소유자 허용 경로가 닫혔는지 확인하세요"
+    },
+    {
+      "title": "ALSA usx2y mmap 미초기화 메모리 유출",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "ALSA usx2y 사용자·stable 5.10.y 백포트 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20260818175749.2748626-1-sashal@kernel.org/",
+      "if": "usx2y 드라이버 hwdep mmap 경로를 쓰는 워크스테이션·오디오 장비를 운영하는 경우",
+      "do": "stable 5.10.y 보안 큐에 US428_SHAREDMEM_PAGES 단위 할당·초기화 패치 반영을 우선 추적하세요",
+      "verify": "원문에서 struct 크기만 zero-clear하던 경로가 페이지 정렬 범위로 바뀌었는지 확인하세요"
+    },
+    {
+      "title": "mlx5e HW-GRO 소형 프레임 padding 회귀",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Mellanox/ConnectX mlx5e·하드웨어 GRO 운영·stable 백포트 담당",
+      "verifyLink": "https://lore.kernel.org/stable/178707469522.2194892.9488420568567548375.git-patchwork-notify@kernel.org/",
+      "if": "ConnectX NIC에서 mlx5e 하드웨어 GRO(SHAMPO)로 IPv4/TCP를 받는 호스트를 운영하는 경우",
+      "do": "main 머지 패치의 stable@vger.kernel.org 백포트 제출·머지 시점을 네트워크 스택 패치 큐에서 확인하세요",
+      "verify": "원문과 커밋에서 소형 Ethernet 프레임 coalesce 시 trailing padding이 payload에 포함되지 않게 막았는지 확인하세요"
+    },
+    {
+      "title": "panic_force_cpu= 리다이렉트 레이스·NMI 우회",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "kdump·crashkernel 및 panic_force_cpu= 사용 운영·백포트 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20260818163806.17460-1-include@grrlz.net/",
+      "if": "panic_force_cpu=로 kdump/crashkernel를 특정 CPU에 고정하는 배포를 유지하는 경우",
+      "do": "6패치 시리즈의 stable 반영 전 Sashiko가 지적한 추가 이슈 해소 여부를 확인하세요",
+      "verify": "원문에서 cmpxchg 패자 CPU의 잘못된 crash_kexec 실행과 NMI panic의 redirect 우회가 닫혔는지, 어느 stable/longterm 브랜치에 백포트될지 추적하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ALSA: usx2y: Fix potential leaks of uninitialized memory**\n\nusx2y 드라이버가 mmap으로 노출하는 공유 메모리를 struct 크기만 zero-clear해 페이지 정렬 영역의 미초기화 바이트가 userspace에 유출될 수 있었다. US428_SHAREDMEM_PAGES로 할당·초기화 범위를 페이지 단위로 맞춘다.\n\n영향: hwdep mmap 경로의 정보 유출은 로컬 권한 상승·프라이버시 침해로 이어질 수 있어 stable 5.10.y 백포트 대상으로 배포 보안 큐에 올려야 한다.\n\n> usx2y drivers may expose the allocated pages via mmap, but it performs zero-clear only for the struct size, not aligned with the page size. This leaves out some uninitialized trailing bytes.\n\n[원문 확인](https://lore.kernel.org/stable/20260818175749.2748626-1-sashal@kernel.org/)\n\n**fscrypt: use the mount idmap for the owner check in fscrypt_ioctl_set_policy()**\n\nfscrypt_ioctl_set_policy()가 inode_owner_or_capable()에 nop_mnt_idmap을 넘겨 idmapped mount에서 실제 소유자 검사가 틀어질 수 있었다. file_mnt_user_ns(filp)로 마운트 idmap을 사용하도록 수정한다.\n\n영향: ext4·f2fs idmapped mount에서 암호화 정책 설정 권한이 잘못 판정되면 정당한 소유자 거부나 비소유자 허용으로 파일시스템 보안 정책이 깨진다.\n\n> fscrypt_ioctl_set_policy() calls inode_owner_or_capable() with &nop_mnt_idmap before allowing an encryption policy to be set, instead of the idmap of the mount the ioctl was issued on.\n\n[원문 확인](https://lore.kernel.org/stable/20260818184052.80142-1-ebiggers@kernel.org/)\n\n**net/mlx5e: do not HW-GRO coalesce small frames**\n\nmlx5e 하드웨어 GRO(SHAMPO)가 60바이트 최소 Ethernet 프레임으로 패딩된 작은 IPv4/TCP 세그먼트를 병합할 때 trailing padding이 payload에 포함되어 userspace로 전달된다. 소형 프레임 coalesce를 막는다.\n\n영향: ConnectX NIC SHAMPO 경로의 패딩 오염은 TCP payload 무결성을 깨뜨려 애플리케이션 프로토콜 파싱 오류·데이터 손상으로 이어질 수 있다.\n\n> When hardware GRO (SHAMPO) coalesces a small IPv4/TCP segment that was padded up to the 60-byte minimum Ethernet frame, the trailing padding is folded into the merged payload causing padding to be del\n\n[원문 확인](https://lore.kernel.org/stable/178707469522.2194892.9488420568567548375.git-patchwork-notify@kernel.org/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**panic: fix panic_force_cpu= redirect races and NMI bypass**\n\npanic_force_cpu= 리다이렉트 경로의 cmpxchg 패자 CPU가 잘못된 CPU에서 crash_kexec를 실행하는 레이스, va_list 재사용 UB, NMI panic이 redirect를 우회하는 문제를 6패치 시리즈로 수정한다.\n\n영향: kdump/crashkernel를 특정 CPU에 고정하는 배포에서 panic CPU 선택 오류는 크래시 덤프 품질과 post-mortem 분석 신뢰도를 깨므로 stable 백포트 큐에서 우선 추적할 가치가 있다.\n\n> The cmpxchg loser used to return false and fall through into vpanic(), where it could win panic_try_start() and run crash_kexec on the wrong CPU before the target ever received the IPI.\n\n[원문 확인](https://lore.kernel.org/stable/20260818163806.17460-1-include@grrlz.net/)\n\n**i2c: qcom-cci: fix device_node refcount leak in cci_probe()/cci_remove()**\n\ni2c_del_adapter() 뒤 memset()이 adap->dev.of_node를 지워 of_node_put()이 no-op이 되며 Qualcomm CCI I2C 어댑터 제거·오류 경로마다 device_node refcount가 누수된다. devm action으로 of_node 포인터를 보호한다.\n\n영향: ARM/Qualcomm 플랫폼에서 드라이버 재로드·핫플러그 반복 시 DT 노드 누수가 장기 운영 메모리 압박으로 이어질 수 있다.\n\n> The of_node_put() matching of_node_get() runs after i2c_del_adapter(), whose trailing memset() zeroes adap->dev and thus adap->dev.of_node, making the put a no-op and leaking the node on every adapter\n\n[원문 확인](https://lore.kernel.org/stable/20260818175750.4205-1-dragonliu2018@gmail.com/)\n\n**staging: greybus: light: initialize channel lock before registration**\n\ngb_lights_light_register()가 채널 mutex_init 전에 LED class device를 등록해 동시 brightness 콜백이 초기화되지 않은 lock에 접근할 수 있다. mutex_init을 channel 등록 전으로 옮긴다.\n\n영향: Greybus lights 경로의 초기화 순서 버그는 레이스 시 커널 패닉·LED 제어 불안정으로 이어질 수 있어 staging 드라이버를 쓰는 제품의 stable 백포트 여부를 확인해야 한다.\n\n> gb_lights_light_register() registers each channel before initializing light->channels[i].lock. Channel registration exposes the LED class device and its brightness callback, which later takes this mut\n\n[원문 확인](https://lore.kernel.org/stable/2026081801-arguable-gosling-c590@gregkh/)\n\n**net: openvswitch: fix nf_connlabels leak in ovs_ct_init**\n\novs_ct_init()이 connlabels 참조를 잡은 뒤 ovs_ct_limit_init() 실패 시 pernet exit 콜백 없이 반환해 labels_used가 영구 상승한다. 초기화 순서를 바꿔 실패 시 참조를 해제한다.\n\n영향: Open vSwitch pernet 등록 실패 후에도 conntrack label 확장이 할당되면 네임스페이스별 conntrack 자원 회계가 깨져 컨테이너·가상화 호스트의 안정성에 영향을 준다.\n\n> If ovs_ct_limit_init() fails, its error is returned directly. The pernet core does not invoke the exit callback for the operation whose initialization failed, so ovs_ct_exit() cannot drop the referenc\n\n[원문 확인](https://lore.kernel.org/stable/178707471727.2194892.12887232737858132657.git-patchwork-notify@kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "panic_force_cpu= v6 시리즈는 Andrew Morton이 Sashiko 추가 리뷰와 va_list 처리 논의를 언급했다. Sashiko가 추가 버그를 지적했으며 stable 반영 전 해소 여부는 확인이 필요하다. 어느 stable/longterm 브랜치에 백포트될지도 아직 확정되지 않았다.\n\n> The redirect code in panic_try_force_cpu() had two races and an NMI bypass, all found by Sashiko. This series closes them and kills one more hack that the rework turned up.\n\n[원문 확인](https://lore.kernel.org/stable/20260818114158.cc20b0cfcbe730a30597b466@linux-foundation.org/)\n\nGreybus lights 패치는 Greg Kroah-Hartman이 재현·테스트 방법을 질문했으며, 재현 시나리오와 테스트 커버리지는 아직 공개되지 않았다.\n\n> How was this found and tested?\n\n[원문 확인](https://lore.kernel.org/stable/2026081801-arguable-gosling-c590@gregkh/)\n\nOpen vSwitch nf_connlabels 누수와 mlx5e HW-GRO 패치는 netdev/net.git main에 머지되었지만, stable@vger.kernel.org 대상 백포트 제출·머지 시점은 아직 확인되지 않았다.\n\n[원문 확인](https://git.kernel.org/netdev/net/c/f9de5db270a4)\n\n[원문 확인](https://git.kernel.org/netdev/net/c/e2466392a0b8)"
+    }
+  ],
+  "confidence": {
+    "level": "medium",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "panic: fix panic_force_cpu= redirect races and NMI bypass",
+      "url": "https://lore.kernel.org/stable/20260818163806.17460-1-include@grrlz.net/",
+      "note": "thread"
+    },
+    {
+      "title": "Andrew Morton review of panic_force_cpu v6 series",
+      "url": "https://lore.kernel.org/stable/20260818114158.cc20b0cfcbe730a30597b466@linux-foundation.org/",
+      "note": "thread"
+    },
+    {
+      "title": "ALSA: usx2y: Fix potential leaks of uninitialized memory",
+      "url": "https://lore.kernel.org/stable/20260818175749.2748626-1-sashal@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "fscrypt: use the mount idmap for the owner check",
+      "url": "https://lore.kernel.org/stable/20260818184052.80142-1-ebiggers@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "i2c: qcom-cci: fix device_node refcount leak",
+      "url": "https://lore.kernel.org/stable/20260818175750.4205-1-dragonliu2018@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "staging: greybus: light: initialize channel lock before registration",
+      "url": "https://lore.kernel.org/stable/2026081801-arguable-gosling-c590@gregkh/",
+      "note": "thread"
+    },
+    {
+      "title": "net: openvswitch: fix nf_connlabels leak in ovs_ct_init",
+      "url": "https://lore.kernel.org/stable/178707471727.2194892.12887232737858132657.git-patchwork-notify@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "net: openvswitch: fix nf_connlabels leak in ovs_ct_init (commit)",
+      "url": "https://git.kernel.org/netdev/net/c/f9de5db270a4",
+      "note": "commit"
+    },
+    {
+      "title": "net/mlx5e: do not HW-GRO coalesce small frames",
+      "url": "https://lore.kernel.org/stable/178707469522.2194892.9488420568567548375.git-patchwork-notify@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "net/mlx5e: do not HW-GRO coalesce small frames (commit)",
+      "url": "https://git.kernel.org/netdev/net/c/e2466392a0b8",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-18T18:51:22.320Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
