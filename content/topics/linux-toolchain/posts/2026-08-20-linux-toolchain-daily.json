@@ -1,0 +1,91 @@
+{
+  "id": "2026-08-20-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-08-20 sysctl 별칭·Rust IO — 툴체인",
+  "headline": "sysctl module alias RFC v3가 kbuild/modpost에 별칭 경로를 추가하고, net/ipv6·Rust register! proc macro 전환이 연쇄 리팩터링을 요구합니다.",
+  "date": "2026-08-20",
+  "summary": "MODULE_SYSCTL_TABLE()과 register_sysctl 래퍼로 sysctl 테이블을 빌드 타임에 파싱해 modprobe sysctl:<path> 경로를 열고, 같은 제약이 ipv6 caller 배치 변경을 끌어냅니다. Rust for Linux는 register!를 syn proc macro로 바꾸고 projection 기반 API로 relative register를 제거합니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "kbuild",
+    "sysctl",
+    "Rust"
+  ],
+  "highlights": [
+    {
+      "title": "sysctl module alias RFC v3",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "kbuild·modpost 유지보수자, sysctl을 등록하는 서브시스템·distro init(userspace sysctl/systemd-sysctl) 담당",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20260819-sysctl-module-aliases-v3-0-aab90569365d@igalia.com/",
+      "if": "kbuild/modpost 파이프라인이나 distro init에서 sysctl 모듈 로딩을 다룬다면",
+      "do": "RFC v3 13패치 시리즈의 MODULE_SYSCTL_TABLE(), CONFIG_SYSCTL_MODULE_ALIASES, file2alias 지원 변경을 lore 스레드에서 추적하세요",
+      "verify": "modinfo에 sysctl: 별칭이 노출되고 modprobe sysctl:<path>로 모듈이 올라가는지 빌드 산출물에서 확인하세요"
+    },
+    {
+      "title": "ipv6 sysctl 등록 패턴 연쇄 변경",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "net/ipv6 sysctl 유지보수자, sysctl module alias 시리즈를 추적하는 kbuild·netdev 개발자",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20260818-sysctl-module-aliases-v2-9-d5a69dae5798@igalia.com/",
+      "if": "net/ipv6나 register_net_sysctl 호출부를 유지보수한다면",
+      "do": "sysctl 테이블 정의와 등록을 같은 파일로 옮기는 v2-9 패턴과 register 래퍼 교체를 검토하세요",
+      "verify": "ipv6_{route,icmp}_sysctl_table_size() 헬퍼 제거 후 등록이 정상 동작하는지 해당 패치를 따라 확인하세요"
+    },
+    {
+      "title": "Rust register! proc macro 전환",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust for Linux 드라이버·매크로 유지보수자, nova-core 등 I/O register 사용자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260819-typed_register-v3-0-3699a75fadf1@garyguo.net/",
+      "if": "Rust for Linux I/O 레지스터 추상화나 nova-core·tyr·pci 샘플을 사용한다면",
+      "do": "v3 16패치의 register! syn proc macro 전환과 io_project! projection API로 마이그레이션하세요",
+      "verify": "relative register API 제거 후 샘플 드라이버 빌드가 통과하는지 rust-for-linux 스레드를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**sysctl: add module aliases**\n\nRFC v3 시리즈가 MODULE_SYSCTL_TABLE() 매크로와 register_sysctl()/register_net_sysctl() 래퍼를 도입해 sysctl 테이블을 빌드 타임에 modpost·file2alias가 파싱하고 MODULE_ALIAS(\"sysctl:...\")를 생성하도록 합니다. CONFIG_SYSCTL_MODULE_ALIASES로 켜면 modinfo에 sysctl: 별칭이 노출되어 userspace가 modprobe sysctl:<path>로 모듈을 올릴 수 있습니다.\n\n영향: kbuild/modpost 파이프라인에 MODULE_DEVICE_TABLE과 유사한 sysctl 별칭 경로가 추가되며, net/ 등 대규모 register_net_sysctl() 호출부와 런타임 할당 sysctl 경로는 template 인자 설계에 따라 리팩터링 부담이 큽니다. RFC 단계로 net/ 전역 caller 변경 범위에 대한 maintainer 합의 전이며, 런타임 할당 sysctl 경로가 template 기반으로만 커버 가능한지는 확인이 필요합니다.\n\n> which emits symbols for file2alias/modpost to find and parse the sysctl tables.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20260819-sysctl-module-aliases-v3-0-aab90569365d@igalia.com/)\n\n**sysctl, ipv6: update register_net_sysctl{_sz}() callers with template arguments**\n\nMODULE_SYSCTL_TABLE() 매크로 제약(테이블 정의와 등록이 같은 파일에 있어야 함)에 맞추기 위해 ipv6_route·ipv6_icmp sysctl 테이블 등록을 각 소스 파일로 옮기고 ipv6_{route,icmp}_sysctl_table_size() 헬퍼를 제거합니다.\n\n영향: sysctl module alias 인프라가 단순 API 추가가 아니라 기존 net/ipv6 등 다수 caller의 파일 배치·등록 패턴을 바꾸는 연쇄 리팩터링을 요구함을 보여줍니다. net/ 전체 caller에 대한 동일 패턴 변경 범위는 확인이 필요합니다.\n\n> The sysctl table definition and registration must be in the same file,\n> in order for the macro to work.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20260818-sysctl-module-aliases-v2-9-d5a69dae5798@igalia.com/)\n\n**rust: io: support register projections and remove relative registers**\n\nv3 16패치가 register! 매크로를 선언형 매크로에서 syn 기반 proc macro로 전환하고, 레지스터에 typed base를 요구해 io_project! 기반 projection으로 relative register API를 제거합니다. nova-core·tyr·pci 샘플이 새 API로 갱신됩니다.\n\n영향: Rust for Linux I/O 레지스터 추상화의 핵심 매크로가 proc macro로 승격되며 GPU(Rust) 드라이버 작성 패턴과 빌드 의존성(rust/macros)이 바뀝니다. proc macro 전환 후 downstream out-of-tree Rust 드라이버 마이그레이션 비용과 추가 기능 전 proc macro 전환 필수 여부는 확인이 필요합니다.\n\n> Changes in v3:\n> - Convert the `register!` macro to syn.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260819-typed_register-v3-0-3699a75fadf1@garyguo.net/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "sysctl: add module aliases (RFC v3)",
+      "url": "https://lore.kernel.org/linux-kbuild/20260819-sysctl-module-aliases-v3-0-aab90569365d@igalia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "sysctl, ipv6: update register_net_sysctl callers (v2-9)",
+      "url": "https://lore.kernel.org/linux-kbuild/20260818-sysctl-module-aliases-v2-9-d5a69dae5798@igalia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: io: support register projections (v3)",
+      "url": "https://lore.kernel.org/rust-for-linux/20260819-typed_register-v3-0-3699a75fadf1@garyguo.net/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-19T18:42:35.835Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

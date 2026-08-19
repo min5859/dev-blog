@@ -1,0 +1,138 @@
+{
+  "id": "2026-08-20-linux-daily-briefing",
+  "topic": "linux",
+  "title": "2026-08-20 7.1.9·LTS 백포트 — 리눅스 개발",
+  "headline": "7.1.9와 5.10.265 stable이 대량 백포트로 갱신됐고, sched domain 회귀 수정과 IOMMU·NOHZ 논의가 이어졌습니다.",
+  "date": "2026-08-20",
+  "summary": "Greg Kroah-Hartman이 7.1.9(271개 패치)와 5.10.265(389개 패치) stable 태그를 달아 운영·LTS 커널 기준점이 갱신됐습니다. CONFIG_CPUSETS=n 환경의 sched domain lock 누락 회귀 수정과 AMD IOMMU off 부팅 ACS 요청 논의가 병행됐습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "CONFIG_CPUSETS=n sched domain lock 누락",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "CONFIG_CPUSETS=n 또는 RT 스케줄 sysctl을 쓰는 플랫폼·배포 커널 담당자",
+      "verifyLink": "https://lore.kernel.org/lkml/20260813073855.ji2UrtVh@linutronix.de/",
+      "if": "cpuset 없는 최소 커널을 운영하세요",
+      "do": "sched_rt_runtime_us 읽기 시 WARN·backtrace를 재현해 보세요",
+      "verify": "원문 스레드에서 guard(cpus_read_lock)() v2 패치를 확인하세요"
+    },
+    {
+      "title": "Linux 7.1.9 stable",
+      "priority": "상",
+      "impactType": "backport",
+      "affectedAudience": "7.1 stable/longterm 커널을 운영·배포하는 엔지니어",
+      "verifyLink": "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/commit/?h=v7.1.9",
+      "if": "7.1 계열 stable 커널을 배포·운영하세요",
+      "do": "271개 stable-review 패치 포함 여부를 확인한 뒤 갱신을 검토하세요",
+      "verify": "v7.1.9 태그 커밋과 stable-review 공지 스레드를 대조하세요"
+    },
+    {
+      "title": "Linux 5.10.265 longterm",
+      "priority": "중",
+      "impactType": "backport",
+      "affectedAudience": "5.10 LTS 커널을 유지하는 장기 지원 배포·임베디드·CIP 참여자",
+      "verifyLink": "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/commit/?h=v5.10.265",
+      "if": "5.10 LTS 커널을 장기 운영하세요",
+      "do": "389개 패치 묶음의 영향 범위를 확인하고 백포트 일정을 잡으세요",
+      "verify": "v5.10.265 태그 커밋과 stable-review 시리즈 공지를 확인하세요"
+    },
+    {
+      "title": "NOHZ idle 코어 우선 선택",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "스케줄러·전력관리·SMT 플랫폼을 다루는 커널 개발자",
+      "verifyLink": "https://lore.kernel.org/lkml/20260804151324.918020-1-arighi@nvidia.com/",
+      "if": "SMT·NOHZ housekeeping CPU 정책을 다루세요",
+      "do": "완전 idle 코어 우선 ILB 선택 v4 패치 논의를 추적하세요",
+      "verify": "원문 스레드에서 find_new_ilb() 변경과 follow-up 리팩터를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.2 mainline**\n\n어제 보고한 v7.2 정식 릴리스(rc7에서 EXTRAVERSION 비움) 상태가 그대로 유지됩니다.\n\n영향: 7.x 메인라인 기준점 갱신은 배포·벤더 트리·회귀 추적의 기준이 됩니다.\n\n> -EXTRAVERSION = -rc7\n+EXTRAVERSION =\n NAME = Baby Opossum Posse\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?h=v7.2)\n\n**Linux next-20260819 linux-next**\n\n2026-08-19 Mark Brown이 linux-next 통합 트리에 next-20260819 태그를 달고 Next/SHA1s·Next/Trees 메타데이터를 추가했습니다.\n\n영향: 다음 merge window 후보 패치의 일일 스냅샷으로 서브시스템 간 충돌·회귀를 미리 잡는 기준 트리가 됩니다.\n\n> Add linux-next specific files for 20260819\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/next/linux-next.git/commit/?h=next-20260819)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**sched/topology: Add a cpus_read_lock to rebuild_sched_domains()**\n\nSebastian Siewior v2 패치는 CONFIG_CPUSETS=n 빌드에서 rebuild_sched_domains()가 partition_sched_domains()를 cpu hotplug lock 없이 호출해 sched_rt_runtime_us 읽기 시 backtrace가 나는 문제를 guard(cpus_read_lock)() 추가로 고칩니다.\n\n영향: cpuset 비활성 구성은 임베디드·최소 커널에서 흔하며, sched domain 재구성 경로 lock 누락은 RT 스케줄 sysctl 접근만으로 WARN/backtrace를 유발합니다.\n\n> A read from /proc/sys/kernel/sched_rt_runtime_us leads to backtrace due to missing cpu_hotplug_lock with CONFIG_CPUSETS=n.\n\n[원문 확인](https://lore.kernel.org/lkml/20260813073855.ji2UrtVh@linutronix.de/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Linux 7.1.9 stable**\n\n2026-08-19 Greg Kroah-Hartman이 linux-7.1.y에 v7.1.9 stable 태그를 달았고, stable-review 시리즈 271개 패치가 포함됩니다.\n\n영향: 7.1 계열 운영 커널 사용자에게 SCTP·BPF·thunderbolt 등 보안·회귀 수정이 한 번에 도달합니다.\n\n> -SUBLEVEL = 8\n+SUBLEVEL = 9\n EXTRAVERSION =\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/commit/?h=v7.1.9)\n\n**Linux 5.10.265 longterm**\n\n2026-08-19 Greg Kroah-Hartman이 linux-5.10.y에 v5.10.265 stable 태그를 달았고, stable-review 시리즈 389개 패치가 포함됩니다.\n\n영향: 여전히 광범위하게 쓰이는 5.10 LTS에 네트워킹·RDMA·staging Wi-Fi·futex 등 다수 회귀·보안 수정이 누적됩니다.\n\n> Linux 5.10.265\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/commit/?h=v5.10.265)\n\n**sched/fair: Prefer fully idle cores for NOHZ balancing**\n\nAndrea Righi v4 패치는 NOHZ idle load balancer가 SMT 형제 중 하나만 idle인 코어보다 완전 idle 코어를 우선 선택하도록 find_new_ilb()를 바꿉니다. 8월 19일 Shrikanth Hegde는 generic scratch cpumask 리팩터와 함께 논의 중입니다.\n\n영향: SMT에서 짧은 ILB 깨우기가 형제 스레드 성능을 오래 눌러둘 수 있어, NOHZ housekeeping CPU 선택 정책은 대칭 멀티스레드·저전력 시스템 전반의 지연·처리량에 영향을 줍니다.\n\n> Prevent this by preferring an idle housekeeping CPU whose entire SMT core is idle. Retain the first idle CPU as a fallback when no fully idle core is available\n\n[원문 확인](https://lore.kernel.org/lkml/20260804151324.918020-1-arighi@nvidia.com/)\n\n**iommu/amd: Do not request ACS when IOMMU is not going to be initialized**\n\nRong Zhang 2-patch 시리즈는 amd_iommu=off 또는 iommu=off 부팅에서도 IVRS 감지 경로가 pci_request_acs()를 호출하는 상태 머신 문제를 고치고, 불필요한 ad-hoc 검사를 정리합니다. 8월 19-20 review에서 Xen PV·Fixes 태그 등 추가 피드백이 오가며 재제출 예정입니다.\n\n영향: IOMMU를 끈 x86 부팅에서도 ACS 요청이 일어나면 PCI 초기화·IRQ remapping 경로가 불필요하게 ACS에 의존해, cmdline 조합에 따라 부팅 동작이 달라질 수 있습니다.\n\n> [0] always calls pci_request_acs() as long as there's a valid IVRS table and no Stoney Ridge graphics. This is not optimal as ACS is not required in an [amd_]iommu=off boot.\n\n[원문 확인](https://lore.kernel.org/lkml/20260811-amd-iommu-fix-acs-v1-0-d64e2172408d@rong.moe/)"
+    },
+    {
+      "heading": "기타",
+      "body": "Panther Lake 전용 intel_tcc_cooling CPU ID 추가, NVIDIA nova-core GPU 펌웨어 부트 radix3 page table 수정 등 플랫폼·드라이버 국부 패치는 이번 브리핑에서 제외했습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Linux 7.2 mainline release commit",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?h=v7.2",
+      "note": "commit"
+    },
+    {
+      "title": "Linux 7.1.9 stable release commit",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/commit/?h=v7.1.9",
+      "note": "commit"
+    },
+    {
+      "title": "7.1.9 stable-review series announcement",
+      "url": "https://lore.kernel.org/r/20260817132536.752504388@linuxfoundation.org/",
+      "note": "thread"
+    },
+    {
+      "title": "linux-next next-20260819 tag commit",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/next/linux-next.git/commit/?h=next-20260819",
+      "note": "commit"
+    },
+    {
+      "title": "sched/fair NOHZ idle core preference v4",
+      "url": "https://lore.kernel.org/lkml/20260804151324.918020-1-arighi@nvidia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "sched/fair NOHZ scratch cpumask follow-up",
+      "url": "https://lore.kernel.org/lkml/020329f9-7cd4-41d0-8e8a-0a8babacd0c1@linux.ibm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "sched/topology rebuild_sched_domains cpus_read_lock v2",
+      "url": "https://lore.kernel.org/lkml/20260813073855.ji2UrtVh@linutronix.de/",
+      "note": "thread"
+    },
+    {
+      "title": "iommu/amd ACS request fix cover letter",
+      "url": "https://lore.kernel.org/lkml/20260811-amd-iommu-fix-acs-v1-0-d64e2172408d@rong.moe/",
+      "note": "thread"
+    },
+    {
+      "title": "iommu/amd ACS fix resubmission reply",
+      "url": "https://lore.kernel.org/lkml/c5dc4cae4f4f33c98ee96d4d15da446b9fbf1f59.camel@rong.moe/",
+      "note": "thread"
+    },
+    {
+      "title": "Linux 5.10.265 longterm release commit",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/commit/?h=v5.10.265",
+      "note": "commit"
+    },
+    {
+      "title": "5.10.265 stable-review series announcement",
+      "url": "https://lore.kernel.org/r/20260817132538.796021292@linuxfoundation.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-19T18:06:33.468Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-newsletter-from-dossier-ko.md"
+  }
+}

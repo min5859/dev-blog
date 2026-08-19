@@ -1,0 +1,116 @@
+{
+  "id": "2026-08-20-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-08-20 OMAP HPD·Nova 배리어 — Linux GPU/AI",
+  "headline": "OMAP HDMI HPD v3가 ASoC 잭으로 오디오 라우팅을 연결하는 가운데, sysfs unbind 경쟁과 Nova GSP 배리어 수정이 병행 검토됩니다.",
+  "date": "2026-08-20",
+  "summary": "OMAP DRM HDMI 브리지가 audio_hpd 콜백으로 ASoC HPD를 보고하고, drm/tyr에 workqueue 기반 GPU reset 인프라 v6가 제출됐습니다. Sashiko AI는 sysfs unbind 경쟁을 지적했고, Nova GSP cmdq는 AArch64 DMA 순서를 위해 dma_mb로 배리어를 교체합니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "GPU",
+    "DRM",
+    "Rust"
+  ],
+  "highlights": [
+    {
+      "title": "OMAP HDMI HPD를 ASoC 잭으로 보고",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "OMAP DRM·ASoC HDMI 오디오 드라이버 유지보수자, 임베디드 오디오 스택 개발자",
+      "verifyLink": "https://patchew.org/linux/20260819171935.233946-1-ivo.g.dimitrov.75@gmail.com/",
+      "if": "OMAP 보드에서 HDMI 케이블 연결에 따라 PipeWire·PulseAudio 라우팅이 자동 전환돼야 한다면,",
+      "do": "v3 패치의 audio_hpd 콜백·SND_JACK_AVOUT 잭 보고와 audio_lock 직렬화 변경을 원문에서 확인하세요.",
+      "verify": "Mark Brown Acked-by와 CEC disconnect 경로의 runtime PM 참조 처리가 포함됐는지 스레드를 대조하세요."
+    },
+    {
+      "title": "sysfs unbind 시 omap_hdmi_audio_remove 경쟁",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "OMAP HDMI 오디오·DRM 브리지 동시성을 다루는 드라이버 개발자",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/dri-devel/20260819172738.90AC71F000E9@smtp.kernel.org/",
+      "if": "OMAP HPD 패치를 머지하거나 sysfs로 omap-hdmi-audio를 직접 unbind하는 경로를 다룬다면,",
+      "do": "Sashiko AI가 지적한 audio_lock 미보유 ha->audio_hpd 클리어와 hdmi_audio_hpd_notify() 경쟁 가능성을 검토하세요.",
+      "verify": "audio_hpd 클리어를 audio_lock 아래로 옮길지, 또는 sysfs unbind를 막는 다른 메커니즘이 있는지 확인이 필요합니다."
+    },
+    {
+      "title": "Nova GSP cmdq 배리어를 dma_mb로 교체",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Nova·Rust for Linux GSP 메시징 개발자, AArch64 GPU 드라이버 동시성 담당",
+      "verifyLink": "https://patchew.org/linux/20260819-rust-barrier-v3-0-d5b7bd7e6624@garyguo.net/",
+      "if": "AArch64에서 Nova GSP 링 버퍼의 포인터·데이터 가시성을 검증 중이라면,",
+      "do": "v3 2패치의 Rust SMP 배리어(SeqCst)를 dma_mb(Ordering)로 바꾸는 변경과 CPU↔GSP 경로 배리어 위치 수정을 확인하세요.",
+      "verify": "drm-rust-next v7.3-rc1 backmerge 이후 적용 전제와 dma_mb API 가용 시점을 원문에서 대조하세요."
+    },
+    {
+      "title": "drm/tyr GPU reset 인프라 v6",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "drm/tyr·Rust GPU 드라이버 개발자, Panthor reset 패턴 추적자",
+      "verifyLink": "https://patchew.org/linux/20260819-tyr-reset-impl-v6-0-7b4e1e041fe5@onurozkan.dev/",
+      "if": "Arm Mali Tyr 드라이버의 Panthor 스타일 복구 경로를 추적한다면,",
+      "do": "v6 3패치의 workqueue reset·SRCU·mutex HwGate·teardown drain과 ScopedWork 채택을 검토하세요.",
+      "verify": "reset source 미연결·실패 시 GPU unplug·PM 검사 TODO가 남아 있는지 스레드를 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**Sashiko review: omap HDMI HPD sysfs unbind race**\n\nSashiko AI가 v3의 omap_hdmi_audio_remove()가 audio_lock 없이 ha->audio_hpd를 NULL로 만들어, sysfs로 omap-hdmi-audio 드라이버를 직접 unbind할 때 hdmi_audio_hpd_notify()와 경쟁해 use-after-free가 날 수 있다고 High 심각도로 보고했습니다.\n\n영향: 정상 unbind 경로(hdmi4_unbind가 audio_lock을 잡는 경우)와 달리 관리자 sysfs unbind는 다른 동기화 경로이므로, OMAP HPD 패치 머지 전에 teardown·HPD 경쟁을 명확히 해야 합니다.\n\n> Manual driver unbinding via sysfs causes a data race and potential use-after-free because `omap_hdmi_audio_remove()` modifies `ha->audio_hpd` without `audio_lock` synchronization.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/20260819172738.90AC71F000E9@smtp.kernel.org/)\n\n**gpu: nova: fix incorrect GSP barrier usage**\n\nv3 2패치가 Nova GSP cmdq에서 Rust SMP 배리어(SeqCst)를 dma_mb(Ordering)로 교체하고, CPU↔GSP 링 버퍼 경로의 배리어 위치를 수정합니다. v3는 이미 머지된 추상화 변경을 제거하고 control dependency 대신 명시적 배리어를 씁니다.\n\n영향: AArch64에서 SMP 배리어는 outer shareable DMA 순서를 보장하지 않아 GSP 메시지 큐에서 포인터·데이터 가시성 버그가 날 수 있습니다. drm-rust-next v7.3-rc1 backmerge 이후 적용을 전제로 합니다.\n\n> Currently Nova GSP code uses Rust barriers, which equivalent to LKMM SMP barriers. This does not provide sufficient ordering for DMA operations on AArch64.\n\n[원문 확인](https://patchew.org/linux/20260819-rust-barrier-v3-0-d5b7bd7e6624@garyguo.net/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/omap: Report HDMI hotplug events to the ASoC HDMI codec**\n\nv3 패치가 OMAP DRM HDMI 브리지(hdmi4·hdmi5)에서 커넥터 상태 변경 시 audio_hpd 콜백을 호출하고, omap-hdmi ASoC 드라이버가 SND_JACK_AVOUT 잭으로 HPD를 보고하도록 연결합니다. audio_lock 뮤텍스로 오디오 플랫폼 디바이스 등록·해제를 직렬화하고, disconnect 경로에서는 CEC 물리 주소 갱신 전 runtime PM 참조를 잡습니다.\n\n영향: OMAP 보드에서 HDMI 오디오 가용성을 표준 ASoC 잭 메커니즘으로 노출해 PipeWire/PulseAudio 등 오디오 정책이 케이블 연결에 따라 자동 라우팅할 수 있게 됩니다. Mark Brown이 Acked-by를 재제출했습니다.\n\n> Add an optional HPD callback to `omap_hdmi_audio_pdata` and invoke it from the DRM HDMI bridge whenever the connector status changes.\n\n[원문 확인](https://patchew.org/linux/20260819171935.233946-1-ivo.g.dimitrov.75@gmail.com/)\n\n**drm/tyr: GPU reset infrastructure**\n\nv6 3패치 시리즈가 drm/tyr에 전용 workqueue 기반 GPU reset 스케줄링, SRCU·mutex HwGate로 reset 중 MMIO 접근 차단, teardown 시 reset 작업 drain, iomem 접근을 HwGate 뒤로 이동하는 인프라를 제출합니다. v5 대비 ScopedWork 채택·dev_dbg 로깅·Danilo workqueue 시리즈(OwnedQueue Send+Sync, ScopedQueue, ScopedWork) 의존으로 정리됐습니다.\n\n영향: Arm Mali Tyr Rust 드라이버가 Panthor 스타일 복구 경로를 갖추려면 이 reset 기반이 먼저 합쳐져야 하며, 아직 reset source 연결·실패 시 GPU unplug·PM 검사는 TODO로 남아 있습니다.\n\n> This is the initial reset infrastructure only. It is not wired to a reset source yet as those will follow in separate work.\n\n[원문 확인](https://patchew.org/linux/20260819-tyr-reset-impl-v6-0-7b4e1e041fe5@onurozkan.dev/)\n\n**gpu: nova-core: NVKV typed decoding review**\n\nDanilo Krummrich가 NVKV typed decoding 패치의 ArrayVec 구현에 대해 [T; N] 대신 [MaybeUninit<T>; N] 사용, rust/kernel/alloc 모듈로 이동, 실제 구성 시 const_assert로 크기 제한 검토를 요청했습니다.\n\n영향: NVKV 코덱은 Nova GSP GMCAPI 메시징의 핵심이며, ArrayVec 설계는 커널 alloc 추상화와 안전한 부분 초기화 패턴에 맞춰야 후속 GSP_INIT 스키마·cmdq 연동이 매끄럽습니다.\n\n> Add a simple macro `nvkv_decode!` which implements `Schema` for a struct by composing visit calls to each member.\n\n[원문 확인](https://lkml.rescloud.iu.edu/2608.2/01770.html)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/omap: Report HDMI hotplug events to the ASoC HDMI codec",
+      "url": "https://patchew.org/linux/20260819171935.233946-1-ivo.g.dimitrov.75@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Sashiko review: omap HDMI HPD sysfs unbind race",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/20260819172738.90AC71F000E9@smtp.kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/tyr: GPU reset infrastructure",
+      "url": "https://patchew.org/linux/20260819-tyr-reset-impl-v6-0-7b4e1e041fe5@onurozkan.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "gpu: nova: fix incorrect GSP barrier usage",
+      "url": "https://patchew.org/linux/20260819-rust-barrier-v3-0-d5b7bd7e6624@garyguo.net/",
+      "note": "thread"
+    },
+    {
+      "title": "gpu: nova-core: NVKV typed decoding review (Danilo Krummrich)",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/DKT5GWU3ARFG.25B1BCY0A3RS1@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "gpu: nova-core: NVKV typed decoding",
+      "url": "https://lkml.rescloud.iu.edu/2608.2/01770.html",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-19T19:11:55.375Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

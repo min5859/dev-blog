@@ -1,0 +1,117 @@
+{
+  "id": "2026-08-20-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-08-20 irq_work UAF·IRQ affinity — Perf/RT",
+  "headline": "PREEMPT_RT에서 irq_work UAF 수정, stmmac IRQ 밸런싱 RFC, sparx5 atomic sleep, uio 중복 irq thread 패치가 올라왔습니다.",
+  "date": "2026-08-20",
+  "summary": "lazy irq_work 경로 use-after-free 수정 v2와 genirq·stmmac IRQ affinity RFC가 linux-rt-devel에서 논의됩니다. sparx5/lan969x MAC 테이블 atomic sleep 회귀와 UIO 중복 irq thread 제거안도 함께 추적 대상입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "PREEMPT_RT",
+    "irq_work",
+    "genirq",
+    "stmmac"
+  ],
+  "highlights": [
+    {
+      "title": "irq_work: Fix use-after-free in irq_work_single on PREEMPT_RT",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "PREEMPT_RT·irq_work·BPF 메모리 할당 경로 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260330073234.303732-1-jiayuan.chen@linux.dev/",
+      "if": "PREEMPT_RT 또는 BPF 경로에서 irq_work_sync() 후 @work를 해제하는 코드를 운용하는 경우",
+      "do": "guard(rcu)()와 irq_work_sync()의 synchronize_rcu() 추가 v2 패치 merge·백포트 범위를 lore에서 추적하세요",
+      "verify": "lazy irq_work 완료 후 @work 조기 해제로 use-after-free가 재현되지 않는지 KASAN·stress 경로에서 확인하세요"
+    },
+    {
+      "title": "net: sparx5: fix sleep in atomic context in MAC table access",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Microchip sparx5/lan969x netdev·PREEMPT_RT 네트워크 드라이버 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260817-misc-fixes-sparx5-lan969x-v3-2-c7c7fef723a8@microchip.com/",
+      "if": "CONFIG_DEBUG_ATOMIC_SLEEP로 sparx5/lan969x에서 ip 등 RX multicast 설정을 테스트하는 경우",
+      "do": "ndo_set_rx_mode_async 전환 v3 패치와 netdev mainline merge 일정을 lore에서 추적하세요",
+      "verify": "sparx5_set_rx_mode() 경로에서 mutex·readx_poll_timeout() 슬립이 netif_addr_lock_bh 원자 컨텍스트에서 호출되지 않는지 확인하세요"
+    },
+    {
+      "title": "genirq: Allow drivers to respect userspace IRQ affinities",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "PREEMPT_RT·CPU isolation 운용자, stmmac·멀티큐 netdev 드라이버 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260819-flo-net-7-2-make-stmmac-default-affinity-aware-v1-0-3f79a99cadaf@siemens.com/",
+      "if": "CPU isolation·smp_default_affinity로 RT 코어를 격리한 뒤 stmmac 등 netdev를 처음 올리는 경우",
+      "do": "cpumask_local_spread()·genirq·stmmac 3파일 RFC의 discussion-first 논의 방향을 추적하세요",
+      "verify": "인터페이스 최초 up 시 IRQ가 격리 코어로 밀려 들어가지 않는지 /proc/irq affinity와 부하를 확인하세요"
+    },
+    {
+      "title": "uio: eliminate extraneous irq thread under CONFIG_PREEMPT_RT",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "UIO 사용자공간 드라이버·PREEMPT_RT 플랫폼 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/TY0PR0101MB48676D503A7F6C5CAC112B3BD2A52@TY0PR0101MB4867.apcprd01.prod.exchangelabs.com/",
+      "if": "PREEMPT_RT에서 UIO 기반 사용자공간 드라이버(가속기·FPGA 등)를 운용하는 경우",
+      "do": "PREEMPT_RT에서 request_irq()만 쓰는 중복 irq thread 제거 패치의 mainline merge 여부를 추적하세요",
+      "verify": "uio 인스턴스당 irq thread 수와 인터럽트당 context switch가 1회로 줄었는지 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**net: sparx5: fix sleep in atomic context in MAC table access**\n\nsparx5_set_rx_mode()가 netif_addr_lock_bh 하에서 multicast 동기화 중 mutex와 readx_poll_timeout()을 호출해 atomic 컨텍스트에서 슬립이 발생합니다. 패치는 ndo_set_rx_mode_async 콜백으로 옮겨 프로세스 컨텍스트에서 MAC 테이블 학습·폴링을 수행합니다.\n\n영향: CONFIG_DEBUG_ATOMIC_SLEEP 등 RT 디버깅 설정에서 ip 등으로 인터페이스를 열 때 sleeping-while-atomic이 실제 관측되므로, sparx5/lan969x를 PREEMPT_RT로 운용하는 플랫폼은 이 수정 추적이 필요합니다. netdev mainline merge 일정은 확인 필요합니다.\n\n> BUG: sleeping function called from invalid context at kernel/locking/mutex.c:591 ... sparx5_mact_learn+0x78/0x100\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260817-misc-fixes-sparx5-lan969x-v3-2-c7c7fef723a8@microchip.com/)\n\n**irq_work: Fix use-after-free in irq_work_single on PREEMPT_RT**\n\nv2 패치는 run_irq_workd()를 guard(rcu)()로 감싸고 irq_work_sync()에 synchronize_rcu()를 추가해 lazy irq_work 완료 후 @work 해제 시 use-after-free를 막습니다. Jan Kiszka는 arm 32-bit 단일코어에서 irq_work_sync 지연과 bpf_mem_alloc_destroy 등 반복 호출 시 성능 영향을 보고했고, Sebastian Siewior는 문제가 RT 전용이 아니라 lazy-work 전반에 해당한다고 답했습니다.\n\n영향: PREEMPT_RT에서 lazy irq_work 경로의 UAF는 메모리 안전 문제이고, synchronize_rcu() 추가는 비-RT·단일코어 arm에서도 irq_work_sync 지연을 키울 수 있어 BPF·RT 스택에서 sync 루프를 쓰는 코드는 수정·백포트 범위를 추적해야 합니다. synchronize_rcu()를 PREEMPT_RT에만 제한할지는 확인 필요합니다.\n\n> An irq_work_sync() caller on another CPU ... can observe BUSY==0 immediately, return, and free the work before those accesses complete — causing a use-after-free.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260330073234.303732-1-jiayuan.chen@linux.dev/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**genirq: Allow drivers to respect userspace IRQ affinities**\n\nRFC 3패치 시리즈는 cpumask_local_spread()가 irq_default_affinity를 존중하고, genirq가 기존 IRQ affinity 힌트를 유지하며, stmmac가 IRQ 밸런싱을 cpumask_local_spread()로 이전합니다. stmmac 등 드라이버가 모든 online CPU에 IRQ를 재분배해 RT 격리 코어의 smp_default_affinity 설정을 무시하는 문제를 보여줍니다.\n\n영향: RT 애플리케이션 배포 후 인터페이스를 처음 올릴 때 드라이버가 격리 코어로 IRQ를 밀어 넣으면 RT 워크로드에 불필요한 인터럽트 부하가 생기므로, CPU isolation·PREEMPT_RT 운용 팀은 genirq·netdev IRQ affinity 정책 논의를 추적해야 합니다. request_irq() 시점까지 /proc/irq/<n> 미생성으로 사전 affinity 제어가 불가한 잔여 문제도 확인 필요합니다.\n\n> stmmac network interface went up for the first time - driver balances IRQs over all CPUs, ignoring the existing affinities - Too much IRQ traffic on RT cores\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260819-flo-net-7-2-make-stmmac-default-affinity-aware-v1-0-3f79a99cadaf@siemens.com/)\n\n**uio: eliminate extraneous irq thread under CONFIG_PREEMPT_RT**\n\nPREEMPT_RT에서는 모든 인터럽트가 이미 threaded인데, f8a27dfa4b82 이후 uio가 request_threaded_irq()로 추가 IRQ 스레드를 요청해 인스턴스당 2개의 irq thread가 생깁니다. 패치는 PREEMPT_RT에서 request_irq()만 쓰고 IRQ_HANDLED 시 uio_event_notify()로 직접 알립니다.\n\n영향: 인터럽트당 불필요한 컨텍스트 스위치는 RT 지연·지터에 직접 기여하므로, UIO 기반 사용자공간 드라이버(가속기·FPGA 등)를 PREEMPT_RT에서 운용하는 팀은 이 중복 스레드 제거를 추적해야 합니다. mainline merge 및 stable 백포트 여부는 확인 필요합니다.\n\n> under CONFIG_PREEMPT_RT, all interrupts are already threaded. This results in 2 irq threads per uio instance, adding an unnecessary extra context switch per interrupt.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/TY0PR0101MB48676D503A7F6C5CAC112B3BD2A52@TY0PR0101MB4867.apcprd01.prod.exchangelabs.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "net: sparx5/lan969x misc fixes v3 (MAC table async)",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260817-misc-fixes-sparx5-lan969x-v3-2-c7c7fef723a8@microchip.com/",
+      "note": "thread"
+    },
+    {
+      "title": "genirq: Allow drivers to respect userspace IRQ affinities RFC",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260819-flo-net-7-2-make-stmmac-default-affinity-aware-v1-0-3f79a99cadaf@siemens.com/",
+      "note": "thread"
+    },
+    {
+      "title": "irq_work: Fix use-after-free in irq_work_single v2",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260330073234.303732-1-jiayuan.chen@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "irq_work lazy-work discussion (Sebastian Siewior)",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260819105259.7ENaDrl2@linutronix.de/",
+      "note": "thread"
+    },
+    {
+      "title": "irq_work_sync performance on arm 32-bit (Jan Kiszka)",
+      "url": "https://lore.kernel.org/linux-rt-devel/60887e69-ae28-495c-a6d7-7d0a94fd1aa8@siemens.com/",
+      "note": "thread"
+    },
+    {
+      "title": "uio: eliminate extraneous irq thread under PREEMPT_RT",
+      "url": "https://lore.kernel.org/linux-rt-devel/TY0PR0101MB48676D503A7F6C5CAC112B3BD2A52@TY0PR0101MB4867.apcprd01.prod.exchangelabs.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-19T19:05:05.367Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
