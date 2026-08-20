@@ -1,0 +1,138 @@
+{
+  "id": "2026-08-21-linux-daily-briefing",
+  "topic": "linux",
+  "title": "2026-08-21 SCO·SELinux — 리눅스 개발",
+  "headline": "블루투스 오디오 소켓 데드락과 중첩 오버레이 보안 검사 오류 등 회귀·보안 수정안이 메일링 리스트에 제안되었습니다.",
+  "date": "2026-08-21",
+  "summary": "Bluetooth SCO 연결 해제 경로의 AB/BA 데드락과 중첩 overlayfs에서 SELinux mprotect 검사 오류가 이번 수집의 핵심 신호입니다. page_pool GFP 회귀와 10G USXGMII 링크 협상 수정안도 함께 검토할 가치가 있습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "Bluetooth SCO 데드락 회귀",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Bluetooth SCO 스택·Android/데스크톱 블루투스 오디오 경로를 다루는 커널 개발자",
+      "verifyLink": "https://lore.kernel.org/lkml/20260820174633.1570398-1-alishmery18@gmail.com/",
+      "if": "SCO 블루투스 오디오 경로를 다루는 경우",
+      "do": "연결 설정·해제 중 데드락 재현 여부를 확인하세요",
+      "verify": "lkml 스레드 원문과 Fixes 커밋 참조를 확인하세요"
+    },
+    {
+      "title": "중첩 overlay SELinux SID",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "SELinux·overlayfs·컨테이너 파일시스템 스택을 운영하는 보안·플랫폼 엔지니어",
+      "verifyLink": "https://lore.kernel.org/lkml/20260820175832.44512-1-kmehltretter@gmail.com/",
+      "if": "SELinux enforcing에서 중첩 overlay를 쓰는 경우",
+      "do": "mprotect(PROT_READ) 접근 거부 재현을 점검하세요",
+      "verify": "lkml 스레드의 EACCES 사례와 패치 diff를 확인하세요"
+    },
+    {
+      "title": "page_pool GFP_DMA32 경고",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "네트워크 드라이버·page_pool·DMA32 제약 플랫폼을 다루는 커널 개발자",
+      "verifyLink": "https://lore.kernel.org/lkml/20260821-page-pool-xa-drop-dma32-v1-1-6eab295c3478@rong.moe/",
+      "if": "mt76·stmmac 등 page_pool 사용자 드라이버를 다루는 경우",
+      "do": "7.2-rc7+ 빌드에서 Unexpected gfp 경고를 확인하세요",
+      "verify": "dmesg 스택 덤프와 Fixes 커밋 참조를 대조하세요"
+    },
+    {
+      "title": "10G USXGMII autoneg",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "임베디드 네트워크·NXP ENETC/Felix·USXGMII PHY/PCS 드라이버 개발자",
+      "verifyLink": "https://lore.kernel.org/lkml/20260820-b4-fix-pcs-lynx-an-v1-1-62d66391eaff@gmail.com/",
+      "if": "부트로더가 USXGMII를 미리 설정하지 않는 보드인 경우",
+      "do": "부팅 후 링크 협상 실패 여부를 테스트하세요",
+      "verify": "lkml 패치의 BMCR autoneg 설정 내용을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux next-20260820 linux-next**\n\n2026-08-20 Mark Brown이 linux-next 통합 트리에 next-20260820 태그를 달고 Next/SHA1s·Next/Trees 메타데이터를 추가했다.\n\n영향: 다음 merge window에 들어갈 후보 패치 묶음의 일일 스냅샷으로, 서브시스템 간 충돌·회귀를 미리 잡는 기준 트리가 된다.\n\n> Add linux-next specific files for 20260820\n\n[원문 확인](https://kernel.googlesource.com/pub/scm/linux/kernel/git/next/linux-next.git/+show/refs/tags/next-20260820)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**Bluetooth SCO: avoid deadlock in sco_conn_free()**\n\nsco_conn_free()가 lock_sock(sk) 보유 중 disable_delayed_work_sync()로 timeout work를 동기 취소하면, sco_sock_timeout()이 같은 socket lock을 기다리며 AB/BA 데드락이 발생한다. 패치는 ISO 전송과 같이 timeout_work를 sco_pinfo로 옮기고 lock 밖에서 취소한다.\n\n영향: 특권 없는 로컬 프로세스가 AF_BLUETOOTH/BTPROTO_SCO 소켓으로 연결 설정·해제 중 데드락을 유발할 수 있고, 비동기 취소만으로는 freed sco_conn에 대한 use-after-free도 남는다.\n\n> sco_conn_free() waits for a sco_sock_timeout() that is blocked on the same socket lock: an AB/BA deadlock.\n\n[원문 확인](https://lore.kernel.org/lkml/20260820174633.1570398-1-alishmery18@gmail.com/)\n\n**selinux: preserve user SID across nested backing files**\n\n중첩 overlayfs(overlay 위 overlay, FUSE passthrough+overlay)에서 user_file이 backing file일 때 mounter SID가 mprotect() fd { use } 검사에 쓰여 잘못된 거부·허용이 발생한다. 패치는 backing layer에서 저장된 user SID를 복사한다.\n\n영향: SELinux enforcing 환경에서 중첩 overlay 위 mprotect()가 사용자 의도와 다른 SID로 검사되어 접근 제어가 깨질 수 있다.\n\n> mprotect(PROT_READ) returns EACCES with an fd { use } denial against the mounter SID. With this change, mprotect() succeeds.\n\n[원문 확인](https://lore.kernel.org/lkml/20260820175832.44512-1-kmehltretter@gmail.com/)\n\n**net: page_pool: Remove zone/policy GFP flags when allocating XArray entries**\n\npage_pool이 DMA 제약 GFP_DMA32를 XArray 엔트리 kmalloc에 전달해 slab이 Unexpected gfp 경고와 gfp 수정을 발생시킨다. 패치는 XArray 할당 시 zone/policy GFP 비트를 제거한다.\n\n영향: mt76·stmmac 등 page_pool 사용자의 WiFi/이더넷 드라이버 PM·RX 리필 경로에서 7.2-rc7+ 빌드가 스택 덤프와 잘못된 gfp로 동작한다.\n\n> Unexpected gfp: 0x4 (GFP_DMA32). Fixing up to gfp: 0x82820 (GFP_ATOMIC|__GFP_NOWARN|__GFP_NOMEMALLOC). Fix your code!\n\n[원문 확인](https://lore.kernel.org/lkml/20260821-page-pool-xa-drop-dma32-v1-1-6eab295c3478@rong.moe/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Linux 7.1.9 stable**\n\n8/19 Greg Kroah-Hartman이 linux-7.1.y에 v7.1.9 stable 태그를 달았고, stable-review 시리즈 271개 패치가 포함된다.\n\n영향: 7.1 계열 운영 커널 사용자에게 SCTP·BPF sockmap·thunderbolt·KVM·ring-buffer 등 보안·회귀 수정이 한 번에 도달한다.\n\n> Date:   Wed Aug 19 18:20:32 2026 +0200\n\n    Linux 7.1.9\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.9)\n\n**Linux 5.10.265 longterm**\n\n8/19 Greg Kroah-Hartman이 linux-5.10.y에 v5.10.265 longterm 태그를 달았고, stable-review 시리즈 389개 패치가 포함된다.\n\n영향: 5.10 longterm을 쓰는 임베디드·CIP·레거시 배포에 SCTP·RDMA·fscrypt·네트워크 등 광범위한 백포트 수정이 한 번에 도달한다.\n\n> Date:   Wed Aug 19 17:12:15 2026 +0200\n\n    Linux 5.10.265\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.265)\n\n**net: pcs: enable autonegotiation for 10g-usxgmii**\n\nLynx PCS USXGMII 설정이 replicator 광고는 쓰지만 in-band autonegotiation 재시작·link timer를 명시하지 않아, 부트로더가 미리 설정하지 않은 시스템에서 링크 협상이 실패할 수 있다. 패치는 BMCR reset·AN enable·AN restart와 timer 레지스터를 ENETC/Felix와 같이 설정한다.\n\n영향: U-Boot Felix 스위치 드라이버에 의존하지 않는 임베디드·산업용 10G USXGMII 보드에서 네트워크 링크가 부팅 후 올라오지 않는 실패 모드를 제거한다.\n\n> Systems which do not get the USXGMII replicator preconfigured before Linux may therefore fail to negotiate the link correctly.\n\n[원문 확인](https://lore.kernel.org/lkml/20260820-b4-fix-pcs-lynx-an-v1-1-62d66391eaff@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "Linux 7.2 메인라인은 8/16 정식 릴리스 이후 추가 변화가 없습니다.\n\n이번 수집에서 제외된 항목: net PHY probe 실패 정리(net vs net-next 라우팅 논의), BCM4361 WiFi 칩셋 지원 추가, memory hotplug PFN online 검사 최적화(리뷰 단계·FLATMEM 빌드 이슈)는 특정 하드웨어·서브시스템에 국한되어 본문에서 생략했습니다."
+    }
+  ],
+  "confidence": {
+    "level": "high",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Linux 7.2 ChangeLog",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux v7.2 git tree",
+      "url": "https://git.kernel.org/torvalds/h/v7.2",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 7.1.9 ChangeLog",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.9",
+      "note": "changelog"
+    },
+    {
+      "title": "7.1.9 stable-review series",
+      "url": "https://lore.kernel.org/all/20260817132536.752504388@linuxfoundation.org/",
+      "note": "thread"
+    },
+    {
+      "title": "linux-next next-20260820",
+      "url": "https://kernel.googlesource.com/pub/scm/linux/kernel/git/next/linux-next.git/+show/refs/tags/next-20260820",
+      "note": "commit"
+    },
+    {
+      "title": "Bluetooth SCO deadlock fix",
+      "url": "https://lore.kernel.org/lkml/20260820174633.1570398-1-alishmery18@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "SELinux nested overlay SID",
+      "url": "https://lore.kernel.org/lkml/20260820175832.44512-1-kmehltretter@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "USXGMII autonegotiation",
+      "url": "https://lore.kernel.org/lkml/20260820-b4-fix-pcs-lynx-an-v1-1-62d66391eaff@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "page_pool XArray GFP fix",
+      "url": "https://lore.kernel.org/lkml/20260821-page-pool-xa-drop-dma32-v1-1-6eab295c3478@rong.moe/",
+      "note": "thread"
+    },
+    {
+      "title": "Linux 5.10.265 ChangeLog",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.265",
+      "note": "changelog"
+    },
+    {
+      "title": "5.10.265 stable-review series",
+      "url": "https://lore.kernel.org/all/20260817132538.796021292@linuxfoundation.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-20T18:04:46.631Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-newsletter-from-dossier-ko.md"
+  }
+}

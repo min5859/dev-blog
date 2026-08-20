@@ -1,0 +1,131 @@
+{
+  "id": "2026-08-21-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-08-21 XSK mac_header — Perf/RT",
+  "headline": "AF_XDP generic Tx의 mac_header 미초기화가 ice에서 KFENCE UAF를 재현했고, sparx5·genirq는 PREEMPT_RT 배포에 atomic sleep·IRQ affinity 이슈를 남깁니다.",
+  "date": "2026-08-21",
+  "summary": "Petr Oros의 xsk 패치는 AF_XDP generic Tx 경로에서 skb_reset_mac_header() 한 줄로 ice KFENCE UAF 387회를 없앴습니다. sparx5 MAC 테이블 접근과 genirq affinity hint 논의는 RT·stable 백포트 범위까지 함께 추적할 가치가 있습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "PREEMPT_RT",
+    "AF_XDP",
+    "genirq"
+  ],
+  "highlights": [
+    {
+      "title": "xsk: reset the mac header in the generic Tx path",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "AF_XDP·XSK generic Tx·Intel ice 등 mac_header 의존 NIC 드라이버 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260817153957.3177627-1-poros@redhat.com/",
+      "if": "AF_XDP generic Tx와 ice(E810) 등 mac_header를 읽는 NIC 드라이버를 함께 쓰는 배포라면",
+      "do": "xsk.c의 skb_reset_mac_header() 패치 merge 여부와 Eric Dumazet이 제안한 ice의 skb_eth_hdr() 전환 follow-up을 추적하세요",
+      "verify": "KFENCE UAF 재현 여부와 stable/backport 대상 커널 범위는 아직 확인하세요"
+    },
+    {
+      "title": "net: sparx5: fix sleep in atomic context in MAC table access",
+      "priority": "상",
+      "impactType": "backport",
+      "affectedAudience": "Microchip sparx5/lan969x netdev·PREEMPT_RT·stable 백포트 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260817-misc-fixes-sparx5-lan969x-v3-2-c7c7fef723a8@microchip.com/",
+      "if": "sparx5/lan969x를 PREEMPT_RT·LTS stable(v5.15~v6.18)에서 운용 중이라면",
+      "do": "ndo_set_rx_mode_async 전환 패치와 Jakub Kicinski가 답한 stable API 백포트 범위를 함께 따라가세요",
+      "verify": "ndo_set_rx_mode_async stable 백포트가 실제로 진행되는지와 lan969x debugfs 분리 패치 merge 일정을 확인하세요"
+    },
+    {
+      "title": "genirq: Honor existing IRQ affinities when setting affinity hints",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "PREEMPT_RT·CPU isolation 운용자, stmmac·멀티큐 netdev·genirq 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260819-flo-net-7-2-make-stmmac-default-affinity-aware-v1-0-3f79a99cadaf@siemens.com/",
+      "if": "PREEMPT_RT CPU isolation 후 stmmac 등 멀티큐 netdev가 link up될 때 IRQ가 RT 코어에 몰리는 문제를 겪는다면",
+      "do": "Florian Bezdeka RFC와 Jakub Kicinski의 request_irq() Nth-of-X 힌트·irq_update_affinity_hint() 제안을 비교 검토하세요",
+      "verify": "request_irq() 시점 등록으로 /proc/irq 사전 제어가 가능한지와 Sashiko가 지적한 TOCTOU·동적 rebalancing 잠금 이슈 반영 여부를 확인하세요"
+    },
+    {
+      "title": "docs: real-time: mention the hrtimer sleeper HARD path",
+      "priority": "하",
+      "impactType": "project",
+      "affectedAudience": "PREEMPT_RT 문서·타이mer·userspace sleeper 동작을 추적하는 RT 개발자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260820163858.27984-1-haohlliang@gmail.com/",
+      "if": "PREEMPT_RT에서 userspace sleep wakeup이 softirq vs hard interrupt 중 어디서 일어나는지 문서로 확인하려면",
+      "do": "Liang Hao v6 패치의 hrtimer_setup_sleeper_on_stack() RT/DL HARD 경로 설명과 ktimers 명칭 정리를 merge 전후 원문에서 확인하세요",
+      "verify": "v6 문구가 Sashiko v5 HRTIMER_MODE_SOFT 정확성 지적을 충분히 반영했는지와 mainline Documentation merge 일정을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**xsk: reset the mac header in the generic Tx path**\n\nAF_XDP generic Tx(__xsk_generic_xmit→__dev_direct_xmit) 경로에서 skb->mac_header가 초기화되지 않아 ice 드라이버가 skb_mac_header()로 ethertype을 읽을 때 sentinel(65535) 오프셋 밖을 참조합니다. Petr Oros 패치는 xsk_skb_init_misc()에 skb_reset_mac_header() 한 줄을 추가하고, KFENCE에서 ice_xmit_frame_ring UAF 387회가 사라졌다고 보고합니다. Eric Dumazet은 증상은 인정하면서 장기적으로 ndo_start_xmit의 mac_header 의존 제거·ice의 skb_eth_hdr() 전환을 제안했습니다.\n\n영향: AF_XDP는 eBPF/XDP 고성능 경로의 핵심이며 qdisc bypass Tx에서 드라이버가 잘못된 헤더 포인터를 읽으면 ethertype 오동작·KFENCE UAF까지 이어집니다. ice/E810 등 일반 Tx에서 mac_header를 읽는 NIC과 generic XSK를 함께 쓰는 배포는 이 수정·리뷰 방향을 추적해야 합니다.\n\n> AF_XDP reaches it through __xsk_generic_xmit(), and net/xdp/xsk.c never sets the mac header. ... BUG: KFENCE: use-after-free read in ice_xmit_frame_ring ... + skb_reset_mac_header(skb);\n\n[원문 확인](https://lore.kernel.org/bpf/20260817153957.3177627-1-poros@redhat.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**net: sparx5: fix sleep in atomic context in MAC table access**\n\nsparx5_set_rx_mode()가 netif_addr_lock_bh 하에서 mutex·readx_poll_timeout()을 호출해 atomic 컨텍스트에서 슬립이 발생합니다. 패치는 ndo_set_rx_mode_async로 옮기며, Sebastian Siewior는 ndo_set_rx_mode_async(v7.1-rc1)가 없는 v5.15~v6.18 stable에 어떻게 백포트할지 질문했고 Jakub Kicinski는 stable에 ndo_set_rx_mode_async 자체를 백포트해야 한다고 답했습니다.\n\n영향: PREEMPT_RT·DEBUG_ATOMIC_SLEEP 환경에서 ip 등으로 인터페이스를 열 때 sleeping-while-atomic이 재현되며, sparx5/lan969x를 LTS·RT로 운용하는 팀은 드라이버 수정뿐 아니라 stable 백포트 범위(새 ndo API 포함)를 함께 추적해야 합니다.\n\n> BUG: sleeping function called from invalid context at kernel/locking/mutex.c:591 ... Convert the driver to the new .ndo_set_rx_mode_async callback ... invoked from process context\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260817-misc-fixes-sparx5-lan969x-v3-2-c7c7fef723a8@microchip.com/)\n\n**genirq: Honor existing IRQ affinities when setting affinity hints**\n\nFlorian Bezdeka RFC는 __irq_apply_affinity_hint()가 이미 설정된 IRQ affinity(/proc/irq)를 덮어써 RT 격리 코어에 stmmac IRQ가 몰리는 문제를 막습니다. Jakub Kicinski는 패치 방향보다 irq_set_affinity_and_hint() API 혼란을 지적하며, Nth-of-X IRQ 분산 힌트를 request_irq() 인자로 옮기거나 irq_update_affinity_hint()가 안전할 때 affinity를 적용하는 쪽을 제안했습니다.\n\n영향: PREEMPT_RT에서 CPU isolation 후 netdev가 link up될 때 드라이버 IRQ 밸런싱이 격리 코어를 무시하면 RT 워크로드에 불필요한 인터럽트 부하가 생깁니다. genirq·netdev IRQ affinity API 설계 논의는 RT 배포·드라이버 유지보수 모두에 영향을 줍니다.\n\n> stmmac network interface went up for the first time - driver balances IRQs over all CPUs, ignoring the existing affinities - Too much IRQ traffic on RT cores\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260819-flo-net-7-2-make-stmmac-default-affinity-aware-v1-0-3f79a99cadaf@siemens.com/)\n\n**docs: real-time: mention the hrtimer sleeper HARD path**\n\nLiang Hao v6 패치는 Documentation/core-api/real-time/differences.rst에 userspace sleep이 쓰는 hrtimer_setup_sleeper_on_stack() 경로를 추가합니다. RT/DL 태스크는 HRTIMER_MODE_HARD로 wakeup하고, 일반 태스크는 softirq(ktimers 스레드)로 처리한다고 문서화하며 ktimersd→ktimers 명칭을 정리합니다. 코드·동작 변경은 없습니다.\n\n영향: PREEMPT_RT에서 userspace sleep wakeup이 softirq vs hard interrupt 중 어디서 일어나는지는 지연·지터 분석의 기본 전제입니다. RT 문서 공백을 메우는 패치이므로 스케줄러·타이머 튜닝 담당은 merge 전후 문구를 확인할 가치가 있습니다.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260820163858.27984-1-haohlliang@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "sparx5 MAC table atomic sleep 및 ndo_set_rx_mode_async 전환",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260817-misc-fixes-sparx5-lan969x-v3-2-c7c7fef723a8@microchip.com/",
+      "note": "thread"
+    },
+    {
+      "title": "stable 백포ort에 ndo_set_rx_mode_async API 포함 필요",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260820102458.308b78ba@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "AF_XDP generic Tx mac_header 미초기화와 ice KFENCE UAF",
+      "url": "https://lore.kernel.org/bpf/20260817153957.3177627-1-poros@redhat.com/",
+      "note": "thread"
+    },
+    {
+      "title": "ndo_start_xmit mac_header 의존 제거 및 ice skb_eth_hdr() 제안",
+      "url": "https://lore.kernel.org/bpf/CANn89iKZe5reKy5uNxF7_G2=zytnPjWCUn+bX7-iGdJuTjBgMw@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "RT 격리 후 stmmac link up 시 IRQ가 RT 코어에 집중",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260819-flo-net-7-2-make-stmmac-default-affinity-aware-v1-0-3f79a99cadaf@siemens.com/",
+      "note": "thread"
+    },
+    {
+      "title": "genirq: 기존 IRQ affinity 덮어쓰지 않도록 hint 적용",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260819-flo-net-7-2-make-stmmac-default-affinity-aware-v1-2-3f79a99cadaf@siemens.com/",
+      "note": "thread"
+    },
+    {
+      "title": "request_irq()에 Nth-of-X 힌트 포함 제안",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260820094153.420202f6@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "hrtimer_setup_sleeper_on_stack() RT/DL HARD 경로 문서화 v6",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260820163858.27984-1-haohlliang@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "ktimers 명칭과 sleeper HARD 설명 문구 제안",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260820082114.QIiSu8n5@linutronix.de/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-20T18:45:12.480Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

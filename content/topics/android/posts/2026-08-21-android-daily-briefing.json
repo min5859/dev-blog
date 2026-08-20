@@ -1,0 +1,96 @@
+{
+  "id": "2026-08-21-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-08-21 f2fs suspend — Android 커널",
+  "headline": "f2fs suspend 중 GC·discard 레이스를 PM notifier로 막고, TLS sockmap dead code 제거와 Qualcomm panic_reboot_mode GKI 심볼 추가가 ACK에 반영됐습니다.",
+  "date": "2026-08-21",
+  "summary": "android16-6.12에서 f2fs 백그라운드 I/O가 UFS Runtime PM suspend와 겹치며 PM freeze 타임아웃을 일으키던 레이스를 PM_SUSPEND_PREPARE 단계 정지로 차단했습니다. mainline·android16-6.12에는 TLS SW 경로 sockmap 정리와 Qualcomm GKI panic_reboot_mode 심볼 화이트리스트 추가도 머지됐습니다.",
+  "tags": [
+    "안드로이드",
+    "커널",
+    "f2fs",
+    "pKVM",
+    "GKI"
+  ],
+  "highlights": [
+    {
+      "title": "f2fs suspend 시 GC·discard 레이스 차단",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "Android 스토리지·전원 관리 담당, f2fs 사용자",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/f255c2d290e7195470916e1810212580fa25adc7",
+      "if": "시스템 suspend 중 PM freeze 타임아웃이나 UFS Runtime PM 교착이 재현되는 경우",
+      "do": "android16-6.12 브랜치에 PM notifier 기반 SBI_IS_SUSPENDING 패치가 포함됐는지 확인하세요.",
+      "verify": "suspend/resume 스트레스 테스트에서 f2fs_gc·f2fs_discard가 정지된 블록 디바이스에 submit_bio()를 호출하지 않는지 검증하세요."
+    },
+    {
+      "title": "TLS SW 경로 sockmap dead code 제거",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "네트워킹·ACK upstream 머지 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/79511603a65b990bed675eb4bcfd85305d3ff42a",
+      "if": "TLS sendmsg/recvmsg 경로의 sockmap 관련 보안 스캐너 오탐이 반복 보고되는 경우",
+      "do": "해당 커밋 머지 후 스캐너 결과 변화를 추적하고, 필요 시 upstream 스레드와 동기화하세요.",
+      "verify": "Android 런타임에서 TLS+sockmap 동시 사용 시나리오 존재 여부는 아직 미확인이니, 영향 범위를 별도로 점검하세요."
+    },
+    {
+      "title": "Qualcomm GKI panic_reboot_mode 심볼 추가",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Qualcomm 벤더 모듈·GKI ABI 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/83f7e9ec53bb7cb3b18b1fde875d861ec7bcbda5",
+      "if": "Qualcomm 벤더 모듈이 패닉 처리 중 설정된 리부트 모드 심볼 참조에 실패하는 경우",
+      "do": "android16-6.12 GKI 심볼 목록에 panic_reboot_mode가 추가됐는지 확인하세요.",
+      "verify": "벤더 모듈 로드·링크 테스트로 enum reboot_mode panic_reboot_mode 참조가 정상 해석되는지 검증하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**tls: remove dead sockmap (psock) handling from the SW path**\n\nTLS와 sockmap이 상호 배타적임에도 sendmsg/recvmsg SW 경로에 남아 있던 psock(sockmap) 처리 코드를 제거해 사실상 dead code인 skmsg 연동을 정리했습니다.\n\n영향: AI 보안 스캐너가 sockmap 관련 버그 표면을 오탐·과다 보고하는 문제를 줄이고, TLS 데이터 경로 유지보수 부담을 낮춥니다(향후 통합 복원 시 재도입 가능).\n\n> TLS and sockmap are now mutually exclusive. Try to delete the code from sendmsg and recvmsg path which is now obviously dead.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/79511603a65b990bed675eb4bcfd85305d3ff42a)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**ANDROID: f2fs: quiesce background threads during system suspend using PM notifier**\n\n시스템 suspend 중 f2fs_gc·f2fs_discard 백그라운드 스레드가 Runtime PM으로 정지된 블록 디바이스에 submit_bio()를 호출해 PM freeze 타임아웃을 일으키는 레이스를, PM_SUSPEND_PREPARE 단계에서 SBI_IS_SUSPENDING 플래그로 GC/디스카드 스레드를 정지시키는 PM notifier로 막았습니다.\n\n영향: Android 기기의 suspend/resume 안정성과 배터리 절감 경로에서 UFS 등 스토리지 PM과 f2fs 백그라운드 I/O 간 교착으로 인한 suspend 실패·지연을 줄입니다. upstream PM/block 레이어 정식 수정은 별도 진행 중이며 ACK에는 f2fs 레이어 워크어라운드만 머지된 것으로 보입니다.\n\n> During system suspend, a race condition can cause f2fs_gc and f2fs_discard threads to call submit_bio() while the underlying block device (e.g., UFS) is in Runtime PM suspend.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/f255c2d290e7195470916e1810212580fa25adc7)\n\n**ANDROID: add panic_reboot_mode to qcom symbols list**\n\nQualcomm GKI 심볼 목록에 panic_reboot_mode enum 심볼을 추가해, 벤더 모듈이 패닉 처리 중 설정된 리부트 모드를 참조할 수 있게 했습니다.\n\n영향: GKI 심볼 화이트리스트에 없는 심볼 참조는 벤더 모듈 로드·인증 실패로 이어지므로, Qualcomm 플랫폼의 패닉/리부트 정책 모듈이 ACK android16-6.12에서 정상 링크되도록 합니다.\n\n> Add panic_reboot_mode to the Qualcomm GKI symbol list, so vendor modules can reference the reboot mode set during panic handling.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/83f7e9ec53bb7cb3b18b1fde875d861ec7bcbda5)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ANDROID: f2fs: quiesce background threads during system suspend using PM notifier",
+      "url": "https://android.googlesource.com/kernel/common/+/f255c2d290e7195470916e1810212580fa25adc7",
+      "note": "commit"
+    },
+    {
+      "title": "tls: remove dead sockmap (psock) handling from the SW path",
+      "url": "https://android.googlesource.com/kernel/common/+/79511603a65b990bed675eb4bcfd85305d3ff42a",
+      "note": "commit"
+    },
+    {
+      "title": "tls: remove dead sockmap — upstream thread",
+      "url": "https://patch.msgid.link/20260614014102.461064-3-kuba@kernel.org",
+      "note": "thread"
+    },
+    {
+      "title": "ANDROID: add panic_reboot_mode to qcom symbols list",
+      "url": "https://android.googlesource.com/kernel/common/+/83f7e9ec53bb7cb3b18b1fde875d861ec7bcbda5",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-20T18:06:34.786Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/android-newsletter-from-dossier-ko.md"
+  }
+}

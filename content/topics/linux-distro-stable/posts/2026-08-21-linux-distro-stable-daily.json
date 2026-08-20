@@ -1,0 +1,120 @@
+{
+  "id": "2026-08-21-linux-distro-stable-daily",
+  "topic": "linux-distro-stable",
+  "title": "2026-08-21 5.15.217-rc1 리뷰 — 배포 Stable",
+  "headline": "5.15.217-rc1 stable 리뷰가 시작됐고, SELinux 중첩 overlay mprotect 회귀·TC qdisc OOM·GVE/xe stable 제출이 큐에 올라왔습니다.",
+  "date": "2026-08-21",
+  "summary": "Greg Kroah-Hartman이 5.15.217-rc1 stable review cycle(272건)을 열었고 이의 제기 마감은 2026-08-22 14:51 UTC입니다. SELinux 중첩 backing file mprotect 회귀, gred/bfifo/plug backlog 래핑 OOM, Intel xe GuC ADS·GVE header-split stable 제출도 함께 추적할 가치가 있습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "stable",
+    "LTS"
+  ],
+  "highlights": [
+    {
+      "title": "5.15.217-rc1 stable review cycle",
+      "priority": "상",
+      "impactType": "release",
+      "affectedAudience": "5.15 LTS stable review·배포 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20260820145231.229664293@linuxfoundation.org/",
+      "if": "5.15 LTS 백포트 큐를 직접 검토한다면",
+      "do": "272건 rc1 시리즈를 검토하고 2026-08-22 14:51 UTC 전에 stable@vger에 이의를 제출하세요",
+      "verify": "마감 시각과 패치 시리즈 공지를 lore 스레드에서 확인하세요"
+    },
+    {
+      "title": "selinux: preserve user SID across nested backing files",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "SELinux enforcing 배포·overlayfs/FUSE passthrough 운영 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20260820175832.44512-1-kmehltretter@gmail.com/",
+      "if": "SELinux enforcing 환경에서 중첩 overlayfs나 overlayfs 기반 FUSE passthrough를 쓴다면",
+      "do": "mprotect(PROT_READ) EACCES 회귀 여부를 재현 테스트하고 stable 백포트 채택 일정을 추적하세요",
+      "verify": "중첩 overlayfs에서 mprotect() 성공·실패와 fd { use } 거부 로그를 원문 스레드와 대조하세요"
+    },
+    {
+      "title": "net: sched: fix 32-bit backlog wrap in gred, bfifo and plug enqueue",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "TC/qdisc(gred·bfifo·plug) 운영·stable 백포트 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20260818095927.15901-1-jhs@mojatatu.com/",
+      "if": "gred·bfifo·plug qdisc로 대용량 shaping이나 실험적 TC 설정을 운영한다면",
+      "do": "4GiB 초과 backlog 래핑으로 admission이 풀리는 경로가 있는지 검토하고 stable 백포트 반영을 기다리세요",
+      "verify": "u64 합산 수정 설명과 Simon Horman Reviewed-by를 stable 스레드에서 확인하세요"
+    },
+    {
+      "title": "gve: fix zero-length skb frag with header-split",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "GVE 드라이버·GCP/클라우드 네트워크 stable 운영 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20260820182128.750922-1-hramamurthy@google.com/",
+      "if": "GVE header split RX와 hairpin TX 경로를 함께 쓴다면",
+      "do": "pure ACK 등 header-only 패킷 후 TX timeout·인터페이스 리셋 회귀를 모니터링하고 6.12.y stable 백포트 일정을 추적하세요",
+      "verify": "zero-length skb frag 생략 수정과 hairpin illegal descriptor 증상을 원문 스레드에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**5.15.217-rc1 review**\n\nGreg Kroah-Hartman이 2026-08-20에 5.15.217 stable review cycle을 시작했으며 272건 패치 시리즈에 대한 이의 제기 마감은 2026-08-22 14:51 UTC입니다. Florian Fainelli가 ARCH_BRCMSTB BMIPS_GENERIC에서 빌드 테스트를 보고했습니다.\n\n영향: 5.15 LTS 배포 담당자는 rc1 review window 동안 272건 백포트 목록을 검토하고 이슈를 stable@vger에 제출해야 다음 5.15.217 릴리스 일정에 반영할 수 있습니다. 272건 패치 시리즈 전체 목록·영향도는 patch-5.15.217-rc1.gz 번들을 열어봐야 확인 가능합니다.\n\n> This is the start of the stable review cycle for the 5.15.217 release.\nThere are 272 patches in this series, all will be posted as a response\nto this one.  If anyone has any issues with these being ap\n\n[원문 확인](https://lore.kernel.org/stable/20260820145231.229664293@linuxfoundation.org/)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**selinux: preserve user SID across nested backing files**\n\nKarl Mehltretter v2 stable 제출은 중첩 backing file(overlayfs 위 overlayfs, overlayfs 기반 FUSE passthrough)에서 user_file SID가 mounter SID로 잘못 저장되어 mprotect() fd { use } 검사가 실패·오판하는 문제를 selinux_file_user_sid() 헬퍼로 수정합니다. 회귀 원인 커밋은 82544d36b172 overlayfs mmap/mprotect 수정입니다.\n\n영향: SELinux enforcing + 중첩 overlayfs/FUSE passthrough를 쓰는 컨테이너·배포 이미지는 stable 백포트 전까지 mprotect(PROT_READ) EACCES 회귀를 그대로 맞을 수 있어, stable 큐 채택 여부를 추적해야 합니다. 패치 Cc에 stable@vger.kernel.org만 있고 대상 stable 브랜치(6.1/6.6/6.12 등) 주석이 없어 백포트 범위는 아직 미확정입니다.\n\n> For nested backing files (overlayfs over overlayfs, or FUSE passthrough\nbacked by overlayfs), user_file may itself be a backing file.  Its\nfsec->sid is the SID of the mounter that opened it, rather th\n\n[원문 확인](https://lore.kernel.org/stable/20260820175832.44512-1-kmehltretter@gmail.com/)\n\n**net: sched: fix 32-bit backlog wrap in gred, bfifo and plug enqueue**\n\nJamal Hadi Salim v2 패치는 gred/bfifo/plug enqueue에서 u32 backlog+패킷 길이 합산이 2^32에서 래핑되어 4GiB 초과 시 admission이 계속 허용되고 OOM까지 갈 수 있는 버그를 u64 합산으로 수정합니다. Simon Horman이 stable 스레드에서 Reviewed-by를 달았습니다.\n\n영향: 루트 권한 qdisc 실험·대용량 트래픽 shaping 환경에서 큐가 한도를 넘어 무한 성장해 OOM을 유발할 수 있어, stable 백포트 채택 시 배포 커널의 TC/qdisc 보안 posture에 직접 영향을 줍니다. stable 제출본에 대상 브랜치 주석이 없어 어떤 LTS/stable 라인에 머지될지는 아직 미확정입니다.\n\n> Once the true backlog exceeds 4 GiB the wrapped sum becomes small and\nadmission keeps succeeding, so the queue grows without bound and the kernel\ncan be driven to OOM.\n\n[원문 확인](https://lore.kernel.org/stable/20260818095927.15901-1-jhs@mojatatu.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/xe/guc_ads: allocate UM queues in a separate BO**\n\nJia Yao 6.12.y stable 제출은 Intel xe GuC ADS의 UM queue를 ads->um_queue_bo 전용 BO로 분리해 CPU memset으로 인한 cacheline 오염을 없애고 GAM 쓰기와 GuC 읽기 간 일관성을 유지합니다. 대상 stable 브랜치는 v6.12+이며, 회귀 원인은 9c57bc08652a(drm/xe/lnl force_probe 제거)입니다.\n\n영향: 6.12+ xe 드라이버를 쓰는 배포(특히 Lunar Lake 계열)는 stable 백포트 전 GuC/ADS queue 일관성 문제로 GPU compute 안정성에 영향을 받을 수 있습니다.\n\n> Move the UM queues into a dedicated BO (ads->um_queue_bo) and avoid\nCPU memset operations on it, which eliminates the CPU as a potential\ncacheline-polluting agent and helps maintain consistency betwee\n\n[원문 확인](https://lore.kernel.org/stable/20260820183050.1381970-1-jia.yao@intel.com/)\n\n**gve: fix zero-length skb frag with header-split**\n\nGoogle GVE 6.12.y stable 제출은 header split RX에서 pure ACK 같은 헤더-only 패킷이 zero-length skb frag를 만들고, hairpin TX 시 illegal descriptor로 큐 정지·TX timeout·인터페이스 리셋이 발생하는 문제를 frag 추가를 생략해 수정합니다. 회귀 원인은 5e37d8254e7f(gve header split data path)입니다.\n\n영향: GVE(GCP 등) header-split + hairpin 경로를 쓰는 배포는 stable 백포트 전 네트워크 인터페이스 리셋 회귀를 맞을 수 있어 백포트 일정 추적이 필요합니다.\n\n> When header split is enabled and a header-only packet is\nreceived such as a pure TCP ACK, GVE will indicate an\nRX SKB with a zero-length fragment. If this SKB is then\nhairpinned and sent back out, the\n\n[원문 확인](https://lore.kernel.org/stable/20260820182128.750922-1-hramamurthy@google.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "high",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "5.15.217-rc1 stable review cycle",
+      "url": "https://lore.kernel.org/stable/20260820145231.229664293@linuxfoundation.org/",
+      "note": "thread"
+    },
+    {
+      "title": "5.15.217-rc1 BMIPS_GENERIC build test",
+      "url": "https://lore.kernel.org/stable/52b90ab8-2503-4cf1-a6aa-767b3c2981d3@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "selinux: preserve user SID across nested backing files",
+      "url": "https://lore.kernel.org/stable/20260820175832.44512-1-kmehltretter@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "net: sched: fix 32-bit backlog wrap in gred, bfifo and plug enqueue",
+      "url": "https://lore.kernel.org/stable/20260818095927.15901-1-jhs@mojatatu.com/",
+      "note": "thread"
+    },
+    {
+      "title": "net sched backlog wrap Reviewed-by",
+      "url": "https://lore.kernel.org/stable/20260820182739.GC265046@horms.kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/xe/guc_ads: allocate UM queues in a separate BO",
+      "url": "https://lore.kernel.org/stable/20260820183050.1381970-1-jia.yao@intel.com/",
+      "note": "thread"
+    },
+    {
+      "title": "gve: fix zero-length skb frag with header-split",
+      "url": "https://lore.kernel.org/stable/20260820182128.750922-1-hramamurthy@google.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-20T18:40:21.538Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

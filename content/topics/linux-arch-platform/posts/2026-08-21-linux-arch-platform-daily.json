@@ -1,0 +1,125 @@
+{
+  "id": "2026-08-21-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-08-21 GIC ITS·RISC-V v7.3 — 아키·플랫폼",
+  "headline": "Arm CCA/MEC에서 GIC ITS·dma-buf zeroing 순서 이슈와 EN7581 NPU 회귀, RISC-V v7.3-rc1 pull이 아키·플랫폼 렌즈를 이끕니다.",
+  "date": "2026-08-21",
+  "summary": "Steven Price v2가 GICv3 ITS와 system_cc_shared dma-buf heap에 clear_pages()를 추가해 set_memory_decrypted() 이후 zeroing을 보장하려 합니다. Paul Walmsley RISC-V v7.3-rc1 pull과 Airoha NPU cache line 버퍼 수정, paravirt static key API 정리, KVM arm64 GCS EXLOCK 패치도 함께 추적할 가치가 있습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "아키텍처",
+    "플랫폼"
+  ],
+  "highlights": [
+    {
+      "title": "irqchip/gic-v3-its: Zero shared pages after conversion",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "GIC ITS·Arm CCA/pKVM·dma-buf heap 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260820150034.88729-1-steven.price@arm.com/",
+      "if": "Arm CCA/MEC 환경에서 GICv3 ITS 또는 system_cc_shared dma-buf heap 경로를 다루는 경우",
+      "do": "set_memory_decrypted() 이후 __GFP_ZERO가 보장되도록 clear_pages() 추가 흐름을 패치 v2와 대조해 검토하세요",
+      "verify": "Catalin Marinas가 지적한 pKVM scrub 부재 가능성과 zeroing 순서 조정 논의를 lore 스레드에서 확인하세요"
+    },
+    {
+      "title": "net: airoha: npu: use cacheline-sized buffers for mailbox DMA",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "Airoha EN7581·MT7996 플랫폼 및 airoha NPU 드라이버 담당",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260817090601.1256389-1-pawlik.dan@gmail.com/",
+      "if": "EN7581+MT7996(Airoha NPU)에서 mailbox DMA와 NPU 버전 probe를 검증하는 경우",
+      "do": "mailbox DMA 버퍼를 최소 SMP_CACHE_BYTES로 할당·매핑하는 v8 패치와 swiotlb bounce buffer 제약을 함께 검토하세요",
+      "verify": "작은 caller 버퍼(24B) 매핑 시 WLAN_FUNC_GET_WAIT_NPU_VERSION이 0.0으로 깨지는 회귀 재현 여부를 보드에서 확인하세요"
+    },
+    {
+      "title": "RISC-V updates for v7.3-rc1",
+      "priority": "중",
+      "impactType": "release",
+      "affectedAudience": "RISC-V 아키텍처·Kconfig·ACPI/EFI 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/d788ab68-c0de-69a3-a36d-b968d6de9b7a@kernel.org/",
+      "if": "RISC-V 아키텍처·플랫폼 코드를 v7.3 merge window에 맞춰 준비하는 경우",
+      "do": "Smcsrind·Ssqosid 등 ISA 확장, MMU update_mmu_cache_range() ASID/Svinval 개선, CFI·ACPI·vDSO 변경 50파일 분량을 pull 요약과 대조하세요",
+      "verify": "Paul Walmsley v7.3-rc1 pull 스레드에서 hwprobe/cpufeature·kprobes selftest 등 관심 항목을 직접 확인하세요"
+    },
+    {
+      "title": "KVM: arm64: Set PSTATE.EXLOCK when entering an exception",
+      "priority": "하",
+      "impactType": "runtime",
+      "affectedAudience": "arm64 KVM·GCS(FEAT_GCS) 가상화 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260812-arm64-gcs-v19-0-9105afd828ac@kernel.org/",
+      "if": "arm64 GCS(FEAT_GCS) KVM 지원과 nested exception·EXLOCK 동작을 추적하는 경우",
+      "do": "GCS v19 05/14 패치의 compute_exlock() 기반 PSTATE.EXLOCK 설정과 Leonardo Bras의 is_exlock_set() 분기 제안을 비교해 리뷰하세요",
+      "verify": "Mark Brown의 EXLOCK 설정 방식 선호 답변과 v19 시리즈 후반 패치 흐름을 lore에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**RISC-V updates for v7.3-rc1**\n\nPaul Walmsley가 v7.3-rc1용 RISC-V pull을 제출했다. Smcsrind·Sscsrind·Ssqosid 등 ISA 확장 정의, ASID/Svinval 기반 update_mmu_cache() 개선, CFI shadow stack 512MB 축소, ACPI table upgrade, vDSO 빌드타임 오프셋 추출, Zacas/Zabha 어셈블러 directive 등 50파일 변경이 포함된다.\n\n영향: RISC-V 아키텍처·플랫폼 담당자는 hwprobe/cpufeature 확장, MMU TLB flush 최적화, UEFI 전원 제어, kprobes selftest 등 이번 merge window 핵심 변경을 미리 파악해야 한다.\n\n> Please pull these RISC-V updates for v7.3-rc1. From a maintenance point of view, there's a new header file include added into one of the ACPI driver files.\n\n> Improve the RISC-V update_mmu_cache_range() implementation by using flush-by-ASID, enabling performance improvements on microarchitectures that support related optimizations\n\n[원문 확인](https://lore.kernel.org/linux-riscv/d788ab68-c0de-69a3-a36d-b968d6de9b7a@kernel.org/)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**irqchip/gic-v3-its: Zero shared pages after conversion**\n\nSteven Price v2 시리즈가 GICv3 ITS와 system_cc_shared dma-buf heap에서 set_memory_decrypted() 이후 __GFP_ZERO를 보장하도록 clear_pages()를 추가한다. Catalin Marinas는 pKVM이 set_memory_decrypted()에서 scrub하지 않아 clear_pages() 전에 기밀 게스트 데이터가 노출될 수 있다고 지적했다.\n\n영향: Arm CCA/MEC 환경에서 ITS 공유 페이지와 dma-buf heap은 게스트에게 암호문 대신 0이 아닌 데이터가 보일 수 있어, irqchip·pKVM·confidential computing 담당자는 zeroing 순서를 반드시 따라야 한다. pKVM에서 set_memory_decrypted() 전에 페이지를 zero/scrub해야 하는지와 zeroing 순서 조정은 확인이 필요하다.\n\n> set_memory_decrypted() does not (currently) guarantee to preserve or zero memory, but both the GICv3 ITS driver and the system_cc_shared dma-buf heap currently allocate memory with __GFP_ZERO\n\n> I don't think pKVM does any scrubbing on set_memory_decrypted(), so it potentially exposes confidential guest data before it reaches clear_pages() below.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260820150034.88729-1-steven.price@arm.com/)\n\n**net: airoha: npu: use cacheline-sized buffers for mailbox DMA**\n\nDaniel Pawlik v8 패치가 EN7581+MT7996(Airoha NPU) mailbox DMA 버퍼를 최소 SMP_CACHE_BYTES로 할당·매핑해 작은 버퍼(24B)에서 NPU 버전 probe가 0.0으로 깨지는 회귀를 수정한다. Jakub Kicinski는 swiotlb bounce buffer에 NPU가 DMA write를 못 하는 EN7581 한계를 인정하면서 근본 원인을 추가로 묻고 있다.\n\n영향: Airoha EN7581 WiFi/NPU 플랫폼은 cache line 미만 DMA 매핑과 bounce buffer 조합에서 mailbox 응답이 깨지므로, 해당 ARM SoC 네트워크 드라이버 유지보수자가 패치와 하드웨어 제약을 함께 봐야 한다. NPU가 swiotlb bounce buffer 주소 범위에 DMA write를 못 하는 EN7581 한계의 근본 원인은 확인이 필요하다.\n\n> mapping small caller buffers with DMA_BIDIRECTIONAL regresses NPU version probe: the mailbox completes successfully but WLAN_FUNC_GET_WAIT_NPU_VERSION reads as 0.0 instead of 0.1111.\n\n> The NPU cannot DMA-write to the bounce buffer address range (it reads commands fine, never writes responses back). This is probably an EN7581 platform limitation.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260817090601.1256389-1-pawlik.dan@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**sched: Convert paravirt_steal to new static key APIs**\n\nHongyan Xia 패치가 paravirt_steal_enabled·paravirt_steal_rq_enabled의 deprecated static_key_slow_inc()를 static_branch_inc()/static_branch_unlikely()로 교체한다. arm64·riscv·x86·Xen 등 10파일에 걸친 API 정리이며 기능 변화는 없다. Shrikanth Hegde가 Reviewed-by를 달았다.\n\n영향: arm64/riscv paravirt stolen time 경로는 scheduler jump label API 마이그레이션의 일부로, 가상화 시간 회계 코드를 병합·백포트할 때 새 static_branch API와 맞춰야 한다.\n\n> paravirt_steal_rq_enabled and paravirt_steal_enabled use raw static_key APIs which are now deprecated. Use the new API instead. No functional change.\n\n> arch/arm64/kernel/paravirt.c           | 4 ++-- arch/riscv/kernel/paravirt.c           | 4 ++-- 10 files changed, 21 insertions(+), 21 deletions(-)\n\n[원문 확인](https://lore.kernel.org/linux-riscv/99bdc3e0-0e0f-4cb1-8747-dd7667307492@linux.ibm.com/)\n\n**KVM: arm64: Set PSTATE.EXLOCK when entering an exception**\n\nMark Brown GCS v19 05/14 패치가 KVM 게스트 exception 진입 시 PSTATE.EXLOCK을 compute_exlock()로 설정한다. Leonardo Bras는 compute_exlock() 대신 is_exlock_set() 분기 패턴을 제안했고 Mark Brown은 양쪽 모두 무방하다고 답했다.\n\n영향: arm64 GCS(FEAT_GCS) KVM 지원에서 nested exception·EXLOCK 동작은 ROP 방어 스택의 하드웨어 의미를 게스트에 올바르게 전달하는 핵심이라, KVM arm64 담당자는 v19 시리즈 후반 패치 리뷰를 따라가야 한다.\n\n> This series implements support for managing GCS for KVM guests.\n\n> I have no strong feeelings on that TBH, I can see preferences either way.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260812-arm64-gcs-v19-0-9105afd828ac@kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "medium",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. GIC ITS 항목은 confidence medium·일부 quote 미검증이므로 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "irqchip/gic-v3-its: Zero shared pages after conversion",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260820150034.88729-1-steven.price@arm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "GIC ITS: Catalin Marinas pKVM scrub 지적",
+      "url": "https://lore.kernel.org/linux-arm-kernel/aoc9CyxGPHPKFH1N@arm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "net: airoha: npu: cacheline-sized mailbox DMA buffers",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260817090601.1256389-1-pawlik.dan@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Airoha NPU: swiotlb bounce buffer EN7581 한계",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260820101851.0b4c284a@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "RISC-V updates for v7.3-rc1",
+      "url": "https://lore.kernel.org/linux-riscv/d788ab68-c0de-69a3-a36d-b968d6de9b7a@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "sched: Convert paravirt_steal to new static key APIs",
+      "url": "https://lore.kernel.org/linux-riscv/99bdc3e0-0e0f-4cb1-8747-dd7667307492@linux.ibm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM arm64 GCS v19 series",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260812-arm64-gcs-v19-0-9105afd828ac@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM arm64 GCS EXLOCK 설정 리뷰",
+      "url": "https://lore.kernel.org/linux-arm-kernel/328346e2-3ace-411a-87ac-31d4d71fb66a@sirena.org.uk/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-20T18:50:05.732Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
