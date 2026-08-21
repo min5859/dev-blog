@@ -1,0 +1,108 @@
+{
+  "id": "2026-08-22-linux-distro-stable-daily",
+  "topic": "linux-distro-stable",
+  "title": "2026-08-22 stable 큐 UAF 5건 — 배포 Stable",
+  "headline": "8월 21일 stable 큐에 TCP_CONGESTION·qdisc 깊이·Bluetooth LE·AF_PACKET TX_RING UAF 백포트가 올라왔고, s390 vfio-ccw v2도 재제출됐습니다.",
+  "date": "2026-08-22",
+  "summary": "stable@vger 큐에는 BPF TCP congestion control getsockopt UAF, TC qdisc 깊이 제한, Bluetooth LE workqueue UAF, AF_PACKET TX_RING headroom 경쟁 수정이 새로 제출됐습니다. s390 vfio-ccw 4패치 묶음은 6.6.y 빌드 오류를 고친 v2로 stable 큐에 재제출됐습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "tcp: fix use-after-free in do_tcp_getsockopt(TCP_CONGESTION)",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF TCP congestion control·고부하 TCP 소켓 운영 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20260821182449.79785-2-blbllhy@gmail.com/",
+      "if": "BPF tcp_congestion_ops를 쓰는 서버·컨테이너 호스트라면",
+      "do": "getsockopt/setsockopt(TCP_CONGESTION) 경쟁으로 UAF가 재현 가능한 워크로드 노출 범위를 점검하고 stable 백포트 일정을 추적하세요",
+      "verify": "KASAN slab-use-after-free 스택과 rcu_read_lock()·스택 버퍼 복사 수정 설명을 lore 스레드에서 확인하세요"
+    },
+    {
+      "title": "net/sched: reject overly deep qdisc hierarchies",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "TC/qdisc 기반 네트워크·컨테이너 네트워킹 운영 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20260821165221.3595405-1-sashal@kernel.org/",
+      "if": "TC qdisc를 깊게 쌓는 컨테이너·QoS 자동화 환경이라면",
+      "do": "5.10.y stable 백포트 채택 여부를 배포 정책과 함께 추적하고 스택 고갈·패닉 위험 경로를 검토하세요",
+      "verify": "struct Qdisc depth 필드 graft 거부 로직과 create-and-graft 경로 설명을 원문 스레드에서 확인하세요"
+    },
+    {
+      "title": "Bluetooth: hci_sync: wait for directed advertising completion",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BlueZ/Bluetooth LE 연결·광고 스택 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20260821172441.3020751-1-nicoyip.dev@gmail.com/",
+      "if": "LE directed advertising·연결 타임아웃 경로를 쓰는 Bluetooth 스택이라면",
+      "do": "stable 백포트 전까지 연결 teardown과 workqueue 경쟁 UAF 위험을 모니터링하세요",
+      "verify": "hci_conn_failed() KASAN 리포트와 le_conn_timeout 제거·LE Connection Complete 동기 대기 수정을 확인하세요"
+    },
+    {
+      "title": "packet: use consistent hard_header_len in TX_RING send path",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "AF_PACKET TX_RING·패킷 mmap 사용자·네트워크 도구 패키징 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20260821165219.3595277-2-sashal@kernel.org/",
+      "if": "AF_PACKET TX_RING(mmap) 기반 패킷 캡처·전송 도구를 운영한다면",
+      "do": "netdevice 재설정 타이밍의 headroom 부족·copylen 음수 위험을 점검하고 stable 백포트를 배포 패치 큐에 반영하세요",
+      "verify": "hard_header_len 스냅샷 통일 수정 설명을 lore 스레드에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**tcp: fix use-after-free in do_tcp_getsockopt(TCP_CONGESTION)**\n\nMicrosoft 보고에 따르면 do_tcp_getsockopt(TCP_CONGESTION)가 rcu_read_lock() 없이 icsk->icsk_ca_ops->name를 읽어, BPF struct_ops로 동적 할당된 congestion ops가 setsockopt(TCP_CONGESTION)과 경쟁해 해제된 뒤 _copy_to_user()에서 UAF가 납니다. 수정은 RCU 구간에서 이름을 스택 버퍼로 복사합니다.\n\n영향: BPF tcp_congestion_ops를 쓰는 서버·컨테이너 호스트는 getsockopt/setsockopt 경쟁으로 slab UAF가 재현 가능하므로 stable 백포트 전까지 해당 워크로드 노출 범위를 점검해야 합니다.\n\n> BUG: KASAN: slab-use-after-free in _copy_to_user+0x37/0x60\n  Read of size 16 at addr ffff888013505260 by task exploit/149\n   do_tcp_getsockopt+0x158a/0x2460 (net/ipv4/tcp.c:4585)\n\n[원문 확인](https://lore.kernel.org/stable/20260821182449.79785-2-blbllhy@gmail.com/)\n\n**net/sched: reject overly deep qdisc hierarchies**\n\nSasha Levin이 5.10.y stable 큐에 제출한 백포트는 struct Qdisc에 depth 필드를 두고 graft 시 갱신해, 이미 최대 깊이인 부모 아래 새 자식 qdisc 생성을 거부합니다. create-and-graft 경로는 기존 loop 검사가 막지 못해 qdisc tree walker가 과도하게 재귀해 커널 스택을 고갈시킬 수 있었습니다.\n\n영향: TC qdisc를 깊게 쌓는 환경(컨테이너·QoS 자동화)에서는 스택 고갈로 커널 패닉까지 이어질 수 있어, 5.10 LTS stable 백포트 채택 여부를 배포 정책과 함께 추적해야 합니다. 동일 upstream 커밋(dedd34b0f231)의 다른 LTS 브랜치(5.15/6.1 등) stable 제출 일정은 이번 스레드만으로는 확인하지 못했습니다.\n\n> Deep qdisc hierarchies can lead to excessive recursion in qdisc tree\nwalkers and exhaust the kernel stack. The existing loop check does not\ncover the create-and-graft path\n\n[원문 확인](https://lore.kernel.org/stable/20260821165221.3595405-1-sashal@kernel.org/)\n\n**Bluetooth: hci_sync: wait for directed advertising completion**\n\nChengfeng Ye v4 stable 제출은 le_conn_timeout delayed work가 hci_conn 참조 없이 큐에 올라가 hci_conn_del()과 경쟁해 hci_conn_failed()에서 UAF가 나는 문제를, delayed callback을 제거하고 directed advertising enable이 LE Connection Complete 이벤트를 동기적으로 기다리도록 바꿉니다.\n\n영향: LE directed advertising·연결 타임아웃 경로를 쓰는 Bluetooth 스택(모바일·IoT 게이트웨이)은 stable 백포트 전까지 연결 teardown과 workqueue 경쟁 UAF 위험을 그대로 안고 있습니다.\n\n> BUG: KASAN: slab-use-after-free in hci_conn_failed+0x232/0x250\n  Read of size 8 at addr ffff8881180e8e20 by task kworker/u33:1/111\n  Workqueue: hci0 le_conn_timeout\n\n[원문 확인](https://lore.kernel.org/stable/20260821172441.3020751-1-nicoyip.dev@gmail.com/)\n\n**packet: use consistent hard_header_len in TX_RING send path**\n\nSasha Levin 5.10.y 백포트는 tpacket_snd()가 dev->hard_header_len을 skb 할당과 tpacket_fill_skb()에서 각각 읽어, netdevice 재설정과 경쟁하면 headroom 부족이나 copylen - hard_header_len 음수가 날 수 있는 문제를, 한 번 스냅샷한 값으로 통일해 수정합니다.\n\n영향: AF_PACKET TX_RING(mmap) 기반 패킷 캡처·전송 도구(tcpdump/자체 DPI)는 장치 재설정 타이밍에 따라 메모리 corruption 위험이 있어 stable 백포트 적용을 배포 패치 큐에 반영해야 합니다. SOCK_DGRAM 경로의 hard_header_len vs header_ops->create 불일치는 이번 패치 범위 밖이라고 명시돼 있습니다.\n\n> Snapshot hard_header_len once before processing ring frames and use it\nfor the frame limit, headroom allocation, copy length, and skb\nconstruction. Pass the snapshot to tpacket_fill_skb().\n\n[원문 확인](https://lore.kernel.org/stable/20260821165219.3595277-2-sashal@kernel.org/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**s390/vfio-ccw stable fixes**\n\nEric Farman v2는 linux-6.6.y에 올렸던 s390/vfio-ccw 4패치 묶음을 빌드 오류·머지 충돌을 고친 뒤 stable 큐에 재제출합니다. cp_init() 실패 시 전체 메모리 해제, IDAW 상수성·IDAL 길이 계산, CRW lock 추가가 포함됩니다.\n\n영향: s390 KVM/vfio-ccw passthrough를 쓰는 엔터프라이즈 배포는 첫 패치 빌드 실패로 6.6.y stable 큐 적용이 지연됐을 수 있어, 수정된 v2 시리즈 채택 여부를 추적해야 합니다.\n\n> The recent s390/vfio-ccw fixes applied to linux-6.6.y had a build error\non the first patch, and some merge conflicts on three others.\nI fixed/resubmitted the other three yesterday, but neglected to no\n\n[원문 확인](https://lore.kernel.org/stable/20260821174951.3467637-1-farman@linux.ibm.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "high",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "tcp: fix use-after-free in do_tcp_getsockopt(TCP_CONGESTION)",
+      "url": "https://lore.kernel.org/stable/20260821182449.79785-2-blbllhy@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "net/sched: reject overly deep qdisc hierarchies",
+      "url": "https://lore.kernel.org/stable/20260821165221.3595405-1-sashal@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "Bluetooth: hci_sync: wait for directed advertising completion",
+      "url": "https://lore.kernel.org/stable/20260821172441.3020751-1-nicoyip.dev@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "packet: use consistent hard_header_len in TX_RING send path",
+      "url": "https://lore.kernel.org/stable/20260821165219.3595277-2-sashal@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "s390/vfio-ccw stable fixes",
+      "url": "https://lore.kernel.org/stable/20260821174951.3467637-1-farman@linux.ibm.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-21T18:28:53.896Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

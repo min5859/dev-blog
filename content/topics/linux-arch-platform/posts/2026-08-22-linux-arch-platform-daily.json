@@ -1,0 +1,110 @@
+{
+  "id": "2026-08-22-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-08-22 stmmac·KVM nested — 아키·플랫폼",
+  "headline": "stmmac QinQ 회귀·arm64 nested KVM shadow S2 UAF 수정, kexec errno 정리, RISC-V stack_canary 빌드 이슈가 아키·플랫폼 렌즈를 이끕니다.",
+  "date": "2026-08-22",
+  "summary": "Ovidiu Panait v2가 dwmac4 stmmac의 802.1ad VLAN stripping 버그를 고치고 HW 한계 구간은 SW 경로로 넘깁니다. Marc Zyngier nested KVM shadow S2 해제 시점 수정, Mukesh Pilaniya kexec probe errno 정리, Charlie Mirabile RISC-V stack_canary 오프셋 패치, Fabrice Gasnier STM32MP25 usb2phy DT binding RFC도 함께 추적할 가치가 있습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "아키텍처",
+    "플랫폼"
+  ],
+  "highlights": [
+    {
+      "title": "net: stmmac: Fix double VLAN 802.1ad tag handling",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "dwmac4/stmmac 기반 ARM SoC·임베디드 네트워크 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260821170959.79708-1-ovidiu.panait.rb@renesas.com/",
+      "if": "Renesas RZ/V2H 등 dwmac4 기반 SoC에서 QinQ(802.1ad) VLAN offload를 검증하는 경우",
+      "do": "vlan_rx_hw()의 ETH_P_8021Q 고정 버그 수정과 RDES3 태그 타입 부재로 SW VLAN 경로로 넘기는 v2 패치를 보드에서 대조하세요",
+      "verify": "802.1ad 외부 태그 패킷이 802.1Q로 잘못 올라가 QinQ ping이 깨지는 재현과 VLAN selftest 추가 내용을 lore 스레드에서 확인하세요"
+    },
+    {
+      "title": "KVM: arm64: nv: Delay freeing of shadow S2 structures until VM destruction",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "arm64 KVM nested virtualization·pKVM 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/aoiQuVs5jzB5La4i@gremlin/",
+      "if": "arm64 nested KVM shadow Stage-2 MMU flush·teardown 경로를 다루는 경우",
+      "do": "kvm_arch_flush_shadow_all()에서 shadow S2 컨테이너 kvfree를 제거하고 VM teardown 시 kvm_destroy_nested()에서 해제하는 패치 흐름을 따라가세요",
+      "verify": "flush_shadow 콜백에서 아직 참조될 수 있는 nested_mmus 배열 free로 인한 use-after-free 위험과 stable Cc 여부를 lore에서 확인하세요"
+    },
+    {
+      "title": "kexec: fix probe error codes and error propagation",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "arm64·RISC-V·LoongArch kexec/kexec-tools 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260821-mpilaniy-v3-0-76b355399d2e@redhat.com/",
+      "if": "kexec_file_load 실패 시 errno 해석이 s390x kexec -s 오진단처럼 가려지는 문제를 추적하는 경우",
+      "do": "포맷 불일치는 -ENOEXEC, -ENOMEM 등 실제 오류는 즉시 전파하도록 probe 경로를 v3 시리즈와 대조하세요",
+      "verify": "kexec_image_probe_default()가 loader 미매칭 시 마지막 loader 반환값을 그대로 돌려주던 버그 수정을 lore 스레드에서 확인하세요"
+    },
+    {
+      "title": "sched: move stack_canary to the start of the randomizable region",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "RISC-V 아키텍처·distro 커널 빌드·scheduler 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260821171127.1061494-1-cmirabil@redhat.com/",
+      "if": "RISC-V defconfig/CI에서 CONFIG_STACKPROTECTOR_PER_TASK 빌드가 task_struct 레이아웃 변화에 취약한 경우",
+      "do": "wakee_flips 재배치로 offset 72에 stack_canary 8바이트 슬롯을 확보하는 패치와 CKI 빌드 재현 사례를 대조하세요",
+      "verify": "stack_canary가 task_struct 2047바이트를 넘을 때 -mstack-protector-guard-offset= 빌드 실패와 7.3 merge window 반영 여부를 lore에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**net: stmmac: Fix double VLAN 802.1ad tag handling**\n\nOvidiu Panait v2 시리즈가 stmmac dwmac4에서 802.1ad(QinQ) 하드웨어 VLAN stripping 시 vlan_rx_hw()가 ETH_P_8021Q로 태그를 고정하는 버그를 수정하고, RDES3에 태그 타입이 없어 이중 VLAN HW stripping을 지원 못 하는 dwmac4에서는 SW 경로로 넘긴다. VLAN selftest도 추가했다.\n\n영향: Renesas RZ/V2H 등 dwmac4 기반 ARM SoC에서 QinQ ping이 깨지므로 stmmac·임베디드 네트워크 플랫폼 담당자는 HW offload 한계와 SW 폴백 동작을 함께 봐야 한다. dwxgmac2에서 동일 이슈 수정 패치가 compile test만 되고 실보드에서 효과가 없다고 보고됐으므로 별도 조사가 필요하다.\n\n> packets that contain an 802.1ad outer tag are incorrectly passed up the stack as having an 802.1Q tag.\n\n> Since dwmac4 does not expose the tag type in the RDES3 descriptor, it cannot support hardware double VLAN stripping correctly.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260821170959.79708-1-ovidiu.panait.rb@renesas.com/)\n\n**KVM: arm64: nv: Delay freeing of shadow S2 structures until VM destruction**\n\nMarc Zyngier 패치가 nested KVM shadow Stage-2 MMU 컨테이너를 kvm_arch_flush_shadow_all()에서 kvfree하던 경로를 제거하고, VM teardown 시 kvm_destroy_nested()에서 vCPU 소멸 후 안전하게 해제한다. Lorenzo Stoakes가 Reviewed-by를 달았고 stable@vger.kernel.org에 Cc됐다.\n\n영향: flush_shadow 콜백에서 아직 참조될 수 있는 nested_mmus 배열을 free하면 use-after-free 위험이 있으므로, arm64 nested KVM·pKVM 담당자는 shadow flush와 VM destroy 경로 분리를 따라가야 한다.\n\n> Freeing the page tables is fair game (this is what this callback is for), but freeing the container that could still be referenced by another part of the system is not great.\n\n> Instead, grow separate destructors that gets called when we tear the VM down for good. From there, we can nuke both the individual MMUs as well as the global array that points to them.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/aoiQuVs5jzB5La4i@gremlin/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**dt-bindings: phy: stm32: adapt usb2phy as syscon child on stm32mp25**\n\nFabrice Gasnier RFC 시리즈 12/16 패치가 stm32mp25에서 stm32-usb2phy DT binding을 syscon 자식 노드(reg·unit address) 모델로 바꾸고 st,syscfg phandle을 제거한다. 예제의 주소·clock·reset도 갱신한다.\n\n영향: STM32MP25 USB/Type-C bring-up에서 usb2phy DT 스키마가 syscon child 전환과 맞물리므로, 보드 DTS·드라이버 담당자는 Marek Vasut syscon 시리즈와 함께 이 바인딩 변경을 추적해야 한다. Marek Vasut syscon child node 시리즈와의 merge 순서 및 최종 binding 형태는 확인이 필요하다.\n\n> Allow usb2phy to be a child node with reg and unit address. It replaces the st,syscfg phandle.\n\n> This is a temporary update, as it depends on Marek's series [1]. This should be dropped in later series revision.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260821-ucpd-host-fusb340-v7-2-rfc-v1-12-c5e27cbc0795@foss.st.com/)\n\n**kexec: fix probe error codes and error propagation**\n\nMukesh Pilaniya v3 2패치 시리즈가 kexec image probe 함수들이 포맷 불일치 시 -EINVAL 대신 -ENOEXEC를 반환하도록 고치고, kexec_image_probe_default()가 마지막 loader 반환값을 그대로 전달하던 버그를 수정해 -ENOEXEC와 -ENOMEM 등 실제 오류를 구분한다. arm64·riscv·loongarch kexec_image.c 등 5파일 변경.\n\n영향: s390x kexec -s 오진단처럼 arch별 kexec_file_load 실패 원인이 가려지는 문제를 줄이므로, arm64/RISC-V kexec·부트로더 통합 담당자는 probe errno 의미 변화를 알아야 한다.\n\n> kexec_image_probe_default() has a bug where it returns whatever the last loader returned rather than always returning -ENOEXEC when no loader matches.\n\n> Patch 2 fixes kexec_image_probe_default() to distinguish format mismatches (-ENOEXEC) from real errors (e.g. -ENOMEM), propagating real errors immediately.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260821-mpilaniy-v3-0-76b355399d2e@redhat.com/)\n\n**sched: move stack_canary to the start of the randomizable region**\n\nCharlie Mirabile가 Ruidong Tian v2 패치 리뷰에 답하며, task_struct 성장으로 RISC-V에서 stack_canary 오프셋이 12-bit signed immediate(±2048) 한계를 넘어 -mstack-protector-guard-offset= 빌드가 깨진 CKI 사례를 확인했다. 패치는 wakee_flips 재배치로 offset 72에 stack_canary 8바이트 슬롯을 확보한다.\n\n영향: RISC-V defconfig/CI에서 CONFIG_STACKPROTECTOR_PER_TASK 빌드가 task_struct 레이아웃 변화에 취약하므로, RISC-V 아키텍처·distro 커널 빌드 담당자는 7.3 merge window 또는 RISC-V tree 긴급 반영 여부를 봐야 한다. 7.3 merge window 병합 가능성과 RISC-V maintainer tree 긴급 반영 경로는 확인이 필요하다.\n\n> Once stack_canary sits past byte 2047 of task_struct, the build fails with cc1: error: '<N>' is not a valid offset in '-mstack-protector-guard-offset='\n\n> We just ran into this exact issue during a CKI build https://datawarehouse.cki-project.org/kcidb/builds/1639782 and this seems like exactly the fix we need.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260821171127.1061494-1-cmirabil@redhat.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "high",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "net: stmmac: Fix double VLAN 802.1ad tag handling",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260821170959.79708-1-ovidiu.panait.rb@renesas.com/",
+      "note": "thread"
+    },
+    {
+      "title": "dt-bindings: phy: stm32: adapt usb2phy as syscon child on stm32mp25",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260821-ucpd-host-fusb340-v7-2-rfc-v1-12-c5e27cbc0795@foss.st.com/",
+      "note": "thread"
+    },
+    {
+      "title": "kexec: fix probe error codes and error propagation",
+      "url": "https://lore.kernel.org/linux-riscv/20260821-mpilaniy-v3-0-76b355399d2e@redhat.com/",
+      "note": "thread"
+    },
+    {
+      "title": "sched: move stack_canary to the start of the randomizable region",
+      "url": "https://lore.kernel.org/linux-riscv/20260821171127.1061494-1-cmirabil@redhat.com/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM: arm64: nv: Delay freeing of shadow S2 structures until VM destruction",
+      "url": "https://lore.kernel.org/linux-arm-kernel/aoiQuVs5jzB5La4i@gremlin/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-21T18:34:16.864Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
