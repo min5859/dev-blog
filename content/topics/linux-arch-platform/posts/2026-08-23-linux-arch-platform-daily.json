@@ -1,0 +1,128 @@
+{
+  "id": "2026-08-23-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-08-23 KVM nested S2 — 아키텍처·플랫폼",
+  "headline": "arm64 nested KVM S2 teardown race·NULL 역참조 수정, RISC-V kprobes LR/SC livelock 방지, SMMUv3 kdump EVTQ 비활성화 등",
+  "date": "2026-08-23",
+  "summary": "arm64 nested KVM Stage-2 shadow 해제 race와 NULL pointer dereference 수정 패치가 stable Cc로 제출됐다. RISC-V kprobes LR/SC 거부, SMMUv3 kdump EVTQ/PRIQ 스킵, axienet IRQ errno 정정, Olimex·Milk-V Duo DTS 논의도 이어진다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "KVM: arm64: nested S2 teardown race·NULL 역참조 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "arm64 KVM nested virtualization·호스트 MMU notifier 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260822-kvm-arm-nested-virt-fix-v2-0-ac4059a0eaa6@kernel.org/",
+      "if": "L0 GFN 무효화로 nested shadow Stage-2를 청크 단위 해제할 때 게스트 teardown과 겹칠 수 있다면",
+      "do": "Lorenzo Stoakes v2 패치의 spurious warn 처리와 kvm->arch.mmu.pgt NULL 검사 반영 여부를 추적하세요",
+      "verify": "stable backport 대상 커널 버전 범위는 아직 확인이 필요합니다"
+    },
+    {
+      "title": "riscv: probes: LR/SC 시퀀스 내부 kprobe 설치 거부",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "RISC-V kprobes·tracing·원자 연산 경로 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260822105303.2043-1-yuanxiaofeng@eswincomputing.com/",
+      "if": "RISC-V 원자 연산 경로에 kprobes나 ftrace를 설치하려 한다면",
+      "do": "LR/SC 명령·시퀀스 내부 주소 거부 로직과 Zalrsc 64바이트 역스캔 한계를 숙지하세요",
+      "verify": "v2 리뷰 반영 후 merge window 반영 시점은 확인이 필요합니다"
+    },
+    {
+      "title": "iommu/arm-smmu-v3: kdump 커널 EVTQ/PRIQ 비활성화",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "arm64 SMMUv3·kdump·IOMMU 플랫폼 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/cover.1784663183.git.nicolinc@nvidia.com/",
+      "if": "arm64 서버·가속기 플랫폼에서 kdump 전환 시 SMMU in-flight DMA 이슈를 다룬다면",
+      "do": "EVTQ/PRIQ 비활성화와 stream table adopt 설계를 함께 검토하세요",
+      "verify": "v9 시리즈 merge 일정과 ARM_SMMU_FEAT_EVTQ 추상화 최종 형태는 확인이 필요합니다"
+    },
+    {
+      "title": "net: xilinx: axienet: IRQ 오류 처리 수정",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "Xilinx AXI Ethernet·Zynq/FPGA SoC arm64 플랫폼 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260821123249.41527-4-phucduc.bui@gmail.com/",
+      "if": "Xilinx AXI Ethernet probe가 DT IRQ 설정 오류로 실패한다면",
+      "do": "irq_of_parse_and_map() 0 반환과 platform_get_irq() 음수를 구분하는 v4 패치를 따라가세요",
+      "verify": "Suraj Gupta 제안 errno(-EINVAL/-ENXIO) 반영 여부를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**KVM: arm64: Fix spurious warn, null ptr deref on S2 teardown race**\n\nLorenzo Stoakes v2 2패치가 nested KVM Stage-2 shadow 해제 중 mmu_lock을 내린 뒤 kvm_flush_shadow_all()과 경합할 때 나는 spurious warning을 무해 race로 처리하고, kvm_nested_s2_unmap()/kvm_nested_s2_wp()에서 kvm->arch.mmu.pgt NULL 검사로 NULL dereference를 막는다. stable@vger.kernel.org에 Cc됐다.\n\n영향: L0 GFN 무효화로 nested shadow S2를 청크 단위로 풀 때 게스트 teardown과 겹치면 실제 하드웨어에서 경고·크래시가 관측됐으므로, arm64 nested KVM·kvmtool 호스트 운영자는 이 teardown race 수정을 따라가야 한다.\n\n> This results in a potential race between this L0 tear down and tear down of the guest itself in kvm_flush_shadow_all(), a race which has been observed on real hardware.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260822-kvm-arm-nested-virt-fix-v2-0-ac4059a0eaa6@kernel.org/)\n\n**net: xilinx: axienet: Fix IRQ error handling**\n\nbui duc phuc v4 패치가 axienet probe에서 irq_of_parse_and_map() 실패(0 반환)와 platform_get_irq() 음수 오류를 구분해 원래 errno를 전달한다. 기존 rx_irq<=0 검사는 irq 0을 놓치고 OF 경로 실패를 -ENOMEM으로 오보고했다. Suraj Gupta가 OF 경로 errno를 -EINVAL/-ENXIO로 바로잡자고 제안했다.\n\n영향: Xilinx AXI Ethernet을 쓰는 Zynq/FPGA SoC arm64 보드에서 DT IRQ 설정 오류가 -ENOMEM으로 가려지면 probe 실패 원인 추적이 어려우므로, axienet 플랫폼 통합 담당자는 수정된 IRQ 검사를 따라가야 한다.\n\n> irq_of_parse_and_map() returns 0 when parsing or mapping an IRQ fails, while platform_get_irq() returns a negative error code on failure. Handle both cases and preserve the original IRQ lookup errors\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260821123249.41527-4-phucduc.bui@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**riscv: probes: reject kprobes inside LR/SC sequences**\n\nXiaofeng Yuan v2 패치가 LR/SC 명령과 Zalrsc 제약 루프(최대 64바이트·16명령) 내부 주소에 대한 kprobe 설치를 거부한다. breakpoint가 load reservation을 깨면 SC가 항상 실패해 재시도 루프가 breakpoint에 다시 걸리는 livelock을 막는다.\n\n영향: RISC-V 원자 연산 경로에 kprobes/ftrace를 쓰는 디버깅·성능 분석 담당자는 LR/SC 시퀀스 중간에 probe를 두면 CPU가 멈출 수 있으므로, 새 거부 로직과 64바이트 역스캔 한계를 알아야 한다.\n\n> A breakpoint trap taken in the middle of an LR/SC sequence clears the load reservation, so an SC following the probed instruction would always fail and the enclosing retry loop would re-enter the brea\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260822105303.2043-1-yuanxiaofeng@eswincomputing.com/)\n\n**iommu/arm-smmu-v3: Do not enable EVTQ/PRIQ interrupts in kdump kernel**\n\nNicolin Chen SMMUv3 kdump v9 시리즈 01/12가 kdump 커널에서 EVTQ/PRIQ 인터럽트·핸들러 설정을 건너뛰고, combined IRQ handler는 ARM_SMMU_FEAT_EVTQ/FEAT_PRIQ 게이트로 threaded wake를 막는다. v9 리뷰에서 Jason Gunthorpe 제안에 따라 is_kdump_kernel() 분산 대신 FEAT 플래그 방식으로 정리 중이다.\n\n영향: kdump 전환 시 SMMU를 공격적으로 리셋하면 in-flight DMA가 AER/SError나 물리 메모리 오염을 일으킬 수 있어, arm64 서버·가속기 플랫폼의 kdump/IOMMU 담당자는 EVTQ/PRIQ 비활성화와 stream table adopt 설계를 함께 봐야 한다.\n\n> - Skip EVENTQ/PRIQ setup including interrupts and their handlers\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/cover.1784663183.git.nicolinc@nvidia.com/)\n\n**arm64: dts: allwinner: a64: olinuxino: Fix phy-mode**\n\nRoman Riabenko v2가 sun50i-a64-olinuxino.dts에서 phy-mode를 rgmii에서 rgmii-id로 바꾸고 allwinner,tx-delay-ps를 제거한다. PCB·KSZ9031RNX 기본 지연 분석에 따르면 rgmii-id가 PHY 내부 RGMII delay를 켜 다운로드 방향 패킷 손실을 없앤다. Andrew Lunn이 Reviewed-by를 달았다.\n\n영향: Olimex A64-OlinuXino에서 잘못된 RGMII 타이밍은 다운로드·소프트웨어 설치를 망가뜨릴 정도의 패킷 손실을 일으키므로, Allwinner arm64 보드 네트워크 bring-up 담당자는 phy-mode 선택을 확인해야 한다.\n\n> Packet loss in the downlink direction is observed with the 'rgmii' mode and is severe enough to interfere with downloads and disrupt software installation. No packet loss is observed with 'rgmii-id'.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260822052353.22881-1-roman@riabenko.com/)\n\n**riscv: dts: sophgo: Enable ethernet for Milk-V Duo 256M**\n\nChen-Yu Yeh 패치가 sg2002-milkv-duo256m.dts에서 gmac0·mdio를 status=\"okay\"로 켜 optional IO 보드의 RJ45 이더넷을 활성화하려 했으나, Inochi Amaoto가 기본 enable은 부적절하다며 DT overlay 방식을 요구했다. GMAC probe·PHY 감지는 보고됐지만 link-up 검증은 IO 보드 부재로 미완이다.\n\n영향: Milk-V Duo 256M·Sophgo SG2002 보드 bring-up 담당자는 이더넷 핀을 GPIO로 쓰는 사용자와 충돌하지 않도록 기본 DT vs overlay 정책을 봐야 한다.\n\n> This is not acceptable, I agree with something like DT overlay for support external IO board to enable this. But you should not enable this by default. As other may want to use this as GPIO.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/aokFbP7wArV58T9E@inochi.infowork/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "riscv: probes: reject kprobes inside LR/SC sequences",
+      "url": "https://lore.kernel.org/linux-riscv/20260822105303.2043-1-yuanxiaofeng@eswincomputing.com/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM: arm64: Fix spurious warn, null ptr deref on S2 teardown race",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260822-kvm-arm-nested-virt-fix-v2-0-ac4059a0eaa6@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: dts: sophgo: Enable ethernet for Milk-V Duo 256M",
+      "url": "https://lore.kernel.org/linux-riscv/aokFbP7wArV58T9E@inochi.infowork/",
+      "note": "thread"
+    },
+    {
+      "title": "arm64: dts: allwinner: a64: olinuxino: Fix phy-mode",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260822052353.22881-1-roman@riabenko.com/",
+      "note": "thread"
+    },
+    {
+      "title": "arm64: dts: allwinner: a64: olinuxino: Reviewed-by Andrew Lunn",
+      "url": "https://lore.kernel.org/linux-arm-kernel/b37fa1dd-862f-48ac-98c9-4556c2bf3f94@lunn.ch/",
+      "note": "thread"
+    },
+    {
+      "title": "iommu/arm-smmu-v3: kdump kernel support (cover)",
+      "url": "https://lore.kernel.org/linux-arm-kernel/cover.1784663183.git.nicolinc@nvidia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "iommu/arm-smmu-v3: Do not enable EVTQ/PRIQ interrupts in kdump kernel",
+      "url": "https://lore.kernel.org/linux-arm-kernel/aonmf%2FmKFhBDca5D@nvidia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "net: xilinx: axienet: Fix IRQ error handling",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260821123249.41527-4-phucduc.bui@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "net: xilinx: axienet: IRQ errno review comment",
+      "url": "https://lore.kernel.org/linux-arm-kernel/e225c560-eae8-4487-be66-f624e5e215ee@amd.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-22T19:04:45.590Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

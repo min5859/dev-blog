@@ -1,0 +1,123 @@
+{
+  "id": "2026-08-23-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-08-23 Bounded bool UB — toolchain",
+  "headline": "Rust Bounded bool 변환 UB, CIFS TREE_CONNECT slab OOB, bnxt_en TPA OOB 등 toolchain 보안·빌드 패치가 메일링 리스트에 올라왔습니다.",
+  "date": "2026-08-23",
+  "summary": "Rust-for-Linux Bounded의 From<bool> 불변식 위배로 safe Rust에서 UB가 가능한 v4 패치, CIFS SMB1 TREE_CONNECT ByteCount 검증 강화 v3, bnxt_en SW TPA ID 범위 제한 패치가 보안 신호로 올라왔습니다. GCC 플러그인 외부 모듈 빌드의 DWARF 경로 유출 억제 v3와 RISC-V PROT_WRITE·shadow stack mmap 후속 논의도 함께 추적 대상입니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "rust: num: restrict bool conversion to unsigned Bounded",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "Rust-for-Linux Bounded 타입 사용자·rust 서브시스템 유지보수자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260822-fix-rust-bounded-from-bool-submit-v4-1-aa780bfe7f30@younes.io/",
+      "if": "Bounded 타입에 bool에서 From 변환을 쓰는 경로가 있다면",
+      "do": "v4 패치를 추적하고 bool↔Bounded 변환을 unsigned Bounded로만 허용하는 수정을 stable 백포트 후보로 검토하세요",
+      "verify": "lore 스레드에서 signed Bounded<N=1> 불변식 위배 시 Deref unreachable_unchecked()로 safe Rust UB에 도달하는 경로를 확인하세요"
+    },
+    {
+      "title": "bnxt_en: Bound SW TPA IDs to prevent crashes",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "bnxt_en·Broadcom NIC 드라이버·netdev 유지보수자",
+      "verifyLink": "https://lore.kernel.org/llvm/20260821233549.3134699-1-joe@dama.to/",
+      "if": "Broadcom bnxt_en NIC(예: FW 57608, max_tpa=32) 부팅·수신 경로를 운영한다면",
+      "do": "bnxt_alloc_agg_idx 충돌 로직이 SW 인덱스를 [0, bp->max_tpa)로 제한하는 패치 적용을 추적하세요",
+      "verify": "agg_id가 bp->max_tpa 이상일 때 rx_tpa OOB와 bnxt_rx_pkt GPF 재현 조건을 lore 원문에서 확인하세요"
+    },
+    {
+      "title": "smb: client: reject a tree connect response whose byte count is too small",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "CIFS/SMB 클라이언트·네트워크 파일시스템 보안 담당",
+      "verifyLink": "https://lore.kernel.org/llvm/20260821-b4-disp-5297959d-v3-1-2f92f9abccee@proton.me/",
+      "if": "SMB1 CIFS 클라이언트가 비정상·악의적 서버에 연결될 수 있는 환경이라면",
+      "do": "v3의 bytes_left<2 거부와 smb_eio_trace 129번째 항목에 따른 __mode(byte) 제거 변경을 머지·백포트 경로에서 추적하세요",
+      "verify": "KMSAN·가짜 SMB1 서버(WordCount 128, ByteCount 0 TREE_CONNECT) 재현 시나리오와 /proc/fs/cifs/DebugData 유출 경로를 lore 원문에서 확인하세요"
+    },
+    {
+      "title": "riscv/mm : ensure PROT_WRITE leads to VM_READ | VM_WRITE",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "RISC-V mm·shadow stack·LTP/mmap 테스트 추적자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/878q5y6qwh.fsf@igel.home/",
+      "if": "RISC-V shadow stack용 protection_map[VM_WRITE] 재정의 이후 mmap 권한·LTP 테스트를 추적한다면",
+      "do": "PROT_WRITE만 지정한 mmap이 VM_READ|VM_WRITE로 매핑되도록 Deepak Gupta 후속 패치 진행 상황을 lore에서 확인하세요",
+      "verify": "7.2에서 Andreas Schwab이 지적한 broken 상태와 spinics 설계(PROT_WRITE 시 VM_READ|VM_WRITE 강제)를 원문에서 대조하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**rust: num: restrict bool conversion to unsigned Bounded**\n\nBounded에 대한 From<bool>이 true를 1로 넣어 signed Bounded<N=1>에서 -1·0만 허용되는 불변식을 깨고, Deref의 unreachable_unchecked()로 safe Rust에서 UB가 가능하다는 v4 패치가 bool↔Bounded 변환을 unsigned 타입으로만 허용합니다.\n\n영향: Rust-for-Linux 드라이버가 Bounded를 쓰는 경로에서 타입 안전성이 깨지면 커널 메모리 손상·UB로 직결되므로, stable 백포트 대상으로 조기 수정이 필요합니다.\n\n> From<bool> turns true into 1. A signed Bounded with N = 1 can hold only -1 and 0. Deref relies on that invariant and calls unreachable_unchecked() when it is broken, so safe Rust can reach undefined b\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260822-fix-rust-bounded-from-bool-submit-v4-1-aa780bfe7f30@younes.io/)\n\n**smb: client: reject a tree connect response whose byte count is too small**\n\nCIFSTCon()이 ByteCount 0·1 응답에서 strnlen 경계가 음수→거대 size_t로 변해 cifs_strndup_from_utf16()이 ~16KB slab을 넘어 읽고, tcon->nativeFileSystem이 /proc/fs/cifs/DebugData로 유출될 수 있다는 v3가 bytes_left<2를 거부하고 smb_eio_trace 129번째 항목 때문에 __mode(byte)를 제거합니다.\n\n영향: 악의적·비정상 SMB1 서버가 TREE_CONNECT 응답만 조작해 커널 slab OOB 읽기와 proc 디버그 경로를 통한 정보 유출을 유발할 수 있습니다. v6.19 이전 stable 백포트에서 trace 없이 rc=-EIO만 넣는 형태로 실제 머지되는지는 확인이 필요합니다.\n\n> for ByteCount 0 or 1 goes negative as an int and converts to a huge size_t. a bound of up to 65535 against a ~16 KB cifs_req_poolp object runs off the end of the slab object, and the bytes reach users\n\n[원문 확인](https://lore.kernel.org/llvm/20260821-b4-disp-5297959d-v3-1-2f92f9abccee@proton.me/)\n\n**bnxt_en: Bound SW TPA IDs to prevent crashes**\n\nbnxt_alloc_agg_idx가 FW TPA ID를 MAX_TPA_P5_MASK(255)로만 줄여 bp->max_tpa(예: 57608 FW 32)보다 큰 agg_id가 rx_tpa[agg_id]에 OOB 접근·부팅 시 bnxt_rx_pkt GPF를 유발한다는 패치가 충돌 로직을 [0, bp->max_tpa)로 제한합니다.\n\n영향: Broadcom bnxt_en NIC 부팅·수신 경로에서 조용한 OOB 쓰기와 즉시 크래시가 가능해, 네트워크 스택 가용성과 메모리 안전 모두에 영향을 줍니다. 다른 FW·max_tpa 조합에서 INVALID_HW_RING_ID 반환 시 패킷 드롭 영향 범위는 확인이 필요합니다.\n\n> If the software ID from bnxt_alloc_agg_idx is above 31, this results in an invalid address being loaded: tpa_info = &rxr->rx_tpa[agg_id]; because rx_tpa is allocated with only bp->max_tpa (32) entries\n\n[원문 확인](https://lore.kernel.org/llvm/20260821233549.3134699-1-joe@dama.to/)\n\n**scripts/gcc-plugins: suppress recorded GCC switches for extmod builds**\n\nGCC 플러그인 사용 시 외부 모듈(KBUILD_EXTMOD) 빌드가 -grecord-gcc-switches로 DWARF에 -fplugin= 절대 경로를 기록해 호스트·빌드 경로가 디버그 메타데이터로 새는 v3가 plugin cflags에 -gno-record-gcc-switches를 추가합니다.\n\n영향: 배포 모듈·QA가 DWARF producer 문자열을 검사할 때 빌드 호스트 경로·내부 경로가 노출되면 정보 유출·재현성·보안 감사 이슈가 됩니다. 메인 커널 이미지 빌드 경로의 동일 leakage 여부는 이 패치 범위 밖입니다.\n\n> With GCC plugins enabled, external module builds can record -fplugin=... paths in DWARF producer metadata via -grecord-gcc-switches, leaking host/build specific paths and triggering QA checks.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20260820060116.786173-1-jaihindy@qti.qualcomm.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**riscv/mm : ensure PROT_WRITE leads to VM_READ | VM_WRITE**\n\nRISC-V shadow stack용 protection_map[VM_WRITE] 재정의 이후 PROT_WRITE만 지정한 mmap이 올바른 VMA/PTE로 매핑되지 않는 문제가 7.2에도 열려 있고, Andreas Schwab이 8월 22일 Deepak Gupta에게 약속된 후속 패치 진행을 문의했습니다.\n\n영향: PROT_WRITE와 shadow stack PTE 인코딩 불일치는 RISC-V 메모리 권한 모델·shadow stack 보안 기능과 기존 앱 mmap 호환성을 동시에 흔들어 잘못된 매핑 권한·테스트 실패·보안 기능 오용 위험이 있습니다. 7.2에서 broken의 구체 경로(mmap04·shadow stack syscall·다른 mmap 경로)와 후속 패치 일정은 확인이 필요합니다.\n\n> If PROT_WRITE was specified, force it to VM_READ | VM_WRITE. Only VM_WRITE means shadow stack.\n\n[원문 확인](https://www.spinics.net/lists/linux-mm/msg462089.html)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "medium",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "rust: num: restrict bool conversion to unsigned Bounded",
+      "url": "https://lore.kernel.org/rust-for-linux/20260822-fix-rust-bounded-from-bool-submit-v4-1-aa780bfe7f30@younes.io/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: num: add Bounded integer wrapping type",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=01e345e82ec3",
+      "note": "commit"
+    },
+    {
+      "title": "smb: client: reject a tree connect response whose byte count is too small",
+      "url": "https://lore.kernel.org/llvm/20260821-b4-disp-5297959d-v3-1-2f92f9abccee@proton.me/",
+      "note": "thread"
+    },
+    {
+      "title": "bnxt_en: Bound SW TPA IDs to prevent crashes",
+      "url": "https://lore.kernel.org/llvm/20260821233549.3134699-1-joe@dama.to/",
+      "note": "thread"
+    },
+    {
+      "title": "scripts/gcc-plugins: suppress recorded GCC switches for extmod builds",
+      "url": "https://lore.kernel.org/linux-kbuild/20260820060116.786173-1-jaihindy@qti.qualcomm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv/mm : ensure PROT_WRITE leads to VM_READ | VM_WRITE",
+      "url": "https://lore.kernel.org/rust-for-linux/878q5y6qwh.fsf@igel.home/",
+      "note": "thread"
+    },
+    {
+      "title": "RISC-V PROT_WRITE and shadow stack mmap design",
+      "url": "https://www.spinics.net/lists/linux-mm/msg462089.html",
+      "note": "thread"
+    },
+    {
+      "title": "riscv_sys_mmap PROT_WRITE handling in v7.2",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/plain/arch/riscv/kernel/sys_riscv.c?h=v7.2",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-22T18:49:01.785Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,123 @@
+{
+  "id": "2026-08-23-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-08-23 BPF verifier null 추론 — linux-perf-rt",
+  "headline": "BPF verifier nullness 오류와 octeontx2 eswitch oops가 주목되고, arena memcg OOM v4·JIT capability 분리가 이어집니다.",
+  "date": "2026-08-23",
+  "summary": "check_cond_jmp_op()의 잘못된 non-null 추론과 octeontx2 representor NULL 역참조가 보안·회귀 신호로 올라왔습니다. BPF arena memcg OOM 수정은 v4로 리뷰가 진행되고, arena kfunc·struct_ops JIT capability 분리 시리즈가 제안됐습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "BPF verifier nullness 추론 오류",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF verifier nullness 추론·selftest 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260821-bug-029-bad-non-null-inference-v1-1-45ddc0f7c308@gmail.com/",
+      "if": "PTR_TO_MEM 등 런타임 NULL 가능 타입과 map pointer를 비교하는 BPF 프로그램을 검증한다면",
+      "do": "Fixes: befae75856ab 회귀 수정 패치 채택 여부를 추적하세요",
+      "verify": "2/2 패치와 selftest 커버리지를 lore 스레드에서 확인하세요"
+    },
+    {
+      "title": "octeontx2 AF_XDP representor NULL 역참조",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Marvell octeontx2 AF_XDP zero-copy·devlink eswitch 운용 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260821105536.2998765-1-rkannoth@marvell.com/",
+      "if": "OcteonTX2에서 devlink eswitch 모드와 AF_XDP zero-copy를 함께 쓴다면",
+      "do": "NULL test_bit() 수정 v2와 Fixes: efabce290151 채택을 확인하세요",
+      "verify": "Sashiko 리뷰가 지적한 set_bit race·NAPI·XDP queue misconfig 잔존 여부를 확인하세요"
+    },
+    {
+      "title": "bpf_obj_memcpy KCSAN data_race 주석",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "BPF map update·KCSAN selftest·syzbot 회귀 추적 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260822-bpf-kcsan-obj-memcpy-v3-1-4227b2edd8b4@proton.me/",
+      "if": "BPF map 값 복사 경로의 KCSAN write-write race 보고를 다룬다면",
+      "do": "data_race() 주석이 동기화 변경 없이 의도적 lockless torn update를 문서화함을 인지하세요",
+      "verify": "일관성이 필요한 호출자는 BPF_F_LOCK 등 적절한 보호를 제공해야 함을 패치 설명에서 확인하세요"
+    },
+    {
+      "title": "arena kfunc·struct_ops JIT capability 분리",
+      "priority": "중",
+      "impactType": "project",
+      "affectedAudience": "BPF arena JIT·struct_ops trampoline·아키텍처 BPF backend 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260821233516.3426127-2-memxor@gmail.com/",
+      "if": "BPF arena kfunc offset rebase와 struct_ops trampoline JIT 지원을 추적한다면",
+      "do": "14패치 시리즈의 capability 분리 채택 일정을 지켜보세요",
+      "verify": "x86-64·arm64가 양쪽 capability를 유지하는지 lore 시리즈에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**bpf: check_cond_jmp_op(): properly infer if register is null**\n\nEduard Zingerman bpf-next 2패치 시리즈(1/2)는 check_cond_jmp_op()가 PTR_MAYBE_NULL 없는 PTR_TO_MEM 등 런타임 NULL 가능 타입과 비교할 때 잘못 non-null을 추론하는 버그를, type_may_be_null() 대신 reg_not_null() allowlist로 고칩니다. Nicholas Carlini가 bpf_rdonly_cast(0,0) == map lookup 비교 후 null deref를 놓치는 사례를 보고했습니다.\n\n영향: verifier의 nullness 추론 오류는 커널 null pointer dereference로 이어질 수 있어, PTR_TO_MEM·PTR_UNTRUSTED와 map pointer를 비교하는 BPF 프로그램 검증 경로를 다루는 쪽은 Fixes: befae75856ab 회귀 수정 채택을 추적해야 합니다.\n\n> if (a == b)\n>     *b = 42;  // verifier does not catch null pointer dereference\n\n[원문 확인](https://lore.kernel.org/bpf/20260821-bug-029-bad-non-null-inference-v1-1-45ddc0f7c308@gmail.com/)\n\n**octeontx2-pf: fix NULL deref of af_xdp_zc_qidx on rep setup**\n\nSuman Ghosh v2 패치는 representor 등 non-AF_XDP 경로에서 NULL인 af_xdp_zc_qidx bitmap에 test_bit()을 무조건 호출해 devlink eswitch 모드 전환 시 otx2_pool_aq_init()에서 oops 나는 문제를 RSS·ethtool·XSK·pool init 경로마다 NULL 검사로 막습니다. Sashiko AI v2 리뷰는 set_bit()/clear_bit() probe race·XSK pool setup 중 NAPI 비활성·XDP queue 경계 오류 등 3건의 선행 이슈가 여전히 열려 있다고 지적합니다.\n\n영향: OcteonTX2에서 AF_XDP zero-copy와 devlink representor를 함께 쓰는 XDP 배포는 eswitch 설정만으로 커널 panic에 닿을 수 있습니다. NULL test_bit() 수정은 Fixes: efabce290151 회귀를 막지만, Sashiko가 지적한 probe·NAPI·queue misconfig 이슈는 zero-copy TX 안정성에 추가 리스크를 남깁니다.\n\n> Representors and other non-AF_XDP paths leave the pointer NULL, but several call sites used test_bit() on it unconditionally. Switching to devlink eswitch mode ... oopses when dereferencing the NULL b\n\n[원문 확인](https://lore.kernel.org/bpf/20260821105536.2998765-1-rkannoth@marvell.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**bpf: arena: handle memory.max on fault-in with reclaim/OOM (v4)**\n\nJiayuan Chen v4(4패치)는 arena memcg accounting 이후 fault-in이 arena->spinlock 아래 non-blocking allocator만 써 memory.max 도달 시 reclaim 없이 실패하고 VM_FAULT_SIGSEGV를 내는 문제를, lock 밖 선할당·sleepable allocator·VM_FAULT_OOM 반환으로 고칩니다. v4는 bpf-next rebase·충돌 수정과 Emil Tsalapatis Reviewed-by가 추가됐고, selftest는 memory.events oom_kill로 memcg OOM을 검증합니다.\n\n영향: BPF arena를 memcg limit 아래에서 fault-in하는 워크로드는 page cache만으로 memory.max에 닿을 수 있어, SIGSEGV 대신 memcg OOM이 맞는 동작을 기대합니다. PREEMPT_RT에서는 can_alloc_pages()가 항상 non-blocking 경로를 강제하므로 arena+PREEMPT_RT 조합은 이 수정과 selftest를 함께 추적해야 합니다. bpf-next merge 일정과 selftest의 oom_kill 검증이 미수정 커널의 racy SIGSEGV와 충분히 분리되는지는 확인이 필요합니다.\n\n> Once memory.current is at memory.max the allocation simply fails. ... That failure is turned into VM_FAULT_SIGSEGV, which is misleading: the faulting address is a perfectly valid arena address.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260821050250.35112-1-jiayuan.chen@linux.dev/)\n\n**bpf: Annotate bpf_obj_memcpy with data_race**\n\nQuanye Yang v3 패치는 syzbot이 보고한 bpf_obj_memcpy() memcpy 경로의 KCSAN write-write race에 data_race() 주석을 bpf_long_memcpy()와 같이 추가합니다. 동기화나 map update 동작은 바꾸지 않고 의도적 lockless torn update 시맨틱을 문서화합니다.\n\n영향: BPF map 값 복사 경로의 KCSAN 노이즈를 줄이되, published map value의 lockless in-place update가 torn value를 허용한다는 기존 계약을 명시합니다. map 타입별 동기화가 필요한 호출자는 여전히 BPF_F_LOCK 등 적절한 보호를 제공해야 합니다.\n\n> Unlocked in-place updates of published map values are intentionally not serialized and may produce torn values. Callers requiring consistency must provide synchronization appropriate for the map type.\n\n[원문 확인](https://lore.kernel.org/bpf/20260822-bpf-kcsan-obj-memcpy-v3-1-4227b2edd8b4@proton.me/)\n\n**bpf: Split arena kfunc and struct_ops JIT capabilities**\n\nKumar Kartikeya Dwivedi bpf-next 14패치 시리즈 01/14는 단일 bpf_jit_supports_arena_args() 훅을 kfunc·struct_ops용 별도 capability 훅으로 분리해 arena offset rebase와 struct_ops trampoline pointer 변환 JIT 지원을 독립적으로 구현·리뷰할 수 있게 합니다. x86-64·arm64는 양쪽 capability를 유지합니다.\n\n영향: BPF arena kfunc와 struct_ops는 JIT 요구가 다르므로, 단일 훅은 bpf_arena_alloc_pages() 변환을 struct_ops trampoline 지원에 묶어 아키텍처별 arena JIT 롤아웃을 지연시킬 수 있습니다. arena fault-in·memcg 수정과 함께 arena JIT 인프라 정비를 추적할 가치가 있습니다. 14패치 시리즈 merge 일정과 비 x86/arm64 아키텍처 롤아웃 순서는 확인이 필요합니다.\n\n> A single bpf_jit_supports_arena_args() hook forces an architecture to implement both paths at once. That ties bpf_arena_alloc_pages() conversion to struct_ops trampoline support and prevents the paths\n\n[원문 확인](https://lore.kernel.org/bpf/20260821233516.3426127-2-memxor@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "bpf: arena: handle memory.max on fault-in with reclaim/OOM",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260821050250.35112-1-jiayuan.chen@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "sched: Allow sleeping spinlocks on PREEMPT_RT within non_block_start()/end block",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260821095755.am1-Segb@linutronix.de/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Annotate bpf_obj_memcpy with data_race",
+      "url": "https://lore.kernel.org/bpf/20260822-bpf-kcsan-obj-memcpy-v3-1-4227b2edd8b4@proton.me/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: check_cond_jmp_op(): properly infer if register is null",
+      "url": "https://lore.kernel.org/bpf/20260821-bug-029-bad-non-null-inference-v1-1-45ddc0f7c308@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "octeontx2-pf: fix NULL deref of af_xdp_zc_qidx on rep setup",
+      "url": "https://lore.kernel.org/bpf/20260821105536.2998765-1-rkannoth@marvell.com/",
+      "note": "thread"
+    },
+    {
+      "title": "octeontx2-pf v2 review — pre-existing issues",
+      "url": "https://lore.kernel.org/bpf/20260822105627.106C21F000E9@smtp.kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Split arena kfunc and struct_ops JIT capabilities",
+      "url": "https://lore.kernel.org/bpf/20260821233516.3426127-2-memxor@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf-ci bot review — arena JIT commit message",
+      "url": "https://lore.kernel.org/bpf/8cbc0a547ead611386fa44b6cf6b027dc371a3ffab68d8b0d6b6929d87288c55@mail.kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-22T19:00:49.125Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
