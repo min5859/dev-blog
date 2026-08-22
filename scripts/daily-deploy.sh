@@ -17,6 +17,15 @@ if [ -f "${LAUNCHD_LOG}" ] && [ "$(wc -c < "${LAUNCHD_LOG}")" -gt 1048576 ]; the
   mv "${LAUNCHD_LOG}" "${LAUNCHD_LOG}.prev"
 fi
 
+# Cursor Agent의 비대화하는 로컬 실행 기록을 제한한다. 정확히 이 프로젝트 cwd로 기록된
+# 세션만 대상으로 하며, 메타데이터가 없거나 다른 작업공간인 기록은 건드리지 않는다.
+CURSOR_CHAT_RETENTION_DAYS="${CURSOR_CHAT_RETENTION_DAYS:-7}"
+if ! node scripts/gc-cursor-chats.mjs \
+  --cwd "${PROJECT_DIR}" \
+  --retention-days "${CURSOR_CHAT_RETENTION_DAYS}"; then
+  echo "cursor chat GC failed; continuing"
+fi
+
 # research 타임아웃/AI CLI exit 1/research non-JSON 같은 외부의존 transient 실패를 자동
 # 회복하기 위해, 실패한 커맨드는 20초 대기 후 1회만 재시도한다. 재시도까지 실패하면 그
 # 실패 상태를 그대로 돌려주므로 호출부의 기존 "continuing" 격리 로직은 그대로 동작한다.
