@@ -1,0 +1,114 @@
+{
+  "id": "2026-08-24-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-08-24 BPF stream·m68k JIT — linux-perf-rt",
+  "headline": "BPF standard stream capacity 회귀 수정 v4와 m68k ColdFire JIT 초기 지원이 병행되며, tail call 오프셋·JIT 실패 정리 이슈가 검토 중이다.",
+  "date": "2026-08-24",
+  "summary": "bpf-next v4 5패치 시리즈가 BPF standard stream의 capacity 롤백·read·oversize 처리 회귀를 고치고 selftest를 보강한다. m68k ColdFire BPF JIT가 M5475에서 test_bpf 전건 통과를 보고했으나 tail call prologue 오프셋 불일치 가능성이 제기됐다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "BPF"
+  ],
+  "highlights": [
+    {
+      "title": "BPF standard stream capacity·read·oversize 회귀 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "BPF standard stream API 사용자·kernel/bpf stream 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/tencent_6B540E4B95A9AD4DBF8C928942E95A23AB0A@qq.com/",
+      "if": "tracing·관측 프로그램에서 BPF standard stream을 쓰고 allocation 실패나 oversize 출력이 간헐적으로 발생한다면,",
+      "do": "bpf-next v4 5패치 시리즈의 capacity 롤백·staging leak·copy_to_user fault 부분 반환·-E2BIG 거부 수정과 selftest 추가를 추적하세요.",
+      "verify": "oversize selftest가 동일 prog stream에서 capacity rollback을 검증하는지 cover v4와 lore 스레드를 확인하세요."
+    },
+    {
+      "title": "m68k ColdFire BPF JIT 초기 지원",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "m68k·ColdFire 플랫폼 BPF·tracing 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/aosfqVMeIISRiv4K@google.com/",
+      "if": "m68020+ 또는 MMU ColdFire에서 BPF tracing·필터 워크로드를 인터프리터만으로 운영 중이라면,",
+      "do": "Greg Ungerer ColdFire 변경이 fold된 Kuan-Wei Chiu v5 패치와 HAVE_EBPF_JIT MMU 조건 확장을 검토하세요.",
+      "verify": "M5475에서 test_bpf·tail call selftest가 JIT로 전건 통과했다는 보고와 v5 fold 확정 여부를 lore 스레드에서 확인하세요."
+    },
+    {
+      "title": "m68k JIT tail call 오프셋·컴파일 실패 정리 이슈",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "m68k BPF JIT maintainer·ColdFire BPF 사용자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260823165230.E67C21F00A3A@smtp.kernel.org/",
+      "if": "ColdFire에서 tail call을 쓰는 BPF 프로그램을 배포하거나 JIT 컴파일 실패 경로를 다룬다면,",
+      "do": "tail call jmp 오프셋 44와 48바이트 prologue 불일치, extra_pass dry-run 실패 시 prog->jited 미정리 가능성을 v5 반영 여부와 함께 추적하세요.",
+      "verify": "Sashiko AI가 지적한 prologue 오프셋·jited 정리 문제가 author v5에서 수정됐는지 lore 리뷰 스레드를 확인하세요."
+    },
+    {
+      "title": "libbpf .eh_frame 섹션 무시",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "libbpf 사용자·BPF 빌드 파이프라인 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260823092057.82200-1-tw19881113@gmail.com/",
+      "if": "Clang 외 toolchain으로 BPF 객체를 libbpf나 bpf-linker가 처리하는 빌드 파이프라인을 운영한다면,",
+      "do": "is_sec_name_dwarf()에 .eh_frame을 dwarf 디버그 섹션과 같이 무시 대상으로 추가하는 패치 채택을 확인하세요.",
+      "verify": "Zig 컴파일러 BPF 빌드에서 발견된 exception frame 섹션이 링크·검증 경로를 방해하지 않는지 패치 스레드를 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**bpf: fix stream capacity, read, and oversize handling**\n\nbpf-next v4 5패치 시리즈가 BPF standard stream의 capacity 선차감 롤백, staging 경로 leak, bpf_stream_read() copy_to_user() fault 시 부분 진행 반환, oversize bpf_stream_vprintk() -E2BIG 거부를 고치고 selftest를 추가한다. v4는 oversize selftest가 동일 프로그램 stream에서 capacity rollback을 검증한다.\n\n영향: BPF standard stream을 쓰는 tracing·관측 프로그램에서 allocation 실패나 oversize 출력이 capacity를 영구 소진하거나 userspace read가 부분 데이터를 잃을 수 있어, stream API 사용자가 회귀 수정 채택을 추적해야 한다.\n\n> Repeated failures can exhaust the stream capacity permanently until the BPF program is freed.\n\n[원문 확인](https://lore.kernel.org/bpf/tencent_6B540E4B95A9AD4DBF8C928942E95A23AB0A@qq.com/)\n\n> v4 fixes the stream_oversize selftest to verify capacity rollback on the same BPF program stream, since streams live on prog->aux and are not shared across programs.\n\n[원문 확인](https://lore.kernel.org/bpf/cover.1787492521.git.shijianlin11@foxmail.com/)\n\nbpf-next merge 일정과 vmtest 봇이 제안한 E2BIG 경로 bpf_bprintf_cleanup() 단일화 반영 여부는 확인이 필요합니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**m68k, bpf: Add initial BPF JIT compiler support**\n\nGreg Ungerer의 ColdFire(ISA_B/ISA_C MMU) BPF JIT 패치가 Kuan-Wei Chiu v5에 fold된다. movem/exg/rotate 부재를 ColdFire 전용 emit 경로로 우회하고 Kconfig HAVE_EBPF_JIT를 MMU 조건으로 확장한다.\n\n영향: m68020+ 및 MMU ColdFire에서 BPF JIT가 처음 가능해지고 M5475에서 test_bpf 전건 통과가 보고되어, 임베디드 m68k 플랫폼 tracing·필터 워크로드가 인터프리터만 의존하지 않게 된다.\n\n> test_bpf: Summary: 1061 PASSED, 0 FAILED, [1049/1049 JIT'ed]\ntest_bpf: test_tail_calls: Summary: 10 PASSED, 0 FAILED, [10/10 JIT'ed]\n\n[원문 확인](https://lore.kernel.org/bpf/aosfqVMeIISRiv4K@google.com/)\n\n> For initial support, the current form is enough for me.\nI'll fold it into v5.\n\n[원문 확인](https://lore.kernel.org/bpf/aosfqVMeIISRiv4K@google.com/)\n\nplain 68000에서 MMU-only Kconfig 조건의 실측 여부와 Sashiko가 지적한 tail-call prologue 오프셋이 v5에서 수정되는지는 확인이 필요합니다.\n\n**m68k, bpf: Add initial BPF JIT compiler support**\n\nSashiko AI가 bpf-next v5 m68k JIT에서 tail call jmp 오프셋 44가 ColdFire 48바이트 prologue와 불일치해 BPF frame pointer 오염·kernel panic 가능성, extra_pass dry-run 실패 시 prog->jited 미정리로 NULL 호출 위험을 High로 지적했다.\n\n영향: ColdFire에서 tail call을 쓰는 BPF가 스택 OOB·kernel panic으로 이어질 수 있고, JIT 컴파일 실패가 성공으로 오인되면 런타임에 NULL pointer 호출이 발생할 수 있다.\n\n> Jumping to offset 44 on ColdFire jumps into the middle of the last prologue instruction, skipping the initialization of the lower 32 bits and zeroing of %d0.\n\n[원문 확인](https://lore.kernel.org/bpf/20260823165230.E67C21F00A3A@smtp.kernel.org/)\n\n> This return does not clear prog->jited or prog->bpf_func. The BPF core checks if (!prog->jited) and incorrectly assumes the compilation succeeded.\n\n[원문 확인](https://lore.kernel.org/bpf/20260823165230.E67C21F00A3A@smtp.kernel.org/)\n\nauthor가 tail-call 오프셋을 CPU별 prologue 크기로 수정하는지, 첫 build_body 실패(extra_pass) 경로의 jited 정리가 v5에서 충분한지는 확인이 필요합니다.\n\n**libbpf: Ignore exception frame section**\n\nlibbpf.c와 linker.c의 is_sec_name_dwarf()가 .eh_frame 섹션을 dwarf 디버그 섹션과 같이 무시 대상에 추가한다. Zig 컴파일러로 BPF 빌드할 때 발견됐다.\n\n영향: Clang 외 toolchain(Zig)으로 BPF 객체를 libbpf/bpf-linker가 처리할 때 exception frame 섹션이 링크·검증 경로를 방해하지 않게 한다.\n\n> Exception handing should not be the interest yet, let's skip it.\nBTW, I found this when building BPF with Zig compiler[1].\n\n[원문 확인](https://lore.kernel.org/bpf/20260823092057.82200-1-tw19881113@gmail.com/)\n\nbpf-next/libbpf merge 일정은 확인이 필요합니다.\n\n**selftests/bpf: drop stale and no-op lines**\n\nselftests/bpf Makefile에서 stale .bpf.o 의존성·dead LINKED_SKELS map 항목·불필요 -fno-inline·미사용 CURDIR/OBJCOPY를 제거하고, cgroup_getset_retval_hooks.h를 progs/로 옮겨 BPF 객체 재빌드 의존성을 복구한다.\n\n영향: BPF selftest CI가 Makefile drift 없이 헤더 변경 시 올바르게 재빌드하고, dead rule 제거로 유지보수 부담과 혼란을 줄인다.\n\n> Four target-specific lines name objects nothing builds. Three went dead when commit afef88e65554 renamed the BPF objects.\n\n[원문 확인](https://lore.kernel.org/bpf/1a568b3014a13d20d4c82bf700bc4ec56f1ef6aa172d51bf46741356c87e71f0@mail.kernel.org/)\n\n> Move it under progs/, next to its only BPF consumer, where the blanket prerequisite covers it.\n\n[원문 확인](https://lore.kernel.org/bpf/1a568b3014a13d20d4c82bf700bc4ec56f1ef6aa172d51bf46741356c87e71f0@mail.kernel.org/)\n\nvmtest 봇이 제안한 패치 분리·flow_dissector_load prerequisite 위치 정리 채택 여부는 확인이 필요합니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "bpf: fix stream capacity, read, and oversize handling",
+      "url": "https://lore.kernel.org/bpf/tencent_6B540E4B95A9AD4DBF8C928942E95A23AB0A@qq.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf stream fix v4 cover",
+      "url": "https://lore.kernel.org/bpf/cover.1787492521.git.shijianlin11@foxmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "m68k, bpf: Add initial BPF JIT compiler support",
+      "url": "https://lore.kernel.org/bpf/aosfqVMeIISRiv4K@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "libbpf: Ignore exception frame section",
+      "url": "https://lore.kernel.org/bpf/20260823092057.82200-1-tw19881113@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "m68k BPF JIT tail call review",
+      "url": "https://lore.kernel.org/bpf/20260823165230.E67C21F00A3A@smtp.kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "selftests/bpf: drop stale and no-op lines",
+      "url": "https://lore.kernel.org/bpf/1a568b3014a13d20d4c82bf700bc4ec56f1ef6aa172d51bf46741356c87e71f0@mail.kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-23T18:59:21.521Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

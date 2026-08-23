@@ -1,0 +1,129 @@
+{
+  "id": "2026-08-24-linux-weekly-rollup",
+  "topic": "linux",
+  "title": "2026-08-24 주간 커널 요약",
+  "headline": "네트워크 스택·모듈 unload 경로를 다루는 커널 개발자, 컨테이너 네트워킹 운영자 주목: net: pin protocol module bef",
+  "date": "2026-08-24",
+  "summary": "오늘의 핵심: 릴리스/로드맵 0건, 회귀·보안 신호 8건, 핵심 변경 0건. 리서치 dossier 의 출처를 근거로 정리했습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "주간"
+  ],
+  "highlights": [
+    {
+      "title": "net: pin protocol module before socket allocation",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "네트워크 스택·모듈 unload 경로를 다루는 커널 개발자, 컨테이너 네트워킹 운영자",
+      "verifyLink": "https://lore.kernel.org/lkml/20260823171311.3857087-1-nicoyip.dev@gmail.com/",
+      "if": "네트워크 스택·모듈 unload 경로를 다루는 커널 개발자, 컨테이너 네트워킹 운영자라면",
+      "do": "Chengfeng Ye의 패치는 sk_prot_alloc()이 prot->owner 모듈 참조를 잡기 전에 prot->slab을 읽고 kmem_",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/lkml/20260823171311.3857087-1-nicoyip.dev@gmail.com/"
+    },
+    {
+      "title": "net: pse-pd: guard regulator ops against freed PI data during unregister",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "네트워크 드라이버·PoE/PSE 스택 개발자, netdev 리뷰어",
+      "verifyLink": "https://lore.kernel.org/lkml/20260813200653.980170-3-github@szelinsky.de/",
+      "if": "네트워크 드라이버·PoE/PSE 스택 개발자, netdev 리뷰어라면",
+      "do": "PSE-PD 드라이버 패치(v3 2/3)는 pse_controller_unregister() 시 pse_release_pis()가 pcdev->",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/lkml/20260813200653.980170-3-github@szelinsky.de/"
+    },
+    {
+      "title": "net: phylink: unwind the PHY binding when bringup fails late",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "phylink·DSA·MAC-PHY 이더넷 드라이버 개발자, 스위치/보드 bring-up 엔지니어",
+      "verifyLink": "https://lore.kernel.org/lkml/20260822155259.87146-2-f@lex.la/",
+      "if": "phylink·DSA·MAC-PHY 이더넷 드라이버 개발자, 스위치/보드 bring-up 엔지니어라면",
+      "do": "Aleksei Sviridkin의 net-next 패치 시리즈(1/3)는 phylink_bringup_phy()가 LPI 관련 MDIO 단계에서",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/lkml/20260822155259.87146-2-f@lex.la/"
+    },
+    {
+      "title": "btrfs: zstd: fix lost wakeup when waiting for a workspace",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "btrfs+zstd를 쓰는 스토리지/파일시스템 운영자, btrfs maintainer",
+      "verifyLink": "https://lore.kernel.org/lkml/20260821-btrfs-zstd-lost-wakeup-v1-1-84f358d4ea67@gmail.com/",
+      "if": "btrfs+zstd를 쓰는 스토리지/파일시스템 운영자, btrfs maintainer라면",
+      "do": "FAN YE가 btrfs zstd workspace 대기 경로의 lost wakeup을 수정하는 패치를 2026-08-21에 올렸습니다. zst",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/lkml/20260821-btrfs-zstd-lost-wakeup-v1-1-84f358d4ea67@gmail.com/"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**net: pin protocol module before socket allocation**\n\nChengfeng Ye의 패치는 sk_prot_alloc()이 prot->owner 모듈 참조를 잡기 전에 prot->slab을 읽고 kmem_cache_alloc()을 호출하는 순서를 바꾼다. 프로토콜 모듈이 unload되는 타이밍과 겹치면 해제된 kmem_cache를 derefere\n\n영향: 로드 가능한 네트워크 프로토콜 모듈을 동적으로 unload하는 환경(컨테이너·모듈형 네트워킹 스택)에서 소켓 생성 경로의 레이스는 커널 패닉·메모리 손상으로 직결된다. inet_create→sk_alloc 경로를 쓰는 모든 워크로드가 영향 범위다.\n\n> kmem_cache_alloc() then dereferences a freed struct kmem_cache and can crash or corrupt memory.\n\n[원문 확인](https://lore.kernel.org/lkml/20260823171311.3857087-1-nicoyip.dev@gmail.com/)\n\n**net: pse-pd: guard regulator ops against freed PI data during unregister**\n\nPSE-PD 드라이버 패치(v3 2/3)는 pse_controller_unregister() 시 pse_release_pis()가 pcdev->pi를 해제한 뒤 regulator core가 pse_pi_disable() 등을 호출할 때 발생하는 use-after-free를 막기 위해 p\n\n영향: PSE(Power Sourcing Equipment) 전원 공급 제어는 PoE 네트워크 장비 teardown 경로와 연결된다. regulator flush 중 freed PI 배열 접근은 드라이버 detach·모듈 unload 시 크래시·UAF로 이어질 수 있다.\n\n> At that point the PI array is already freed, so this is a use-after-free.\n\n[원문 확인](https://lore.kernel.org/lkml/20260813200653.980170-3-github@szelinsky.de/)\n\n**net: phylink: unwind the PHY binding when bringup fails late**\n\nAleksei Sviridkin의 net-next 패치 시리즈(1/3)는 phylink_bringup_phy()가 LPI 관련 MDIO 단계에서 실패할 때 pl->phydev 바인딩을 정리하지 않아 stale 포인터가 남는 문제를 고친다. 실패 경로에서 phylink_disconnect\n\n영향: stale pl->phydev는 이후 phylink_disconnect_phy()에서 동일 PHY에 대한 이중 phy_detach()와 잘못된 모듈/디바이스 참조 카운트 감소로 이어질 수 있어, DSA·phylink 기반 이더넷 포트 수명 주기 관리에 직접 영향을 준다.\n\n> Clear the binding on the failure path, the same three fields phylink_disconnect_phy() clears, under the same locks.\n\n[원문 확인](https://lore.kernel.org/lkml/20260822155259.87146-2-f@lex.la/)\n\n**btrfs: zstd: fix lost wakeup when waiting for a workspace**\n\nFAN YE가 btrfs zstd workspace 대기 경로의 lost wakeup을 수정하는 패치를 2026-08-21에 올렸습니다. zstd_get_workspace()가 prepare_to_wait() 이후 풀을 재검사하지 않아 writer가 TASK_UNINTERRUPTIBLE\n\n영향: btrfs+zstd(특히 높은 압축 레벨) 워크로드에서 delalloc kworker hung이 재현되며, 스토리지 쓰기 경로 전체가 멈출 수 있는 회귀입니다.\n\n> A writer can sleep forever in zstd_get_workspace() even though a workspace is free. When zstd_alloc_workspace() fails, the task is queued on zwsm->wait and schedules unconditionally, never re-testing\n\n[원문 확인](https://lore.kernel.org/lkml/20260821-btrfs-zstd-lost-wakeup-v1-1-84f358d4ea67@gmail.com/)\n\n**Bluetooth SCO: avoid deadlock in sco_conn_free()**\n\nsco_conn_free()가 lock_sock(sk) 보유 중 disable_delayed_work_sync()로 timeout work를 동기 취소하면, sco_sock_timeout()이 같은 socket lock을 기다리며 AB/BA 데드락이 발생한다. 패치는 ISO 전송과 같이\n\n영향: 특권 없는 로컬 프로세스가 AF_BLUETOOTH/BTPROTO_SCO 소켓으로 연결 설정·해제 중 데드락을 유발할 수 있고, 비동기 취소만으로는 freed sco_conn에 대한 use-after-free도 남는다.\n\n> sco_conn_free() waits for a sco_sock_timeout() that is blocked on the same socket lock: an AB/BA deadlock.\n\n[원문 확인](https://lore.kernel.org/lkml/20260820174633.1570398-1-alishmery18@gmail.com/)\n\n**selinux: preserve user SID across nested backing files**\n\n중첩 overlayfs(overlay 위 overlay, FUSE passthrough+overlay)에서 user_file이 backing file일 때 mounter SID가 mprotect() fd { use } 검사에 쓰여 잘못된 거부·허용이 발생한다. 패치는 backing la\n\n영향: SELinux enforcing 환경에서 중첩 overlay 위 mprotect()가 사용자 의도와 다른 SID로 검사되어 접근 제어가 깨질 수 있다.\n\n> mprotect(PROT_READ) returns EACCES with an fd { use } denial against the mounter SID. With this change, mprotect() succeeds.\n\n[원문 확인](https://lore.kernel.org/lkml/20260820175832.44512-1-kmehltretter@gmail.com/)\n\n**net: page_pool: Remove zone/policy GFP flags when allocating XArray entries**\n\npage_pool이 DMA 제약 GFP_DMA32를 XArray 엔트리 kmalloc에 전달해 slab이 Unexpected gfp 경고와 gfp 수정을 발생시킨다. 패치는 XArray 할당 시 zone/policy GFP 비트를 제거한다.\n\n영향: mt76·stmmac 등 page_pool 사용자의 WiFi/이더넷 드라이버 PM·RX 리필 경로에서 7.2-rc7+ 빌드가 스택 덤프와 잘못된 gfp로 동작한다.\n\n> Unexpected gfp: 0x4 (GFP_DMA32). Fixing up to gfp: 0x82820 (GFP_ATOMIC|__GFP_NOWARN|__GFP_NOMEMALLOC). Fix your code!\n\n[원문 확인](https://lore.kernel.org/lkml/20260821-page-pool-xa-drop-dma32-v1-1-6eab295c3478@rong.moe/)\n\n**sched/topology: Add a cpus_read_lock to rebuild_sched_domains()**\n\nSebastian Siewior v2 패치는 CONFIG_CPUSETS=n 빌드에서 rebuild_sched_domains()가 partition_sched_domains()를 cpu hotplug lock 없이 호출해 sched_rt_runtime_us 읽기 시 backtrace가 나\n\n영향: cpuset 비활성 구성은 임베디드·최소 커널에서 흔하고, sched domain 재구성 경로의 lock 누락은 RT 스케줄 sysctl 접근만으로도 WARN/backtrace를 유발한다.\n\n> A read from /proc/sys/kernel/sched_rt_runtime_us leads to backtrace due to missing cpu_hotplug_lock with CONFIG_CPUSETS=n.\n\n[원문 확인](https://lore.kernel.org/lkml/20260813073855.ji2UrtVh@linutronix.de/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "국부 드라이버/플랫폼 패치는 본문에서 제외했습니다. 자기 영역 키워드로 lore.kernel.org에서 직접 검색하세요."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "net: pin protocol module before socket allocation",
+      "url": "https://lore.kernel.org/lkml/20260823171311.3857087-1-nicoyip.dev@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "net: pse-pd: guard regulator ops against freed PI data during unregister",
+      "url": "https://lore.kernel.org/lkml/20260813200653.980170-3-github@szelinsky.de/",
+      "note": "thread"
+    },
+    {
+      "title": "net: phylink: unwind the PHY binding when bringup fails late",
+      "url": "https://lore.kernel.org/lkml/20260822155259.87146-2-f@lex.la/",
+      "note": "thread"
+    },
+    {
+      "title": "btrfs: zstd: fix lost wakeup when waiting for a workspace",
+      "url": "https://lore.kernel.org/lkml/20260821-btrfs-zstd-lost-wakeup-v1-1-84f358d4ea67@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Bluetooth SCO: avoid deadlock in sco_conn_free()",
+      "url": "https://lore.kernel.org/lkml/20260820174633.1570398-1-alishmery18@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "selinux: preserve user SID across nested backing files",
+      "url": "https://lore.kernel.org/lkml/20260820175832.44512-1-kmehltretter@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "net: page_pool: Remove zone/policy GFP flags when allocating XArray entries",
+      "url": "https://lore.kernel.org/lkml/20260821-page-pool-xa-drop-dma32-v1-1-6eab295c3478@rong.moe/",
+      "note": "thread"
+    },
+    {
+      "title": "sched/topology: Add a cpus_read_lock to rebuild_sched_domains()",
+      "url": "https://lore.kernel.org/lkml/20260813073855.ji2UrtVh@linutronix.de/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "source": "research-dossier",
+    "bucketCounts": {
+      "릴리스/로드맵": 0,
+      "회귀·보안 신호": 8,
+      "핵심 변경": 0,
+      "기타": 0
+    },
+    "entryCount": 8
+  }
+}

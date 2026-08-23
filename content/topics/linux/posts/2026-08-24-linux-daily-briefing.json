@@ -1,0 +1,123 @@
+{
+  "id": "2026-08-24-linux-daily-briefing",
+  "topic": "linux",
+  "title": "2026-08-24 stable·네트워크 UAF — 리눅스 개발",
+  "headline": "7.1.10·5.10.266 stable이 동시 태그되고, 프로토콜 모듈 unload 경로의 kmem_cache 사용 후 해제 크래시 수정이 제안되었습니다.",
+  "date": "2026-08-24",
+  "summary": "Greg Kroah-Hartman이 2026-08-23에 Linux 7.1.10 stable과 5.10.266 longterm을 태그했습니다. 동적 네트워크 프로토콜 모듈 unload와 겹친 소켓 할당에서 메모리 손상이 보고되어 수정 패치가 메일링 리스트에 올라왔습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "프로토콜 모듈 unload 시 소켓 할당 UAF",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "네트워크 스택·모듈 unload 경로를 다루는 커널 개발자, 컨테이너 네트워킹 운영자",
+      "verifyLink": "https://lore.kernel.org/lkml/20260823171311.3857087-1-nicoyip.dev@gmail.com/",
+      "if": "동적 프로토콜 unload 환경을 운영하는 담당자에게 해당하세요",
+      "do": "sk_prot_alloc 순서 수정 패치와 Fixes a79af59efd20을 추적하세요",
+      "verify": "lore 스레드에서 kmem_cache UAF 재현·패치 내용을 확인하세요"
+    },
+    {
+      "title": "PSE-PD unregister 시 regulator UAF 가드",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "네트워크 드라이버·PoE/PSE 스택 개발자, netdev 리뷰어",
+      "verifyLink": "https://lore.kernel.org/lkml/20260813200653.980170-3-github@szelinsky.de/",
+      "if": "PoE·PSE teardown 경로를 다루는 개발자에게 해당하세요",
+      "do": "pcdev->pi NULL 가드 패치와 notifier 시리즈 논의를 확인하세요",
+      "verify": "lore 스레드에서 regulator flush UAF 재현을 확인하세요"
+    },
+    {
+      "title": "Linux 7.1.10 stable",
+      "priority": "중",
+      "impactType": "release",
+      "affectedAudience": "stable 커널 배포·백포트 담당자, 엔터프라이즈 리눅스 운영자",
+      "verifyLink": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.10",
+      "if": "7.1 계열 stable 커널을 운영·배포하는 팀에게 해당하세요",
+      "do": "7.1.10으로 업그레이드하고 TCP·DRM·PID 수정을 반영하세요",
+      "verify": "ChangeLog-7.1.10에서 227건 백포트 목록을 확인하세요"
+    },
+    {
+      "title": "4Kn NTFS 임시 read-only 마운트",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "NTFS 마운트·스토리지 스택 개발자, 4Kn 디스크 사용자",
+      "verifyLink": "https://lore.kernel.org/lkml/6a8b31d3.6dfd78af.244576.33c7@mx.google.com/",
+      "if": "4Kn 디스크에서 NTFS를 rw로 쓰는 사용자에게 해당하세요",
+      "do": "MFT 쓰기 실패 손상 위험을 인지하고 패치 진행을 확인하세요",
+      "verify": "lore 스레드에서 read-only 임시 조치 내용을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.1.10 stable**\n\nGreg Kroah-Hartman이 2026-08-23에 Linux 7.1.10 stable 릴리스를 태그했으며, 7.1.11-rc1 이전 7.1 브랜치에 227건의 백포트가 포함되었다.\n\n영향: 7.1 계열 stable 커널을 운영·배포하는 팀은 TCP ACK 타이밍 회귀, DRM 로그 디버그 경로 크래시, PID namespace UAF 방지, VLAN 태그 패킷 헤더 오류 등 프로덕션에서 즉각 체감할 수 있는 버그 수정을 받을 수 있다.\n\n> Linux 7.1.10\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.10)\n\n**Linux 5.10.266 longterm**\n\nGreg Kroah-Hartman이 2026-08-23에 Linux 5.10.266 longterm stable 릴리스를 태그했으며, 5.10.267-rc1 이전 5.10 브랜치에 229건의 백포트가 포함되었다.\n\n영향: 5.10 longterm을 유지하는 임베디드·엔터프라이즈·CIP 환경은 tracing ring-buffer 교환 경로 안정화, netfilter ipset GC 레이스, TI Ethernet 드라이버 포트 ID 오류 등 장기 운영 중 발견된 회귀·크래시 수정을 받을 수 있다.\n\n> Linux 5.10.266\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.266)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**net: pin protocol module before socket allocation**\n\nChengfeng Ye의 패치는 sk_prot_alloc()이 prot->owner 모듈 참조를 잡기 전에 prot->slab을 읽고 kmem_cache_alloc()을 호출하는 순서를 바꾼다. 프로토콜 모듈 unload 타이밍과 겹치면 해제된 kmem_cache를 dereference하여 general protection fault·KASAN wild-memory-access가 발생할 수 있다. Fixes: a79af59efd20 회귀를 되돌린다. 메인라인 머지·stable 백포트 계획은 확인이 필요합니다.\n\n영향: 로드 가능한 네트워크 프로토콜 모듈을 동적으로 unload하는 환경에서 소켓 생성 경로 레이스는 커널 패닉·메모리 손상으로 직결된다.\n\n> kmem_cache_alloc() then dereferences a freed struct kmem_cache and can crash or corrupt memory.\n\n[원문 확인](https://lore.kernel.org/lkml/20260823171311.3857087-1-nicoyip.dev@gmail.com/)\n\n**net: pse-pd: guard regulator ops against freed PI data during unregister**\n\nPSE-PD 드라이버 패치(v3 2/3)는 pse_controller_unregister() 시 pse_release_pis()가 pcdev->pi를 해제한 뒤 regulator core가 pse_pi_disable() 등을 호출할 때 발생하는 use-after-free를 막기 위해 pcdev->pi NULL 설정과 regulator op 가드를 추가한다. notifier 시리즈 머지 전 teardown 윈도우 완전 제거 여부와 메인라인 머지는 확인이 필요합니다.\n\n영향: PSE 전원 공급 제어는 PoE 네트워크 장비 teardown 경로와 연결되며, regulator flush 중 freed PI 배열 접근은 드라이버 detach·모듈 unload 시 크래시·UAF로 이어질 수 있다.\n\n> At that point the PI array is already freed, so this is a use-after-free.\n\n[원문 확인](https://lore.kernel.org/lkml/20260813200653.980170-3-github@szelinsky.de/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**ntfs: mount read-only when mft records are smaller than the device block**\n\nDennis Tighe의 패치는 4Kn 드라이브에서 MFT 레코드(1KB)가 논리 블록(4KB)보다 작을 때 bio_unaligned()가 MFT 쓰기를 전부 거부하는 문제를 임시로 read-only 마운트로 차단한다. 4KB MFT 쓰기 장기 수정 일정과 메인라인 머지 여부는 확인이 필요합니다.\n\n영향: 4Kn 디스크에서 NTFS를 rw로 마운트하는 사용자·백업 시스템은 조용한 MFT 쓰기 실패 후 디렉터리가 비어 보이는 심각한 손상 상태에 빠질 수 있다.\n\n> other writes that use all 4k will succeed leading to a corruption situation.\n\n[원문 확인](https://lore.kernel.org/lkml/6a8b31d3.6dfd78af.244576.33c7@mx.google.com/)\n\n**nvme-tcp: pin io_cpu to submitter cpu**\n\nSaravanan D의 v2 패치는 nvme-tcp가 connect 시점에 blk-mq map group에서 io_cpu를 고정 선택하는 동작에 io_cpu_adopt fabrics 옵션을 추가한다. Connect 명령을 제외한 실제 I/O submitter CPU로 io_cpu를 채택하고, 30초 idle 후 재채택한다. 메인라인 머지 여부와 straddling queue 완전 해소 여부는 확인이 필요합니다.\n\n영향: NVMe-oF/NVMe-tcp를 멀티 VM·cpuset 격리 환경에서 쓰는 운영자는 cross-tenant CPU steal과 latency 변동을 완화할 수 있다.\n\n> 9% of nvme_tcp_io_work executions ran outside the submitting VM's cpuset, all on io_cpus of boundary straddling map groups\n\n[원문 확인](https://lore.kernel.org/lkml/20260820083634.71689-1-saravanand@crusoe.ai/)"
+    },
+    {
+      "heading": "기타",
+      "body": "Linux 7.2 메인라인은 어제도 다룬 항목이며, 이번 수집에서 추가 진척 신호가 없습니다. 원문 인용 검증이 실패한 상태이므로 7.2 태그 내용은 단정하지 않습니다.\n\n이번 수집에서 제외된 항목: linux-next next-20260821 일일 통합 스냅샷(개별 기능 변경 영향 낮음), Marvell Cavium Thunder BGX Ethernet 드라이버 fwnode_handle_put 누락 수정(단일 보드·드라이버 범위)."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ChangeLog-7.1.10",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.10",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-5.10.266",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.266",
+      "note": "changelog"
+    },
+    {
+      "title": "net: pin protocol module before socket allocation",
+      "url": "https://lore.kernel.org/lkml/20260823171311.3857087-1-nicoyip.dev@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "ntfs: mount read-only when mft records are smaller than the device block",
+      "url": "https://lore.kernel.org/lkml/6a8b31d3.6dfd78af.244576.33c7@mx.google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "net: pse-pd: guard regulator ops against freed PI data during unregister",
+      "url": "https://lore.kernel.org/lkml/20260813200653.980170-3-github@szelinsky.de/",
+      "note": "thread"
+    },
+    {
+      "title": "net: pse-pd teardown race follow-up",
+      "url": "https://lore.kernel.org/lkml/20260823170824.1429431-1-github@szelinsky.de/",
+      "note": "thread"
+    },
+    {
+      "title": "nvme-tcp: pin io_cpu to submitter cpu",
+      "url": "https://lore.kernel.org/lkml/20260820083634.71689-1-saravanand@crusoe.ai/",
+      "note": "thread"
+    },
+    {
+      "title": "nvme-tcp io_cpu_adopt review discussion",
+      "url": "https://lore.kernel.org/lkml/20260823174348.40236-1-saravanand@crusoe.ai/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-23T18:05:39.531Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,127 @@
+{
+  "id": "2026-08-24-linux-distro-stable-weekly-rollup",
+  "topic": "linux-distro-stable",
+  "title": "2026-08-24 주간 요약",
+  "headline": "SCTP 스택 운영·백포트 담당, 네트워크 보안 엔지니어 주목: sctp: fix NULL deref on untransmitted RECONF",
+  "date": "2026-08-24",
+  "summary": "오늘의 핵심: 릴리스/로드맵 0건, 회귀·보안 신호 8건, 핵심 변경 0건. 리서치 dossier 의 출처를 근거로 정리했습니다.",
+  "tags": [
+    "주간"
+  ],
+  "highlights": [
+    {
+      "title": "sctp: fix NULL deref on untransmitted RECONF completion",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "SCTP 스택 운영·백포트 담당, 네트워크 보안 엔지니어",
+      "verifyLink": "https://lore.kernel.org/stable/20260823172857.896146-2-bestswngs@gmail.com/",
+      "if": "SCTP 스택 운영·백포트 담당, 네트워크 보안 엔지니어라면",
+      "do": "전송되지 않은 stream reconfiguration(RECONF) 청크를 완료 처리할 때 chunk->transport가 NULL인 채 re",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/stable/20260823172857.896146-2-bestswngs@gmail.com/"
+    },
+    {
+      "title": "netfilter: nf_log: unregister loggers before per-net teardown",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "netfilter·iptables/nftables 로깅 운영자, LTS 백포트 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20260823170538.3856770-1-nicoyip.dev@gmail.com/",
+      "if": "netfilter·iptables/nftables 로깅 운영자, LTS 백포트 담당라면",
+      "do": "nf_log_syslog·nfnetlink_log가 per-net 해제 후에도 전역 logger가 남아 sysctl/netlink가 stale ",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/stable/20260823170538.3856770-1-nicoyip.dev@gmail.com/"
+    },
+    {
+      "title": "drm/vc4: hdmi: Unregister the ASoC card on unbind",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "vc4/RPi 플랫폼 유지보수자, DRM·ASoC 드라이버 보안 리뷰어",
+      "verifyLink": "https://lore.kernel.org/stable/20260823173740.2983-1-kmehltretter@gmail.com/",
+      "if": "vc4/RPi 플랫폼 유지보수자, DRM·ASoC 드라이버 보안 리뷰어라면",
+      "do": "vc4_hdmi의 devm_snd_soc_register_card()가 deferrable card binding 재시도로 devres 노드가 ",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/stable/20260823173740.2983-1-kmehltretter@gmail.com/"
+    },
+    {
+      "title": "Bluetooth: RFCOMM: serialize security confirmation handling",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "Bluetooth RFCOMM·BlueZ 스택 유지보수·배포 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20260822164341.3750491-1-nicoyip.dev@gmail.com/",
+      "if": "Bluetooth RFCOMM·BlueZ 스택 유지보수·배포 담당라면",
+      "do": "Chengfeng Ye의 stable 제출은 rfcomm_security_cfm()이 rfcomm_mutex 없이 session_list에서 세",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/stable/20260822164341.3750491-1-nicoyip.dev@gmail.com/"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**sctp: fix NULL deref on untransmitted RECONF completion**\n\n전송되지 않은 stream reconfiguration(RECONF) 청크를 완료 처리할 때 chunk->transport가 NULL인 채 reconf_timer를 중지하려다 softirq에서 커널 패닉이 나던 경로를, transport가 NULL이면 asoc->strreset_chun\n\n영향: 비특권 프로세스가 마지막 주소 제거 후 stream reset을 요청하거나, 피어가 한 패킷에 복수 RECONF 파라미터를 보내는 경우에도 NULL 역참조로 패닉이 가능해 SCTP를 노출한 서버·클라이언트 모두 패치 적용이 필요합니다.\n\n> A request already published in asoc->strreset_chunk but not yet transmitted has neither, so completing it dereferences NULL.\n\n[원문 확인](https://lore.kernel.org/stable/20260823172857.896146-2-bestswngs@gmail.com/)\n\n**netfilter: nf_log: unregister loggers before per-net teardown**\n\nnf_log_syslog·nfnetlink_log가 per-net 해제 후에도 전역 logger가 남아 sysctl/netlink가 stale per-net logger 포인터를 재바인딩할 수 있던 순서를 바꿔, 전역 logger를 먼저 unregister한 뒤 per-net을 해제합니\n\n영향: 모듈 언로드 후 패킷 로깅·sysctl 읽기가 해제된 backend 메모리를 역참조할 수 있어 netfilter 로깅을 쓰는 컨테이너·방화벽 호스트에서 namespace 전환·모듈 재로드 시 UAF 위험이 있습니다.\n\n> Later, a sysctl read or packet logging operation can dereference the stale per-net logger pointer.\n\n[원문 확인](https://lore.kernel.org/stable/20260823170538.3856770-1-nicoyip.dev@gmail.com/)\n\n**drm/vc4: hdmi: Unregister the ASoC card on unbind**\n\nvc4_hdmi의 devm_snd_soc_register_card()가 deferrable card binding 재시도로 devres 노드가 component devres 그룹 밖으로 이동해, vc4_hdmi 해제 후 snd_soc_unregister_card()가 slab-use-a\n\n영향: Raspberry Pi 등 vc4 기반 보드에서 드라이버 modprobe/rmmod 루프 시 KASAN UAF가 재현되므로, 엣지 디바이스·CI에서 모듈 핫플러그를 쓰는 환경은 백포트 적용 전까지 모듈 언로드를 제한해야 합니다.\n\n> BUG: KASAN: slab-use-after-free in snd_soc_unregister_card\n\n[원문 확인](https://lore.kernel.org/stable/20260823173740.2983-1-kmehltretter@gmail.com/)\n\n**Bluetooth: RFCOMM: serialize security confirmation handling**\n\nChengfeng Ye의 stable 제출은 rfcomm_security_cfm()이 rfcomm_mutex 없이 session_list에서 세션을 찾고 DLC 리스트를 순회해, krfcommd의 rfcomm_session_del()과 hci_rx_work 경쟁 시 해제된 세션·DLC를\n\n영향: Bluetooth RFCOMM 보안 확인 콜백 경로를 쓰는 모바일·IoT·데스크톱 배포는 stable 백포트 전까지 연결 teardown과 HCI workqueue 경쟁 UAF 위험을 그대로 안고 있습니다.\n\n> rfcomm_security_cfm() looks up a session on session_list and then walks its DLC list without holding rfcomm_mutex.\n\n[원문 확인](https://lore.kernel.org/stable/20260822164341.3750491-1-nicoyip.dev@gmail.com/)\n\n**KVM: arm64: Fix spurious warn, null ptr deref on S2 teardown race**\n\nLorenzo Stoakes v2는 중첩 가상화에서 L0 GFN 무효화로 kvm_nested_s2_unmap()이 mmu_lock을 내려놓는 동안 kvm_flush_shadow_all()이 stage-2 PGD를 해제해, 재획득 후 kvm->arch.mmu.pgt NULL 역참조로 이어\n\n영향: arm64 KVM 중첩 가상화·kvmtool 호스트를 쓰는 배포는 guest teardown과 MMU notifier 경쟁 시 커널 WARN·NULL deref가 날 수 있어 stable 백포트 채택 여부를 추적해야 합니다.\n\n> a race which has been observed on real hardware.\n\n[원문 확인](https://lore.kernel.org/stable/20260822-kvm-arm-nested-virt-fix-v2-0-ac4059a0eaa6@kernel.org/)\n\n**vsock/virtio: flush works in dependency order**\n\nChengfeng Ye stable 제출은 virtio_vsock_remove()가 tx_work→send_pkt_work→rx_work 의존 순서를 무시하고 rx_work를 먼저 flush해, send_pkt_work가 나중에 큐한 rx_work와 kfree(vsock)가 경쟁하는 U\n\n영향: virtio-vsock을 쓰는 VM·컨테이너 호스트는 디바이스 제거 시 workqueue 경쟁 UAF가 재현 가능하므로 stable 백포트를 distro kernel SA 계획에 반영해야 합니다.\n\n> nothing waits for the newly queued rx_work, so kfree(vsock) can race with it.\n\n[원문 확인](https://lore.kernel.org/stable/20260822164556.3750959-1-nicoyip.dev@gmail.com/)\n\n**sctp: fix NULL deref on untransmitted RECONF completion**\n\nWeiming Shi v2 stable 제출은 아직 전송되지 않은 stream reconfiguration 청크에 transport가 NULL인데 완료 경로가 reconf_timer를 지우며 NULL deref·softirq 패닉이 나는 문제를, chunk->transport가 NULL\n\n영향: SCTP stream reset·ASCONF 주소 제거를 허용하는 서버·통신 스택은 비특권 로컬 프로세스나 피어 RECONF 패킷만으로 커널 패닉에 노출될 수 있어 stable 백포트 우선순위가 높습니다.\n\n> A request already published in asoc->strreset_chunk but not yet transmitted has neither, so completing it dereferences NULL.\n\n[원문 확인](https://lore.kernel.org/stable/20260822172352.63025-3-bestswngs@gmail.com/)\n\n**ipvs: separate destination availability state**\n\nSasha Levin 5.10.y 백포트는 IPVS 목적지 가용성(AVAILABLE)과 과부하(OVERLOAD) 상태가 dest->flags를 공유해 read-modify-write 경쟁으로 서로 덮어쓰던 문제를, AVAILABLE을 dest->cflags로 분리해 수정합니다.\n\n영향: IPVS 로드밸런서를 쓰는 배포·클라우드 노드는 스케줄러 hot path와 설정 경로 경쟁으로 잘못된 목적지 상태가 노출될 수 있어 5.10 LTS stable 채택을 추적해야 합니다.\n\n> The two independent states share dest->flags, so their read-modify-write updates can race and lose one another.\n\n[원문 확인](https://lore.kernel.org/stable/20260822154748.2681345-1-sashal@kernel.org/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "국부 드라이버/플랫폼 패치는 본문에서 제외했습니다. 자기 영역 키워드로 lore.kernel.org에서 직접 검색하세요."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "sctp: fix NULL deref on untransmitted RECONF completion",
+      "url": "https://lore.kernel.org/stable/20260823172857.896146-2-bestswngs@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "netfilter: nf_log: unregister loggers before per-net teardown",
+      "url": "https://lore.kernel.org/stable/20260823170538.3856770-1-nicoyip.dev@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/vc4: hdmi: Unregister the ASoC card on unbind",
+      "url": "https://lore.kernel.org/stable/20260823173740.2983-1-kmehltretter@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Bluetooth: RFCOMM: serialize security confirmation handling",
+      "url": "https://lore.kernel.org/stable/20260822164341.3750491-1-nicoyip.dev@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM: arm64: Fix spurious warn, null ptr deref on S2 teardown race",
+      "url": "https://lore.kernel.org/stable/20260822-kvm-arm-nested-virt-fix-v2-0-ac4059a0eaa6@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "vsock/virtio: flush works in dependency order",
+      "url": "https://lore.kernel.org/stable/20260822164556.3750959-1-nicoyip.dev@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "sctp: fix NULL deref on untransmitted RECONF completion",
+      "url": "https://lore.kernel.org/stable/20260822172352.63025-3-bestswngs@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "ipvs: separate destination availability state",
+      "url": "https://lore.kernel.org/stable/20260822154748.2681345-1-sashal@kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "source": "research-dossier",
+    "bucketCounts": {
+      "릴리스/로드맵": 0,
+      "회귀·보안 신호": 8,
+      "핵심 변경": 0,
+      "기타": 0
+    },
+    "entryCount": 8
+  }
+}

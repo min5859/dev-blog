@@ -1,0 +1,108 @@
+{
+  "id": "2026-08-24-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-08-24 T7 UART·SD 회귀 — 아키·플랫폼",
+  "headline": "Amlogic T7 DTS의 placeholder UART clock·SD always-on 회귀 수정, GICv3 Kconfig 의존성·execmem direct map API 정리, LubanCat 5IO DTS 제안.",
+  "date": "2026-08-24",
+  "summary": "Khadas VIM4에서 메인라인 v7.2 부팅 시 콘솔 hang과 SD 무한 재시도가 재현된 T7 DTS 회귀가 수정 제안됐습니다. GICv3 Kconfig 의존성, execmem direct map API 혼선, LubanCat 5IO 보드 DTS 추가도 함께 논의 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "Amlogic T7 UART clock·SD 전원 회귀",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Amlogic T7·Khadas VIM4 DTS 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260823115335.102219-1-tanure@linux.com/",
+      "if": "T7 기반 보드 DTS에서 uart_a가 24MHz xtal placeholder를 쓰거나 SD 전원에 regulator-always-on이 있으면",
+      "do": "실제 UART bus clock 연결과 SD 전원 사이클 복구 가능한 regulator 설정으로 패치를 점검하세요",
+      "verify": "메인라인 v7.2 부팅 후 콘솔 출력과 SD 카드 초기화가 정상인지 VIM4 등 실제 보드에서 확인하세요"
+    },
+    {
+      "title": "GICv3 ARM_PSCI_FW Kconfig 의존성",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "ARM GICv3·Kconfig 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260823180832.1246363-1-julianbraha@gmail.com/",
+      "if": "32bit arm defconfig에서 ARM_GIC_V3를 켜거나 NVIDIA T241 erratum workaround 이후 GICv3 Kconfig를 유지보수하면",
+      "do": "HAVE_ARM_SMCCC_DISCOVERY select를 ARM64 조건부로 제한하고 32bit arm용 stub 매크로 fallback을 반영하세요",
+      "verify": "kconfirm 정적 분석과 32bit arm defconfig 빌드에서 ARM_PSCI_FW 미충족 경고가 사라졌는지 확인하세요"
+    },
+    {
+      "title": "execmem set_direct_map API 정합",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "아키텍처별 pageattr·execmem·vmalloc 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260823-execmem-set-vm-perms-v0-2-v2-0-b013a37d84b3@kernel.org/",
+      "if": "arm64와 다른 아키텍처에서 set_direct_map_valid_noflush() 의미 차이로 execmem ROX cache를 추적하면",
+      "do": "6패치 시리즈의 페이지 수 인자 추가·VM_FLUSH_RESET_PERMS 전환·set_direct_map_valid_noflush() revert 방향을 따라가세요",
+      "verify": "x86·arm64·riscv·s390·loongarch pageattr 경로에서 direct map reset과 execmem ROX cache 동작을 대조 확인하세요"
+    },
+    {
+      "title": "LubanCat 5IO RK3588 DTS",
+      "priority": "하",
+      "impactType": "project",
+      "affectedAudience": "Rockchip RK3588 보드·DTS 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/tencent_16321809632326015A886B7E7C4D91347808@qq.com/",
+      "if": "RK3588 LubanCat 5/5IO 메인라인 지원을 포팅하거나 carrier 보드 DTS를 추가하면",
+      "do": "LubanCat 5IO dt-binding·device tree 시리즈와 선행 RK3588 CAN-FD controller node 패치 의존성을 함께 추적하세요",
+      "verify": "eMMC·듀얼 GbE·HDMI·M.2·CAN-FD·USB 등 보고된 테스트 범위와 binding 리뷰 상태를 원문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**arm64: dts: amlogic: t7: fix UART clock and SD card recovery**\n\nAmlogic T7 보드 DTS에서 uart_a를 24MHz xtal placeholder 대신 실제 UART bus clock에 연결하고, Khadas VIM4 SD 카드 전원에서 regulator-always-on을 제거해 UHS 1.8V 전환 실패 시 전원 사이클 복구가 가능하게 한다.\n\n영향: 메인라인 v7.2 부팅 시 미사용 clock gate-off로 콘솔이 사라지는 hang과 SD 카드 초기화 무한 재시도가 실제 Khadas VIM4에서 재현됐으며, T7 기반 보드 DTS 유지보수 담당은 동일 placeholder 패턴을 점검해야 한다.\n\n> the kernel turns it off when it disables unused clocks at the end of boot, and the board hangs with the console gone.\n\n> A card that refuses the 1.8V UHS switch can only be recovered by removing its power, which that property prevents, so the card never initialises and the MMC core retries forever.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260823115335.102219-1-tanure@linux.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**irqchip: gic-v3: fix unmet dependency on ARM_PSCI_FW**\n\nARM_GIC_V3의 HAVE_ARM_SMCCC_DISCOVERY select를 ARM64에만 제한하고, 32bit arm에서 비활성 시 arm-smccc.h에 stub 매크로를 추가해 kconfirm이 지적한 ARM_PSCI_FW 미충족 Kconfig 의존성을 제거한다.\n\n영향: NVIDIA T241 erratum workaround(35727af2b15d) 이후 GICv3 Kconfig가 정적 분석에서 깨졌고, 32bit arm defconfig에서도 SMCCC discovery 호출부가 #ifdef 없이 빌드 가능해져 irqchip·ARM 플랫폼 Kconfig 유지보수에 직접 영향이 있다.\n\n> ARM_GIC_V3 currently selects HAVE_ARM_SMCCC_DISCOVERY without ensuring its dependency, ARM_PSCI_FW, is met.\n\n> select HAVE_ARM_SMCCC_DISCOVERY if ARM64\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260823180832.1246363-1-julianbraha@gmail.com/)\n\n**arch, mm/execmem: resolve confusion about set_direct_map_valid_noflush()**\n\n6패치 시리즈가 set_direct_map API에 페이지 수 인자를 추가하고, vmalloc direct map reset을 VMAP_HUGE 친화적으로 만든 뒤 execmem ROX cache가 VM_FLUSH_RESET_PERMS를 쓰도록 전환하고 set_direct_map_valid_noflush() 도입을 revert한다.\n\n영향: arm64와 다른 아키텍처에서 set_direct_map_valid_noflush() 의미가 달라 execmem ROX cache 구현이 혼란스러웠고, x86·arm64·riscv·s390·loongarch pageattr 경로가 함께 정리되어 아키텍처별 direct map·execmem 상호작용을 추적하는 담당자에게 API 의미 정합이 중요하다.\n\n> On arm64 it sets or clears the PTE_VALID bit marking a PTE as present or not present. On other architectures it's a range version of set_direct_map_invalid_noflush() and set_direct_map_default_noflush\n\n> Implement these adjustments, make execmem always use VM_FLUSH_RESET_PERMS and revert set_direct_map_valid_noflush() changes.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260823-execmem-set-vm-perms-v0-2-v2-0-b013a37d84b3@kernel.org/)\n\n**riscv: probes: reject kprobes inside LR/SC sequences**\n\nv2에서 insn 디코더와 arch_prepare_kprobe()에 LR/SC 명령 자체와 Zalrsc 제약 루프(최대 64바이트·16명령) 내부 주소에 대한 probe 설치 거부 검사가 구현됐다. 64바이트 역방향 스캔으로 LR/SC 시퀀스 내부 주소를 거부한다.\n\n영향: LR/SC 시퀀스 중 breakpoint는 load reservation을 지워 SC가 항상 실패하고 재시도 루프가 breakpoint에 재진입해 CPU livelock이 발생할 수 있어, RISC-V kprobes·tracing 사용자는 원자적 루프 내부 probe 시도가 -EINVAL로 거부됨을 알아야 한다.\n\n> A breakpoint trap taken in the middle of an LR/SC sequence clears the load reservation, so an SC following the probed instruction would always fail and the enclosing retry loop would re-enter the brea\n\n> Reject probing the LR/SC instructions themselves, and reject probing any address that lies inside an LR/SC sequence by scanning back up to the Zalrsc constrained-loop limit of 64 bytes.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260822105303.2043-1-yuanxiaofeng@eswincomputing.com/)\n\n**arm64: dts: rockchip: Add LubanCat 5IO board**\n\nEmbedFire LubanCat 5(RK3588 BTB 코어)용 carrier 보드 LubanCat 5IO의 dt-binding과 device tree를 추가한다. eMMC·듀얼 GbE·HDMI·M.2·CAN-FD·USB 등 하드웨어가 보고된 테스트 범위다.\n\n영향: RK3588 LubanCat 5/5IO 메인라인 지원이 새 DTS·binding으로 제안됐으나 RK3588 CAN-FD controller node 패치에 의존하므로, Rockchip 보드 포팅 담당은 선행 패치와 binding 리뷰 상태를 함께 봐야 한다.\n\n> This series adds dt-bindings and initial device tree for the LubanCat 5IO.\n\n> This series requires the following patch to provide the RK3588 CAN-FD controller nodes\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/tencent_16321809632326015A886B7E7C4D91347808@qq.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "arm64: dts: amlogic: t7: fix UART clock and SD card recovery",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260823115335.102219-1-tanure@linux.com/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: probes: reject kprobes inside LR/SC sequences",
+      "url": "https://lore.kernel.org/linux-riscv/20260822105303.2043-1-yuanxiaofeng@eswincomputing.com/",
+      "note": "thread"
+    },
+    {
+      "title": "irqchip: gic-v3: fix unmet dependency on ARM_PSCI_FW",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260823180832.1246363-1-julianbraha@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "arch, mm/execmem: resolve confusion about set_direct_map_valid_noflush()",
+      "url": "https://lore.kernel.org/linux-riscv/20260823-execmem-set-vm-perms-v0-2-v2-0-b013a37d84b3@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "arm64: dts: rockchip: Add LubanCat 5IO board",
+      "url": "https://lore.kernel.org/linux-arm-kernel/tencent_16321809632326015A886B7E7C4D91347808@qq.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-23T19:03:09.573Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

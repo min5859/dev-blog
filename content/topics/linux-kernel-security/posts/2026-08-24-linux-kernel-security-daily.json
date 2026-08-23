@@ -1,0 +1,125 @@
+{
+  "id": "2026-08-24-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-08-24 7.1.10·LTS 보안 — 커널 보안",
+  "headline": "7.1.10 stable과 5.10·5.15·6.1 LTS가 08-23에 공개됐고, userns __counted_by_ptr 하드닝이 linux-hardening에 올라왔습니다.",
+  "date": "2026-08-24",
+  "summary": "이번 수집의 핵심은 2026-08-23 공개 7.1.10 stable과 5.10.266·5.15.217·6.1.184 LTS 태그의 보안·메모리 안전 백포트 묶음입니다. Bill Wendling의 userns __counted_by_ptr 시리즈와 stack_trace KUnit 테스트 제안이 하드닝 경로를 이어갑니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "보안",
+    "LTS"
+  ],
+  "highlights": [
+    {
+      "title": "Linux 7.1.10 stable 보안 백포트",
+      "priority": "상",
+      "impactType": "backport",
+      "affectedAudience": "stable 커널 배포·백포트 담당, 네트워킹·컨테이너 보안 엔지니어",
+      "verifyLink": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.10",
+      "if": "7.1 stable에서 pid namespace·BPF/TC·raw/packet·kTLS 경로를 운영한다면,",
+      "do": "227건 백포트가 실린 v7.1.10 적용 일정을 보안 패치 큐에서 우선 검토하세요.",
+      "verify": "ChangeLog-7.1.10에서 pidns·cls_bpf·cls_u32·act_api 관련 항목이 배포 대상 서브시스템과 일치하는지 대조하세요."
+    },
+    {
+      "title": "userns uid_gid_map __counted_by_ptr 하드닝",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "user namespace·컨테이너 하드닝 담당, __counted_by_ptr 롤아웃 추적자",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20260823125155.1136740-2-morbo@google.com/",
+      "if": "user namespace ID 매핑과 __counted_by_ptr 롤아웃을 하드닝 CI에서 추적한다면,",
+      "do": "insert_extent() 순서 변경과 KUnit 2/2 패치의 linux-hardening 리뷰 동향을 조기에 확인하세요.",
+      "verify": "nr_extents 선증가 이유 주석 반영 여부와 mainline 머지 시점은 아직 미확인임을 유의하세요."
+    },
+    {
+      "title": "Linux 6.1.184 longterm",
+      "priority": "상",
+      "impactType": "backport",
+      "affectedAudience": "6.1 LTS 배포·백포트 담당",
+      "verifyLink": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.1.184",
+      "if": "6.1 LTS에서 Bluetooth 관리 소켓이나 hugetlb를 운영한다면,",
+      "do": "304건 백포트가 실린 v6.1.184의 mgmt pending command UAF·huge_zero_pfn 경쟁 수정 적용 여부를 확인하세요.",
+      "verify": "Bluetooth UAF 수정의 exploitability 평가는 아직 공개되지 않았으므로 원문 changelog를 대조하세요."
+    },
+    {
+      "title": "Linux 5.10.266·5.15.217 longterm",
+      "priority": "중",
+      "impactType": "backport",
+      "affectedAudience": "5.10 LTS 배포·백포트 담당",
+      "verifyLink": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.266",
+      "if": "5.10·5.15 LTS에서 USB 시리얼·dma-buf·binfmt_misc·ipset 경로를 쓴다면,",
+      "do": "keyspan_pda 정보 유출·udmabuf 캐시 동기화·binfmt_misc 잠금 등 공통 백포트와 5.15.217의 net/x25 UAF 수정 적용 계획을 세우세요.",
+      "verify": "ipset·ring-buffer 수정의 CVE 부여 여부는 아직 확인되지 않았으므로 각 ChangeLog를 대조하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**userns: Add __counted_by_ptr attribute to struct uid_gid_map**\n\nBill Wendling의 2패치 시리즈가 struct uid_gid_map의 forward/reverse 포인터에 __counted_by_ptr(nr_extents)를 붙이고, insert_extent()가 카운트 증가 전 인덱스를 쓰던 패턴을 nr_extents 선증가·nr_extents-1 인덱싱으로 바꿉니다. 2/2는 KUnit으로 base·extended extent 삽입·정렬을 검증합니다.\n\n영향: user namespace ID 매핑은 컨테이너 격리의 핵심 경로이며, __counted_by_ptr 적용 시 KASAN·fortify가 OOB를 런타임에 잡을 수 있지만 기존 insert 패턴은 즉시 panic을 유발하므로 하드닝 CI에서 조기 리뷰가 필요합니다.\n\n> Under __counted_by_ptr(nr_extents), the compiler and KASAN expect the accessed index to be strictly less than map->nr_extents.\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20260823125155.1136740-2-morbo@google.com/)\n\n> accessing index 5 when the count is 5 triggers an out-of-bounds panic/trap at runtime.\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20260823125155.1136740-2-morbo@google.com/)\n\n> Add a KUnit test suite to verify the insertion and sorting of mappings in struct uid_gid_map.\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20260823125155.1136740-3-morbo@google.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Linux 7.1.10 stable**\n\n2026-08-23에 공개된 7.1.10 stable은 227건의 업스트림 수정을 백포트했으며, pid namespace·TC cls_bpf/cls_u32/act_api·af_packet/tap/packet VLAN 헤더·TLS splice 등 보안·메모리 안전 계열 수정이 포함됩니다.\n\n영향: stable 트리를 직접 추적하지 않아도, 컨테이너(pidns)·BPF/TC 오프로드·raw/packet 소켓·kTLS 스택을 운영하는 팀은 이번 태그의 백포트 범위를 기준으로 배포 우선순위를 잡을 수 있습니다. 각 수정의 CVE 번호 부여 여부는 아직 확인되지 않았습니다.\n\n> pid: reject allocations through dead ancestor pid namespaces\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.10)\n\n> net/sched: cls_bpf: reject dev-bound programs bound to a different device\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.10)\n\n> net/sched: cls_u32: skip hash tables in u32_bind_class()\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.10)\n\n> net/sched: act_api: fix TOCTOU NULL deref on a->goto_chain\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.10)\n\n**Linux 5.10.266 longterm**\n\n2026-08-23 공개 5.10.266 LTS는 229건을 백포트했으며, ring-buffer per-CPU swap 경쟁·keyspan_pda 정보 유출·udmabuf 캐시 동기화·binfmt_misc 인터프리터 clone 잠금·netfilter ipset list 타입 드리프트 등이 포함됩니다.\n\n영향: 5.10 LTS를 쓰는 엔터프라이즈·임베디드 배포는 tracing·USB 시리얼·dma-buf·binfmt_misc·ipset 경로의 알려진 취약·정보 유출 수정을 이번 태그 기준으로 추적해야 합니다.\n\n> USB: serial: keyspan_pda: fix information leak\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.266)\n\n> udmabuf: Ensure to perform cache synchronisation in begin_cpu_udmabuf()\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.266)\n\n> binfmt_misc: use exe_file_deny_write_access() for the interpreter clone\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.266)\n\n**Linux 5.15.217 longterm**\n\n2026-08-23 공개 5.15.217 LTS는 267건을 백포트했으며, 5.10과 공통인 ring-buffer·udmabuf·binfmt_misc·ipset 수정에 더해 net/x25 소켓 타이머 UAF, openvswitch fragment 처리, ice resume reset 대기 등이 추가됩니다.\n\n영향: 5.15는 여전히 널리 쓰이는 LTS이므로, X25·OVS·ice 드라이버를 포함한 네트워크 스택과 공통 하드닝 백포트를 한 태그에서 묶어 배포 계획을 세울 수 있습니다. openvswitch fragment 처리 수정의 보안 영향 범위는 아직 확인되지 않았습니다.\n\n> net/x25: fix use-after-free of the socket by its timers\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.217)\n\n> udmabuf: Ensure to perform cache synchronisation in begin_cpu_udmabuf()\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.217)\n\n**Linux 6.1.184 longterm**\n\n2026-08-23 공개 6.1.184 LTS는 304건을 백포트했으며, Bluetooth mgmt pending command UAF·huge_zero_pfn 경쟁·ring-buffer swap·udmabuf·binfmt_misc·netfilter ipset·net/x25 UAF 등이 포함됩니다.\n\n영향: 6.1 LTS는 데스크톱·서버 배포에서 흔하며, Bluetooth 관리 소켓 UAF와 hugetlb 경쟁은 로컬/원격 공격면 평가에 직결되므로 이번 태그의 보안 백포트를 우선 검토해야 합니다.\n\n> Bluetooth: mgmt: fix pending command UAF in EIR updates\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.1.184)\n\n> mm/huge_memory: fix huge_zero_pfn race\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.1.184)\n\n**lib/tests: Add KUnit test for struct stack_trace __counted_by_ptr attribute**\n\nBill Wendling 패치는 struct stack_trace.entries에 붙은 __counted_by_ptr를 검증하는 stacktrace_counted_by KUnit 스위트를 추가하며, CONFIG_ARCH_STACKWALK가 켜진 아키텍처에서는 런타임 skip합니다.\n\n영향: __counted_by_ptr 롤아웃은 구조체마다 KUnit 회귀 테스트가 필요하며, 리뷰어가 제기한 대로 in-bounds 쓰기만으로는 속성 검증이 충분한지 하드닝 테스트 전략 논의가 이어지는 것으로 보입니다.\n\n> To test __counted_by_ptr, I thought we were supposed to intentionally trigger an out of bounds access and see if it actually catches the error?\n\n[원문 확인](https://lore.kernel.org/linux-hardening/aosNst7K9zaClFEH@google.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "kallsyms 미해석 심볼 raw 포인터 출력 문서화 v2 패치는 전일과 동일 상태이며, 이번 수집에서 추가 진척은 없습니다. mainline 적용 시점과 같은 v2 시리즈 1/2(vsprintf %ps 수정)와의 함께 머지 여부는 아직 확인되지 않았습니다. IS32FL3207 LED 드라이버·userns 패치에 대한 리뷰 응답 스레드 등 보안·하드닝 동작 변경이 없는 후보 3건은 편집 단계에서 제외됐습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ChangeLog-7.1.10",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.10",
+      "note": "changelog"
+    },
+    {
+      "title": "userns: Add __counted_by_ptr attribute to struct uid_gid_map (2/2)",
+      "url": "https://lore.kernel.org/linux-hardening/20260823125155.1136740-2-morbo@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "userns: Add KUnit test for uid_gid_map (2/2)",
+      "url": "https://lore.kernel.org/linux-hardening/20260823125155.1136740-3-morbo@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-5.10.266",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.266",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-5.15.217",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.217",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-6.1.184",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.1.184",
+      "note": "changelog"
+    },
+    {
+      "title": "lib/tests: Add KUnit test for struct stack_trace __counted_by_ptr attribute",
+      "url": "https://lore.kernel.org/linux-hardening/aosNst7K9zaClFEH@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "kallsyms: Document why unresolved symbols are revealed",
+      "url": "https://lore.kernel.org/linux-hardening/20260821152614.2202196-3-bigeasy@linutronix.de/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-23T18:42:27.796Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
