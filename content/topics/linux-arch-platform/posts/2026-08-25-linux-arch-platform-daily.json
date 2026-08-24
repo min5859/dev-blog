@@ -1,0 +1,142 @@
+{
+  "id": "2026-08-25-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-08-25 kexec·KVM 회귀 — Arch/Platform",
+  "headline": "riscv64 kexec-tools split crash kernel 예약 수정이 머지됐고, arm64 nested KVM S2 teardown race 수정이 실제 하드웨어에서 관측된 회귀를 다룬다.",
+  "date": "2026-08-25",
+  "summary": "Rui Qi의 kexec-tools 2패치가 split crash kernel 예약 handoff를 arm64 모델에 맞춰 머지됐다. Lorenzo Stoakes의 arm64 nested KVM v2는 Stage-2 shadow 해제 race에서 spurious warning과 NULL dereference를 막는다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "RISC-V",
+    "arm64",
+    "kexec",
+    "KVM"
+  ],
+  "highlights": [
+    {
+      "title": "kexec-tools: split crash kernel 예약 수정 머지",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "RISC-V kdump·crashkernel·kexec-tools 유지보수 담당",
+      "verifyLink": "https://git.kernel.org/pub/scm/utils/kernel/kexec/kexec-tools.git/commit/?id=6b8b27fbe5cc",
+      "if": "riscv64에서 high/low crash kernel 예약으로 kdump를 운영 중이라면",
+      "do": "갱신된 kexec-tools로 split reservation handoff와 --print-ckr-size sysfs 우선 동작을 확인하세요",
+      "verify": "kexec_load 경로가 low 예약을 숨기지 않고 linux,usable-memory-range에 전체 범위를 넘기는지 kdump 부팅으로 검증하세요"
+    },
+    {
+      "title": "KVM arm64: nested S2 teardown race 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "arm64 KVM nested virtualization·호스트 MMU notifier 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260822-kvm-arm-nested-virt-fix-v2-0-ac4059a0eaa6@kernel.org/",
+      "if": "L0 GFN 무효화로 nested shadow S2를 청크 단위로 해제하는 nested KVM 호스트를 운영 중이라면",
+      "do": "Lorenzo Stoakes v2 패치의 mmu.pgt NULL 검사와 spurious warning 무해 race 처리를 트리에 반영 여부를 확인하세요",
+      "verify": "게스트 teardown과 kvm_flush_shadow_all() 경합 시 경고·NULL dereference가 재현되지 않는지 실제 하드웨어에서 nested 워크로드를 돌려보세요"
+    },
+    {
+      "title": "arm_scmi: ACPI transport 매크로 확장",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "ACPI ARM 플랫폼·arm_scmi transport 드라이버 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260824100431.00002daf@oss.qualcomm.com/",
+      "if": "ACPI 기반 ARM 플랫폼에서 OF 없이 SCMI transport 드라이버를 추가하려면",
+      "do": "DEFINE_SCMI_TRANSPORT_DRIVER(OF)와 DEFINE_SCMI_ACPI_TRANSPORT_DRIVER(ACPI) 분리 및 선행 firmware-node propagation 의존을 따라가세요",
+      "verify": "acpi_device_id 기반 probe 경로에서 fwnode lookup이 올바른 firmware description을 보는지 selftest 또는 보드 부팅 로그로 확인하세요"
+    },
+    {
+      "title": "kexec: probe 불일치 시 -ENOEXEC 반환",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "kexec_file_load·다중 아키텍처 kexec 이미지 로더 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260821-mpilaniy-v3-1-76b355399d2e@redhat.com/",
+      "if": "kexec_file_load()로 다중 아키텍처 이미지 로더를 유지보수한다면",
+      "do": "형식 불일치 시 -EINVAL 대신 -ENOEXEC가 userspace errno로 전달되도록 Mukesh Pilaniya v3 변경을 따라가세요",
+      "verify": "Will Deacon이 질문한 0/-ENOEXEC 외 probe 반환값 존재 여부와 merge 일정은 아직 확인이 필요합니다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**kexec-tools: Fix split crash kernel reservations**\n\nRui Qi 2패치 시리즈가 kexec-tools에 머지됐다. --print-ckr-size는 /sys/kernel/kexec_crash_size를 우선 사용하고, RISC-V kexec_load 경로는 split crash kernel 예약의 high/low 범위를 모두 linux,usable-memory-range에 넘긴다(arm64 모델과 동일).\n\n영향: high/low crash kernel 예약이 있는 riscv64에서 기존 kexec_load는 low 예약을 crash kernel에 숨겨 kdump가 깨질 수 있다. RISC-V kdump·crashkernel 운영자는 갱신된 kexec-tools로 split reservation handoff가 정상인지 확인해야 한다.\n\n> Thanks, applied.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260824152714.GA102316@horms.kernel.org/)\n\n**KVM: arm64: Fix spurious warn, null ptr deref on S2 teardown race**\n\nLorenzo Stoakes v2 2패치가 nested KVM Stage-2 shadow 해제 중 mmu_lock을 내린 뒤 kvm_flush_shadow_all()과 경합할 때 spurious warning을 무해 race로 처리하고, kvm_nested_s2_unmap()/kvm_nested_s2_wp()에서 kvm->arch.mmu.pgt NULL 검사로 NULL dereference를 막는다. 8/24 스레드에서는 Yao Yuan 피드백 반영 여부로 respin을 논의 중이다.\n\n영향: L0 GFN 무효화로 nested shadow S2를 청크 단위로 풀 때 게스트 teardown과 겹치면 실제 하드웨어에서 경고·NULL dereference가 관측됐다. arm64 nested KVM·kvmtool 호스트 운영자는 이 teardown race 수정을 따라가야 한다.\n\n> a race which has been observed on real hardware.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260822-kvm-arm-nested-virt-fix-v2-0-ac4059a0eaa6@kernel.org/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**kexec: return -ENOEXEC from image probe functions on mismatch**\n\nMukesh Pilaniya v3 패치가 kexec_file_load() 이미지 probe가 형식 불일치 시 -EINVAL 대신 -ENOEXEC를 반환하도록 arm64·loongarch·riscv·kexec_elf.c를 수정한다. Will Deacon은 다른 probe 구현이 0/-ENOEXEC 외 값을 반환하는지 질문했다.\n\n영향: probe 오류가 userspace kexec_file_load() errno로 그대로 전달되므로, -EINVAL은 syscall 인자 문제로 오인될 수 있다. kexec_file_load 사용자·다중 아키텍처 kexec 로더 담당자는 errno 의미 변화를 따라가야 한다.\n\n> Returning -EINVAL from a probe when no loader matches is semantically incorrect and misleads userspace about the nature of the failure.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260821-mpilaniy-v3-1-76b355399d2e@redhat.com/)\n\n**arm64: Defer the GMID_EL1 read to {init,update}_cpu_features()**\n\nFuad Tabba v2는 MTE 비활성 시 GMID_EL1 읽기가 EL2 trap을 유발해 reg_gmid 읽기를 {init,update}_cpu_features()로 미루려 했으나, Will Deacon은 cpuinfo_store_cpu()에 stash된 ID 레지스터로 게이트하자고 제안했다. Fuad는 gmid_el1_accessible()로 __cpuinfo_store_cpu()에서 게이트하는 v3를 보내기로 했다.\n\n영향: MTE 비활성·CONFIG_ARM64_MTE=n·arm64.nomte·CPU hotplug 조합에서 GMID_EL1 접근이 boot/online 경로를 깨뜨릴 수 있다. arm64 MTE·CPU features·hotplug 담당자는 게이트 설계가 parallel onlining과 충돌하지 않는지 봐야 한다.\n\n> reading it traps to EL2 when MTE is disabled.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/CA+EHjTynGY1DFY=SP27MF=ioCQA4jnwnpJWCj1DLRqsqEyEUgA@mail.gmail.com/)\n\n**firmware: arm_scmi: Extend transport driver macro to support ACPI**\n\nSudeep Holla v3 2/9가 SCMI transport driver 매크로를 ACPI match table까지 받도록 확장해 DEFINE_SCMI_TRANSPORT_DRIVER(OF)와 DEFINE_SCMI_ACPI_TRANSPORT_DRIVER(ACPI) 래퍼를 분리한다. Jonathan Cameron이 Reviewed-by를 달았다.\n\n영향: ACPI 기반 ARM 플랫폼에서 SCMI transport가 OF 없이 acpi_device_id로 probe되려면 이 인프라가 필요하다. ACPI ARM 서버·SoC에서 SCMI transport 드라이버를 추가하는 담당자는 매크로 변경을 따라가야 한다.\n\n> Reviewed-by: Jonathan Cameron <jonathan.cameron@oss.qualcomm.com>\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260824100431.00002daf@oss.qualcomm.com/)\n\n**KVM: arm64: Add selftests for the pKVM heap allocator**\n\nVincent Donnefort v4 09/17이 pKVM hyp allocator selftest HVC 핸들러를 정리하고 pkvm_call_hyp_req() kerneldoc를 추가한다. Fuad Tabba는 merged handler가 no-req 경로에서 x2를 쓰고 kerneldoc 규칙이 명확하다고 승인했다.\n\n영향: pKVM hyp allocator 회귀는 protected KVM 호스트에서 조용히 터질 수 있어, selftest·HVC 요청 처리 규칙이 CI에서 검증되는지가 중요하다. KVM arm64·pKVM 개발자는 selftest 시리즈 진행을 따라가야 한다.\n\n> Both look good. The merged handler writes x2 through the no-req path, which is what I was after, and the kerneldoc states the rule.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/CA+EHjTwp=80sZar7XXd1ojZKpTooDeCK-td8q2L7qgVzayFjmw@mail.gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "kexec-tools split crash kernel — Simon Horman applied",
+      "url": "https://lore.kernel.org/linux-riscv/20260824152714.GA102316@horms.kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "kexec-tools RISC-V split reservation commit",
+      "url": "https://git.kernel.org/pub/scm/utils/kernel/kexec/kexec-tools.git/commit/?id=6b8b27fbe5cc",
+      "note": "commit"
+    },
+    {
+      "title": "kexec-tools --print-ckr-size sysfs commit",
+      "url": "https://git.kernel.org/pub/scm/utils/kernel/kexec/kexec-tools.git/commit/?id=97061549e25f",
+      "note": "commit"
+    },
+    {
+      "title": "kexec probe -ENOEXEC v3",
+      "url": "https://lore.kernel.org/linux-riscv/20260821-mpilaniy-v3-1-76b355399d2e@redhat.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Will Deacon probe return value question",
+      "url": "https://lore.kernel.org/linux-riscv/aoxQFxuzZ1AHmM8d@willie-the-truck/",
+      "note": "thread"
+    },
+    {
+      "title": "arm64 GMID_EL1 defer discussion",
+      "url": "https://lore.kernel.org/linux-arm-kernel/CA+EHjTynGY1DFY=SP27MF=ioCQA4jnwnpJWCj1DLRqsqEyEUgA@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "arm_scmi ACPI transport macro v3",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260824100431.00002daf@oss.qualcomm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "arm_scmi ACPI firmware-node propagation",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260813-acpi_scmi_pcc-v3-2-cb6b88b4ebb3@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM arm64 pKVM heap allocator selftests",
+      "url": "https://lore.kernel.org/linux-arm-kernel/CA+EHjTwp=80sZar7XXd1ojZKpTooDeCK-td8q2L7qgVzayFjmw@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM arm64 nested S2 teardown race fix v2",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260822-kvm-arm-nested-virt-fix-v2-0-ac4059a0eaa6@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM nested S2 fix respin discussion",
+      "url": "https://lore.kernel.org/linux-arm-kernel/aox6a50IKICiQ7EX@gremlin/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-24T19:01:29.882Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,116 @@
+{
+  "id": "2026-08-25-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-08-25 Clang CFI i.MX 회귀 — Linux Toolchain",
+  "headline": "Clang CFI 빌드의 i.MX6 suspend 회귀 수정, Rust PCI SR-IOV API·KUnit 진단 연동·컨테이너 TOML 설정이 도구체인 스레드에 올라왔습니다.",
+  "date": "2026-08-25",
+  "summary": "Yo'av Moshe가 i.MX6 OCRAM fncpy 경로의 kCFI 해시 배치 문제를 하드웨어에서 검증한 수정안을 공유했고, Rust-for-Linux에는 PCI SR-IOV extended capability·KUnit lockdep/taint 검사·drm/tyr reset teardown 순서 패치가 이어졌습니다. kbuild 쪽에서는 scripts/container에 TOML 프로필 지원이 추가됐습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "도구체인",
+    "Clang",
+    "Rust"
+  ],
+  "highlights": [
+    {
+      "title": "ARM i.MX6 Clang CFI suspend/resume 회귀",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Clang/CFI 커널 빌드·i.MX6 전원관리·ARM mach-imx 유지보수자",
+      "verifyLink": "https://lore.kernel.org/llvm/da6bffba-6c44-4ee7-a1a8-842f9e6de408@yoavmoshe.com/",
+      "if": "CONFIG_CFI=y로 i.MX6 계열 기기를 Clang 빌드해 suspend/resume을 쓰고 있다면",
+      "do": "OCRAM fncpy 정렬과 pm_info 뒤 kCFI 해시 배치가 8바이트 정렬을 깨지 않는지 diff를 따라 검토하세요",
+      "verify": "QEMU만이 아니라 실제 i.MX6 하드웨어에서 pmbootstrap Clang/CFI 빌드로 부팅·재개를 반복 확인하세요"
+    },
+    {
+      "title": "Rust PCI extended capability·SR-IOV API v8",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust-for-Linux PCI·SR-IOV 드라이버·rust bindings 유지보수자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/DKX9YTDJLJMI.1RKDZ3S28MVQ0@nvidia.com/",
+      "if": "Rust PCI 드라이버에서 SR-IOV extended capability를 raw binding 없이 다루려 한다면",
+      "do": "ExtCapability·find_ext_capability()·ExtSriovRegs API와 PCI_EXT_CAP_ID_SRIOV 캐스트 정책 논쟁 스레드를 추적하세요",
+      "verify": "v8 머지 시 `as` vs casts helper 중 어느 쪽이 채택되는지 lore 스레드에서 최종 합의를 확인하세요"
+    },
+    {
+      "title": "KUnit lockdep·TAINT_WARN 추가 검사",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "KUnit·lockdep·Rust-for-Linux CI 유지보수자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260824-lockdep-kunit-v2-0-36a6fec9f72e@gmail.com/",
+      "if": "KUnit green만으로 Rust·Clang CI 회귀를 판단하고 있다면",
+      "do": "CONFIG_KUNIT_EXTRA_ASSERTS로 debug_locks와 TAINT_WARN 검사를 테스트 하네스에 연동할지 검토하세요",
+      "verify": "defconfig·CI에서 해당 옵션 활성화 여부와 upstream 머지 일정을 스레드에서 확인하세요"
+    },
+    {
+      "title": "scripts/container TOML 프로필 지원",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "scripts/container·kbuild·CI 컨테이너 빌드 담당",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/7d8ba914cd174d716340bb2b88723bef0f330627.1787565460.git.gtucker@gtucker.io/",
+      "if": "커널 컨테이너 빌드에서 uid/gid·env_file 등 옵션을 매번 CLI로 넘기고 있다면",
+      "do": ".container.toml 프로필로 팀별 빌드 설정을 저장소에 버전 관리하도록 -c/-p 옵션 사용을 검토하세요",
+      "verify": "패치 2/2 추가 변경과 머지 후 기본 예시·문서화 일정을 lore에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ARM: imx: Fix suspend/resume crash with Clang CFI**\n\nYo'av Moshe가 Nick Desaulniers 제안 방식의 후속 diff를 공유했다. SYM_TYPED_FUNC_START로 OCRAM에 4바이트 kCFI 해시를 넣는 시도는 i.MX6SLL(Kobo Clara HD)에서 fncpy 8바이트 정렬·pm_info 덮어쓰기로 부팅 실패했고, pm_info 뒤 8바이트(패딩+해시)를 예약해 수동으로 해시를 쓰는 방식이 하드웨어에서 부팅에 성공했다.\n\n영향: CONFIG_CFI=y Clang 빌드에서 suspend 코드를 OCRAM로 fncpy할 때 kCFI 타입 해시 배치와 8바이트 정렬을 맞추지 않으면 ARM suspend/resume 경로가 조용히 깨지며, QEMU만으로는 i.MX6 MMDC 하드웨어 회귀를 놓칠 수 있다.\n\n> fncpy requires 8-byte aligned source and destination addresses (FNCPY_ALIGN, with a BUG_ON check).\n\n[원문 확인](https://lore.kernel.org/llvm/da6bffba-6c44-4ee7-a1a8-842f9e6de408@yoavmoshe.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/panic: Split into core and helpers**\n\nThomas Zimmermann v2 13패치가 DRM panic 처리를 core(상태·락·debugfs·엔트리포인트)와 KMS helper(드로잉·framebuffer 세부)로 분리하고, panic 상태 처리를 drm_panic_display_panic_screen() 한곳으로 모은 뒤 테스트를 drm_panic_helper_test 별도 모듈로 빌드 가능하게 한다.\n\n영향: rust-for-linux에 올라온 시리즈로 panic QR Rust 모듈(drm_panic_qr.rs 등)이 helper 쪽으로 정리되며, 기능 변화 없이 드로잉 코드를 core 밖으로 빼 향후 format conversion·Rust draw 코드와 공유할 기반을 만든다.\n\n> Split DRM's current panic handling into a core and a helper module. ... Hence there's no change in features or functionality.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260824125201.218863-1-tzimmermann@suse.de/)\n\n**scripts: add TOML config to container tool**\n\nGuillaume Tucker 2패치 중 1/2가 scripts/container에 .container.toml 프로필 지원을 추가한다. CLI 옵션이 설정 파일보다 우선하고, -c로 설정 경로·-p로 프로필을 고를 수 있으며, 파일이 없으면(또는 -c 미사용 시) 조용히 무시한다.\n\n영향: 커널 컨테이너 빌드에서 uid/gid·env_file 등 반복 옵션을 저장소에 버전 관리 가능한 kbuild 도구 설정으로 옮겨, 팀별 재현 가능한 빌드 프로필을 표준화할 수 있다.\n\n> Add support for a TOML configuration file to the scripts/container tool. ... Include the concept of 'profiles' with different named sections in the file\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/7d8ba914cd174d716340bb2b88723bef0f330627.1787565460.git.gtucker@gtucker.io/)\n\n**kunit: add optional assertions to catch taint and lockdep warnings**\n\nMalte Wechter v2가 CONFIG_KUNIT_EXTRA_ASSERTS로 lockdep debug_locks와 panic TAINT_WARN를 KUnit 테스트 전·각 테스트 케이스마다 검사해, 본문 assertion은 통과했어도 lockdep/taint가 있으면 실패 처리한다. v2는 Rust 래퍼 대신 C KUnit에 직접 구현한다.\n\n영향: Rust·Clang CI에서 KUnit만 green이어도 lockdep 경고나 WARN taint가 남는 회귀를 놓치기 쉬워, 도구체인·드라이버 테스트 하네스에 진단 연동 계층을 추가하는 선례다.\n\n> this patch tries to expand KUnit by using existing kernel diagnostics to catch certain locking related bugs. Specifically this adds assertions for `debug_locks` from `lockdep` and the `TAINT_WARN` fla\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260824-lockdep-kunit-v2-0-36a6fec9f72e@gmail.com/)\n\n**drm/tyr: move reset work to platform driver data**\n\nOnur Özkan 패치가 ResetHandle을 DRM 등록 데이터에서 platform driver data 첫 필드로 옮겨, 플랫폼 teardown이 DRM 등록·리소스 해제 전에 queued/running reset work를 drain하도록 한다. Daniel Almeida가 teardown 순서·use-after-free 위험 설명을 요청한 뒤 Reviewed-by를 달았다.\n\n영향: Rust drm/tyr의 GPU reset workqueue와 platform/DRM unregister 순서는 R4L 드라이버에서 흔한 unload UAF 클래스를 보여 주며, reset 인프라 후속(unplug 시리즈)과 함께 복구·해제 정책을 맞추는 데 필요하다. GPU reset infrastructure v6 머지 후 리베이스·머지 일정과 drain vs cancel 정책 정렬은 확인이 필요합니다.\n\n> Move ResetHandle out of DRM registration data and store it as the first field of platform driver data. This makes platform teardown drain queued or running reset work before dropping the DRM registrat\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/ECE73D59-4043-4AC6-9D3D-69CBA5DC1515@collabora.com/)\n\n**rust: pci: add extended capability and SR-IOV support**\n\nZhi Wang v8이 rust/kernel/pci/cap.rs에 ExtCapability·ConfigSpace::find_ext_capability()·ExtSriovRegs·VF BAR iterator를 추가하고 PCI_EXT_CAP_NEXT 매크로용 Rust helper를 노출한다. 8/24 스레드에서 Gary Guo와 Alexandre Courbot이 PCI_EXT_CAP_ID_SRIOV를 casts::u32_into_u16 const generic으로 쓸지 `as`로 쓸지 정책을 논쟁한다.\n\n영향: Rust PCI 드라이버가 raw binding 없이 SR-IOV extended capability를 다루려면 이 API가 필요하고, 정수 캐스트 helper vs `as` 논쟁은 이후 모든 PCIe capability 바인딩의 안전·가독성 기준이 된다. v8 머지 시 어느 쪽이 채택되는지는 확인이 필요합니다.\n\n> Define ExtCapability to associate a capability ID with a register layout, and add ConfigSpace::find_ext_capability() to locate and project that layout.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/DKX9YTDJLJMI.1RKDZ3S28MVQ0@nvidia.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/panic: Split into core and helpers",
+      "url": "https://lore.kernel.org/rust-for-linux/20260824125201.218863-1-tzimmermann@suse.de/",
+      "note": "thread"
+    },
+    {
+      "title": "ARM: imx: Fix suspend/resume crash with Clang CFI",
+      "url": "https://lore.kernel.org/llvm/da6bffba-6c44-4ee7-a1a8-842f9e6de408@yoavmoshe.com/",
+      "note": "thread"
+    },
+    {
+      "title": "scripts: add TOML config to container tool",
+      "url": "https://lore.kernel.org/linux-kbuild/7d8ba914cd174d716340bb2b88723bef0f330627.1787565460.git.gtucker@gtucker.io/",
+      "note": "thread"
+    },
+    {
+      "title": "kunit: add optional assertions to catch taint and lockdep warnings",
+      "url": "https://lore.kernel.org/rust-for-linux/20260824-lockdep-kunit-v2-0-36a6fec9f72e@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/tyr: move reset work to platform driver data",
+      "url": "https://lore.kernel.org/rust-for-linux/ECE73D59-4043-4AC6-9D3D-69CBA5DC1515@collabora.com/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: pci: add extended capability and SR-IOV support",
+      "url": "https://lore.kernel.org/rust-for-linux/DKX9YTDJLJMI.1RKDZ3S28MVQ0@nvidia.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-24T18:37:42.900Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,132 @@
+{
+  "id": "2026-08-25-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-08-25 UALink 인프라 2차 — Linux GPU·AI",
+  "headline": "AMD UALink 2차 시리즈가 pod 내 원격 VRAM 직접 접근 기반을 제시하고, amdxdna import BO I/O mapping 거부가 보안 회귀를 막는다.",
+  "date": "2026-08-25",
+  "summary": "dri-devel에서는 UALoE 인프라·GEM handle_free·AMDGPU export/import 경로가 rack-scale AI pod 연동의 핵심 축으로 올라왔다. 동시에 ingenic DRM bridge 회귀 수정과 amdxdna I/O mapping 거부, Tyr reset work 수명 정리가 안정성·보안 측면에서 주목된다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "GPU",
+    "AMDGPU",
+    "UALink",
+    "DRM"
+  ],
+  "highlights": [
+    {
+      "title": "UALink scale-up pod UALoE 인프라 2차 시리즈",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "AMDGPU·rack-scale AI 인프라·dma-buf/GEM 공유 스택 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260824170202.1764463-1-alexander.deucher@amd.com/",
+      "if": "Helios급 rack-scale GPU pod에서 RDMA 복사 없이 원격 VRAM을 GPUVM에 매핑하는 커널 기반을 추적한다면",
+      "do": "UALoE 문서·GEM UALink IOCTL·amdgpu export/import 경로와 GitLab ualink 브랜치 커밋을 대조해 NPA 공간·GPUVM 페이지 테이블 설계를 검토하세요",
+      "verify": "원문 스레드에서 load/store 직접 접근과 NPA 주소 공간 정의를 확인하고, 시리즈 1(amd-gfx)과의 merge 순서는 아직 확인이 필요합니다"
+    },
+    {
+      "title": "amdxdna import BO I/O memory mapping 거부",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "amdxdna(NPU)·dma-buf import·GEM vmap 스택 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260813164700.43960-2-taimuraz@kaitmazov.com/",
+      "if": "NPU가 nouveau·radeon 등 VRAM resident dma-buf exporter와 조합되는 환경을 운영한다면",
+      "do": "import BO의 dma_buf_vmap() 결과가 is_iomem이면 -EOPNOTSUPP로 거부하는 패치 적용 여부를 확인하고, maintainer 제안대로 amdxdna_gem_vmap()으로 검사를 옮기는 후속 반영을 추적하세요",
+      "verify": "스레드에서 __iomem 포인터가 일반 kva로 저장될 때 amdxdna_cmd_set_error()의 memset/memcpy 경로와 nouveau/radeon+NPU 재현 조건을 원문으로 대조하세요"
+    },
+    {
+      "title": "drm/gem handle_free 콜백 추가",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "DRM GEM 코어·AMDGPU UALink 드라이버 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260824170202.1764463-2-alexander.deucher@amd.com/",
+      "if": "UALink pod에서 사용자 공간 GEM 핸들 수명과 원격 노드 export 해제 시점을 맞춰야 한다면",
+      "do": "drm_gem_object_funcs.handle_free가 핸들 카운트 0 시 object_name_lock 밖에서 호출되는 흐름과 AMDGPU의 amdgpu_ualink_revoke_exported_memory() 연동을 검토하세요",
+      "verify": "UALink IOCTL 시리즈와의 동시 landing 필요성 및 다른 GEM 드라이버의 handle_free 채택 여부는 아직 확인이 필요합니다"
+    },
+    {
+      "title": "drm/ingenic bridge 할당 회귀 수정",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "Ingenic DRM·embedded HDMI(drm/ingenic) 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/f77ed4e1547e452668a6549e3966471a6b638a6b.1787593585.git.hns@goldelico.com/",
+      "if": "CI20 등 Ingenic 보드에서 HDMI attach 실패나 bridge corrupted 경고가 9347f2fbb0183 이후 나타난다면",
+      "do": "v5 패치가 ingenic_drm_bridge_alloc 컨테이너에 devm_drm_bridge_alloc()를 쓰고 drm_bridge_add()를 attach 전에 호출하는지 확인하고 stable backport 대상 여부를 추적하세요",
+      "verify": "drm_bridge_connector_init() 이후 실패 경로의 drm_bridge_remove() 누락 지적이 v5에서 해소됐는지와 dri-devel merge 일정은 아직 확인이 필요합니다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm/ingenic: fix bridge allocation**\n\nv5는 ingenic DRM 브리지를 ingenic_drm_bridge_alloc 컨테이너에 devm_drm_bridge_alloc()로 옮기고 drm_bridge_add()를 attach 전에 호출하도록 바꾼다.\n\n영향: 9347f2fbb0183 이후 수동 bridge 할당이 깨져 CI20 등 Ingenic 보드에서 HDMI attach 실패·refcount use-after-free 경고가 났고, stable@vger.kernel.org 대상 수정이다.\n\n> [drm] DRM bridge corrupted or not allocated by devm_drm_bridge_alloc()\n\n[원문 확인](https://lore.kernel.org/dri-devel/f77ed4e1547e452668a6549e3966471a6b638a6b.1787593585.git.hns@goldelico.com/)\n\n**accel/amdxdna: refuse an I/O memory mapping of an imported BO**\n\namdxdna가 import BO의 dma_buf_vmap() 결과가 is_iomem이면 -EOPNOTSUPP로 거부한다. Lizhi Hou는 검사를 amdxdna_gem_vmap()으로 옮겨 모든 경로를 막자고 제안했다.\n\n영향: nouveau·radeon 등 VRAM resident dma-buf exporter가 I/O mapping을 반환하면 amdxdna_cmd_set_error()가 __iomem을 일반 커널 주소처럼 memset/memcpy해 커널 메모리 오염 위험이 있고, 비특권 ioctl로 도달 가능하다.\n\n> an exporter answering with an I/O mapping leaves a void __iomem pointer in abo->mem.kva, which amdxdna_cmd_set_error() memsets and memcpys through.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260813164700.43960-2-taimuraz@kaitmazov.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Add UALink infrastructure series 2**\n\nUALink scale-up pod용 UALoE(UALink over Ethernet) 인프라 2차 시리즈로 문서·GEM UALink IOCTL·amdgpu export/import 경로를 추가한다. 원격 GPU 메모리는 NPA(Network Physical Address) 공간으로 직접 load/store 접근한다.\n\n영향: AMD Helios급 rack-scale GPU pod에서 RDMA 복사 없이 원격 VRAM을 GPUVM에 매핑하는 커널 기반을 제시하며, ROCm libhsakmt 사용자 공간 연동까지 열린다.\n\n> Unlike RMDA, there is no copy involved; it is direct loads/stores over the fabric.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260824170202.1764463-1-alexander.deucher@amd.com/)\n\n**drm/gem: Add callback for when handle count goes to 0**\n\ndrm_gem_object_funcs에 handle_free 콜백을 추가하고, GEM 핸들 카운트가 0이 될 때 object_name_lock 밖에서 호출한 뒤 refcount를 내린다. AMDGPU는 여기서 UALink export 메모리를 revoke한다.\n\n영향: UALink pod에서 사용자 공간 핸들이 모두 사라진 뒤에만 원격 노드 export를 해제할 수 있어, 원격 GPU 접근 권한과 GEM 수명을 맞추는 핵심 훅이다.\n\n> freeing of memory exported to other nodes in a UALink pod once all user mode references are gone.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260824170202.1764463-2-alexander.deucher@amd.com/)\n\n**drm/tyr: move reset work to platform driver data**\n\nTyr(Rust Mali) 드라이버가 ResetHandle을 DRM registration data에서 platform driver data 첫 필드로 옮겨, teardown 시 큐/실행 중 reset work를 드랍하기 전에 drain한다.\n\n영향: drop 순서가 어긋나면 reset work가 이미 해제된 clock·regulator·MMIO를 건드릴 수 있어 GPU unplug/재초기화 경로의 use-after-free를 막는다. 실제 GPU hot-unplug 시나리오에서 race 재현 여부는 아직 확인이 필요합니다.\n\n> Move ResetHandle out of DRM registration data and store it as the first field of platform driver data.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260823-tyr-gpu-unplug-b4-v1-1-e99c07d4c785@onurozkan.dev/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/ingenic: fix bridge allocation",
+      "url": "https://lore.kernel.org/dri-devel/f77ed4e1547e452668a6549e3966471a6b638a6b.1787593585.git.hns@goldelico.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/bridge: add warning for bridges using neither devm_drm_bridge_alloc() nor drm_bridge_add()",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=9347f2fbb0183",
+      "note": "commit"
+    },
+    {
+      "title": "Add UALink infrastructure series 2",
+      "url": "https://lore.kernel.org/dri-devel/20260824170202.1764463-1-alexander.deucher@amd.com/",
+      "note": "thread"
+    },
+    {
+      "title": "UALink development branch commits",
+      "url": "https://gitlab.freedesktop.org/agd5f/linux/-/commits/ualink?ref_type=heads",
+      "note": "article"
+    },
+    {
+      "title": "drm/gem: Add callback for when handle count goes to 0",
+      "url": "https://lore.kernel.org/dri-devel/20260824170202.1764463-2-alexander.deucher@amd.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/tyr: move reset work to platform driver data",
+      "url": "https://lore.kernel.org/dri-devel/20260823-tyr-gpu-unplug-b4-v1-1-e99c07d4c785@onurozkan.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/tyr reset work review discussion",
+      "url": "https://lore.kernel.org/dri-devel/ECE73D59-4043-4AC6-9D3D-69CBA5DC1515@collabora.com/",
+      "note": "thread"
+    },
+    {
+      "title": "accel/amdxdna: refuse an I/O memory mapping of an imported BO",
+      "url": "https://lore.kernel.org/dri-devel/20260813164700.43960-2-taimuraz@kaitmazov.com/",
+      "note": "thread"
+    },
+    {
+      "title": "amdxdna is_iomem check relocation suggestion",
+      "url": "https://lore.kernel.org/dri-devel/a782e2ad-d12a-66c8-447c-725d8e66593d@amd.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-24T19:04:39.588Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

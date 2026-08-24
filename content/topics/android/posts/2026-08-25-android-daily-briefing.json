@@ -1,0 +1,128 @@
+{
+  "id": "2026-08-25-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-08-25 pKVM·f2fs 보안 — Android 커널",
+  "headline": "pKVM VLPI MMIO 차단·f2fs suspend 교착 수정·NMI dump_tasks 안전화 등 ACK 병합 대기 항목을 점검하세요.",
+  "date": "2026-08-25",
+  "summary": "ACK mainline·android16-6.12 병합 큐에는 pKVM GICv4 VLPI 보안, f2fs suspend 레이스, SELinux/BPF 초기화 순서 수정이 포함됩니다. GKI defconfig 정리·QCOM 심볼 export 등 빌드·ABI 항목도 함께 유지됩니다.",
+  "tags": [
+    "안드로이드",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "pKVM GICv4 VLPI MMIO 차단",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "pKVM·가상화 보안 담당, arm64 ACK 유지보수",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/18b623c9490c5519d40209efb05770d61b3d3c84",
+      "if": "pKVM 환경에서 호스트가 GICv4 redistributor VLPI 프레임에 MMIO 접근할 수 있다면,",
+      "do": "pkvm_handle_vlpi_emulation() no-op 핸들러로 우회하는 패치가 포함된 ACK 빌드를 적용하세요.",
+      "verify": "보호 VM·VLPI 보안이 유지되는지 가상화 회귀 테스트를 실행하세요."
+    },
+    {
+      "title": "SELinux BPF SBLABEL_MNT 검사 순서",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "Android 보안·SELinux/BPF 스택 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/8f0a5b31aee19510e75741c9687cf0d9321fa7ed",
+      "if": "bpfvfs genfscon 마운트에서 SBLABEL_MNT 검사가 inode 보안 구조체 초기화보다 늦게 수행된다면,",
+      "do": "selinux_inode_init_security()에서 SBLABEL_MNT를 isec 초기화 전에 검사하도록 한 커밋 반영 여부를 확인하세요.",
+      "verify": "BPF·SELinux 통합 초기화와 inode_doinit_with_dentry() 연쇄 호출이 정상 완료되는지 검증하세요."
+    },
+    {
+      "title": "f2fs suspend 중 백그라운드 I/O 교착",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Android suspend/전력 담당, f2fs·스토리지 벤더",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/f255c2d290e7195470916e1810212580fa25adc7",
+      "if": "시스템 suspend 중 f2fs_gc·f2fs_discard가 Runtime PM suspend된 블록 장치에 submit_bio()를 호출한다면,",
+      "do": "PM notifier로 SBI_IS_SUSPENDING을 설정해 백그라운드 스레드 bio 제출을 중단하는 패치가 android16-6.12에 포함됐는지 확인하세요.",
+      "verify": "UFS 등 장치에서 시스템 suspend 타임아웃이 재현되지 않는지 전력 시나리오를 테스트하세요."
+    },
+    {
+      "title": "NMI 컨텍스트 dump_tasks() deadlock",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "ACK 메모리·LMKD·크래시 덤프 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/db2acc01b75f9a30bfef0f4d2a6f413542cc32ac",
+      "if": "NMI 컨텍스트에서 dump_tasks()를 호출하는 크래시·메모리 압박 디버깅 경로를 운영한다면,",
+      "do": "spin_trylock()과 memcg 덤프 조기 반환으로 NMI-unsafe 잠금·순회를 피하는 패치가 mainline ACK에 포함됐는지 확인하세요.",
+      "verify": "alloc_lock 보유 중 NMI에서 deadlock이나 memcg 구조체 비안전 순회가 재현되지 않는지 스트레스 테스트하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ANDROID: KVM: arm64: Block host MMIO accesses to GICv4 VLPI region**\n\nGICv4 redistributor VLPI 프레임에 대한 호스트 MMIO를 pkvm_handle_vlpi_emulation() no-op 핸들러로 우회해 직접 하드웨어 접근을 차단했습니다.\n\n영향: pKVM이 VLPI MMIO를 충분히 검증하지 않아 호스트 쓰기가 VLPI·보호 VM 보안을 침해할 수 있는 취약점을 막습니다.\n\n> Route host MMIO accesses targeting the GICv4 redistributor VLPI frame to a no-op handler, pkvm_handle_vlpi_emulation(), instead of forwarding them directly to hardware.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/18b623c9490c5519d40209efb05770d61b3d3c84)\n\n**FROMGIT: selinux: bpf: check SBLABEL_MNT before isec init**\n\nselinux_inode_init_security()에서 inode 보안 구조체 초기화 전에 SBLABEL_MNT 마운트 지원 여부를 먼저 검사하도록 순서를 바꿨습니다.\n\n영향: bpfvfs genfscon 마운트가 SBLABEL_MNT 검사에 실패하면 inode_doinit_with_dentry() 연쇄 호출이 깨져 BPF·SELinux 통합 초기화가 실패할 수 있습니다.\n\n> Do the SBLABEL_MNT check before the inode security is initialized.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/8f0a5b31aee19510e75741c9687cf0d9321fa7ed)\n\n**ANDROID: f2fs: quiesce background threads during system suspend using PM notifier**\n\nPM notifier로 suspend 준비 단계에서 SBI_IS_SUSPENDING을 설정하고, f2fs_gc·f2fs_discard 스레드가 새 bio 제출을 즉시 중단하도록 했습니다.\n\n영향: 블록 장치(UFS 등)가 Runtime PM suspend 중일 때 f2fs 백그라운드 I/O가 submit_bio()에서 교착되어 시스템 suspend 타임아웃으로 이어지는 레이스를 막습니다. PM/block 레이어 공식 수정이 ACK에 병합되는 시점과 android16-6.12 백포트 범위는 확인이 필요합니다.\n\n> During system suspend, a race condition can cause f2fs_gc and f2fs_discard threads to call submit_bio() while the underlying block device is in Runtime PM suspend.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/f255c2d290e7195470916e1810212580fa25adc7)\n\n**ANDROID: mm: Make dump_tasks() safe in NMI context**\n\nNMI 컨텍스트에서 dump_tasks() 호출 시 spin_trylock()과 memcg 덤프 조기 반환으로 find_lock_task_mm()·mem_cgroup_scan_tasks()의 NMI-unsafe 잠금·순회를 피합니다.\n\n영향: NMI에서 dump_tasks()를 쓰는 크래시·메모리 압박 디버깅 경로가 alloc_lock 보유 중 NMI에서 deadlock하거나 memcg 구조체를 안전하지 않게 순회하던 회귀를 막습니다.\n\n> dump_tasks() can be called from NMI context to dump memory status of all tasks. However, calling from NMI context has safety issues:\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/db2acc01b75f9a30bfef0f4d2a6f413542cc32ac)\n\n**tls: remove dead sockmap (psock) handling from the SW path**\n\nTLS SW 경로(sendmsg/recvmsg)에서 TLS와 상호 배타적인 sockmap(psock) 처리 dead code를 제거했습니다.\n\n영향: 실제로 사용되지 않는 sockmap 분기를 없애 AI 보안 스캐너 오탐과 유지 부담을 줄이고, TLS Tx 경로의 잠재 버그 표면을 축소합니다.\n\n> TLS and sockmap are now mutually exclusive. Try to delete the code from sendmsg and recvmsg path which is now obviously dead.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/79511603a65b990bed675eb4bcfd85305d3ff42a)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**ANDROID: GKI: CRYPTO_LZ4 is now implicit**\n\nCRYPTO_LZ4가 HIBERNATION Kconfig에 의해 암시적으로 선택되므로 gki_defconfig에서 해당 항목을 제거했습니다.\n\n영향: GKI defconfig 중복 옵션을 정리해 업스트림 Kconfig 병합 시 불필요한 충돌·경고를 줄이고, LZ4 압축 의존성은 hibernation 경로로 일원화됩니다.\n\n> The CRYPTO_LZ4 config is now implicitly selected via HIBERNATION, so remove it from our gki_defconfig files.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/87aba67d69fd0706152ae2d9dec68c2cfc274459)\n\n**ANDROID: gki_defconfig: enable CONFIG_SW_SYNC=y for debug/testing**\n\nGKI gki_defconfig에 CONFIG_SW_SYNC=y를 켜 GPU 드라이버 디버그·테스트(igt-gpu-tools 등)를 지원합니다.\n\n영향: sw_sync는 fence 관리 오류로 userspace 데드락 위험이 있어 shipping에는 debugfs로만 노출되며, Android 12+ GMS는 shipping 기기의 debugfs 마운트를 금지합니다.\n\n> GMS requirements for Android 12 and newer disallow shipping devices with debugfs mounted.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/7443a0c3c9ecfc8982003afde92e9c783c725994)\n\n**ANDROID: sched: Avoid macro redefinition of TRACE_INCLUDE_PATH**\n\ninclude/trace/hooks/sched.h에서 #define TRACE_INCLUDE_PATH 전에 #undef TRACE_INCLUDE_PATH를 추가해 동일 컴파일 단위에서 trace hook 헤더가 중복 포함될 때 매크로 재정의 빌드 오류를 방지합니다.\n\n영향: EAS·스케줄러 trace hook을 쓰는 ACK 빌드에서 -Werror,-Wmacro-redefined로 컴파일이 깨지는 회귀를 막습니다.\n\n> Add missing #undef TRACE_INCLUDE_PATH before #define in include/trace/hooks/sched.h to prevent -Werror,-Wmacro-redefined when multiple trace hook headers are included in the same compilation unit.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/82be0d329bf2b455546a09cc84a40c9d1716b54d)\n\n**ANDROID: add panic_reboot_mode to qcom symbols list**\n\nQualcomm GKI 심볼 목록에 enum reboot_mode panic_reboot_mode를 추가해 벤더 모듈이 참조할 수 있게 했습니다.\n\n영향: 패닉 핸들러에서 설정한 reboot_mode를 QCOM 벤더 모듈이 GKI export 심볼로 읽을 수 있어, GKI ABI 준수 하의 크래시·복구 동작 연동이 가능해집니다.\n\n> Add panic_reboot_mode to the Qualcomm GKI symbol list, so vendor modules can reference the reboot mode set during panic handling.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/83f7e9ec53bb7cb3b18b1fde875d861ec7bcbda5)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ANDROID: KVM: arm64: Block host MMIO accesses to GICv4 VLPI region",
+      "url": "https://android.googlesource.com/kernel/common/+/18b623c9490c5519d40209efb05770d61b3d3c84",
+      "note": "commit"
+    },
+    {
+      "title": "FROMGIT: selinux: bpf: check SBLABEL_MNT before isec init",
+      "url": "https://android.googlesource.com/kernel/common/+/8f0a5b31aee19510e75741c9687cf0d9321fa7ed",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: f2fs: quiesce background threads during system suspend using PM notifier",
+      "url": "https://android.googlesource.com/kernel/common/+/f255c2d290e7195470916e1810212580fa25adc7",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: mm: Make dump_tasks() safe in NMI context",
+      "url": "https://android.googlesource.com/kernel/common/+/db2acc01b75f9a30bfef0f4d2a6f413542cc32ac",
+      "note": "commit"
+    },
+    {
+      "title": "tls: remove dead sockmap (psock) handling from the SW path",
+      "url": "https://android.googlesource.com/kernel/common/+/79511603a65b990bed675eb4bcfd85305d3ff42a",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: GKI: CRYPTO_LZ4 is now implicit",
+      "url": "https://android.googlesource.com/kernel/common/+/87aba67d69fd0706152ae2d9dec68c2cfc274459",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: gki_defconfig: enable CONFIG_SW_SYNC=y for debug/testing",
+      "url": "https://android.googlesource.com/kernel/common/+/7443a0c3c9ecfc8982003afde92e9c783c725994",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: sched: Avoid macro redefinition of TRACE_INCLUDE_PATH",
+      "url": "https://android.googlesource.com/kernel/common/+/82be0d329bf2b455546a09cc84a40c9d1716b54d",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: add panic_reboot_mode to qcom symbols list",
+      "url": "https://android.googlesource.com/kernel/common/+/83f7e9ec53bb7cb3b18b1fde875d861ec7bcbda5",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-24T18:08:59.741Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/android-newsletter-from-dossier-ko.md"
+  }
+}
