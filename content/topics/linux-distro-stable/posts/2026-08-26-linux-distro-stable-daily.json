@@ -1,0 +1,133 @@
+{
+  "id": "2026-08-26-linux-distro-stable-daily",
+  "topic": "linux-distro-stable",
+  "title": "2026-08-26 stable 보안 백포트 — linux-distro-stable",
+  "headline": "inet 소켓·KVM VFIO·rtw89 펌웨어·io_uring 등 stable 보안 백포트 후보가 집중 제출됐고, 8월 23일 태그는 배포 기준으로 유지됩니다.",
+  "date": "2026-08-26",
+  "summary": "이번 수집은 lore stable 큐의 신규 메모리 안전·수명 경쟁 수정이 중심입니다. 7.1.10·LTS 태그는 어제와 동일한 기준점이며, 배포판은 신규 백포트 후보 적용 여부를 우선 점검해야 합니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "inet 소켓 생성 시 protocol 모듈 pin",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "네트워크 스택·동적 모듈 운영자, distro kernel 보안 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20260825172349.232794-1-nicoyip.dev@gmail.com/",
+      "if": "loadable protocol 모듈을 동적으로 로드·해제하는 네트워크·컨테이너 환경을 운영 중이면",
+      "do": "l2tp_ip delete_module과 socket() 레이스가 재현되는 경로를 점검하고 stable 백포트 적용 계획을 세우세요",
+      "verify": "RCU 해제 후 sk_alloc()까지 protocol owner pin 수정이 배포판에 cherry-pick 됐는지 스레드를 확인하세요"
+    },
+    {
+      "title": "KVM kvm_zap_gfn_range() SRCU 보호",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "KVM·VFIO 가상화 스택 운영자, distro kernel 보안 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20260825183924.237727-1-nicoyip.dev@gmail.com/",
+      "if": "KVM과 VFIO noncoherent-DMA를 함께 쓰는 가상화 스택을 운영 중이면",
+      "do": "GPA zap과 memslot 삭제 경쟁으로 인한 vmalloc-out-of-bounds 위험을 평가하고 stable 백포트를 추적하세요",
+      "verify": "kvm_zap_gfn_range() 내부 SRCU 취득 패치의 stable 브랜치 적용 시점을 확인하세요"
+    },
+    {
+      "title": "rtw89 펌웨어 section_num 상한 검증",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "rtw89 Wi-Fi 드라이버·펌웨어 로드 경로 운영자",
+      "verifyLink": "https://lore.kernel.org/stable/20260825174438.63168-1-acharyalaxman8848@gmail.com/",
+      "if": "rtw89 Wi-Fi 드라이버와 외부 펌웨어 blob 로드 경로를 운영 중이면",
+      "do": "악성 펌웨어로 인한 스택 오버플로우 가능성을 차단하는 패치 적용을 검토하세요",
+      "verify": "section_num이 FWDL_SECTION_MAX_NUM(10)으로 상한 검증되는 수정의 배포 여부를 확인하세요"
+    },
+    {
+      "title": "io_uring waitid task_work 취소 처리",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "io_uring waitid 사용자·런타임 보안 담당",
+      "verifyLink": "https://lore.kernel.org/stable/178768148595.43624.3625796882295211976.b4-ty@b4/",
+      "if": "io_uring waitid를 프로세스 컨텍스트에 의존하는 애플리케이션에서 사용 중이면",
+      "do": "fallback kworker에서 tw.cancel 무시로 잘못된 child lookup이 발생하지 않도록 stable 백포트를 적용하세요",
+      "verify": "Jens Axboe가 승인한 stable 커밋 14572de82e5022899e5856008bc9cac97004a88c 적용 여부를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 신규 stable/LTS 태그 변화는 없습니다. 2026-08-23에 Greg Kroah-Hartman이 서명한 Linux 7.1.10(227건 백포트)과 5.10.266(229건)·5.15.217(267건)·6.1.184(304건) longterm 태그는 배포·백포트 계획의 기준점으로 유지됩니다.\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.10)\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.266)\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.217)\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.1.184)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**net: pin protocol module before inet socket allocation**\n\ninet_create()/inet6_create()가 RCU 해제 후 sk_alloc()까지의 창에서 loadable protocol 모듈이 unregister되면 dangling proto·slab로 kmem_cache_alloc이 실패하는 경쟁을, RCU 구간에서 answer_prot->owner를 pin하는 방식으로 닫습니다. l2tp_ip delete_module과 socket() 레이스로 KASAN wild-memory-access가 재현되었습니다.\n\n영향: 동적 protocol 모듈(l2tp_ip 등)을 로드·해제하는 네트워크 스택·컨테이너 환경에서 모듈 수명과 소켓 생성 경쟁이 메모리 손상으로 이어질 수 있어 stable 백포트 추적이 필요합니다.\n\n> inet_create() then uses a dangling proto pointer: sk_alloc() -> kmem_cache_alloc(stale)\n\n[원문 확인](https://lore.kernel.org/stable/20260825172349.232794-1-nicoyip.dev@gmail.com/)\n\n**wifi: rtw89: cap firmware section_num before parsing**\n\nrtw89 펌웨어 헤더의 section_num(0–255)을 FWDL_SECTION_MAX_NUM(10)으로 상한 검증하지 않아 스택 상 section_info 배열이 넘치는 취약점을, 헤더·섹션 테이블 크기 검증으로 차단합니다.\n\n영향: 악성 펌웨어 blob으로 rtw89 드라이버 스택 오버플로우가 가능해 Wi-Fi 스택·임베디드 보안 경계에서 펌웨어 공급·로드 경로 점검이 필요합니다.\n\n> rtw89_fw_download_suit() keeps that object on the stack, so a crafted firmware blob overflows the stack.\n\n[원문 확인](https://lore.kernel.org/stable/20260825174438.63168-1-acharyalaxman8848@gmail.com/)\n\n**KVM: x86: Take SRCU in kvm_zap_gfn_range()**\n\nkvm_zap_gfn_range()가 SRCU 없이 memslot/rmap을 순회하면 memslot 삭제와 경쟁해 해제된 rmap을 읽는 vmalloc-out-of-bounds가 발생합니다. VFIO noncoherent-DMA 경로에서 KASAN이 보고되어 함수 내부 SRCU 취득으로 모든 caller를 보호합니다.\n\n영향: KVM+VFIO 가상화 스택에서 GPA zap과 memslot 수명 경쟁은 게스트 격리·호스트 메모리 안전에 직결되므로 stable 백포트가 필요합니다.\n\n> kvm_free_memslot() frees the old slot and its rmap, and the zap resumes on freed memory.\n\n[원문 확인](https://lore.kernel.org/stable/20260825183924.237727-1-nicoyip.dev@gmail.com/)\n\n**io_uring/waitid: honor task_work cancellation**\n\nio_waitid_cb()가 task_work fallback kworker에서 tw.cancel을 무시하고 __do_wait()를 호출하면 current가 요청 제출 태스크가 아니어서 잘못된 child lookup이 발생합니다. Jens Axboe가 stable에 적용을 승인했습니다.\n\n영향: io_uring waitid는 프로세스 컨텍스트에 의존하는데 fallback kworker에서 실행되면 시그널·wait 채널이 엉뚱한 태스크를 참조해 정보 유출·권한 혼선 위험이 있습니다.\n\n> io_waitid_cb() currently ignores tw.cancel and calls __do_wait(). waitid is task-context dependent\n\n[원문 확인](https://lore.kernel.org/stable/178768148595.43624.3625796882295211976.b4-ty@b4/)\n\n**io_uring/io-wq: fix worker accounting when canceling creation callbacks**\n\ncreate_worker_cb() 취소 시 nr_workers가 이중 감소되어 worker 한도가 undercount되고, OpenBMC AST2600에서 센서 데몬이 4,291 스레드까지 폭증한 사례가 보고되었습니다. 취소 콜백이 create_worker_cb()일 때는 nr_workers 감소를 건너뜁니다.\n\n영향: io-wq worker 한도 붕괴는 DoS·리소스 고갈 공격면으로 확장될 수 있어 io_uring 워크큐를 쓰는 서비스의 stable 백포트가 필요합니다.\n\n> On an AST2600 OpenBMC system, an unchanged sensor daemon reached 4,291 threads with the original kernel.\n\n[원문 확인](https://lore.kernel.org/stable/20260825-stable-io-wq-5-15-y-v1-1-a37209dc29ed@openai.com/)\n\n**RDMA/rxe: Fix OOB in free_rd_atomic_resources()**\n\nrxe_qp_from_attr()가 max_dest_rd_atomic를 갱신한 뒤 free_rd_atomic_resources()를 호출하면 free 경로가 확대된 인덱스로 old 배열을 순회해 slab out-of-bounds write가 발생합니다. syzkaller가 KASAN으로 보고했습니다.\n\n영향: 소프트웨어 RDMA(rxe) QP 수정 경로의 OOB는 커널 메모리 손상·권한 상승 면에 해당하므로 stable 백포트 추적이 필요합니다.\n\n> BUG: KASAN: slab-out-of-bounds in free_rd_atomic_resources drivers/infiniband/sw/rxe/rxe_qp.c:171\n\n[원문 확인](https://lore.kernel.org/stable/20260825181727.887465-1-yanjun.zhu@linux.dev/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ChangeLog-7.1.10",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.10",
+      "note": "changelog"
+    },
+    {
+      "title": "net: pin protocol module before inet socket allocation",
+      "url": "https://lore.kernel.org/stable/20260825172349.232794-1-nicoyip.dev@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "wifi: rtw89: cap firmware section_num before parsing",
+      "url": "https://lore.kernel.org/stable/20260825174438.63168-1-acharyalaxman8848@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM: x86: Take SRCU in kvm_zap_gfn_range()",
+      "url": "https://lore.kernel.org/stable/20260825183924.237727-1-nicoyip.dev@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "io_uring/waitid: honor task_work cancellation",
+      "url": "https://lore.kernel.org/stable/178768148595.43624.3625796882295211976.b4-ty@b4/",
+      "note": "thread"
+    },
+    {
+      "title": "io_uring/io-wq: fix worker accounting when canceling creation callbacks",
+      "url": "https://lore.kernel.org/stable/20260825-stable-io-wq-5-15-y-v1-1-a37209dc29ed@openai.com/",
+      "note": "thread"
+    },
+    {
+      "title": "RDMA/rxe: Fix OOB in free_rd_atomic_resources()",
+      "url": "https://lore.kernel.org/stable/20260825181727.887465-1-yanjun.zhu@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-5.10.266",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.266",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-5.15.217",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.217",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-6.1.184",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.1.184",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-25T18:49:24.862Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

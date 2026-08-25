@@ -1,0 +1,103 @@
+{
+  "id": "2026-08-26-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-08-26 i.MX CFI 회귀 — linux-toolchain",
+  "headline": "Clang CFI i.MX suspend 회귀와 hrtimer expiry API 확장이 llvm·Rust-for-Linux 논의를 이끌었다.",
+  "date": "2026-08-26",
+  "summary": "Yo'av Moshe 후속 diff는 SYM_TYPED_FUNC_START 방식이 i.MX6SLL에서 pm_info 덮어쓰기·fncpy 8바이트 정렬 BUG_ON으로 부팅을 깨뜨렸고, 수동 해시+패딩이 하드웨어에서 성공했다. Andreas Hindborg hrtimer expiry injecting 콜백 시리즈는 timerqueue 레이스와 Rust soundness를 동시에 겨냥한다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "ARM: imx: Fix suspend/resume crash with Clang CFI",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Clang/CFI 커널 빌드·i.MX6 전원관리·ARM mach-imx 유지보수자",
+      "verifyLink": "https://lore.kernel.org/llvm/CAKwvOdmT=Q+etTTJUna4ZAg1=eXwaT9cSDy=U0s15UT-3TOu1Q@mail.gmail.com/",
+      "if": "CONFIG_CFI=y Clang 빌드에서 i.MX6 suspend 코드를 OCRAM로 fncpy하는 경로를 추적할 때에는",
+      "do": "SYM_TYPED_FUNC_START 접근 대신 pm_info 뒤 8바이트 패딩+수동 kCFI 해시 방식을 검토하고, pmbootstrap Clang/CFI 빌드로 Kobo Clara HD 등 실 하드웨어에서 suspend/resume을 반복 검증하세요",
+      "verify": "lore 스레드에서 fncpy 8바이트 정렬 BUG_ON과 pm_info_size +8 조정 논의를 확인하세요"
+    },
+    {
+      "title": "hrtimer: add an expiry injecting callback variant",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "hrtimer 코어·Rust-for-Linux time 서브시스템·i915_pmu 등 주기 타이머 사용자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260825-expires-v2-v1-0-90411c6217c7@kernel.org/",
+      "if": "콜백에서 hrtimer_forward()와 다른 CPU의 hrtimer_start_range_ns()가 경쟁하는 주기 타이머를 다룰 때에는",
+      "do": "Hindborg v2의 hrtimer_setup_ext() expiry injecting callback과 hrtimer_forward_args 재시작 패턴으로 전환 가능성을 검토하세요",
+      "verify": "lore 스레드에서 lock 없는 RMW와 Rust soundness 논의, i915_pmu 하드웨어 검증 범위를 확인하세요"
+    },
+    {
+      "title": "rust: hrtimer: document deadlock when starting a timer in its handler",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust-for-Linux hrtimer 바인딩·타이머 기반 Rust 드라이버 작성자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/DKY292V0LWJN.1L3HG02NBW6K5@garyguo.net/",
+      "if": "Rust hrtimer 핸들러 내부에서 타이머를 start·cancel하는 코드를 작성할 때에는",
+      "do": "HrTimerHandle drop이 hrtimer_cancel()을 호출한다는 점을 인지하고, Gary Guo 정정대로 cancel이 데드락 근본 원인인지 문서 문구와 대조하세요",
+      "verify": "lore 스레드에서 start vs cancel 최종 문구와 expiry injecting 시리즈 머지 후 문서 위치 논의를 확인하세요"
+    },
+    {
+      "title": "iio: pressure: dps310: FIFO and triggered buffer support",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "IIO pressure 드라이버·clang context analysis/Kconfig opt-in 담당",
+      "verifyLink": "https://lore.kernel.org/llvm/20260824201203.396651-1-zoone.rupert@gmail.com/",
+      "if": "IIO 드라이버에서 clang context analysis opt-in 선례를 평가할 때에는",
+      "do": "패치 6의 __must_hold() 표기와 clang context analysis opt-in이 락 주석을 컴파일 타임에 검사하는지 검토하세요",
+      "verify": "lore 스레드에서 BeagleBone Black clang 23.1.0 lock marking clean 보고와 IIO 서브시스템 opt-in 의사를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ARM: imx: Fix suspend/resume crash with Clang CFI**\n\nYo'av Moshe가 Nick Desaulniers 제안 방식의 후속 diff를 공유했고, SYM_TYPED_FUNC_START로 OCRAM에 kCFI 해시를 넣는 시도는 i.MX6SLL(Kobo Clara HD)에서 pm_info 덮어쓰기·fncpy 8바이트 정렬 BUG_ON으로 부팅 실패했다. pm_info 뒤 8바이트(패딩+해시)를 예약하고 수동으로 해시를 쓰는 방식이 하드웨어에서 성공했으며, Nick은 struct imx6_cpu_pm_info에 cfi_type 멤버나 cfi_get_func_hash() 사용을 제안했다.\n\n영향: CONFIG_CFI=y Clang 빌드에서 suspend 코드를 OCRAM로 fncpy할 때 kCFI 타입 해시 배치와 8바이트 정렬을 맞추지 않으면 ARM suspend/resume이 조용히 깨지며, QEMU만으로는 i.MX6 MMDC 하드웨어 회귀를 놓칠 수 있다.\n\n> fncpy requires 8-byte aligned source and destination addresses (FNCPY_ALIGN, with a BUG_ON check).\n\n[원문 확인](https://lore.kernel.org/llvm/CAKwvOdmT=Q+etTTJUna4ZAg1=eXwaT9cSDy=U0s15UT-3TOu1Q@mail.gmail.com/)\n\nupstream이 수동 해시 vs struct cfi_type 멤버·cfi_get_func_hash() 중 어느 설계를 채택할지, v4 제출 일정과 stable 백포트 대상은 확인이 필요합니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**hrtimer: add an expiry injecting callback variant**\n\nAndreas Hindborg v2 6패치가 hrtimer_setup_ext()로 만료 시각을 base lock 하에서 스냅샷해 콜백에 전달하고, 콜백은 hrtimer_forward_args로 재시작을 요청만 하도록 코어를 확장한다. i915_pmu 변환과 Rust HrTimerCallback::run() 시그니처 변경, Gary Guo가 제안한 구조적 레이스 제거가 포함된다.\n\n영향: 콜백에서 hrtimer_forward()와 다른 CPU의 hrtimer_start_range_ns()가 경쟁하면 timerqueue가 무순서가 될 수 있고, Rust에서는 Arc<T> Clone로 콜백 실행 중 arming이 가능해 soundness 문제가 되므로 코어 API 확장이 필요하다.\n\n> The read-modify-write of node.expires in hrtimer_forward() is unsynchronized against the write in the start path, which happens under the base lock.\n\n> The callback never touches live timer state.\n\n> For the Rust hrtimer abstraction this is a soundness problem rather than a documentation problem\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260825-expires-v2-v1-0-90411c6217c7@kernel.org/)\n\ni915_pmu 패치는 compile-test만 되어 하드웨어 검증 범위이며, taprio·i915_pmu 외 forward+arm 경쟁 사용자의 후속 변환 일정은 확인이 필요합니다.\n\n**rust: hrtimer: document deadlock when starting a timer in its handler**\n\nAndreas Hindborg 패치 5/6이 Rust hrtimer 상태 머신 문서에 핸들러 내부 start 시 데드락 경고를 추가했고, Gary Guo는 핸들러 밖으로 handle을 보관하면 start 자체는 가능하므로 '핸들러 내부에서 cancel하면 데드락'이 더 정확한 표현이라고 정정했다.\n\n영향: HrTimerHandle drop이 hrtimer_cancel()을 호출해 실행 중인 핸들러 반환을 기다리므로, Rust hrtimer API 문서가 이 함정을 정확히 기술하지 않으면 안전한 것처럼 보이는 코드가 자기 자신을 영원히 블록할 수 있다.\n\n> Issuing the `start` operation from within the timer handler will lead to deadlock.\n\n> cancelling a timer from within the timer handler will lead to deadlock\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/DKY292V0LWJN.1L3HG02NBW6K5@garyguo.net/)\n\n최종 문서 문구가 start vs cancel 중 어느 쪽으로 정리되는지, expiry injecting callback 시리즈 머지 후 문서 위치 확정 여부는 확인이 필요합니다.\n\n**iio: pressure: dps310: FIFO and triggered buffer support**\n\nRupesh Majhi v6 6패치가 DPS310에 triggered buffer·하드웨어 FIFO를 추가하고, 마지막 패치에서 __must_hold() 표기와 함께 드라이버를 clang context analysis에 opt-in해 락 주석이 실제로 검사되게 한다. BeagleBone Black 실기에서 clang 23.1.0으로 lock marking이 clean하다고 보고했다.\n\n영향: IIO 드라이버가 clang context analysis에 opt-in하면 __must_hold() 같은 락 표기가 컴파일 타임에 검증되어, LLVM/clang 기반 커널 빌드에서 락 규율 위반을 조기에 잡을 선례가 된다.\n\n> Patch 6 turns on clang context analysis for this driver, so the lock markings are checked and not just documented.\n\n> Lock markings clean under clang 23.1.0.\n\n[원문 확인](https://lore.kernel.org/llvm/20260824201203.396651-1-zoone.rupert@gmail.com/)\n\nIIO 서브시스템이 context analysis opt-in을 원치 않을 경우 패치 6 drop 여부와 다른 IIO 드라이버로의 opt-in 확산 가능성은 확인이 필요합니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ARM: imx: Fix suspend/resume crash with Clang CFI",
+      "url": "https://lore.kernel.org/llvm/CAKwvOdmT=Q+etTTJUna4ZAg1=eXwaT9cSDy=U0s15UT-3TOu1Q@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "hrtimer: add an expiry injecting callback variant",
+      "url": "https://lore.kernel.org/rust-for-linux/20260825-expires-v2-v1-0-90411c6217c7@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: hrtimer: document deadlock when starting a timer in its handler",
+      "url": "https://lore.kernel.org/rust-for-linux/DKY292V0LWJN.1L3HG02NBW6K5@garyguo.net/",
+      "note": "thread"
+    },
+    {
+      "title": "iio: pressure: dps310: FIFO and triggered buffer support",
+      "url": "https://lore.kernel.org/llvm/20260824201203.396651-1-zoone.rupert@gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-25T18:45:16.452Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

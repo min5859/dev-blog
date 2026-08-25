@@ -1,0 +1,136 @@
+{
+  "id": "2026-08-26-linux-daily-briefing",
+  "topic": "linux",
+  "title": "2026-08-26 rtw89 스택 오버플로 — 리눅스 개발",
+  "headline": "조작된 Realtek Wi-Fi 펌웨어로 커널 스택이 깨질 수 있는 취약점이 제보됐고, linux-next와 hybrid 스케줄러·전력 패치가 논의됐습니다.",
+  "date": "2026-08-26",
+  "summary": "rtw89 펌웨어 파서가 section_num 상한 없이 스택 버퍼를 넘길 수 있어 로컬 공격면으로 보고됐습니다. linux-next next-20260825 스냅샷과 AMD IOMMU DTE 수정, confidential VM FUSE DAX mmap 보호 등이 메일링 리스트에 올라왔습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "보안",
+    "stable",
+    "linux-next"
+  ],
+  "highlights": [
+    {
+      "title": "rtw89 펌웨어 파서 스택 오버플로",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "rtw89 Wi-Fi 드라이버 메인테이너, 커널 보안팀, 펌웨어 서명·검증 파이프라인 담당자",
+      "verifyLink": "https://lore.kernel.org/lkml/20260825174438.63168-1-acharyalaxman8848@gmail.com/",
+      "if": "Realtek 802.11ax rtw89 Wi-Fi를 쓰는 경우",
+      "do": "펌웨어 로딩 경로와 패치 머지·백포트 일정을 추적하세요",
+      "verify": "LKML 스레드에서 section_num 상한·truncation 검사 패치를 확인하세요"
+    },
+    {
+      "title": "AMD IOMMU DTE clearing torn write",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "IOMMU/AMD 플랫폼 개발자, kdump·가상화 스택 담당자, PCI DMA 보안 엔지니어",
+      "verifyLink": "https://lore.kernel.org/lkml/20260824122347.1588592-3-praan@google.com/",
+      "if": "AMD IOMMU·kdump·PCI alias 장치를 다루는 경우",
+      "do": "DTE clearing 경로와 kdump 피드백 반영 여부를 추적하세요",
+      "verify": "LKML 스레드에서 invalidation helper 교체안을 확인하세요"
+    },
+    {
+      "title": "Linux 7.1.10 stable",
+      "priority": "중",
+      "impactType": "release",
+      "affectedAudience": "stable 커널 배포 담당자, 엔터프라이즈/임베디드 LTS 운영자, 네트워크·DRM 스택 담당자",
+      "verifyLink": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.10",
+      "if": "7.1.x stable 커널을 운영·배포하는 경우",
+      "do": "227건 백포트 포함 여부를 보고 업그레이드 우선순위를 정하세요",
+      "verify": "ChangeLog-7.1.10에서 tcp·pid 등 관련 수정을 확인하세요"
+    },
+    {
+      "title": "linux-next next-20260825",
+      "priority": "중",
+      "impactType": "release",
+      "affectedAudience": "linux-next를 빌드·테스트하는 서브시스템 메인테이너, 커널 CI 운영자",
+      "verifyLink": "https://git.kernel.org/pub/scm/linux/kernel/git/next/linux-next.git/atom/?h=next-20260825",
+      "if": "merge window 전 통합 테스트를 돌리는 경우",
+      "do": "next-20260825 태그 기준으로 빌드·충돌 검사를 실행하세요",
+      "verify": "linux-next atom 피드에서 당일 merge 커밋을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**linux-next next-20260825**\n\nlinux-next 통합 테스트 트리에 next-20260825 태그가 2026-08-25에 생성됐고, 당일 다수 서브시스템 merge 커밋이 뒤따랐습니다.\n\n영향: 다음 merge window에 들어갈 패치의 조기 통합 스냅샷으로, mainline 머지 전 충돌·빌드 회귀를 잡는 기준점입니다.\n\n> Add linux-next specific files for 20260825\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/next/linux-next.git/atom/?h=next-20260825)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**rtw89: cap firmware section_num before parsing**\n\nrtw89 v0/v1 펌웨어 헤더 파서가 section_num 상한 없이 section_info[]에 쓰고, rtw89_fw_download_suit()가 구조체를 스택에 둬 조작 펌웨어로 스택 오버플로가 납니다. v2 패치는 section_num 범위·truncation 검사를 추가합니다.\n\n영향: 악성·손상 펌웨어 파일만으로 커널 스택이 깨질 수 있는 로컬 공격면입니다. 머지·stable 백포트·CVE 부여 일정은 확인 필요합니다.\n\n> rtw89_fw_download_suit() keeps that object on the stack, so a crafted firmware blob overflows the stack.\n\n[원문 확인](https://lore.kernel.org/lkml/20260825174438.63168-1-acharyalaxman8848@gmail.com/)\n\n**iommu/amd: Fix DTE clearing and rename iommu_ignore_device()**\n\nmemset 기반 DTE 클리어가 256비트 qwords 원자 읽기 하드웨어에서 torn write를 일으키고 alias DTE까지 못 지웁니다. invalidation helper로 교체하고 iommu_disable_device()로 이름을 바꿉니다. kdump 경로 DTE clearing 제거 제안은 후속 반영 여부 확인 필요합니다.\n\n영향: AMD IOMMU DTE 손상은 DMA 격리 실패·장치 오동작으로 이어질 수 있어 가상화·플랫폼 IOMMU 담당자에게 중요합니다.\n\n> uses memset() to manually clear the primary Device Table Entry (DTE), which risks torn writes as the hardware reads DTEs as atomic 256-bit qwords.\n\n[원문 확인](https://lore.kernel.org/lkml/20260824122347.1588592-3-praan@google.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**fuse: mark DAX VMA page protections as decrypted**\n\nAMD SEV-SNP·Intel TDX 게스트에서 host-backed FUSE/virtiofs DAX 공유 메모리는 decrypted 페이지 보호가 필요합니다. v2 패치는 fuse_dax_mmap()에서 vma->vm_page_prot에 pgprot_decrypted()를 적용합니다.\n\n영향: 암호화 게스트에서 virtiofs/FUSE DAX mmap 시 메모리 암호화 fault로 I/O가 실패할 수 있습니다.\n\n> direct memory access (DAX) mappings between the guest kernel and host-backed FUSE/virtiofs shared memory regions must be accessed using shared (decrypted) page protections.\n\n[원문 확인](https://lore.kernel.org/lkml/20260825175433.2588528-1-psalian@google.com/)\n\n**mm/mglru: clean up folio counters and flag usage**\n\nMGLRU-FG 시리즈 분리 v3 cleanup 6패치로 folio gen/refs 플래그 helper 정리와 generation folio number leak 버그 수정을 포함합니다.\n\n영향: generation 카운터 누수는 LRU 통계·reclaim 동작을 왜곡할 수 있어 mm 개발자와 대용량 메모리 워크로드 운영자에게 중요합니다.\n\n> No feature change is intended, except one bugfix.\n\n[원문 확인](https://lore.kernel.org/lkml/20260826-mglru-flags-cleanup-v3-0-d9f1c75549c8@tencent.com/)\n\n**sched/fair: avoid creating misfits during cache-aware balancing**\n\n비대칭 CPU에서 cache-aware load balancing이 LLC 선호도 때문에 작은 코어로 태스크를 끌어와 misfit을 만듭니다. can_migrate_llc_task()·alb_break_llc()에 목적지 CPU 용량 검사를 넣고 hybrid 프로세서에서만 동작합니다.\n\n영향: ARM big.LITTLE·Intel hybrid에서 캐시 지역성 때문에 성능이 떨어지는 회귀를 막습니다. 머지·벤치마크 수치는 확인 필요합니다.\n\n> Pulling the task there turns it into a misfit, trading a cache-locality gain for a capacity loss that's more detrimental to performance.\n\n[원문 확인](https://lore.kernel.org/lkml/20260825174112.2580942-1-tim.c.chen@linux.intel.com/)\n\n**sched/cpufreq: Reevaluate frequency before tickless idle**\n\nsugov_hold_freq()가 UCLAMP_MIN으로 idle 진입 시 고주파를 유지하고 cpuidle이 tick을 멈추면 utilization 업데이트 없이 고전압 idle이 길어집니다. tick 중단 시 SCHED_CPUFREQ_IDLE 플래그로 마지막 cpufreq 갱신을 강제합니다.\n\n영향: tickless idle·WFI 위주 ARM 플랫폼에서 idle 전력 낭비를 줄일 수 있습니다. idle 일반화 제안 합의·머지 상태는 확인 필요합니다.\n\n> If cpuidle then stops the tick, no later utilization update is guaranteed and a CPU using WFI can remain at an unnecessarily high voltage for the entire idle period.\n\n[원문 확인](https://lore.kernel.org/lkml/b9049e0a-8de6-4a9f-94b6-8be353ee7355@arm.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "Linux 7.2·7.1.10 stable·5.10.266 longterm은 전일 브리핑 이후 dossier에서 확인된 신규 진척이 없어 본문에서 생략했습니다. 서브시스템 국부 패치는 포함하지 않았습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "linux-next next-20260825 atom",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/next/linux-next.git/atom/?h=next-20260825",
+      "note": "changelog"
+    },
+    {
+      "title": "linux-next next-20260825 README",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/next/linux-next.git/plain/README?h=next-20260825",
+      "note": "changelog"
+    },
+    {
+      "title": "rtw89 firmware section_num cap",
+      "url": "https://lore.kernel.org/lkml/20260825174438.63168-1-acharyalaxman8848@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "iommu/amd DTE clearing fix",
+      "url": "https://lore.kernel.org/lkml/20260824122347.1588592-3-praan@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "iommu/amd kdump DTE feedback",
+      "url": "https://lore.kernel.org/lkml/20260825175315.GD3325090@nvidia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "fuse DAX decrypted page protections",
+      "url": "https://lore.kernel.org/lkml/20260825175433.2588528-1-psalian@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "mm/mglru folio counters cleanup v3",
+      "url": "https://lore.kernel.org/lkml/20260826-mglru-flags-cleanup-v3-0-d9f1c75549c8@tencent.com/",
+      "note": "thread"
+    },
+    {
+      "title": "sched/fair cache-aware misfit guard",
+      "url": "https://lore.kernel.org/lkml/20260825174112.2580942-1-tim.c.chen@linux.intel.com/",
+      "note": "thread"
+    },
+    {
+      "title": "sched/cpufreq tickless idle reevaluate",
+      "url": "https://lore.kernel.org/lkml/b9049e0a-8de6-4a9f-94b6-8be353ee7355@arm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Linux 7.1.10 ChangeLog",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.10",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-25T18:04:15.962Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-newsletter-from-dossier-ko.md"
+  }
+}

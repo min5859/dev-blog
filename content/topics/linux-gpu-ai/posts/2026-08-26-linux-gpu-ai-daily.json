@@ -1,0 +1,106 @@
+{
+  "id": "2026-08-26-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-08-26 GPU buddy 재설계 — GPU·AI",
+  "headline": "GPU buddy dirty tracker 재설계, LG 32GN600 HDR quirk, amdgpu VM NULL 역참조 수정이 dri-devel에 올라왔습니다.",
+  "date": "2026-08-26",
+  "summary": "dri-devel에서 GPU buddy allocator의 dual-tree·force_merge 제거와 dirty tracker 도입(v11), LG 32GN600 EDID HDR quirk, KUnit Kconfig 분리, amdgpu VM 초기화 에러 경로 수정이 논의됐습니다. VKCTS 후 dual-tree는 order-5에 499MiB·3999 blocks로 파편화됐지만 dirty tracker 설계는 order 분포가 안정적이었다는 비교가 제시됐습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "GPU",
+    "DRM",
+    "amdgpu"
+  ],
+  "highlights": [
+    {
+      "title": "GPU buddy allocator dirty tracker 재설계",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "GPU buddy allocator·amdgpu/intel DRM VRAM 관리 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260825172432.80355-1-Arunpravin.PaneerSelvam@amd.com/",
+      "if": "mixed clear/dirty 워크로드 이후 고차 contiguous VRAM 할당이 여유 메모리 대비 실패하거나 지연된다면",
+      "do": "v11 패치 스레드와 VKCTS 파편화 비교 자료를 검토하세요",
+      "verify": "메인라인 머지 일정과 intel xe 등 다른 DRM_BUDDY 사용자 회귀 여부는 아직 확인 필요합니다"
+    },
+    {
+      "title": "LG 32GN600 HDR Static Metadata Type 1 quirk",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "DRM/KMS HDR 출력·EDID quirk 유지보수 담당, LG 32GN600 사용자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260824223827.259147-1-git@xela.zone/",
+      "if": "LG 32GN600에서 Plasma·Gamescope·MPV 등 HDR 전환이 atomic KMS 커밋 단계에서 -EINVAL로 막힌다면",
+      "do": "EDID_QUIRK_FORCE_HDR_STATIC_METADATA_TYPE1 패치와 GSM 0x7766 등록 내용을 확인하세요",
+      "verify": "동일 EDID 결함을 가진 다른 LG 모델 존재 여부와 메인라인 머지 예상 시점은 아직 확인 필요합니다"
+    },
+    {
+      "title": "amdgpu_vm_init 에러 경로 NULL 역참조 수정",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "amdgpu VM·page table 초기화 경로 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/tencent_BA5E7F623BA1DDDE076775332AA916D99E08@qq.com/",
+      "if": "dma_resv_reserve_fences()나 amdgpu_vm_pt_clear() 실패 후 VM 초기화 에러 경로를 다룬다면",
+      "do": "error_free_root에서 unreserve 후 free_root 순서로 바꾼 패치를 검토하세요",
+      "verify": "런타임 크래시 재현 여부와 리뷰어 피드백·머지 여부는 아직 확인 필요합니다"
+    },
+    {
+      "title": "GPU_BUDDY_KUNIT_TEST Kconfig select 되돌림",
+      "priority": "하",
+      "impactType": "build",
+      "affectedAudience": "GPU buddy allocator·KUnit 테스트·Kconfig 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/e67a2cb0d599b75ae365882913c543e7b0c5b8a3.1787671708.git.geert@linux-m68k.org/",
+      "if": "모듈형 KUnit 테스트가 GPU_BUDDY 등 추가 기능을 암묵적으로 켜는 설정을 유지보수한다면",
+      "do": "select를 depends on GPU_BUDDY로 되돌리고 GPU_BUDDY에 DRM 의존성을 추가한 패치를 반영하세요",
+      "verify": "Fixes 대상 8fe3fc37564920ae의 릴리스 브랜치 포함 여부는 아직 확인 필요합니다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm/amdgpu: fix NULL pointer dereference in amdgpu_vm_init error path**\n\namdgpu_vm_init()의 error_free_root 경로에서 amdgpu_vm_pt_free_root()가 vm->root.bo를 NULL로 만든 뒤 amdgpu_bo_unreserve(vm->root.bo)가 호출되던 순서를 바꿔, 성공 경로처럼 unreserve 후 free 하도록 수정한다.\n\n영향: dma_resv_reserve_fences()나 amdgpu_vm_pt_clear() 실패 시 VM 초기화 에러 경로에서 NULL 역참조가 발생할 수 있어, amdgpu VM/page table 초기화 실패 처리의 안정성에 영향한다.\n\n> Found by static analysis of the error handling path; the failure cases (dma_resv_reserve_fences() or amdgpu_vm_pt_clear() returning an error) trigger this path.\n\n[원문 확인](https://lore.kernel.org/dri-devel/tencent_BA5E7F623BA1DDDE076775332AA916D99E08@qq.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**gpu/buddy: replace dual-tree/force_merge with decoupled dirty tracker**\n\norder별 clear_tree/dirty_tree 이중 rbtree와 __force_merge() O(N×max_order) 스캔을 제거하고, 단일 free_tree와 out-of-band gpu_dirty_tracker, cleared extent용 augmented interval rbtree로 재설계한다. __gpu_buddy_free()에서 clear/dirty 무관하게 buddy 병합을 허용한다.\n\n영향: mixed clear/dirty 워크로드 후 고차 contiguous VRAM 할당이 총 여유 메모리가 충분해도 실패·지연될 수 있어, amdgpu 등 DRM buddy 사용자의 대용량 GPU 메모리 할당 안정성에 직결된다.\n\n> Base (dual-tree), after VKCTS test: order- 5 free: 499 MiB, blocks: 3999. Dirty tracker, after VKCTS test: order- 6 free: 4 MiB, blocks: 19\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260825172432.80355-1-Arunpravin.PaneerSelvam@amd.com/)\n\n**drm/edid: Add HDR Static Metadata Type 1 quirk for LG 32GN600**\n\nLG 32GN600(GSM 0x7766) EDID가 HDR Static Metadata descriptor byte(0x9f)를 0x00으로 잘못 보고해 drm_parse_hdr_metadata_block()이 metadata_type=0으로 파싱하고, atomic KMS HDR 메타데이터 커밋이 -EINVAL로 실패한다. EDID_QUIRK_FORCE_HDR_STATIC_METADATA_TYPE1 quirk와 해당 모델 등록으로 Type 1 비트를 강제한다.\n\n영향: PQ EOTF와 luminance descriptor는 유효한데 quirk 없이는 Plasma·Gamescope·MPV 등 userspace HDR 전환이 커널 EDID 파싱 단계에서 막힌다.\n\n> Because of this omitted bit, drm_parse_hdr_metadata_block() sets metadata_type to 0. Consequently, drm_calculate_luminance_range() rejects the block, and userspace attempts to perform atomic KMS commi\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260824223827.259147-1-git@xela.zone/)\n\n**gpu: GPU_BUDDY_KUNIT_TEST should not select GPU_BUDDY**\n\nCONFIG_GPU_BUDDY_KUNIT_TEST의 select GPU_BUDDY를 depends on GPU_BUDDY로 되돌리고, KUNIT 활성 시 GPU_BUDDY를 visible하게 하며 GPU_BUDDY에 depends on DRM을 추가한다. drivers/gpu/tests/.kunitconfig도 갱신한다. Fixes: 8fe3fc37564920ae.\n\n영향: 모듈형 KUnit 테스트가 추가 커널 기능을 암묵적으로 켜면 제품 공격 면적이 불필요하게 넓어진다. DRM 없는 커널 빌드에서도 buddy allocator Kconfig가 올바르게 분리된다.\n\n> Enabling a (modular) test should not silently enable additional kernel functionality, as that may increase the attack vector for a product. Fix this by reverting the select to a dependency.\n\n[원문 확인](https://lore.kernel.org/dri-devel/e67a2cb0d599b75ae365882913c543e7b0c5b8a3.1787671708.git.geert@linux-m68k.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "gpu/buddy: replace dual-tree/force_merge with decoupled dirty tracker",
+      "url": "https://lore.kernel.org/dri-devel/20260825172432.80355-1-Arunpravin.PaneerSelvam@amd.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/edid: Add HDR Static Metadata Type 1 quirk for LG 32GN600",
+      "url": "https://lore.kernel.org/dri-devel/20260824223827.259147-1-git@xela.zone/",
+      "note": "thread"
+    },
+    {
+      "title": "gpu: GPU_BUDDY_KUNIT_TEST should not select GPU_BUDDY",
+      "url": "https://lore.kernel.org/dri-devel/e67a2cb0d599b75ae365882913c543e7b0c5b8a3.1787671708.git.geert@linux-m68k.org/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/amdgpu: fix NULL pointer dereference in amdgpu_vm_init error path",
+      "url": "https://lore.kernel.org/dri-devel/tencent_BA5E7F623BA1DDDE076775332AA916D99E08@qq.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-25T19:01:18.692Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

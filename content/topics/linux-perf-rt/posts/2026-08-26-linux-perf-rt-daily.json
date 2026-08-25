@@ -1,0 +1,118 @@
+{
+  "id": "2026-08-26-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-08-26 xsk·verifier — Perf/RT",
+  "headline": "AF_XDP xsk_bind 락 순서 수정이 교착 우려로 반박됐고, BPF verifier 글로벌 서브프로그 크기 우회가 7.1.y 백포트 대상으로 제출됐다.",
+  "date": "2026-08-26",
+  "summary": "syzbot이 보고한 xsk_bind() 순환 락 의존 수정이 Daniel Borkmann 리뷰에서 xp_clear_dev() 경로와의 교착 가능성으로 재논의됐다. BPF 전용 키링, libbpf USDT 부착, verifier 백포트, mmu_notifier SRCU 벤치마크도 함께 올라왔다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "BPF verifier 글로벌 서브프로그 인자 크기 우회",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF verifier·글로벌 서브프로그 사용 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260825142432.2347543-1-hataegu0826@gmail.com/",
+      "if": "BTF가 S32_MAX를 넘는 전역 서브프로그 인자 크기를 signed int 래핑으로 검증하는 프로그램을 배포한다면",
+      "do": "7.1.y 백포트 적용 여부를 stable 트리에서 확인하고 upstream 커밋 de36adca6346과 대조하세요",
+      "verify": "회귀 테스트 포함 lore 스레드에서 oversized BTF argument 거부 동작을 재확인하세요"
+    },
+    {
+      "title": "xsk_bind() 락 순서 수정의 교착 우려",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "AF_XDP/XSK 소켓·netdev notifier 경로 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/46035122-87f6-449f-aa71-a8e9e99dc006@iogearbox.net/",
+      "if": "AF_XDP 바인드나 xsk_notifier 경로를 수정·백포트한다면",
+      "do": "netdev_lock_ops와 xs->mutex를 모두 만족하는 후속 패치와 Fixes 태그 유효성을 lore에서 추적하세요",
+      "verify": "Daniel Borkmann 반박 스레드와 syzbot 보고를 대조해 최종 락 계층 합의를 확인하세요"
+    },
+    {
+      "title": "BPF 프로그램 서명 검증 전용 키링",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "서명된 BPF 로딩 정책·secure boot 연동 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/28573444-7881-48e7-9046-c63f03fe06e7@iogearbox.net/",
+      "if": "부팅 시 BPF 전용 서명 키만 등록하는 정책을 설계한다면",
+      "do": "기본 봉인 키링과 bpf.keyring_unsealed=1 initrd 등록 경로를 검토하고 v3 API 변경을 모니터링하세요",
+      "verify": "VERIFY_USE_BPF_KEYRING 대신 KEY_SPEC_BPF_KEYRING 채택 여부를 lore 스레드에서 확인하세요"
+    },
+    {
+      "title": "mmu_notifier SRCU atomic 동기화 성능",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "KVM·mmu_notifier·PREEMPT_RT 동기화 경로 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/69567965-48fd-48c5-abb6-0699d7f5bd16@paulmck-laptop/",
+      "if": "KVM GPC·mmu_notifier 무효화 tail latency가 PREEMPT_RT 게스트에 영향을 준다면",
+      "do": "try_synchronize_srcu() fast path 벤치와 Paul McKenney의 선점 비활성 요구 논의를 추적하세요",
+      "verify": "128-way Ice Lake 벤치(평균 8.0µs→3.6µs, tail ~330µs) 수치를 lore 스레드에서 재확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**xsk: Fix circular locking dependency in xsk_bind**\n\nKhawar Ahemad가 syzbot이 보고한 xsk_bind()에서 xs->mutex를 netdev_lock_ops()보다 먼저 잡는 ABBA 역전을 고치려 락 순서를 바꿨으나, Daniel Borkmann은 xp_clear_dev() 경로와 충돌해 교착이 생긴다고 지적했고 Fixes 태그도 유효하지 않다고 했다.\n\n영향: AF_XDP 바인드는 rtnl_lock·netdev_lock·net->xdp.lock·xs->mutex가 교차하는 핫패스라, lockdep 경고를 없애는 수정이 오히려 xsk_notifier 경로에서 런타임 교착을 만들 수 있다. netdev_lock_ops와 xs->mutex를 모두 만족하는 최종 락 순서는 아직 확인이 필요하다.\n\n> This creates a deadlock with the change in the following: - xsk_bind() takes dev->lock -> xs->mutex - xsk_notifier() -> xp_clear_dev() takes xs->mutex -> dev->lock\n\n[원문 확인](https://lore.kernel.org/bpf/46035122-87f6-449f-aa71-a8e9e99dc006@iogearbox.net/)\n\n**bpf: reject overlarge global subprog argument sizes**\n\nTaegu Ha가 BTF가 S32_MAX를 넘는 전역 서브프로그 인자 크기를 기술할 때 signed int 래핑으로 caller 검증이 4바이트 스택만 허용하고 callee는 거대 PTR_TO_MEM 접근을 통과하는 verifier 버그를 고친 7.1.y 백포트를 제출했다.\n\n영향: 글로벌 서브프로그 호출 경로의 크기 검증 우회는 잘못된 메모리 접근을 허용하는 verifier 결함으로, stable 백포트 대상이다. 다른 stable 브랜치 백포트 필요성과 실제 공격 시나리오 공개 여부는 확인이 필요하다.\n\n> Reject sizes that cannot be represented by the verifier's signed access-size API before the stack-specific negation. Add a verifier regression test for the oversized BTF argument.\n\n[원문 확인](https://lore.kernel.org/bpf/20260825142432.2347543-1-hataegu0826@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**bpf: Add a bpf keyring for program signature validation**\n\nDaniel Borkmann 시리즈가 BPF 프로그램 서명 검증 전용 .bpf 키링(VERIFY_USE_BPF_KEYRING)을 추가한다. 기본은 빈 채로 봉인되고 bpf.keyring_unsealed=1로 initrd 등록이 가능하며, Christian Brauner가 Reviewed-by를 달았다. API는 KEY_SPEC_BPF_KEYRING 안정 핸들 제안으로 논의 중이다.\n\n영향: 시스템 키링 재빌드와 로더 제어 키링 사이에 운영자가 부팅 시 BPF 전용 서명 키만 등록할 수 있는 중간 신뢰 계층이 생긴다. systemd 등록 경로 정리 시점은 확인이 필요하다.\n\n> By default the keyring is sealed empty at init. Systems that want to provision keys pass bpf.keyring_unsealed=1, which leaves the keyring open for the initrd to add keys to.\n\n[원문 확인](https://lore.kernel.org/bpf/28573444-7881-48e7-9046-c63f03fe06e7@iogearbox.net/)\n\n**libbpf: Fix usdt attach failure when nop10 crosses page boundary**\n\nJiayuan Chen이 libbpf USDT 부착이 페이지 경계를 넘는 nop10에 uprobe를 올리려다 커널 -ENOTSUPP로 실패하는 문제를 고친다. has_nop_combo에서 해당 경우 1바이트 nop int3 uprobe로 유지한다.\n\n영향: 바이너리 레이아웃에 따라 USDT 추적이 조용히 실패할 수 있어, eBPF 기반 관측 파이프라인 신뢰도에 직결된다. v2 패치가 커널 변경 없이 userspace만으로 충분한지는 확인이 필요하다.\n\n> libbpf doesn't check for it and blindly shifts the uprobe onto the nop10, and the attach then fails with -ENOTSUPP. Just keep the uprobe on the preceding 1-byte nop\n\n[원문 확인](https://lore.kernel.org/bpf/20260825150444.31603-1-jiayuan.chen@linux.dev/)\n\n**mm/mmu_notifier: Remove non_block_start/end() from notifier invocation**\n\nDavid Woodhouse가 KVM GPC 시리즈를 srcu_read_lock_atomic()/synchronize_srcu_atomic()로 전환한 뒤 128-way Ice Lake 무효화 플러드 벤치를 공유했다. try_synchronize_srcu() fast path를 앞에 두면 평균 8.0µs에서 3.6µs로 줄고 tail도 rwlock 수준(~330µs)에 근접한다.\n\n영향: mmu_notifier/KVM 동기화 tail latency는 PREEMPT_RT 게스트 성능에 직결되며, Paul McKenney는 원자 SRCU 구간에 선점 비활성 요구 가능성을 제기했다. PREEMPT_RT에서의 실현 가능한 대안과 non_block_start/end() 제거 패치와의 머지 순서는 확인이 필요하다.\n\n> The try fast path more than halves the average — it skips srcu_gp_start() and the flip-driven advance loop entirely for the no-readers case, which is >99% of them here.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/69567965-48fd-48c5-abb6-0699d7f5bd16@paulmck-laptop/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "xsk: Fix circular locking dependency in xsk_bind",
+      "url": "https://lore.kernel.org/bpf/20260825152152.86092-1-ahemadkhawar123@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "xsk_bind deadlock review by Daniel Borkmann",
+      "url": "https://lore.kernel.org/bpf/46035122-87f6-449f-aa71-a8e9e99dc006@iogearbox.net/",
+      "note": "thread"
+    },
+    {
+      "title": "syzbot circular locking dependency report",
+      "url": "https://syzkaller.appspot.com/bug?extid=aa48b5fe7bfda62d1682",
+      "note": "other"
+    },
+    {
+      "title": "bpf: Add a bpf keyring for program signature validation",
+      "url": "https://lore.kernel.org/bpf/28573444-7881-48e7-9046-c63f03fe06e7@iogearbox.net/",
+      "note": "thread"
+    },
+    {
+      "title": "libbpf: Fix usdt attach failure when nop10 crosses page boundary",
+      "url": "https://lore.kernel.org/bpf/20260825150444.31603-1-jiayuan.chen@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: reject overlarge global subprog argument sizes",
+      "url": "https://lore.kernel.org/bpf/20260825142432.2347543-1-hataegu0826@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "mmu_notifier SRCU atomic synchronization benchmark",
+      "url": "https://lore.kernel.org/linux-rt-devel/69567965-48fd-48c5-abb6-0699d7f5bd16@paulmck-laptop/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-25T18:54:40.654Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

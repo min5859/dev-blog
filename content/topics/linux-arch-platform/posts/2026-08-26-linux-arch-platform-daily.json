@@ -1,0 +1,123 @@
+{
+  "id": "2026-08-26-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-08-26 RISC-V hwprobe 수정 — 아키·플랫폼",
+  "headline": "RISC-V hwprobe FPU 보고 수정, kprobes nop 시뮬레이션, i.MX6 CFI suspend 회귀 등 아키·플랫폼 패치가 메일링 리스트에서 논의 중입니다.",
+  "date": "2026-08-26",
+  "summary": "Ivy Lopez v2는 has_fpu()를 D 확장만 검사하도록 고치고 bug 221874 경로를 되돌립니다. Xiaofeng Yuan v2는 nop kprobe per-hit 비용을 QEMU에서 약 40% 줄였고, i.MX6 Clang CFI suspend와 RISC-V KVM PMU 스냅샷 오류 전파도 함께 다뤄집니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "RISC-V hwprobe has_fpu() D 확장 검사 수정",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "RISC-V hwprobe·FPU 상태 관리·userspace 런타임 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260825142034.31230-1-skunkolee@gmail.com/",
+      "if": "RISC-V userspace가 hwprobe로 FPU·IMA_FD 지원을 판단한다면",
+      "do": "has_fpu()를 D만 검사하도록 바꾼 v2와 sys_hwprobe.c 변경 되돌림을 따라가세요",
+      "verify": "패치 스레드와 bugzilla 221874 원문에서 RISCV_HWPROBE_IMA_FD 보장 범위를 확인하세요"
+    },
+    {
+      "title": "RISC-V kprobes/uprobes nop·c.nop 시뮬레이션",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "RISC-V kprobes·uprobes·동적 추적 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260825122020.1192-1-yuanxiaofeng@eswincomputing.com/",
+      "if": "USDT·ftrace mcount·jump_label 등 nop 사이트에 kprobe/uprobe를 걸어 오버헤드를 줄여야 한다면",
+      "do": "breakpoint 핸들러에서 PC만 전진하는 nop·c.nop 시뮬레이션 v2 경로를 검토하세요",
+      "verify": "스레드 원문에서 KUnit 확장과 QEMU virt 벤치마크 수치를 확인하세요"
+    },
+    {
+      "title": "RISC-V KVM PMU 스냅샷 쓰기 실패 전파",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "RISC-V KVM·SBI PMU Snapshot 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260825083719.643970-3-suunj1331@gmail.com/",
+      "if": "게스트가 SBI PMU Snapshot shared memory를 신뢰한다면",
+      "do": "kvm_vcpu_write_guest() 스냅샷 쓰기 실패 시 SBI_ERR_FAILURE를 반환하는 v1 수정을 따라가세요",
+      "verify": "패치 스레드에서 c2f41ddbcdd7 도입 경로와 시리즈 나머지 범위를 확인하세요"
+    },
+    {
+      "title": "kexec 이미지 probe errno를 -ENOEXEC로 정리",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "kexec_file_load·다중 아키텍처 kexec 이미지 로더 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260821-mpilaniy-v3-1-76b355399d2e@redhat.com/",
+      "if": "userspace가 kexec_file_load() errno로 probe 실패 원인을 구분한다면",
+      "do": "형식 불일치 시 -EINVAL 대신 -ENOEXEC를 쓰는 Mukesh Pilaniya v3와 Will Deacon의 -ENOMEM 특별 처리 논의를 따라가세요",
+      "verify": "두 스레드 원문에서 arm64·loongarch·riscv·kexec_elf.c 변경 범위를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ARM: imx: Fix suspend/resume crash with Clang CFI**\n\nYo'av Moshe의 i.MX6 suspend/resume Clang CFI 수정이 Kobo Clara HD(i.MX6SLL)에서 부팅함을 Nick Desaulniers가 확인했고, OCRAM CFI type hash 수동 배치·pm_info_size +8 대신 struct imx6_cpu_pm_info에 명시적 패딩/u32 cfi_type 멤버를 넣자는 제안이 올라왔습니다.\n\n영향: Clang CFI 빌드에서 fncpy 8바이트 정렬과 CFI hash 배치가 어긋나면 부팅 실패나 pm_info 손상이 날 수 있어 i.MX SoC 전력 관리·CFI를 함께 쓰는 담당자는 최종 struct 레이아웃을 따라가야 합니다. cfi_get_func_hash()를 pm_info 필드로 쓰는 방식과 v3 merge 일정은 확인이 필요합니다.\n\n> But that didn't boot on my hardware (Kobo Clara HD, i.MX6SLL).\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/CAKwvOdmT=Q+etTTJUna4ZAg1=eXwaT9cSDy=U0s15UT-3TOu1Q@mail.gmail.com/)\n\n**RISC-V: KVM: Report snapshot write failure to the guest**\n\nSeungJu Cheon v1 2/3가 PMU counter stop 시 kvm_vcpu_write_guest() 스냅샷 쓰기 실패를 무시하던 경로를 고쳐 SBI_ERR_FAILURE를 게스트에 반환합니다.\n\n영향: 쓰기 실패에도 SBI_SUCCESS를 주면 게스트가 stale PMU 스냅샷을 신뢰할 수 있어 RISC-V KVM·SBI PMU Snapshot 사용자는 오류 전파 수정을 따라가야 합니다. 시리즈 나머지 패치 범위와 merge 일정은 확인이 필요합니다.\n\n> the guest may receive SBI_SUCCESS without the snapshot being updated, leaving stale data in shared memory.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260825083719.643970-3-suunj1331@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**kexec: return -ENOEXEC from image probe functions on mismatch**\n\nMukesh Pilaniya v3가 kexec_file_load() 이미지 probe가 형식 불일치 시 -EINVAL 대신 -ENOEXEC를 반환하도록 arm64·loongarch·riscv·kexec_elf.c를 수정합니다. Will Deacon은 kexec_elf_probe()의 -ENOMEM 경로만 특별 처리하는 편이 전역 변경보다 낫지 않냐고 재질문했습니다.\n\n영향: probe 오류가 userspace errno로 그대로 전달되므로 -EINVAL은 syscall 인자 문제로 오인될 수 있습니다. Will의 -ENOMEM 특별 처리 제안 반영 여부와 merge 일정은 확인이 필요합니다.\n\n> Returning -EINVAL from a probe when no loader matches is semantically incorrect and misleads userspace about the nature of the failure.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260821-mpilaniy-v3-1-76b355399d2e@redhat.com/)\n\n**riscv: hwprobe: fix has_fpu() to require D extension only**\n\nIvy Lopez v2가 has_fpu()를 F||D 대신 D 확장만 검사하도록 바꾸고 sys_hwprobe.c의 RISCV_HWPROBE_IMA_FD 설정을 다시 has_fpu() 호출로 되돌립니다. 커널은 F 없이 D만 지원하지 않으므로 D 검사가 F+D를 보장합니다.\n\n영향: F만 있는 하드웨어에서 has_fpu()가 true를 반환하면 RISCV_HWPROBE_IMA_FD가 D 의존 상태 저장/복원을 보장하지 못합니다.\n\n> has_fpu() checking either extension with '||' is incorrect: it reports FPU support when only F is present\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260825142034.31230-1-skunkolee@gmail.com/)\n\n**riscv: kprobes: simulate nop and c.nop instructions**\n\nXiaofeng Yuan v2 2패치가 RISC-V kprobes/uprobes에서 nop·c.nop를 out-of-line 슬롯 single-step 대신 breakpoint 핸들러에서 PC만 전진해 시뮬레이션합니다. KUnit 테스트를 확장했고 QEMU RISC-V virt에서 nop kprobe per-hit 비용이 single-step 대비 약 40% 줄었습니다. 실제 하드웨어 벤치마크와 merge 일정은 확인이 필요합니다.\n\n영향: USDT·ftrace mcount·jump_label 등 nop 사이트에 kprobe/uprobe를 걸 때 오버헤드가 큽니다.\n\n> reduces the per-hit cost of a kprobe on a nop by roughly 40% compared to single-stepping through the out-of-line slot.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260825122020.1192-1-yuanxiaofeng@eswincomputing.com/)\n\n**tee: add MbedTEE driver**\n\nXing Loong v4 3/3가 MbedTEE OS와 통신하는 Linux TEE 드라이버를 추가합니다. ARM/ARM64는 SMCCC+GIC SPI이고 RISC-V는 shared-memory r2t-ring 폴링과 t2r-ring+IMSIC MSI 알림을 씁니다.\n\n영향: 임베디드 ARM·RISC-V 플랫폼에 MbedTEE TEE를 붙이려면 아키텍처별 transport가 필요하며 GlobalPlatform Client API·동적 shared memory·tee-supplicant 지원 범위를 확인해야 합니다. 리뷰 피드백·merge 일정·지원 보드·DT/ACPI 바인딩 범위는 확인이 필요합니다.\n\n> implements the TEE subsystem interface (tee_driver_ops) and provides GlobalPlatform TEE Client API support, dynamic shared memory registration, and tee-supplicant support.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260819083559.1303348-4-xing.xl.loong@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ARM: imx: Fix suspend/resume crash with Clang CFI",
+      "url": "https://lore.kernel.org/linux-arm-kernel/CAKwvOdmT=Q+etTTJUna4ZAg1=eXwaT9cSDy=U0s15UT-3TOu1Q@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "kexec: return -ENOEXEC from image probe functions on mismatch",
+      "url": "https://lore.kernel.org/linux-riscv/20260821-mpilaniy-v3-1-76b355399d2e@redhat.com/",
+      "note": "thread"
+    },
+    {
+      "title": "kexec_elf_probe -ENOMEM 특별 처리 논의",
+      "url": "https://lore.kernel.org/linux-riscv/ao2xc027TNYTwBA1@willie-the-truck/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: hwprobe: fix has_fpu() to require D extension only",
+      "url": "https://lore.kernel.org/linux-riscv/20260825142034.31230-1-skunkolee@gmail.com/",
+      "note": "patch"
+    },
+    {
+      "title": "bugzilla 221874 — RISCV_HWPROBE_IMA_FD",
+      "url": "https://bugzilla.kernel.org/show_bug.cgi?id=221874",
+      "note": "cve"
+    },
+    {
+      "title": "riscv: kprobes: simulate nop and c.nop instructions",
+      "url": "https://lore.kernel.org/linux-riscv/20260825122020.1192-1-yuanxiaofeng@eswincomputing.com/",
+      "note": "thread"
+    },
+    {
+      "title": "tee: add MbedTEE driver",
+      "url": "https://lore.kernel.org/linux-riscv/20260819083559.1303348-4-xing.xl.loong@gmail.com/",
+      "note": "patch"
+    },
+    {
+      "title": "RISC-V: KVM: Report snapshot write failure to the guest",
+      "url": "https://lore.kernel.org/linux-riscv/20260825083719.643970-3-suunj1331@gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-25T18:58:52.900Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
