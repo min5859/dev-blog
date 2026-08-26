@@ -1,0 +1,116 @@
+{
+  "id": "2026-08-27-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-08-27 libbpf 동적 로드·BPF 검증기 — Perf/RT",
+  "headline": "CrowdStrike libbpf v2가 프로그램별 동적 로드를 재제출했고, verifier null 추론 결함 수정과 PREEMPT_RT mmu_notifier RCU 논의가 이어졌습니다.",
+  "date": "2026-08-27",
+  "summary": "libbpf v2 시리즈가 per-program tri-state load type과 BTF decl_tag 기반 선언적 dynamic load를 도입해 대형 BPF 애플리케이션의 기본 로드 프로그램 수를 줄였습니다. BPF verifier는 등가 비교 null 추론 결함을 수정했고, PREEMPT_RT 쪽에서는 mmu_notifier non_block 제거 후속으로 RCU/SRCU 래퍼 설계가 논의됐습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "BPF",
+    "PREEMPT_RT",
+    "libbpf"
+  ],
+  "highlights": [
+    {
+      "title": "libbpf: BPF program dynamic loading",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "libbpf 기반 대형 BPF 애플리케이션·보안 에이전트 개발자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260826181825.1826541-1-andrey.grodzovsky@crowdstrike.com/",
+      "if": "대형 libbpf 오브젝트가 초기 로드 시 전 프로그램을 한꺼번에 올려 기동·종료 지연이나 보호 공백이 우려된다면,",
+      "do": "v2 RFC의 per-program tri-state load type(disabled/auto/dynamic)과 bpf_program__set_autoload() enum 확장, BTF decl_tag 선언적 dynamic load 설계를 검토하세요.",
+      "verify": "커버레터에서 기본 로드 프로그램 수 축소와 load time 단축 실측, upstream 최종 설계·머지 타임라인을 lore 스레드에서 확인하세요."
+    },
+    {
+      "title": "bpf: check_cond_jmp_op(): properly infer if register is null",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF verifier·안전한 포인터 추론 경로 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260826-bug-029-bad-non-null-inference-v2-1-136789ace9e9@localhost/",
+      "if": "PTR_TO_MEM 등 PTR_MAYBE_NULL 없이도 런타임 NULL이 가능한 타입에서 등가 비교 후 역참조를 verifier가 통과시키는 경로를 다룬다면,",
+      "do": "Eduard Zingerman v2 패치의 reg_not_null() 허용목록 기반 추론과 PTR_TO_XDP_SOCK·PTR_TO_BUF 추가를 추적하고, Nicholas Carlini가 보고한 재현 케이스로 회귀 여부를 점검하세요.",
+      "verify": "Fixes 태그가 붙은 스레드에서 type_may_be_null() 대체 내용과 stable/backport 논의를 확인하세요."
+    },
+    {
+      "title": "mm/mmu_notifier: Remove non_block_start/end() from notifier invocation",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "PREEMPT_RT·mmu_notifier·KVM 동기화 경로 추적 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/98e123c9-3dc4-45fb-815b-881b3346741c@paulmck-laptop/",
+      "if": "KVM·GPU 드라이버 tail latency와 PREEMPT_RT 선점 모델이 mmu_notifier 동기화에 맞물려 있다면,",
+      "do": "Paul McKenney 후속 스레드에서 PREEMPT_RT의 rcu_read_lock_atomic()/synchronize_rcu_atomic()을 일반 RCU로 통일하거나 non-atomic SRCU 폴백을 검토하는 제안을 따라가세요.",
+      "verify": "David Woodhouse의 sleeping lock 일관성 제안과 SRCU/RCU 래퍼 대안, RT maintainer 선호 형태·non_block 제거 패치 머지 순서가 아직 확정되지 않았는지 스레드를 확인하세요."
+    },
+    {
+      "title": "libbpf: BPF programs dynamic loading and attaching",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "libbpf API 구현·리뷰 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260826183305.EBADA1F000E9@smtp.kernel.org/",
+      "if": "동일 v2 시리즈 2/5 패치의 bpf_program__load_dynamically() 구현을 리뷰하거나 의존한다면,",
+      "do": "Sashiko AI 리뷰가 지적한 fd 누수(High), libbpf_err() 래핑·NULL 검사·log_level 오염(Medium) 등 5건 이슈 반영 여부를 v3 제출 전에 점검하세요.",
+      "verify": "dynamic 프로그램의 object load 이후 독립 load/attach·재로드 동작과 bpf_program__unload_dynamically() 대칭 API 계약을 리뷰 스레드에서 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**bpf: check_cond_jmp_op(): properly infer if register is null**\n\nEduard Zingerman v2 패치가 check_cond_jmp_op()의 등가 비교 null 추론을 type_may_be_null() 대신 reg_not_null() 허용목록 기반으로 바꾸고, PTR_TO_XDP_SOCK·PTR_TO_BUF를 reg_not_null()에 추가한다.\n\n영향: PTR_TO_MEM 등 PTR_MAYBE_NULL 없이도 런타임 NULL이 가능한 타입에서 verifier가 잘못 non-null로 추론하면 null 역참조를 통과시키는 보안 결함이 된다.\n\n> if (a == b)\n>     *b = 42;  // verifier does not catch null pointer dereference\n\n[원문 확인](https://lore.kernel.org/bpf/20260826-bug-029-bad-non-null-inference-v2-1-136789ace9e9@localhost/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**libbpf: BPF program dynamic loading**\n\nCrowdStrike가 libbpf v2 시리즈(0/5)를 재제출해 프로그램별 tri-state load type(disabled/auto/dynamic)을 도입하고, bpf_program__set_autoload()를 enum으로 확장하며 BTF decl_tag로 선언적 dynamic load를 지원한다.\n\n영향: 대형 보안·관측 BPF 오브젝트는 초기 로드 시 필요한 프로그램만 올려 부분 로드·재로드 창을 줄일 수 있어, libbpf 기반 도구의 기동·종료 지연과 보호 공백을 동시에 줄이는 핵심 API 변화다.\n\n> a two-patch RFC introducing a per-program tri-state load type (disabled/auto/dynamic) to let large BPF applications load a subset of their programs lazily, after the initial bpf_object load.\n\n[원문 확인](https://lore.kernel.org/bpf/20260826181825.1826541-1-andrey.grodzovsky@crowdstrike.com/)\n\n**libbpf: BPF programs dynamic loading and attaching**\n\n동일 v2 시리즈 2/5 패치에 Sashiko AI 리뷰가 bpf_program__load_dynamically()의 fd 누수(High), libbpf_err() 래핑·NULL 검사·log_level 오염(Medium) 등 5건 이슈를 지적했다.\n\n영향: dynamic load API가 머지되기 전에 fd leak·errno 처리 같은 구현 결함을 잡지 못하면 대형 libbpf 소비자의 런타임 리소스 누수와 오류 처리 불일치로 이어질 수 있다.\n\n> [High] `bpf_program__load_dynamically` overwrites `prog->fd` without closing the old one, leading to a file descriptor leak if the program is already loaded.\n\n[원문 확인](https://lore.kernel.org/bpf/20260826183305.EBADA1F000E9@smtp.kernel.org/)\n\n**mm/mmu_notifier: Remove non_block_start/end() from notifier invocation**\n\nPaul McKenney가 mmu_notifier non_block 제거 논의 후속으로, PREEMPT_RT에서는 rcu_read_lock_atomic()/synchronize_rcu_atomic()을 일반 RCU 호출로 통일하거나 non-atomic SRCU 폴백을 검토하자며 커뮤니티 의견을 요청했다.\n\n영향: mmu_notifier 동기화는 KVM·GPU 드라이버 tail latency와 PREEMPT_RT 선점 모델이 맞물리는 지점이라, RCU/SRCU 래퍼 설계가 RT 일관성과 성능 벤치 결과에 직접 영향을 준다.\n\n> Given the way that PREEMPT_RT treats other locks like spinlocks and rwlocks — turning them into sleeping locks — I suspect it makes most sense, and is consistent, to also turn rcu_read_lock_atomic() a\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/98e123c9-3dc4-45fb-815b-881b3346741c@paulmck-laptop/)\n\n**selftests/bpf: add tests to validate KASAN on JIT programs**\n\nAlexis Lothoré가 KASAN JIT selftest v7 9/9에 대해 Kumar Kartikeya 리뷰에 응답해 테스트를 serial로 표시하고, Clang이 ST/STX/st blinding 케이스를 섞는 문제를 CPU 버전별로 skip·검증하도록 수정하겠다고 했다.\n\n영향: JIT hardening·KASAN 상호작용을 selftest로 고정하면 verifier/JIT 회귀가 메모리 안전 검증 공백 없이 CI에서 잡히는 기반이 된다.\n\n> Should this test be made serial to make sure bpf_jit_harden sysctl change doesn't affect other tests?\n\n[원문 확인](https://lore.kernel.org/bpf/DKZ2ZV0RB5XV.2TU1APPGT5OSN@bootlin.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "**docs: real-time: mention the hrtimer sleeper HARD path**\n\nLiang Hao v6 문서 패치가 PREEMPT_RT 타이머 문서에 userspace sleep이 쓰는 hrtimer sleeper HARD 경로를 설명하고 ktimersd 명칭을 ktimers로 정리했으며, Sebastian Siewior가 Reviewed-by를 달았다.\n\n영향: 코드 변경은 없지만 RT 환경에서 userspace sleep이 어떤 hrtimer 경로를 타는지 문서화되어, 지연·우선순위 문제 디버깅 시 혼동을 줄인다.\n\n> The Timers section documents the PREEMPT_RT softirq default and HRTIMER_MODE_HARD, but not the sleeper helper used by userspace sleeps. Describe that path, and rename \"ktimersd\" to \"ktimers\"\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260826082626.Dc0QiAR7@linutronix.de/)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "libbpf: BPF program dynamic loading",
+      "url": "https://lore.kernel.org/bpf/20260826181825.1826541-1-andrey.grodzovsky@crowdstrike.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: check_cond_jmp_op(): properly infer if register is null",
+      "url": "https://lore.kernel.org/bpf/20260826-bug-029-bad-non-null-inference-v2-1-136789ace9e9@localhost/",
+      "note": "thread"
+    },
+    {
+      "title": "mm/mmu_notifier: Remove non_block_start/end() from notifier invocation",
+      "url": "https://lore.kernel.org/linux-rt-devel/98e123c9-3dc4-45fb-815b-881b3346741c@paulmck-laptop/",
+      "note": "thread"
+    },
+    {
+      "title": "docs: real-time: mention the hrtimer sleeper HARD path",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260826082626.Dc0QiAR7@linutronix.de/",
+      "note": "thread"
+    },
+    {
+      "title": "libbpf: BPF programs dynamic loading and attaching",
+      "url": "https://lore.kernel.org/bpf/20260826183305.EBADA1F000E9@smtp.kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "selftests/bpf: add tests to validate KASAN on JIT programs",
+      "url": "https://lore.kernel.org/bpf/DKZ2ZV0RB5XV.2TU1APPGT5OSN@bootlin.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-26T18:57:22.233Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

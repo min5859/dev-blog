@@ -1,0 +1,118 @@
+{
+  "id": "2026-08-27-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-08-27 서스펜드·보안 회귀 — Android 커널",
+  "headline": "Android 16 6.12 f2fs 서스펜드 데드락 완화, SELinux bpffs inode 초기화 회귀 수정, NMI dump_tasks 안전화 등 ACK 후속 패치가 이어집니다.",
+  "date": "2026-08-27",
+  "summary": "서스펜드·보안·메모리 진단 경로의 회귀 수정이 android16-6.12와 mainline ACK에 계속 반영되고 있습니다. GKI defconfig·빌드·ABI 정리 변경도 함께 추적 중입니다.",
+  "tags": [
+    "안드로이드",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "f2fs 서스펜드 중 GC/discard 정지",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Android 전원관리·스토리지·f2fs 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/f255c2d290e7195470916e1810212580fa25adc7",
+      "if": "Android 16 6.12 ACK에서 전원관리·f2fs를 담당한다면",
+      "do": "서스펜드 경로에서 f2fs GC/discard와 Runtime PM suspend 레이스가 재현되는지 PM notifier 적용 브랜치에서 재현 테스트를 수행하세요.",
+      "verify": "커밋 diff에서 SBI_IS_SUSPENDING 설정과 백그라운드 스레드 정지 동작을 확인하세요."
+    },
+    {
+      "title": "SELinux bpffs inode 초기화 회귀 수정",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "보안·SELinux·BPF 서브시스템 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/8f0a5b31aee19510e75741c9687cf0d9321fa7ed",
+      "if": "bpffs·SELinux inode 초기화 경로를 유지보수한다면",
+      "do": "genfscon bpffs 마운트 후 inode 초기화가 정상인지 SBLABEL_MNT 선행 검사 커밋을 반영한 트리에서 확인하세요.",
+      "verify": "inode_do_init_with_dentry() 실패가 재현되지 않는지 마운트·초기화 시퀀스를 검증하세요."
+    },
+    {
+      "title": "NMI 컨텍스트 dump_tasks() 안전화",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "ACK 메모리·LMKD 담당, OOM/메모리 압박 디버깅 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/db2acc01b75f9a30bfef0f4d2a6f413542cc32ac",
+      "if": "LMKD·OOM 메모리 디버깅을 담당한다면",
+      "do": "NMI 컨텍스트에서 메모리 덤프 호출 시 데드락이 없는지 spin_trylock·memcg 덤프 생략 수정이 포함된 브랜치에서 검증하세요.",
+      "verify": "원문 커밋에서 oom_kill.c 변경 범위를 직접 확인하세요."
+    },
+    {
+      "title": "android16-6.12 obsolete 구조체 제거",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "GKI ABI·android16-6.12 벤더 모듈 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/597dc0ff249091c26bf364e40decb6d901289597",
+      "if": "android16-6.12 GKI ABI·벤더 모듈을 빌드한다면",
+      "do": "ABI revert 후 남은 구조체 정리 커밋이 벤더 트리에 반영됐는지 확인하고 모듈 빌드를 재검증하세요.",
+      "verify": "제거된 구조체의 정확한 이름·영향 범위는 커밋 diff 추가 확인이 필요합니다."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**f2fs 서스펜드 중 백그라운드 스레드 정지**\n\n시스템 서스펜드 중 PM notifier로 SBI_IS_SUSPENDING을 설정해 f2fs_gc·f2fs_discard 백그라운드 스레드가 새 bio를 내지 않도록 정지시킵니다.\n\n영향: UFS 등 블록 디바이스가 Runtime PM suspend 상태일 때 f2fs 백그라운드 I/O가 겹치며 발생하던 서스펜드 데드락·프리즈 타임아웃을 Android 16 6.12 ACK에서 완화합니다.\n\n> During system suspend, a race condition can cause f2fs_gc and f2fs_discard threads to call submit_bio() while the underlying block device is in Runtime PM suspend.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/f255c2d290e7195470916e1810212580fa25adc7)\n\n**NMI에서 dump_tasks() 안전화**\n\nNMI 컨텍스트에서 dump_tasks() 호출 시 spin_trylock(&t->alloc_lock)을 쓰고, NMI에서는 memcg OOM 덤프를 건너뛰도록 oom_kill.c를 수정했습니다.\n\n영향: Android에서 NMI 핸들러가 메모리 상태를 덤프할 때 alloc_lock·memcg 락으로 인한 데드락을 막아 LMK/메모리 진단 경로의 안정성을 높입니다.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/db2acc01b75f9a30bfef0f4d2a6f413542cc32ac)\n\n**SELinux bpffs SBLABEL_MNT 검사 순서 수정**\n\nselinux_inode_init_security()가 inode 보안을 initialized로 표시하기 전에 마운트가 SBLABEL_MNT(라벨링)를 지원하는지 먼저 확인하도록 순서를 바꿨습니다.\n\n영향: genfscon bpffs 마운트가 xattr 없이 SBLABEL_MNT 검사에 실패한 뒤 isec->initialized가 잘못 설정되어 inode_do_init_with_dentry()가 깨지던 회귀를 수정합니다.\n\n> Do the SBLABEL_MNT check before the inode security is initialized.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/8f0a5b31aee19510e75741c9687cf0d9321fa7ed)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**GKI defconfig에서 CONFIG_CRYPTO_LZ4 명시 제거**\n\nHIBERNATION Kconfig가 CRYPTO_LZ4를 암묵적으로 선택하므로 GKI defconfig에서 CONFIG_CRYPTO_LZ4 명시 항목을 제거했습니다.\n\n영향: upstream Kconfig 의존성과 GKI defconfig를 맞춰 중복 심볼·설정 드리프트를 줄이고, hibernation/LZ4 압축 빌드 구성을 단순화합니다.\n\n> The CRYPTO_LZ4 config is now implicitly selected via HIBERNATION, so remove it from our gki_defconfig files.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/87aba67d69fd0706152ae2d9dec68c2cfc274459)\n\n**GKI defconfig에 CONFIG_SW_SYNC=y 활성화**\n\nGKI defconfig에 CONFIG_SW_SYNC=y를 켜 sw_sync 펜스 드라이버를 디버그·테스트 빌드에서 사용할 수 있게 했습니다.\n\n영향: igt-gpu-tools 등 GPU 드라이버 테스트가 sw_sync에 의존하며, debugfs 노출만으로는 Android 12+ 출하 빌드의 fence 관리 위험을 피할 수 있다고 명시합니다.\n\n> The sw_sync driver is useful for debugging and testing GPU drivers, and is leveraged by several tests in the igt-gpu-tools test suite.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/7443a0c3c9ecfc8982003afde92e9c783c725994)\n\n**TRACE_INCLUDE_PATH 매크로 재정의 방지**\n\ninclude/trace/hooks/sched.h에서 #define TRACE_INCLUDE_PATH 전에 #undef TRACE_INCLUDE_PATH를 추가해 매크로 재정의 경고·오류를 방지합니다.\n\n영향: EAS/sched 트레이스 훅이 다른 trace 헤더와 같은 컴파일 유닛에 포함될 때 ACK 빌드가 -Wmacro-redefined로 깨지는 문제를 해소합니다.\n\n> Add missing #undef TRACE_INCLUDE_PATH before #define in include/trace/hooks/sched.h to prevent -Werror,-Wmacro-redefined\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/82be0d329bf2b455546a09cc84a40c9d1716b54d)\n\n**android16-6.12 obsolete 구조체 제거**\n\n이전 ABI revert 후 남아 있던 obsolete 구조체를 제거해 누락된 정리 작업을 마무리했습니다.\n\n영향: GKI ABI 정리 미완으로 인한 레이아웃·심볼 불일치 가능성을 줄여 android16-6.12 벤더 모듈 빌드 안정성을 돕습니다. 제거된 구조체의 정확한 이름·영향 받는 서브시스템은 커밋 diff 추가 확인이 필요합니다.\n\n> This fixes the missing structure supposed to be removed by\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/597dc0ff249091c26bf364e40decb6d901289597)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "medium",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ANDROID: mm: Make dump_tasks() safe in NMI context",
+      "url": "https://android.googlesource.com/kernel/common/+/db2acc01b75f9a30bfef0f4d2a6f413542cc32ac",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: GKI: CRYPTO_LZ4 is now implicit",
+      "url": "https://android.googlesource.com/kernel/common/+/87aba67d69fd0706152ae2d9dec68c2cfc274459",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: f2fs: quiesce background threads during system suspend using PM notifier",
+      "url": "https://android.googlesource.com/kernel/common/+/f255c2d290e7195470916e1810212580fa25adc7",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: gki_defconfig: enable CONFIG_SW_SYNC=y for debug/testing",
+      "url": "https://android.googlesource.com/kernel/common/+/7443a0c3c9ecfc8982003afde92e9c783c725994",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: sched: Avoid macro redefinition of TRACE_INCLUDE_PATH",
+      "url": "https://android.googlesource.com/kernel/common/+/82be0d329bf2b455546a09cc84a40c9d1716b54d",
+      "note": "commit"
+    },
+    {
+      "title": "FROMGIT: selinux: bpf: check SBLABEL_MNT before isec init",
+      "url": "https://android.googlesource.com/kernel/common/+/8f0a5b31aee19510e75741c9687cf0d9321fa7ed",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: remove obsolete structure",
+      "url": "https://android.googlesource.com/kernel/common/+/597dc0ff249091c26bf364e40decb6d901289597",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-26T18:17:56.936Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/android-newsletter-from-dossier-ko.md"
+  }
+}

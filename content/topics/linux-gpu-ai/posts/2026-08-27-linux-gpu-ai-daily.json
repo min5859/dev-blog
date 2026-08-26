@@ -1,0 +1,108 @@
+{
+  "id": "2026-08-27-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-08-27 amdxdna 데드락·보안 — GPU·AI 가속",
+  "headline": "amdxdna 데드락·dmabuf I/O 차단, DCE blend mode 보완, DisplayLink vino KMS atomic v3가 dri-devel에서 논의되었습니다.",
+  "date": "2026-08-27",
+  "summary": "amdxdna는 디버그 BO 대기의 interruptible 전환과 imported BO I/O mapping 거부로 런타임 데드락·dmabuf 안전 경로를 보강합니다. DCE 디스플레이 blend mode uAPI 보완과 DisplayLink vino Rust KMS atomic v3 리뷰도 함께 올라왔습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "accel/amdxdna: debug BO 대기 interruptible 전환",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "amdxdna 드라이버·NPU 런타임·디버그 BO ioctl 사용자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260826184503.282106-1-taimuraz@kaitmazov.com/",
+      "if": "tdr_timeout_ms=0으로 디버그 BO ioctl을 쓰거나 펌웨어 hang을 재현하는 경우",
+      "do": "interruptible wait 패치 적용 전에는 hang 시 프로세스 kill·모듈 unload로 복구되지 않을 수 있으니 client_lock 장시간 점유 경로를 피하세요",
+      "verify": "debug BO outstanding 동안 device open/close·모듈 unload가 막히는지, dma_fence_wait_timeout(..., true, ...) 적용 후 -EINTR 전달 여부를 원문 스레드와 로그로 확인하세요"
+    },
+    {
+      "title": "accel/amdxdna: imported BO I/O memory mapping 거부",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "amdxdna GEM/dmabuf import·런타임 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/61586ab4-bbc4-2795-c4c0-1a0299aeea66@amd.com/",
+      "if": "amdxdna_drm_va_tbl이 nouveau·radeon 등 VRAM resident TTM exporter의 dmabuf를 import하는 조합을 테스트하는 경우",
+      "do": "I/O mapping이 abo->mem.kva로 들어와 memset/memcpy가 실행되는 경로가 열려 있지 않은지, -EOPNOTSUPP 반환으로 차단되는지 확인하세요",
+      "verify": "exporter가 iomem mapping을 돌려줄 때 amdxdna_cmd_set_error()가 일반 kva처럼 접근하지 않는지 원문 스레드와 패치 diff를 대조하세요"
+    },
+    {
+      "title": "drm/amd/display: DCE primary에 PIXEL_NONE·PREMULTI blend mode 노출",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "amdgpu_dm·DCE 디스플레이 plane uAPI 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/a4fde5da-9712-4595-8f9a-ee20a48e5c3f@amd.com/",
+      "if": "DCE 세대 AMD iGPU·dGPU에서 atomic commit 시 missing-blend-mode-prop 경고나 userspace 검증 실패가 보이는 경우",
+      "do": "primary plane에 PIXEL_NONE·PREMULTI property가 노출되고 PREMULTI default가 유지되는지, Fixes 860e748bddcc 맥락과 맞는지 확인하세요",
+      "verify": "dmesg의 missing-blend-mode-prop 경고와 atomic 검증 실패가 사라졌는지 코어 DRM alpha pixel format 요구와 대조하세요"
+    },
+    {
+      "title": "drm/vino: DisplayLink DL3 KMS·atomic 경로 v3",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "Rust DRM·DisplayLink DL3 독·KMS atomic 경로 개발자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260826163913.7052-1-mike@fireburn.co.uk/",
+      "if": "DisplayLink DL3 독을 인커널 Rust DRM/KMS로 구동하거나 vino atomic 경로를 리뷰하는 경우",
+      "do": "atomic callback 내 sleep(GFP_KERNEL·vmap), flip coalesce freeze, atomic_check bandwidth overcommit 등 Sashiko High 3건이 수정·응답되었는지 먼저 확인하세요",
+      "verify": "v3가 세 대 독에서 실제 패널 구동·DFU·KUnit 97건을 보고한 내용과 Sashiko 리뷰 지적이 원문 스레드에서 어떻게 처리되었는지 대조하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**accel/amdxdna: refuse an I/O memory mapping of an imported BO**\n\nimported BO의 dma_buf_vmap() 결과가 is_iomem이면 즉시 unmap하고 -EOPNOTSUPP를 반환한다. VRAM resident TTM exporter(nouveau·radeon 등)가 I/O mapping을 돌려줄 때 abo->mem.kva를 일반 커널 주소처럼 memset/memcpy하던 경로를 차단한다.\n\n영향: amdxdna_drm_va_tbl은 임의 exporter의 dmabuf를 받을 수 있어, I/O mapping이 그대로 통과하면 커널 메모리 조작으로 이어질 수 있다. NPU·GPU 간 dmabuf 공유 조합에서 안전하지 않은 vmap 경로를 닫는다.\n\n> an exporter answering with an I/O mapping leaves a void __iomem pointer in abo->mem.kva, which amdxdna_cmd_set_error() memsets and memcpys through.\n\n> drm_gem_ttm_vmap() answers iomem for a VRAM resident object, so an NPU paired with nouveau or radeon does.\n\n[원문 확인](https://lore.kernel.org/dri-devel/61586ab4-bbc4-2795-c4c0-1a0299aeea66@amd.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**accel/amdxdna: make the debug BO command wait interruptible**\n\naie2_cmd_wait()를 uninterruptible 대기에서 interruptible dma_fence_wait_timeout()으로 바꾸고 -EINTR을 상위로 전달한다. tdr_timeout_ms=0이면 스케줄러 타임아웃 없이 client_lock을 잡은 채 영구 블록되어 디바이스 open/close·모듈 언로드가 불가능했던 경로를 끊는다.\n\n영향: AMD XDNA NPU 디버그 BO ioctl이 client_lock을 장시간 점유하면 같은 디바이스의 다른 클라이언트와 teardown이 전부 막힌다. tdr_timeout_ms=0 테스트나 펌웨어 hang 시 프로세스 kill로도 복구할 수 없었던 데드락 클래스를 완화한다. 메인라인 머지 일정과 interrupt 시 BO attached 기록 휴리스틱의 펌웨어 상태 정합성은 확인이 필요합니다.\n\n> while a debug BO command is outstanding, nobody can open the device, nobody can close their DRM file and exit, and the module cannot be unloaded.\n\n> ret = dma_fence_wait_timeout(out_fence, true, MAX_SCHEDULE_TIMEOUT);\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260826184503.282106-1-taimuraz@kaitmazov.com/)\n\n**drm/amd/display: advertise PIXEL_NONE and PREMULTI blend mode for DCE**\n\nDCE 세대 primary plane에 PIXEL_NONE·PREMULTI blend mode property를 노출한다. DCN universal이 아닌 DCE plane은 overlay 없이 black background 위에서 blend가 무시되므로, Fixes 860e748bddcc의 missing-blend-mode-prop 경고를 막으면서 PREMULTI를 유지해 uAPI 회귀를 피한다.\n\n영향: 코어 DRM이 alpha pixel format에 blend mode property를 요구하면서 DCE primary에 property가 없으면 dmesg 경고와 userspace atomic 검증 실패가 난다. 구형 AMD iGPU·dGPU 디스플레이 스택 사용자에게 직접 영향한다. overlay plane이 있는 DCE 변형의 추가 blend mode 노출 필요 여부는 확인이 필요합니다.\n\n> To fix the missing-blend-mode-prop warning according to current DCE plane caps, create blend mode property with PIXEL_NONE and PREMULTI for primary planes.\n\n> PREMULTI has been the mandatory/default mode for years, so keep it to avoid regressions.\n\n[원문 확인](https://lore.kernel.org/dri-devel/a4fde5da-9712-4595-8f9a-ee20a48e5c3f@amd.com/)\n\n**drm/vino: add the KMS device and the atomic path**\n\nDisplayLink DL3 독용 Rust DRM/KMS 드라이버 v3 시리즈가 atomic commit·scanout worker·GEM을 추가한다. Sashiko 리뷰는 atomic callback 내 sleep(GFP_KERNEL·vmap), pending frame coalesce로 최신 flip 유실, atomic_check의 전역 bandwidth 경쟁 등 3건 High 이슈를 지적한다.\n\n영향: 벤더 클로즈 스택 대신 인커널 Rust DRM으로 DL3 독을 구동하는 신규 경로이며, atomic KMS 설계 품질이 실사용 freeze·bandwidth overcommit으로 이어질 수 있다. Sashiko High 3건에 대한 작성자 응답·수정 여부와 drm-misc-next 머지 전 atomic 경로 재설계 범위는 확인이 필요합니다.\n\n> v1 and v2 never lit a panel. This one does, on three generations of dock, driving a real desktop\n\n> Sashiko AI review found 3 potential issue(s) to consider: - [High] Operations that sleep (Mutex locks, GFP_KERNEL allocations, and vmap)\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260826163913.7052-1-mike@fireburn.co.uk/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "high",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "accel/amdxdna: make the debug BO command wait interruptible",
+      "url": "https://lore.kernel.org/dri-devel/20260826184503.282106-1-taimuraz@kaitmazov.com/",
+      "note": "thread"
+    },
+    {
+      "title": "accel/amdxdna: refuse an I/O memory mapping of an imported BO",
+      "url": "https://lore.kernel.org/dri-devel/61586ab4-bbc4-2795-c4c0-1a0299aeea66@amd.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/amd/display: advertise PIXEL_NONE and PREMULTI blend mode for DCE",
+      "url": "https://lore.kernel.org/dri-devel/a4fde5da-9712-4595-8f9a-ee20a48e5c3f@amd.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/vino: add the KMS device and the atomic path (v3)",
+      "url": "https://lore.kernel.org/dri-devel/20260826163913.7052-1-mike@fireburn.co.uk/",
+      "note": "thread"
+    },
+    {
+      "title": "Sashiko AI review: drm/vino atomic path",
+      "url": "https://lore.kernel.org/dri-devel/20260826165931.B63521F000E9@smtp.kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-26T19:04:51.334Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
