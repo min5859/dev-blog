@@ -1,0 +1,118 @@
+{
+  "id": "2026-08-28-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-08-28 vmemmap TLB 회귀 — Arch·Platform",
+  "headline": "sparse_init() 순서 회귀로 RISC-V 부트 패닉이 보고됐고, IOMMU PMU·Marvell Wi-Fi regdomain·SA8255P GENI clock 패치가 리뷰 중이다.",
+  "date": "2026-08-28",
+  "summary": "4267739cabb8 이후 RISC-V VMEMMAP TLB flush 순서 회귀로 SPARSEMEM_VMEMMAP 보드에서 __init_single_page() paging fault 패닉이 발생했다. RISC-V IOMMU PMU auxiliary perf 드라이버, Marvell mwifiex regdomain DT 플래그, SA8255P GENI SE clock OPP 연동 패치가 각각 리뷰 단계에 있다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "RISC-V vmemmap TLB flush 순서 회귀",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "RISC-V mm·부트 경로 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260827073603.141426-1-guoyaxing@bosc.ac.cn/",
+      "if": "SPARSEMEM_VMEMMAP RISC-V 보드에서 4267739cabb8 이후 부트 중 kernel paging request oops가 발생하는 경우",
+      "do": "arch_post_sparse_init() 훅 패치의 mm maintainer 리뷰·머지 여부와 stable/longterm 백포트 필요 범위를 추적하십시오",
+      "verify": "sparse_init() 완료 후 flush_cache_vmap_early() 호출과 __init_single_page() oops 재현 여부를 원문 스레드와 대조해 확인하세요"
+    },
+    {
+      "title": "RISC-V IOMMU PMU auxiliary perf 드라이버",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "RISC-V IOMMU·perf 드라이버 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260824022034.3916570-2-zong.li@sifive.com/",
+      "if": "RISC-V IOMMU 플랫폼에서 DMA/IOMMU 병목을 perf로 계측하려는 경우",
+      "do": "v6 시리즈의 sysfs_emit()·cpumask_local_spread 피드백 반영 respin과 auxiliary HPM 디바이스 생성 패치(v6 2/2) 동반 머지 여부를 지켜보십시오",
+      "verify": "GSCID/PSCID 필터·런타임 카운터 폭 탐지 구현과 7.3-rc sysfs API 호환 수정이 다음 버전에 반영됐는지 lore 스레드를 확인하세요"
+    },
+    {
+      "title": "mwifiex ROM regdomain hint 충돌 DT 플래그",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "ARM Marvell Wi-Fi 플랫폼·OpenWrt integrator",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260827175850.89395-2-gvalkov@gmail.com/",
+      "if": "WRT3200ACM/WRT32x EU 등에서 mwifiex phy0이 DFS 채널에서 기동하지 않는 경우",
+      "do": "DTS에 marvell,invalid-reg-hint-in-rom 플래그를 적용하고 v6에서 바뀐 DT 바인딩 이름을 드라이버·보드 설정과 함께 맞추십시오",
+      "verify": "device_property_read_bool()로 ROM regulatory_hint()를 건너뛰는 v9 드라이버 동작과 WRT32x DTS·OpenWrt 쪽 패치 필요 여부를 원문에서 확인하세요"
+    },
+    {
+      "title": "SA8255P GENI SE clock OPP 테이블 연동",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "Qualcomm SA8255P·GENI serial 플랫폼 드라이버 담당",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260827-derive_clk_perf_tbl_from_perf_domain_opp_table-v2-0-091697dbeb02@oss.qualcomm.com/",
+      "if": "firmware-managed SA8255P에서 SPI/I2C/UART GENI GSI 전송이 잘못된 SE clock 설정으로 실패하는 경우",
+      "do": "perf domain OPP 테이블로 clk_perf_tbl을 채우는 v2 9패치 시리즈 머지 일정과 SCMI perf domain state 0 -EINVAL 수정의 타 플랫폼 영향을 추적하십시오",
+      "verify": "geni_se_domain_attach() 시 OPP 기반 clk_perf_tbl 채움과 geni_se_clk_freq_match() 재사용 경로가 v2 리뷰 반영 후에도 유지되는지 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**riscv: mm: Flush vmemmap TLB after sparse_init()**\n\n4267739cabb8이 sparse_init()을 generic mm/sparse.c로 옮기면서 RISC-V VMEMMAP TLB flush가 sparse_init()보다 먼저 실행되는 순서 회귀가 생겼다. 패치는 sparse_init() 끝에 arch_post_sparse_init() 훅을 추가하고 RISC-V에서 flush_cache_vmap_early()로 vmemmap 매핑 직후 sfence.vma를 보장한다.\n\n영향: RISC-V는 non-present TLB 엔트리 캐싱을 허용해 stale TLB가 남으면 부트 초기 memmap 초기화 중 __init_single_page()에서 paging fault로 패닉할 수 있다. SPARSEMEM_VMEMMAP RISC-V 보드는 이 Fixes 커밋 이후 회귀 여부와 백포트 필요성을 추적해야 한다.\n\n> RISC-V now flushes the VMEMMAP range before sparse_init() populates the vmemmap page tables.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260827073603.141426-1-guoyaxing@bosc.ac.cn/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drivers/perf: riscv-iommu: add risc-v iommu pmu driver**\n\nZong Li v6 시리즈가 RISC-V IOMMU HPM을 auxiliary perf 드라이버(riscv_iommu_pmu.c)로 추가하고, device/process ID·GSCID/PSCID 필터·런타임 카운터 폭 탐지·8바이트 MMIO 비원자 접근 회피를 구현한다. 8/27 스레드에서는 Yicong Yang이 cpumask sysfs가 7.3-rc에서 제거된 cpumap_print_to_pagebuf 대신 sysfs_emit()을 써야 한다고 지적했고, Zong Li는 다음 버전에서 수정하겠다고 답했으며 Yicong은 cpuhp online 핸들러에 cpumask_local_spread() 사용을 추가 제안했다.\n\n영향: RISC-V IOMMU가 있는 플랫폼에서 DMA/IOMMU 병목을 perf로 계측하려는 담당자에게 첫 메인라인 통합 경로이며, 7.3-rc sysfs API 변화와 cpuhp/cpumask 설계 피드백 반영 여부가 머지 전 관건이다.\n\n> Add a new driver to support the RISC-V IOMMU PMU. This is an auxiliary device driver created by the parent RISC-V IOMMU driver.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260824022034.3916570-2-zong.li@sifive.com/)\n\n**wifi: mwifiex: add dt flag to avoid conflict with platform reg domain**\n\nGeorgi Valkov v9 시리즈가 WRT3200ACM/WRT32x에서 mwifiex ROM의 US regulatory hint가 플랫폼(EU 등) 설정과 충돌해 phy0 DFS 채널 기동이 막히는 문제를 DT 플래그 marvell,invalid-reg-hint-in-rom으로 해결한다. v6에서 marvell,ignore-regulatory-hint에서 이름을 바꿨고, 드라이버는 device_property_read_bool()로 ROM hint를 건너뛴 뒤 플랫폼 regdomain을 따른다.\n\n영향: Marvell 3-radio ARM 플랫폼(Linksys Rango 계열) integrator는 EU 판매 기기에서 Wi-Fi regdomain 충돌로 5 GHz/DFS radio가 죽는 장애를 피하려면 바인딩·DTS·드라이버 쪽 플래그 이름 변경을 함께 따라가야 한다.\n\n> preventing phy0 from starting on any DFS channel. phy2 works.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260827175850.89395-2-gvalkov@gmail.com/)\n\n**soc: qcom: geni: Derive SE clock configuration from OPP table on SA8255P**\n\nPraveen Talari v2(9패치)는 firmware-managed SA8255P에서 perf domain OPP 테이블을 SE source clock 주파수 표로 간주해 geni_se_domain_attach() 시 clk_perf_tbl을 채우고, geni_se_set_rate()·geni_se_clk_freq_match()로 GSI TRE 프로그래밍에 필요한 clock index/divider를 Linux-managed 경로와 동일하게 계산한다. v2는 OPP rate reset 제거·I2C OPP voting 등 리뷰 반영 패치를 추가했다.\n\n영향: SA8255P처럼 Linux clock handler가 없는 Qualcomm automotive 플랫폼에서 SPI/I2C/UART GENI 드라이버가 잘못된 SE clock 설정으로 GSI 전송을 실패하는 문제를 플랫폼 공통 helper로 정리한다. firmware-managed GENI를 쓰는 보드 integrator는 OPP 테이블 의미 변화를 추적해야 한다.\n\n> On firmware-managed platforms such as SA8255P, there is no Linux clock handler available to determine the appropriate SE source clock, source clock index, and divider values\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260827-derive_clk_perf_tbl_from_perf_domain_opp_table-v2-0-091697dbeb02@oss.qualcomm.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "riscv: mm: Flush vmemmap TLB after sparse_init()",
+      "url": "https://lore.kernel.org/linux-riscv/20260827073603.141426-1-guoyaxing@bosc.ac.cn/",
+      "note": "thread"
+    },
+    {
+      "title": "drivers/perf: riscv-iommu: add risc-v iommu pmu driver",
+      "url": "https://lore.kernel.org/linux-riscv/20260824022034.3916570-2-zong.li@sifive.com/",
+      "note": "thread"
+    },
+    {
+      "title": "RISC-V IOMMU PMU cpumask sysfs_emit 리뷰",
+      "url": "https://lore.kernel.org/linux-riscv/ab59c5b8-2915-4d59-8766-7a6297224494@picoheart.com/",
+      "note": "thread"
+    },
+    {
+      "title": "RISC-V IOMMU PMU sysfs_emit 수정 응답",
+      "url": "https://lore.kernel.org/linux-riscv/CANXhq0rBYWyLztFQzLCPx1vMSdahcuH-kfKPGO+WRDvFEW6Osg@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "wifi: mwifiex: add dt flag to avoid conflict with platform reg domain",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260827175850.89395-2-gvalkov@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "mwifiex DT 플래그 이름 변경 (v6 cover)",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260827175850.89395-1-gvalkov@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "soc: qcom: geni: Derive SE clock configuration from OPP table on SA8255P",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260827-derive_clk_perf_tbl_from_perf_domain_opp_table-v2-0-091697dbeb02@oss.qualcomm.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-27T18:46:40.254Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,117 @@
+{
+  "id": "2026-08-28-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-08-28 i.MX CFI·NVKV — Linux 툴체인",
+  "headline": "Clang CFI i.MX suspend 크래시 수정이 수렴하고, nova-core NVKV 코덱이 GSP wire format Rust 직렬화 기반을 제시했다.",
+  "date": "2026-08-28",
+  "summary": "Yo'av Moshe가 Nick Desaulniers 제안을 반영해 i.MX OCRAM fncpy 경로의 CFI 타입 해시·정렬 설계를 정리했고, Eliot Courtney v2가 nova-core용 NVKV 인코더·디코더와 GSP_INIT 스키마를 추가했다. DisplayLink vino v3는 EDID engage 1바이트 수정 후 세 독 세대에서 실제 패널 출력에 성공했다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "툴체인",
+    "Rust-for-Linux",
+    "Clang",
+    "CFI"
+  ],
+  "highlights": [
+    {
+      "title": "ARM imx: Clang CFI suspend/resume 크래시 수정 수렴",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Clang/CFI 커널 빌드·i.MX6 전원관리·ARM mach-imx 유지보수자",
+      "verifyLink": "https://lore.kernel.org/llvm/ca86be7a-7439-49cb-9deb-8d565ca0b1dd@yoavmoshe.com/",
+      "if": "CONFIG_CFI=y Clang 빌드에서 i.MX suspend 코드를 OCRAM로 fncpy하는 경로를 유지보수하는 경우",
+      "do": "cfi_type tail padding·cfi_get_func_hash()·SYM_TYPED_FUNC_START 전환과 v4 노트의 수동 패드 설명을 추적하세요.",
+      "verify": "fncpy 8바이트 정렬 요구와 CFI 타입 해시 배치가 suspend/resume에서 맞는지 lore 스레드를 확인하세요."
+    },
+    {
+      "title": "gpu nova-core: NVKV 코덱 v2",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust-for-Linux alloc·nova-core GSP·NVIDIA open GPU Rust 드라이버 작성자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260827-b4-nvkv-v2-0-0de9d5c8658c@nvidia.com/",
+      "if": "nova-core GSP 드라이버에서 GMCAPI 펌웨어 메시지 직렬화를 설계하는 경우",
+      "do": "NVKV wire format 인코더·디코더, nvkv_encode!/nvkv_decode! 매크로, GSP_INIT 스키마와 Danilo EncodedStream·zerocopy 선행 패치 의존을 검토하세요.",
+      "verify": "f(key, index, value) 호출 시퀀스 인코딩과 ArrayVec·try_push_init 변경이 r570 이후 GMCAPI RPC 바이너리 계약과 맞는지 원문을 확인하세요."
+    },
+    {
+      "title": "drm/vino v3: DisplayLink DL3 패널 출력 성공",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "Rust-for-Linux·LLVM 커널 빌드·DRM/KMS Rust 드라이버·DisplayLink 하드웨어 사용자",
+      "verifyLink": "https://lore.kernel.org/llvm/20260826163913.7052-1-mike@fireburn.co.uk/",
+      "if": "CONFIG_RUST=y·make LLVM=1·drm-rust-next 위 Rust DRM/KMS 스택 통합을 추적하는 경우",
+      "do": "DL-3x00·6xxx(D6000)·7400 세 세대 DockProfile 단일 경로와 EDID engage 커넥터 셀렉터 1바이트 수정 내용을 확인하세요.",
+      "verify": "safe KMS layer만 사용하고 bindings::drm_ 직접 호출이 없는지 패치와 빌드 의존성을 대조하세요."
+    },
+    {
+      "title": "rust crypto v3: in-tree CMAC·akcipher RSA",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust-for-Linux crypto 바인딩·linux-crypto 동기 API·장치 인증 Rust 드라이버 작성자",
+      "verifyLink": "https://lore.kernel.org/llvm/20260826163004.3365-1-mike@fireburn.co.uk/",
+      "if": "Rust crypto 바인딩이 C crypto 스택을 우회하지 않도록 설계하는 경우",
+      "do": "수제 AES-CMAC 제거와 in-tree aes_cmac 위임, crypto_alloc_akcipher(\"rsa\")·메모리 삭제형 secret 타입 변경을 리뷰하세요.",
+      "verify": "Eric Biggers가 요청한 CMAC 재사용과 akcipher RSA 래핑이 동기 crypto API 경로로 동작하는지 스레드를 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ARM: imx: Fix suspend/resume crash with Clang CFI**\n\nYo'av Moshe가 Nick Desaulniers 제안을 반영한 후속 diff 상태를 보고했다. struct tail padding에 cfi_type이 들어가 ±8 산술을 제거했고, cfi_get_func_hash()와 SYM_TYPED_FUNC_START/SYM_FUNC_END 전환을 적용했다. 함수 엔트리 정렬을 위해 매크로 앞에 작은 수동 패드만 유지하며 v4 노트에 상세를 적을 예정이다.\n\n영향: CONFIG_CFI=y Clang 빌드에서 i.MX suspend 코드를 OCRAM로 fncpy할 때 kCFI 타입 해시·8바이트 정렬을 어떻게 배치할지 upstream 설계가 수렴하는 단계이며, 배치가 틀리면 ARM suspend/resume이 조용히 깨진다.\n\n> All three suggestions worked great. cfi_type fits exactly in the struct's tail padding so I removed the ±8 arithmetic, cfi_get_func_hash() works as you suggested, and I've switched to SYM_TYPED_FUNC_S\n\n[원문 확인](https://lore.kernel.org/llvm/ca86be7a-7439-49cb-9deb-8d565ca0b1dd@yoavmoshe.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**gpu: nova-core: add NVKV codec**\n\nEliot Courtney v2 8패치가 GSP 통신용 NVKV wire format 인코더·디코더와 nvkv_encode!/nvkv_decode! 매크로, GSP_INIT 스키마를 추가한다. rust alloc에 Vec::try_push_init·push_init·ArrayVec를 넣고 Danilo EncodedStream·zerocopy 선행 패치에 의존한다. drm-rust-next(4c9ba407018e) 기준이며 command queue 연동은 후속이다.\n\n영향: NVKV는 r570 이후 GMCAPI RPC의 바이너리 계약이며, nova-core Rust GSP 드라이버가 C 없이 펌웨어 메시지를 타입 안전하게 직렬화하는 패턴(ArrayVec·Schema trait·매크로)을 정한다.\n\n> Essentially, the format encodes a sequence of calls to some function f(key, index, value), where value is a [u8], u32, u64, [u32], or a [u64].\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260827-b4-nvkv-v2-0-0de9d5c8658c@nvidia.com/)\n\n**drm/vino: a Rust driver for DisplayLink DL3 docks (v3 진척)**\n\nv3 13패치에서 v1/v2와 달리 실제 패널 출력에 성공했으며 DL-3x00·6xxx(D6000)·7400 세 세대를 DockProfile 데이터로 단일 코드 경로 지원한다. EDID engage 커넥터 셀렉터 1바이트 버그 수정 후 동작했고 safe KMS layer만 사용한다.\n\n영향: CONFIG_RUST=y·make LLVM=1·drm-rust-next 위에서 usb·crypto·drm·firmware 바인딩 스택을 통합 검증하는 참조 구현이며, upstream 바인딩 시리즈의 실사용 부담과 빌드 의존성을 보여준다.\n\n> The headline change since v2 is not a refactor. v1 and v2 never lit a panel. This one does, on three generations of dock, driving a real desktop, from a cold boot\n\n[원문 확인](https://lore.kernel.org/llvm/20260826163913.7052-1-mike@fireburn.co.uk/)\n\n**rust: crypto: AES, CMAC, SHA-256, HMAC and RSA bindings (v3)**\n\nv3 2패치가 동기 crypto API 위 AES-128·AES-CMAC·SHA-256·HMAC 바인딩과 akcipher RSA 바인딩을 추가한다. v2 수제 AES-CMAC은 제거되고 in-tree aes_cmac으로 위임하며, RSA는 crypto_alloc_akcipher(\"rsa\")와 메모리 삭제형 secret 타입을 사용한다.\n\n영향: Eric Biggers가 요청한 in-tree CMAC 재사용과 akcipher 경유 RSA 래핑은 Rust crypto 바인딩이 C crypto 스택을 우회하지 않도록 하는 선례가 된다.\n\n> The hand-rolled AES-CMAC is gone, along with its own dbl() subkey derivation. It delegates to the in-tree aes_cmac library through include/crypto/aes-cbc-macs.h, which is what Eric Biggers asked for\n\n[원문 확인](https://lore.kernel.org/llvm/20260826163004.3365-1-mike@fireburn.co.uk/)\n\n**rust: usb: host-side abstractions for a bulk-endpoint driver (v3)**\n\nv3 5패치에서 v2 Device 은닉·as_bound()·reset_configuration()은 제거되고 lifecycle gating으로 대체된다. revocable interface I/O, 재사용 URB·persistent bulk queue, Colin Braun URB RFC를 변경 없이 기반으로 사용한다.\n\n영향: Oliver Neukum·Danilo Krummrich 리뷰로 USB 계층 위반·unsafe escape hatch 없이 lifecycle-gated I/O를 설계한 사례는 Rust USB 바인딩의 소유권·수명 모델 선례가 된다.\n\n> Oliver Neukum was right that it was conceptually wrong: USB does device level operations, and hiding that behind an interface is a layering violation. Device stays public\n\n[원문 확인](https://lore.kernel.org/llvm/20260826163101.4168-1-mike@fireburn.co.uk/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ARM: imx: Fix suspend/resume crash with Clang CFI",
+      "url": "https://lore.kernel.org/llvm/ca86be7a-7439-49cb-9deb-8d565ca0b1dd@yoavmoshe.com/",
+      "note": "thread"
+    },
+    {
+      "title": "fncpy 8-byte alignment requirement",
+      "url": "https://lore.kernel.org/llvm/CAKwvOdmT=Q+etTTJUna4ZAg1=eXwaT9cSDy=U0s15UT-3TOu1Q@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "gpu: nova-core: add NVKV codec v2",
+      "url": "https://lore.kernel.org/rust-for-linux/20260827-b4-nvkv-v2-0-0de9d5c8658c@nvidia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/vino: a Rust driver for DisplayLink DL3 docks",
+      "url": "https://lore.kernel.org/llvm/20260826163913.7052-1-mike@fireburn.co.uk/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: crypto: AES, CMAC, SHA-256, HMAC and RSA bindings",
+      "url": "https://lore.kernel.org/llvm/20260826163004.3365-1-mike@fireburn.co.uk/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: usb: host-side abstractions for a bulk-endpoint driver",
+      "url": "https://lore.kernel.org/llvm/20260826163101.4168-1-mike@fireburn.co.uk/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-27T18:32:49.974Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
