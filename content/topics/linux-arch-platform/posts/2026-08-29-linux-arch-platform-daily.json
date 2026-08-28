@@ -1,0 +1,123 @@
+{
+  "id": "2026-08-29-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-08-29 SMMU·CFI 수정 — Arch·Platform",
+  "headline": "SMMUv3 L2 테이블 ordering 보완, arm64 show_pte lockless race 수정, i.MX6 Clang CFI suspend v4, KVM cross-arch selftest 변경이 리뷰·검증 단계다.",
+  "date": "2026-08-29",
+  "summary": "arm-smmu-v3에 L1 descriptor publish 전 L2 stream/context table 가시성을 보장하는 dma_wmb()가 추가되었고, arm64 show_pte()는 lockless walk race를 gup_fast()식 saved parent entry helper로 막는 v2가 올라왔다. i.MX6 OCRAM suspend의 Clang CFI panic은 v4에서 Kobo Clara HD 실기 검증되었고, KVM은 s390 arm64 모듈 boilerplate와 selftest GPA 상향이 cross-arch 테스트에 영향을 준다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "arm-smmu-v3 L2 table 가시성 ordering",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "ARM SMMUv3 드라이버·IOMMU/디바이스 DMA 격리를 다루는 arm64/arm 플랫폼 개발자",
+      "verifyLink": "https://patchew.org/linux/20260828125409.1921538-1-smostafa@google.com/20260828125409.1921538-2-smostafa@google.com/",
+      "if": "ARM SMMUv3를 쓰는 SoC에서 stream/context table L1 descriptor publish 경로를 추적하는 경우",
+      "do": "arm_smmu_write_strtab_l1_desc()·arm_smmu_write_cd_l1_desc()에 추가된 dma_wmb()와 hitless STE update 경로의 기존 barrier 배치를 함께 대조하십시오",
+      "verify": "L1 WRITE_ONCE() 전 zero-cleared L2 table 내용이 SMMU에 보이는지 원문 스레드와 Reviewed-by 답글을 확인하세요"
+    },
+    {
+      "title": "arm64 show_pte() lockless walk race",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "arm64 MM/fault handling 및 lockless page-table walk를 다루는 아키텍처·메모리 관리 개발자",
+      "verifyLink": "https://marc.info/?i=20260828174131.46825-1-kmehltretter@gmail.com",
+      "if": "arm64 fault 진단 중 concurrent munmap/khugepaged collapse와 겹쳐 nested fault나 garbage oops가 보이는 경우",
+      "do": "v2의 lockless offset helper·pte_offset_map(&pmd) 변경과 task page table IRQ guard 위치를 MM 디버그·KASAN 환경에서 추적하십시오",
+      "verify": "gup_fast()와 동일한 saved parent entry 경로와 header print 이후 guard(irqsave)() 배치가 v2에 반영됐는지 lore 스레드를 확인하세요"
+    },
+    {
+      "title": "i.MX6 OCRAM suspend Clang CFI v4",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "i.MX6 전력관리·Clang/CFI 빌드를 쓰는 ARM32 플랫폼 유지보수자",
+      "verifyLink": "https://marc.info/?i=CAKwvOdkSZBbq=e916=efx8G-CTzZ5b31AhyUytO6eJjjkEdMow@mail.gmail.com",
+      "if": "CONFIG_CFI=y Clang 빌드에서 i.MX6 suspend/resume indirect call panic이 재현되는 경우",
+      "do": "v4의 SYM_TYPED_FUNC_START()·cfi_type tail padding·cfi_get_func_hash() 경로와 v3 __nocfi 래퍼 제거 여부를 postmarketOS·Kobo Clara HD 계열 보드와 대조하십시오",
+      "verify": "Kobo Clara HD(i.MX6SLL) suspend/resume 성공 보고와 Nick Desaulniers의 cfi.h IWYU 수정 요구가 open question으로 남아 있는지 원문을 확인하세요"
+    },
+    {
+      "title": "KVM selftest 최소 GPA 상향",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "KVM selftests·cross-arch page table allocation을 다루는 arm64/s390/LoongArch 가상화 개발자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/08/26/2172",
+      "if": "KVM_GUEST_PAGE_TABLE_MIN_PADDR 변경이 cross-arch selftest 회귀를 유발했는지 점검하는 경우",
+      "do": "0x180000→0x200000 상향과 LoongArch vm_alloc_page_table() 사용 경로, s390/cmma_test 실패 보고를 함께 추적하십시오",
+      "verify": "Claudio Imbrenda의 quick fix 불충분 답변과 proper fix 공개 시점이 아직 없는지 marc 스레드를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**arm64: mm: Fix the lockless page-table walk in show_pte()**\n\nshow_pte() v2는 lockless walk 중 테이블 해제·부모 엔트리 clear race를 gup_fast()처럼 saved parent entry 기반 lockless offset helper와 pte_offset_map(&pmd)로 막고, task page table에는 header print 이후 guard(irqsave)()로 RCU-deferred free와 tlb_remove_table_sync_one() IPI를 차단합니다.\n\n영향: arm64 fault 진단 경로에서 concurrent munmap/khugepaged collapse와 겹치면 freed page table을 다시 dereference해 nested fault나 garbage oops가 날 수 있어, MM 디버그·KASAN 환경의 arm64 플랫폼 엔지니어가 추적할 회귀 수정입니다.\n\n> Use the lockless offset helpers with the saved parent entries, as\ngup_fast() does, and pass the saved PMD to pte_offset_map().\n\nFor task page tables, arm64 selects MMU_GATHER_RCU_TABLE_FREE.\n\n[원문 확인](https://marc.info/?i=20260828174131.46825-1-kmehltretter@gmail.com)\n\n**iommu/arm-smmu-v3: Ensure L2 tables are visible before L1 ptrs**\n\narm_smmu_write_strtab_l1_desc()와 arm_smmu_write_cd_l1_desc()에 dma_wmb()를 추가해, L1 descriptor WRITE_ONCE() 전에 zero-cleared L2 stream/context table 내용이 SMMUv3에 보이도록 합니다.\n\n영향: 기존 hitless STE update용 dma_wmb()는 arm_smmu_write_entry()에만 있었고 L1 pointer publish 경로는 빠져 있어, SMMU가 초기화되지 않은 L2 table을 fetch할 수 있는 ordering hole이 ARM SMMUv3를 쓰는 SoC·가상화/IOMMU 스택에 보안·안정성 영향을 줍니다.\n\n> However, STE L1 table descriptors are configured directly\nvia WRITE_ONCE(), where before that they were zeroed with memset()\ninside dma_direct_alloc() then written to abort in via memset() also\n\n[원문 확인](https://patchew.org/linux/20260828125409.1921538-1-smostafa@google.com/20260828125409.1921538-2-smostafa@google.com/)\n\n**KVM: selftests: Bump the minimum GPA for page tables to 0x200000**\n\nSean Christopherson의 KVM selftests PPC pre-enabling 시리즈는 공유 kvm_util.h의 KVM_GUEST_PAGE_TABLE_MIN_PADDR를 0x180000에서 0x200000(LoongArch minimum)으로 올려 LoongArch가 vm_alloc_page_table()을 쓰게 합니다.\n\n영향: 공유 selftest GPA 상수 변경은 arm64를 포함한 다아키텍처 KVM 테스트 하네스에 영향을 주며, Claudio Imbrenda는 s390/cmma_test가 깨졌고 quick fix로는 부족하다고 보고해 cross-arch test infra 변경의 회귀 리스크를 드러냅니다.\n\n> Bump selftests completely arbitrary minimum GPA for page tables from\n0x180000 to 0x200000 (LoongArch's minimum), so that LoongArch can use\nvm_alloc_page_table() instead of open coding a rough equivale\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/08/26/2172)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**ARM: imx: Fix suspend/resume crash with Clang CFI**\n\nv4는 i.MX6 OCRAM suspend 경로에서 fncpy()가 kCFI type hash를 복사하지 않아 CONFIG_CFI=y에서 indirect call이 panic 나던 문제를, __nocfi 래퍼 대신 SYM_TYPED_FUNC_START(), struct imx6_cpu_pm_info tail padding의 cfi_type, cfi_get_func_hash()로 해결하고 관련 포인터를 __ro_after_init로 고정합니다.\n\n영향: Clang+CFI로 i.MX6 계열(특히 postmarketOS 등) suspend/resume을 쓰는 32-bit ARM 플랫폼은 v3의 CFI 예외 축소보다 안전한 경로가 필요하며, v4는 Kobo Clara HD(i.MX6SLL) 실기에서 suspend/resume 성공을 보고합니다. Nick Desaulniers는 include/linux/cfi.h IWYU 누락을 pm-imx6.c 워크어라운드가 아니라 cfi.h 수정으로 풀 것을 요구했고, inline .align/.4byte 패드 대신 cfi_types.h 매크로화 여부는 아직 열려 있습니다. v4 패치의 최종 머지 여부와 stable backport 범위는 아직 확인되지 않았습니다.\n\n> Changes in v4, all following Nick's suggestions:\n- Drop the v3 __nocfi wrapper; keep the indirect call CFI-checked.\n- Store the hash in a cfi_type member in the struct's tail padding\n\n[원문 확인](https://marc.info/?i=CAKwvOdkSZBbq=e916=efx8G-CTzZ5b31AhyUytO6eJjjkEdMow@mail.gmail.com)\n\n**KVM: s390: Add basic arm64 kvm module**\n\nSteffen Eiden의 arm-on-s390 KVM v6 시리즈 28/33은 arch/s390/kvm/arm64/에 kvm-arm64 모듈 boilerplate, tracing, generated arm64 code include, kvm_max_guest_address() 등 기본 골격을 추가합니다.\n\n영향: s390에서 Start Arm Execution(SAE)로 arm64 guest를 가속하려면 KVM/arm64 헤더·코드를 s390 쪽으로 추출·공유하는 대규모 아키텍처 재배치가 진행 중이며, arm64 KVM 코드 변경이 s390 공유 경로에도 영향을 줄 수 있습니다. Janosch Frank는 kvm_max_guest_address()의 MSLA+1-MSOA>MGPAS(VIR code 4) 가능성을 질문했고 Steffen Eiden은 qmc support가 있는 series 2에서 MGPAS 검증을 추가할 것이라 답했습니다. v6 33-patch 시리즈 전체의 review/merge 일정과 arm64 KVM 공유 코드 추출 방식이 downstream distro에 미치는 시점은 아직 불명확합니다.\n\n> Add basic code for the new arm64 on s390 KVM implementation.\nAdd kernel module boilerplate code and trivial functions.\nAdd tracing scaffolding.\n\n[원문 확인](https://patchew.org/linux/20260812153631.3376090-1-seiden@linux.ibm.com/20260812153631.3376090-29-seiden@linux.ibm.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ARM: imx: Fix suspend/resume crash with Clang CFI v4",
+      "url": "https://marc.info/?i=CAKwvOdkSZBbq=e916=efx8G-CTzZ5b31AhyUytO6eJjjkEdMow@mail.gmail.com",
+      "note": "thread"
+    },
+    {
+      "title": "i.MX6 CFI v4 Nick 제안 반영 답글",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/27/1576",
+      "note": "thread"
+    },
+    {
+      "title": "arm64: mm: Fix the lockless page-table walk in show_pte() v2",
+      "url": "https://marc.info/?i=20260828174131.46825-1-kmehltretter@gmail.com",
+      "note": "thread"
+    },
+    {
+      "title": "show_pte() v2 IRQ guard 위치 리뷰",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/28/205",
+      "note": "thread"
+    },
+    {
+      "title": "iommu/arm-smmu-v3: Ensure L2 tables are visible before L1 ptrs",
+      "url": "https://patchew.org/linux/20260828125409.1921538-1-smostafa@google.com/20260828125409.1921538-2-smostafa@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM: s390: Add basic arm64 kvm module",
+      "url": "https://patchew.org/linux/20260812153631.3376090-1-seiden@linux.ibm.com/20260812153631.3376090-29-seiden@linux.ibm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM: selftests: Bump the minimum GPA for page tables to 0x200000",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/26/2172",
+      "note": "thread"
+    },
+    {
+      "title": "s390/cmma_test 회귀 보고",
+      "url": "https://marc.info/?i=20260828195848.2d14e9aa@p-imbrenda",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-28T19:04:59.161Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

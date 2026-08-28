@@ -1,0 +1,138 @@
+{
+  "id": "2026-08-29-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-08-29 i.MX6 CFI 수정 — Linux 툴체인",
+  "headline": "i.MX6 Clang CFI suspend v4 수정, Rust cpufreq NULL 회귀, container TOML·kbuild SBOM·cv! 매크로",
+  "date": "2026-08-29",
+  "summary": "Clang CFI 빌드에서 i.MX6 suspend 경로 패닉을 SYM_TYPED_FUNC_START와 cfi_type tail padding으로 유지하며 고치는 v4가 제출됐습니다. Rust cpufreq NULL oops 회귀 수정, scripts/container TOML 프로필, kbuild make_prereqs 메타데이터, cv! 상수 변환 매크로도 함께 논의 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "ARM i.MX6 suspend/resume Clang CFI 패닉 v4 수정",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "Clang/LLVM CFI 빌드 담당, i.MX6 전력관리·ARM mach-imx 유지보수자",
+      "verifyLink": "https://lore.kernel.org/llvm/20260827194508.446733-1-linux@yoavmoshe.com/",
+      "if": "Clang/LLVM CFI로 i.MX6 계열 suspend/resume를 빌드·백포트한다면",
+      "do": "v4의 SYM_TYPED_FUNC_START·cfi_type tail padding·cfi_get_func_hash() 접근을 검토하세요",
+      "verify": "lore 스레드에서 fncpy() kCFI hash 미복사 패닉 원인과 Kobo Clara HD 검증 내용을 확인하세요"
+    },
+    {
+      "title": "Rust cpufreq PolicyCpu::from_cpu() NULL oops 회귀",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Rust for Linux cpufreq 추상화 사용자, cpufreq 서브시스템 Rust 드라이버 개발자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260828161834.29539-1-mehmet.mkoseoglu@gmail.com/",
+      "if": "Rust cpufreq 추상화나 PolicyCpu::from_cpu()를 쓰는 드라이버·KUnit 테스트를 작성한다면",
+      "do": "NonNull 검사 후 ENODEV를 반환하는 수정 패치 적용 여부를 확인하세요",
+      "verify": "KUnit negative-control로 oops 재현·수정 후 통과 결과를 lore 스레드에서 확인하세요"
+    },
+    {
+      "title": "scripts/container TOML 프로필 지원",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "scripts/container·tuxmake 이미지를 쓰는 커널 빌드/CI 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/08/28/447",
+      "if": "컨테이너 기반 LLVM/GCC 커널 빌드에서 반복 옵션을 관리한다면",
+      "do": ".container.toml 프로필과 -p/-c 옵션으로 clang 빌드 명령을 단순화하세요",
+      "verify": "v2 스레드에서 uid/gid=0(root)이 False로 무시되던 버그 수정을 확인하세요"
+    },
+    {
+      "title": "kbuild .cmd에 real-prereqs 메타데이터 기록",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "KernelSbom·kbuild 메타데이터 소비자, kbuild 유지보수자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/08/14/939",
+      "if": "SBOM·빌드 그래프 도구가 .cmd 메타데이터에 의존한다면",
+      "do": "make_prereqs_<target> 필드 도입과 KernelSbom 직접 prerequisite 읽기 흐름을 추적하세요",
+      "verify": "incremental 빌드에서 make_prereqs_* 내용 불일치 이슈와 v2 해소 여부를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**rust: cpufreq: reject NULL from cpufreq_cpu_get()**\n\nPolicyCpu::from_cpu()가 cpufreq_cpu_get()의 NULL 반환을 from_err_ptr()로 통과시켜 Policy::from_raw_mut(NULL)과 cpufreq_cpu_put() 경로에서 oops가 나던 버그를, NonNull 검사 후 ENODEV를 반환하도록 고칩니다.\n\n영향: Rust cpufreq 추상화를 쓰는 드라이버·KUnit 테스트 작성자에게 NULL policy 조회가 즉시 커널 oops로 이어지는 회귀 버그이며, C 바인딩 계약과 Rust 안전 래퍼 간 불일치를 보여 줍니다.\n\n> PolicyCpu::from_cpu() passed its return value to from_err_ptr(), which rejects ERR_PTR values but accepts NULL.\n\n> A KUnit negative-control run reproduced the oops with the original conversion. The same test passed with this change.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260828161834.29539-1-mehmet.mkoseoglu@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**ARM: imx: Fix suspend/resume crash with Clang CFI**\n\ni.MX6 OCRAM suspend 경로에서 fncpy()가 kCFI type hash를 복사하지 않아 CONFIG_CFI=y 빌드 시 imx6_suspend_in_ocram_fn 간접 호출이 패닉하던 문제를, v4에서 __nocfi 래퍼 대신 SYM_TYPED_FUNC_START·struct tail padding의 cfi_type·cfi_get_func_hash()로 CFI 검사를 유지하며 수정합니다.\n\n영향: Clang/LLVM+CFI로 i.MX6 계열(특히 suspend/resume)을 빌드·백포트하는 팀은 v3의 CFI 예외 축소와 달리 v4가 하드웨어 실기(Kobo Clara HD)에서 검증된 CFI 유지 해법이라, 툴체인·하드닝 정책 선택에 직접 영향을 줍니다.\n\n> fncpy(), which does not copy the kCFI type hash preceding the function. With CONFIG_CFI=y the indirect call through imx6_suspend_in_ocram_fn therefore panics.\n\n> cfi_type fits exactly in the struct's tail padding so I removed the ±8 arithmetic, cfi_get_func_hash() works as you suggested, and I've switched to SYM_TYPED_FUNC_START/SYM_FUNC_END.\n\n[원문 확인](https://lore.kernel.org/llvm/20260827194508.446733-1-linux@yoavmoshe.com/)\n\n**scripts: add TOML config to container tool**\n\nscripts/container에 .container.toml TOML 설정과 named profile(-p), 경로 지정(-c)을 추가해 이미지·런타임·UID/GID 등 반복 옵션을 파일로 관리합니다. CLI 인자가 프로필·DEFAULT보다 우선합니다.\n\n영향: 컨테이너 기반 LLVM/GCC 커널 빌드 워크플로에서 clang 프로필 등 툴체인 전환을 scripts/container -p clang -- make defconfig처럼 단순화해, 팀 공통 빌드 설정 표준화에 유용합니다.\n\n> Add support for a TOML configuration file to the scripts/container tool.\n\n> scripts/container -p clang -- make defconfig\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/08/28/447)\n\n**kbuild: record real-prereqs in .cmd files**\n\nKbuild가 .cmd 파일에 make_prereqs_<target> := $(real-prereqs) 메타데이터를 기록하도록 cmd_and_savecmd·fixdep·make_fit.py를 확장합니다. KernelSbom이 savedcmd 셸 명령 파싱 대신 직접 prerequisite를 읽을 수 있게 합니다.\n\n영향: SBOM·빌드 그래프 도구가 .cmd 메타데이터에 의존하는 흐름에서, 셸 명령별 파서 유지 부담을 줄이는 kbuild 인프라 개선으로 툴체인·컴플라이언스 파이프라인 설계에 영향을 줍니다.\n\n> some Make prerequisites also appear in deps_*, so the filter dropped them from make_prereqs_* on incremental builds.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/08/21/1940)\n\n**rust: introduce cv! macro for safe const conversions of integer-like types**\n\nRust 커널에 cv! 매크로와 FromConst 트레이트를 도입해 NonZero·Bounded·Alignment 등 정수 상수 변환을 컴파일 타임에 검증하며, nova-core 등에서 casts:: 헬퍼·unsafe as 대체를 시연합니다.\n\n영향: Rust for Linux 코드베이스에서 상수 캐스팅·타입 안전성 패턴을 표준화하려는 툴체인 수준 변화로, 새 드라이버·바인딩 작성 시 변환 API 선택 기준에 영향을 줍니다.\n\n> This series introduces the cv! (\"const value\") macro for safe compile time conversions of integer-like types.\n\n> const DMA_LEN: u32 = cv!(MEM_BLOCK_ALIGNMENT);\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/08/28/762)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "v4 패치가 fncpy()가 kCFI hash를 복사하지 않아 CONFIG_CFI=y에서 간접 호출이 패닉한다고 설명",
+      "url": "https://lore.kernel.org/llvm/20260827194508.446733-1-linux@yoavmoshe.com/",
+      "note": "thread"
+    },
+    {
+      "title": "v4는 SYM_TYPED_FUNC_START·cfi_type tail padding·cfi_get_func_hash()로 CFI를 유지",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/27/1576",
+      "note": "thread"
+    },
+    {
+      "title": "fncpy 8바이트 정렬 요구와 SYM_TYPED_FUNC_START 정렬 충돌이 실제 하드웨어 부팅 실패 원인",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/24/1374",
+      "note": "thread"
+    },
+    {
+      "title": "패치 제출 메시지가 NULL 허용 버그와 ENODEV 수정을 설명",
+      "url": "https://lore.kernel.org/rust-for-linux/20260828161834.29539-1-mehmet.mkoseoglu@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "v2 패치가 TOML 설정·profile·-c/-p 옵션 추가",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/28/447",
+      "note": "thread"
+    },
+    {
+      "title": "문서 예시가 clang 프로필로 LLVM 빌드 명령 단순화",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/28/448",
+      "note": "thread"
+    },
+    {
+      "title": "v2에서 uid/gid=0(root)이 False로 무시되던 버그 수정",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/28/470",
+      "note": "thread"
+    },
+    {
+      "title": "incremental 빌드에서 make_prereqs_* 내용이 clean 빌드와 달라질 수 있음",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/21/1940",
+      "note": "thread"
+    },
+    {
+      "title": "시리즈 커버레터가 cv! 문법과 FromConst 설계 설명",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/28/762",
+      "note": "thread"
+    },
+    {
+      "title": "cv!가 i128로 widen 후 FromConst로 빌드 타임 검증",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/28/749",
+      "note": "thread"
+    },
+    {
+      "title": "nova-core가 cv!로 기존 casts:: 호출을 대체",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/28/761",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-28T18:53:33.352Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
