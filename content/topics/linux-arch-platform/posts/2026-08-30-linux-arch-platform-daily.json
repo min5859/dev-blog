@@ -1,0 +1,143 @@
+{
+  "id": "2026-08-30-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-08-30 MT7986 타이머 — 아키·플랫폼",
+  "headline": "MT7986 타이머 12.98 MHz 보정, Synology wakealarm·RISC-V TLB tracepoint·JHB100 pinctrl 등 플랫폼 패치가 제출·재제출되었습니다.",
+  "date": "2026-08-30",
+  "summary": "MT7986 architected timer clock-frequency를 12,986,200 Hz로 명시하는 upstream 패치가 NTP 500 ppm 한도 초과 회귀와 직결된 증상을 겨냥합니다. RISC-V TLB flush 경로 tracepoint RFC, Synology NAS wakealarm pinctrl, StarFive JHB100 sys0 바인딩, zh_CN vm-layout 번역 갱신도 함께 올라왔습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "arm64: dts: mediatek: mt7986: correct timer frequency",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "MediaTek MT7986/filogic 플랫폼·DTS 유지보수자, 임베디드 NTP/시계 담당",
+      "verifyLink": "https://github.com/openwrt/openwrt/pull/24943",
+      "if": "MT7986/filogic에서 NTP가 +500 ppm에 고정되거나 수십 ms 오프셋이 남는다면 timer clock-frequency 가정을 의심하세요.",
+      "do": "upstream DTS에 12,986,200 Hz를 반영하고 OpenWrt·MediaTek feed의 12986200 수정과 동기화하세요.",
+      "verify": "GL-MT6000 등 대상 DTB의 /timer clock-frequency와 NTP 보정 한도(500 ppm) 이내 수렴 여부를 확인하세요."
+    },
+    {
+      "title": "rtc: s35390a: Allow use of output pin for interrupt signal 1 for wakealarm (v7)",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "ARM NAS/RTC 플랫폼 유지보수자, Synology 계열 wake-from-RTC 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/08/23/639",
+      "if": "Synology Kirkwood/Armada NAS에서 wake alarm이 동작하지 않거나 devicetree에 INT1 pinctrl가 없다면 해당 quirk·바인딩을 따라가세요.",
+      "do": "v7 6패치 시리즈의 pinctrl 바인딩과 DMI 기반 Synology quirk 적용 여부를 리뷰·테스트 계획에 넣으세요.",
+      "verify": "대상 NAS에서 wakealarm 동작과 ACPI 경로(DMI vendor \"Synology Inc.\") fallback을 실보드로 확인하세요."
+    },
+    {
+      "title": "riscv: mm: Trace TLB flush path selection",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "RISC-V MM/TLB shootdown 유지보수자, SMP·firmware 경계 디버깅 담당",
+      "verifyLink": "https://lpc.events/event/20/contributions/2342/",
+      "if": "RISC-V에서 원격 TLB shootdown 지연을 볼 때 SBI RFENCE와 Linux IPI 경로를 구분할 관측 수단이 필요하다면 RFC tracepoint를 검토하세요.",
+      "do": "flush_tlb_all()·__flush_tlb_range()에 추가되는 riscv_tlb:riscv_tlb_flush_path와 기존 riscv:sbi_call RFENCE 상관 관측을 perf/ftrace로 시험하세요.",
+      "verify": "QEMU virt 외 APLIC+IMSIC·실보드에서 cross-CPU 경로와 hot path tracepoint 오버헤드·enable 정책은 확인이 필요합니다."
+    },
+    {
+      "title": "dt-bindings: pinctrl: Add starfive,jhb100-sys0-pinctrl",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "StarFive JHB100 플랫폼·pinctrl 드라이버 유지보수자, RISC-V DT 작성자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/08/10/281",
+      "if": "JHB100 RISC-V 보드 bring-up에서 sys0 pinctrl·GPIO DT 모델을 맞춰야 한다면 v6 sys0 바인딩 재제출을 추적하세요.",
+      "do": "3-cell #gpio-cells와 4-tuple gpio-ranges instance 모델을 드라이버·DT 작성과 일치시키고 Linus Walleij 리뷰의 32 GPIO/instance 설명을 커밋 메시지에 반영하세요.",
+      "verify": "dt_binding_check·gpio-ranges 스키마 오류 해결 여부와 21패치 시리즈 머지 일정은 확인이 필요합니다."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**arm64: dts: mediatek: mt7986: correct timer frequency**\n\nAndrea Pesaresi가 MT7986 architected timer 실제 주파수 12,986,200 Hz를 DTS timer 노드 clock-frequency로 명시하는 upstream 패치를 제출했습니다. 펌웨어 CNTFRQ_EL0의 13 MHz 보고와 약 1062 ppm 차이로 시계가 느려지고 NTP 500 ppm 보정 한도를 넘깁니다.\n\n영향: MT7986/filogic 라우터·AP에서 NTP가 +500 ppm에 고정되고 수십 ms 오프셋이 남는 증상과 직결됩니다. OpenWrt·다운스트림은 MediaTek feed 수정(12986200)을 upstream 반영해야 합니다.\n\n> The resulting 1062 ppm discrepancy exceeds the kernel's 500 ppm NTP correction limit.\n\n[원문 확인](https://github.com/openwrt/openwrt/pull/24943)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**riscv: mm: Trace TLB flush path selection**\n\nRoman Storozhenko가 RISC-V TLB 무효화 시 Linux가 local·SBI RFENCE·cross-CPU(IPI) 중 어느 경로를 택하는지 기록하는 riscv_tlb:riscv_tlb_flush_path tracepoint RFC를 linux-riscv에 제출했습니다. flush_tlb_all()과 __flush_tlb_range()에서 범위·stride·ASID·대상 CPU mask·선택 경로를 기록합니다.\n\n영향: 원격 TLB shootdown 지연을 볼 때 펌웨어(SBI) 경로인지 Linux IPI 경로인지 구분할 관측 수단이 없어 디버깅이 어려웠습니다. RISC-V MM·SMP 추적자는 perf/ftrace로 이 선택을 직접 상관시킬 수 있습니다.\n\n> The proposed tracepoint records the requested flush range, stride, ASID, target CPU count, flush type, threshold decision, and selected transport path: local, SBI remote fence, or IPI fallback.\n\n[원문 확인](https://lpc.events/event/20/contributions/2342/)\n\n**rtc: s35390a: Allow use of output pin for interrupt signal 1 for wakealarm (v7)**\n\nMarkus Probst가 S35390A RTC에 pinctrl를 추가해 INT1 출력 핀을 wakealarm에 쓸 수 있게 하는 6패치 시리즈 v7을 linux-arm-kernel에 재제출했습니다. Synology NAS는 INT1로 wake해야 하며, ACPI에서는 pinctrl를 못 쓰므로 DMI 기반 Synology quirk도 포함됩니다.\n\n영향: Synology Kirkwood/Armada NAS 다수에서 wake alarm이 devicetree 설정 부재로 동작하지 않을 수 있습니다. 플랫폼·RTC 드라이버 담당자는 pinctrl 바인딩·quirk 적용 여부를 따라가야 합니다.\n\n> Add pinctrl to allow the use of output pin for interrupt signal 1 for wakealarm. This is needed for wakealarms to work on Synology NAS devices.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/08/23/639)\n\n**dt-bindings: pinctrl: Add starfive,jhb100-sys0-pinctrl**\n\nChanghuang Liang가 StarFive JHB100 SoC sys0 pinctrl 바인딩(v6 시리즈 03/21)을 재제출했습니다. 32 GPIO마다 레지스터 주소가 달라 3-cell #gpio-cells와 4-tuple gpio-ranges로 GPIO instance·offset을 표현해 드라이버의 /32·%32 연산을 줄입니다.\n\n영향: JHB100 RISC-V 보드 bring-up에 pinctrl/GPIO DT 모델이 선행 조건입니다. StarFive·DT 작성자는 sys0 도메인(4 pad, auxpwrgood/gpio/hbled/pe2rst_out) 바인딩과 instance 모델을 맞춰야 합니다.\n\n> The JHB100 SoC has 13 pinctrl domains - sys0, sys0h, sys1, sys2, per0, per1, per2, per2pok, per3, adc0, adc1, emmc, and vga.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/08/10/281)\n\n**docs/zh_CN: Update arch/riscv/vm-layout.rst translation**\n\nYukai Wu가 Documentation/translations/zh_CN/arch/riscv/vm-layout.rst 번역을 upstream commit 954260ff5a46(Userspace VAs/mmap 절 revert)까지 동기화하는 패치를 linux-riscv에 제출했습니다.\n\n영향: 중국어 RISC-V 문서를 보는 개발자가 SV39/SV48 레이아웃과 mmap 동작 설명을 최신 upstream과 일치시킬 수 있습니다. 플랫폼·MM 문서 추적자는 영문 vm-layout.rst 변경과 번역 갱신을 함께 봐야 합니다.\n\n> When a hint address is passed to mmap, the returned address will never use more bits than the hint address.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2024/01/30/1507)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "RISC-V TLB flush path tracepoint RFC (LPC)",
+      "url": "https://lpc.events/event/20/contributions/2342/",
+      "note": "article"
+    },
+    {
+      "title": "S35390A RTC INT1 pinctrl for wakealarm",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/23/639",
+      "note": "thread"
+    },
+    {
+      "title": "Synology DMI quirk for INT1 wakeup",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/23/644",
+      "note": "thread"
+    },
+    {
+      "title": "Synology devicetree wake alarm broken",
+      "url": "https://lkml.iu.edu/2608.2/12659.html",
+      "note": "thread"
+    },
+    {
+      "title": "StarFive JHB100 pinctrl domains",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/10/281",
+      "note": "thread"
+    },
+    {
+      "title": "JHB100 3-cell gpio and gpio-ranges model",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/29/96",
+      "note": "thread"
+    },
+    {
+      "title": "Linus Walleij review on 32 GPIO/instance",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/17/1087",
+      "note": "thread"
+    },
+    {
+      "title": "MT7986 timer frequency NTP regression",
+      "url": "https://github.com/openwrt/openwrt/pull/24943",
+      "note": "article"
+    },
+    {
+      "title": "MediaTek feed mt7986 clock-frequency 12986200",
+      "url": "https://github.com/mediatek/mtk-openwrt-feeds/commit/6a4c41c41410cd5042ad10c39da6593ba036283c",
+      "note": "commit"
+    },
+    {
+      "title": "GL-MT6000 DTB clock-frequency verification",
+      "url": "https://github.com/openwrt/openwrt/issues/24789",
+      "note": "article"
+    },
+    {
+      "title": "Revert RISC-V mmap documentation (954260ff)",
+      "url": "https://git.b0tt0m.xyz/mirror/linux/commit/954260ff5a4657eb97ad7e1618505074f1610acc.diff",
+      "note": "commit"
+    },
+    {
+      "title": "RISC-V mmap hint address bit limit",
+      "url": "https://lists.openwall.net/linux-kernel/2024/01/30/1507",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-29T18:48:22.911Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

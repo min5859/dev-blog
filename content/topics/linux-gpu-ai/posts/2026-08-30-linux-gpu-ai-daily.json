@@ -1,0 +1,113 @@
+{
+  "id": "2026-08-30-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-08-30 DCN3.2 CRC 회귀 — GPU·AI",
+  "headline": "DCN3.2 CRC engine 1 회귀 v2와 MST remote sink 전원·Tegra suspend 오류 전파, CH1115 OLED v3가 핵심입니다.",
+  "date": "2026-08-30",
+  "summary": "ef45aaf73717 이후 DCN3.2 pipe CRC가 engine 1까지 순회하면서 OTG_CRC1 레지스터 누락 WARN이 발생하고, MST payload 경로에는 remote sink D0/D3 전원 호출이 제안되었습니다. CH1115 I2C OLED DRM v3와 Tegra DC runtime suspend powergate 실패 전파 패치도 함께 올라왔습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "drm/amd/display: add missing CRC engine 1 registers and masks for DCN3.2",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "amdgpu DCN3.2 Display CRC·secure display 유지보수 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/08/29/325",
+      "if": "DCN3.2(RX 7900 XTX 등)에서 CRTC CRC debugfs·Display CRC 검증을 담당하는 경우,",
+      "do": "v2 패치 머지 여부와 ef45aaf73717 이후 engine 1 WARN·윈도 미설정 enable 회귀를 추적하세요.",
+      "verify": "openwall 325 스레드에서 OTG_CRC1 윈도·데이터 레지스터 SRI_ARR/SF 추가 내용을 확인하세요."
+    },
+    {
+      "title": "drm/amd/display: set remote MST sink power state on payload changes",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "AMD amdgpu_dm MST·DP 전원 관리 유지보수 담당",
+      "verifyLink": "https://patchew.org/linux/20260829-mst-remote-sink-power-v1-1-b9eab331e0d5@0xMax42.io/mbox",
+      "if": "DPMS off 후에도 downstream MST 디스플레이 백라이트가 남는 증상을 재현하는 경우,",
+      "do": "payload 할당 전 drm_dp_link_power_up()·제거 전 drm_dp_link_power_down() 패치의 머지 여부를 확인하세요.",
+      "verify": "patchew 스레드에서 remote sink DP_SET_POWER 미갱신 설명과 D0/D3 호출 순서를 대조하세요."
+    },
+    {
+      "title": "drm/ch1115: add support for Chipwealth CH1115 OLED controller",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "임베디드 DRM·소형 OLED 패널 통합 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/08/29/252",
+      "if": "소형 I2C 모노크롬 OLED 패널을 ST7571 계열과 유사하게 통합하는 경우,",
+      "do": "v3의 DT binding·ch1115-i2c.c API와 Christophe Jaillet 스타일 nitpick 반영 여부를 검토하세요.",
+      "verify": "openwall 252에서 CH1115 I2C DRM 드라이버·binding 제출 내용을 확인하세요."
+    },
+    {
+      "title": "drm/tegra: dc: Propagate powergate failures on suspend",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "Tegra DRM display controller·host1x 전원 관리 유지보수 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/08/29/155",
+      "if": "Tegra DC runtime suspend에서 powergate 실패가 무시되는 경로를 추적하는 경우,",
+      "do": "tegra_pmc_powergate_power_off() 실패 시 reset deassert·err 반환 패치와 상위 usecount 처리를 함께 검토하세요.",
+      "verify": "openwall 155에서 false success 방지 목적과 오류 전파 코드 변경을 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm/amd/display: add missing CRC engine 1 registers and masks for DCN3.2**\n\nv2 패치가 DCN3.2에 빠진 CRC engine 1 윈도·데이터 레지스터 SRI_ARR/SF 정의를 추가해, ef45aaf73717 이후 pipe CRC 경로가 engine 1까지 순회할 때 generic_reg_update_ex()의 ASSERT(mask != 0) WARN과 MMIO offset 0 접근을 막습니다.\n\n영향: DCN3.2(RX 7900 XTX 등)에서 CRTC CRC debugfs를 열면 부팅 후 한 번 WARN이 나고 engine 1 윈도가 미설정된 채 enable될 수 있어, amdgpu Display CRC·secure display 검증 담당자는 Fixes 커밋 이후 회귀를 추적해야 합니다. DCN2.0/3.0/3.1에도 동일 누락이 있을 수 있으나 이번 패치에는 미포함이며, RX 7900 XTX 외 DCN3.2 보드에서 engine 0 CRC 120fps 동작은 재확인이 필요합니다.\n\n> Since commit ef45aaf73717 the pipe CRC source path iterates every CRC engine, so crc_eng_inst = 1 now reaches optc1_configure_crc(). Its case 1 programs OTG_CRC1_WINDOWA/WINDOWB_X/Y_CONTROL before ena\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/08/29/325)\n\n> v2: also add the CRC1 data registers and masks (OTG_CRC1_DATA_RG, OTG_CRC1_DATA_B), spotted by Sashiko AI review. Engine 1 needs all three sets to be usable\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/08/29/325)\n\n> Iterate every CRC engine instance when enabling or disabling the pipe CRC source so DCN31x OTG_CRC1_EN is handled alongside OTG_CRC_EN\n\n[원문 확인](https://www.mail-archive.com/amd-gfx@lists.freedesktop.org/msg148066.html)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/amd/display: set remote MST sink power state on payload changes**\n\namdgpu_dm_helpers.c의 MST payload 할당/해제 경로에 drm_dp_link_power_up()·drm_dp_link_power_down()을 넣어, payload 추가 전 remote sink를 D0로, 제거 전 D3로 보내고 AUX 실패는 drm_dbg_dp로만 기록합니다.\n\n영향: 일부 downstream MST 디스플레이는 DPMS off 후에도 payload 제거만으로는 remote sink DP_SET_POWER가 갱신되지 않아 백라이트가 켜진 채 남을 수 있어, AMD MST·DP 전원 관리를 다루는 DRM 엔지니어가 패치 머지 여부를 봐야 합니다. 영향 받는 특정 MST 허브/패널 모델 목록과 AUX 오류 무시 설계의 장기 전원 불일치 여부는 확인이 필요합니다.\n\n> Some downstream MST displays keep their backlight on after DPMS off because removing the MST payload does not update DP_SET_POWER on the remote sink.\n\n[원문 확인](https://patchew.org/linux/20260829-mst-remote-sink-power-v1-1-b9eab331e0d5@0xMax42.io/mbox)\n\n**drm/ch1115: add support for Chipwealth CH1115 OLED controller**\n\nNicolás Antinori v3 시리즈(8/29)가 I2C 모노크롬 OLED 컨트롤러 CH1115용 DT binding·DRM 드라이버(ch1115-i2c.c)·MAINTAINERS 항목을 제출했고, Christophe Jaillet 리뷰는 스타일 nitpick(빈 줄, 중괄호, dev_err 개행)만 지적했습니다.\n\n영향: 소형 I2C OLED 패널용 upstream DRM 드라이버 후보로, 임베디드·키오스크 보드에서 ST7571 계열과 유사한 통합 패턴을 따르므로 패널·DT 작성자는 v3 API·binding을 미리 검토할 가치가 있습니다. v3 머지 전 추가 Tested-by·하드웨어 보드 목록과 SPI 인터페이스 공통화 계획은 확인이 필요합니다.\n\n> Chipwealth CH1115 is a controller for monochrome dot matrix OLED panels. Add DRM support for this chip using i2c bus.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/08/29/252)\n\n**drm/tegra: dc: Propagate powergate failures on suspend**\n\ntegra_dc_runtime_suspend()가 tegra_pmc_powergate_power_off() 실패 시 reset을 deassert하고 err를 반환하도록 바꿔, powergate 실패 뒤에도 suspend가 성공한 것처럼 진행되던 경로를 막습니다.\n\n영향: Tegra DC runtime suspend에서 powergate 오류가 무시되면 소프트웨어·하드웨어 전원 상태가 어긋날 수 있어, tegra DRM·host1x 전원 경로를 추적하는 담당자는 오류 전파와 상위 usecount 처리를 함께 봐야 합니다. suspend err 반환 시 host1x_client usecount 불일치 가능성과 클럭·DVFS 상태 불일치·권장 unwind 방향은 검증이 필요합니다.\n\n> Propagate the failure and unwind state acquired by the transition so callers cannot observe a false success.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/08/29/155)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "medium",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/amd/display: add missing CRC engine 1 registers and masks for DCN3.2",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/29/325",
+      "note": "thread"
+    },
+    {
+      "title": "amdgpu_dm CRC engine iteration (ef45aaf73717 context)",
+      "url": "https://www.mail-archive.com/amd-gfx@lists.freedesktop.org/msg148066.html",
+      "note": "thread"
+    },
+    {
+      "title": "drm/amd/display: set remote MST sink power state on payload changes",
+      "url": "https://patchew.org/linux/20260829-mst-remote-sink-power-v1-1-b9eab331e0d5@0xMax42.io/mbox",
+      "note": "thread"
+    },
+    {
+      "title": "drm/ch1115: add support for Chipwealth CH1115 OLED controller",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/29/252",
+      "note": "thread"
+    },
+    {
+      "title": "drm/ch1115 v3 review (Christophe Jaillet)",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/29/310",
+      "note": "thread"
+    },
+    {
+      "title": "drm/tegra: dc: Propagate powergate failures on suspend",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/29/155",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-29T18:51:29.021Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

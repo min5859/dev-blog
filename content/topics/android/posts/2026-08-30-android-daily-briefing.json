@@ -1,0 +1,138 @@
+{
+  "id": "2026-08-30-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-08-30 fuse·SELinux 보안 — Android 커널",
+  "headline": "fuse-bpf verifier 우회 차단과 SELinux BPF 초기화 회귀 수정, f2fs suspend 레이스 해소, drm-next·bpf-next-7.2 대규모 머지가 ACK에 반영됐습니다.",
+  "date": "2026-08-30",
+  "summary": "Android Common Kernel에 fuse-bpf·SELinux 보안 패치와 NMI·wakeup 회귀 수정이 들어왔고, f2fs suspend 안정화와 drm-next·bpf-next-7.2 머지로 GKI·벤더 재검증이 필요합니다.",
+  "tags": [
+    "안드로이드",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "fuse-bpf verifier 우회 차단",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "Android 16 ACK·fuse-bpf·보안 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/a3d06921ce7506e56eb9b3444a70dbbe9c69cac4",
+      "if": "Android 16 ACK fuse-bpf 프로그램을 배포하거나 검증 중이라면",
+      "do": "fuse_prog_is_valid_access() read-only 강화 반영 빌드를 우선 적용하고 FUSE-BPF 보안 테스트를 재실행하세요",
+      "verify": "커밋 원문에서 out_args[i].value read-only 강제와 verifier bypass 차단 내용을 확인하세요"
+    },
+    {
+      "title": "SELinux BPF inode 초기화 회귀 수정",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "보안·SELinux·BPF 서브시스템 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/8f0a5b31aee19510e75741c9687cf0d9321fa7ed",
+      "if": "genfscon bpffs 마운트·SELinux BPF 연동 경로를 유지보수한다면",
+      "do": "SBLABEL_MNT 선검사 순서 수정 커밋을 머지한 뒤 bpffs 마운트·inode_doinit_with_dentry() 동작을 회귀 테스트하세요",
+      "verify": "원문에서 selinux_inode_init_security() 초기화 순서 변경을 확인하세요"
+    },
+    {
+      "title": "wakeup reason 순환 락 의존 제거",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "전원·suspend/resume 디버깅 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/c439eb78736dc606256bac910652f186c4933d08",
+      "if": "suspend/resume 디버그 로그 수집 중 lockdep 데드락이 보고됐다면",
+      "do": "IRQ·wakeup reason 버퍼 복사 후 pr_info() 호출 패치를 적용하고 wakeup source 로깅 경로를 재검증하세요",
+      "verify": "원문에서 print_wakeup_sources() 락 순서 수정을 확인하세요"
+    },
+    {
+      "title": "NMI 컨텍스트 dump_tasks() 안전화",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "ACK 메모리 서브시스템·LMKD 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/db2acc01b75f9a30bfef0f4d2a6f413542cc32ac",
+      "if": "NMI 경로(lockup·메모리 압박 덤프)에서 dump_tasks()를 사용한다면",
+      "do": "spin_trylock·memcg OOM 덤프 조기 반환 패치 적용 후 LMKD·OOM 덤프 경로에서 데드락 여부를 확인하세요",
+      "verify": "원문 커밋 메시지에서 find_lock_task_mm()·mem_cgroup_scan_tasks() 변경을 직접 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Merge 4b99990cdf95 (\"Merge tag 'drm-next-2026-06-17'\") into android-mainline**\n\ndrm-next-2026-06-17 태그(약 1731 커밋)를 android-mainline에 머지했으며, dma-buf selftest KUnit 이전·heap 모듈화·DMABUF_HEAPS_SYSTEM_CC_SHARED 분리 등이 포함됩니다.\n\n영향: v7.2-rc1 방향 ACK에 최신 DRM/GPU·dma-buf 스택을 반영하므로 GKI/벤더가 display·GPU·dmabuf heap 변경에 맞춰 빌드·ABI를 재검증해야 합니다.\n\n> dma-buf:\n>   - port selftests to kunit\n>   - convert dma-buf system/heap allocators to module\n>   - add separate DMABUF_HEAPS_SYSTEM_CC_SHARED Kconfig\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/4b99990cdf9560e8a071640baf19f312e6ae02f4)\n\n**Merge tag 'bpf-next-7.2' of git://git.kernel.org/pub/scm/linux/kernel/git/bpf/bpf-next**\n\nbpf-next-7.2 태그(336 커밋)를 머지해 BPF arena 직접 접근·6+ 인자 프로그램·호출 체인 깊이 16·libarena 런타임·verifier/BTF 대규모 개선이 ACK에 들어왔습니다.\n\n영향: Android BPF 기반 네트워킹·보안·tracing 워크로드가 새 verifier 규칙·arena ABI·스택 깊이 한도에 맞춰 재검증·재컴파일이 필요합니다.\n\n> Major changes:\n>\n>    - Recover from BPF arena page faults using a scratch page and add\n>      pte_try_set() for lockless empty-slot installs on x86 and arm64.\n>\n>    - Lift old restriction and support 6+ arg\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/9c87e61e3c5797277407ba5eae4eac8a52be3fa3)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ANDROID: mm: Make dump_tasks() safe in NMI context**\n\nNMI 컨텍스트에서 dump_tasks() 호출 시 spin_lock 기반 find_lock_task_mm()과 mem_cgroup_scan_tasks() 대신 spin_trylock 및 memcg OOM 덤프 조기 반환으로 안전하게 처리하는 것으로 보입니다.\n\n영향: NMI(예: lockup·메모리 압박 덤프) 경로에서 데드락 없이 전체 태스크 메모리 상태를 덤프할 수 있어 LMKD·OOM 디버깅 신뢰성이 올라갈 수 있습니다.\n\n> Fix these by:\n> - Using spin_trylock(&t->alloc_lock) in find_lock_task_mm() when in_nmi().\n> - Returning early if a memcg oom dump is requested in NMI context.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/db2acc01b75f9a30bfef0f4d2a6f413542cc32ac)\n\n**ANDROID: PM: wakeup: Fix circular locking dependencies in wakeup reasons**\n\nwakeup reason 로깅 시 wakeup_reason_lock과 console_owner·irq_desc_lock_class 간 순환 락 의존을 제거하기 위해 IRQ/이유를 버퍼에 복사한 뒤 락을 풀고 pr_info()·pr_warn()을 호출하도록 변경했습니다.\n\n영향: suspend/resume 디버그 로그 수집 시 lockdep 데드락이 보고되던 문제를 해소해 전원 디버깅·크래시 분석 시 wakeup source 추적이 안전해집니다.\n\n> print_wakeup_sources() holds wakeup_reason_lock while calling\n> pr_info(), creating a lock inversion when preempted by an IRQ\n> handler taking wakeup_reason_lock\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/c439eb78736dc606256bac910652f186c4933d08)\n\n**FROMGIT: selinux: bpf: check SBLABEL_MNT before isec init**\n\nselinux_inode_init_security()에서 isec->initialized 설정 전에 SBLABEL_MNT(마운트 라벨링 지원) 여부를 먼저 검사하도록 순서를 바로잡았습니다.\n\n영향: genfscon bpffs 마운트 시 SBLABEL_MNT 검사가 건너뛰어져 inode_doinit_with_dentry() 호출이 깨지던 회귀를 막아 BPF/SELinux 연동 보안 초기화를 복구합니다.\n\n> selinux_inode_init_security() marks the isec as initialized before\n> checking if mount labeling is supported (SBLABEL_MNT).\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/8f0a5b31aee19510e75741c9687cf0d9321fa7ed)\n\n**ANDROID: fuse-bpf: fix verifier bypass in fuse_prog_is_valid_access**\n\nfuse_prog_is_valid_access()에서 out_args[i].value에 대해 read-only 접근만 허용하도록 검증을 강화해 BPF verifier 우회를 막았습니다.\n\n영향: fuse-bpf 프로그램이 임의 커널 쓰기·해제로 이어질 수 있는 verifier 검증 구멍을 닫아 Android FUSE-BPF 보안 경계를 강화합니다.\n\n> Enforce read-only access for out_args[i].value in\n> fuse_prog_is_valid_access() to prevent verifier bypass and arbitrary\n> kernel writes/frees.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/a3d06921ce7506e56eb9b3444a70dbbe9c69cac4)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**ANDROID: f2fs: quiesce background threads during system suspend using PM notifier**\n\n시스템 suspend 준비 단계에 PM notifier를 등록해 SBI_IS_SUSPENDING 플래그를 설정하고, f2fs_gc·f2fs_discard 스레드가 새 I/O를 내지 않도록 freeze 경로를 강화했습니다.\n\n영향: 블록 디바이스 Runtime PM suspend 중 f2fs 백그라운드 스레드가 submit_bio()를 호출해 PM freeze 타임아웃·데드락이 나던 레이스를 막아 Android suspend 안정성을 높입니다. 업스트림 PM/block 레이어 정식 수정이 android-mainline에 머지되는 시점은 확인이 필요합니다.\n\n> During system suspend, a race condition can cause f2fs_gc and f2fs_discard\n> threads to call submit_bio() while the underlying block device (e.g., UFS)\n> is in Runtime PM suspend.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/f255c2d290e7195470916e1810212580fa25adc7)"
+    },
+    {
+      "heading": "기타",
+      "body": "**ANDROID: GKI: CRYPTO_LZ4 is now implicit**\n\nCRYPTO_LZ4가 HIBERNATION 선택 시 암묵적으로 켜지므로 gki_defconfig에서 CONFIG_CRYPTO_LZ4 항목을 제거했습니다.\n\n영향: GKI defconfig와 업스트림 Kconfig 정합을 맞춰 불필요한 중복 설정·빌드 드리프트를 줄이고, 하이버네이션 압축 경로는 그대로 유지됩니다.\n\n> The CRYPTO_LZ4 config is now implicitly selected via HIBERNATION, so\n> remove it from our gki_defconfig files.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/87aba67d69fd0706152ae2d9dec68c2cfc274459)\n\n**ANDROID: gki_defconfig: enable CONFIG_SW_SYNC=y for debug/testing**\n\nGKI gki_defconfig에서 CONFIG_SW_SYNC=y를 켜 sw_sync 드라이버를 빌드에 포함합니다.\n\n영향: igt-gpu-tools 등 GPU 드라이버 테스트·디버깅에 sw_sync가 필요하지만, 프로덕션에서는 debugfs 경유만 노출되어 GMS 정책상 shipping 빌드 리스크는 제한적입니다.\n\n> The sw_sync driver is useful for debugging and testing GPU drivers, and\n> is leveraged by several tests in the igt-gpu-tools test suite.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/7443a0c3c9ecfc8982003afde92e9c783c725994)\n\n**ANDROID: sched: Avoid macro redefinition of TRACE_INCLUDE_PATH**\n\ninclude/trace/hooks/sched.h에서 TRACE_INCLUDE_PATH 매크로 재정의 전에 #undef를 추가해 -Wmacro-redefined 빌드 경고를 제거한 것으로 보입니다.\n\n영향: EAS 등 sched tracepoint 훅을 쓰는 벤더·ACK 빌드에서 경고 없이 컴파일되며, trace 헤더 포함 순서에 따른 빌드 실패를 방지할 수 있습니다.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/82be0d329bf2b455546a09cc84a2a6f413542cc32ac)\n\n**ANDROID: dma-heap: restore struct dma_heap kernel-doc lost in a merge**\n\ndrm-next 머지 과정에서 누락된 struct dma_heap kernel-doc(@heap_devt, @list, @heap_cdev 콜론 및 ANDROID 전용 @heap_dev, @refcount)를 업스트림 문구로 복원했습니다.\n\n영향: 기능 변경은 없으나 dma-heap.c kernel-doc 경고 5건을 제거해 GKI 빌드·문서 품질을 유지하고, dma-buf/heap API 문서 정확성을 회복합니다.\n\n> scripts/kernel-doc -none drivers/dma-buf/dma-heap.c reports five\n> warnings before this change and none after it.\n>\n> No functional change.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/d6549754be00560c3cd7afb7f1cd3e91c14e78b0)"
+    }
+  ],
+  "confidence": {
+    "level": "medium",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. dump_tasks()·TRACE_INCLUDE_PATH 항목은 원문 인용 검증이 실패해 단정을 피했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ANDROID: mm: Make dump_tasks() safe in NMI context",
+      "url": "https://android.googlesource.com/kernel/common/+/db2acc01b75f9a30bfef0f4d2a6f413542cc32ac",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: GKI: CRYPTO_LZ4 is now implicit",
+      "url": "https://android.googlesource.com/kernel/common/+/87aba67d69fd0706152ae2d9dec68c2cfc274459",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: f2fs: quiesce background threads during system suspend using PM notifier",
+      "url": "https://android.googlesource.com/kernel/common/+/f255c2d290e7195470916e1810212580fa25adc7",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: PM: wakeup: Fix circular locking dependencies in wakeup reasons",
+      "url": "https://android.googlesource.com/kernel/common/+/c439eb78736dc606256bac910652f186c4933d08",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: gki_defconfig: enable CONFIG_SW_SYNC=y for debug/testing",
+      "url": "https://android.googlesource.com/kernel/common/+/7443a0c3c9ecfc8982003afde92e9c783c725994",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: sched: Avoid macro redefinition of TRACE_INCLUDE_PATH",
+      "url": "https://android.googlesource.com/kernel/common/+/82be0d329bf2b455546a09cc84a2a6f413542cc32ac",
+      "note": "commit"
+    },
+    {
+      "title": "FROMGIT: selinux: bpf: check SBLABEL_MNT before isec init",
+      "url": "https://android.googlesource.com/kernel/common/+/8f0a5b31aee19510e75741c9687cf0d9321fa7ed",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: dma-heap: restore struct dma_heap kernel-doc lost in a merge",
+      "url": "https://android.googlesource.com/kernel/common/+/d6549754be00560c3cd7afb7f1cd3e91c14e78b0",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: fuse-bpf: fix verifier bypass in fuse_prog_is_valid_access",
+      "url": "https://android.googlesource.com/kernel/common/+/a3d06921ce7506e56eb9b3444a70dbbe9c69cac4",
+      "note": "commit"
+    },
+    {
+      "title": "Merge 4b99990cdf95 (drm-next-2026-06-17) into android-mainline",
+      "url": "https://android.googlesource.com/kernel/common/+/4b99990cdf9560e8a071640baf19f312e6ae02f4",
+      "note": "commit"
+    },
+    {
+      "title": "Merge tag 'bpf-next-7.2' into android-mainline",
+      "url": "https://android.googlesource.com/kernel/common/+/9c87e61e3c5797277407ba5eae4eac8a52be3fa3",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-29T18:16:33.260Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/android-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,173 @@
+{
+  "id": "2026-08-30-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-08-30 Clang CFI·Kconfig — Linux 툴체인",
+  "headline": "i.MX6 Clang CFI suspend v4, Rust cpufreq NULL 회귀, Kconfig 숫자 검증·syscall 공통 테이블",
+  "date": "2026-08-30",
+  "summary": "Clang CFI 빌드에서 i.MX6 suspend/resume 패닉을 CFI 검사를 유지한 채 고치는 v4가 Kobo Clara HD에서 검증됐습니다. Rust cpufreq NULL oops 회귀 수정, Kconfig int/hex 입력 검증 강화, syscall 403부터 공통 테이블 통합, cv! 대안·bitmap 문서화도 논의 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "ARM i.MX6 suspend/resume Clang CFI 패닉 v4 수정",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "i.MX6 전력 관리·suspend 경로 유지보수자, Clang/LLVM kCFI 빌드 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/08/28/1754",
+      "if": "Clang/LLVM kCFI로 i.MX6 계열 suspend/resume를 빌드·유지보수한다면",
+      "do": "v4의 SYM_TYPED_FUNC_START·struct imx6_cpu_pm_info::cfi_type·cfi_get_func_hash() 접근을 검토하세요",
+      "verify": "lore 스레드에서 fncpy() kCFI hash 미복사 패닉 원인과 Kobo Clara HD 검증 내용을 확인하세요"
+    },
+    {
+      "title": "Rust cpufreq PolicyCpu::from_cpu() NULL oops 회귀",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Rust cpufreq 추상화·cpufreq 드라이버 포팅 담당, 전력 관리 서브시스템 추적자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/08/28/1597",
+      "if": "Rust cpufreq 추상화(6ebdd7c93177)나 PolicyCpu::from_cpu()를 쓰는 코드를 작성한다면",
+      "do": "NonNull 검사 후 ENODEV를 반환하는 수정 패치 적용 여부를 확인하세요",
+      "verify": "KUnit negative-control로 oops 재현·수정 후 통과 결과를 lore 스레드에서 확인하세요"
+    },
+    {
+      "title": "Kconfig int/hex 숫자 옵션 입력 검증 강화",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "Kconfig/kbuild 유지보수자, 배포판·벤더 defconfig 담당",
+      "verifyLink": "https://patchew.org/linux/20260829171902.1510587-1-julianbraha@gmail.com/",
+      "if": "defconfig·CI·distro Kconfig 설정을 유지보수한다면",
+      "do": "비숫자 참조 오류 승격·범위 밖 값 거부·기존 .config 경고 동작을 확인하세요",
+      "verify": "Julian Braha 4패치 시리즈의 각 케이스 테스트와 patchew 스레드를 확인하세요"
+    },
+    {
+      "title": "syscall 403부터 아키 공통 테이블 통합 v6",
+      "priority": "중",
+      "impactType": "project",
+      "affectedAudience": "syscall 번호·uapi 헤더 생성을 다루는 kbuild·아키 메인테이너",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/08/28/1977",
+      "if": "새 syscall 추가나 아키별 syscallhdr/syscalltbl 생성을 담당한다면",
+      "do": "scripts/syscall_common.tbl 공통 테이블과 v6 리베이스·빌드 의존성 변경을 추적하세요",
+      "verify": "arm32·arm64·s390·mips·sparc·alpha 생성 헤더 전후 비교 결과를 lore 스레드에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**rust: cpufreq: reject NULL from cpufreq_cpu_get()**\n\nPolicyCpu::from_cpu()가 cpufreq_cpu_get()의 NULL 반환을 from_err_ptr()로 통과시켜 NULL에서 Policy 참조를 만들고, drop 시 cpufreq_cpu_put()→kobject_put()에서 oops가 나던 경로를 NonNull 검사 후 ENODEV로 바꿉니다.\n\n영향: Rust cpufreq 추상화(6ebdd7c93177)를 쓰는 코드에서 정책 조회 실패 시 커널 패닉으로 이어질 수 있어, cpufreq Rust 바인딩·드라이버 작성자는 NULL 처리 수정을 따라가야 합니다.\n\n> PolicyCpu::from_cpu() passed its return value to from_err_ptr(), which rejects ERR_PTR values but accepts NULL. Dropping the resulting PolicyCpu then passes the invalid pointer to cpufreq_cpu_put(), c\n\n> A KUnit negative-control run reproduced the oops with the original conversion. The same test passed with this change.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/08/28/1597)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**ARM: imx: Fix suspend/resume crash with Clang CFI**\n\ni.MX6 suspend 코드를 OCRAM으로 fncpy() 복사할 때 kCFI 타입 해시가 따라가지 않아 CONFIG_CFI=y에서 imx6_suspend_in_ocram_fn 간접 호출이 패닉하던 문제를, v4에서 __nocfi 래퍼 대신 SYM_TYPED_FUNC_START·struct imx6_cpu_pm_info::cfi_type·cfi_get_func_hash()로 CFI 검사를 유지한 채 해결합니다.\n\n영향: Clang CFI 빌드에서 i.MX6 suspend/resume가 동작하지 않는 회귀를 막으며, fncpy 8바이트 정렬과 CFI 해시 배치가 어긋나는 패턴은 OCRAM/런타임 코드 복사와 kCFI를 함께 쓰는 다른 ARM 플랫폼에도 참고가 됩니다.\n\n> The suspend code that runs from OCRAM is copied there with fncpy(), which does not copy the kCFI type hash preceding the function. With CONFIG_CFI=y the indirect call through imx6_suspend_in_ocram_fn \n\n> Tested on a Kobo Clara HD (i.MX6SLL) running postmarketOS (clang/LLVM, CONFIG_CFI=y): suspend and resume work.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/08/28/1754)\n\n**kconfig: improve input validation for numeric options**\n\nJulian Braha 4패치 시리즈가 Kconfig int/hex 옵션에 대해 비숫자 참조를 오류로 승격하고, 상수 범위·int/hex 상호 할당·프론트엔드/기존 .config의 범위 밖 값을 검사하며 각 케이스용 테스트를 추가합니다.\n\n영향: 잘못된 숫자 Kconfig 값이 조용히 실패하던 문제를 빌드/설정 단계에서 잡아, defconfig·CI·distro 설정 유지보수에서 회귀를 조기에 발견할 수 있습니다.\n\n> This series improves checks for invalid values of 'int' and 'hex' config options in the Kconfig interpreter. Tests are added for all new warnings and errors.\n\n> Finally, patch 4/4 rejects out-of-bounds numeric values from the Kconfig frontends and adds a warning upon reading in an existing .config file with one of these values.\n\n[원문 확인](https://patchew.org/linux/20260829171902.1510587-1-julianbraha@gmail.com/)\n\n**syscalls: Add a shared table for all archs**\n\nAndré Almeida v6 13패치가 syscall 403(clock_gettime64)부터 공통 번호를 scripts/syscall_common.tbl 한 곳에 모으고, arm·mips·s390·sparc·alpha 등이 이 테이블을 쓰도록 syscallhdr/syscalltbl 생성 스크립트와 아키 Makefile을 정리합니다.\n\n영향: 새 syscall 추가 시 아키별 표에 동일 항목을 반복 등록하던 부담을 줄여 kbuild·아키 포팅 담당자의 유지보수 비용과 번호 불일치 위험을 낮춥니다.\n\n> The generic table starts from 403 (clock_gettime64), the first common syscall.\n\n> I've compile tested for arm32, arm64, s390, mips, sparc and alpha by comparing the syscalls_*.h and unistd_*.h files generated before and after this patchset.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/08/28/1977)\n\n**rust: num: add cv! macro to create values from constant expressions (alt)**\n\nGary Guo 대안 시리즈가 const generic 표현 제한 없이 NonZero·Bounded·Alignment 등 FromConst 타입을 상수 식에서 만드는 cv! 매크로와 build_assert 유틸을 제안하며, NVIDIA/Alexandre Courbot 쪽 cv!/const_as 시리즈와 경쟁합니다.\n\n영향: 커널 Rust에서 상수 정수 변환·검증 API가 cv!/const_as!/casts 등 여러 설계로 수렴 중이라, 어떤 매크로가 표준이 되느냐에 따라 드라이버·추상화 코드 스타일과 마이그레이션 경로가 달라질 수 있습니다.\n\n> This is an alternative to https://lore.kernel.org/rust-for-linux/20260828-cv-v1-0-48a180dfc4c8@nvidia.com/ without const generic expressions limitation.\n\n> Implement a macro `cv!` (short for constant value) which converts a const integer to types that implements `FromConst` trait and validate them during const evaluation.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/08/28/1088)\n\n**rust: bitmap: document panics in `next_bit` and `next_zero_bit`**\n\nnext_bit()/next_zero_bit()가 CONFIG_RUST_BITMAP_HARDENED에서 start≥len일 때 bitmap_assert!로 패닉하는데 문서는 None 반환만 적고 있던 불일치를, v2에서 # Panics 절과 경계 조건 설명으로 맞춥니다.\n\n영향: 하드닝 옵션을 켠 Rust 빌드에서 비트맵 API 계약이 문서와 달라 디버깅이 어려워지므로, bitmap 사용자는 패닉 조건을 명시한 문서 변경을 반영해야 합니다.\n\n> `next_bit()` and `next_zero_bit()` use `bitmap_assert!()` to check that `start` is less than `self.len()`, which panics when `CONFIG_RUST_BITMAP_HARDENED` is enabled.\n\n> Panics if `CONFIG_RUST_BITMAP_HARDENED` is enabled and `start` is out of bounds.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/08/28/1229)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "fncpy()가 kCFI 타입 해시를 복사하지 않아 CONFIG_CFI=y에서 간접 호출이 패닉한다",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/28/1754",
+      "note": "thread"
+    },
+    {
+      "title": "v4는 Kobo Clara HD(i.MX6SLL) postmarketOS에서 suspend/resume 동작을 확인했다",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/28/1754",
+      "note": "thread"
+    },
+    {
+      "title": "fncpy는 8바이트 정렬을 요구해 CFI 해시 배치가 부팅 실패 원인이 될 수 있다",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/24/1374",
+      "note": "thread"
+    },
+    {
+      "title": "NULL이 from_err_ptr()를 통과해 PolicyCpu drop 시 kobject_put() oops가 난다",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/28/1597",
+      "note": "thread"
+    },
+    {
+      "title": "NonNull로 NULL을 거부하고 ENODEV를 반환한다",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/28/1597",
+      "note": "thread"
+    },
+    {
+      "title": "KUnit negative-control로 원본 코드에서 oops를 재현했다",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/28/1499",
+      "note": "thread"
+    },
+    {
+      "title": "시리즈는 int/hex 비숫자 참조·범위·타입 불일치·프론트엔드 입력 검증을 강화한다",
+      "url": "https://patchew.org/linux/20260829171902.1510587-1-julianbraha@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "패치 1/4는 잘못된 숫자 참조 경고를 오류로 승격한다",
+      "url": "https://patchew.org/linux/20260829171902.1510587-1-julianbraha@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "패치 4/4는 범위 밖 사용자 입력을 거부하고 기존 .config 읽기 시 경고를 추가한다",
+      "url": "https://patchew.org/linux/20260829171902.1510587-1-julianbraha@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "공통 테이블은 syscall 403부터 시작한다",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/28/1977",
+      "note": "thread"
+    },
+    {
+      "title": "arm32·arm64·s390·mips·sparc·alpha에서 생성 헤더를 전후 비교해 컴파일 테스트했다",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/28/1977",
+      "note": "thread"
+    },
+    {
+      "title": "v6는 7.3-rc0 위 리베이스와 syscalltbl_common 빌드 의존성을 추가한다",
+      "url": "https://patchew.org/linux/20260828-tonyk-syscall._5Ftable-v6-0-fdd358456cf1@igalia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Gary Guo 대안은 const generic expressions 제한 없이 cv!를 제공한다",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/28/1088",
+      "note": "thread"
+    },
+    {
+      "title": "cv!는 FromConst 트레이트 타입에 대해 빌드 타임 유효성 검사를 한다",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/28/1090",
+      "note": "thread"
+    },
+    {
+      "title": "시리즈는 rust/kernel/num.rs 등 8파일에 313줄 추가한다",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/28/1088",
+      "note": "thread"
+    },
+    {
+      "title": "함수는 hardened 모드에서 start≥len이면 패닉하지만 # Panics 절이 없었다",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/28/1229",
+      "note": "thread"
+    },
+    {
+      "title": "v2는 # Panics 절과 in-bounds 요구를 문서화한다",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/28/1229",
+      "note": "thread"
+    },
+    {
+      "title": "리뷰에서 문서 문구 단순화가 제안되었다",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/28/732",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-29T18:34:43.883Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

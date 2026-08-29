@@ -1,0 +1,128 @@
+{
+  "id": "2026-08-30-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-08-30 BPF dynptr·UAF — Perf/RT",
+  "headline": "6.6.y dynptr 슬라이스 무효화·release 오류 전파 백포트, sk_lookup test_run UAF, memalloc RCU 경쟁 수정 논의가 이어집니다.",
+  "date": "2026-08-30",
+  "summary": "BPF verifier dynptr 슬라이스 수명 추적 결함과 sk_lookup test_run 경로 slab UAF가 stable·mainline 양쪽에서 수정·백포트 논의 중입니다. memalloc waiting_for_gp_ttrace 경쟁 수정은 PREEMPT_RT 비선점 구간 우려로 설계 재검토가 필요합니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "bpf_prog_test_run_sk_lookup slab UAF",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF sk_lookup·test_run 사용자, userns/비특권 BPF 활성 배포 담당",
+      "verifyLink": "https://lists.openwall.net/netdev/2026/08/29/59",
+      "if": "userns·비특권 BPF 환경에서 bpf_sk_lookup_assign()으로 선택한 소켓이 동시 close될 수 있다면",
+      "do": "bpf_prog_test_run_sk_lookup() 수정 패치가 반영된 커널로 lookup test_run 검증을 재실행하세요",
+      "verify": "RCU 해제 후 ctx.selected_sk 역참조로 slab UAF가 재현되는지 원문 스레드를 확인하세요"
+    },
+    {
+      "title": "dynptr 슬라이스 dynptr_id 무효화",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "BPF verifier·dynptr helper를 쓰는 프로그램 작성자, 6.6.y stable 백포트 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260829102618.105116-2-xyx2021@mail.ustc.edu.cn/",
+      "if": "bpf_dynptr_slice()·bpf_dynptr_slice_rdwr()로 ringbuf submit/discard 이후 슬라이스 접근을 검증한다면",
+      "do": "6.6.y 백포트 반영 여부와 verifier가 submit 이후 LDX/STX를 거부하는지 확인하세요",
+      "verify": "dynptr_id 기반 무효화 패치와 upstream 308c7a0ae885 parent_id 리팩터 범위 차이를 lore 스레드에서 대조하세요"
+    },
+    {
+      "title": "referenced dynptr release 오류 전파",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "BPF verifier·dynptr·콜백 프로그램 작성자, stable 백포트 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260829104214.9F4B01F000E9@smtp.kernel.org/",
+      "if": "dynptr·콜백·bpf_loop() 조합에서 caller가 획득한 referenced dynptr을 콜백이 release하려 한다면",
+      "do": "WARN_ON_ONCE 대신 err 전파 패치가 적용된 빌드에서 잘못된 release가 verifier 거부로 처리되는지 테스트하세요",
+      "verify": "unmark_stack_slots_iter()에 동일 WARN 패턴이 남아 있는지 리뷰 코멘트를 추적하세요"
+    },
+    {
+      "title": "waiting_for_gp_ttrace 경쟁 UAF 수정",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "BPF memalloc·htab/map 할당 경로 유지보수자, PREEMPT_RT 프로파일 운영 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/08/27/583",
+      "if": "고부하 BPF 할당 경로나 PREEMPT_RT 프로파일에서 memalloc UAF·지연을 모니터링한다면",
+      "do": "Pu Lehui v2의 raw_spinlock 접근과 do_call_rcu_ttrace() 무한 루프 논의가 머지 전에 어떻게 정리되는지 추적하세요",
+      "verify": "Syzkaller 재현 사례와 PREEMPT_RT 비선점 구간 지적 내용을 openwall 스레드에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**bpf: Invalidate dynptr slices by dynptr_id on release**\n\n6.6.y용 백포트가 unmark_stack_slots_dynptr()에서 release_reference(ref_obj_id)만 호출해 bpf_dynptr_slice()/bpf_dynptr_slice_rdwr()로 만든 슬라이스(dynptr_id만 설정, ref_obj_id=0)가 ringbuf submit/discard 이후에도 LDX/STX 가능하던 verifier 결함을, dynptr_id로 레지스터를 무효화하도록 고칩니다.\n\n영향: dynptr 슬라이스 수명 추적 오류는 verifier가 submit 이후 메모리 접근을 허용해 잘못된 BPF 프로그램이 통과할 수 있으며, upstream 308c7a0ae885 parent_id 리팩터 전체를 stable에 넣기 어려운 환경에서 최소 수정으로 동일 클래스 버그를 막는 선례입니다.\n\n> bpf_dynptr_slice() and bpf_dynptr_slice_rdwr() stamp dynptr_id and leave ref_obj_id at 0, so LDX/STX through those slices remains allowed after bpf_ringbuf_submit_dynptr()\n\n[원문 확인](https://lore.kernel.org/bpf/20260829102618.105116-2-xyx2021@mail.ustc.edu.cn/)\n\n6.6.y 시리즈 머지·stable-queue 반영 일정은 확인이 필요합니다.\n\n**bpf: Propagate referenced dynptr release errors**\n\nstable 백포트가 unmark_stack_slots_dynptr()에서 release_reference() 실패 시 WARN_ON_ONCE만 찍던 경로를 err 전파로 바꿔, 콜백이 caller가 획득한 referenced dynptr을 release하려 할 때 verifier가 거부 대신 커널 WARN(및 panic_on_warn=1 시 패닉)을 내지 않게 합니다.\n\n영향: 잘못된 dynptr release는 verifier가 프로그램 로드를 막아야 하나 WARN 경로는 운영 환경에서 패닉으로 이어질 수 있어, dynptr·콜백·bpf_loop() 조합을 쓰는 eBPF 작성자와 stable 유지보수자가 이 수정을 따라가야 합니다.\n\n> This patch fixes a panic caused by a WARN_ON_ONCE in the verifier when a BPF callback incorrectly attempts to release a referenced dynptr acquired by its caller.\n\n[원문 확인](https://lore.kernel.org/bpf/20260829104214.9F4B01F000E9@smtp.kernel.org/)\n\nunmark_stack_slots_iter()·mark_ptr_or_null_regs()의 동일 WARN 패턴 별도 패치 여부와 6.12.y patch 3 머지 일정은 확인이 필요합니다.\n\n**bpf: Fix use-after-free in bpf_prog_test_run_sk_lookup**\n\nbpf_prog_test_run_sk_lookup()가 반복 루프 직후 bpf_test_timer_leave()로 RCU 잠금을 풀고 ctx.selected_sk를 reuseport 검사·sock_gen_cookie()로 역참조하던 순서를, selected_sk 처리가 끝난 뒤 leave()를 호출하도록 바꿉니다.\n\n영향: bpf_sk_lookup_assign()이 RCU로만 보호되는 비-refcount 소켓을 선택할 수 있어, userns·비특권 BPF가 켜진 환경에서 동시 close 시 slab UAF가 재현 가능하며 test_run 경로를 쓰는 lookup 프로그램 검증·보안 담당자가 우선 확인해야 합니다.\n\n> dropping the RCU lock before dereferencing `ctx.selected_sk` opens an unprotected window. Consequently, if the selected socket is closed concurrently ... accessing `ctx.selected_sk` triggers a slab-us\n\n[원문 확인](https://lists.openwall.net/netdev/2026/08/29/59)\n\nCVE 할당·stable 백포트 일정과 PoC 재현률은 확인이 필요합니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**bpf: Fix UAF due to concurrent consumption of waiting_for_gp_ttrace**\n\nPu Lehui v2 패치가 bpf memalloc의 waiting_for_gp_ttrace에 raw_spinlock을 도입해 alloc_bulk()의 llist_del_first와 __free_rcu 콜백의 llist_del_all 경쟁 UAF를 막으려 하나, Hou Tao·bpf-ci 리뷰는 do_call_rcu_ttrace()의 무한 루프가 IRQ-off·PREEMPT_RT에서 비선점 구간을 만들 수 있다고 지적합니다.\n\n영향: Syzkaller가 재현한 memalloc UAF 수정이 PREEMPT_RT·고부하 BPF 할당 경로에서 lock hold 시간·IRQ 지연을 키울 수 있어, eBPF 메모리 할당자와 RT 프로파일을 함께 추적하는 독자에게 머지 전 설계 재검토가 중요합니다.\n\n> Syzkaller repeatedly triggered UAF splats related to nodes in waiting_for_gp_ttrace within the bpf memalloc\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/08/27/583)\n\n> Only this one is unbounded, and raw_spinlock_t + irqsave means it is non-preemptible even on PREEMPT_RT\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/08/27/699)\n\nO(1) splice로 락 홀드 축소 가능 여부와 v2 머지 전 개선 반영 여부는 확인이 필요합니다.\n\n**bpf: Add btf_type_is_arena_ptr()**\n\nBTF 타입이 address_space(1) arena 포인터 태그를 갖는지 검사하는 btf_type_is_arena_ptr()을 추가하고 btf_scan_type_tags()·btf_validate_return_type()을 단순화하며, 이후 verifier.c에서 구조체 by-value 반환의 arena 포인터 멤버 판별에 쓸 예정입니다.\n\n영향: bpf_arena 타입 태그 기반 검증 인프라가 verifier·BTF 검사 전반으로 확장되면 arena 프로그램·kfunc 서명 작성자가 타입 태그 규칙 변화를 미리 따라가야 할 가능성이 있습니다.\n\n> Add btf_type_is_arena_ptr() to test whether a BTF type is a pointer carrying the \"arena\" type tag, and use it to simplify both btf_scan_type_tags() and btf_validate_return_type().\n\n[원문 확인](https://lore.kernel.org/bpf/20260829061529.1693266-1-yonghong.song@linux.dev/)\n\n> emit a type tag encoding __attribute__((address_space(1))) for them\n\n[원문 확인](https://www.spinics.net/lists/dwarves/msg02707.html)\n\n후속 verifier.c by-value struct arena 멤버 규칙 변화는 확인이 필요합니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "bpf: Invalidate dynptr slices by dynptr_id on release",
+      "url": "https://lore.kernel.org/bpf/20260829102618.105116-2-xyx2021@mail.ustc.edu.cn/",
+      "note": "thread"
+    },
+    {
+      "title": "upstream 308c7a0ae885 parent_id refactor",
+      "url": "https://www.spinics.net/lists/netdev/msg1191972.html",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Propagate referenced dynptr release errors",
+      "url": "https://lore.kernel.org/bpf/20260829104214.9F4B01F000E9@smtp.kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Fix use-after-free in bpf_prog_test_run_sk_lookup",
+      "url": "https://lists.openwall.net/netdev/2026/08/29/59",
+      "note": "thread"
+    },
+    {
+      "title": "bpf memalloc waiting_for_gp_ttrace UAF (Syzkaller)",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/27/583",
+      "note": "thread"
+    },
+    {
+      "title": "do_call_rcu_ttrace PREEMPT_RT non-preemptible concern",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/27/699",
+      "note": "thread"
+    },
+    {
+      "title": "raw spinlock alternative for bpf memalloc",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/26/1151",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Add btf_type_is_arena_ptr()",
+      "url": "https://lore.kernel.org/bpf/20260829061529.1693266-1-yonghong.song@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "arena pointer BTF address_space(1) type tag",
+      "url": "https://www.spinics.net/lists/dwarves/msg02707.html",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-29T18:44:42.925Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
