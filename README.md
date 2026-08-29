@@ -84,6 +84,8 @@ npm run daily:linux:publish
 ```
 
 Scheduling details and cron examples are documented in `docs/SCHEDULING.md`.
+For migrating the daily publisher from macOS to an OCI Linux server, follow
+`docs/OCI-MIGRATION.md`.
 
 Runtime data outputs are ignored by git because they are reproducible and change over time. Generated posts under `content/` are versioned.
 
