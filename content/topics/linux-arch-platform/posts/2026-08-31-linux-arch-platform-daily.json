@@ -1,0 +1,131 @@
+{
+  "id": "2026-08-31-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-08-31 i.MX6 CFI·RISC-V — 아키텍처·플랫폼",
+  "headline": "i.MX6 Clang CFI suspend 회귀 수정이 v5로 추진되고, RISC-V는 RPMI genpd·TLB trace·pgtable 핫패스 최적화가 병행됩니다.",
+  "date": "2026-08-31",
+  "summary": "ARM 쪽은 i.MX6 OCRAM suspend 경로의 kCFI type hash 누락으로 인한 CFI 패닉을 SYM_TYPED_FUNC_START_ALIGNED()로 해결하는 v5가 리뷰 중입니다. RISC-V·플랫폼 영역에서는 RPMI device power genpd, TLB flush 경로 tracepoint, pgtable 레벨 alternatives 최적화, JH7110 HDMI PHY, ASPEED B650D4U DT bindings가 함께 진행됩니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "RISC-V",
+    "ARM",
+    "플랫폼"
+  ],
+  "highlights": [
+    {
+      "title": "ARM: imx: Fix suspend/resume crash with Clang CFI",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "i.MX6 전력관리·suspend 유지보수자, Clang CFI 빌드 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/linux-arm-kernel/20260830155100.1020620-1-linux@yoavmoshe.com/",
+      "if": "CONFIG_CFI=y Clang 빌드에서 i.MX6 suspend/resume 경로를 유지보수하거나 stable 백포트를 검토하는 경우",
+      "do": "v5의 SYM_TYPED_FUNC_START_ALIGNED()·struct imx6_cpu_pm_info.cfi_type 적용과 ccm_base·suspend_ocram_base·imx6_suspend_in_ocram_fn의 __ro_after_init 보호를 따라가고, stable 백포트 시 cfi uaccess.h 의존(979c294509f9)도 함께 확인하세요.",
+      "verify": "fncpy()가 kCFI type hash를 복사하지 않아 indirect call이 패닉한다는 원문 스레드와 Kobo Clara HD(i.MX6SLL) 테스트 리포트를 확인하세요."
+    },
+    {
+      "title": "Add RISC-V RPMI device power service support",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "RISC-V RPMI/MPXY·genpd 플랫폼 유지보수자",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/linux-riscv/20260830152812.312663-1-joshua.yeong@starfivetech.com/",
+      "if": "StarFive 등 RPMI 플랫폼에서 PuC가 관리하는 장치 전원 도메인을 Linux genpd로 노출해야 하는 경우",
+      "do": "v2의 riscv,rpmi-device-power DT bindings와 drivers/pmdomain/riscv/ genpd 드라이버, mailbox mutex 직렬화·probe 실패 unwind·응답 길이 검증 보강을 리뷰하세요.",
+      "verify": "QEMU RPMI 에뮬레이션에서 /sys/kernel/debug/pm_genpd/로 도메인이 보이는지 원문 테스트 설명을 확인하세요."
+    },
+    {
+      "title": "riscv: mm: Trace TLB flush path selection",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "RISC-V MM/TLB shootdown 유지보수자, SMP·firmware 경계 디버깅 담당",
+      "verifyLink": "http://lists.infradead.org/pipermail/linux-riscv/2026-August/097420.html",
+      "if": "RISC-V TLB shootdown 지연을 SBI RFENCE 경로와 Linux IPI 경로로 구분해 디버깅해야 하는 경우",
+      "do": "v2의 riscv_tlb:riscv_tlb_flush_path tracepoint와 trace_call__riscv_tlb_flush_path() 사용을 perf/ftrace 상관 분석에 활용하세요.",
+      "verify": "QEMU virt에서 local은 path=local, remote는 path=sbi-rfence로 보고된다는 원문 결과를 확인하세요."
+    },
+    {
+      "title": "optimize pgtable_l4|l5_enabled",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "RISC-V MM/pgtable 유지보수자, 성능 민감 워크로드 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/linux-riscv/20260830170414.4505-1-jszhang@kernel.org/",
+      "if": "SV39 고정 RISC-V 플랫폼에서 pgtable 레벨 체크 핫패스 오버헤드를 줄이려는 경우",
+      "do": "cap framework 기반 alternatives 최적화 3패치 시리즈와 RISCV_ALTERNATIVE Kconfig 정리를 따라가세요.",
+      "verify": "TH1520 lmbench lat_syscall write 기준 약 2.38% 지연 감소 보고와 핫패스 instruction 변화 설명을 원문에서 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ARM: imx: Fix suspend/resume crash with Clang CFI**\n\nYo'av Moshe v5가 i.MX6 OCRAM suspend 코드의 kCFI type hash 누락 문제를 __nocfi 면제 대신 SYM_TYPED_FUNC_START_ALIGNED()와 struct imx6_cpu_pm_info.cfi_type로 해결합니다. ccm_base·suspend_ocram_base·imx6_suspend_in_ocram_fn도 __ro_after_init로 보호합니다.\n\n영향: CONFIG_CFI=y Clang 빌드에서 i.MX6 suspend/resume이 CFI 위반으로 패닉·행 걸림이 났습니다. ARM 전력관리·Clang/CFI 빌드 담당자는 stable 백포트 시 cfi uaccess.h 의존(979c294509f9)도 함께 봐야 합니다.\n\n> The suspend code that runs from OCRAM is copied there with fncpy(), which does not copy the kCFI type hash preceding the function. With CONFIG_CFI=y the indirect call through imx6_suspend_in_ocram_fn \n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-arm-kernel/20260830155100.1020620-1-linux@yoavmoshe.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**tools/mm: add hwpoison-panic tool**\n\nAndrew Morton이 Breno Leitao의 hwpoison-panic 도구(v2)에 답해, vm.panic_on_unrecoverable_memory_failure 검증을 CI에서 돌릴 수 있게 커널에 '패닉하지 말라'는 노브나 fault-injection(i_should_crash_now)을 두자고 제안했습니다.\n\n영향: memory failure 패닉 정책을 수동 VM 테스트(tools/mm)로만 검증하는 현재 방향이 selftest로 확장될지 여부가 갈립니다. MM·memory-failure 추적자는 향후 커널 API·selftest 설계 변경을 따라가야 합니다. 패닉 억제 노브 또는 fault-injection 중 어느 방향으로 구현될지는 확인 필요합니다.\n\n> I wonder if we can fix this. Add a knob which tells the kernel not to panic/oops/crash/etc. Set that knob around your hwpoison-panic tool and voila, it's now a selftest.\n\n[원문 확인](http://lists.infradead.org/pipermail/linux-riscv/2026-August/097411.html)\n\n**riscv: mm: Trace TLB flush path selection**\n\nRoman Storozhenko v2가 riscv_tlb:riscv_tlb_flush_path tracepoint를 flush_tlb_all()·__flush_tlb_range()에 추가해 local·SBI RFENCE·cross-CPU-call 경로 선택을 기록합니다. v2는 Steven Rostedt 제안대로 trace_call__riscv_tlb_flush_path()를 사용합니다.\n\n영향: RISC-V TLB shootdown 지연을 볼 때 펌웨어(SBI) 경로인지 Linux IPI 경로인지 구분할 관측 수단이 없었습니다. MM·SMP·firmware 경계 디버깅 담당자는 perf/ftrace로 경로 선택을 직접 상관시킬 수 있습니다. hot path tracepoint 오버헤드와 기본 enable 정책은 확인 필요합니다.\n\n> Add riscv_tlb:riscv_tlb_flush_path in flush_tlb_all() and __flush_tlb_range(). Record start, size, stride, the hardware-visible ASID, whether a specific mm is associated with the request, the target C\n\n[원문 확인](http://lists.infradead.org/pipermail/linux-riscv/2026-August/097420.html)\n\n**dt-bindings: arm: aspeed: Add ASRock Rack B650D4U**\n\nPrasanth Kumar Padarthi v4가 ASRock Rack B650D4U BMC(AST2600)용 compatible string asrock,b650d4u-bmc를 aspeed.yaml에 추가했습니다. Krzysztof Kozlowski Acked-by가 붙었습니다.\n\n영향: AMD Ryzen 서버 보드 B650D4U BMC에 upstream DT 지원이 들어가면 OpenBMC·배포판이 공식 compatible로 bring-up할 수 있습니다. ASPEED BMC 플랫폼 담당자는 bindings·DTS 시리즈 v4 진행을 따라가야 합니다. v4 DTS 패치(2/2) 머지 일정과 실하드웨어 검증 범위는 확인 필요합니다.\n\n> Acked-by: Krzysztof Kozlowski <krzysztof.kozlowski@oss.qualcomm.com>\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-arm-kernel/20260830182036.284736-2-prasanth.padarthi10@gmail.com/)\n\n**Add RISC-V RPMI device power service support**\n\nJoshua Yeong v2가 RPMI device power service group(0x0009) supervisor 지원을 추가합니다. riscv,rpmi-device-power DT bindings와 drivers/pmdomain/riscv/ genpd 드라이버가 PuC에 SBI MPXY로 ON/OFF를 전달합니다. v2는 mailbox mutex 직렬화·probe 실패 시 pm_genpd_remove() unwind·응답 길이 검증을 보강합니다.\n\n영향: RISC-V PuC가 관리하는 장치 전원 도메인을 Linux genpd로 노출하면 StarFive 등 RPMI 플랫폼에서 power-domains 속성으로 주변장치 전원을 제어할 수 있습니다. RISC-V 플랫폼·genpd 소비자 드라이버는 bindings와 드라이버 머지를 따라가야 합니다.\n\n> A generic power domain (genpd) provider driver under drivers/pmdomain/riscv/ which talks to the PuC over an SBI MPXY mailbox channel.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-riscv/20260830152812.312663-1-joshua.yeong@starfivetech.com/)\n\n**optimize pgtable_l4|l5_enabled**\n\nJisheng Zhang 3패치 시리즈가 2022 static branch 방식 대신 cap framework를 도입해 pgtable_l4|l5_enabled 핫패스를 alternatives로 최적화합니다. pgtable_l4|l5_enabled를 inline function으로 바꾸고 RISCV_ALTERNATIVE Kconfig를 정리합니다.\n\n영향: pgtable 레벨 체크는 RISC-V MM 핫패스에 있어 SV39 고정 플랫폼에서 불필요한 분기·메모리 로드를 줄이면 syscall 지연이 줄어듭니다. TH1520 lmbench lat_syscall write 기준 약 2.38% 개선이 보고되었습니다.\n\n> Introduce cap framework to describe the capabilities selected by kernel. After that, use it to optimize pgtable_l4|l5_enabled.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-riscv/20260830170414.4505-1-jszhang@kernel.org/)\n\n**phy: starfive: Add jh7110-inno-hdmi-phy driver**\n\nMaud Spierings가 JH7110 display 시리즈 v2 HDMI PHY 드라이버 리뷰 중 화면 깜빡임을 0x29590000·0x29590020 레지스터 두 번 쓰기로 완화했습니다. inno-hdmi.c가 항상 설정하는 v_REG_CLK_INV|v_REG_CLK_SOURCE_SYS 비트가 이 패널에서는 v_VCLK_NOT_INV|v_REG_CLK_SOURCE_TMDS여야 한다고 보고합니다.\n\n영향: JH7110 display 서브시스템 upstream화 과정에서 패널별 PHY/클럭 레지스터 차이가 드러났습니다. StarFive·DRM bring-up 담당자는 공통 inno-hdmi helper와 보드별 레지스터 요구를 맞추는 v3 수정을 따라가야 합니다. 0x29590020 레지스터 의미와 패널별 클럭 비트 자동 감지 방법은 확인 필요합니다.\n\n> these bits always get set but that seems to break this display so there must be some way to detect that these should not be set: v_VCLK_NOT_INV | v_REG_CLK_SOURCE_TMDS\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-riscv/e780ecb8-918f-4816-99c8-b69b10b25a18@murena.io/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "tools/mm: add hwpoison-panic tool — Andrew Morton selftest 제안",
+      "url": "http://lists.infradead.org/pipermail/linux-riscv/2026-August/097411.html",
+      "note": "thread"
+    },
+    {
+      "title": "tools/mm: add hwpoison-panic tool — 패치 설명",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/13/1092",
+      "note": "thread"
+    },
+    {
+      "title": "ARM: imx: Fix suspend/resume crash with Clang CFI",
+      "url": "https://lore-kernel.gnuweeb.org/linux-arm-kernel/20260830155100.1020620-1-linux@yoavmoshe.com/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: mm: Trace TLB flush path selection",
+      "url": "http://lists.infradead.org/pipermail/linux-riscv/2026-August/097420.html",
+      "note": "thread"
+    },
+    {
+      "title": "dt-bindings: arm: aspeed: Add ASRock Rack B650D4U",
+      "url": "https://lore-kernel.gnuweeb.org/linux-arm-kernel/20260830182036.284736-2-prasanth.padarthi10@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Add RISC-V RPMI device power service support",
+      "url": "https://lore-kernel.gnuweeb.org/linux-riscv/20260830152812.312663-1-joshua.yeong@starfivetech.com/",
+      "note": "thread"
+    },
+    {
+      "title": "optimize pgtable_l4|l5_enabled",
+      "url": "https://lore-kernel.gnuweeb.org/linux-riscv/20260830170414.4505-1-jszhang@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "phy: starfive: Add jh7110-inno-hdmi-phy driver — 리뷰 스레드",
+      "url": "https://lore-kernel.gnuweeb.org/linux-riscv/e780ecb8-918f-4816-99c8-b69b10b25a18@murena.io/",
+      "note": "thread"
+    },
+    {
+      "title": "phy: starfive: Add jh7110-inno-hdmi-phy driver — 패치 시리즈",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/28/1274",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-30T18:31:53.266Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

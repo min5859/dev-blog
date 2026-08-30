@@ -1,0 +1,127 @@
+{
+  "id": "2026-08-31-linux-perf-rt-weekly-rollup",
+  "topic": "linux-perf-rt",
+  "title": "2026-08-31 주간 요약",
+  "headline": "bpf_snprintf_btf·BTF 출력 경로 사용자, BPF selftest/관측 도구 담당 주목: bpf: Fix NULL-ptr-dere",
+  "date": "2026-08-31",
+  "summary": "오늘의 핵심: 릴리스/로드맵 0건, 회귀·보안 신호 5건, 핵심 변경 3건. 리서치 dossier 의 출처를 근거로 정리했습니다.",
+  "tags": [
+    "주간"
+  ],
+  "highlights": [
+    {
+      "title": "bpf: Fix NULL-ptr-deref when showing a void BTF type",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "bpf_snprintf_btf·BTF 출력 경로 사용자, BPF selftest/관측 도구 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/bpf/20260830073242.148092-3-jiayuan.chen@linux.dev/",
+      "if": "bpf_snprintf_btf·BTF 출력 경로 사용자, BPF selftest/관측 도구 담당라면",
+      "do": "Jiayuan Chen v2 시리즈 2/4가 btf_modifier_show()에서 void(예: vmlinux BTF의 const void)처",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore-kernel.gnuweeb.org/bpf/20260830073242.148092-3-jiayuan.chen@linux.dev/"
+    },
+    {
+      "title": "bpf: Keep progs alive until the trampoline image calling them is freed",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "BPF trampoline·sleepable LSM/fexit hook 운영자, PREEMPT/PREEMPT_RT 프로파일 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/08/19/1071",
+      "if": "BPF trampoline·sleepable LSM/fexit hook 운영자, PREEMPT/PREEMPT_RT 프로파일 담당라면",
+      "do": "Florent Revest 패치는 PREEMPT 커널에서 trampoline glue 구간(프로그램 진입 전)에 선점된 태스크가 이미 해제된 p",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lists.openwall.net/linux-kernel/2026/08/19/1071"
+    },
+    {
+      "title": "bpf: Invalidate dynptr slices by dynptr_id on release",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "BPF verifier·dynptr helper를 쓰는 프로그램 작성자, 6.6.y stable 백포트 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260829102618.105116-2-xyx2021@mail.ustc.edu.cn/",
+      "if": "BPF verifier·dynptr helper를 쓰는 프로그램 작성자, 6.6.y stable 백포트 담당라면",
+      "do": "6.6.y용 백포트가 unmark_stack_slots_dynptr()에서 release_reference(ref_obj_id)만 호출해 bpf",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/bpf/20260829102618.105116-2-xyx2021@mail.ustc.edu.cn/"
+    },
+    {
+      "title": "bpf: Propagate referenced dynptr release errors",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "BPF verifier·dynptr·콜백 프로그램 작성자, stable 백포트 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260829104214.9F4B01F000E9@smtp.kernel.org/",
+      "if": "BPF verifier·dynptr·콜백 프로그램 작성자, stable 백포트 담당라면",
+      "do": "stable 백포트가 unmark_stack_slots_dynptr()에서 release_reference() 실패 시 WARN_ON_ONCE만",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/bpf/20260829104214.9F4B01F000E9@smtp.kernel.org/"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**bpf: Fix NULL-ptr-deref when showing a void BTF type**\n\nJiayuan Chen v2 시리즈 2/4가 btf_modifier_show()에서 void(예: vmlinux BTF의 const void)처럼 show op가 없는 타입을 만나면 btf_df_show() placeholder로 처리해 bpf_snprintf_btf() 경로의 NULL\n\n영향: bpf_prog_test_run() 등에서 bpf_snprintf_btf()로 const void type_id를 넘기면 KASAN null-ptr-deref가 재현되므로, BTF 기반 출력·selftest·관측 도구를 쓰는 BPF 작성자는 이 수정의 bpf/backport 반영을 추적\n\n> a \"const void\" (a modifier that resolves to void, present in the vmlinux BTF) NULL-derefs there: KASAN: null-ptr-deref in range [0x0000000000000028-0x000000000000002f] RIP: 0010:btf_modifier_show\n\n[원문 확인](https://lore-kernel.gnuweeb.org/bpf/20260830073242.148092-3-jiayuan.chen@linux.dev/)\n\n**bpf: Keep progs alive until the trampoline image calling them is freed**\n\nFlorent Revest 패치는 PREEMPT 커널에서 trampoline glue 구간(프로그램 진입 전)에 선점된 태스크가 이미 해제된 prog 텍스트를 호출해 int3 oops가 나는 레이스를, bpf_tramp_image가 호출하는 모든 prog에 refcount를 잡아 이미지\n\n영향: 프리엠션 가능 커널에서 sleepable LSM/fexit trampoline detach 중 프로덕션 크래시가 보고됐고, fentry/fexit·LSM tracing을 쓰는 eBPF/RT 워크로드는 패치 채택 여부와 대안 설계를 반드시 따라가야 합니다.\n\n> With CONFIG_PREEMPTION a task can sit there, in no RCU read section of any flavor and holding only im->pcref, for longer than it takes to free the prog it is about to call\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/08/19/1071)\n\n**bpf: Invalidate dynptr slices by dynptr_id on release**\n\n6.6.y용 백포트가 unmark_stack_slots_dynptr()에서 release_reference(ref_obj_id)만 호출해 bpf_dynptr_slice()/bpf_dynptr_slice_rdwr()로 만든 슬라이스(dynptr_id만 설정, ref_obj_id=0)가 r\n\n영향: dynptr 슬라이스 수명 추적 오류는 verifier가 submit 이후 메모리 접근을 허용해 잘못된 BPF 프로그램이 통과할 수 있으며, upstream 308c7a0ae885 parent_id 리팩터 전체를 stable에 넣기 어려운 환경에서 최소 수정으로 동일 클래스 버그를 막는\n\n> bpf_dynptr_slice() and bpf_dynptr_slice_rdwr() stamp dynptr_id and leave ref_obj_id at 0, so LDX/STX through those slices remains allowed after bpf_ringbuf_submit_dynptr()\n\n[원문 확인](https://lore.kernel.org/bpf/20260829102618.105116-2-xyx2021@mail.ustc.edu.cn/)\n\n**bpf: Propagate referenced dynptr release errors**\n\nstable 백포트가 unmark_stack_slots_dynptr()에서 release_reference() 실패 시 WARN_ON_ONCE만 찍던 경로를 err 전파로 바꿔, 콜백이 caller가 획득한 referenced dynptr을 release하려 할 때 verifier가 거\n\n영향: 잘못된 dynptr release는 verifier가 프로그램 로드를 막아야 하나 WARN 경로는 운영 환경에서 패닉으로 이어질 수 있어, dynptr·콜백·bpf_loop() 조합을 쓰는 eBPF 작성자와 stable 유지보수자가 이 수정을 따라가야 합니다.\n\n> This patch fixes a panic caused by a WARN_ON_ONCE in the verifier when a BPF callback incorrectly attempts to release a referenced dynptr acquired by its caller.\n\n[원문 확인](https://lore.kernel.org/bpf/20260829104214.9F4B01F000E9@smtp.kernel.org/)\n\n**bpf: Fix use-after-free in bpf_prog_test_run_sk_lookup**\n\nbpf_prog_test_run_sk_lookup()가 반복 루프 직후 bpf_test_timer_leave()로 RCU 잠금을 풀고 ctx.selected_sk를 reuseport 검사·sock_gen_cookie()로 역참조하던 순서를, selected_sk 처리가 끝난 뒤 leav\n\n영향: bpf_sk_lookup_assign()이 RCU로만 보호되는 비-refcount 소켓을 선택할 수 있어, userns·비특권 BPF가 켜진 환경에서 동시 close 시 slab UAF가 재현 가능하며 test_run 경로를 쓰는 lookup 프로그램 검증·보안 담당자가 우선 확인해야 \n\n> dropping the RCU lock before dereferencing `ctx.selected_sk` opens an unprotected window. Consequently, if the selected socket is closed concurrently ... accessing `ctx.selected_sk` triggers a slab-us\n\n[원문 확인](https://lists.openwall.net/netdev/2026/08/29/59)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**File descriptor interface for BPF streams**\n\nbpf-next v1 6패치 시리즈가 BPF_PROG_STREAM_OPEN syscall과 libbpf bpf_prog_stream_open()을 추가해 BPF 프로그램 stdout/stderr 스트림을 읽기 전용 close-on-exec FD로 열고, 기본 블로킹 read·poll/e\n\n영향: 기존 BPF_PROG_STREAM_READ_BY_FD 반복 호출만으로는 이벤트 루프 통합이 어려웠는데, FD 인터페이스는 tracelog·관측 도구·사용자 공간 에이전트가 표준 poll 기반으로 BPF 스트림을 소비할 수 있게 해 eBPF 디버깅·텔레메트리 파이프라인 설계에 직접 영향을\n\n> Add BPF_PROG_STREAM_OPEN to return a read-only, close-on-exec descriptor for a program stream. Reads block by default, with an option for non-blocking mode.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/bpf/20260830093514.4105972-1-memxor@gmail.com/)\n\n**bpf: allow terminal gotox instructions**\n\nSiddharth Chintamaneni bpf-next 패치가 check_subprogs()에서 마지막 gotox를 fallthrough가 아닌 종료 instruction으로 허용하고, 직접 offset 검증을 CFG 구성 단계로 넘깁니다. Sashiko는 동일 검증이 bpf_thro\n\n영향: 컴파일러가 서브프로그램 끝에 gotox를 배치하는 유효 프로그램이 로드 실패하던 verifier 제약이 풀리며, 간접 점프·서브프로그램 레이아웃을 쓰는 고급 BPF 작성자에게 영향이 있습니다.\n\n> Skip direct-offset validation for gotox and accept it as a non-fallthrough terminal instruction. Its actual targets remain validated from the instruction-array jump table during CFG construction.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/bpf/20260830073125.360934-1-sidchintamaneni@gmail.com/)\n\n**bpf: Fix UAF due to concurrent consumption of waiting_for_gp_ttrace**\n\nPu Lehui v2 패치가 bpf memalloc의 waiting_for_gp_ttrace에 raw_spinlock을 도입해 alloc_bulk()의 llist_del_first와 __free_rcu 콜백의 llist_del_all 경쟁 UAF를 막으려 하나, Hou Tao·bpf-c\n\n영향: Syzkaller가 재현한 memalloc UAF 수정이 PREEMPT_RT·고부하 BPF 할당 경로에서 lock hold 시간·IRQ 지연을 키울 수 있어, eBPF 메모리 할당자와 RT 프로파일을 함께 추적하는 독자에게 머지 전 설계 재검토가 중요합니다.\n\n> Syzkaller repeatedly triggered UAF splats related to nodes in waiting_for_gp_ttrace within the bpf memalloc\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/08/27/583)"
+    },
+    {
+      "heading": "기타",
+      "body": "국부 드라이버/플랫폼 패치는 본문에서 제외했습니다. 자기 영역 키워드로 lore.kernel.org에서 직접 검색하세요."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "bpf: Fix NULL-ptr-deref when showing a void BTF type",
+      "url": "https://lore-kernel.gnuweeb.org/bpf/20260830073242.148092-3-jiayuan.chen@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Keep progs alive until the trampoline image calling them is freed",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/19/1071",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Invalidate dynptr slices by dynptr_id on release",
+      "url": "https://lore.kernel.org/bpf/20260829102618.105116-2-xyx2021@mail.ustc.edu.cn/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Propagate referenced dynptr release errors",
+      "url": "https://lore.kernel.org/bpf/20260829104214.9F4B01F000E9@smtp.kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Fix use-after-free in bpf_prog_test_run_sk_lookup",
+      "url": "https://lists.openwall.net/netdev/2026/08/29/59",
+      "note": "thread"
+    },
+    {
+      "title": "File descriptor interface for BPF streams",
+      "url": "https://lore-kernel.gnuweeb.org/bpf/20260830093514.4105972-1-memxor@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: allow terminal gotox instructions",
+      "url": "https://lore-kernel.gnuweeb.org/bpf/20260830073125.360934-1-sidchintamaneni@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Fix UAF due to concurrent consumption of waiting_for_gp_ttrace",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/27/583",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "source": "research-dossier",
+    "bucketCounts": {
+      "릴리스/로드맵": 0,
+      "회귀·보안 신호": 5,
+      "핵심 변경": 3,
+      "기타": 0
+    },
+    "entryCount": 8
+  }
+}
