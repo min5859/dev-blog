@@ -1,0 +1,108 @@
+{
+  "id": "2026-09-01-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-09-01 memcg·RT·TSO — Perf/RT",
+  "headline": "PREEMPT_RT kfree_rcu sheaves 회귀 hotfix, memcg MEMCG_MAX 관측 구멍, BPF TCP TSO 콜백 API 변경이 논의 중입니다.",
+  "date": "2026-09-01",
+  "summary": "Joe Damato v2는 memory.max 거절 시 MEMCG_MAX 이벤트가 누락되던 bpf_mem_alloc 모니터링 맹점을 고치고, Vlastimil Babka는 PREEMPT_RT에서 kfree_rcu_sheaf()를 다시 금지하는 syzbot lockdep 회귀 hotfix를 제안합니다. Chia-Yu Chang net-next v9는 TCP 혼잡제어 min_tso_segs()를 tso_segs()로 바꿔 BPF struct_ops·kfunc 경로 마이그레이션이 필요합니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "PREEMPT_RT kfree_rcu_sheaf() lockdep 회귀 hotfix",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "PREEMPT_RT 빌드·회귀 테스트 담당, slab/kfree_rcu·스케줄러 교차 경로 유지보수자",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/linux-rt-devel/20260831-b4-kfree_rcu_hotfix-v1-1-4f0fb882638b@kernel.org/",
+      "if": "PREEMPT_RT 빌드에서 __balance_push_cpu_stop→set_cpus_allowed_force 경로 lockdep 경고를 추적 중이라면",
+      "do": "kvfree_call_rcu()가 PREEMPT_RT에서 kfree_rcu_sheaf()를 다시 건너뛰는 hotfix 채택 여부를 확인하고, kfree_rcu_nolock·set_cpus_allowed_force RFC 진행도를 함께 추적하세요",
+      "verify": "syzbot circular locking 리포트와 linux-rt-devel 스레드에서 수정 적용 후 splat 소멸 여부를 확인하세요"
+    },
+    {
+      "title": "memory.max 거절 시 MEMCG_MAX 이벤트 누락",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "bpf_mem_alloc·cgroup memory.events 모니터링 담당, eBPF 메모리 한도 운영자",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/bpf/20260831174836.3102406-1-joe@dama.to/",
+      "if": "bpf_mem_alloc() per-CPU freelist refill이 GFP_NOWAIT charge 거절 시 cgroup 이벤트가 보이지 않는다면",
+      "do": "Joe Damato v2 패치의 거절·강제 charge 공통 out 경로 MEMCG_MAX 발생 동작과 Shakeel Butt의 stable Cc 권고를 추적하세요",
+      "verify": "lore BPF 스레드에서 non-blocking charge 거절 시 -ENOMEM만 반환되던 재현 근거와 v2 라우팅 변경을 확인하세요"
+    },
+    {
+      "title": "BPF TCP TSO min_tso_segs→tso_segs API 변경",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "BPF TCP congestion control(struct_ops)·tcp_ca_kfunc selftest 사용자",
+      "verifyLink": "https://lists.openwall.net/netdev/2026/08/24/281",
+      "if": "커스텀 BPF TCP 혼잡제어에서 min_tso_segs struct_ops 콜백을 쓰고 있다면",
+      "do": "net-next v9 머지 전 tso_segs()로 마이그레이션하고 tcp_tso_autosize()·bbr_tso_segs() kfunc 노출 변경을 점검하세요",
+      "verify": "netdev 스레드에서 콜백 이름·시그니처·반환 의미 변경과 tcp_ca_kfunc selftest 업데이트를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**mm/slab: disallow kfree_rcu_sheaf() on PREEMPT_RT again**\n\nVlastimil Babka 패치는 2a8bb29ec9b2가 PREEMPT_RT에서 kfree_rcu_sheaf()를 다시 허용한 변경을 부분 되돌려, kvfree_call_rcu()가 PREEMPT_RT에서 sheaves 경로를 건너뛰게 합니다. set_cpus_allowed_force()가 pi_lock을 잡은 채 kvfree_call_rcu()를 호출할 때 local_trylock()이 waitlock을 잡아 lockdep 순환 잠금이 나던 syzbot 버그를 막습니다.\n\n영향: PREEMPT_RT 프로파일에서 slab sheaves 최적화 회귀가 스케줄러 마이그레이션 경로(__balance_push_cpu_stop→set_cpus_allowed_force)까지 lockdep deadlock 경고를 일으킵니다. RT 커널·syzbot 재현을 추적하는 엔지니어는 이 hotfix 채택과 장기 대안(kfree_rcu_nolock, set_cpus_allowed_force RFC)을 봐야 합니다.\n\n> For the immediate fix, skip kfree_rcu_sheaf() on PREEMPT_RT again from kvfree_call_rcu().\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-rt-devel/20260831-b4-kfree_rcu_hotfix-v1-1-4f0fb882638b@kernel.org/)\n\n> WARNING: possible circular locking dependency detected ... __kfree_rcu_sheaf ... set_cpus_allowed_force ... __balance_push_cpu_stop\n\n[원문 확인](https://syzkaller.appspot.com/bug?extid=acf142088e0182172e58)\n\n> reproduced the original splat with syzbot's C repro ... confirmed the exact same lockdep report as syzbot, then rebuilt with the fix and confirmed the splat no longer appears\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-rt-devel/20260831162442.8176-1-ngocthang2710.1999@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**mm: memcontrol: raise MEMCG_MAX for charges that fail without reclaiming**\n\nJoe Damato v2 패치는 memory.max에서 reclaim 없이 거절되는 non-blocking charge가 -ENOMEM만 반환하고 memory.events:max(MEMCG_MAX)를 올리지 않던 구멍을, 거절·강제 charge 모두 공통 out 경로에서 이벤트를 발생시키도록 고칩니다. reclaim/retry 루프마다 이벤트를 올리던 기존 동작은 v1과 달리 유지합니다.\n\n영향: 프로덕션에서 bpf_mem_alloc() per-CPU freelist refill이 한도에서 GFP_NOWAIT charge를 거절당해도 cgroup 이벤트가 안 보여 BPF 메모리 한도·실패 원인 모니터링이 맹점이 됩니다. bpf_mem_alloc·cgroup v2 memory.events를 쓰는 eBPF 운영자는 stable backport 여부를 추적해야 합니다. linux-mm/cgroups 메인테이너 리뷰·머지 일정과 d6e103a757fa 이후 stable/backport 대상 커널 버전은 확인 필요합니다.\n\n> A non-blocking charge can hit the limit, get rejected, but is not visible in memory.events. This was noticed in a production setting where bpf_mem_alloc() attempted to refill its per-cpu freelists\n\n[원문 확인](https://lore-kernel.gnuweeb.org/bpf/20260831174836.3102406-1-joe@dama.to/)\n\n> let's go with the following patch. No need to change the semantics. Also I think we should Cc stable as getting ENOMEM/allocation-failures without the corresponding counter\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/08/29/32)\n\n**Explicit TSO segment count**\n\nChia-Yu Chang net-next v9 시리즈는 TCP 혼잡제어 콜백 min_tso_segs()를 tso_segs(sk, mss_now)로 바꿔 burst별 TSO 세그먼트 수를 명시 반환하게 하고, BPF struct_ops·kfunc 경로에 tcp_tso_autosize()와 bbr_tso_segs()를 노출합니다. 반환값은 [1, sk_gso_max_segs]로 clamp됩니다.\n\n영향: BPF TCP congestion control 작성자는 콜백 시맨틱이 'tcp_tso_autosize() 하한'에서 '최종 tso_segs'로 바뀌므로 기존 min_tso_segs struct_ops 프로그램을 tso_segs로 마이그레이션해야 합니다. 커스텀 TSO 정책을 쓰는 eBPF 네트워킹 실험·프로덕션 배포는 net-next 머지 전 호환성을 점검해야 합니다. net-next 머지 일정과 기존 배포 BPF CC 바이너리 마이그레이션 가이드는 확인 필요합니다.\n\n> replaces the existing min_tso_segs() congestion control callback with a new tso_segs() callback ... exposes tcp_tso_autosize() as a BPF kfunc\n\n[원문 확인](https://lore-kernel.gnuweeb.org/bpf/20260831165230.2696893-1-chia-yu.chang@nokia-bell-labs.com/)\n\n> The callback is renamed from min_tso_segs() to tso_segs() ... return value semantics is changed from \"floor value passed into tcp_tso_autosize()\" to \"final tso_segs value\"\n\n[원문 확인](https://lists.openwall.net/netdev/2026/08/24/281)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "mm: memcontrol: raise MEMCG_MAX for charges that fail without reclaiming",
+      "url": "https://lore-kernel.gnuweeb.org/bpf/20260831174836.3102406-1-joe@dama.to/",
+      "note": "thread"
+    },
+    {
+      "title": "Shakeel Butt stable Cc 권고",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/29/32",
+      "note": "thread"
+    },
+    {
+      "title": "mm/slab: disallow kfree_rcu_sheaf() on PREEMPT_RT again",
+      "url": "https://lore-kernel.gnuweeb.org/linux-rt-devel/20260831-b4-kfree_rcu_hotfix-v1-1-4f0fb882638b@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "syzbot circular locking dependency",
+      "url": "https://syzkaller.appspot.com/bug?extid=acf142088e0182172e58",
+      "note": "article"
+    },
+    {
+      "title": "ThangNN99 syzbot repro·수정 검증",
+      "url": "https://lore-kernel.gnuweeb.org/linux-rt-devel/20260831162442.8176-1-ngocthang2710.1999@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Explicit TSO segment count (BPF)",
+      "url": "https://lore-kernel.gnuweeb.org/bpf/20260831165230.2696893-1-chia-yu.chang@nokia-bell-labs.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Explicit TSO segment count (netdev)",
+      "url": "https://lists.openwall.net/netdev/2026/08/24/281",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-31T18:45:14.578Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

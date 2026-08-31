@@ -1,0 +1,126 @@
+{
+  "id": "2026-09-01-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-09-01 RISC-V IOMMU 재설계 — 아키텍처·플랫폼",
+  "headline": "Andrew Jones v5 시리즈가 RISC-V IOMMU MSI 리맵을 재설계해 IOMMU_DMA·VFIO 활성화 경로를 열었습니다.",
+  "date": "2026-09-01",
+  "summary": "RISC-V IOMMU v5는 IMSIC 기반 MSI 리맵과 IOMMU_DMA·VFIO·KVM_VFIO 활성화를 제안합니다. RISC-V kexec memblock 유지 백포트, ftrace 범위 검증, TI AM62P/J722S GPU DTS 노드 추가도 함께 추적됩니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "riscv",
+    "arm64",
+    "플랫폼"
+  ],
+  "highlights": [
+    {
+      "title": "iommu/riscv: Enable MSI remapping, IOMMU_DMA and VFIO",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "RISC-V IOMMU·IMSIC·VFIO/KVM 플랫폼 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/08/31/2471",
+      "if": "RISC-V에서 PCIe VFIO 디바이스 할당이나 IOMMU_DMA 경로를 준비 중이라면",
+      "do": "v5 시리즈의 IMSIC·IOVA 매핑 변경과 allow_unsafe_interrupts=1 제약을 추적하세요",
+      "verify": "메일링 리스트 원문에서 v5 설계와 VFIO 모듈 파라미터 요구사항을 확인하세요"
+    },
+    {
+      "title": "riscv: also select ARCH_KEEP_MEMBLOCK if kexec is selected",
+      "priority": "상",
+      "impactType": "backport",
+      "affectedAudience": "RISC-V kexec/kdump·stable 백포트 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/08/31/2241",
+      "if": "Device Tree RISC-V에서 kexec/kdump를 운영 중이라면",
+      "do": "6.18 stable AUTOSEL 백포트 후보 채택 여부와 배포판 커널 반영 일정을 확인하세요",
+      "verify": "Kconfig 변경 원문과 stable 백포트 스레드를 대조하세요"
+    },
+    {
+      "title": "riscv: ftrace: reject out-of-range non-direct targets",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "RISC-V dynamic ftrace·tracing 유지보수 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/07/07/1480",
+      "if": "RISC-V에서 dynamic ftrace나 livepatch를 사용 중이라면",
+      "do": "out-of-range non-direct 타깃 거절 패치의 RISC-V 메인테이너 리뷰 진행을 추적하세요",
+      "verify": "ftrace_modify_call() 검증 수정 내용을 원문 패치와 8월 31일 핑에서 확인하세요"
+    },
+    {
+      "title": "arm64: dts: ti: add am62p/j722s GPU node",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "TI K3 AM62P/J722S arm64 DTS·GPU bring-up 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/linux-arm-kernel/20260831-am62p-gpu-node-v2-1-69945a2db2af@ti.com/",
+      "if": "AM62P/J722S에서 Imagination BXS-4 GPU 바인딩을 준비 중이라면",
+      "do": "공통 DTS GPU 노드 추가 v2와 보드별 status·클럭 설정 계획을 맞추세요",
+      "verify": "원문 스레드에서 노드 정의와 인용 내용을 직접 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**iommu/riscv: Enable MSI remapping, IOMMU_DMA and VFIO**\n\nAndrew Jones v5(17) 시리즈는 v4의 RISC-V IOMMU IRQ domain·PA-to-IOVA 테이블을 제거하고, IMSIC가 CPU별 S-mode 주소 배열을 iommu_dma_prepare_msi_list()로 하나의 연속 IOVA 범위에 매핑하는 방식으로 MSI 리맵을 재설계합니다. 64-bit RISC-V에서 IOMMU_DMA·VFIO type1·KVM_VFIO·defconfig IOMMUFD/VFIO 활성화까지 포함합니다.\n\n영향: RISC-V에서 DMA와 MSI 주소 변환이 맞지 않아 IOMMU_DMA와 VFIO PCIe 디바이스 할당이 막혀 있었습니다. KVM/가상화·IOMMU 담당자는 v5 설계 단순화와 allow_unsafe_interrupts=1 제약을 추적해야 합니다. v5 리뷰·linux-iommu/next 머지 일정과 irqbypass 후속 시리즈 시점은 확인이 필요합니다.\n\n> v5 is a complete redesign around that approach. ... passes the complete array to iommu_dma_prepare_msi_list().\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/08/31/2471)\n\n> VFIO device assignment requires the applicable allow_unsafe_interrupts=1 module parameter.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-riscv/20260831145943.313726-1-andrew.jones@oss.qualcomm.com/)\n\n**riscv: also select ARCH_KEEP_MEMBLOCK if kexec is selected**\n\nHan Gao 패치(업스트림 bce35135fecc)는 RISC-V Kconfig에서 ARCH_KEEP_MEMBLOCK 선택 조건을 ACPI 전용에서 ACPI||KEXEC로 확장합니다. Sasha Levin이 6.18 stable AUTOSEL로 2026-08-31에 백포트 후보로 제출했습니다.\n\n영향: Device Tree RISC-V에서 CONFIG_KEXEC 시 부팅 후 memblock이 해제되면 kexec/kdump가 2차 커널 메모리 배치에 실패할 수 있습니다. RISC-V 플랫폼·배포판 유지보수자는 stable 백포트 채택 여부를 봐야 합니다. 6.18.y 이외 stable 브랜치 백포트 범위는 확인이 필요합니다.\n\n> kexec requires the memblock areas to be kept after boot to initialize the secondary kernel.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/08/31/2241)\n\n> select ARCH_KEEP_MEMBLOCK if ACPI || KEXEC\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-riscv/20260831133314.4125787-438-sashal@kernel.org/)\n\n**riscv: ftrace: reject out-of-range non-direct targets**\n\nRui Qi 7월 패치는 ftrace_resolve_call_addr()로 AUIPC/JALR 범위 밖 non-direct 타깃을 거절하고 ftrace_modify_call()이 old_addr/addr를 올바르게 검증하게 합니다. 8월 31일 핑에서 리뷰를 요청했고, Steven Rostedt는 아키텍처 전용 변경으로 RISC-V 메인테이너 리뷰가 필요하다고 답했습니다.\n\n영향: 범위 밖 ops 전용 trampoline을 FTRACE_ADDR로 돌리면 ftrace_caller가 op->func만 호출해 트램폴린을 건너뛰는 버그가 납니다. RISC-V에서 dynamic ftrace·livepatch를 쓰는 엔지니어는 패치 채택과 리뷰 라우팅을 추적해야 합니다.\n\n> reject other out-of-range targets. Use the resolved old and new targets in ftrace_modify_call()\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/07/07/1480)\n\n> The patch fixes ftrace_modify_call() on RISC-V to properly validate old_addr/addr\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/08/31/242)\n\n> You need the RISC-V maintainers to review and accept this patch.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260831105820.22085739@gandalf.local.home/)\n\n**arm64: dts: ti: add am62p/j722s GPU node**\n\nMichael Walle v2 패치는 k3-am62p-j722s-common-main.dtsi에 ti,am62p-gpu 호환 BXS-4 GPU 노드(gpu@fd80000, 클럭·IRQ·power-domain)를 11줄 추가한다고 제시합니다. v2는 커밋 제목·메시지를 정리하고 이전 머지 윈도우를 놓친 뒤 재송부한 것입니다.\n\n영향: AM62P/J722S SoC에서 Imagination BXS-4 GPU를 바인딩하려면 공통 DTS에 GPU 노드가 필요할 수 있습니다. TI K3 arm64 플랫폼·drm/imagination 드라이버 사용자는 보드 DTS에서 status=okay와 클럭 설정을 맞출 준비가 필요합니다. drm/imagination·keystone clk 캐시 수정 패치와의 머지 순서와 보드별 assigned-clock-rates 필요 여부는 확인이 필요합니다.\n\n> Add BXS-4 GPU node for J722s/AM62P.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-arm-kernel/20260831-am62p-gpu-node-v2-1-69945a2db2af@ti.com/)\n\n> compatible = \"ti,am62p-gpu\", \"img,img-bxs-4-64\", \"img,img-rogue\"; reg = <0x00 0x0fd80000 0x00 0x80000>;\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-arm-kernel/20260831-am62p-gpu-node-v2-1-69945a2db2af@ti.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "iommu/riscv MSI remapping v5 redesign",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/31/2471",
+      "note": "thread"
+    },
+    {
+      "title": "iommu/riscv VFIO allow_unsafe_interrupts requirement",
+      "url": "https://lore-kernel.gnuweeb.org/linux-riscv/20260831145943.313726-1-andrew.jones@oss.qualcomm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv ARCH_KEEP_MEMBLOCK for kexec",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/31/2241",
+      "note": "thread"
+    },
+    {
+      "title": "riscv ARCH_KEEP_MEMBLOCK stable backport",
+      "url": "https://lore-kernel.gnuweeb.org/linux-riscv/20260831133314.4125787-438-sashal@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv ftrace out-of-range target rejection",
+      "url": "https://lists.openwall.net/linux-kernel/2026/07/07/1480",
+      "note": "thread"
+    },
+    {
+      "title": "riscv ftrace patch review ping",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/31/242",
+      "note": "thread"
+    },
+    {
+      "title": "Steven Rostedt on RISC-V maintainer review",
+      "url": "https://lore.kernel.org/linux-riscv/20260831105820.22085739@gandalf.local.home/",
+      "note": "thread"
+    },
+    {
+      "title": "arm64 ti am62p/j722s GPU DTS node v2",
+      "url": "https://lore-kernel.gnuweeb.org/linux-arm-kernel/20260831-am62p-gpu-node-v2-1-69945a2db2af@ti.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-31T18:53:20.661Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

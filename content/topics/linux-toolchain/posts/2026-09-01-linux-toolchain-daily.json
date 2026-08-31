@@ -1,0 +1,163 @@
+{
+  "id": "2026-09-01-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-09-01 modpost·Rust IRQ — Linux 툴체인",
+  "headline": "modpost truncation·WMI GUID 정규화가 stable AUTOSEL에 들어가고, Rust PCI IRQ 인덱스 래핑과 Clippy 1.100 대비 패치가 리뷰 중입니다.",
+  "date": "2026-09-01",
+  "summary": "kbuild modpost가 buf_printf truncation과 WMI GUID 대소문자를 빌드 타임에 잡고 6.18 stable 백포트 대상에 포함되었습니다. Rust for Linux 쪽은 PCI IRQ 벡터 u32 경계 수정과 drm/panic Clippy 경고 정리가 진행 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "툴체인",
+    "kbuild",
+    "Rust",
+    "Clang",
+    "CFI"
+  ],
+  "highlights": [
+    {
+      "title": "modpost buf_printf truncation을 fatal error로 처리",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "kbuild/modpost·모듈 빌드 파이프라인 유지보수 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/05/27/990",
+      "if": "모듈 빌드에서 modpost가 export/alias 메타데이터를 조용히 손상시킬 수 있다면",
+      "do": "upstream 커밋 d7231d8cb262와 truncation fatal error 처리가 배포판·LTS 빌드에 들어갔는지 확인하세요",
+      "verify": "truncation 시 buf_write()가 스택 버퍼 밖을 읽는 원문 설명과 6.18-5.10 stable AUTOSEL 기록을 대조하세요"
+    },
+    {
+      "title": "Rust PCI IRQ 벡터 인덱스 u32 래핑 차단",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust PCI IRQ 바인딩·드라이버 포팅 담당",
+      "verifyLink": "https://patchew.org/linux/20260901-fix-pci-irq-vector-index-truncation-v4-1-f94aa6932fd9@hotmail.com/",
+      "if": "64비트에서 usize IRQ 인덱스가 u32::MAX+1로 잘못 해석될 수 있다면",
+      "do": "v4의 u32::try_from(index)? 변환과 Fixes: 2fb7755b0a7e 태그가 머지·리뷰 반영되었는지 추적하세요",
+      "verify": "u32::MAX+1이 0으로 래핑되는 경로와 Miguel Ojeda의 stable Cc 불필요 판단을 원문에서 확인하세요"
+    },
+    {
+      "title": "modpost WMI GUID 대소문자 정규화",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "WMI 드라이버·modpost alias 생성·배포판 모듈 빌드 담당",
+      "verifyLink": "https://github.com/openSUSE/kernel/commit/3429ae7b2f02a4a6ad40d36ee06641d433d75a1b",
+      "if": "MOF/BMOF 혼합 대소문자 GUID로 WMI 드라이버 자동 로딩이 실패한다면",
+      "do": "upstream 3429ae7b2f02가 6.18 stable AUTOSEL에 포함된 내용을 LTS·배포판 modpost에 적용 여부를 확인하세요",
+      "verify": "do_wmi_entry()의 toupper() 정규화와 AUTOSEL changelog의 upstream 커밋 해시를 대조하세요"
+    },
+    {
+      "title": "drm/panic Rust 1.100 Clippy needless_range_loop 대비",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "Rust for Linux·drm/panic QR 코드 유지보수자, CLIPPY=1 빌드 담당",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/CANiq72=TjVOxDj631gCFMKAeXYbjycmZe74ChXL=rw4H53pQzA@mail.gmail.com/",
+      "if": "CLIPPY=1 빌드를 Rust 1.100(예상 2026-11-12)으로 올릴 계획이 있다면",
+      "do": "drm_panic_qr.rs의 슬라이스 iter_mut 변경과 rust-fixes 백포트 시점을 CI에서 미리 확인하세요",
+      "verify": "Clippy needless_range_loop 경고 원인과 bounds check 유지 주장을 패치 스레드에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ARM: imx: Fix suspend/resume crash with Clang CFI**\n\nv5는 i.MX6 OCRAM suspend 코드가 fncpy()로 kCFI 타입 해시 없이 복사되어 CONFIG_CFI=y에서 imx6_suspend_in_ocram_fn 간접 호출이 패닉하던 문제를, SYM_TYPED_FUNC_START_ALIGNED()·struct imx6_cpu_pm_info::cfi_type·__ro_after_init 마킹으로 CFI 검사를 유지한 채 고칩니다.\n\n영향: Clang/kCFI 빌드에서 i.MX6 suspend/resume 회귀를 막고, fncpy()+런타임 코드 복사와 CFI 해시 배치를 함께 다루는 ARM 전력 관리·LLVM 툴체인 통합 사례입니다.\n\n> The suspend code that runs from OCRAM is copied there with fncpy(), which does not copy the kCFI type hash preceding the function. With CONFIG_CFI=y the indirect call through imx6_suspend_in_ocram_fn \n\n[원문 확인](https://patchew.org/linux/20260830155100.1020620-1-linux@yoavmoshe.com/mbox)\n\nKobo Clara HD(i.MX6SLL) postmarketOS에서 CONFIG_CFI=y suspend/resume 동작이 확인되었습니다. stable 백포트 시 선행 커밋 979c294509f9 포함 여부와 imx/arm 트리 머지 일정은 확인이 필요합니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**rust: pci: reject IRQ vector indices that do not fit in u32**\n\nv4는 IrqVectorRegistration::index()의 usize 인덱스를 pci_irq_vector() 호출 전 u32::try_from()으로 검사해, 64비트에서 u32::MAX+1이 0으로 래핑되어 첫 벡터로 해석되던 경로를 EINVAL로 막습니다.\n\n영향: Rust PCI IRQ 추상화(Fixes: 2fb7755b0a7e)의 usize→unsigned int 경계에서 잘못된 IRQ가 선택될 수 있어, Rust PCI 드라이버 작성자는 이 ABI 경계 수정을 따라가야 합니다.\n\n> On 64-bit architectures, casting an index larger than u32::MAX wraps it before the PCI core can validate it. In particular, u32::MAX + 1 becomes zero and can resolve to the first allocated vector.\n\n[원문 확인](https://patchew.org/linux/20260901-fix-pci-irq-vector-index-truncation-v4-1-f94aa6932fd9@hotmail.com/)\n\nv4에서 명시적 len 검사 제거 후 PCI core 범위 검증만으로 충분한지, 리뷰 코멘트(.map_err 필요 여부) 반영 여부는 확인이 필요합니다.\n\n**scripts: modpost: detect and report truncated buf_printf() output**\n\nmodpost buf_printf()가 vsnprintf() 반환 길이를 검사하지 않아 스택 버퍼를 넘어 읽고 잘못된 심볼명을 출력하던 문제를, truncation·실패 시 fatal error로 바꿉니다.\n\n영향: 모듈 빌드 시 modpost가 조용히 손상된 export/alias 메타데이터를 만들 수 있어, kbuild·장기 지원 백포트 담당자는 이 빌드 도구 수정 적용을 확인해야 합니다.\n\n> whenever this happens buf_printf() currently passes this length, unchecked, to buf_write(), which silently reads past the stack buffer and copies invalid data into the output buffer.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/05/27/990)\n\nupstream 커밋 d7231d8cb262가 6.18-5.10 stable AUTOSEL에 포함되었고 Nathan Chancellor가 kbuild 트리로 가져가겠다고 Acked했습니다.\n\n**modpost: Handle malformed WMI GUID strings**\n\nmodpost do_wmi_entry()가 MOF/BMOF에서 온 혼합 대소문자 WMI GUID를 대문자로 정규화하고 유효한 GUID 형식인지 검증한 뒤 module alias를 생성합니다.\n\n영향: 잘못된 WMI alias로 드라이버 자동 로딩이 실패하는 빌드 타임 문제를 막아, WMI 모듈·kbuild alias 생성을 다루는 팀에 영향을 줍니다.\n\n> Some WMI GUIDs found inside binary MOF files contain both uppercase and lowercase characters. Blindly copying such GUIDs will prevent the associated WMI driver from loading automatically\n\n[원문 확인](https://github.com/openSUSE/kernel/commit/3429ae7b2f02a4a6ad40d36ee06641d433d75a1b)\n\nupstream 3429ae7b2f02가 6.18 stable AUTOSEL에 포함되었습니다.\n\n**drm/panic: clean new `clippy::needless_range_loop` lint for Rust 1.100.0**\n\nRust 1.100.0(예상 2026-11-12)에서 Clippy가 self.decimals 필드 뒤 배열 인덱싱을 needless_range_loop로 경고하므로, drm_panic_qr.rs의 for i in 0..len 루프를 self.decimals[..len].iter_mut()로 바꿉니다.\n\n영향: CLIPPY=1 커널 Rust 빌드가 Rust 1.100으로 올라갈 때 drm/panic QR 코드 경로에서 새 Clippy 경고를 막아, Rust for Linux CI·rust-fixes 백포트 추적이 필요합니다.\n\n> Thus clean the warning by iterating over a slice rather than using `take()` so that an out-of-range `len` still triggers the same bounds check as the indexed loop.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/CANiq72=TjVOxDj631gCFMKAeXYbjycmZe74ChXL=rw4H53pQzA@mail.gmail.com/)\n\nrust-fixes PR 포함 시점과 6.18.y stable 백포트 필요 여부는 확인이 필요합니다."
+    },
+    {
+      "heading": "기타",
+      "body": "**Docs: changes.rst: rework**\n\nManuel Ebner v2 시리즈(4패치)는 Documentation/process/changes.rst의 부정확한 표현을 다듬고, lzma·lzop·iproute2·syslinux 등 누락 빌드 도구를 changes.rst와 scripts/ver_linux에 추가하며 번역·optional 표기 개선을 제안합니다.\n\n영향: 커널 빌드 최소 도구 목록 문서가 실제 kbuild 요구와 어긋나면 Clang/Rust·이미지 생성 환경 구성이 잘못되므로, 툴체인·빌드 환경 담당자가 변경을 추적해야 합니다.\n\n> Issues are inaccurate language (patch 1). Patch 2 adds toolsets and patch 3 updates the list in the translations. Finally patch 4 is a preview for a way to handle the marking of optional software.\n\n[원문 확인](https://patchew.org/linux/20260831151605.638172-2-manuelebnerli@mailbox.org/)\n\n7.3 머지 윈도 대상 여부와 optional software 표기 방향 합의는 확인이 필요합니다.\n\n**Docs: pt_BR, it_IT: changes.rst: copy table from english source**\n\nchanges.rst rework 시리즈 patch 3/4는 영문 Documentation/process/changes.rst의 도구·버전 표를 it_IT·pt_BR 번역본에 복사해 정렬·누락 항목을 맞춥니다.\n\n영향: 영문 빌드 요구 목록이 갱신될 때 번역 문서가 뒤처지면 비영어권 빌드 가이드가 잘못된 도구 버전을 안내할 수 있습니다.\n\n> Copy the list from Documentation/process/changes.rst to /it_IT/ and /pt_BR/ with the purpose to update and sort the lists in the translations.\n\n[원문 확인](https://patchew.org/linux/20260831152405.638749-2-manuelebnerli@mailbox.org/mbox)\n\n영문 changes.rst rework가 머지되기 전 번역 동기화 순서는 확인이 필요합니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ARM imx CFI suspend/resume fix v5",
+      "url": "https://patchew.org/linux/20260830155100.1020620-1-linux@yoavmoshe.com/mbox",
+      "note": "thread"
+    },
+    {
+      "title": "rust-clippy needless_range_loop issue #16631",
+      "url": "https://github.com/rust-lang/rust-clippy/issues/16631",
+      "note": "article"
+    },
+    {
+      "title": "rust-clippy needless_range_loop PR #16634",
+      "url": "https://github.com/rust-lang/rust-clippy/pull/16634",
+      "note": "article"
+    },
+    {
+      "title": "drm/panic Clippy needless_range_loop cleanup",
+      "url": "https://lore.kernel.org/rust-for-linux/CANiq72=TjVOxDj631gCFMKAeXYbjycmZe74ChXL=rw4H53pQzA@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "rust pci IRQ vector index truncation v4",
+      "url": "https://patchew.org/linux/20260901-fix-pci-irq-vector-index-truncation-v4-1-f94aa6932fd9@hotmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Miguel Ojeda Fixes tag and stable Cc review",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/31/1084",
+      "note": "thread"
+    },
+    {
+      "title": "modpost buf_printf truncation fix",
+      "url": "https://lists.openwall.net/linux-kernel/2026/05/27/990",
+      "note": "commit"
+    },
+    {
+      "title": "modpost buf_printf stable AUTOSEL",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/31/2119",
+      "note": "changelog"
+    },
+    {
+      "title": "modpost buf_printf Nathan Chancellor Ack",
+      "url": "https://lists.openwall.net/linux-kernel/2026/05/27/1706",
+      "note": "thread"
+    },
+    {
+      "title": "modpost WMI GUID malformed strings fix",
+      "url": "https://github.com/openSUSE/kernel/commit/3429ae7b2f02a4a6ad40d36ee06641d433d75a1b",
+      "note": "commit"
+    },
+    {
+      "title": "modpost WMI GUID toupper normalization",
+      "url": "https://lists.openwall.net/linux-kernel/2026/06/10/2252",
+      "note": "commit"
+    },
+    {
+      "title": "modpost WMI GUID stable AUTOSEL",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/31/2009",
+      "note": "changelog"
+    },
+    {
+      "title": "Docs changes.rst rework v2 cover letter",
+      "url": "https://patchew.org/linux/20260831151605.638172-2-manuelebnerli@mailbox.org/",
+      "note": "thread"
+    },
+    {
+      "title": "Docs changes.rst patch 2 tool additions",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/31/2493",
+      "note": "commit"
+    },
+    {
+      "title": "Docs pt_BR it_IT changes.rst table sync",
+      "url": "https://patchew.org/linux/20260831152405.638749-2-manuelebnerli@mailbox.org/mbox",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-08-31T18:34:13.994Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
