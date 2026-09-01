@@ -1,0 +1,153 @@
+{
+  "id": "2026-09-02-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-09-02 bnxt·BPF·Rust IO — linux-toolchain",
+  "headline": "bnxt_en TPA 크래시 v4, BPF lib.bpf.mk v3 보류, Rust register! v4·fwnode PCS v15가 netdev·툴체인 리뷰를 압박합니다.",
+  "date": "2026-09-02",
+  "summary": "Broadcom bnxt_en TPA ID 마스킹 v4는 Thor2 부팅 크래시를 막지만 NETIF_F_LRO capability 정합성은 별도 Fixes가 필요합니다. BPF selftests 공통 lib.bpf.mk v3는 Andrew Morton이 다음 iteration을 기다리라고 했고, Rust register! proc macro v4와 fwnode PCS v15가 드라이버·phylink API 전환을 진행합니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "bnxt_en: SW TPA ID 바운드로 OOB 크래시 방지",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "bnxt_en·Broadcom NIC 드라이버 유지보수 담당",
+      "verifyLink": "https://lists.openwall.net/netdev/2026/08/28/180",
+      "if": "Thor2/P5+ NIC에서 bnxt_en RX·부팅 경로 크래시나 stable 백포트 회귀를 추적한다면",
+      "do": "v4의 max_tpa_roundup_size 마스킹·rx_tpa 할당 변경과 Paolo·Sashiko가 지적한 NETIF_F_LRO hw_features 설정 이슈를 분리 추적하세요",
+      "verify": "netdev 스레드에서 v4 머지 후 LRO Fixes follow-up 필요 여부와 max_tpa_v2==0·BNXT_FLAG_TPA 조합 재현 상태를 확인하세요"
+    },
+    {
+      "title": "rust: register! proc macro·projection 전환 v4",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust for Linux io/register!·nova-core·drm/tyr 드라이버 개발 담당",
+      "verifyLink": "https://patchew.org/linux/20260819-typed._5Fregister-v3-0-3699a75fadf1@garyguo.net/",
+      "if": "Rust for Linux에서 register!·relative register를 쓰는 드라이버를 유지한다면",
+      "do": "Gary Guo v4(9월 1일)의 typed base·I/O subregion projection 전환과 nova-core·drm/tyr 일괄 변경을 리베이스 계획에 반영하세요",
+      "verify": "v4에서 v3 대비 syn·base type 검사 변경과 proc macro 전환 후 compile time·CLIPPY=1 빌드 영향을 리뷰 스레드에서 확인하세요"
+    },
+    {
+      "title": "selftests: lib.bpf.mk BPF 빌드 fragment v3",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "BPF selftests·kbuild/selftests Makefile 유지보수 담당",
+      "verifyLink": "https://patchew.org/linux/20260814075054.507089-1-ziyang.meme@gmail.com/",
+      "if": "BPF selftests·kselftest를 Clang/BPF 툴체인으로 빌드한다면",
+      "do": "Ziyang Men v3의 lib.bpf.mk 통합과 cgroup·hid·sched_ext 전환 내용을 bpfbot·Sashiko 지적 사항과 함께 v4 준비 목록에 올리세요",
+      "verify": "Sashiko·bpfbot이 요구한 v3 잔여 이슈와 sched_ext BPF_SKEL_EXT·subskeleton 레이아웃 변경의 downstream CI 영향을 확인하세요"
+    },
+    {
+      "title": "net: fwnode PCS provider API v15 재송",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "phylink·PCS·MAC 드라이버·devicetree 네트워크 바인딩 담당",
+      "verifyLink": "https://lists.openwall.net/netdev/2026/09/01/200",
+      "if": "외장 PCS·phylink·DT pcs-handle 바인딩을 포팅한다면",
+      "do": "Christian Marangi v15(9월 1일)의 fill_available_pcs·PCS notifier·late attach/release 경로를 .mac_select_pcs 의존 제거 계획에 맞춰 검토하세요",
+      "verify": "v15 lock/notifier 수정의 netdev 리뷰 반응과 Mediatek·QCOM·Airoha 외 fwnode_pcs_get() probe defer 검증 상태를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**bnxt_en: Bound SW TPA IDs to prevent crashes**\n\nv4는 Broadcom bnxt_en에서 FW TPA ID를 bp->max_tpa_roundup_size로 마스킹하고 rx_tpa를 그 크기로 할당해 rx_tpa 인덱스 초과 크래시를 막습니다. Paolo Abeni는 Sashiko(Clashiko)가 지적한 NETIF_F_LRO가 TPA 미지원 시에도 hw_features에 설정되는 문제가 v4만으로는 해결되지 않았다고 재지적했습니다.\n\n영향: Thor2/P5+ NIC에서 부팅·RX 경로 크래시와 stable 백포트 대상 회귀를 추적하는 netdev·드라이버 담당자에게, TPA/LRO capability 정합성과 별도 Fixes가 필요한지가 리뷰 쟁점입니다.\n\n> Fix this by allocating rx_tpa with bp->max_tpa rounded up to the next power of 2 (bp->max_tpa_roundup_size) entries and masking the FW TPA ID with that size\n\n[원문 확인](https://lists.openwall.net/netdev/2026/08/28/180)\n\n**rust_binder: reject mremap()**\n\nCarlos Llamas 패치는 rust_binder가 Inner::vma_addr에 캐시한 매핑이 mremap()로 이동하면 IPC가 깨지고 shrinker reclaim 중 페이지가 일시 유출될 수 있어 .mremap()을 명시적으로 거부합니다. Sashiko가 보고한 후속 수정으로 Fixes: eafedbc7c050을 참조합니다.\n\n영향: Android Rust Binder·VMA 추상화 작업자에게, check_vma 이후에도 남던 mremap 경로를 차단하는 보안·안정성 후속 패치입니다. 2026-09-01 패치의 .mremap() 구현 전문과 vm_ops->close 도입 전 mremap offset 변형 공격 가능성은 확인이 필요합니다.\n\n[원문 확인](https://patchew.org/linux/20260218-binder-vma-check-v2-0-60f9d695a990@google.com/20260218-binder-vma-check-v2-1-60f9d695a990@google.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**selftests: shared lib.bpf.mk for building BPF progs and skeletons**\n\nZiyang Men의 v3 시리즈는 tools/testing/selftests/lib.bpf.mk로 libbpf·bpftool·vmlinux.h·BPF 객체·skeleton 빌드를 한 fragment로 통합하고 cgroup·hid·sched_ext에 적용합니다. 8월 31일 follow-up에 Andrew Morton은 merge window·bpfbot·Sashiko 리뷰 부담을 이유로 다음 iteration을 기다리는 편이 낫다고 답했습니다.\n\n영향: BPF selftests·kbuild/selftests Makefile 유지보수 담당자에게, 공통 Makefile fragment 도입 전 bot 지적 사항을 정리한 v4가 필요합니다.\n\n> Under these circumstances I expect most reviewers would choose to await the next iteration!\n\n[원문 확인](https://patchew.org/linux/20260814075054.507089-1-ziyang.meme@gmail.com/)\n\n**net: pcs: Introduce support for fwnode PCS**\n\nChristian Marangi의 fwnode PCS 시리즈(v15, 9월 1일 재송)는 PCS provider API와 phylink 내부 PCS 리스트·late attach/release notifier를 도입해 .mac_select_pcs 의존을 줄입니다. MAC은 pcs_interfaces·fill_available_pcs로 DT pcs-handle 기반 PCS를 phylink_create 시 등록합니다.\n\n영향: 외장 PCS·phylink·DT 바인딩을 다루는 netdev·드라이버 포터에게, export symbol 없이 PCS를 fwnode로 연결하는 표준 경로가 net-next 머지 후보입니다.\n\n> MAC should now provide a callback to fill the available PCS in phylink_config in .fill_available_pcs and fill the .num_possible_pcs with the number of elements in the array\n\n[원문 확인](https://lists.openwall.net/netdev/2026/09/01/200)\n\n**rust: io: support register projections and remove relative registers**\n\nGary Guo v4(9월 1일)는 register!를 proc macro로 재구현하고 레지스터에 typed base를 요구합니다. relative register는 I/O subregion projection으로 대체하고 nova-core·drm/tyr 등 드라이버를 일괄 전환합니다.\n\n영향: Rust for Linux I/O·register! 매크로 사용자와 GPU Rust 드라이버 작성자에게, 타입 안전한 레지스터 projection이 향후 register API의 기본 모델이 됩니다.\n\n> gpu: nova-core: convert hshub0 from relative register to projection; rust: io: register: remove relative registers\n\n[원문 확인](https://patchew.org/linux/20260819-typed._5Fregister-v3-0-3699a75fadf1@garyguo.net/)\n\n**drm/tyr: add BO creation and lookup helpers**\n\nAlvin Sun이 tyr-ioctls v1 시리즈 patch 6에서 GEM BO 생성·lookup을 위한 new_object()·lookup_handle() 헬퍼를 추가했습니다. 4월 tyr-ioctls-deps 시리즈는 VM/BO ioctl 구현에 SZ_4G·task_size()·XArray Guard::find() 등 선행 API를 upstream에 제안했습니다. 2026-09-02 tyr-ioctls v1 patch 6의 전체 diff·리뷰 스레드 공개 여부와 Onur Özkan xa_alloc 선행 패치 머지 여부는 확인이 필요합니다.\n\n영향: Rust DRM tyr 드라이버와 userspace BO ioctl 경로를 추적하는 GPU·Rust for Linux 담당자에게, GEM handle 관리 헬퍼가 ioctl 시리즈 머지의 전제 조건입니다.\n\n[원문 확인](https://yhbt.net/lore/lkml/20260417-tyr-ioctls-deps-v1-0-41c6e9bb061c@linux.dev/raw)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "bnxt_en: Bound SW TPA IDs to prevent crashes",
+      "url": "https://lists.openwall.net/netdev/2026/08/28/180",
+      "note": "patch"
+    },
+    {
+      "title": "bnxt_en NETIF_F_LRO follow-up thread",
+      "url": "https://patchew.org/linux/20260828190900.1767611-1-joe@dama.to/",
+      "note": "thread"
+    },
+    {
+      "title": "selftests: shared lib.bpf.mk v3",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/14/529",
+      "note": "patch"
+    },
+    {
+      "title": "lib.bpf.mk usage fragment",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/14/532",
+      "note": "patch"
+    },
+    {
+      "title": "lib.bpf.mk Andrew Morton follow-up",
+      "url": "https://patchew.org/linux/20260814075054.507089-1-ziyang.meme@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "fwnode PCS cover letter",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/13/628",
+      "note": "thread"
+    },
+    {
+      "title": "fwnode PCS v15 phylink_config",
+      "url": "https://lists.openwall.net/netdev/2026/09/01/200",
+      "note": "patch"
+    },
+    {
+      "title": "tyr-ioctls-deps cover letter",
+      "url": "https://yhbt.net/lore/lkml/20260417-tyr-ioctls-deps-v1-0-41c6e9bb061c@linux.dev/raw",
+      "note": "thread"
+    },
+    {
+      "title": "tyr-ioctls-deps panfrost MR reference",
+      "url": "https://yhbt.net/lore/linux-mm/20260417-tyr-ioctls-deps-v1-0-41c6e9bb061c@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "rust register projections v3 cover",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/19/980",
+      "note": "thread"
+    },
+    {
+      "title": "rust register projections v3 patch",
+      "url": "https://patchew.org/linux/20260819-typed._5Fregister-v3-0-3699a75fadf1@garyguo.net/",
+      "note": "patch"
+    },
+    {
+      "title": "rust_binder reject mremap thread",
+      "url": "https://patchew.org/linux/20260218-binder-vma-check-v2-0-60f9d695a990@google.com/20260218-binder-vma-check-v2-1-60f9d695a990@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "rust_binder Sashiko patchset",
+      "url": "https://sashiko.dev/#/patchset/20260813193433.3318288-1-surenb%40google.com?part=2",
+      "note": "article"
+    },
+    {
+      "title": "check_vma related thread",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/27/581",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-01T19:09:41.436Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

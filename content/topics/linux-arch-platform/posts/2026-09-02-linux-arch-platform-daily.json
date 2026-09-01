@@ -1,0 +1,116 @@
+{
+  "id": "2026-09-02-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-09-02 RISC-V uaccess·THP RCU — Arch·Platform",
+  "headline": "Tenstorrent RISC-V uaccess misaligned 최대 11% 개선 제안, Lichee Pi 4A USB3 DTS·THP deposited table RCU 지연 free 논쟁이 linux-riscv에서 진행됩니다.",
+  "date": "2026-09-02",
+  "summary": "RISC-V 렌즈는 Tenstorrent K3/Ascalon uaccess fast path, Sophgo SG2044 SPI NOR, Lichee Pi 4A USB3 DTS 패치가 올라왔습니다. MM THP deposited table RCU defer 시리즈는 exit(2) 성능 우려와 zap 경로 설계를 중심으로 리뷰가 이어집니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "RISC-V",
+    "아키텍처",
+    "플랫폼"
+  ],
+  "highlights": [
+    {
+      "title": "RISC-V uaccess misaligned fast path",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "RISC-V uaccess·Tenstorrent/K3/Ascalon 플랫폼 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/linux-riscv/20260901192334.3543340-1-tchiu@tenstorrent.com/",
+      "if": "HAVE_EFFICIENT_UNALIGNED_ACCESS가 켜진 RISC-V에서 uaccess·misaligned user copy를 다루는 경우",
+      "do": "arch/riscv/lib/uaccess.S word copy fast path 채택 여부와 K3/Ascalon 외 uarch 재현 가능성을 추적하세요",
+      "verify": "misaligned 512B user copy 대역폭 측정값과 패치 리뷰·머지 일정을 lore 원문에서 확인하세요"
+    },
+    {
+      "title": "Lichee Pi 4A USB3 DTS 활성화",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "T-Head TH1520·Lichee Pi 4A RISC-V DTS·USB 담당",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-riscv/2026-September/097597.html",
+      "if": "Lichee Pi 4A(TH1520) 보드에서 USB3 upstream·허브 downstream bring-up을 담당하는 경우",
+      "do": "TH1520 USB 12패치 시리즈 12/12 재송부와 1–11패치 리뷰·머지 순서를 따라가세요",
+      "verify": "VL817 허브·4 Type-A downstream 및 avdd33_usb3 regulator 묘사를 mailing list 원문에서 확인하세요"
+    },
+    {
+      "title": "THP deposited table RCU defer 설계",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "MM·THP·arch page table free(RISC-V 포함) 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/linux-riscv/20260901-rcu-pagetable-freeing-v1-1-5456a81c8212@kernel.org/",
+      "if": "lockless page table walk·THP split deposited table free 경로를 추적하는 경우",
+      "do": "zap_deposited_table()의 pte_free_defer() 전환과 Jason Gunthorpe mmu_gather 배치 제안 채택 여부를 리뷰 스레드에서 확인하세요",
+      "verify": "패치 01/12 선행 조건과 시리즈 전체 머지 일정을 lore 원문에서 확인하세요"
+    },
+    {
+      "title": "Sophgo SG2044 SRD3 SPI NOR DTS",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "Sophgo SG2044·SRD3 RISC-V DTS 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/linux-riscv/20260902-sg2044-dts-v1-1-aa1fd1a4ec0d@iscas.ac.cn/",
+      "if": "SRD3-10 RISC-V 보드 부트·스토리지 bring-up을 담당하는 경우",
+      "do": "spifmc0·spifmc1 노드와 spifmc 드라이버·바인딩 리뷰 상태를 추적하세요",
+      "verify": "부트로더·파티션 테이블 연동 여부와 DTS 노드 묘사를 lore 원문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**riscv: skip software algning code for HAVE_EFFICIENT_UNALIGNED_ACCESS**\n\nAndy Chiu v1 패치는 CONFIG_HAVE_EFFICIENT_UNALIGNED_ACCESS가 켜진 RISC-V에서 arch/riscv/lib/uaccess.S의 소프트웨어 정렬·shift copy 경로를 #if 가드로 건너뛰고 바로 word copy 루프로 진입합니다. Tenstorrent K3·Ascalon에서 misaligned 512B user copy 대역폭이 최대 약 11% 개선됐다고 보고합니다.\n\n영향: 하드웨어 misaligned access가 효율적인 RVA23급 RISC-V 플랫폼에서 불필요한 uaccess 정렬 오버헤드를 줄입니다. Tenstorrent·고성능 RISC-V bring-up 담당자는 HAVE_EFFICIENT_UNALIGNED_ACCESS 선택 조건과 uaccess fast path 채택 여부를 추적해야 합니다.\n\n> We can jump straight into the copy loop if the kernel is compiled for a hardware that natively supports misaligned access.\n\n> Ascalon | 10.0% | 11.4% |\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-riscv/20260901192334.3543340-1-tchiu@tenstorrent.com/)\n\n**riscv: dts: sophgo: sg2044: srd3: add spifmc node**\n\nHan Gao·Hangfan Li 패치는 Sophgo SG2044 SRD3-10 보드 DTS(sg2044-sophgo-srd3-10.dts)에 spifmc0·spifmc1 노드를 추가하고 각각 jedec,spi-nor 플래시(133 MHz, 1-bit TX/RX)를 묘사합니다. 보드에 SPI 플래시 두 개가 있다고 설명합니다.\n\n영향: SRD3-10 RISC-V 보드 부트·스토리지 bring-up에 SPI NOR DT 바인딩이 필요합니다. Sophgo SG2044 플랫폼·배포판 DTS 담당자는 spifmc 컨트롤러와 플래시 파티션 후속 패치를 따라가야 합니다. spifmc 드라이버·바인딩 리뷰 상태와 부트로더/파티션 테이블 연동 여부는 확인이 필요합니다.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-riscv/20260902-sg2044-dts-v1-1-aa1fd1a4ec0d@iscas.ac.cn/)\n\n**riscv: dts: thead: enable USB3 ports on Lichee Pi 4A**\n\nIcenowy Zheng이 TH1520 USB 지원 12패치 시리즈 12/12를 linux-riscv에 재송부했습니다. Lichee Pi 4A 보드 DTS에 SoC USB3·VIA VL817 허브·4개 USB3 Type-A 포트, avdd33_usb3·hub 전원 레귤레이터를 추가합니다.\n\n영향: Lichee Pi 4A(TH1520 RISC-V SBC)에서 USB3 upstream·허브 downstream을 쓰려면 보드 DTS 전원·커넥터·허브 노드가 선행됩니다. T-Head TH1520·Lichee Pi bring-up 담당자는 PHY/DWC3/허브 바인딩 시리즈 머지를 추적해야 합니다. AON regulator 전환 TODO 처리 시점은 확인이 필요합니다.\n\n> The Lichee Pi 4A board features an onboard VIA VL817 hub connected to the SoC's USB3 as upstream and 4 USB-3.0-capable Type-A ports as downstream.\n\n> Enable SoC USB3 and the hub on Lichee Pi 4A.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-September/097597.html)\n\n**mm/huge_memory: zap deposited page tables after an RCU grace period**\n\nLorenzo Stoakes는 [PATCH 01/12] 리뷰에서 Jason Gunthorpe의 mmu_gather 연결 리스트 제안에 답해, zap_deposited_table()은 THP split용 reserve(deposited) 테이블을 __free_pages() 수준으로 즉시 해제하는 경로이며 TLB flush와 무관하다고 설명합니다. call_rcu()로 개별 지연 free해도 체감 문제는 없을 것이라 봅니다.\n\n영향: Lorenzo v1(12) 시리즈는 모든 아키텍처에서 페이지 테이블 free를 RCU 지연으로 통일해 lockless page table walk 기반을 마련합니다. deposited table free 경로의 RCU 전환 논쟁은 RISC-V 등 MM/arch 담당자가 성능·복잡도 trade-off를 이해해야 합니다.\n\n> update zap_deposited_table() to use pte_free_defer() rather than pte_free().\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-riscv/20260901-rcu-pagetable-freeing-v1-1-5456a81c8212@kernel.org/)\n\n**mm/huge_memory: zap deposited page tables after an RCU grace period (exit 성능 논쟁)**\n\nLiam R. Howlett는 Kiryl Shutsemau의 exit(2) 성능 우려에 답해, deposited table을 RCU로 지연 free해도 exit 경로에서 측정 가능한 회귀 시나리오를 만들기 어렵고 오히려 느려지는 경우는 더 어렵다고 봅니다.\n\n영향: THP deposited table RCU defer가 프로세스 exit·VM 재시작 워크로드에 미치는 영향은 MM 리뷰의 핵심 쟁점입니다. 대량 exit/munmap 워크로드를 다루는 플랫폼·MM 담당자는 Liam·Kiryl 논쟁 결과를 따라가야 합니다.\n\n> exit(2) path is performance critical for many workloads. Like, if you need to restart VM.\n\n> It would be very difficult to come up with a scenario that this would have a measurable difference and an even harder time to come up with one that is slower.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-September/097595.html)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "high",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요. Sophgo SG2044 spifmc 항목은 confidence가 medium이며 spifmc 관련 인용 검증이 완료되지 않았습니다."
+  },
+  "sources": [
+    {
+      "title": "riscv: skip software algning code for HAVE_EFFICIENT_UNALIGNED_ACCESS",
+      "url": "https://lore-kernel.gnuweeb.org/linux-riscv/20260901192334.3543340-1-tchiu@tenstorrent.com/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: dts: sophgo: sg2044: srd3: add spifmc node",
+      "url": "https://lore-kernel.gnuweeb.org/linux-riscv/20260902-sg2044-dts-v1-1-aa1fd1a4ec0d@iscas.ac.cn/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: dts: thead: enable USB3 ports on Lichee Pi 4A",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-September/097597.html",
+      "note": "thread"
+    },
+    {
+      "title": "mm/huge_memory: zap deposited page tables after an RCU grace period (PATCH 01/12)",
+      "url": "https://lore-kernel.gnuweeb.org/linux-riscv/20260901-rcu-pagetable-freeing-v1-1-5456a81c8212@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "mm/huge_memory: Lorenzo on zap_deposited_table vs mmu_gather",
+      "url": "https://lore-kernel.gnuweeb.org/linux-riscv/apbiB51hjm-9pRzf@gremlin/",
+      "note": "thread"
+    },
+    {
+      "title": "mm/huge_memory: exit(2) performance debate",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-September/097595.html",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-01T19:30:54.808Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

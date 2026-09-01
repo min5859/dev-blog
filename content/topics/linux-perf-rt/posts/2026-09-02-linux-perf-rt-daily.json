@@ -1,0 +1,133 @@
+{
+  "id": "2026-09-02-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-09-02 BPF·slab RT — Perf/RT",
+  "headline": "BPF SEG6 SRH KASAN 수정, kfree_rcu_sheaf RT hotfix 심화, KVM gpc-v3·amdgpu DC FPU 논의가 이어집니다.",
+  "date": "2026-09-02",
+  "summary": "Cen Zhang BPF 패치는 비선형 skb에서 SEG6 SRH 캐시가 slab-use-after-free를 일으키던 경로를 seg6_get_srh() 기반으로 고치고 stable 큐잉을 요청했습니다. Vlastimil Babka는 PREEMPT_RT kfree_rcu_sheaf hotfix의 근본 원인이 pi_lock 아래 GFP_NOWAIT 할당임을 지적했고, David Woodhouse KVM gpc-v3와 Bert Karwatzki amdgpu DC FPU follow-up이 RT 검증 논의를 이어갑니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "bpf: Fix non-linear SRH access in bpf_update_srh_state()",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "SEG6 LWT BPF 프로그램 작성·운영자, net/bpf 유지보수 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/bpf/20260901183151.16648-1-cenzhang@linux.microsoft.com/",
+      "if": "SEG6 LWT BPF 프로그램을 비선형 skb 경로에서 운영 중이라면",
+      "do": "Fixes: 486cdf21583e 영향 범위와 stable 백포트 큐잉 여부를 추적하세요",
+      "verify": "KASAN slab-use-after-free 스택과 seg6_get_srh() 기반 수정 패치를 lore 원문에서 대조하세요"
+    },
+    {
+      "title": "mm/slab: disallow kfree_rcu_sheaf() on PREEMPT_RT again",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "PREEMPT_RT slab/kfree_rcu·스케줄러(pi_lock) 교차 경로 유지보수자",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/linux-rt-devel/20260831-b4-kfree_rcu_hotfix-v1-1-4f0fb882638b@kernel.org/",
+      "if": "PREEMPT_RT에서 kvfree_call_rcu()·kfree_rcu_nolock() 경로를 유지보수 중이라면",
+      "do": "PREEMPT_RT hotfix revert 채택과 __GFP_NOWARN 할당 경로 대안·set_cpus_allowed_force() RFC 진행을 추적하세요",
+      "verify": "kvfree_call_rcu()에서 kfree_rcu_sheaf() skip 문구와 pi_lock 아래 GFP_NOWAIT 지적을 lore 스레드에서 확인하세요"
+    },
+    {
+      "title": "mm/mmu_notifier: Remove non_block_start/end() from notifier invocation",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "KVM x86·mmu_notifier·SRCU PREEMPT_RT 통합 담당",
+      "verifyLink": "https://www.spinics.net/lists/kernel/msg6373645.html",
+      "if": "KVM·mmu_notifier·SRCU PREEMPT_RT 통합을 담당한다면",
+      "do": "gpc-v3 mmu_notifier non_block 제거 머지 일정과 try_synchronize_srcu inline fastpath 통합 시점을 추적하세요",
+      "verify": "PREEMPT_RT notifier spinlock 오탐 인용과 Woodhouse latency 보고를 원문에서 확인하세요"
+    },
+    {
+      "title": "drm/amd/display: fix usage of DC_FPU_{BEGIN,END} with PREEMPT_RT",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "PREEMPT_RT + amdgpu/DC display 드라이버 유지보수·회귀 테스트 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/673ff4d5f23be979766397b4a58c05e61f2f3ec4.camel@web.de/",
+      "if": "PREEMPT_RT + amdgpu/DC display 검증을 담당한다면",
+      "do": "v7.2-rc6 FPU 가드 시리즈와 DC_FP_* 단순화 follow-up 패치를 함께 추적하세요",
+      "verify": "dml2_create()·dml2_create_copy() non-FPU 파일 이동과 DC_FP_START/END 제거 테스트 결과를 lore 원문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**bpf: Fix non-linear SRH access in bpf_update_srh_state()**\n\nCen Zhang 패치는 bpf_update_srh_state()가 ipv6_find_hdr() 오프셋을 선형 head에 가정해 SRH를 캐시하던 경로를 seg6_get_srh()로 바꿉니다. skb pull로 head가 재할당될 수 있어 bpf_compute_data_pointers()를 즉시 갱신하고, End.DT6는 내부 IPv6 헤더를 선형화한 뒤 outer 헤더를 제거하며, End.B6/End.B6.Encap은 오류 여부와 무관하게 SRH 상태를 재구축합니다.\n\n영향: 비선형 skb에서 SEG6 LWT BPF helper가 slab-use-after-free(KASAN)를 일으킬 수 있어, SEG6·BPF LWT 프로그램을 운영하는 네트워크/eBPF 엔지니어는 stable 백포트와 Fixes: 486cdf21583e 영향 범위를 확인해야 합니다. BPF LWT test-run의 non-linear skb selftest 부재와 per-CPU srh_state->srh 캐시 잔존 위험은 확인 필요합니다.\n\n> BUG: KASAN: slab-use-after-free in bpf_update_srh_state+0x1bc/0x200 net/core/filter.c:7027 bpf_update_srh_state()\n\n[원문 확인](https://lore-kernel.gnuweeb.org/bpf/20260901183151.16648-1-cenzhang@linux.microsoft.com/)\n\n> srh = seg6_get_srh(skb, 0); bpf_compute_data_pointers(skb); srh_state->srh = srh;\n\n[원문 확인](https://lore-kernel.gnuweeb.org/bpf/20260901183151.16648-1-cenzhang@linux.microsoft.com/raw)\n\n> Please queue this fix for stable kernels. Fixes: 486cdf21583e (\"bpf: add End.DT6 action to bpf_lwt_seg6_action helper\")\n\n[원문 확인](https://patchew.org/linux/20260901183151.16648-1-cenzhang@linux.microsoft.com/)\n\n**mm/slab: disallow kfree_rcu_sheaf() on PREEMPT_RT again**\n\nVlastimil Babka가 Sebastian Siewior 리뷰에 답해, pi_lock 아래 kfree_rcu_nolock()이 sheaf용 GFP_NOWAIT 할당 시 __GFP_KSWAPD_RECLAIM→wakeup_kswapd()로 스케줄러 잠금을 다시 잡을 수 있어 PREEMPT_RT 전용이 아닌 근본 문제라고 지적했습니다. 즉시 수정은 kvfree_call_rcu()에서 PREEMPT_RT 시 kfree_rcu_sheaf()를 다시 건너뛰는 부분 revert이며, 새 풀 대신 __GFP_NOWARN만 쓰는 안전한 할당 경로를 선호합니다.\n\n영향: 2a8bb29ec9b2가 되돌려진 뒤에도 free_to_pcs() trylock·kfree_rcu_nolock() 할당 경로가 pi_lock·스케줄러 잠금 아래 deadlock 위험을 남깁니다. PREEMPT_RT slab·스케줄러 교차 경로 유지보수자는 hotfix 채택과 set_cpus_allowed_force() RFC 대안 진행을 추적해야 합니다. __GFP_NOWARN만으로 pi_lock 아래 sheaf 할당 안전성이 충분한지는 확인 필요합니다.\n\n> For the immediate fix, skip kfree_rcu_sheaf() on PREEMPT_RT again from kvfree_call_rcu().\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-rt-devel/20260831-b4-kfree_rcu_hotfix-v1-1-4f0fb882638b@kernel.org/)\n\n> free_to_pcs() has still this trylock. What I am not so sure how good is that kfree_rcu_nolock() may allocate memory for the sheaf if there is none around.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-rt-devel/20260901073339.uyKHXWCX@linutronix.de/)\n\n> Per sashiko review it's actually bad too under the pi_lock, because GFP_NOWAIT means __GFP_KSWAPD_RECLAIM which can mean wakeup_kswapd() and thus also need scheduler locks.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-rt-devel/47aa459f-27d5-4b2f-9eb9-36ebca63d890@kernel.org/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/amd/display: fix usage of DC_FPU_{BEGIN,END} with PREEMPT_RT**\n\nBert Karwatzki가 v7.2-rc6 PREEMPT_RT FPU 가드 패치 위에 follow-up을 올려, next-20260828+ 기준으로 불필요한 DC_FP_START/END와 DC_RUN_WITH_PREEMPTION_ENABLED()를 제거해 테스트했고 오류 없이 동작한다고 보고했습니다. dml2_create()·dml2_create_copy()를 FPU 비컴파일 단위로 옮겨 암묵적 FPU 사용을 피합니다.\n\n영향: PREEMPT_RT에서 AMD DC FPU 가드와 선점 가능 호출(vfree·kvzalloc) 조합은 'scheduling while atomic' 회귀의 반복 원인입니다. 중첩 DC_FP_* 안에서 DC_RUN_WITH_PREEMPTION_ENABLED()가 무력화되는 구조적 문제를 줄이는 방향이므로, amdgpu/DC PREEMPT_RT 검증 담당자는 이 단순화 패치와 upstream v7.2-rc6 시리즈 머지를 함께 추적해야 합니다. 단순화 패치의 공식 시리즈 제출·amd-gfx/drm-misc-next 머지 일정과 arm64 등 gcc-16 외 컴파일러에서 non-FPU 단위 이동 없이 암묵적 FPU 사용 재현 여부는 확인 필요합니다.\n\n> The function dml2_create() and dml2_create_copy() are moved to a non-FPU file so they do not accidently use FPU instruction\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/673ff4d5f23be979766397b4a58c05e61f2f3ec4.camel@web.de/)\n\n> Now, I've tested dropping some DC_FP_START,END() and DC_RUN_WITH_PREEMPTION_ENABLED(). (Patch for next-20260828+ with the fix above applied) This works without error so far.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/673ff4d5f23be979766397b4a58c05e61f2f3ec4.camel@web.de/)\n\n> Could the FPU regions with disabled preemption be limited to where we have actually have FPU usage ... dc_fpu_begin()/ end() can nest and if they do the usage of DC_RUN_WITH_PREEMPTION_ENABLED() is fu\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-rt-devel/20260828095511.zrVXJUrU@linutronix.de/)\n\n**mm/mmu_notifier: Remove non_block_start/end() from notifier invocation**\n\nPaul E. McKenney가 David Woodhouse KVM gpc-v3 시리즈 토론에 답해, try_synchronize_srcu() 인라인 no-readers 증명 fastpath는 진행 중이나 별도 API 노출은 무기한 지연 위험으로 거부했습니다. atomic SRCU에서는 big 변환·할당이 없어 spare node array도 불필요하다고 봅니다. Woodhouse gpc-v3는 mmu_notifier non_block 제거(003716df6605)·atomic SRCU 기반 pfncache를 포함해 PREEMPT_RT에서 latency 측정 중입니다.\n\n영향: PREEMPT_RT에서 mmu_notifier non_block_start/end() 주석이 KVM 합법적 spinlock·RCU grace period 대기를 오탐하고, gpc-v3는 atomic SRCU로 rwlock 대비 RT latency를 개선합니다. KVM·mmu_notifier·RCU 교차 경로를 추적하는 RT 엔지니어는 gpc-v3 머지와 SRCU fastpath 채택 시점을 봐야 합니다. gpc-v3의 003716df6605 mmu_notifier 패치 mainline 머지 일정과 try_synchronize_srcu inline fastpath(6d484ca99bc9)가 synchronize_srcu_atomic()에 통합되는 시점은 확인 필요합니다.\n\n> On PREEMPT_RT, spinning locks become sleeping locks, and perfectly legitimate spinlock/rwlock usage in notifier implementations (e.g. KVM's mn_invalidate_lock) triggers the splat\n\n[원문 확인](https://www.spinics.net/lists/kernel/msg6373645.html)\n\n> It's working; the latency numbers have been looking good in all of my RT/DYNAMIC and debug/prod-like permutations.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/90d91673-a912-439f-98ee-e43285294486@paulmck-laptop/)\n\n> I do not intend to provide a separate API for this given the possibility of indefinite postponement.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/90d91673-a912-439f-98ee-e43285294486@paulmck-laptop/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/amd/display: fix usage of DC_FPU_{BEGIN,END} with PREEMPT_RT",
+      "url": "https://lore.kernel.org/linux-rt-devel/673ff4d5f23be979766397b4a58c05e61f2f3ec4.camel@web.de/",
+      "note": "thread"
+    },
+    {
+      "title": "Sebastian Siewior DC FPU 중첩 문제 지적",
+      "url": "https://lore-kernel.gnuweeb.org/linux-rt-devel/20260828095511.zrVXJUrU@linutronix.de/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Fix non-linear SRH access in bpf_update_srh_state()",
+      "url": "https://lore-kernel.gnuweeb.org/bpf/20260901183151.16648-1-cenzhang@linux.microsoft.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf_update_srh_state() 패치 diff",
+      "url": "https://lore-kernel.gnuweeb.org/bpf/20260901183151.16648-1-cenzhang@linux.microsoft.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "BPF SRH 수정 stable 큐잉 요청",
+      "url": "https://patchew.org/linux/20260901183151.16648-1-cenzhang@linux.microsoft.com/",
+      "note": "thread"
+    },
+    {
+      "title": "mm/mmu_notifier: Remove non_block_start/end() from notifier invocation",
+      "url": "https://www.spinics.net/lists/kernel/msg6373645.html",
+      "note": "thread"
+    },
+    {
+      "title": "KVM gpc-v3·SRCU fastpath 토론",
+      "url": "https://lore.kernel.org/linux-rt-devel/90d91673-a912-439f-98ee-e43285294486@paulmck-laptop/",
+      "note": "thread"
+    },
+    {
+      "title": "mm/slab: disallow kfree_rcu_sheaf() on PREEMPT_RT again",
+      "url": "https://lore-kernel.gnuweeb.org/linux-rt-devel/20260831-b4-kfree_rcu_hotfix-v1-1-4f0fb882638b@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "Sebastian Siewior kfree_rcu_sheaf 리뷰",
+      "url": "https://lore-kernel.gnuweeb.org/linux-rt-devel/20260901073339.uyKHXWCX@linutronix.de/",
+      "note": "thread"
+    },
+    {
+      "title": "Vlastimil Babka pi_lock 아래 GFP_NOWAIT 지적",
+      "url": "https://lore-kernel.gnuweeb.org/linux-rt-devel/47aa459f-27d5-4b2f-9eb9-36ebca63d890@kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-01T19:23:05.644Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
