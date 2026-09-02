@@ -1,0 +1,98 @@
+{
+  "id": "2026-09-03-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-09-03 amdxdna 보안수정 — GPU·AI 가속기",
+  "headline": "amdxdna flink UAF 차단·BO deadlock 수정 시리즈와 drm/sched fence timeline UAF v3가 dri-devel에서 교차 논의 중입니다.",
+  "date": "2026-09-03",
+  "summary": "accel/amdxdna에서 flink import UAF 차단(1/2)과 BO open/close deadlock 수정(2/2) 패치가 제출됐고, drm/sched fence timeline name UAF v3는 Imagination fence 경로와의 레이스가 이슈로 남았습니다. XDNA 스택 유지보수 담당은 BO 수명·락 순서와 IOVA 누적 이슈를, drm/sched 쪽은 per-context scheduler 사용 드라이버의 CVE-2025-38703/71302 동급 경로를 함께 추적해야 합니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "drm/sched fence timeline name UAF v3",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "drm/sched 코어·per-context scheduler 드라이버(amdxdna 포함)·fence syncobj 연동 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/dri-devel/1b628841e8bb8735f2bcdc79450a49e75433101b.camel@mailbox.org/",
+      "if": "per-context drm_gpu_scheduler를 쓰는 드라이버에서 finished fence SYNC_IOC_FILE_INFO 경로를 다룬다면",
+      "do": "Jonghyuk Kim v3 시리즈와 Philipp Stanner 9월 2일 follow-up 논의를 추적하고 stable backport 범위를 확인하세요",
+      "verify": "lore 스레드에서 v3 ops detach 방식과 pvr_queue_fence_is_native 레이스 우려, get_driver_name() 동일 lifetime 이슈를 원문에서 검토하세요"
+    },
+    {
+      "title": "accel/amdxdna flink import UAF 차단",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "accel/amdxdna·AMD Ryzen AI NPU 스택 유지보수 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/dri-devel/20260902180955.3999242-1-lizhi.hou@amd.com/",
+      "if": "accel/amdxdna carveout/non-IOMMU 워크로드에서 flink BO import를 사용한다면",
+      "do": "Lizhi Hou 2패치 v1 시리즈 1/2·2/2 머지·stable backport 일정을 모니터링하세요",
+      "verify": "dri-devel 스레드에서 filp->driver_priv!=abo->client 시 -EPERM 반환 조건과 Fixes 3cc5d7a59519 연관을 확인하세요"
+    },
+    {
+      "title": "accel/amdxdna BO open/close deadlock 수정",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "accel/amdxdna GEM·IOMMU 경로 유지보수 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/dri-devel/20260902182808.C24501F00A3A@smtp.kernel.org/",
+      "if": "accel/amdxdna GEM open/close에서 client_lock·abo->lock 교차 잠금 경로를 유지보수한다면",
+      "do": "시리즈 2/2의 client·BO 락 순서 수정과 IOVA 누수 후속 패치 논의를 추적하세요",
+      "verify": "Sashiko AI 리뷰의 exported BO 반복 open/close 시 IOVA·IOMMU 매핑 누수(High) 지적을 원문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**accel/amdxdna: Disable BO import via flink**\n\nLizhi Hou가 2패치 v1 시리즈 1/2를 제출했습니다. flink로 import된 BO에서 amdxdna_gem_del_bo_usage()가 abo->client에 접근할 때 use-after-free가 날 수 있어, amdxdna_gem_obj_open()에서 filp->driver_priv가 abo->client와 다르면 -EPERM을 반환해 flink import를 막습니다. Fixes: 3cc5d7a59519 (carveout memory support).\n\n영향: AMD XDNA NPU 드라이버의 GEM BO 수명·클라이언트 소유권 모델과 맞지 않는 flink import 경로를 차단해, carveout/non-IOMMU 설정 이후 드러난 UAF 클래스를 막습니다. 2/2 deadlock 수정과 함께 BO open/close 경로 전반을 정리하는 시리즈의 첫 단계입니다.\n\n> Accessing abo->client in amdxdna_gem_del_bo_usage() may result in a use-after-free when the BO is imported via flink.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/20260902180955.3999242-1-lizhi.hou@amd.com/)\n\n3cc5d7a59519 carveout 커밋 머지 여부와 flink 외 dma-buf import 경로 영향, 시리즈 2/2와의 머지·stable backport 일정은 확인 필요합니다.\n\n**drm/sched: fix use-after-free of the fence timeline name**\n\nJonghyuk Kim v3 시리즈는 v2의 timeline name 캐싱 대신 finished fence의 .release 콜백을 제거해 signal 시 ops를 detach하고 get_timeline_name()이 freed scheduler를 dereference하지 않게 합니다. Philipp Stanner는 9월 2일 follow-up에서 이 방식이 signalled fence에서 to_drm_sched_fence()를 NULL로 만들어 imagination의 pvr_queue_fence_is_native()와 레이스할 수 있다고 경고했습니다.\n\n영향: per-context drm_gpu_scheduler를 쓰는 amdxdna·nouveau·msm(VM_BIND)에서 userspace가 유지한 finished fence가 scheduler 해제 뒤 SYNC_IOC_FILE_INFO로 timeline name을 읽으면 slab UAF read가 납니다(CVE-2025-38703/71302와 동일 클래스). v3의 ops detach 접근은 Imagination fence 식별 경로와 충돌할 수 있어 core 수정 방향 재검토가 필요합니다.\n\n> Philipp suggested dropping the finished fence's ->release callback instead.\n\n> So depending on when the finished-fence gets signaled, the function could now sometimes return true, then false, depending on how it's racing.\n\n> reachable through at least three in-tree drivers: amdxdna, nouveau and msm (VM_BIND).\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/1b628841e8bb8735f2bcdc79450a49e75433101b.camel@mailbox.org/)\n\nname 캐싱(v2) vs ops detach(v3) maintainer 선호, stable backport 범위, v3 머지 전 Fixes/Cc: stable 태그 정책은 확인 필요합니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**accel/amdxdna: Fix potential deadlock in BO open and close callbacks**\n\n시리즈 2/2는 BO open/close에서 client·BO 락을 일관된 순서로 잡도록 guard(mutex)를 수동 mutex_lock/unlock으로 바꾸고, BO 락 전에 client 포인터를 로컬에 저장해 역순 잠금 deadlock을 피합니다. Sashiko AI 리뷰는 별도로 exported BO를 반복 open/close할 때 IOVA·IOMMU 매핑이 누적될 수 있는 기존 High 이슈를 지적했습니다.\n\n영향: XDNA GEM open/close가 client_lock·abo->lock을 교차로 잡는 경로에서 교착이 나면 NPU ioctl·BO 관리 전체가 멈출 수 있습니다. 동시에 AI 리뷰가 지적한 IOVA 누수는 export/import 워크로드에서 자원 고갈 DoS로 이어질 수 있어 후속 수정이 필요합니다.\n\n> This commit fixes a potential deadlock during BO open and close operations by acquiring client and BO locks in a consistent order.\n\n> Repeated open and close of an exported BO leaks IOVA and IOMMU mappings.\n\n> When the handle is closed, amdxdna_gem_obj_close() drops abo->open_ref to 0 but does not unmap the IOVA.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/20260902182808.C24501F00A3A@smtp.kernel.org/)\n\nIOVA 누수 수정이 같은 시리즈에 포함될지·별도 패치로 갈지, 패치 2/2 본문 전체 diff·Reviewed-by·머지 상태는 확인 필요합니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "high",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "accel/amdxdna: Disable BO import via flink",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/20260902180955.3999242-1-lizhi.hou@amd.com/",
+      "note": "thread"
+    },
+    {
+      "title": "accel/amdxdna: Fix potential deadlock in BO open and close callbacks",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/20260902182808.C24501F00A3A@smtp.kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/sched: fix use-after-free of the fence timeline name (v3)",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/1b628841e8bb8735f2bcdc79450a49e75433101b.camel@mailbox.org/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/sched v3 Imagination fence race follow-up",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/f9553c0254e22800753a6377d77102e3b66c154b.camel@mailbox.org/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/sched UAF reachable via amdxdna, nouveau, msm",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/28/1387",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-02T18:59:19.504Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

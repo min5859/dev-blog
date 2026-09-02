@@ -1,0 +1,138 @@
+{
+  "id": "2026-09-03-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-09-03 i.MX6 CFI 회귀 — 리눅스 툴체인",
+  "headline": "i.MX6 OCRAM suspend의 Clang kCFI 패닉 수정 v5, kcov dataflow RFC v3, Rust 1.100.0 링크 심볼 대응이 툴체인 축을 이끕니다.",
+  "date": "2026-09-03",
+  "summary": "i.MX6 suspend/resume가 CONFIG_CFI=y에서 fncpy() 복사로 CFI 간접 호출이 깨지던 회귀를 v5가 고치고, kcov dataflow RFC v3가 SanitizerCoverage 기반 인자·반환 추적을 제안합니다. perf clang-format 정책, container TOML 프로필, Rust 1.100.0 intrinsics 보완도 빌드 워크플로에 영향을 줍니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "ARM i.MX6 OCRAM suspend Clang CFI 회귀 수정 v5",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "i.MX6 전력 관리·suspend 경로 유지보수자, Clang/LLVM kCFI 빌드 담당",
+      "verifyLink": "https://patchew.org/linux/20260830155100.1020620-1-linux@yoavmoshe.com/mbox",
+      "if": "CONFIG_CFI=y로 i.MX6 suspend/resume 경로를 유지보수하는 경우",
+      "do": "v5 패치 채택과 stable 백포트 시 선행 커밋 979c294509f9(cfi.h IWYU) 포함 여부를 확인하세요",
+      "verify": "patchew 스레드에서 SYM_TYPED_FUNC_START_ALIGNED()·cfi_type 변경과 Kobo Clara HD postmarketOS 테스트 결과를 확인하세요"
+    },
+    {
+      "title": "kcov per-task dataflow 추적 RFC v3",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "KCOV·커널 퍼징·LLVM SanitizerCoverage·Rust for Linux 툴체인 담당",
+      "verifyLink": "https://patchew.org/linux/20260902-b4-kcov-dataflow-rfc-v3-v3-0-824609f279f5@est.tech/mbox",
+      "if": "엣지 커버리지만으로는 구분하기 어려운 인자값 기반 퍼징·계약 검증을 추적하는 경우",
+      "do": "kcov_dataflow debugfs 디바이스·KCOV_DF_REMOTE_ENABLE·커스텀 Clang/Rustc 요구사항을 검토하세요",
+      "verify": "RFC v3 cover letter와 LLVM PR #201410 리뷰 상태를 원문에서 확인하세요"
+    },
+    {
+      "title": "Rust 1.100.0 clamp_to 링크 undefined symbol 대응",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "Rust for Linux·rust/Makefile redirect-intrinsics 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20260902150353.23666-1-ojeda@kernel.org/",
+      "if": "CONFIG_RUST 빌드를 Rust 1.100.0(예상 2026-11-12) 이상으로 올리는 경우",
+      "do": "fmaximum_numf 등 redirect-intrinsics·panicking stub 추가 패치 머지 전 링크 실패를 예상하고 빌드 계획을 조정하세요",
+      "verify": "lore 스레드의 undefined symbol 메시지와 rust-lang/rust bd174e1b20a8 커밋을 대조해 확인하세요"
+    },
+    {
+      "title": "scripts/container TOML 프로필 지원 v3",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "scripts/container·커널 CI/컨테이너 빌드 워크플로우 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/08/24/788",
+      "if": "Clang/GCC 컨테이너로 반복되는 image/runtime/registry 옵션을 고정하는 경우",
+      "do": ".container.toml과 named profile(-p)로 scripts/container -p clang -- make defconfig 형태로 명령을 단순화할지 검토하세요",
+      "verify": "패치 시리즈에서 CLI 우선순위와 profile/DEFAULT 우선 규칙을 원문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ARM: imx: Fix suspend/resume crash with Clang CFI (v5)**\n\nv5는 i.MX6 OCRAM suspend 코드가 fncpy()로 kCFI 타입 해시 없이 복사되어 CONFIG_CFI=y에서 imx6_suspend_in_ocram_fn 간접 호출이 패닉하던 문제를, SYM_TYPED_FUNC_START_ALIGNED()·struct imx6_cpu_pm_info::cfi_type·__ro_after_init 마킹으로 CFI 검사를 유지한 채 고칩니다. Nick Desaulniers가 v5에 Reviewed-by를 달았고 Frank Li의 imx 트리 pickup을 승인했습니다.\n\n영향: Clang/kCFI 빌드에서 i.MX6 suspend/resume 회귀를 막고, fncpy()+런타임 코드 복사와 CFI 해시 배치를 함께 다루는 ARM 전력 관리·LLVM 툴체인 통합 사례입니다. stable 백포트 시 선행 커밋 979c294509f9(cfi.h IWYU) 포함이 필요합니다. imx5·at91·omap1 등 fncpy()+SRAM suspend 경로에 동일 패턴이 필요한지는 확인이 필요합니다.\n\n> The suspend code that runs from OCRAM is copied there with fncpy(), which does not copy the kCFI type hash preceding the function. With CONFIG_CFI=y the indirect call through imx6_suspend_in_ocram_fn \n\n[원문 확인](https://patchew.org/linux/20260830155100.1020620-1-linux@yoavmoshe.com/mbox)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**perf tool: Align structs in arrays in .clang-format**\n\nIan Rogers v1은 tools/perf/.clang-format에 AlignArrayOfStructures: Left를 추가해 구조체 배열 초기화의 탭 정렬 기둥이 clang-format 실행 시 깨지지 않도록 합니다.\n\n영향: perf 도구 트리는 별도 .clang-format을 쓰며, LLVM/clang-format 기본 동작이 perf 코드 스타일을 훼손할 수 있어 perf·LLVM 툴체인 유지보수자가 포맷 정책 변경을 추적해야 합니다.\n\n> Configure clang-format to ensure structs within arrays maintain left alignment inside tools/perf/.clang-format.\n\n[원문 확인](https://patchew.org/linux/20260902153420.2069344-1-irogers@google.com/mbox)\n\n**kcov: add per-task dataflow tracking for function arguments/return values (RFC v3)**\n\nRFC v3(8패치)는 kcov_dataflow를 kernel/kcov_dataflow.c로 분리하고 /sys/kernel/debug/kcov_dataflow 디바이스·KCOV_DF_REMOTE_ENABLE·selftests/trigger-view.py를 추가합니다. SanitizerCoverage trace-args/trace-ret 콜백으로 함수 인자·반환값을 per-task로 기록하며 커스텀 Clang/Rustc가 필요합니다.\n\n영향: 엣지 커버리지만으로는 구분 못 하는 인자값 기반 퍼징·계약 검증 피드백을 제공해, 커널 퍼저·KCOV·LLVM SanitizerCoverage 확장을 추적하는 툴체인 담당자에게 커널-UAPI-컴파일러 공동 설계의 핵심 신호입니다. v3 cover letter의 v2 대비 변경점은 확인이 필요합니다.\n\n> Own debugfs device /sys/kernel/debug/kcov_dataflow with its own ioctl namespace ('d') and per-task mmap'd buffer, independent of KCOV\n\n[원문 확인](https://patchew.org/linux/20260902-b4-kcov-dataflow-rfc-v3-v3-0-824609f279f5@est.tech/mbox)\n\n**scripts: add TOML config to container tool**\n\nGuillaume Tucker v3 시리즈는 scripts/container에 .container.toml 설정 파일과 named profile(-p)·경로 지정(-c)을 추가합니다. CLI 옵션이 설정 파일보다 우선하고 profile 섹션이 DEFAULT보다 우선합니다.\n\n영향: 커널 컨테이너 빌드 워크플로우에서 반복되는 image/runtime/registry 옵션을 프로필로 고정할 수 있어, Clang/GCC 컨테이너 빌드를 쓰는 kbuild·CI 담당자의 일상 명령이 단순해집니다. v3가 v2 대비 달라진 점은 확인이 필요합니다.\n\n> Add support for a TOML configuration file to the scripts/container tool. Include the concept of 'profiles' with different named sections in the file\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/08/24/788)\n\n**rust: kbuild: add intrinsics to fix Rust 1.100.0 builds**\n\nMiguel Ojeda 패치는 Rust 1.100.0(예상 2026-11-12)에서 core::cmp::clamp_to 구현이 요구하는 f{min,max}imum_num{f,}·__gt{s,d}f2 심볼을 redirect-intrinsics·panicking stub에 추가해 최종 링크 undefined symbol을 막습니다.\n\n영향: Rust for Linux가 새 rustc를 따라갈 때마다 반복되는 compiler-rt 심볼 누락 패턴으로, CONFIG_RUST 빌드를 최신 nightly/stable로 올리는 담당자는 이 패치 머지 전 링크 실패를 예상해야 합니다.\n\n> Starting with Rust 1.100.0 (expected 2026-11-12), a kernel build may fail at the final link with: ld.lld: error: undefined symbol: fmaximum_numf\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20260902150353.23666-1-ojeda@kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ARM: imx: Fix suspend/resume crash with Clang CFI (v5)",
+      "url": "https://patchew.org/linux/20260830155100.1020620-1-linux@yoavmoshe.com/mbox",
+      "note": "patch"
+    },
+    {
+      "title": "Nick Desaulniers v5 Reviewed-by 및 pickup 지시",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/28/1754",
+      "note": "thread"
+    },
+    {
+      "title": "cfi: Include uaccess.h for get_kernel_nofault()",
+      "url": "https://github.com/torvalds/linux/commit/979c294509f9248fe1e7c358d582fb37dd5ca12d",
+      "note": "commit"
+    },
+    {
+      "title": "perf tool: Align structs in arrays in .clang-format",
+      "url": "https://patchew.org/linux/20260902153420.2069344-1-irogers@google.com/mbox",
+      "note": "patch"
+    },
+    {
+      "title": "kcov: add per-task dataflow tracking (RFC v3)",
+      "url": "https://patchew.org/linux/20260902-b4-kcov-dataflow-rfc-v3-v3-0-824609f279f5@est.tech/mbox",
+      "note": "thread"
+    },
+    {
+      "title": "kcov dataflow 비활성 시 오버헤드",
+      "url": "https://lists.openwall.net/linux-kernel/2026/06/03/2192",
+      "note": "thread"
+    },
+    {
+      "title": "LLVM SanitizerCoverage trace-args/trace-ret 확장",
+      "url": "https://github.com/llvm/llvm-project/pull/201410",
+      "note": "article"
+    },
+    {
+      "title": "scripts: add TOML config to container tool",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/24/788",
+      "note": "patch"
+    },
+    {
+      "title": "container TOML clang profile 사용 예시",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/28/448",
+      "note": "changelog"
+    },
+    {
+      "title": "rust: kbuild: add intrinsics to fix Rust 1.100.0 builds",
+      "url": "https://lore.kernel.org/linux-kbuild/20260902150353.23666-1-ojeda@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "Rust clamp_to 구현 (bd174e1b20a8)",
+      "url": "https://github.com/rust-lang/rust/commit/bd174e1b20a8",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-02T18:39:58.926Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
