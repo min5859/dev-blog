@@ -1,0 +1,130 @@
+{
+  "id": "2026-09-04-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-09-04 HW BP·RIMT ACS — 아키·플랫폼",
+  "headline": "RISC-V RIMT PCI ACS 초기화, ARM HW BP task_work 지연, execmem direct map API 정리, KVM arm64 GCS 지원이 동시에 논의됩니다.",
+  "date": "2026-09-04",
+  "summary": "Fangyu Yu v2는 RIMT 기반 RISC-V에서 IOMMU 뒤 root complex에 PCI ACS를 enumeration 전에 켜고, Siewior v2는 PREEMPT_RT에서 HW breakpoint 알림을 task_work()로 지연합니다. Rapoport execmem v3와 Mark Brown KVM GCS v20도 아키·mm·가상화 경로를 정리 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "아키텍처",
+    "플랫폼"
+  ],
+  "highlights": [
+    {
+      "title": "ACPI: RIMT: Enable PCI ACS for root complexes mapped to an IOMMU",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "RISC-V ACPI RIMT·IOMMU·PCI 플랫폼 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260903140031.3684-1-fangyu.yu@linux.alibaba.com/",
+      "if": "ACPI RIMT 기반 RISC-V 서버에서 IOMMU 뒤 PCIe root complex를 운용한다면",
+      "do": "riscv_acpi_rimt_init()에서 RC 노드만 rimt_enable_acs()를 호출하고 pci_request_acs() 시점이 arm64 iort_enable_acs()와 대칭인지 추적하세요",
+      "verify": "v2 스레드에서 ID mapping이 IOMMU를 가리킬 때 ACS가 PCI enumeration 전에 설정되는지 원문을 확인하세요"
+    },
+    {
+      "title": "ARM, ARM64, LONGARCH: Delay HW BP notification to task_work()",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "ARM/ARM64/LoongArch PREEMPT_RT·ptrace·perf HW breakpoint 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/08/14/673",
+      "if": "PREEMPT_RT·ptrace·perf HW breakpoint를 arm/arm64/loongarch에서 쓴다면",
+      "do": "4분할 시리즈 제안(generic 1+아키별 3)과 각 아키 maintainer ack·perf pull 경로를 추적하세요",
+      "verify": "v2에서 ARCH_NEED_PERF_HW_NOTIF와 arch_hw_notif_busy 가드가 syscall 중 반복 watchpoint를 막는지 스레드를 확인하세요"
+    },
+    {
+      "title": "arch, mm/execmem: resolve confusion about set_direct_map_valid_noflush()",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "arm64·RISC-V·LoongArch·x86·s390 mm·execmem 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260903-execmem-set-vm-perms-v0-2-v3-0-949b64a9f755@kernel.org/",
+      "if": "execmem ROX cache나 eBPF JIT 등 set_direct_map API를 다룬다면",
+      "do": "v3에서 set_direct_map 페이지 수 인자 추가, VM_FLUSH_RESET_PERMS 사용, set_direct_map_valid_noflush() revert와 vmalloc direct map 동작 변화를 추적하세요",
+      "verify": "v3 cover와 v2 시리즈의 아키별 set_memory.h·pageattr.c 변경 범위를 원문에서 대조하세요"
+    },
+    {
+      "title": "KVM: arm64: Manage GCS access and registers for guests",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "arm64 KVM·GCS 가상화 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/08/12/2189",
+      "if": "arm64 KVM에서 게스트 GCS(Guarded Control Stack) 노출을 검토한다면",
+      "do": "HCRX_EL2.GCSEn 설정과 GCS 시스템 레지스터 context switch·VMM 노출 경로를 확인하세요",
+      "verify": "Lorenzo Stoakes ack와 HCRX_EL2.GCSEn 미설정 시 GCS noop 동작을 스레드에서 검증하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ACPI: RIMT: Enable PCI ACS for root complexes mapped to an IOMMU**\n\nFangyu Yu v2는 arm64 iort_enable_acs()와 같이 riscv_acpi_rimt_init()에서 RIMT PCIe root complex 노드를 스캔해 ID mapping이 IOMMU를 가리키면 pci_request_acs()를 호출합니다. v2는 RC 노드 타입만 처리하도록 정리했고 Sunil V L이 Reviewed-by를 달았습니다.\n\n영향: ACPI RIMT 기반 RISC-V 서버에서 IOMMU 뒤 root complex의 PCI ACS가 늦게 켜지면 P2P 격리가 깨질 수 있습니다. RISC-V ACPI·IOMMU·PCI 플랫폼 담당자는 arm64 IORT와 대칭되는 초기화 타이밍을 확인해야 합니다.\n\n> Check the RIMT node type in riscv_acpi_rimt_init() and invoke rimt_enable_acs() only for PCIe root-complex nodes.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260903140031.3684-1-fangyu.yu@linux.alibaba.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**ARM, ARM64, LONGARCH: Delay HW BP notification to task_work()**\n\nSebastian Siewior v2는 ARM/ARM64/LoongArch 하드웨어 브레이크포인트 overflow를 task_work()로 지연해 PREEMPT_RT에서 atomic context SIGTRAP 전송을 피합니다. Russell King은 3아키 단일 패치 적용 경로를 질문했고 Steven Rostedt는 generic·아키별 4분할 시리즈로 나누자고 제안했습니다.\n\n영향: PREEMPT_RT·ptrace·perf HW breakpoint를 쓰는 arm/arm64/loongarch 담당자는 시리즈 분할 후 각 아키 maintainer ack와 perf pull 경로를 추적해야 합니다. v2의 arch_hw_notif_busy 가드 없이는 syscall 중 반복 watchpoint가 task_work 리스트를 손상시킬 수 있습니다.\n\n> Delay the event callback until the return to userland. Add perf_arch_hwbp_notify(), a generic perf callback which delayes the actual callback invocation to task_work_add()\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/08/14/673)\n\n**arm64: dts: freescale: imx95: Add ENETC port 2 in SGMII mode on Toradex boards**\n\nFranz Schnyder 2패치 시리즈는 Toradex SMARC·Aquila iMX95 보드에 ENETC port 2를 SGMII 이더넷으로 DTS에 추가합니다. 모듈 reference clock과 carrier PHY 연결을 활성화합니다.\n\n영향: iMX95 Aquila/SMARC에서 세 번째 MAC(ENETC port 2) SGMII bring-up 담당자는 upstream DTS 머지와 carrier별 DT 오버레이 반영이 필요합니다. Toradex 커뮤니티는 동일 보드에서 end1 미표시가 알려진 이슈로 추적 중입니다.\n\n> Add the ENETC port 2 on Toradex SMARC and Aquila iMX95. The port is connected as an SGMII Ethernet interface.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260903-add-enetc-port2-v1-0-2a21139d7a7c@toradex.com/)\n\n**arch, mm/execmem: resolve confusion about set_direct_map_valid_noflush()**\n\nMike Rapoport v3(6패치)는 execmem ROX cache가 VM_FLUSH_RESET_PERMS를 쓰도록 set_direct_map API에 페이지 수 인자를 추가하고 vmalloc direct map 갱신을 VMAP_HUGE 친화적으로 만든 뒤 set_direct_map_valid_noflush()를 되돌립니다. v3는 ROX cache 권한 전환 직전에 VM_FLUSH_RESET_PERMS를 설정합니다.\n\n영향: arm64·riscv·loongarch·x86·s390에서 set_direct_map_valid_noflush() 의미가 달라 execmem ROX cache 구현이 혼란스러웠습니다. 아키 mm·execmem(eBPF JIT 등) 담당자는 API 정리와 direct map 대형 매핑 보존 동작 변화를 추적해야 합니다.\n\n> Implement these adjustments, make execmem always use VM_FLUSH_RESET_PERMS and revert set_direct_map_valid_noflush() changes.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260903-execmem-set-vm-perms-v0-2-v3-0-949b64a9f755@kernel.org/)\n\n**KVM: arm64: Manage GCS access and registers for guests**\n\nMark Brown v20 03/14 패치는 KVM 게스트 GCS(Guarded Control Stack)용 시스템 레지스터 컨텍스트 스위치·VMM 노출과 HCRX_EL2.GCSEn 설정을 추가합니다. Lorenzo Stoakes(ARM)가 GCSCRE0_EL1·GCSPR_EL0 등 레지스터 정의를 ARM 문서 기준으로 ack했습니다.\n\n영향: arm64 GCS를 게스트에 노출하려는 KVM·가상화 담당자는 HCRX_EL2.GCSEn 미설정 시 GCS 명령이 noop이 되는 점과 레지스터 트랩·컨텍스트 스위치 경로를 확인해야 합니다.\n\n> In order to allow guests to use GCS we also need to configure HCRX_EL2.GCSEn, if this is not set GCS instructions will be noops and CHKFEAT will report GCS as disabled.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/08/12/2189)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "high",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ARM HW BP task_work delay v2",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/14/673",
+      "note": "thread"
+    },
+    {
+      "title": "4분할 시리즈 제안 스레드",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260903133146.07095885@gandalf.local.home/",
+      "note": "thread"
+    },
+    {
+      "title": "iMX95 ENETC port 2 DTS v1",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260903-add-enetc-port2-v1-0-2a21139d7a7c@toradex.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Aquila iMX95 datasheet",
+      "url": "https://docs.toradex.com/117671-aquila_imx95_datasheet.pdf",
+      "note": "article"
+    },
+    {
+      "title": "ACPI RIMT PCI ACS v2",
+      "url": "https://lore.kernel.org/linux-riscv/20260903140031.3684-1-fangyu.yu@linux.alibaba.com/",
+      "note": "thread"
+    },
+    {
+      "title": "execmem set_direct_map v3",
+      "url": "https://lore.kernel.org/linux-riscv/20260903-execmem-set-vm-perms-v0-2-v3-0-949b64a9f755@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "execmem set_direct_map v2 시리즈",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/23/224",
+      "note": "thread"
+    },
+    {
+      "title": "KVM arm64 GCS v20",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/12/2189",
+      "note": "thread"
+    },
+    {
+      "title": "KVM GCS 레지스터 ack",
+      "url": "https://lore.kernel.org/linux-arm-kernel/apmfx08vccSd2MXw@gremlin/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-03T18:44:00.988Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

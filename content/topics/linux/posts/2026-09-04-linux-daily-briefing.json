@@ -1,0 +1,148 @@
+{
+  "id": "2026-09-04-linux-daily-briefing",
+  "topic": "linux",
+  "title": "2026-09-04 TCP보안·mm회귀 — 리눅스 개발",
+  "headline": "IPv6 TCP 경합 보안 수정과 mm·sched_ext 회귀 패치가 안정 브랜치 백포트를 따라가며 linux-next 통합이 이어집니다.",
+  "date": "2026-09-04",
+  "summary": "tcp_v6_syn_recv_sock() 경합 수정이 CVE-2026-43198로 문서화되며 stable cherry-pick이 진행 중입니다. MGLRU 환경 workingset shadow node 예산 붕괴와 x86 THP dirty 비트 손실 회귀도 패치 논의가 활발합니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "TCP IPv6 mapped 소켓 경합 수정",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "네트워크 스택 개발자, stable/backport 담당자, IPv6 dual-stack 서버 운영자",
+      "verifyLink": "https://lists.openwall.net/netdev/2026/02/17/129",
+      "if": "IPv6 dual-stack 서버·네트워크 스택 담당",
+      "do": "stable cherry-pick 반영 여부를 확인하고 해당 브랜치에 패치를 적용하세요",
+      "verify": "netdev 스레드와 9월 3일 stable cherry-pick 메일에서 백포트 상태를 확인하세요"
+    },
+    {
+      "title": "sched_ext kfunc NULL 역참조 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "sched_ext/BPF 스케줄러 개발자, 컨테이너/서버 성능 엔지니어",
+      "verifyLink": "https://lore.kernel.org/lkml/2edcf44237f7a5e81c6ec97a81b56d5b@kernel.org/",
+      "if": "sched_ext BPF 스케줄러·select_cpu_and 사용 워크로드",
+      "do": "for-7.3-fixes 적용분을 추적하고 v7.1+ stable 백포트 일정을 확인하세요",
+      "verify": "Tejun Heo 적용 스레드와 9월 3일 패치 설명에서 NULL deref 경로를 검토하세요"
+    },
+    {
+      "title": "MGLRU workingset shadow node 예산 회귀",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "메모리 관리/mm 개발자, MGLRU 및 cgroup v2 사용자, 대용량 워크로드 운영자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/08/31/1002",
+      "if": "MGLRU·memcg reclaim·thrashing 보호가 중요한 워크로드",
+      "do": "lruvec_page_state_local() 복원 패치 시리즈 적용 여부를 추적하세요",
+      "verify": "8월 31일 회귀 설명과 9월 3일 Shakeel Butt ack 스레드를 확인하세요"
+    },
+    {
+      "title": "x86 pmd_modify() dirty 비트 손실",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "x86/mm 개발자, THP/MADV_FREE 사용자, NUMA 힌팅 워크로드 운영자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/03/262",
+      "if": "THP·MADV_FREE·NUMA hinting x86 워크로드",
+      "do": "pmd_modify() dirty 비트 보존 패치 머지 여부를 확인하세요",
+      "verify": "9월 3일 패치 스레드와 Dave Hansen 리뷰 코멘트에서 비대칭 원인을 검토하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.2.3 stable**\n\nGreg Kroah-Hartman이 2026-09-02에 71개 백포트가 포함된 Linux 7.2.3 stable을 출시했습니다.\n\n영향: EOL된 7.1.y에서 이전하는 사용자에게 활성 stable 라인으로 동일 계열 보안·안정성 수정을 제공합니다.\n\n> Greg Kroah-Hartman has announced the 7.2.3, 7.1.13, 6.18.49, 6.12.108, 6.6.156, 6.1.187, 5.15.220, and 5.10.269 stable kernels.\n\n[원문 확인](https://lwn.net/Articles/1092151/)\n\n**Linux 7.1.13 stable EOL**\n\n7.1.y 최종 릴리스 7.1.13(76개 백포트)가 2026-09-02에 공개되었고 시리즈가 EOL로 표시되었습니다.\n\n영향: 7.1.y 기반 배포판·사용자는 7.2.y로 이전해야 지속적인 stable 수정을 받을 수 있습니다.\n\n> Note, the 7.1.y kernel series is now end-of-life.  Please move to the 7.2.y kernel series at this point in time.\n\n[원문 확인](https://lwn.net/Articles/1092154/)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**tcp: fix potential race in tcp_v6_syn_recv_sock()**\n\nIPv6-mapped 자식 소켓 초기화를 tcp_v6_mapped_child_init()로 옮겨 ehash 삽입 전에 pinet6를 설정하고, Florian Fainelli가 2026-09-03에 stable cherry-pick을 게시했습니다.\n\n영향: 수정 없이는 다른 CPU가 리스너의 ipv6_pinfo를 가리키는 v6-mapped 자식을 사용해 메모리 손상이 발생할 수 있으며 CVE-2026-43198이 이를 문서화합니다.\n\n> After tcp_v4_syn_recv_sock(), the child socket is already visible from TCP ehash table and other cpus might use it.\n\n[원문 확인](https://lists.openwall.net/netdev/2026/02/17/129)\n\n**sched_ext: Fix NULL sched deref in kfunc sub-sched error paths**\n\nWanwu Li v3 패치가 COMPAT kfunc 래퍼에서 RCU 하에 스케줄러를 읽도록 바꿨고 Tejun Heo가 sched_ext/for-7.3-fixes에 적용했으며 stable Cc에 v7.1+를 추가했습니다.\n\n영향: sub-scheduler가 붙은 상태에서 종료된 좀비 태스크에 select_cpu_and를 호출하면 scx_vexit()에서 sch->exit_info NULL 역참조로 커널이 크래시할 수 있습니다.\n\n> Passing NULL to scx_error() reaches scx_vexit(), which dereferences sch->exit_info, oopsing the kernel.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/03/467)\n\n**mm: workingset: fix shadow node budget under MGLRU**\n\nHui Zhu 3패치 시리즈가 commit 7404bd37cfbe 이후 MGLRU에서 유지되지 않는 lruvec_lru_size() 대신 lruvec_page_state_local()로 count_shadow_nodes()를 복원합니다.\n\n영향: MGLRU에서 shadow shrinker가 eviction token을 거의 생성 즉시 회수해 memcg·전역 reclaim의 thrashing 보호가 무너집니다. Shakeel Butt가 2026-09-03에 패치 1을 ack했습니다.\n\n> count_shadow_nodes() sees the evictable LRU lists as empty and the shadow shrinker reclaims eviction tokens almost as fast as they are created, losing thrashing protection.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/08/31/1002)\n\n**x86/mm: Fix pmd_modify() dropping dirty bit**\n\nVernon Yang의 한 줄 수정이 pmd_modify()가 (_HPAGE_CHG_MASK & ~_PAGE_DIRTY)로 _PAGE_DIRTY를 제거하지 않게 해 pte_modify()·pud_modify()와 정렬합니다.\n\n영향: dirty PMD가 mprotect()나 NUMA hinting 중 dirty 비트를 잃으면 lazyfree 익명 THP folio가 reclaim되거나 파일 THP writeback이 건너뛰어져 데이터 손실이 발생할 수 있습니다.\n\n> pmd_modify() masks the old value with (_HPAGE_CHG_MASK & ~_PAGE_DIRTY), silently discarding the hardware dirty bit.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/03/262)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**x86/mm: direct map 1G page support helper**\n\nDave Hansen가 CONFIG_X86_DIRECT_GBPAGES, X86_FEATURE_GBPAGES, direct_gbpages 부트 변수를 검사하는 direct_gbpages_enabled() 헬퍼를 제안해 raw direct_gbpages 검사를 대체합니다.\n\n영향: 1G direct map이 컴파일 타임에 비활성화되면 dead path를 제거하고 collapse_pud_page()를 최적화할 수 있으나 런타임 버그 수정이 아닌 인프라 리팩터링입니다. 공개 브랜치 머지 여부는 확인이 필요합니다.\n\n> Add a helper to replace 'direct_gbpages' checks. Check the Kconfig option and base CPU support before looking at the variable.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/02/2777)"
+    },
+    {
+      "heading": "기타",
+      "body": "**linux-next next-20260903**\n\nMark Brown이 2026-09-03에 bpf-next/bpf·bluetooth/net 머지 충돌을 해소한 뒤 Linus 트리 대비 2971개 non-merge 커밋(3323 files changed)이 포함된 linux-next 스냅샷을 게시했습니다.\n\n영향: 다음 mainline 사이클 대상 패치의 사전 통합·교차 트리 충돌·빌드 실패 조기 발견에 쓰이는 일일 통합 트리입니다.\n\n> Non-merge commits (relative to Linus' tree): 2971 3323 files changed, 184076 insertions(+), 33164 deletions(-)\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/03/2280)\n\n7.3-rc1은 머지 윈도우 종료 후 안정화 단계가 이어지는 항목으로, 이번 수집에서 추가 진척은 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "TCP ehash 가시성 경합 설명",
+      "url": "https://lists.openwall.net/netdev/2026/02/17/129",
+      "note": "thread"
+    },
+    {
+      "title": "TCP 수정 stable cherry-pick",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/03/2",
+      "note": "thread"
+    },
+    {
+      "title": "sched_ext for-7.3-fixes 적용",
+      "url": "https://lore.kernel.org/lkml/2edcf44237f7a5e81c6ec97a81b56d5b@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "sched_ext NULL deref 패치 설명",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/03/467",
+      "note": "thread"
+    },
+    {
+      "title": "MGLRU workingset shadow node 회귀",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/31/1002",
+      "note": "thread"
+    },
+    {
+      "title": "workingset 수정 ack",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/03/2369",
+      "note": "thread"
+    },
+    {
+      "title": "x86 pmd_modify dirty 비트 패치",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/03/262",
+      "note": "thread"
+    },
+    {
+      "title": "x86 pmd_modify 리뷰",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/03/1999",
+      "note": "thread"
+    },
+    {
+      "title": "direct_gbpages_enabled() 헬퍼",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/02/2777",
+      "note": "thread"
+    },
+    {
+      "title": "linux-next next-20260903",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/03/2280",
+      "note": "thread"
+    },
+    {
+      "title": "Linux 7.2.3 stable 발표",
+      "url": "https://lwn.net/Articles/1092151/",
+      "note": "article"
+    },
+    {
+      "title": "Linux 7.1.13 EOL",
+      "url": "https://lwn.net/Articles/1092154/",
+      "note": "article"
+    },
+    {
+      "title": "kernel.org 릴리스 목록",
+      "url": "https://www.kernel.org/",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-03T18:06:38.750Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-newsletter-from-dossier-ko.md"
+  }
+}

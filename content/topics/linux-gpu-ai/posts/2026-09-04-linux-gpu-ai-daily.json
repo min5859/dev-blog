@@ -1,0 +1,123 @@
+{
+  "id": "2026-09-04-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-09-04 DRM minor 회귀 수정 — GPU·AI 렌즈",
+  "headline": "minor 256 이상 DRM open() -ENXIO 회귀 수정안과 MSM GEM THP·dw-hdmi-qp 오디오·Rockchip 빌드 정리가 dri-devel에 올라왔습니다.",
+  "date": "2026-09-04",
+  "summary": "Andrey Erokhin 패치가 DRM_MAJOR 전체 minor 등록으로 071d583e01c8 이후 chrdev 범위 불일치 회귀를 고칩니다. Rob Clark MSM THP·Simon Wright dw-hdmi-qp ACR 통합·Rockchip Kconfig·GEM LRU API 정리도 함께 추적할 가치가 있습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "DRM minor 전체 범위 chrdev 등록",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "DRM 코어·다중 GPU/가상화 환경 드라이버·userspace 개발자",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/dri-devel/20260903155745.3027211-1-language.lawyer@gmail.com/",
+      "if": "SR-IOV·멀티 GPU·가상 DRM에서 minor 256 이상 노드를 open()하는 CI나 userspace를 운영 중이면",
+      "do": "__register_chrdev() 전환 패치 적용 여부와 -ENXIO 재현·해소를 우선 확인하세요",
+      "verify": "lore 스레드와 Fixes 커밋 071d583e01c8 설명을 대조해 회귀 맥락을 검증하세요"
+    },
+    {
+      "title": "drm/msm GEM Transparent Hugepage",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "drm/msm·Freedreno·Qualcomm 디스플레이/GPU 스택 유지보수 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/dri-devel/20260903183725.15835-1-robin.clark@oss.qualcomm.com/",
+      "if": "Adreno/MSM 스택에서 대용량 GEM mmap·CPU 접근·사진 처리 워크로드를 벤치마킹 중이면",
+      "do": "drm_gem_huge_mnt_create()와 transparent_hugepage 모듈 파라미터 동작을 패치 시리즈 1/2 기준으로 따라가세요",
+      "verify": "darktable 벤치마크 2배 이상 향상 주장과 패치 본문 인용을 lore 스레드에서 확인하세요"
+    },
+    {
+      "title": "dw-hdmi-qp ACR drm_hdmi_acr_get_n_cts() 통합",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "dw-hdmi-qp·Rockchip HDMI 오디오 경로 드라이버 유지보수 담당",
+      "verifyLink": "https://github.com/torvalds/linux/commit/a9f09b5ea0c3db1e2d4c0f8d3ebdd612d8aa0366",
+      "if": "10bit·고해상도 HDMI 모드에서 strict sink 오디오 mute를 재현·검증해야 하면",
+      "do": "자체 N/CTS 테이블 제거 후 공유 헬퍼 경로가 drm-misc-next에 반영됐는지 빌드·런타임에서 확인하세요",
+      "verify": "185.625 MHz에서 CTS=0이 나오던 커밋 설명과 Heiko 적용 스레드를 대조하세요"
+    },
+    {
+      "title": "Rockchip DRM_BRIDGE_CONNECTOR Kconfig 보강",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "drm/rockchip·임베디드 디스플레이 Kconfig/빌드 담당",
+      "verifyLink": "https://github.com/torvalds/linux/commit/c83e3e806d4c115f1dad9ef756db4cd91448a262",
+      "if": "ROCKCHIP_DW_DP나 ROCKCHIP_RK3066_HDMI만 단독으로 켠 최소 Kconfig를 빌드한다면",
+      "do": "DRM_BRIDGE_CONNECTOR select 추가 커밋(c83e3e8, d72aa5c) 반영 후 drm_bridge_connector_init 링크 실패가 사라지는지 확인하세요",
+      "verify": "undefined reference 오류 메시지와 Heiko 적용 스레드를 대조하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm: Register the full minor range**\n\nAndrey Erokhin 패치가 drm_core_init()/drm_core_exit()에서 register_chrdev()/unregister_chrdev() 대신 __register_chrdev()/__unregister_chrdev()로 DRM_MAJOR 전체 minor 범위(0–MINORMASK)를 등록합니다. 071d583e01c8이 확장한 minor>255 할당과 chrdev 등록 범위 불일치로 -ENXIO가 나던 회귀를 고칩니다.\n\n영향: SR-IOV·멀티 GPU·가상 DRM 장치 테스트에서 minor 256 이상 노드를 쓰는 환경은 open()이 drm_stub_open()에 도달하기 전에 실패할 수 있어, 확장 minor 지원을 전제로 한 userspace·CI가 깨집니다.\n\n> character-device lookup for a DRM minor greater than 255 fails with -ENXIO before drm_stub_open() can handle the open.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/20260903155745.3027211-1-language.lawyer@gmail.com/)\n\n**Fixes: 071d583e01c8 — minor 할당 확장**\n\n071d583e01c8 커밋이 minor 192 이상을 동적 할당하도록 확장했으나 register_chrdev()는 minor 0–255만 등록해 범위 불일치가 생겼습니다. stable@vger.kernel.org Cc 포함 여부는 백포트 일정 확인이 필요합니다.\n\n영향: minor>255 open 실패 회귀의 직접 원인 커밋 맥락을 이해하는 데 필요합니다.\n\n> For minors >= 192, we're allocating minors dynamically on a first-come, first-served basis.\n\n[원문 확인](https://github.com/torvalds/linux/commit/071d583e01c88272f6ff216d4f867f8f35e94d7d)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/msm: Enable THP for GEM buffers**\n\nRob Clark 2패치 시리즈 1/2가 msm_drm_init()에서 drm_gem_huge_mnt_create(dev, \"within_size\")로 전용 huge tmpfs 마운트를 만들고, transparent_hugepage 모듈 파라미터(기본 true)로 MSM GEM 버퍼에 Transparent Hugepage를 켭니다.\n\n영향: 페이지 할당·pinning 병목이 있던 사진 처리 워크로드에서 darktable 벤치마크가 2배 이상 빨라졌다고 보고돼, Adreno/MSM 스택에서 대용량 GEM mmap·CPU 접근 성능을 추적하는 담당자에게 직접적입니다. 시리즈 2/2 내용·drm-misc 머지 일정과 Loïc Molinari THP GEM 코어 시리즈와의 관계는 확인이 필요합니다.\n\n> More than 2x speedup on darktable benchmark which was bottlenecked on page allocation/pinning.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/20260903183725.15835-1-robin.clark@oss.qualcomm.com/)\n\n**drm/bridge: dw-hdmi-qp: use drm_hdmi_acr_get_n_cts() helper for audio N/CTS**\n\nSimon Wright v3 패치가 dw_hdmi_qp_set_sample_rate()의 자체 N/CTS 테이블·검색 로직(~200줄)을 제거하고 공유 drm_hdmi_acr_get_n_cts() 헬퍼로 교체합니다. 테이블 밖 TMDS(예: 185.625 MHz)에서 CTS=0이 나와 LG G3 OLED 오디오 mute가 났던 문제를 수정합니다. Heiko Stuebner가 drm-misc-next에 적용했습니다(commit a9f09b5).\n\n영향: dw-hdmi-qp를 쓰는 Rockchip·기타 플랫폼에서 10bit/고해상도 모드의 HDMI 오디오가 strict sink에서 mute되는 사용자 영향 회귀를 막고, ACR 계산을 DRM 코어 헬퍼로 일원화합니다. mainline 태그 반영 시점과 비 CEA TMDS helper fallback은 확인이 필요합니다.\n\n> dw_hdmi_qp_find_cts() returning 0 at 185.625 MHz, leaving AUDPKT_ACR_CTS_OVR_EN clear and falling back to the controller's internal CTS auto-measurement\n\n[원문 확인](https://github.com/torvalds/linux/commit/a9f09b5ea0c3db1e2d4c0f8d3ebdd612d8aa0366)\n\n**drm/gem: Drop ticket arg to lru_scan()**\n\nRob Clark v2 패치가 drm_gem_lru_scan()과 msm/panthor shrinker 호출부에서 사용되지 않는 ww_acquire_ctx *ticket 인자와 관련 ww_acquire_init/fini 경로를 제거합니다. Fixes: 3392291fc509(\"drm/msm: Fix shrinker deadlock\") 이후 후속 정리입니다. Thomas Zimmermann이 drm-misc-next에 머지했다고 확인했습니다.\n\n영향: GEM LRU shrinker API 시그니처가 단순해져 msm·panthor 등 shrinker 사용자가 deadlock 수정 이후 남은 dead code 없이 맞춰야 하며, 외부 shrinker 콜백 구현체는 시그니처 변경에 맞춰 갱신이 필요합니다.\n\n> Merged into drm-misc-next.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/9e61d418-f8a6-4261-82e5-3b47df87e8fa@suse.de/)\n\n**drm/rockchip: rk3066_hdmi: convert to devm_drm_bridge_alloc() API**\n\nHüseyin BIYIK v2 패치가 rk3066_hdmi_bind()의 devm_kzalloc()을 devm_drm_bridge_alloc()로 바꿔 bridge API 전환 시 누락됐던 devm 기반 bridge 할당 경로를 맞춥니다. Heiko Stübner는 rk3066_hdmi_register()의 driver_private·funcs 설정이 중복일 수 있다고 질문했습니다.\n\n영향: drm_bridge devm 할당 API로의 정리는 rockchip HDMI bridge 유지보수와 다른 bridge 드라이버 전환 패턴의 참고가 되며, 리뷰어가 지적한 중복 필드는 후속 정리가 필요할 수 있습니다. Heiko 리뷰에 대한 v3 정리·머지·테스트 보드 범위는 확인이 필요합니다.\n\n> This conversion was missed during the initial conversion of all bridges to the new API.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/2814844.6tgchFWduM@diego/)\n\n**drm/rockchip: Add missing DRM_BRIDGE_CONNECTOR selects**\n\nIgor Paunovic 2패치 시리즈가 ROCKCHIP_DW_DP와 ROCKCHIP_RK3066_HDMI Kconfig에 DRM_BRIDGE_CONNECTOR(및 rk3066_hdmi는 DRM_DISPLAY_HELPER) select를 추가해 drm_bridge_connector_init() 링크 실패를 막습니다. Heiko Stuebner가 drm-misc-next에 적용했습니다(c83e3e8, d72aa5c).\n\n영향: 해당 Rockchip 출력만 단독으로 켠 최소 Kconfig에서 undefined reference로 빌드가 깨지며, 다른 옵션이 DRM_BRIDGE_CONNECTOR를 간접 선택하면 재현이 사라져 설정 변경만으로 회귀가 다시 나타날 수 있습니다.\n\n> undefined reference to `drm_bridge_connector_init'\n\n[원문 확인](https://github.com/torvalds/linux/commit/c83e3e806d4c115f1dad9ef756db4cd91448a262)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/msm: Enable THP for GEM buffers",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/20260903183725.15835-1-robin.clark@oss.qualcomm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm: Register the full minor range",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/20260903155745.3027211-1-language.lawyer@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Fixes: 071d583e01c8 — minor 할당 확장",
+      "url": "https://github.com/torvalds/linux/commit/071d583e01c88272f6ff216d4f867f8f35e94d7d",
+      "note": "commit"
+    },
+    {
+      "title": "drm/rockchip: rk3066_hdmi: convert to devm_drm_bridge_alloc() API",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/2814844.6tgchFWduM@diego/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/bridge: dw-hdmi-qp: use drm_hdmi_acr_get_n_cts() helper",
+      "url": "https://github.com/torvalds/linux/commit/a9f09b5ea0c3db1e2d4c0f8d3ebdd612d8aa0366",
+      "note": "commit"
+    },
+    {
+      "title": "Heiko Stuebner — dw-hdmi-qp·Rockchip Kconfig 적용",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/178845323373.2687836.517588125431937296.b4-ty@sntech.de/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/gem: Drop ticket arg to lru_scan()",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/9e61d418-f8a6-4261-82e5-3b47df87e8fa@suse.de/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/rockchip: Add missing DRM_BRIDGE_CONNECTOR selects",
+      "url": "https://github.com/torvalds/linux/commit/c83e3e806d4c115f1dad9ef756db4cd91448a262",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-03T18:47:24.572Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
