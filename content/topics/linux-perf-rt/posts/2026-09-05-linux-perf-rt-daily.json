@@ -1,0 +1,135 @@
+{
+  "id": "2026-09-05-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-09-05 mm kfunc·RT 회귀 — 성능·RT 렌즈",
+  "headline": "BPF exec·memcg kfunc 확장과 PREEMPT_RT kfree_rcu_sheaf 회귀 되돌림이 진행되는 가운데 libbpf light skeleton 로그 전파 복구가 검토 중입니다.",
+  "date": "2026-09-05",
+  "summary": "BPF는 exec 시점 bprm->mm 접근 kfunc와 memcg proactive reclaim kfunc를 제안했고, PREEMPT_RT는 pi_lock 경로 lockdep splat을 막기 위해 kfree_rcu_sheaf() 재허용을 다시 되돌립니다. libbpf light skeleton verifier log_level 전파 회귀는 추정 복구 패치가 올라왔습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "BPF",
+    "PREEMPT_RT"
+  ],
+  "highlights": [
+    {
+      "title": "mm/slab: PREEMPT_RT에서 kfree_rcu_sheaf() 재차 비활성",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "PREEMPT_RT·SLUB/kfree_rcu·스케줄러 pi_lock 경로 유지보수 담당",
+      "verifyLink": "https://patchew.org/linux/20260831-b4-kfree._5Frcu._5Fhotfix-v1-1-4f0fb882638b@kernel.org/",
+      "if": "PREEMPT_RT 커널에서 set_cpus_allowed_force()→kvfree_call_rcu() 경로 lockdep를 추적 중이라면",
+      "do": "kfree_rcu_sheaf() 재허용(2a8bb29ec9b2) 부분 되돌림 hotfix와 syzbot 재현 결과를 머지 목록에서 우선 확인하세요",
+      "verify": "patchew 패치와 ThangNN99 syzbot 재현 스레드에서 splat 제거를 대조하세요"
+    },
+    {
+      "title": "bpf: mm_struct 기반 user memory kfunc",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "BPF LSM·exec 보안 정책·user memory kfunc 사용자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260904145340.40212-4-tasos.papagiannnis@gmail.com/",
+      "if": "BPF LSM으로 security_bprm_check() 시점 argv/env를 읽으려 한다면",
+      "do": "v4 시리즈 bpf_copy_from_user_mm()·trusted-or-null bprm->mm 규칙과 bpf-next 머지 일정을 추적하세요",
+      "verify": "lore BPF 스레드와 v3 cover에서 fault-protected read 호환 설명을 확인하세요"
+    },
+    {
+      "title": "mm/bpf: bpf_proactive_reclaim kfunc",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "BPF memcg 정책·cgroup 메모리 reclaim·bpf_wq 비동기 워크로드 설계자",
+      "verifyLink": "https://lkml.iu.edu/2608.3/16409.html",
+      "if": "BPF가 memcg 압력 관측 후 memory.reclaim 대신 직접 reclaim을 트리거하려 한다면",
+      "do": "BPF_PROG_TYPE_SYSCALL 제한과 reclaim_state·PF_MEMALLOC 중첩 차단 의미를 정책 설계에 반영하세요",
+      "verify": "v6/v7 cover와 Andrew Morton nesting 질문 스레드를 읽어보세요"
+    },
+    {
+      "title": "libbpf: light skeleton log level 전파",
+      "priority": "하",
+      "impactType": "build",
+      "affectedAudience": "bpftool·libbpf light skeleton 사용자 및 BPF CI/개발 도구 유지보수자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260904171601.336613-1-mahe.tardy@gmail.com/",
+      "if": "bpftool -d -L로 light skeleton verifier 실패를 디버깅한다면",
+      "do": "b59e4ce8bcaa 이후 bpf_trace_printk() 출력이 사라질 수 있으니 Mahe Tardy 패치 적용 전 워크플로를 조정하세요",
+      "verify": "패치 스레드에서 do_skeleton() obj->log_level→bpf_gen__init() 경로를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**mm/slab: disallow kfree_rcu_sheaf() on PREEMPT_RT again**\n\nVlastimil Babka 패치가 PREEMPT_RT에서 kfree_rcu_sheaf() 재허용(2a8bb29ec9b2)을 부분 되돌려 kvfree_call_rcu()가 pi_lock 보유 중 local_trylock()으로 sleeping lock을 잡지 않게 합니다. Harry Yoo가 리뷰를 승인했고 ThangNN99가 syzbot 재현으로 수정을 검증했습니다.\n\n영향: set_cpus_allowed_force()→kvfree_call_rcu() 경로에서 PREEMPT_RT lockdep splat이 syzbot으로 보고됐으며, sheaf fast-path를 되살리려면 pi_lock 아래 allocator·lockdep 정책 합의가 필요합니다.\n\n> For the immediate fix, skip kfree_rcu_sheaf() on PREEMPT_RT again from kvfree_call_rcu().\n\n[원문 확인](https://patchew.org/linux/20260831-b4-kfree._5Frcu._5Fhotfix-v1-1-4f0fb882638b@kernel.org/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**bpf: Add user memory access kfuncs for mm_struct**\n\nv4 시리즈가 bpf_copy_from_user_mm()·bpf_copy_from_user_mm_str() sleepable kfunc를 추가하고 task 기반 helper가 mm 기반 구현에 위임하도록 리팩터합니다. linux_binprm->mm을 trusted-or-null로 표시해 bprm_check_security LSM에서 exec 인자·환경 문자열을 읽을 수 있게 합니다.\n\n영향: exec 직전 nascent address space는 task_struct에 아직 연결되지 않아 기존 BPF user memory helper로는 bprm_check_security에서 argv/env 검사가 불가능했습니다. LSM·exec 정책을 BPF로 구현하는 팀은 새 kfunc·trusted-or-null 규칙을 추적해야 합니다. v4 bpf-next 머지 일정·NOMMU 지원 범위·기존 LSM verifier 영향은 확인 필요합니다.\n\n> On CONFIG_MMU kernels, when security_bprm_check() runs, the argument and environment strings for the exec have been copied into bprm->mm. The new address space is not associated with a task_struct unt\n\n[원문 확인](https://lore.kernel.org/bpf/20260904145340.40212-4-tasos.papagiannnis@gmail.com/)\n\n**mm/bpf: Add bpf_proactive_reclaim kfunc**\n\nHui Zhu v6/v7 시리즈가 bpf_proactive_reclaim() sleepable kfunc로 memcg proactive reclaim 한 패스를 노출하고 PF_MEMALLOC·reclaim_state로 중첩 reclaim을 차단합니다. Shakeel Butt·Andrii Nakryiko 리뷰 반영으로 호출을 BPF_PROG_TYPE_SYSCALL로 제한해 깨끗한 process context에서만 reclaim이 돌도록 합니다.\n\n영향: BPF가 memcg 압력 신호를 관측만 하고 memory.reclaim으로는 조치할 수 없던 공백을 메우며, Andrew Morton은 try_to_free_mem_cgroup_pages()의 reclaim_state 덮어쓰기 때문에 중첩 허용이 근본 해결인지 질문했습니다. mm 쪽 reclaim_state 중첩 안전화·SYSCALL 외 context 확대·반환값 단위는 확인 필요합니다.\n\n> This series adds bpf_proactive_reclaim(), a sleepable kfunc performing one proactive reclaim pass on a target memcg. The kfunc is restricted to BPF_PROG_TYPE_SYSCALL so that reclaim always runs in a c\n\n[원문 확인](https://lkml.iu.edu/2608.3/16409.html)"
+    },
+    {
+      "heading": "기타",
+      "body": "**libbpf: fix log level propagation for light skeleton loaders**\n\nbpftool이 bpf_object__load()로 전환되며 light skeleton syscall loader의 verifier log_level이 0으로 초기화돼 bpf_trace_printk() 디버그 출력이 사라졌을 가능성이 있습니다. Mahe Tardy 패치는 do_skeleton()에서 설정한 obj->log_level을 bpf_gen__init()에 전달해 bpftool -d -L 동작을 복구하려 합니다.\n\n영향: light skeleton·syscall loader로 BPF를 개발하는 팀은 verifier 실패 시 bpf_trace_printk() 로그 없이 조용히 깨질 수 있어, bpftool -d 디버깅 워크플로 회복이 BPF bring-up 생산성에 직결됩니다. bpf 트리 머지 일정·kernel-space light skeleton BPF_LOG_KERNEL 경로 상호작용은 확인 필요합니다.\n\n> commit b59e4ce8bcaa changed bpftool to use bpf_object__load() which call the internal bpf_object_load with extra_log_level to 0 instead of bpf_object__load_xattr with the user request log_level.\n\n[원문 확인](https://lore.kernel.org/bpf/20260904171601.336613-1-mahe.tardy@gmail.com/)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "bpf: user memory kfuncs for mm_struct (v4)",
+      "url": "https://lore.kernel.org/bpf/20260904145340.40212-4-tasos.papagiannnis@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf mm_struct kfunc v3 cover",
+      "url": "https://lkml.iu.edu/2608.3/13350.html",
+      "note": "thread"
+    },
+    {
+      "title": "mm/bpf: bpf_proactive_reclaim cover",
+      "url": "https://lkml.iu.edu/2608.3/16409.html",
+      "note": "thread"
+    },
+    {
+      "title": "bpf_proactive_reclaim kfunc implementation",
+      "url": "https://lkml.iu.edu/2608.3/16462.html",
+      "note": "thread"
+    },
+    {
+      "title": "Andrew Morton on reclaim nesting",
+      "url": "https://lore.kernel.org/bpf/20260904110308.4473cde499e91aab14dbd5fc@linux-foundation.org/",
+      "note": "thread"
+    },
+    {
+      "title": "libbpf light skeleton log level fix",
+      "url": "https://lore.kernel.org/bpf/20260904171601.336613-1-mahe.tardy@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf_loader_ctx structure",
+      "url": "https://git.zx2c4.com/linux-dev/plain/tools/lib/bpf/skel_internal.h",
+      "note": "article"
+    },
+    {
+      "title": "kfree_rcu_sheaf PREEMPT_RT hotfix",
+      "url": "https://patchew.org/linux/20260831-b4-kfree._5Frcu._5Fhotfix-v1-1-4f0fb882638b@kernel.org/",
+      "note": "patch"
+    },
+    {
+      "title": "syzbot repro for kfree_rcu splat",
+      "url": "https://lkml.iu.edu/2608.3/15918.html",
+      "note": "thread"
+    },
+    {
+      "title": "Harry Yoo review on kfree_rcu hotfix",
+      "url": "https://lore.kernel.org/linux-rt-devel/apqS7Z3F5Rtq7caz@nixos/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-04T18:38:17.731Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

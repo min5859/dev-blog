@@ -1,0 +1,138 @@
+{
+  "id": "2026-09-05-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-09-05 gpusvm SVM 공유 — GPU·AI",
+  "headline": "drm/gpusvm v3가 N:1 SVM에서 HMM fault 1회 공유와 THP inline DMA를 추진하고, samsung-dsim TE GPIO 수명 버그 수정은 리뷰·테스트를 통과했다.",
+  "date": "2026-09-05",
+  "summary": "Honglei Huang의 drm/gpusvm v3 6패치 시리즈가 xe/amdgpu SVM fault 핫패스에서 반복 HMM fault와 THP당 8KiB dma_addr 낭비를 줄이도록 재구성됐다. 동시에 samsung-dsim TE GPIO 수명 불일치 회귀 수정과 panthor debugfs 관측, mxsfb bus-width 설정 패치 pick-up 요청이 진행 중이다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "drm/gpusvm: N:1 mirror에서 HMM fault 1회 공유",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "drm/gpusvm·Intel xe SVM·AMD GPU SVM 통합 담당",
+      "verifyLink": "https://ratatoskr.run/dri-devel/2026/09/17515697",
+      "if": "한 CPU 범위를 여러 GPU가 mirror하는 xe/amdgpu SVM fault 경로를 다루는 경우",
+      "do": "v3 6패치 시리즈의 배열 get_pages()·단일 HMM fault·선택적 DMA map·inline dma_addr 변경을 리뷰하고 fault 핫패스 성능·메모리 사용을 확인하세요",
+      "verify": "cover letter와 patch 5 diff에서 THP inline union 및 drm_gpusvm_pages_first_dma() 도입을 확인하세요"
+    },
+    {
+      "title": "drm/bridge: samsung-dsim TE GPIO 수명 회귀 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "samsung-dsim·Exynos DSI display bridge 통합 담당",
+      "verifyLink": "https://lkml.iu.edu/hypermail/linux/kernel/2609.0/09088.html",
+      "if": "Exynos/Samsung DSI 패널에서 host detach/reattach와 tear-sync(TE GPIO) 경로를 검증하는 경우",
+      "do": "v2 패치의 non-managed gpiod_get_optional() 되돌림과 Fixes e7447128ca4a 명시를 확인하고 detach/reattach 시나리오를 재현 테스트하세요",
+      "verify": "Luca Ceresoli Reviewed-by·Tested-by 승인 스레드와 attach 콜백 수명 설명 원문을 확인하세요"
+    },
+    {
+      "title": "drm/gpusvm: CONFIG_DRM_XE_GPUSVM=n 빌드 회귀 신호",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "Intel xe Kconfig/CI 및 drm/gpusvm 공통 API 소비자",
+      "verifyLink": "https://ratatoskr.run/dri-devel/2026/09/17515850",
+      "if": "Intel CI kunit처럼 CONFIG_DRM_XE_GPUSVM=n minimal config를 유지하는 경우",
+      "do": "THP inline dma_addr 패치(5/6)의 xe_pt_stage_bind() accessor 변경이 GPUSVM off 빌드에 미치는 영향을 추적하고 wrapper 반영 여부를 확인하세요",
+      "verify": "Sashiko 타입 불일치 지적과 Matthew Brost의 Intel CI kunit 실패 확인·xe_svm_range_first_dma() 제안 스레드를 확인하세요"
+    },
+    {
+      "title": "drm/panthor: sched_groups debugfs 관측 추가",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "Panthor/CSF GPU 드라이버 유지보수 및 스케줄러 디버깅 담당",
+      "verifyLink": "https://lkml.iu.edu/hypermail/linux/kernel/2609.0/11463.html",
+      "if": "Arm Mali CSG 스케줄링·우선순위 문제를 런타임에 추적해야 하는 경우",
+      "do": "v3 패치의 sched_groups debugfs 항목과 groups xa lock UAF 방지 변경을 리뷰하고 panfrost debugfs와 대칭 관측 경로를 비교하세요",
+      "verify": "panfrost JM context debugfs 추가 커밋과 유사하다는 cover 인용 및 v3 출력 순서 조정 changelog를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm/bridge: samsung-dsim: fix TE GPIO lifetime for host attach**\n\nsamsung-dsim이 host attach 콜백에서 TE GPIO를 devm_gpiod_get_optional()로 잡고 gpiod_put()도 호출하던 수명 불일치를, non-managed gpiod_get_optional()로 되돌려 detach/reattach 시 중복 acquire를 막는 v2 수정이다.\n\n영향: DSI host detach/reattach가 bridge 수명과 어긋나 TE GPIO가 이중 해제되거나 재attach 시 leak·실패할 수 있어, Exynos/Samsung DSI 패널 tear-sync 경로 안정성에 중요하다.\n\n> samsung_dsim_register_te_irq() runs from the DSI host attach callback, and host detach/reattach can happen without destroying the device that owns the managed action.\n\n[원문 확인](https://lkml.iu.edu/hypermail/linux/kernel/2609.0/09088.html)\n\nLuca Ceresoli가 v2를 Reviewed-by·Tested-by로 승인하고 apply 예정이다. drm-misc-next 반영 시점은 아직 확인되지 않았다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/gpusvm: share one HMM fault and keep single mappings inline**\n\nHonglei Huang의 v3 6패치 시리즈가 drm_gpusvm_get_pages()를 배열 입력·단일 HMM fault·선택적 DMA map·THP/IOVA inline dma_addr 저장으로 재구성한다. xe/amdgpu SVM fault 경로와 no_dma_map 컨텍스트 플래그가 추가된다.\n\n영향: 한 CPU 범위를 여러 GPU가 공유할 때 반복 HMM fault와 THP당 8KiB dma_addr 배열 낭비를 줄여, xe/amdgpu SVM fault 핫패스 성능·메모리 사용에 직접 영향을 준다.\n\n> When one CPU range is mirrored on several devices, every device has to call get_pages() and redo the HMM fault. Matt suggested [2] passing an array of drm_gpusvm_pages plus a count so the fault is tak\n\n[원문 확인](https://ratatoskr.run/dri-devel/2026/09/17515697)\n\nMatthew Brost가 patch 3의 N:1 get_pages() 배열 API 변경을 Reviewed-by로 승인했다. AMDGPU N:1 multi-device 지원은 시리즈 위에서 아직 WIP로 명시되어 있다.\n\n**drm/gpusvm: keep a single DMA mapping inline for THP**\n\nTHP inline dma_addr 패치(5/6)에 Sashiko가 xe_pt_stage_bind()에서 drm_gpusvm_pages_first_dma() 호출이 CONFIG_DRM_XE_GPUSVM 비활성 빌드에서 타입 불일치로 실패할 수 있다고 지적했다. Matthew Brost는 Intel CI kunit 빌드 실패를 확인하고 xe 쪽 ifdef wrapper가 필요하다고 답했다.\n\n영향: inline dma union 변경은 xe SVM bind 경로 전반에 걸쳐 accessor를 강제하므로, GPUSVM Kconfig off 구성에서 빌드 회귀가 나면 CI·distro minimal config가 막힌다.\n\n> When CONFIG_DRM_XE_GPUSVM is disabled, struct xe_svm_range uses an anonymous struct for its pages field instead of struct drm_gpusvm_pages.\n\n[원문 확인](https://ratatoskr.run/dri-devel/2026/09/17515850)\n\nCONFIG_DRM_XE_GPUSVM=n 빌드 실패에 대한 v4/fixup 반영 여부와 Honglei Huang follow-up의 xe_svm_range_first_dma() wrapper 포함 여부는 확인되지 않았다.\n\n**drm/panthor: Display priorities of panthor groups over debugfs**\n\nPanthor 스케줄러 그룹의 client_id·pid·command·priority·queue count를 debugfs sched_groups 파일로 노출하는 v3 패치가 올라왔다. v2 대비 groups xa lock으로 UAF를 막고 출력 형식을 정리했다.\n\n영향: Arm Mali CSG 스케줄링·우선순위 문제를 추적하는 엔지니어가 런타임에 그룹 상태를 확인할 수 있어, panfrost debugfs와 대칭되는 관측 수단이 생긴다.\n\n> Analogous to what was added in Commit d41c79838c47 (\"drm/panfrost: Display list of device JM contexts over debugfs\") for panfrost, add similar debugfs information for panthor.\n\n[원문 확인](https://lkml.iu.edu/hypermail/linux/kernel/2609.0/11463.html)\n\nmaintainer 리뷰/머지 여부는 확인되지 않았다(Ratatoskr 스레드 DORMANT).\n\n**drm: mxsfb: Add optional DPI output bus-width configuration**\n\nFrank Li가 v4 mxsfb 시리즈(OF endpoint bus-width→LCDIF media bus format)에 대해 maintainer Marek Vasut·Stefan Agner에게 pick-up을 요청했다. 드라이버는 DT bus-width가 있으면 downstream panel format보다 물리 LCDIF 버스 폭을 우선한다.\n\n영향: 보드 배선(16/18/24-bit LCDIF)과 panel declared format이 다를 때 색 비트 매핑 오류로 display가 깨질 수 있어, i.MX LCDIF 기반 임베디드 보드 DT·드라이버 담당자에게 실질적 fix다.\n\n> Read the optional bus-width endpoint property from the LCDIF output port and use it to select the media bus format used to configure LCDIF.\n\n[원문 확인](https://patchew.org/linux/20260813092836.38367-1-francesco@dolcini.it/20260813092836.38367-3-francesco@dolcini.it/)\n\nMarek Vasut/Stefan Agner의 pick/merge 응답은 아직 확인되지 않았다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/gpusvm v3 cover letter — N:1 HMM fault 공유",
+      "url": "https://ratatoskr.run/dri-devel/2026/09/17515697",
+      "note": "thread"
+    },
+    {
+      "title": "drm/gpusvm patch 5 — THP inline dma_addr union",
+      "url": "https://ratatoskr.run/dri-devel/2026/09/17515702",
+      "note": "thread"
+    },
+    {
+      "title": "drm/gpusvm patch 3 — Matthew Brost Reviewed-by",
+      "url": "https://ratatoskr.run/dri-devel/2026/09/17515948",
+      "note": "thread"
+    },
+    {
+      "title": "CONFIG_DRM_XE_GPUSVM=n 빌드 실패 지적",
+      "url": "https://ratatoskr.run/dri-devel/2026/09/17515850",
+      "note": "thread"
+    },
+    {
+      "title": "Intel CI kunit 실패 확인 및 wrapper 제안",
+      "url": "https://ratatoskr.run/sashiko-reviews/2026/09/17515890",
+      "note": "thread"
+    },
+    {
+      "title": "samsung-dsim TE GPIO 수명 수정 v2",
+      "url": "https://lkml.iu.edu/hypermail/linux/kernel/2609.0/09088.html",
+      "note": "thread"
+    },
+    {
+      "title": "samsung-dsim v2 Reviewed-by·Tested-by",
+      "url": "https://lkml.iu.edu/hypermail/linux/kernel/2609.0/11191.html",
+      "note": "thread"
+    },
+    {
+      "title": "panthor sched_groups debugfs v3",
+      "url": "https://lkml.iu.edu/hypermail/linux/kernel/2609.0/11463.html",
+      "note": "thread"
+    },
+    {
+      "title": "panthor v3 changelog — groups xa lock",
+      "url": "https://ratatoskr.run/dri-devel/2026/09/17516073",
+      "note": "thread"
+    },
+    {
+      "title": "mxsfb bus-width endpoint 패치",
+      "url": "https://patchew.org/linux/20260813092836.38367-1-francesco@dolcini.it/20260813092836.38367-3-francesco@dolcini.it/",
+      "note": "thread"
+    },
+    {
+      "title": "mxsfb maintainer pick-up 요청",
+      "url": "https://lkml.iu.edu/hypermail/linux/kernel/2609.0/11117.html",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-04T18:45:54.183Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,123 @@
+{
+  "id": "2026-09-05-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-09-05 arm64 kCFI ftrace — 리눅스 툴체인",
+  "headline": "arm64 kCFI에서 CALL_OPS 8패치 RFC, ftrace 패치 사이트 거부·slab 강화, i386 Clang 회귀 수정이 동시에 진행 중입니다.",
+  "date": "2026-09-05",
+  "summary": "Jose Fernandez RFC는 clang 21의 -fpatchable-function-entry 섹션 인자로 kCFI arm64에서 CALL_OPS를 다시 켜고 BPF fentry 성능을 개선합니다. Karl Mehltretter v3는 ZERO_SIZE_PTR 정렬과 ERR_PTR 거부를 강화하고, ftrace·i386·Rust 바인딩 쪽 회귀 수정도 함께 올라왔습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "arm64: ftrace: support CALL_OPS on kernels built with kCFI",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "arm64 kCFI·BPF·Clang kbuild 담당",
+      "verifyLink": "https://patchew.org/linux/20260904-b4-arm64-callops-kcfi-v1-0-ce6687739b0c@linux.dev/",
+      "if": "LLVM=1 kCFI arm64 커널에서 BPF fentry·LSM ftrace 경로를 유지보수하는 경우",
+      "do": "CALL_OPS 재활성화와 .text 약 +4.8% 트레이드오프, out-of-range 경로 호출당 약 10ns 절감 주장을 벤치·빌드 산출물로 검증하세요",
+      "verify": "RFC 8패치 스레드와 clang 21 section 인자 LLVM PR 원문을 대조하고 RUST=y·모듈 prefix count·BTI Kconfig 정리는 확인이 필요합니다"
+    },
+    {
+      "title": "slab: ZERO_SIZE_PTR alignment and ERR_PTR hardening",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "slab·hardened usercopy·Clang/UBSAN 검증 담당",
+      "verifyLink": "https://patchew.org/linux/20260903203720.63689-1-kmehltretter@gmail.com/",
+      "if": "Clang UBSAN_ALIGNMENT armv5 빌드나 hardened usercopy·kfree 경로를 추적하는 경우",
+      "do": "ZERO_SIZE_PTR 정렬·ZERO_OR_NULL_PTR() 변경·ERR_PTR 명시 거부가 기존 slab 사용자에 미치는 영향을 KUnit·LKDTM·kselftest로 확인하세요",
+      "verify": "slab 트리와 hardening 트리 분리 머지 여부와 패치 1·2 백포트 범위는 원문 스레드에서 확인하세요"
+    },
+    {
+      "title": "ftrace: Let ftrace_call_adjust() reject a patch site",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "ftrace·kbuild·arm64 ftrace 유지보수者",
+      "verifyLink": "https://patchew.org/linux/20260904-b4-arm64-callops-kcfi-v1-1-ce6687739b0c@linux.dev/",
+      "if": "arm64 CALL_OPS+kCFI 시리즈와 함께 ftrace 패치 사이트 처리를 검토하는 경우",
+      "do": "ftrace_call_adjust()가 0을 반환하는 정렬되지 않은 사이트가 skipped로 처리되는지 ftrace_init_nop() BUG_ON() 회귀 없이 확인하세요",
+      "verify": "Steve Rostedt 리뷰에 대한 작성자 답장·머지 일정은 확인이 필요합니다"
+    },
+    {
+      "title": "x86: checksum_32: allow memory/immediate operands in csum_ipv6_magic",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "x86 i386 Clang 빌드·네트워크 스택 유지보수자",
+      "verifyLink": "https://patchew.org/linux/20260904000833.2058186-1-rosenp@gmail.com/",
+      "if": "i386에서 LLVM/Clang으로 nf_synproxy_core.c 등 네트워크 경로를 빌드하는 경우",
+      "do": "len·proto 피연산자 제약 완화 후 i386 Clang 빌드가 통과하는지 확인하세요",
+      "verify": "x86_64·GCC 빌드 영향 없음 확인 후 머지 일정은 원문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ftrace: Let ftrace_call_adjust() reject a patch site**\n\nRFC 1/8은 ftrace_process_locs()가 ftrace_call_adjust()가 0을 반환한 패치 사이트를 건너뛰도록 kernel/trace/ftrace.c를 수정합니다. arm64 등에서 정렬되지 않은 사이트에 대해 ftrace_call_adjust()가 0을 돌려주면 기록 ip가 0으로 저장되어 ftrace_init_nop()의 BUG_ON()까지 이어질 수 있었습니다.\n\n영향: arm64 CALL_OPS+kCFI 시리즈가 패치 사이트를 거부하는 전제이며, 코어 ftrace가 아키텍처 거부 값을 올바르게 처리하지 않으면 kCFI·prefix NOP 레이아웃 확장 시 부팅 크래시 위험이 있습니다. Steve Rostedt 리뷰에 대한 작성자 답장·머지 일정은 확인이 필요합니다.\n\n> When ftrace_call_adjust() returns 0 for a patch site, ftrace_process_locs() does not skip the site... Test the adjusted address too and count the site as skipped.\n\n[원문 확인](https://patchew.org/linux/20260904-b4-arm64-callops-kcfi-v1-1-ce6687739b0c@linux.dev/)\n\n**slab: ZERO_SIZE_PTR alignment and ERR_PTR hardening**\n\nKarl Mehltretter v3 5패치는 ZERO_SIZE_PTR를 ARCH_KMALLOC_MINALIGN에 맞추고, ZERO_OR_NULL_PTR()를 NULL·ZERO_SIZE_PTR 정확 비교로 바꾸며, kfree()와 hardened usercopy에서 ERR_PTR를 명시적으로 거부합니다. KUnit·LKDTM·kselftest가 추가되었습니다.\n\n영향: __assume_kmalloc_alignment 주석과 0바이트 kmalloc 반환값 불일치가 Clang UBSAN_ALIGNMENT(armv5)에서 잡히고, 컴파일러 최적화가 slab 경계 검사를 바꿀 수 있어 llvm·hardened usercopy 추적자에게 직접 해당됩니다. slab 트리와 hardening 트리 분리 머지 여부와 패치 1·2 백포트 동시 적용 범위는 확인이 필요합니다.\n\n> The kmalloc entry points promise ARCH_KMALLOC_MINALIGN alignment but return (void *)16 for zero-size requests. Patch 1 aligns the sentinel to that promise.\n\n[원문 확인](https://patchew.org/linux/20260903203720.63689-1-kmehltretter@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**arm64: ftrace: support CALL_OPS on kernels built with kCFI**\n\nJose Fernandez RFC 8패치 시리즈는 clang 21의 -fpatchable-function-entry 세 번째 인자(섹션 이름)로 추적되지 않는 함수에도 prefix NOP를 넣고, CONFIG_ARM64_FUNCTION_PREFIX_NOPS로 kCFI 타입 해시 오프셋과 CALL_OPS 레이아웃을 맞춰 arm64 kCFI 커널에서 CALL_OPS를 다시 켭니다. out-of-range BPF 트램폴린 호출 비용이 약 10ns 줄고 ftrace_ops 수에 따른 추가 비용이 사라집니다.\n\n영향: clang 21·kbuild·sorttable·CFI·ftrace가 함께 맞물리는 변경으로, LLVM=1 kCFI arm64 빌드에서 BPF fentry/LSM 성능과 .text 크기(약 +4.8%) 트레이드오프를 추적해야 합니다. RUST=y 시 rustc prefix NOP 미전달로 인한 해시 오프셋 불일치, 모듈·커널 prefix count 불일치(vermagic 미반영) 배포 정책, BTI와 clang 21 상호 배타 Kconfig 정리는 확인이 필요합니다.\n\n> Clang 21 added a third argument to -fpatchable-function-entry that names the section the entries go to. Point it at a section the linker scripts already drop.\n\n[원문 확인](https://patchew.org/linux/20260904-b4-arm64-callops-kcfi-v1-0-ce6687739b0c@linux.dev/)\n\n**x86: checksum_32: allow memory/immediate operands in csum_ipv6_magic**\n\nRosen Penev 패치는 csum_ipv6_magic() 인라인 asm에서 len·proto 피연산자 제약을 \"r\"에서 \"g\"로 완화합니다. i386에서 GPR이 6개뿐인데 5개 레지스터를 동시에 요구해 Clang이 nf_synproxy_core.c 빌드에 실패하던 문제를 해결합니다.\n\n영향: LLVM/Clang i386 커널 빌드 회귀를 막는 한 줄 변경으로, 인라인 asm 레지스터 압박이 있는 네트워크 경로를 Clang으로 빌드하는 담당자가 추적해야 합니다. x86_64·GCC 빌드 영향 없음 확인 후 머지 일정은 확인이 필요합니다.\n\n> Building nf_synproxy_core.c for i386 with LLVM/Clang fails with \"inline assembly requires more registers than available\".\n\n[원문 확인](https://patchew.org/linux/20260904000833.2058186-1-rosenp@gmail.com/)\n\n**i2c: rust: avoid locking when performing I2cAdapter::inc_ref**\n\nv2 패치는 I2cAdapter::inc_ref가 i2c_get_adapter() 대신 __i2c_adapter_get()을 직접 호출하도록 바꿉니다. ARef::clone이 atomic context에서 mutex 잠금을 유발하는 sleep-in-atomic 버그를 제거합니다.\n\n영향: Rust for Linux 바인딩이 C refcount 경로를 잘못 래핑하면 컴파일은 통과해도 런타임에서 atomic context 규칙을 깨므로, RfL 드라이버·바인딩 API 사용자가 추적해야 합니다. Trevor Chan의 AlwaysRefCounted::inc_ref associated function 패치와의 머지 순서는 확인이 필요합니다.\n\n> Incrementing this reference count in an atomic context... could trigger a sleep-in-atomic bug due to the mutex locking inside i2c_get_adapter.\n\n[원문 확인](https://patchew.org/linux/20260904134600.340991-1-nico.antinori.7@gmail.com/)\n\n**rust: pin-init: support tuple structs**\n\nGary Guo 4패치 시리즈는 #[pin_data]가 tuple struct를 지원하도록 pin-init 내부를 syn::Member 기반으로 바꿉니다. pin_init!은 필드 인덱스(0 <- expr, 1: 0) 문법을 쓰며 새 구문은 도입하지 않습니다.\n\n영향: pin-init은 Rust for Linux 초기화 패턴의 핵심 도구라, tuple struct를 named struct로 억지 변환하던 제약이 풀리면 드라이버·크레이트 API 설계가 단순해집니다. upstream pin-init PR #155 동기화·커널 트리 머지 일정은 확인이 필요합니다.\n\n> This is a long requested feature to support tuple structs. There are a few cases that structs have to be converted to become normal structs so pin-init can be used.\n\n[원문 확인](https://patchew.org/linux/20260904-tuple-struct-v1-0-72c50bd037fd@garyguo.net/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ftrace: Let ftrace_call_adjust() reject a patch site",
+      "url": "https://patchew.org/linux/20260904-b4-arm64-callops-kcfi-v1-1-ce6687739b0c@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "Steve Rostedt ftrace_call_adjust 리뷰",
+      "url": "https://lore.kernel.org/linux-kbuild/20260904084728.6d2ebcc8@gandalf.local.home/",
+      "note": "thread"
+    },
+    {
+      "title": "arm64: ftrace: support CALL_OPS on kernels built with kCFI",
+      "url": "https://patchew.org/linux/20260904-b4-arm64-callops-kcfi-v1-0-ce6687739b0c@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "LLVM: -fpatchable-function-entry section 인자",
+      "url": "https://github.com/llvm/llvm-project/pull/131230",
+      "note": "article"
+    },
+    {
+      "title": "slab: ZERO_SIZE_PTR alignment and ERR_PTR hardening",
+      "url": "https://patchew.org/linux/20260903203720.63689-1-kmehltretter@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "x86: checksum_32: allow memory/immediate operands in csum_ipv6_magic",
+      "url": "https://patchew.org/linux/20260904000833.2058186-1-rosenp@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "i2c: rust: avoid locking when performing I2cAdapter::inc_ref",
+      "url": "https://patchew.org/linux/20260904134600.340991-1-nico.antinori.7@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: pin-init: support tuple structs",
+      "url": "https://patchew.org/linux/20260904-tuple-struct-v1-0-72c50bd037fd@garyguo.net/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-04T18:29:12.986Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
