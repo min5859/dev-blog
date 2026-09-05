@@ -1,0 +1,168 @@
+{
+  "id": "2026-09-06-linux-distro-stable-daily",
+  "topic": "linux-distro-stable",
+  "title": "2026-09-06 7.1.y EOL — 배포 안정 릴리스",
+  "headline": "7.1.y 최종 릴리스로 EOL이 확정됐고, nfsd·hugetlb 등 stable 백포트 검토가 이어집니다.",
+  "date": "2026-09-06",
+  "summary": "Linux 7.1.13이 7.1.y 최종 릴리스로 EOL을 선언했고 7.2.3이 활성 안정 브랜치로 권장됩니다. hugetlb PTE 검증, nfsd 메모리 안전, dwc3 초기화 실패, IPv6 멀티캐스트 라우팅 누수 등 stable 백포트가 검토 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "nfsd fcache_disposal UAF 수정",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "NFS 서버(nfsd) 및 per-net namespace 운영 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/06/02/1887",
+      "if": "nfsd를 netns별로 운영하거나 파일 캐시 shrinker·GC·fsnotify 경로를 쓰는 경우",
+      "do": "fcache_disposal 인라인 백포트가 포함된 stable 태그 적용을 검토하세요",
+      "verify": "stable 스레드 원문에서 패치 포함 브랜치와 태그를 확인하세요"
+    },
+    {
+      "title": "nfsd delegation 경합 BUG_ON",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "NFSv4/pNFS 서버 운영·nfsd 유지보수자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/05/30/464",
+      "if": "pNFS·delegation을 사용하는 NFS 서버를 운영 중이라면",
+      "do": "nfsd4_alloc_layout_stateid 동기화·graceful error return 백포트를 우선 적용하세요",
+      "verify": "Openwall 스레드에서 해당 수정의 stable 포함 여부를 확인하세요"
+    },
+    {
+      "title": "hugetlb huge_ptep_get 백포트",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "hugetlb·메모리 관리·arm64 커널 유지보수자",
+      "verifyLink": "https://lkml.iu.edu/2606.3/02770.html",
+      "if": "hugetlb VMA와 커스텀 huge_ptep_get() 아키텍처를 다루는 경우",
+      "do": "page_vma_mapped_walk() 변경과 huge_ptep_get 선언·주소 정렬 follow-up을 함께 추적하세요",
+      "verify": "LKML 스레드에서 아키텍처별 빌드·백포트 상태를 확인하세요"
+    },
+    {
+      "title": "7.1.y EOL 및 7.2.3 이전",
+      "priority": "상",
+      "impactType": "release",
+      "affectedAudience": "7.1.y 커널을 운영하는 배포·임베디드 팀",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/02/1497",
+      "if": "7.1.y 계열 커널을 아직 운영 중이라면",
+      "do": "7.2.3 이상 활성 7.2.y로 즉시 이전하세요",
+      "verify": "Greg Kroah-Hartman EOL 공지와 7.2.3 ChangeLog에서 적용 버전을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.1.13 stable · EOL**\n\n2026-09-02 공개된 7.1.13이 7.1.y 최종 릴리스이며, USB usbfs UAF·serial OOB·bridge mcast UAF·crypto·netfilter 등 76건의 보안 백포트가 포함됩니다.\n\n영향: 7.1.y가 EOL로 종료되어 더 이상 보안 업데이트를 받지 않으므로, 7.1 계열 사용자는 활성 7.2.y로 즉시 이전해야 합니다.\n\n> Note, the 7.1.y kernel series is now end-of-life. Please move to the 7.2.y kernel series at this point in time.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/02/1497)\n\n**Linux 7.2.3 stable**\n\n7.2.3이 현재 활성 7.2.y 안정 릴리스로, 7.1.13과 겹치는 USB·crypto·xfrm·네트워크 메모리 안전 백포트 71건을 포함합니다.\n\n영향: 7.1 EOL 이후 권장 업그레이드 대상이며, 동일 클래스의 취약점 수정을 최신 유지보수 브랜치에서 받을 수 있습니다.\n\n> I'm announcing the release of the 7.2.3 kernel. All users of the 7.2 kernel series must upgrade.\n\n[원문 확인](https://lwn.net/Articles/1092153/)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**mm/page_vma_mapped: use huge_ptep_get() for hugetlb**\n\npage_vma_mapped_walk()의 check_pte()가 hugetlb VMA에서 ptep_get() 대신 huge_ptep_get()을 사용하도록 바뀌며, 커스텀 huge_ptep_get() 아키텍처에서 PTE 검증이 올바르게 동작합니다.\n\n영향: arm64 등 hugetlb 아키텍처에서 PTE 검증 오류나 잘못된 contig 계산으로 커널 패닉 가능성이 있어, stable 백포트 시 huge_ptep_get 선언·주소 정렬 이슈도 함께 추적해야 합니다. 사용자 공간 영향과 stable 트리별 follow-up 상태는 확인이 필요합니다.\n\n> accessing via ptep_get() would cause pte_pfn(), pte_present() etc to misbehave.\n\n[원문 확인](https://lkml.iu.edu/2606.3/02770.html)\n\n**usb: dwc3: host: fix dangling xhci pointer on init failure**\n\ndwc3_host_init() 실패 경로에서 platform_device_put() 후 dwc->xhci를 NULL로 지우고, dwc3_host_exit()에 NULL 가드를 추가해 제거·셧다운 시 dangling pointer dereference를 막습니다.\n\n영향: dwc3 host 초기화 실패 후 모듈 제거나 셧다운 시 커널 크래시가 발생할 수 있어, dwc3 기반 SoC·임베디드 보드 운영자가 stable 백포트를 적용해야 합니다. 원문 인용 검증은 확인이 필요합니다.\n\n[원문 확인](https://www.spinics.net/lists/stable/msg1014332.html)\n\n**nfsd: fix nfsd_file leak on inter-server COPY setup failure**\n\nnfsd4_setup_inter_ssc() 실패 시 nfsd4_copy()가 out: 정리 경로를 건너뛰던 버그를 수정해, 실패한 inter-server COPY마다 nfsd_file 참조가 해제됩니다.\n\n영향: NFSv4 inter-server COPY 실패마다 nfsd_file가 누적되어 inode/dentry/vfsmount가 pin되므로, NFS 서버 운영자는 메모리 고갈·장기 가동 안정성 문제를 피하려면 백포트가 필요합니다.\n\n> Fix by setting status and jumping to out: instead of returning directly.\n\n[원문 확인](https://ratatoskr.run/linux-nfs/2026/05/17069170)\n\n**nfsd: fix BUG_ON in nfsd4_alloc_layout_stateid on racing delegation revoke**\n\nnfsd4_alloc_layout_stateid()가 delegation revoke와 경합할 때 fi_deleg_file 읽기에 적절한 동기화를 추가하고 BUG_ON을 graceful error return으로 대체합니다.\n\n영향: 두 NFS 클라이언트가 delegation recall/revoke와 LAYOUTGET를 동시에 트리거하면 서버 커널 패닉이 가능해, pNFS·delegation을 쓰는 NFS 서버는 우선 백포트 대상입니다.\n\n> replacing the BUG_ON with a graceful error return that cleans up the partially-initialized layout stateid.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/05/30/464)\n\n**nfsd: fix fcache_disposal UAF by inlining dispose state into nfsd_net**\n\nper-net nfsd_fcache_disposal 구조체를 제거하고 fcache_dispose_lock·fcache_dispose_list를 struct nfsd_net에 인라인해, netns teardown과 shrinker/GC/fsnotify 경합 시 UAF를 제거합니다.\n\n영향: NFS 서버 netns 종료·파일 캐시 shrinker/GC/fsnotify callback이 동시에 실행되면 use-after-free가 발생할 수 있어, nfsd를 netns별로 운영하는 환경에서 필수 수정입니다. 2026-09-05 stable review 포함 브랜치 목록은 확인이 필요합니다.\n\n> The global shrinker, laundrette, and fsnotify callbacks can still be inside nfsd_file_dispose_list_delayed() dereferencing that pointer, causing a use-after-free.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/06/02/1887)\n\n**ipv6: ip6mr: fix mr_table leak from MRT6_TABLE**\n\nMRT6_TABLE가 테이블 id 선택만 하도록 바꾸고, 빈 non-default mr_table을 소켓 종료·DEL/FLUSH 시 mr6_tables에서 제거해 slab 누수를 막습니다.\n\n영향: CAP_NET_ADMIN 권한으로 MRT6_TABLE만 반복 호출해도 mr_table이 netns 종료까지 누적되어 OOM까지 갈 수 있어, IPv6 멀티캐스트 라우팅을 쓰는 서버·컨테이너 환경에 직접적입니다. 원문 인용 검증은 확인이 필요합니다.\n\n[원문 확인](https://www.spinics.net/lists/stable/msg1014342.html)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Linux 5.10.269 longterm**\n\n5.10.269 LTS에 USB UAF/OOB, xfrm espintcp UAF·auth-trunc leak, kcov PREEMPT_RT 경합, igmp UAF 등 43건의 백포트가 포함됩니다.\n\n영향: 오래된 5.10 기반 제품도 USB·IPsec·커버리지 수집 경로의 알려진 취약점 수정을 이번 태그로 받을 수 있습니다. 개별 CVE 번호 매핑은 확인하지 못했습니다.\n\n> espintcp_close() frees emsg->skb via kfree_skb() without holding any socket lock.\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.269)\n\n**Linux 5.15.220 longterm**\n\n5.15.220 LTS에 USB·crypto·xfrm·bridge mcast UAF, HID ft260 stack-use-after-return, fuse invalidate lock leak 등 69건의 백포트가 포함됩니다.\n\n영향: 아직 5.15에 머무는 팀은 보안 수정을 수확하면서 곧 예정된 브랜치 EOL에 맞춰 상위 LTS 이전 계획을 세워야 합니다. 5.15.y EOL 정확 일정은 kernel.org releases.json에서 재확인이 필요합니다.\n\n> HID: ft260: fix stack-use-after-return write in I2C read race\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.220)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "7.1.y EOL 공지",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/02/1497",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-7.1.13",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.13",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 7.2.3 stable 발표",
+      "url": "https://lwn.net/Articles/1092153/",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-7.2.3",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.3",
+      "note": "changelog"
+    },
+    {
+      "title": "hugetlb huge_ptep_get 스레드",
+      "url": "https://lkml.iu.edu/2606.3/02770.html",
+      "note": "thread"
+    },
+    {
+      "title": "huge_ptep_get arm32 빌드 실패",
+      "url": "https://lkml.iu.edu/2609.0/12528.html",
+      "note": "thread"
+    },
+    {
+      "title": "dwc3 dangling xhci pointer",
+      "url": "https://www.spinics.net/lists/stable/msg1014332.html",
+      "note": "thread"
+    },
+    {
+      "title": "nfsd inter-server COPY leak",
+      "url": "https://www.spinics.net/lists/stable/msg1013244.html",
+      "note": "thread"
+    },
+    {
+      "title": "nfsd COPY leak 수정",
+      "url": "https://ratatoskr.run/linux-nfs/2026/05/17069170",
+      "note": "thread"
+    },
+    {
+      "title": "nfsd delegation BUG_ON",
+      "url": "https://www.spinics.net/lists/stable/msg1012677.html",
+      "note": "thread"
+    },
+    {
+      "title": "nfsd layout stateid graceful return",
+      "url": "https://lists.openwall.net/linux-kernel/2026/05/30/464",
+      "note": "thread"
+    },
+    {
+      "title": "nfsd fcache_disposal UAF",
+      "url": "https://lists.openwall.net/linux-kernel/2026/06/02/1887",
+      "note": "thread"
+    },
+    {
+      "title": "ipv6 ip6mr mr_table leak",
+      "url": "https://www.spinics.net/lists/stable/msg1014342.html",
+      "note": "thread"
+    },
+    {
+      "title": "MRT6_TABLE mr_table 누수",
+      "url": "https://lists.openwall.net/netdev/2026/07/23/455",
+      "note": "thread"
+    },
+    {
+      "title": "2026-09-02 stable 배치 발표",
+      "url": "https://lwn.net/Articles/1092151/",
+      "note": "article"
+    },
+    {
+      "title": "ChangeLog-5.10.269",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.269",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-5.15.220",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.220",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-05T18:24:50.918Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,136 @@
+{
+  "id": "2026-09-06-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-09-06 Integer봉인·kCFI — Linux 툴체인",
+  "headline": "Rust Integer 봉인으로 Bounded soundness 구멍을 막고, arm64 kCFI·RV64 BPF JIT·dma_fence 추상화가 toolchain 경계를 확장합니다.",
+  "date": "2026-09-06",
+  "summary": "Rust num/Bounded와 serdev 레이스 완화가 안전성 쪽에서 눈에 띄고, arm64 kCFI prefix NOP 통합·lib/parser 와일드카드·RV64 BPF 스택 인자·dma_fence Rust 래퍼가 API·JIT·kbuild 경계를 동시에 건드립니다. RFC·v8·v11 시리즈 머지 일정은 아직 확인이 필요합니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "툴체인",
+    "Rust",
+    "BPF"
+  ],
+  "highlights": [
+    {
+      "title": "rust: num: seal Integer",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "Rust-for-Linux num/Bounded API 사용자·리뷰어",
+      "verifyLink": "https://lkml.iu.edu/2609.0/12216.html",
+      "if": "드라이버나 라이브러리에서 Integer를 외부에서 구현하거나 Bounded safe 연산을 가정한다면",
+      "do": "Integer는 커널 crate 원시 타입 구현만 허용하는 봉인 패치 머지 전까지 외부 구현을 쓰지 마세요",
+      "verify": "v2 스레드와 Fixes: 01e345e82ec3 stable 백포트 범위를 원문에서 확인하세요"
+    },
+    {
+      "title": "arm64: cfi: Use CONFIG_ARM64_FUNCTION_PREFIX_NOPS for the type hash offset",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "arm64 kCFI·Clang kbuild·BPF JIT 유지보수자",
+      "verifyLink": "https://lkml.iu.edu/2609.0/09056.html",
+      "if": "arm64 kCFI·CALL_OPS·BPF JIT·sorttable·clang 21 toolchain을 함께 추적한다면",
+      "do": "RFC 5/8의 CONFIG_ARM64_FUNCTION_PREFIX_NOPS 적용과 현재 CFI 커널에서 값 0인 점을 구분해 두세요",
+      "verify": "RFC 0/8·5/8 스레드와 maintainer 피드백·머지 일정을 원문에서 확인하세요"
+    },
+    {
+      "title": "bpf, riscv: Add BPF stack arguments support for RV64 JIT",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "RISC-V BPF JIT·LLVM BPF·selftest 담당",
+      "verifyLink": "https://lkml.iu.edu/2609.0/12424.html",
+      "if": "RISC-V에서 kfunc·bpf 서브프로그램 6인자 이상 또는 verifier selftest JIT 기대값을 다룬다면",
+      "do": "BPF_REG_0 t6·TCC t5 재매핑과 bpf_jit_supports_stack_args() 구현을 bpf-next v5 기준으로 따라가세요",
+      "verify": "QEMU+LLVM main selftest 결과와 T0 ftrace 상호작용 검증 상태를 원문에서 확인하세요"
+    },
+    {
+      "title": "rust / dma_buf: Add abstractions for dma_fence",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust GPU/DRM·dma-buf 드라이버 개발자",
+      "verifyLink": "https://lkml.iu.edu/2609.0/12431.html",
+      "if": "Rust GPU/DRM 드라이버에서 dma_fence를 C 규칙과 맞춰 쓸 계획이라면",
+      "do": "DriverFence·Fence 이중 타입과 FenceContext lifetime 규칙을 v11 추상화 기준으로 검토하세요",
+      "verify": "drm-rust-next 리베이스 후 rust-next/drm 머지 경로를 원문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**rust: num: seal Integer**\n\nv2 패치는 private::Sealed 트레이트로 Integer를 봉인해 커널 crate 원시 정수 구현만 Integer를 만족하도록 제한합니다.\n\n영향: Integer가 공개·외부 구현 가능한 상태면 Bounded safe 연산이 UB에 도달할 수 있어, 머지 전 외부 Integer 구현을 가정하면 안 됩니다.\n\n> Integer is currently safe and externally implementable, so an implementation can violate those assumptions and make safe Bounded operations reach undefined behavior.\n\n[원문 확인](https://lkml.iu.edu/2609.0/12216.html)\n\n**rust: serdev: Mitigate race conditions**\n\nMarkus Probst v2는 probe 실패 시 ScopeGuard로 serdev를 먼저 닫고, unbind/receive 콜백에 Pin<&mut Self::Data>를 제공해 drvdata 접근 창을 줄입니다.\n\n영향: probe·unbind·수신 콜백이 겹치면 NULL 역참조나 use-after-free가 날 수 있어 후속 probe 리팩터 계획도 함께 봐야 합니다.\n\n> there is a small window in which the serdev device is still open, but the pointer to the driver data is NULL.\n\n[원문 확인](https://lkml.iu.edu/2609.0/12083.html)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**arm64: cfi: Use CONFIG_ARM64_FUNCTION_PREFIX_NOPS for the type hash offset**\n\nRFC 5/8은 cfi_get_offset(), SYM_TYPED_FUNC_START, arm64 BPF JIT이 하드코딩 4바이트 대신 CONFIG_ARM64_FUNCTION_PREFIX_NOPS를 쓰도록 바꿉니다. kCFI+CALL_OPS는 3개 NOP(ThinLTO+BTI는 5개)가 필요하지만 현재 CFI 커널에서는 값이 0이라 기능 변화는 없습니다.\n\n영향: prefix NOP 수와 kCFI 타입 해시 오프셋을 한 Kconfig로 묶는 핵심 조각으로 clang 21·ftrace·BPF JIT·sorttable toolchain 변경을 추적해야 합니다.\n\n> Make cfi_get_offset(), SYM_TYPED_FUNC_START and the BPF JIT use CONFIG_ARM64_FUNCTION_PREFIX_NOPS instead of hardcoding four bytes.\n\n[원문 확인](https://lkml.iu.edu/2609.0/09056.html)\n\n**lib/parser: add match_wildcard_hyphen() for agnostic matching**\n\nJim Cromie v8 17/43은 match_wildcard_hyphen()을 추가해 하이픈·언더스코어를 동일 취급하는 와일드카드 매칭을 제공하고, __always_inline __match_wildcard()로 strict/agnostic 경로 모두 런타임 오버헤드 없이 컴파일합니다.\n\n영향: dynamic_debug classmap이 KBUILD_MODFILE 하이픈 builtin명과 사용자 underscore 입력을 맞추려면 이 헬퍼가 필요합니다.\n\n> This commit introduces match_wildcard_hyphen() as a variant of the existing match_wildcard() function. It treats hyphens and underscores as identical characters.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/07/21/2429)\n\n**rust / dma_buf: Add abstractions for dma_fence**\n\nPhilipp Stanner v11은 DriverFence·Fence 이중 타입, FenceContext, 사전 할당 DriverFenceAllocation, call_rcu drop 동기화를 포함한 dma_fence Rust 추상화(~1000줄)를 제출합니다.\n\n영향: Rust GPU/DRM 드라이버가 dma_fence를 쓰려면 C 규칙(단일 signal·참조·에러 코드)과 Rust 소유권을 맞추는 전제가 됩니다.\n\n> DriverFence: the only fence type that can be signaled. Fence: the fence type to be shared with other drivers and / or userspace.\n\n[원문 확인](https://lkml.iu.edu/2609.0/12431.html)\n\n**bpf, riscv: Add BPF stack arguments support for RV64 JIT**\n\nPu Lehui bpf-next v5 3패치는 BPF_REG_0을 t6·TCC를 t5로 재매핑한 뒤 bpf_jit_supports_stack_args()를 RV64 JIT에 구현해 5개 초과 인자를 스택(a5-a7 및 SP)으로 전달합니다. riscv64 QEMU+LLVM main에서 bpf2bpf·kfunc selftest 통과를 보고합니다.\n\n영향: kfunc·서브프로그램 6인자 이상 공백을 메우며 BPF_REG 매핑 변경은 verifier selftest JIT 기대값과 LLVM BPF 백엔드 상호작용에 영향을 줍니다.\n\n> Implement bpf_jit_supports_stack_args() on RV64 JIT to allow bpf subprogs and kfuncs to pass and receive more than 5 arguments.\n\n[원문 확인](https://lkml.iu.edu/2609.0/12424.html)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "arm64 kCFI RFC 5/8 — CONFIG_ARM64_FUNCTION_PREFIX_NOPS",
+      "url": "https://lkml.iu.edu/2609.0/09056.html",
+      "note": "thread"
+    },
+    {
+      "title": "arm64 kCFI RFC 0/8 — prefix count 개요",
+      "url": "https://lkml.iu.edu/2609.0/09052.html",
+      "note": "thread"
+    },
+    {
+      "title": "rust: num: seal Integer v2",
+      "url": "https://lkml.iu.edu/2609.0/12216.html",
+      "note": "thread"
+    },
+    {
+      "title": "lib/parser: match_wildcard_hyphen() v8",
+      "url": "https://lists.openwall.net/linux-kernel/2026/07/21/2429",
+      "note": "thread"
+    },
+    {
+      "title": "rust: serdev: Mitigate race conditions v2",
+      "url": "https://lkml.iu.edu/2609.0/12083.html",
+      "note": "thread"
+    },
+    {
+      "title": "rust: serdev — mutable callback refs",
+      "url": "https://lkml.iu.edu/2609.0/08834.html",
+      "note": "thread"
+    },
+    {
+      "title": "rust / dma_buf: dma_fence abstractions v11",
+      "url": "https://lkml.iu.edu/2609.0/12431.html",
+      "note": "thread"
+    },
+    {
+      "title": "bpf riscv: bpf_jit_supports_stack_args v5",
+      "url": "https://lkml.iu.edu/2609.0/12424.html",
+      "note": "thread"
+    },
+    {
+      "title": "bpf riscv: BPF_REG_0 t6 remap",
+      "url": "https://lkml.iu.edu/2609.0/12423.html",
+      "note": "thread"
+    },
+    {
+      "title": "bpf riscv: stack args a5-a7 mapping",
+      "url": "https://lkml.iu.edu/2609.0/12425.html",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-05T18:21:17.943Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

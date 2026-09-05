@@ -1,0 +1,138 @@
+{
+  "id": "2026-09-06-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-09-06 회귀·보안 정리 — Android 커널",
+  "headline": "ACK mainline·android16-6.12에서 회귀·보안·빌드 정리가 이어지며 drm-next 병합 동기화가 진행 중입니다.",
+  "date": "2026-09-06",
+  "summary": "SELinux BPF 초기화, wrapfd dma-buf 락, PM wakeup lockdep, NMI dump_tasks 등 회귀·보안 패치가 ACK에 반영되었습니다. drm-next-2026-06-17 병합과 GKI defconfig·빌드 정리 커밋도 함께 확인할 수 있습니다.",
+  "tags": [
+    "안드로이드",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "SELinux BPF SBLABEL_MNT 검사 순서 수정",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "ACK 보안·SELinux·BPF 사용자",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/8f0a5b31aee19510e75741c9687cf0d9321fa7ed",
+      "if": "bpffs 등 xattr 없는 genfscon 마운트에서 SELinux inode 초기화 경로를 다룬다면",
+      "do": "selinux_inode_init_security()의 SBLABEL_MNT 검사가 isec 초기화 전에 수행되는지 ACK 트리에서 확인하세요.",
+      "verify": "커밋 원문과 bpffs 마운트 시 inode_doinit_with_dentry() 연쇄 호출 동작을 테스트 환경에서 검증하세요."
+    },
+    {
+      "title": "wrapfd dma_buf unlocked variant 전환",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "android16-6.12 ACK 사용자, wrapfd·dmabuf 드라이버 개발자",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/56a91e3eaa38c8d78cc1b0cc5714b3e434123ffc",
+      "if": "android16-6.12에서 wrapfd 기반 HAL·드라이버 경로를 사용한다면",
+      "do": "dma_buf_vmap/vunmap 대신 dma_buf_vmap_unlocked/vunmap_unlocked 사용 여부를 벤더 트리에 반영하세요.",
+      "verify": "wrapfd reservation lock 없이 vmap/vunmap 호출 시 레이스·크래시가 재현되지 않는지 런타임 테스트로 확인하세요."
+    },
+    {
+      "title": "PM wakeup reason lockdep 데드락 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "ACK 전력/서스펜드 담당, wakeup reason·suspend 디버깅 엔지니어",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/c439eb78736dc606256bac910652f186c4933d08",
+      "if": "suspend/resume wakeup reason·IRQ 로그 디버깅 중 lockdep 경고를 본다면",
+      "do": "wakeup_reason_lock·irq_desc_lock_class과 console_owner 간 락 순서 수정 커밋이 ACK에 포함됐는지 확인하세요.",
+      "verify": "suspend 디버그 경로에서 lockdep 데드락 재현 여부를 원문 커밋 기준으로 재검증하세요."
+    },
+    {
+      "title": "NMI 컨텍스트 dump_tasks() 안전화",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "ACK 메모리 서브시스템·LMKD 담당, OOM 디버깅 도구 사용자",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/db2acc01b75f9a30bfef0f4d2a6f413542cc32ac",
+      "if": "NMI·메모리 압박 경로에서 dump_tasks()를 호출한다면",
+      "do": "spin_trylock과 memcg OOM 덤프 조기 반환 적용 여부를 mm/oom_kill.c 변경과 대조하세요.",
+      "verify": "원문 인용은 아직 확인 필요하므로, NMI 컨텍스트 OOM 덤프 시 데드락 재현 여부를 직접 테스트하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Merge drm-next-2026-06-17 into android-mainline**\n\ndrm-next-2026-06-17 태그를 android-mainline에 병합했으며 cma_heap.c·system_heap.c의 dma-buf heap 충돌을 해소해 v7.2-rc1 방향 동기화를 진행했습니다.\n\n영향: ACK가 upstream DRM/dma-buf 스택을 따라가며 GPU·디스플레이·dmabuf heap 동작 변화를 벤더가 미리 파악해야 할 대규모 릴리스 동기화입니다.\n\n병합에 포함된 drm-next 개별 기능 변경 전체 목록은 별도 changelog 분석이 필요합니다.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/01ee4ea37e86aacce089f0ccb2e3e0e02bfc7fae)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**FROMGIT: selinux: bpf: check SBLABEL_MNT before isec init**\n\nselinux_inode_init_security()에서 SBLABEL_MNT(마운트 라벨링 지원) 검사를 isec 초기화 전으로 옮겨 bpffs 등 xattr 없는 genfscon 마운트 시 잘못된 initialized 상태를 막습니다.\n\n영향: bpffs xattr 지원(9722955b5430) 이후 inode_doinit_with_dentry() 연쇄 호출이 깨져 SELinux 초기화·BPF 파일시스템 접근에 보안 회귀가 생길 수 있습니다.\n\n> genfscon bpffs mounts fail the SBLABEL_MNT check as expected (no xattrs) and yet leave the isec->initialized. This breaks subsequent calls to inode_doinit_with_dentry().\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/8f0a5b31aee19510e75741c9687cf0d9321fa7ed)\n\n**ANDROID: drivers/wrapfd: Use unlocked variants of dma_buf_[vmap|vunmap]**\n\nwrapfd 드라이버가 reservation lock 없이 dma_buf_vmap/vunmap을 호출하던 문제를 dma_buf_vmap_unlocked/vunmap_unlocked 사용으로 수정했습니다.\n\n영향: dma-buf 동기화 규약 위반은 레이스·크래시로 이어질 수 있어, Android wrapfd 기반 HAL/드라이버 경로의 런타임 안정성에 중요합니다.\n\n> in the wrapfd driver, the reservation object lock isn't held; therefore, use the unlocked version of those functions, as that handles the necessary locking.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/56a91e3eaa38c8d78cc1b0cc5714b3e434123ffc)\n\n**ANDROID: PM: wakeup: Fix circular locking dependencies in wakeup reasons**\n\nsuspend/resume wakeup reason 로깅에서 wakeup_reason_lock·irq_desc_lock_class과 console_owner 간 락 순서 역전을 해소하도록 PM wakeup 코드를 수정했습니다.\n\n영향: lockdep가 보고한 suspend 디버그 경로 데드락을 제거해, 전력·서스펜드 분석(wakeup reason, IRQ 로그) 시 커널이 멈추는 회귀를 방지합니다.\n\n> print_wakeup_sources() holds wakeup_reason_lock while calling pr_info(), creating a lock inversion when preempted by an IRQ handler taking wakeup_reason_lock.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/c439eb78736dc606256bac910652f186c4933d08)\n\n**ANDROID: mm: Make dump_tasks() safe in NMI context**\n\nNMI 컨텍스트에서 dump_tasks() 호출 시 spin_trylock과 memcg OOM 덤프 조기 반환으로 NMI-unsafe 락 사용을 피하도록 mm/oom_kill.c를 수정했습니다.\n\n영향: ACK에서 export된 dump_tasks()가 NMI(예: 메모리 압박·OOM 디버깅)에서 호출될 때 데드락을 유발할 수 있어, LMKD·메모리 압박 분석 경로의 안정성에 직접 영향을 줍니다.\n\n원문 인용은 확인 필요합니다.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/db2acc01b75f9a30bfef0f4d2a6f413542cc32ac)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Revert \"ANDROID: dma-buf: heaps: export new mem_accounting symbol\"**\n\nANDROID 측 mem_accounting 심볼 export 커밋(159a7a24)을 revert해 upstream dma-buf heaps 커밋(f78a0607c8bf)의 동일 export와 중복을 제거했습니다.\n\n영향: 동일 심볼 이중 export는 모듈·ABI 검증 혼란을 일으킬 수 있어, drm-next 병합 후 dma-buf heap 모듈 의존성을 정리하는 필수 정리 작업입니다.\n\n> This is no longer needed as the export has now been added by upstream commit f78a0607c8bf (\"dma-buf: heaps: Export mem_accounting parameter\").\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/9fb882e31c318d88c36b9b0b173ce7f7d6d801e5)\n\n**ANDROID: GKI: CRYPTO_LZ4 is now implicit**\n\nHIBERNATION Kconfig가 LZ4를 암묵적으로 선택하므로 gki_defconfig에서 CONFIG_CRYPTO_LZ4=y 항목을 제거했습니다.\n\n영향: GKI defconfig 정리로 하이버네이션 압축 지원은 유지되면서 중복 Kconfig 선언을 없애, ACK 빌드·설정 동기화 부담을 줄입니다.\n\n> The CRYPTO_LZ4 config is now implicitly selected via HIBERNATION, so remove it from our gki_defconfig files.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/87aba67d69fd0706152ae2d9dec68c2cfc274459)\n\n**ANDROID: gki_defconfig: enable CONFIG_SW_SYNC=y for debug/testing**\n\nGKI defconfig에 CONFIG_SW_SYNC=y를 활성화해 igt-gpu-tools 등 GPU 드라이버 디버그/테스트에서 sw_sync를 사용할 수 있게 했습니다.\n\n영향: 출시 빌드는 debugfs 미마운트(GMS)로 sw_sync 노출이 제한되지만, ACK 테스트·CI에서 GPU 동기화 검증을 가능하게 합니다.\n\n> sw_sync is only exposed through debugfs, so enabling in newer GKI kernels for debugging and testing no longer poses the risk to shipping builds.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/7443a0c3c9ecfc8982003afde92e9c783c725994)\n\n**ANDROID: sched: Avoid macro redefinition of TRACE_INCLUDE_PATH**\n\ninclude/trace/hooks/sched.h에 TRACE_INCLUDE_PATH 재정의 전 #undef를 추가해 다중 trace hook 헤더 포함 시 -Werror,-Wmacro-redefined 빌드 실패를 방지했습니다.\n\n영향: EAS vendor hook 등 sched trace 확장이 같은 컴파일 유닛에 겹칠 때 ACK 전체 빌드가 깨질 수 있어, 스케줄러/EAS 개발 경로의 빌드 안정성에 필요합니다.\n\n> Add missing #undef TRACE_INCLUDE_PATH before #define in include/trace/hooks/sched.h to prevent -Werror,-Wmacro-redefined when multiple trace hook headers are included.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/82be0d329bf2b455546a09cc84a40c9d1716b54d)\n\n**ANDROID: iommu/arm-smmu-v3-kvm: Drop static from dst pointer**\n\nsmmuv3_dev_block_dma()의 dst 포인터에서 static 한정자를 제거해 스택 할당으로 동일 파일 내 다른 STE 헬퍼와 일치시켰습니다.\n\n영향: KVM arm-smmu-v3 경로의 코드 일관성·스택 사용 패턴을 맞춰 유지보수와 잠재적 static 스토리지 이슈를 줄입니다.\n\n> Remove the static qualifier so it is allocated on the stack, matching the convention used by other STE helper functions in this file.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/459446cbc80a5ae089a81799357707cbf00f92b8)"
+    },
+    {
+      "heading": "기타",
+      "body": "**ANDROID: dma-heap: restore struct dma_heap kernel-doc lost in a merge**\n\ndrm-next 병합으로 유실된 struct dma_heap의 @heap_devt/@list/@heap_cdev kernel-doc을 복원하고 ANDROID 전용 @heap_dev 주석 위치를 정리했습니다.\n\n영향: 기능 변경은 없지만 kernel-doc 경고를 없애 dma-heap API 문서·검증 스크립트와 android-mainline/upstream 정합을 유지합니다.\n\n원문 인용은 확인 필요합니다.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/d6549754be00560c3cd7afb7f1cd3e91c14e78b0)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "FROMGIT: selinux: bpf: check SBLABEL_MNT before isec init",
+      "url": "https://android.googlesource.com/kernel/common/+/8f0a5b31aee19510e75741c9687cf0d9321fa7ed",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: drivers/wrapfd: Use unlocked variants of dma_buf_[vmap|vunmap]",
+      "url": "https://android.googlesource.com/kernel/common/+/56a91e3eaa38c8d78cc1b0cc5714b3e434123ffc",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: PM: wakeup: Fix circular locking dependencies in wakeup reasons",
+      "url": "https://android.googlesource.com/kernel/common/+/c439eb78736dc606256bac910652f186c4933d08",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: mm: Make dump_tasks() safe in NMI context",
+      "url": "https://android.googlesource.com/kernel/common/+/db2acc01b75f9a30bfef0f4d2a6f413542cc32ac",
+      "note": "commit"
+    },
+    {
+      "title": "Merge drm-next-2026-06-17 into android-mainline",
+      "url": "https://android.googlesource.com/kernel/common/+/01ee4ea37e86aacce089f0ccb2e3e0e02bfc7fae",
+      "note": "commit"
+    },
+    {
+      "title": "Revert \"ANDROID: dma-buf: heaps: export new mem_accounting symbol\"",
+      "url": "https://android.googlesource.com/kernel/common/+/9fb882e31c318d88c36b9b0b173ce7f7d6d801e5",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: GKI: CRYPTO_LZ4 is now implicit",
+      "url": "https://android.googlesource.com/kernel/common/+/87aba67d69fd0706152ae2d9dec68c2cfc274459",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: gki_defconfig: enable CONFIG_SW_SYNC=y for debug/testing",
+      "url": "https://android.googlesource.com/kernel/common/+/7443a0c3c9ecfc8982003afde92e9c783c725994",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: sched: Avoid macro redefinition of TRACE_INCLUDE_PATH",
+      "url": "https://android.googlesource.com/kernel/common/+/82be0d329bf2b455546a09cc84a40c9d1716b54d",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: iommu/arm-smmu-v3-kvm: Drop static from dst pointer",
+      "url": "https://android.googlesource.com/kernel/common/+/459446cbc80a5ae089a81799357707cbf00f92b8",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: dma-heap: restore struct dma_heap kernel-doc lost in a merge",
+      "url": "https://android.googlesource.com/kernel/common/+/d6549754be00560c3cd7afb7f1cd3e91c14e78b0",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-05T18:03:05.553Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/android-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,118 @@
+{
+  "id": "2026-09-06-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-09-06 RV64 BPF 스택인자 — 아키텍처·플랫폼",
+  "headline": "RV64 BPF JIT가 5개 초과 인자 스택 전달을 지원하고, arm64 nested KVM NUMA balancing hang 수정이 검토 중입니다.",
+  "date": "2026-09-06",
+  "summary": "RV64 BPF JIT·selftest가 stack argument·kfunc 호출 규약을 확장했고, Exynos850 panfrost DT 기반과 kexec 메모리 경로 정리가 제출됐습니다. arm64 nested stage-2 interval tree 패치는 NUMA balancing 시 L1 hang을 겨냥하나 maintainer는 877ms unmap 원인 규명을 선행 조건으로 뒀습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "RV64 BPF stack argument·kfunc 지원",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "RISC-V BPF JIT·eBPF selftest·kfunc 사용자",
+      "verifyLink": "https://lkml.iu.edu/2609.0/12424.html",
+      "if": "RV64에서 5개를 넘는 인자의 BPF subprog·kfunc를 포팅하거나 selftest를 돌릴 계획이면",
+      "do": "v5 패치의 bpf_jit_supports_stack_args()·BPF_REG_0·RV_REG_TCC 재매핑 변경을 추적하고 LLVM main과 함께 BPF-to-BPF·kfunc selftest를 실행하세요.",
+      "verify": "lkml 스레드에서 riscv64 QEMU·LLVM main selftest 통과 주장과 ABI 정렬 내용을 원문으로 확인하세요."
+    },
+    {
+      "title": "arm64 nested KVM stage-2 interval tree",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "arm64 KVM nested virtualization·클라우드/하이퍼바이저 플랫폼 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/04/665",
+      "if": "NUMA balancing이 켜진 nested KVM에서 L1 게스트 부팅 hang을 재현하거나 Yitian 710급 워크로드를 운영 중이면",
+      "do": "Wei-Lin Chang v5의 kvm_guest_s2_mapping·kvm_nested_unmap_cipa_range() 범위 한정 unmap 방향을 검토하고 Marc Zyngier 보류 사유를 함께 읽으세요.",
+      "verify": "Alibaba 재현·ftrace 분석과 maintainer의 877ms unmap 선행 규명 요구를 openwall 스레드에서 확인하세요."
+    },
+    {
+      "title": "Exynos850 Mali-G52 panfrost DT",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "Samsung Exynos850·arm64 DTS·panfrost 플랫폼 포팅 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/08/20/1194",
+      "if": "Exynos850 보드에서 panfrost GPU를 메인라인 DT로 쓰려면",
+      "do": "samsung,exynos850-mali binding·exynos850.dtsi GPU 노드를 확인하고 status=disabled 기본값과 보드별 regulator workaround 필요성을 점검하세요.",
+      "verify": "SM-A217F probe 성공 주장과 DVFS·power domain 미지원 범위를 1192 스레드 원문에서 확인하세요."
+    },
+    {
+      "title": "RV64 BPF stack argument selftest 활성화",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "RISC-V BPF CI·selftest 유지보수 담당",
+      "verifyLink": "https://lkml.iu.edu/2609.0/12427.html",
+      "if": "RV64 BPF JIT stack argument 변경을 CI에서 회귀 검증하려면",
+      "do": "7개 selftest의 __TARGET_ARCH_riscv && __riscv_xlen == 64 가드와 __BPF_FEATURE_STACK_ARGUMENT 게이트가 유지되는지 빌드 로그를 확인하세요.",
+      "verify": "lkml 12427에서 RV32 제외 조건과 clang stack argument 매크로 게이트 설명을 원문으로 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Add bpf stack arguments support for RV64**\n\nPu Lehui·Feng Jiang이 RV64 BPF JIT에 bpf_jit_supports_stack_args()를 구현해 BPF subprog·kfunc가 5개를 넘는 인자를 스택으로 전달·수신할 수 있게 했고, v5는 BPF_REG_0·RV_REG_TCC 재매핑과 RISC-V psABI 정렬·prologue stack_arg_sz 예약을 포함한다.\n\n영향: RV64에서 x86/arm64와 동일한 BPF stack argument·kfunc 호출 규약을 쓰게 되어 복잡한 BPF 프로그램·kfunc 기반 tracing/보안 도구 포팅이 가능해진다. LLVM BPF stack argument 지원(PR 189060)과 커널 JIT 변경의 릴리스 타이밍 정합은 배포 환경마다 확인이 필요하다.\n\n> Implement bpf_jit_supports_stack_args() on RV64 JIT to allow bpf subprogs and kfuncs to pass and receive more than 5 arguments.\n\n[원문 확인](https://lkml.iu.edu/2609.0/12424.html)\n\n**selftests/bpf: Enable stack argument tests for RV64**\n\nFeng Jiang이 RV64 BPF stack argument selftest 7개 프로그램의 가드를 __TARGET_ARCH_riscv && __riscv_xlen == 64 조건으로 확장했고, __BPF_FEATURE_STACK_ARGUMENT(clang 지원) 게이트는 유지한다.\n\n영향: RV64 JIT stack argument 지원이 CI·selftest에서 회귀 검증되도록 하며, RV32에는 적용하지 않아 잘못된 활성화를 막는다.\n\n> Enable the stack argument selftests for RV64. The riscv guard is restricted to __riscv_xlen == 64 since stack arguments are only supported by the RV64 JIT.\n\n[원문 확인](https://lkml.iu.edu/2609.0/12427.html)\n\n**KVM: arm64: nv: Implement nested stage-2 reverse map (new data structure)**\n\nWei-Lin Chang v5(6패치)가 maple tree 대신 interval tree 기반 guest stage-2 tracking(kvm_guest_s2_mapping)을 도입하고, MMU notifier 경로의 전체 IPA unmap 대신 kvm_nested_unmap_cipa_range()로 범위 한정 unmap을 한다. Alibaba가 Yitian 710·NUMA balancing 환경에서 L1 게스트 부팅 hang을 재현·ftrace로 입증했다.\n\n영향: nested KVM에서 NUMA balancing 등 MMU notifier가 빈번할 때 kvm_nested_s2_unmap() 전체 IPA 스캔(8 vCPU에서 수백 ms×반복)이 L1 진행을 멈춘다. interval tree 기반 정밀 unmap이 핵심 수정 방향이나, Marc Zyngier는 877ms unmap이 반복되는 근본 원인 규명 전까지 패치 적용을 보류했고 interval-tree 수정이 더 큰 문제를 가릴 수 있다고 지적했다. VHE-only L1 부팅 초 EL1 구간의 nested MMU 활성화 메커니즘에 대한 maintainer 추가 질문도 남아 있다.\n\n> This series fixes a functional hang that is exposed when NUMA balancing is enabled. The previous nested stage-2 unmap path is too slow for this workload\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/04/665)\n\n**Exynos850 GPU support**\n\nThomas Turner가 Exynos850 SoC의 Mali-G52(Bifrost) GPU를 panfrost로 쓰기 위한 DT binding(samsung,exynos850-mali)과 exynos850.dtsi GPU 노드를 추가하는 2패치 시리즈를 제출했다. GPU 노드는 status=\"disabled\"로 두어 E850-96 보드에서는 기본 비활성이다.\n\n영향: Exynos850 플랫폼에 메인라인 GPU DT 기반을 마련한다. DVFS·power domain·PMIC regulator 등은 아직 없어 실사용은 보드별 enable·regulator workaround가 필요하다. E850-96 보드에서 DPU·framebuffer 미구성으로 GPU 실사용 검증 경로가 제한적이며, 2026-09-05 재게시가 v2 이후 새 변경을 포함하는지는 원문 미확인 상태다.\n\n> This series provides basic GPU support to the Exynos850 platform, making use of the Mali G52 GPU through the panfrost driver.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/08/20/1194)\n\n**kexec_file: remove unused arch_kexec_locate_mem_hole hook**\n\nSourabh Jain이 어떤 아키텍처도 arch_kexec_locate_mem_hole()을 구현하지 않는다고 보고, kexec_file·riscv kexec_elf 경로에서 kexec_locate_mem_hole()을 직접 호출하고 include/linux/kexec.h의 미사용 fallback wrapper(15줄)를 제거하는 패치를 제출했다.\n\n영향: kexec/kdump 메모리 할당 경로가 단순해지며 향후 아키텍처별 hook 추가 없이 generic API만 추적하면 된다. 동작 변화는 없다고 명시됐다. 2026-09-05 linux-riscv 재게시 이후 maintainer ack·머지 상태는 확인하지 못했다.\n\n> This simplifies the kexec memory allocation path without changing its behavior.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/08/27/1328)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Add bpf stack arguments support for RV64",
+      "url": "https://lkml.iu.edu/2609.0/12424.html",
+      "note": "thread"
+    },
+    {
+      "title": "selftests/bpf: Enable stack argument tests for RV64",
+      "url": "https://lkml.iu.edu/2609.0/12427.html",
+      "note": "thread"
+    },
+    {
+      "title": "KVM: arm64: nv: Avoid full shadow stage-2 unmap",
+      "url": "https://lkml.iu.edu/2608.1/03830.html",
+      "note": "thread"
+    },
+    {
+      "title": "KVM arm64 nested stage-2 NUMA balancing hang 분석",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/04/665",
+      "note": "thread"
+    },
+    {
+      "title": "Exynos850 GPU support 시리즈",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/20/1194",
+      "note": "thread"
+    },
+    {
+      "title": "Exynos850 GPU DT 노드",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/20/1192",
+      "note": "thread"
+    },
+    {
+      "title": "kexec_file: remove unused arch_kexec_locate_mem_hole hook",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/27/1328",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-05T18:30:31.484Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

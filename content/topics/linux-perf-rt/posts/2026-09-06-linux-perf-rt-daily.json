@@ -1,0 +1,130 @@
+{
+  "id": "2026-09-06-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-09-06 softirq·BPF보안 — 성능·RT 렌즈",
+  "headline": "PREEMPT_RT softirq IRQ 컨텍스트 v2와 Nicholas Carlini 보고 BPF verifier 보안 패치 두 건, RV64 stack argument JIT가 병행됩니다.",
+  "date": "2026-09-06",
+  "summary": "Karl Mehltretter v2가 __irq_exit_rcu() HARDIRQ_OFFSET 조기 제거로 ftrace·KCSAN·KMSAN 컨텍스트 오류를 막고, BPF는 callback map lock identity·acyclic ownership 검증 허점을 닫습니다. Pu Lehui v5가 RV64 JIT에 stack argument 지원을 추가해 x86·arm64에 이어 multi-arg BPF-to-BPF·kfunc 경로를 열었습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "BPF",
+    "PREEMPT_RT"
+  ],
+  "highlights": [
+    {
+      "title": "softirq: Preserve interrupt context during IRQ exit",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "PREEMPT_RT·softirq·IRQ tracing·KCSAN/KMSAN 유지보수 담당",
+      "verifyLink": "https://lkml.iu.edu/2609.0/12220.html",
+      "if": "PREEMPT_RT·threadirqs 환경에서 IRQ-exit tracing 컨텍스트를 검증 중이라면",
+      "do": "v2 패치의 HARDIRQ_OFFSET 유지·SOFTIRQ_OFFSET 전환과 PREEMPT_RT·threadirqs QEMU 부하 테스트 결과를 먼저 확인하세요",
+      "verify": "lkml 스레드에서 __irq_exit_rcu() 조기 HARDIRQ_OFFSET 제거 문제와 hardirq→softirq WARN·lockdep 갱신 변경을 대조하세요"
+    },
+    {
+      "title": "bpf: Assign lock identity to callback map values",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF verifier·callback map·bpf_spin_lock·graph kfunc 사용자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260905083418.3723623-7-memxor@gmail.com/",
+      "if": "nested callback·bpf_spin_lock·graph kfunc 조합을 verifier가 검증한다면",
+      "do": "v2 시리즈 6/7의 lockable map value fresh ID와 map-in-map map_uid lookup 정체성 규칙을 selftest와 함께 추적하세요",
+      "verify": "lore BPF 스레드에서 Nicholas Carlini 보고 우회 경로와 d0d78c1df9b1 단일 원소 array ID-zero 예외를 확인하세요"
+    },
+    {
+      "title": "Fix acyclic ownership checks",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF BTF graph·local kptr·list/rbtree 소유 모델 설계자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260905090750.4064411-1-memxor@gmail.com/",
+      "if": "BTF graph·local kptr 소유 모델을 설계·검증한다면",
+      "do": "BTF_MAX_OWNERSHIP_DEPTH 8 bounded walk와 local kptr 체인 제한이 기존 BTF와 충돌하지 않는지 확인하세요",
+      "verify": "3패치 시리즈 cover와 패치 1/3·2/3에서 cycle 거부·bpf_obj_drop 스택 고갈 시나리오를 읽어보세요"
+    },
+    {
+      "title": "Add bpf stack arguments support for RV64",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "RISC-V BPF JIT·kfunc·BPF selftest 유지보수 담당",
+      "verifyLink": "https://lkml.iu.edu/2609.0/12424.html",
+      "if": "RISC-V BPF JIT·kfunc 포팅을 진행 중이라면",
+      "do": "v5 bpf_jit_supports_stack_args()와 BPF_REG_0·RV_REG_TCC 리맵, LLVM stack argument 지원 전제 조건을 CI에 반영하세요",
+      "verify": "lkml v5 cover와 LLVM PR 189060에서 riscv64 QEMU selftest 통과 주장을 대조하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**bpf: Assign lock identity to callback map values**\n\nKumar Kartikeya Dwivedi v2 시리즈 6/7이 callback frame(for-each·timer/workqueue·task-work)의 lockable map value에 고유 verifier ID를 부여하고, map-in-map에서는 map_uid로 inner map lookup 정체성을 보존합니다. 단일 원소 array map의 ID-zero 예외는 유지합니다.\n\n영향: 중첩 callback이 동일 map의 서로 다른 원소를 ID 0으로 공유하면 verifier가 한 원소에서 잡은 bpf_spin_lock을 다른 원소에서 해제하거나 graph kfunc을 잘못 허용해 동시 리스트 손상이 가능합니다. Nicholas Carlini가 보고한 verifier 우회 경로를 닫는 보안 수정입니다. v2 시리즈 bpf-next 머지 일정·selftests 7/7 회귀 테스트 범위·map_uid 전파 성능 영향은 확인 필요합니다.\n\n> Callback frame constructors also leave map-value arguments with ID zero, but their maps can have multiple elements. Consequently, nested callbacks can hold two distinct elements of the same map with a\n\n[원문 확인](https://lore.kernel.org/bpf/20260905083418.3723623-7-memxor@gmail.com/)\n\n**Fix acyclic ownership checks**\n\n3패치 시리즈가 BTF 로드 시 graph ownership을 bounded walk로 검증하고(BTF_MAX_OWNERSHIP_DEPTH 8), program-local referenced kptr·percpu kptr 체인 깊이도 같은 한도로 제한합니다. 기존 one-hop 근사가 거부하던 안전한 acyclic 레이아웃은 허용합니다.\n\n영향: 자기 참조 또는 과도하게 긴 local kptr 소유 체인은 bpf_obj_drop 시 커널 스택을 고갈시켜 패닉할 수 있습니다. CAP_BPF 사용자가 Nicholas Carlini가 보고한 소유 그래프 검증 허점을 닫는 보안·안정성 수정입니다. BTF_MAX_OWNERSHIP_DEPTH 8이 실제 프로그램 패턴에 충분한지·기존 BTF 호환성·bpf-next 머지 일정은 확인 필요합니다.\n\n> Bound and ensure acyclic ownership graphs for native data structures to fix a bug reported by Nicholas. See commit logs and tests for details.\n\n[원문 확인](https://lore.kernel.org/bpf/20260905090750.4064411-1-memxor@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**softirq: Preserve interrupt context during IRQ exit**\n\nv2 패치가 __irq_exit_rcu()에서 HARDIRQ_OFFSET를 hrtimer 재무장·softirq 디스패치·timersd wakeup이 끝날 때까지 유지하고, 직접 softirq 처리 시 SOFTIRQ_OFFSET로 전환한 뒤 복원합니다. softirq 자격은 irq_count() == HARDIRQ_OFFSET로 판별해 PREEMPT_RT의 task-local BH 비활성 상태를 보존합니다. v2는 hardirq→softirq 전환에서 SOFTIRQ_OFFSET가 정확히 하나인지 WARN하고 lockdep 상태를 무조건 갱신하며 PREEMPT_RT·threadirqs QEMU 부하 테스트를 통과했습니다.\n\n영향: IRQ 반환 경로가 잠깐 task context로 보이면 ftrace·KCSAN·KMSAN이 잘못된 컨텍스트로 기록·속성을 부여합니다. PREEMPT_RT·threadirqs·sanitizer 추적 담당자는 이 수정이 IRQ-exit 윈도우의 컨텍스트 불일치를 제거하는지 확인해야 합니다. mainline·linux-rt-devel 머지 일정·다른 아키텍처 재현 여부·cyclictest p99.9 차이가 실제 RT 지연 회귀인지는 확인 필요합니다.\n\n> __irq_exit_rcu() drops HARDIRQ_OFFSET before deferred hrtimer rearm, entry into softirq dispatch, and timersd wakeup. The rearm, wakeup, and softirq entry code before softirq_handle_begin() are still \n\n[원문 확인](https://lkml.iu.edu/2609.0/12220.html)\n\n**Add bpf stack arguments support for RV64**\n\nPu Lehui v5 시리즈가 RV64 JIT에 bpf_jit_supports_stack_args()를 구현해 BPF subprog·kfunc가 5개 초과 인자를 스택(BPF_REG_PARAMS)으로 주고받게 합니다. v4의 BPF_REG_0/TCC 레지스터 리맵과 selftest 가드 확장이 포함됩니다.\n\n영향: x86·arm64에 이어 RV64에서도 stack argument를 쓰는 BPF-to-BPF·kfunc 프로그램이 JIT 가능해집니다. RISC-V BPF 포팅·CI는 LLVM BPF stack argument 지원(PR 189060)과 함께 추적해야 합니다. BPF_REG_0을 t6로 옮긴 JIT 코드 밀도·RVC fallback·exceptions.c RV64 stack-arg 가드 반영 여부·bpf-next 머지 일정은 확인 필요합니다.\n\n> Implement bpf_jit_supports_stack_args() on RV64 JIT to allow bpf subprogs and kfuncs to pass and receive more than 5 arguments.\n\n[원문 확인](https://lkml.iu.edu/2609.0/12424.html)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "softirq: Preserve interrupt context during IRQ exit (v2)",
+      "url": "https://lkml.iu.edu/2609.0/12220.html",
+      "note": "thread"
+    },
+    {
+      "title": "softirq_count() WARN review (Frederic Weisbecker)",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/04/2533",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Assign lock identity to callback map values (v2 6/7)",
+      "url": "https://lore.kernel.org/bpf/20260905083418.3723623-7-memxor@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: pseudo load ID-zero for single-element array (d0d78c1df9b1)",
+      "url": "https://github.com/torvalds/linux/commit/d0d78c1df9b1",
+      "note": "commit"
+    },
+    {
+      "title": "Fix acyclic ownership checks (cover)",
+      "url": "https://lore.kernel.org/bpf/20260905090750.4064411-1-memxor@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Fix acyclic ownership checks (patch 1/3)",
+      "url": "https://lore.kernel.org/bpf/20260905090750.4064411-2-memxor@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Fix acyclic ownership checks (patch 2/3)",
+      "url": "https://lore.kernel.org/bpf/20260905090750.4064411-3-memxor@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Add bpf stack arguments support for RV64 (v5)",
+      "url": "https://lkml.iu.edu/2609.0/12424.html",
+      "note": "thread"
+    },
+    {
+      "title": "LLVM BPF stack argument support (PR 189060)",
+      "url": "https://github.com/llvm/llvm-project/pull/189060",
+      "note": "article"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-05T18:28:05.192Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

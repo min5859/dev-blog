@@ -1,0 +1,124 @@
+{
+  "id": "2026-09-06-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-09-06 randstruct·LLC — 커널 보안",
+  "headline": "randstruct 캐스트 경고 승격, LLC OOB KUnit 테스트, GCC FORTIFY type-1 수정이 하드닝 스레드에서 진행됐습니다.",
+  "date": "2026-09-06",
+  "summary": "GCC randstruct와 FAM subobject type-1 크기 버그 수정이 FORTIFY_SOURCE 하드닝 신뢰도를 높이는 방향으로 논의됐습니다. LLC 상태 머신 index -1 OOB에 KUnit 회귀 테스트가 추가됐으며, 7.1.y EOL 이후 7.2.3이 권장 업그레이드 대상입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "보안"
+  ],
+  "highlights": [
+    {
+      "title": "randstruct 잘못된 캐스트 경고 승격",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "randstruct/GCC 플러그인을 쓰는 커널 빌드·보안 하드닝 유지보수자",
+      "verifyLink": "https://lists.openwall.net/linux-hardening/2026/09/03/66",
+      "if": "CONFIG_RANDSTRUCT_FULL 빌드에서 타입 캐스트 위반을 놓치고 있다면",
+      "do": "inform 대신 warning_at으로 보고되는 변경을 반영한 빌드로 캐스트 위반을 조기에 수정하세요",
+      "verify": "하드닝 스레드 원문에서 Clang과 동일하게 error로 올리는 v2 예고를 확인하세요"
+    },
+    {
+      "title": "LLC 상태 머신 OOB KUnit 회귀 테스트",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "net/llc 유지보수자 및 syzbot/KUnit 하드닝 추적자",
+      "verifyLink": "https://lists.openwall.net/linux-hardening/2026/09/01/30",
+      "if": "PF_LLC 소켓 경로를 유지보수한다면",
+      "do": "llc_conn_state_in_service() 경계 검사와 conn_kunit.c 회귀 테스트 패치를 추적하세요",
+      "verify": "KUnit 테스트가 syzbot index -1 OOB를 재현하는지 스레드 원문을 확인하세요"
+    },
+    {
+      "title": "GCC FAM subobject type-1 크기 버그 수정",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "GCC·커널 toolchain 및 FORTIFY_SOURCE 하드닝 추적자",
+      "verifyLink": "https://lists.openwall.net/linux-hardening/2026/09/03/37",
+      "if": "GCC와 FORTIFY_SOURCE로 커널을 빌드한다면",
+      "do": "addr_object_size() type-1 회귀 수정 패치와 GCC 릴리스 포함 시점을 추적하세요",
+      "verify": "PR126975 스레드에서 -fstrict-flex-arrays=3 상호작용과 Clang 동작 차이를 확인하세요"
+    },
+    {
+      "title": "7.1.y EOL 및 7.2.3 업그레이드",
+      "priority": "상",
+      "impactType": "release",
+      "affectedAudience": "7.1.y 커널을 운영하는 배포·임베디드 팀",
+      "verifyLink": "https://lwn.net/Articles/1092154/",
+      "if": "7.1.y 커널을 운영 중이라면",
+      "do": "더 이상 보안 업데이트가 없으므로 활성 7.2.y(7.2.3)로 즉시 이전하세요",
+      "verify": "LWN EOL 공지와 ChangeLog-7.1.13에서 USB usbfs UAF 등 백포트 목록을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**llc: add KUnit tests for the connection state machine bounds**\n\nKees Cook 3패치 시리즈의 마지막 패치가 LLC type 2 상태 머신에 llc_conn_state_in_service() 경계 검사와 KUnit 회귀 테스트(conn_kunit.c)를 추가합니다. syzbot이 보고한 index -1 OOB를 재현·차단합니다.\n\n영향: LLC_CONN_OUT_OF_SVC(0) 상태에서 llc_conn_state_table[-1] 인덱싱으로 KASAN/UBSAN OOB가 발생할 수 있어, PF_LLC 소켓 경로의 메모리 안전을 보강합니다. net-next 머지 시점 및 배포 커널 백포트 가능성은 확인이 필요합니다.\n\n> UBSAN: array-index-out-of-bounds in net/llc/llc_conn.c:681:8 index -1 is out of range for type 'int[12][5]'\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/09/01/30)\n\n> Without the preceding fixes, on a CONFIG_UBSAN_BOUNDS=y plus CONFIG_KASAN=y kernel that case prints both halves of the reported splat and then dies\n\n[원문 확인](https://lkml.iu.edu/2609.0/02654.html)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**randstruct: report bad casts as warnings rather than notes**\n\nGCC randstruct 플러그인이 randomized struct 포인터 간 잘못된 캐스트를 inform(note) 대신 warning_at으로 보고하도록 바뀝니다. Bill Wendling 피드백에 Kees Cook이 Clang과 동일하게 error로 올리는 v2를 예고했습니다.\n\n영향: CONFIG_RANDSTRUCT_FULL 빌드에서 거의 보이지 않던 타입 캐스트 위반을 조기에 잡아 하드닝 빌드 신뢰도를 높이며, v2는 빌드 실패로 승격될 예정입니다. v2 패치 제출·리뷰 진행 상태는 확인이 필요합니다.\n\n> Clang's implementation of the same check has always been stricter: it rejects such a cast as a full error.\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/09/03/66)\n\n> I'd agree: better to just match Clang on this. I'll send a v2.\n\n[원문 확인](https://lkml.iu.edu/2609.0/12125.html)\n\n**tree-object-size: Fix type-1 size for pointers to FAM-containing subobjects [PR126975]**\n\nGCC addr_object_size()가 FAM 포함 subobject 포인터에 대해 type-1 __builtin_object_size()가 전체 객체 크기를 반환하던 버그를 -fstrict-flex-arrays=3에서 subobject 크기를 측정하도록 수정합니다.\n\n영향: FORTIFY_SOURCE가 type-0/type-1 구분에 의존하므로, 이 회귀는 커널 빌드의 bounds check를 약화시킬 수 있습니다. Clang은 이미 올바른 동작을 합니다. GCC 릴리스 포함 버전과 커널 빌드의 -fstrict-flex-arrays 기본값 상호작용은 확인이 필요합니다.\n\n> FORTIFY_SOURCE relies on the type-1 distinction, so this weakens its bounds checks.\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/09/03/37)\n\n> Fix this by computing the size directly from the referenced record/union instead of walking up, under -fstrict-flex-arrays=3 specifically\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/09/03/37)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "randstruct 잘못된 캐스트 warning_at 승격",
+      "url": "https://lists.openwall.net/linux-hardening/2026/09/03/66",
+      "note": "thread"
+    },
+    {
+      "title": "randstruct v2 error 승격 예고",
+      "url": "https://lkml.iu.edu/2609.0/12125.html",
+      "note": "thread"
+    },
+    {
+      "title": "LLC syzbot index -1 OOB 보고",
+      "url": "https://lists.openwall.net/linux-hardening/2026/09/01/30",
+      "note": "thread"
+    },
+    {
+      "title": "LLC KUnit 회귀 테스트",
+      "url": "https://lkml.iu.edu/2609.0/02654.html",
+      "note": "thread"
+    },
+    {
+      "title": "GCC FAM subobject type-1 크기 버그",
+      "url": "https://lists.openwall.net/linux-hardening/2026/09/03/37",
+      "note": "thread"
+    },
+    {
+      "title": "Linux 7.1.y EOL 공지",
+      "url": "https://lwn.net/Articles/1092154/",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 7.1.13 ChangeLog",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.13",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 7.2.3 stable 발표",
+      "url": "https://lwn.net/Articles/1092153/",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-05T18:18:31.011Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
