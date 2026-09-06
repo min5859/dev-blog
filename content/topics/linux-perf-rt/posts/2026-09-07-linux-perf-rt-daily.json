@@ -1,0 +1,162 @@
+{
+  "id": "2026-09-07-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-09-07 bpftool·GTK4 — Perf·RT",
+  "headline": "bpftool ring buffer event_pipe·심볼 flags·batch dump와 perf GTK4 이식이 논의되고, softirq v2는 sanitizer 검증을 통과했습니다.",
+  "date": "2026-09-07",
+  "summary": "Tianyi Chen bpftool 시리즈 3건이 CLI 디버깅·map 생성·대형 dump 성능을 개선하고, Matt Turner가 perf report GTK browser를 GTK4로 이식합니다. Karl Mehltretter softirq v2는 IRQ exit 컨텍스트 보존을 sanitizer 측정으로 뒷받침합니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "perf",
+    "bpftool",
+    "PREEMPT_RT",
+    "eBPF"
+  ],
+  "highlights": [
+    {
+      "title": "bpftool ring buffer event_pipe",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "bpftool·libbpf 사용자 및 eBPF 트레이싱/관측성 도구 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260906170747.1212378-1-hi@tychen.cc/",
+      "if": "ring buffer map 이벤트를 libbpf 앱 없이 CLI로 확인해야 한다면",
+      "do": "event_pipe 확장 패치의 plain/JSON 출력과 12개 selftest 결과를 확인하세요",
+      "verify": "cover 메일과 man page에서 BPF_MAP_TYPE_RINGBUF 지원 범위를 대조하세요"
+    },
+    {
+      "title": "perf GTK report browser GTK4 이식",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "perf 도구 패키징·빌드 담당 및 perf report --gtk 사용자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260906-perf-gtk2-v4-0-97e92ee07214@gmail.com/",
+      "if": "배포판에서 perf report --gtk 빌드·실행이 깨지고 있다면",
+      "do": "GTK4 v4 시리즈의 -rdynamic·annotated_source__hist_entry() export와 SIGINT 경로 수정을 패키지 빌드에 반영하세요",
+      "verify": "v4 cover와 dlopen 실패 원인 패치에서 libperf-gtk.so 로딩 경로를 확인하세요"
+    },
+    {
+      "title": "bpftool hash map batch dump",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "bpftool map dump 사용자 및 BPF map introspection 도구 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260906170819.1212661-1-hi@tychen.cc/",
+      "if": "대형 hash map dump가 GET_NEXT_KEY+LOOKUP_ELEM 반복으로 병목이라면",
+      "do": "4 MiB 예산 내 BPF_MAP_LOOKUP_BATCH 경로와 EOPNOTSUPP/EINVAL fallback 동작을 selftest로 검증하세요",
+      "verify": "10만 엔트리 map에서 BPF syscall 200,004→395 감소 수치를 cover 인용과 대조하세요"
+    },
+    {
+      "title": "bpftool map create 심볼 flags",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "bpftool·libbpf map 작성 스크립트·selftest 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260906170715.1212085-1-hi@tychen.cc/",
+      "if": "map flags를 정수 비트마스크로만 넘기며 bpf.h 조회 실수가 잦다면",
+      "do": "콤마 구분 BPF_F_* 이름 입력과 29개 selftest·bash completion 갱신을 CI 스크립트에 반영하세요",
+      "verify": "upstream bpftool-map.rst의 정수 전용 FLAGS 설명과 패치 man page 차이를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**softirq: Preserve interrupt context during IRQ exit (v2 진척)**\n\nKarl Mehltretter v2가 __irq_exit_rcu()에서 HARDIRQ_OFFSET를 hrtimer 재무장·softirq 디스패치·timersd wakeup까지 유지하고, hardirq에서 직접 softirq 처리 시 SOFTIRQ_OFFSET로 전환·복원하며 자격 판별을 irq_count() == HARDIRQ_OFFSET로 바꿉니다.\n\n영향: IRQ 반환 경로가 잠깐 task context로 보이면 ftrace·KCSAN·KMSAN이 잘못된 컨텍스트를 기록해 PREEMPT_RT·sanitizer·tracing 분석 결과가 왜곡됩니다.\n\n> KCSAN attributed all 25 target reports to interrupt context. KMSAN selected or changed task state zero times in 24K IRQ-exit windows\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/05/154)\n\n**bpftool: Consume ring buffer maps with event_pipe**\n\nTianyi Chen 시리즈가 bpftool map event_pipe를 BPF_MAP_TYPE_RINGBUF에도 확장해 libbpf ring buffer manager로 레코드를 plain/JSON으로 스트리밍하고, 기존 perf event array 경로와 12개 selftest를 유지합니다.\n\n영향: ring buffer는 eBPF 이벤트 전달의 주류인데 bpftool은 perf array만 event_pipe로 읽을 수 있어 CLI·스크립트 디버깅이 libbpf 앱 없이는 불가능했습니다.\n\n> This series extends map event_pipe to BPF ring buffer maps through libbpf's ring buffer manager. Records contain a size and raw bytes in plain or JSON output.\n\n[원문 확인](https://lore.kernel.org/bpf/20260906170747.1212378-1-hi@tychen.cc/)\n\n**perf tools: port UI from GTK2 to GTK4**\n\nMatt Turner v4(3패치)가 perf GTK report browser를 GTK4로 이식하고, -rdynamic·annotated_source__hist_entry() export로 dlopen 플러그인 로딩을 고치며, GTK2 show/hide 잔여와 SIGINT 경로의 error-loop 리스트 경합을 수정합니다.\n\n영향: GTK2는 최신 배포판에서 빌드가 어려워 perf report --gtk가 깨지고 있으며, GTK4 전환 없이는 perf GUI 기반 프로파일 분석 워크플로가 유지되지 않습니다.\n\n> GTK2 is long dead upstream and increasingly hard to keep building on current distros. This series ports perf's GTK-based report browser to GTK4\n\n[원문 확인](https://lore.kernel.org/bpf/20260906-perf-gtk2-v4-0-97e92ee07214@gmail.com/)\n\n**bpftool: Accept symbolic map creation flags**\n\nTianyi Chen 시리즈가 bpftool map create flags에 콤마 구분 BPF_F_* 심볼 이름을 추가하고(숫자 입력 유지), bash completion·man page·29개 selftest로 검증합니다.\n\n영향: 기존 bpftool은 map flags를 정수 비트마스크만 받아 bpf.h를 매번 조회해야 했고, 심볼 이름 지원은 스크립트·CI에서 map 생성 실수를 줄입니다.\n\n> This series adds comma-separated BPF_F_* names to map create flags, while retaining base-0 numeric input.\n\n[원문 확인](https://lore.kernel.org/bpf/20260906170715.1212085-1-hi@tychen.cc/)\n\n**bpftool: Use batch lookups for bounded hash map dumps**\n\nTianyi Chen 시리즈가 bounded hash map dump에 BPF_MAP_LOOKUP_BATCH를 사용해 syscall 수를 줄이고, 4 MiB 메모리 예산·ENOSPC 버퍼 성장·초기 EOPNOTSUPP/EINVAL 시에만 individual lookup으로 fallback합니다.\n\n영향: 대형 hash map dump는 GET_NEXT_KEY+LOOKUP_ELEM 반복으로 느려 관측·디버깅 워크플로 병목이 되며, batch 경로는 selftest에서 10만 엔트리 map의 BPF syscall을 200,004→395로 줄였습니다.\n\n> On the same static 100,000-entry hash map, BPF syscall counts dropped from 200,004 to 395.\n\n[원문 확인](https://lore.kernel.org/bpf/20260906170819.1212661-1-hi@tychen.cc/)"
+    },
+    {
+      "heading": "기타",
+      "body": "**arm64: ftrace: Allow CALL_OPS on kCFI kernels built with Rust (RFC 피드백)**\n\nMiguel Ojeda가 Jose Fernandez RFC 8/8의 rust/Makefile bindgen_c_flags 변경에 대해, -fpatchable-function-entry 필터를 Clang ifdef 밖·GCC에도 적용할지와 주석 표현을 질문했습니다.\n\n영향: arm64 kCFI+CALL_OPS+RUST 빌드는 ftrace·BPF 트레이싱 비용과 Rust bindgen 호환성이 맞물려 있어, bindgen 플래그 처리 방식이 최종 머지 형태를 좌우할 가능성이 있습니다.\n\n> Now, if we are going to filter this out for Clang, should we just filter it out for GCC too? i.e. outside the `ifdef`?\n\n[원문 확인](https://lore.kernel.org/bpf/CANiq72=xOrSXBBdmrKYfX1=qgF37LRAMzMJd4GJkXaYHMVe9yQ@mail.gmail.com/)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "bpftool ring buffer event_pipe 시리즈 cover",
+      "url": "https://lore.kernel.org/bpf/20260906170747.1212378-1-hi@tychen.cc/",
+      "note": "thread"
+    },
+    {
+      "title": "bpftool issue #54: ring buffer event_pipe 부재",
+      "url": "https://github.com/libbpf/bpftool/issues/54",
+      "note": "article"
+    },
+    {
+      "title": "bpftool-map.8: event_pipe perf array 전용",
+      "url": "https://man.archlinux.org/man/bpftool-map.8.en",
+      "note": "changelog"
+    },
+    {
+      "title": "perf GTK4 이식 v4 cover",
+      "url": "https://lore.kernel.org/bpf/20260906-perf-gtk2-v4-0-97e92ee07214@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "perf -rdynamic dlopen 플러그인 수정",
+      "url": "https://lkml.iu.edu/2609.0/13626.html",
+      "note": "thread"
+    },
+    {
+      "title": "softirq IRQ exit 컨텍스트 보존",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/05/154",
+      "note": "thread"
+    },
+    {
+      "title": "softirq v2: SOFTIRQ_OFFSET WARN·lockdep",
+      "url": "https://lkml.iu.edu/2609.0/12220.html",
+      "note": "thread"
+    },
+    {
+      "title": "arm64 kCFI+CALL_OPS+RUST RFC 8/8",
+      "url": "https://lkml.iu.edu/2609.0/09058.html",
+      "note": "thread"
+    },
+    {
+      "title": "arm64 CALL_OPS·kCFI 상호 배타 RFC 0/8",
+      "url": "https://lkml.iu.edu/2609.0/09052.html",
+      "note": "thread"
+    },
+    {
+      "title": "Miguel Ojeda bindgen_c_flags 피드백",
+      "url": "https://lore.kernel.org/bpf/CANiq72=xOrSXBBdmrKYfX1=qgF37LRAMzMJd4GJkXaYHMVe9yQ@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpftool map create 심볼 flags 시리즈",
+      "url": "https://lore.kernel.org/bpf/20260906170715.1212085-1-hi@tychen.cc/",
+      "note": "thread"
+    },
+    {
+      "title": "bpftool issue #57: map creation 개선",
+      "url": "https://github.com/libbpf/bpftool/issues/57",
+      "note": "article"
+    },
+    {
+      "title": "bpftool-map.rst: FLAGS 정수 비트마스크",
+      "url": "https://github.com/torvalds/linux/blob/master/tools/bpf/bpftool/Documentation/bpftool-map.rst",
+      "note": "changelog"
+    },
+    {
+      "title": "bpftool hash map batch lookup 시리즈",
+      "url": "https://lore.kernel.org/bpf/20260906170819.1212661-1-hi@tychen.cc/",
+      "note": "thread"
+    },
+    {
+      "title": "BPF_MAP_LOOKUP_BATCH syscall 문서",
+      "url": "https://github.com/isovalent/ebpf-docs/blob/master/docs/linux/syscall/BPF_MAP_LOOKUP_BATCH.md",
+      "note": "article"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-06T18:29:25.342Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

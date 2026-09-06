@@ -1,0 +1,118 @@
+{
+  "id": "2026-09-07-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-09-07 Rust serdev API — Linux Toolchain",
+  "headline": "Rust serdev 리팩터에서 C pause API가 추가되고 drvdata_borrow_mut는 철회됐으며, dyndbg classmap과 kconfirm v5 경로도 진행 중이다.",
+  "date": "2026-09-07",
+  "summary": "Markus Probst의 Rust serdev 5패치 시리즈가 C 쪽 pause_rx/resume_rx API와 probe/unbind 단순화를 제안했으나 mutable drvdata 접근 패치는 driver core 수명 설계 충돌로 철회됐다. Jim Cromie의 dyndbg classmap array-slice 전환과 Julian Braha의 kconfirm v5 제출 예정도 kbuild·Kconfig 워크플로에 영향을 준다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "rust: serdev: Refactor",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust serdev 드라이버·serdev/tty 유지보수자, driver-core Rust API 리뷰어",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/06/676",
+      "if": "Rust serdev 드라이버나 greybus UART receive 콜백을 유지한다면",
+      "do": "C pause_rx/resume_rx API와 콜백 API 변경을 추적하고 mutable drvdata 대안(SpinLock 등) 필요 여부를 검토하세요",
+      "verify": "cover letter와 drvdata_borrow_mut 철회 스레드를 읽어 최종 API 형태를 확인하세요"
+    },
+    {
+      "title": "dyndbg: replace classmap list with an array-slice",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "dynamic_debug·kbuild·lib/parser 유지보수자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/05/777",
+      "if": "dynamic_debug classmap이나 v8 43패치 시리즈를 추적한다면",
+      "do": "per-module list 대신 ELF section 연속 array-slice 방식 전환과 후속 validation 패치 전제 조건을 점검하세요",
+      "verify": "v8 21/43 패치 원문에서 list_head 제거와 subrange 탐색 방식을 확인하세요"
+    },
+    {
+      "title": "add kconfirm",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "kbuild·Kconfig·scripts/kconfig 유지보수자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/06/634",
+      "if": "Kconfig 정적 분석이나 빌드 시 lint 통합을 계획한다면",
+      "do": "kconfirm 선 merge 후 interpreter 통합이라는 단계적 경로와 v5 제출·Nicolas Schier 동의 여부를 추적하세요",
+      "verify": "Nathan Chancellor의 staged integration 제안과 kconfirm v4 검출 범위를 원문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**rust: serdev: Refactor**\n\nMarkus Probst가 5패치 시리즈로 C 쪽 serdev_device_pause_rx/resume_rx API를 추가하고, Rust serdev 추상화의 active mutex를 수신 일시정지로 대체하며 probe/unbind 경로를 단순화한다. 콜백에 Pin<&mut Self::Data>를 제공해 Sync 요구를 없애려 했으나 Danilo Krummrich가 bus device private data에 대한 mutable borrow가 driver core 수명 설계와 충돌한다고 지적해 drvdata_borrow_mut(4/5)는 철회됐다.\n\n영향: Rust serdev 드라이버 작성자와 tty/serdev 유지보수자는 race condition 완화(v4의 Driver::receive 비활성화)를 넘어 C/Rust 공통 수신 동기화 API와 콜백 API 변경을 추적해야 한다. greybus UART 등 receive 콜백 사용자는 mutable drvdata 접근 대신 SpinLock 등 대안이 여전히 필요하다.\n\n> introduce a new C serdev API to fix race conditions and simplify rust code. Should also be useful on the C side.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/06/676)\n\n**dyndbg: replace classmap list with an array-slice**\n\nJim Cromie v8 21/43은 dyndbg classmap을 per-module list 대신 ELF section에 연속 배치된 array-slice(start pointer + length)로 취급한다. ddebug_attach_module_classes()의 list 연결과 ddebug_class_map의 list_head 멤버를 제거하고 modname으로 subrange를 찾는다.\n\n영향: dynamic_debug classmap 대규모 리팩터(v8 43패치)의 핵심 조각으로, kbuild·dyndbg·lib/parser 경계를 추적하는 toolchain 독자에게 per-module classmap 관리 단순화와 후속 validation 패치의 전제가 된다.\n\n> each modules' maps are packed contiguously, and can be treated as a array-start-address & array-length.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/05/777)\n\n**add kconfirm**\n\nJulian Braha가 Nathan Chancellor의 v4 kconfirm 피드백에 동의하고 v5를 보낼 예정이다. Nathan은 kconfirm을 먼저 트리에 넣어 경고를 정리한 뒤 검사를 in-tree Kconfig interpreter로 옮기는 단계적 경로를 제안했고, Julian은 Nicolas Schier의 동의도 확인하려 한다.\n\n영향: Kconfig 정적 분석 도구 도입 경로와 향후 빌드 시 기본 lint 통합 여부가 kbuild·Kconfig 유지보수자의 워크플로에 직접 영향을 준다. v4는 dead code·constant condition·invalid range 등을 in-tree parser 기반으로 검출한다.\n\n> Your strategy makes sense to me. I'll send v5 then, but I'd also like to make sure that Nicolas is onboard with this idea.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/06/634)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "high",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "rust: serdev: Refactor — cover letter",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/06/676",
+      "note": "thread"
+    },
+    {
+      "title": "serdev_device_pause_rx/resume_rx API 추가",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/06/677",
+      "note": "thread"
+    },
+    {
+      "title": "Rust active mutex 제거 및 pause_rx/resume_rx 사용",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/06/675",
+      "note": "thread"
+    },
+    {
+      "title": "bus device private data mutable reference 반대",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/06/694",
+      "note": "thread"
+    },
+    {
+      "title": "drvdata_borrow_mut 패치 철회",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/06/767",
+      "note": "thread"
+    },
+    {
+      "title": "dyndbg classmap array-slice 전환",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/05/777",
+      "note": "thread"
+    },
+    {
+      "title": "kconfirm v5 제출 예정",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/06/634",
+      "note": "thread"
+    },
+    {
+      "title": "kconfirm staged integration 제안",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/04/2938",
+      "note": "thread"
+    },
+    {
+      "title": "kconfirm v4 도구 설명",
+      "url": "https://lists.openwall.net/linux-kernel/2026/07/27/4",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-06T18:22:03.955Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,148 @@
+{
+  "id": "2026-09-07-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-09-07 arm64 고주파 cpufreq — 아키텍처·플랫폼",
+  "headline": "Snapdragon X2 Elite급 arm64에서 cpufreq wrap·boost 미반영 버그 수정 제출, execmem ROX·IMSIC 검증·Orange Pi RTC 회귀도 추적 중입니다.",
+  "date": "2026-09-07",
+  "summary": "Oleg Keri가 4.19 GHz 초과 주파수 보고와 boost 토글 시 capacity_freq_ref 갱신을 고치는 2패치를 제출했습니다. execmem ROX cache 정리, RISC-V IMSIC DT 검증 강화, TI K3 ethernet alias, Orange Pi 5 Plus RTC IRQ 회귀 수정도 함께 올라왔습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "arm64/cpufreq: report and track frequencies above 4.19 GHz",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "arm64 cpufreq·topology·스케줄러 유지보수자, Glymur/X2 Elite 플랫폼 개발자",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-September/1169301.html",
+      "if": "Snapdragon X2 Elite(Glymur) 등 4.72 GHz boost OPP를 쓰는 arm64 랩톱에서 cpuinfo_avg_freq가 524283 kHz처럼 잘못 보이면",
+      "do": "arch_freq_get_on_cpu() overflow 수정(패치 1)과 capacity_freq_ref 갱신(패치 2)이 함께 머지되는지 추적하세요",
+      "verify": "cover letter의 Glymur 4723200 kHz 벤치마크와 패치 1·2 의존 관계를 원문에서 확인하세요"
+    },
+    {
+      "title": "arch, mm/execmem: resolve confusion about set_direct_map_valid_noflush()",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "mm/execmem·vmalloc·arch set_memory 유지보수자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/03/1098",
+      "if": "execmem ROX cache·BPF JIT 등 arch 공통 경로에서 direct-map API 의미 차이로 혼선이 있다면",
+      "do": "v3의 VM_FLUSH_RESET_PERMS 타이밍 변경과 set_direct_map_valid_noflush() revert가 mm-unstable에 반영됐는지 대조하세요",
+      "verify": "ROX 전환 직전 set_vm_flush_reset_perms() 호출 위치를 패치 5/6 원문에서 확인하세요"
+    },
+    {
+      "title": "arm64: dts: rockchip: fix hym8563 interrupt pin on Orange Pi 5 Plus",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Rockchip rk3588 Orange Pi 5 Plus 사용자·DTS 유지보수자",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-September/1169311.html",
+      "if": "Orange Pi 5 Plus에서 rtcwake s2idle 진입 후 복귀하지 않는 hang이 발생하면",
+      "do": "HYM8563 RTC IRQ 핀이 GPIO0_B0에서 GPIO0_C6로 수정된 패치 적용 여부를 확인하세요",
+      "verify": "GPIO EXT_PORT 샘플링 결과와 Fixes 태그 대상 커밋을 원문에서 확인하세요"
+    },
+    {
+      "title": "irqchip/riscv-imsic: Validate group index geometry",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "RISC-V IMSIC·APLIC irqchip 및 AIA 플랫폼 유지보수자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/06/292",
+      "if": "RISC-V AIA/IMSIC DT에서 group index 레이아웃을 검증 중이라면",
+      "do": "group width 0 처리와 overlapping layout 거부 패치가 tip/irq/drivers 경로에 머지되는지 추적하세요",
+      "verify": "absent·overlapping group field 처리 설명을 cover letter 원문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**arm64: dts: rockchip: fix hym8563 interrupt pin on Orange Pi 5 Plus**\n\nIgor Paunovic 패치가 Orange Pi 5 Plus HYM8563 RTC 인터럽트 핀을 mainline GPIO0_B0(RK_PB0)에서 보드 실배선 GPIO0_C6(RK_PC6)로 수정하고 pinctrl pull-up을 vendor tree와 맞춘다.\n\n영향: 잘못된 핀 때문에 RTC alarm IRQ가 SoC에 도달하지 않아 rtcwake s2idle 진입 후 복귀하지 않는 hang이 발생할 수 있다.\n\n> The interrupt line of the hym8563 RTC on the Orange Pi 5 Plus is routed to GPIO0_C6, not GPIO0_B0.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-arm-kernel/2026-September/1169311.html)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**arm64/cpufreq: report and track frequencies above 4.19 GHz**\n\nOleg Keri가 2패치 시리즈를 제출했다. 패치 1은 arch_freq_get_on_cpu() 64비트 곱셈으로 4194304 kHz 초과 wrap을 막고, 패치 2는 topology_update_freq_ref()로 boost 토글 시 capacity_freq_ref를 갱신한다.\n\n영향: Glymur 등 4.72 GHz boost OPP arm64 랩톱에서 cpuinfo_avg_freq 오류와 스케줄러 boost 구분 실패가 생기며, AMU frequency invariance·schedutil/PELT 추적 시 두 패치가 함께 머지되어야 한다.\n\n> Patch 1 fixes an overflow in arch_freq_get_on_cpu()... Patch 2 makes capacity_freq_ref follow the boost state.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-arm-kernel/2026-September/1169301.html)\n\n**arch, mm/execmem: resolve confusion about set_direct_map_valid_noflush()**\n\nMike Rapoport v3 6패치 시리즈가 execmem ROX cache가 VM_FLUSH_RESET_PERMS와 vmalloc direct-map reset 경로를 쓰도록 정리하고, ROX 전환 직전 set_vm_flush_reset_perms()를 호출하며 set_direct_map_valid_noflush() 도입을 revert한다.\n\n영향: BPF JIT·동적 코드 생성 등 arch 공통 execmem 경로에서 direct map alias 갱신 방식 차이로 TLB flush·대형 mapping 분할 문제가 생길 수 있어 v3 타이밍 변경을 추적해야 한다.\n\n> On arm64 it sets or clears the PTE_VALID bit... make execmem always use VM_FLUSH_RESET_PERMS and revert set_direct_map_valid_noflush() changes.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/03/1098)\n\n**irqchip/riscv-imsic: Validate group index geometry**\n\nPengpeng Hou 2패치가 IMSIC group index 필드 검증을 강화한다. group width 0일 때 underflow 거부를 건너뛰고, page·guest·hart 하위 필드와 겹치는 DT 레이아웃을 -EINVAL로 거부한다.\n\n영향: 잘못된 IMSIC 주소 레이아웃은 한 비트에 두 필드가 매핑되어 MSI 라우팅·인터럽트 파일 주소 계산이 깨질 수 있다.\n\n> This series handles absent and overlapping IMSIC group fields.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/06/292)\n\n**arm64: dts: ti: k3-j7200-common-proc-board: Add ethernet alias**\n\nSiddharth Vadapalli 시리즈(0/4)가 J7200 Common Processor Board DTS aliases에 ethernet0 = &cpsw_port1 한 줄을 추가한다.\n\n영향: K3 보드 DTS alias 일관성과 systemd predictable interface 이름(end0)에 영향이 있으며, 멀티포트 overlay 준비에 의미가 있다. next merge window 대기 중이며 실제 머지 일정은 확인 필요하다.\n\n> This series adds the aliases for Ethernet on various Texas Instruments K3 boards, keeping them on-par with other K3 boards which already have the aliases for Ethernet.\n\n[원문 확인](https://lkml.iu.edu/2608.1/04519.html)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "high",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "arm64/cpufreq: cover letter (Glymur 4723200 kHz)",
+      "url": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-September/1169301.html",
+      "note": "thread"
+    },
+    {
+      "title": "arm64/cpufreq: patch 1 arch_freq_get_on_cpu overflow",
+      "url": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-September/1169302.html",
+      "note": "thread"
+    },
+    {
+      "title": "arm64/cpufreq: patch 2 capacity_freq_ref boost",
+      "url": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-September/1169303.html",
+      "note": "thread"
+    },
+    {
+      "title": "execmem: cover letter set_direct_map_valid_noflush",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/03/1098",
+      "note": "thread"
+    },
+    {
+      "title": "execmem: v3 5/6 set_vm_flush_reset_perms timing",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/03/1066",
+      "note": "thread"
+    },
+    {
+      "title": "execmem: mm-unstable v3 반영 확인",
+      "url": "https://lore.kernel.org/linux-riscv/20260905190030.adf2740822e211ddc028a24a@linux-foundation.org/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv-imsic: cover letter group field validation",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/06/292",
+      "note": "thread"
+    },
+    {
+      "title": "riscv-imsic: patch 1 group width 0",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/06/294",
+      "note": "thread"
+    },
+    {
+      "title": "riscv-imsic: patch 2 overlapping layout",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/06/295",
+      "note": "thread"
+    },
+    {
+      "title": "TI K3 J7200: ethernet0 alias patch",
+      "url": "https://lkml.iu.edu/2608.1/04523.html",
+      "note": "thread"
+    },
+    {
+      "title": "TI K3: ethernet alias series cover",
+      "url": "https://lkml.iu.edu/2608.1/04519.html",
+      "note": "thread"
+    },
+    {
+      "title": "TI K3: alias 리뷰 Acked-by",
+      "url": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-September/1169310.html",
+      "note": "thread"
+    },
+    {
+      "title": "Orange Pi 5 Plus: HYM8563 IRQ pin fix",
+      "url": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-September/1169311.html",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-06T18:31:54.978Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

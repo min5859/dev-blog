@@ -1,0 +1,176 @@
+{
+  "id": "2026-09-07-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-09-07 radeon userptr 보안 — Linux GPU·AI",
+  "headline": "radeon userptr pin API 전환 v2가 FOLL_LONGTERM을 추가하는 동안, bind·error path 결함에 대한 Critical 보안 리뷰가 제기됐습니다.",
+  "date": "2026-09-07",
+  "summary": "drm/radeon 레거시 userptr 경로가 pin_user_pages로 전환되며 dma-buf mapping lifetime 문서화 v2가 제출됐습니다. Poco F1 패널 회귀 수정과 nova-core PRAMIN maintainer ack도 함께 추적할 가치가 있습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "GPU",
+    "drm",
+    "dma-buf"
+  ],
+  "highlights": [
+    {
+      "title": "radeon userptr bind·error path Critical 보안 리뷰",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "drm/radeon userptr·GART 바인딩 보안·안정성 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260906153759.B69F81F00A3D@smtp.kernel.org/",
+      "if": "레거시 AMD GPU radeon userptr·GART 바인딩 경로를 다룬다면",
+      "do": "pin_user_pages v2와 별도로 bind() 반환값 검사·sg_free_table() 수정 패치가 시리즈에 포함됐는지 먼저 확인하세요",
+      "verify": "Sashiko AI Critical 리뷰와 8월 27일 openwall follow-up 2패치를 대조해 보세요"
+    },
+    {
+      "title": "radeon get_user_pages→pin_user_pages v2 + FOLL_LONGTERM",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "drm/radeon userptr·TTM 경로 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260906152726.1685848-1-hsj0512@snu.ac.kr/",
+      "if": "radeon_ttm_tt_pin_userptr()와 GEM userptr BO GART 바인딩을 추적한다면",
+      "do": "FOLL_LONGTERM 추가로 FS DAX 등 long-term pin 불가 매핑 거부 시 pin 실패 경로 동작을 점검하세요",
+      "verify": "v2 cover letter와 pin_user_pages.rst Case 2 규칙을 함께 확인하세요"
+    },
+    {
+      "title": "dma-buf mapping lifetime 협상 문서화 v2",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "dma-buf exporter/importer를 구현하는 GPU·디스플레이 드라이버 작성자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260906-document-dma-buf-v2-1-942710fe82c6@nvidia.com/",
+      "if": "GPU·디스플레이 드라이버에서 dma-buf exporter 또는 importer를 구현한다면",
+      "do": "Pinned·Revoked·Movable 세 흐름과 dma_buf_pin() 런타임 협상 규칙을 드라이버 계약 검토에 반영하세요",
+      "verify": "v2 dma-buf.rst·kernel-doc 추가 섹션과 기존 callback 구현을 대조해 보세요"
+    },
+    {
+      "title": "Xiaomi Poco F1 EBBG FT8719 패널 회귀 수정",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "Xiaomi Poco F1 EBBG 변형·MIPI DSI panel 드라이버 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260906-ebbg-ft8719-fixups-v1-0-4e846510cad1@ixit.cz/",
+      "if": "Poco F1 EBBG 변형 또는 panel-ebbg-ft8719.c를 테스트·유지한다면",
+      "do": "prepare_prev_first·MODULE_LICENSE·enable/disable 분리 3패치 시리즈 머지 여부와 디스플레이 동작을 확인하세요",
+      "verify": "cover letter와 prepare_prev_first 패치의 DSI/DCS 초기화 순서 수정을 검토하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm/radeon userptr bind·error path Critical 보안 리뷰**\n\nSashiko AI review가 v2 radeon pin_user_pages 패치에 대해 기존 코드의 두 취약점을 지적한다: radeon_ttm_backend_bind()가 radeon_ttm_tt_pin_userptr() 반환값을 무시해 pin 실패 시 stale DMA 주소로 GART를 프로그래밍할 수 있고, pin 실패 error path의 ttm->sg dangling pointer가 UAF·double-free로 이어질 수 있다. FOLL_LONGTERM 추가로 FS DAX 매핑 거부 등 pin 실패가 더 쉬워질 수 있다고 덧붙인다.\n\n영향: userptr pin API 전환만으로는 기존 bind/error-path 결함이 남아 GPU가 잘못된 물리 메모리에 DMA할 수 있는 보안 리스크가 지속되므로, radeon/레거시 AMD GPU userptr 경로를 다루는 엔지니어는 API 패치와 함께 반환값·sg 소유권 수정이 필요하다.\n\n> [Critical] The return value of `radeon_ttm_tt_pin_userptr()` is completely ignored in `radeon_ttm_backend_bind()`, leading to arbitrary DMA mapping, Use-After-Free, and Double Free vulnerabilities.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260906153759.B69F81F00A3D@smtp.kernel.org/)\n\n8월 27일 follow-up 패치는 bind()에서 pin_userptr() 반환값을 검사하고, error path의 kfree(ttm->sg)를 sg_free_table()로 바꿔 UAF/double-free를 수정한다.\n\n> Use sg_free_table() instead, which releases only the sgl entries this function allocated and leaves the ttm->sg header intact for radeon_ttm_tt_unpopulate() to free later.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/08/27/1450)\n\n8월 27일 companion 패치는 pin 실패 시 stale/uninitialized DMA 주소가 GART에 기록되는 문제를 막기 위해 bind()에서 오류를 전파한다.\n\n> Propagate the error and bail out before calling radeon_gart_bind(). Fixes: f72a113a71ab (\"drm/radeon: add userptr support v8\")\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/08/27/1460)\n\n8월 27일 보안 수정 2패치가 9월 6일 v2 pin_user_pages 시리즈에 rebased·포함됐는지는 확인되지 않았다.\n\n**Xiaomi Poco F1 (ebbg display variant) fixes**\n\nDavid Heidelberg의 3패치 시리즈가 panel-ebbg-ft8719.c에서 prepare_prev_first 설정, MODULE_LICENSE 문자열 수정, 패널 초기화를 prepare/unprepare에서 enable/disable로 분리해 mainline에서 깨져 있던 Xiaomi Poco F1 EBBG FT8719 패널 동작을 고친다.\n\n영향: EBBG 변형 Poco F1은 upstream panel 드라이버가 이미 있지만 초기화 순서 버그로 실사용이 깨져 있었고, 모바일·postmarketOS 사용자와 panel/DSI 유지보수자에게 직접적인 디스플레이 회복 패치다.\n\n> Been broken in mainline for some time. drm/panel: ebbg-ft8719: Set prepare_prev_first drm/panel: ebbg-ft8719: Fix the MODULE_LICENSE() string drm/panel: ebbg-ft8719: Split initialization into enable/d\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260906-ebbg-ft8719-fixups-v1-0-4e846510cad1@ixit.cz/)\n\nprepare_prev_first 패치는 host 초기화 순서를 바로잡아 prepare()에서 DSI/DCS 명령을 보낼 수 있게 한다.\n\n> This corrects the host initialisation sequence so that we can send DSI/DCS commands in prepare(). Fixes: b00de0e237da (\"drm/panel: introduce ebbg,ft8719 panel\")\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260906-ebbg-ft8719-fixups-v1-1-4e846510cad1@ixit.cz/)\n\n패치 3/3의 enable() 이동에 대해 Sashiko AI가 DCS 초기화 타이밍 회귀 가능성을 지적했으며, 작성자 응답·수정 여부는 확인되지 않았다.\n\n**phy: starfive: Add jh7110-inno-hdmi-phy driver — sync polarity 비트**\n\nStarFive JH7110 HDMI bring-up 리뷰에서 Dominique Belhachemi가 디스플레이 glitching 원인으로 generic inno-hdmi.c의 v_HSYNC_POLARITY/v_VSYNC_POLARITY 비트 위치(<<3 vs <<2)가 JH7110 하드웨어와 맞지 않을 수 있다며 swap을 제안했고, Maud Spierings가 이는 HDMI_VIDEO_TIMING_CTL(0x08) 레지스터에만 해당한다고 확인했다.\n\n영향: JH7110 display subsystem 시리즈의 HDMI 출력 품질은 Innosilicon bridge의 sync polarity 비트 매핑에 달려 있으며, Rockchip 기준 매크로를 그대로 쓰면 타이밍 레지스터 값이 vendor kernel과 달라져 glitching·비정상 sync가 발생할 수 있다.\n\n> Maybe this needs to be swapped? drivers/gpu/drm/bridge/inno-hdmi.c -#define v_HSYNC_POLARITY(n)          ((n) << 3) +#define v_HSYNC_POLARITY(n)          ((n) << 2)\n\n[원문 확인](https://lore.kernel.org/dri-devel/CAAvaLCwvVUddS14MPx0FHdnp+QeZ99+ox17pXt2hSWPTCFcHtw@mail.gmail.com/)\n\n> Those seem to only be relevant the 0x08 register: > #define HDMI_VIDEO_TIMING_CTL\t\t0x08\n\n[원문 확인](https://lore.kernel.org/dri-devel/cb0884b3-c9be-4cfd-ba43-27add3821ddd@murena.io/)\n\npolarity swap 제안이 Michal Wilczynski JH7110 display subsystem 시리즈의 공식 패치로 반영됐는지 확인되지 않았다. Maud가 언급한 0x29590020 레지스터 값 차이(0x09 vs vendor 0x05/0x0D)의 근본 원인은 아직 설명되지 않았다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/radeon: switch from get_user_pages to pin_user_pages**\n\nSeongjun Hong의 v2 패치가 radeon_ttm_tt_pin_userptr()에서 get_user_pages()/release_pages()/put_page()를 pin_user_pages()/unpin_user_pages()/unpin_user_page()로 교체하고, GEM userptr BO의 GART 바인딩 수명 동안 유지되는 long-term pin을 위해 FOLL_LONGTERM을 gup_flags에 추가한다.\n\n영향: 레거시 radeon userptr 경로가 pin_user_pages.rst Case 2(RDMA/long-term DMA) 규칙에 맞춰짐에 따라, FOLL_LONGTERM 추가로 FS DAX 등 long-term pin 불가 매핑은 더 일찍 거부될 수 있어 userptr 동작·실패 경로를 추적하는 AMD/TTM 유지보수자에게 중요하다.\n\n> Also pass FOLL_LONGTERM: these userptr pages stay pinned for the lifetime of the GEM userptr BO's GART binding, not just for the duration of a single call, so this is a long-term pin.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260906152726.1685848-1-hsj0512@snu.ac.kr/)\n\nv1은 get_user_pages를 pin_user_pages로, release_pages/put_page를 unpin_user_pages/unpin_user_page로 교체하는 3줄 변경이었다.\n\n> Switch old api get_user_pages to pin_user_pages according to [1]. It guarantees these DMA pages are pinned.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/08/27/642)\n\nCase 2 RDMA/long-term DMA 버퍼는 pin_user_pages 호출 시 FOLL_PIN | FOLL_LONGTERM 플래그가 필요하며, DAX 페이지는 longterm pin이 지원되지 않는다.\n\n> There are GUP references to pages that are serving as DMA buffers. These buffers are needed for a long time (\"long term\"). Therefore, flags to set at the call site are: FOLL_PIN | FOLL_LONGTERM\n\n[원문 확인](https://docs.kernel.org/7.0/core-api/pin_user_pages.html)\n\n**dma-buf: Document how exporters and importers agree on mapping lifetime**\n\nLeon Romanovsky의 v2는 dma-buf.rst와 dma-buf.c에 'mapping lifetime negotiation' 섹션을 추가해 importer 관점에서 Pinned·Revoked·Movable 세 흐름, 각 측 optional callback, dma_buf_pin() 런타임 협상 규칙을 문서화한다. v2는 PCI P2P 문서 패치를 별도 시리즈로 분리하고 설명을 importer POV로 재작성했다.\n\n영향: GPU/디스플레이 드라이버가 dma-buf exporter·importer로 동작할 때 backing storage 이동·철회 가능 여부가 flag가 아니라 callback 구현과 dma_buf_pin() 성공 여부로 결정되는데, 기존에는 kdoc에만 흩어져 있어 신규·기존 DRM 드라이버 작성자가 계약을 오해하기 쉬웠다.\n\n> Nothing in DMA-buf declares whether a mapping may be moved or taken away. Nearly every callback on both sides is optional, so the answer follows from which ones are implemented and from whether dma_bu\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260906-document-dma-buf-v2-1-942710fe82c6@nvidia.com/)\n\n> Out of that optionality the importer sees three main flows. They are named from the importer's point of view, because each one demands a different capability of its hardware: - Pinned: the memory is n\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260906-document-dma-buf-v2-1-942710fe82c6@nvidia.com/)\n\nv2의 importer POV 재작성에 대한 maintainer 피드백·머지 여부는 아직 확인되지 않았다.\n\n**gpu: nova-core: add PRAMIN window support**\n\nDanilo Krummrich가 Eliot Courtney의 nova-core PRAMIN window v3 10패치 시리즈 cover letter에 Acked-by를 달았다. 시리즈는 BAR0 1MiB PRAMIN sliding aperture로 VRAM에 CPU MMIO 쓰기를 가능하게 하는 Pramin manager·VramAddress·GpuMm HAL·self-test·문서를 추가한다.\n\n영향: Nova(Rust) GPU 드라이버의 VRAM 부트스트랩·향후 GPU-side page table 작성 기반인 PRAMIN 추상화가 maintainer ack를 받아 upstream 경로로 진행 중이며, nova-core/mm 아키텍처를 추적하는 GPU 드라이버 개발자에게 머지 임박 신호다.\n\n> Acked-by: Danilo Krummrich <dakr@kernel.org>\n\n[원문 확인](https://lore.kernel.org/dri-devel/f72e2bf9-9934-4b2c-aa44-4becc6dee779@kernel.org/)\n\n> The PRAMIN window is a method that lets arbitrary VRAM be written over BAR0 by configuring a 1 MiB window through GPU registers. That 1 MiB window can point anywhere in VRAM.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/08/27/625)\n\n> Add a `Pramin` manager whose `window_at()` returns a typed MMIO view of VRAM through the 1 MiB PRAMIN aperture in BAR0, validating the view against the VRAM region and repositioning the window as need\n\n[원문 확인](https://patchew.org/linux/20260827-pramin-split-v3-0-24b24d7afc52@nvidia.com/20260827-pramin-split-v3-6-24b24d7afc52@nvidia.com/)\n\nAcked-by 이후 실제 drm-rust-next/next 브랜치 머지·추가 리뷰 코멘트 여부는 확인되지 않았다."
+    },
+    {
+      "heading": "기타",
+      "body": "JH7110 HDMI PHY 드라이버는 starfive,jh7110-inno-hdmi-phy 노드에 bind되며 parent regmap과 xin24m 기준 클럭만 사용해 probe-time circular dependency를 끊는다.\n\n> This driver binds to the starfive,jh7110-inno-hdmi-phy node and gets its regmap from the parent. It has no dependencies on voutcrg, only on its reference oscillator (xin24m), which breaks the probe-ti\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/04/1919)\n\nEBBG FT8719 panel 드라이버는 CONFIG_DRM_PANEL_EBBG_FT8719로 빌드되며 주로 Xiaomi Poco F1에 탑재된다.\n\n> Say Y here if you want to enable support for the EBBG FT8719 video mode panel. Mainly found on Xiaomi Poco F1 mobile phone.\n\n[원문 확인](https://cateee.net/lkddb/web-lkddb/DRM_PANEL_EBBG_FT8719.html)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/radeon pin_user_pages v2 — Seongjun Hong",
+      "url": "https://lore.kernel.org/dri-devel/20260906152726.1685848-1-hsj0512@snu.ac.kr/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/radeon pin_user_pages v1 — openwall",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/27/642",
+      "note": "thread"
+    },
+    {
+      "title": "pin_user_pages.rst — kernel docs",
+      "url": "https://docs.kernel.org/7.0/core-api/pin_user_pages.html",
+      "note": "article"
+    },
+    {
+      "title": "dma-buf mapping lifetime v2 — Leon Romanovsky",
+      "url": "https://lore.kernel.org/dri-devel/20260906-document-dma-buf-v2-1-942710fe82c6@nvidia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "dma-buf mapping lifetime v1 — lkml",
+      "url": "https://lkml.iu.edu/2608.3/02433.html",
+      "note": "thread"
+    },
+    {
+      "title": "ebbg-ft8719 fixups cover letter",
+      "url": "https://lore.kernel.org/dri-devel/20260906-ebbg-ft8719-fixups-v1-0-4e846510cad1@ixit.cz/",
+      "note": "thread"
+    },
+    {
+      "title": "ebbg-ft8719 prepare_prev_first",
+      "url": "https://lore.kernel.org/dri-devel/20260906-ebbg-ft8719-fixups-v1-1-4e846510cad1@ixit.cz/",
+      "note": "thread"
+    },
+    {
+      "title": "DRM_PANEL_EBBG_FT8719 — lkddb",
+      "url": "https://cateee.net/lkddb/web-lkddb/DRM_PANEL_EBBG_FT8719.html",
+      "note": "article"
+    },
+    {
+      "title": "radeon userptr security review — Sashiko AI",
+      "url": "https://lore.kernel.org/dri-devel/20260906153759.B69F81F00A3D@smtp.kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "radeon sg_free_table security fix",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/27/1450",
+      "note": "thread"
+    },
+    {
+      "title": "radeon bind error propagation fix",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/27/1460",
+      "note": "thread"
+    },
+    {
+      "title": "nova-core PRAMIN v3 Acked-by",
+      "url": "https://lore.kernel.org/dri-devel/f72e2bf9-9934-4b2c-aa44-4becc6dee779@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "nova-core PRAMIN v3 cover letter — openwall",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/27/625",
+      "note": "thread"
+    },
+    {
+      "title": "nova-core PRAMIN manager — patchew",
+      "url": "https://patchew.org/linux/20260827-pramin-split-v3-0-24b24d7afc52@nvidia.com/20260827-pramin-split-v3-6-24b24d7afc52@nvidia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "JH7110 inno-hdmi polarity swap 제안",
+      "url": "https://lore.kernel.org/dri-devel/CAAvaLCwvVUddS14MPx0FHdnp+QeZ99+ox17pXt2hSWPTCFcHtw@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "JH7110 HDMI_VIDEO_TIMING_CTL 확인",
+      "url": "https://lore.kernel.org/dri-devel/cb0884b3-c9be-4cfd-ba43-27add3821ddd@murena.io/",
+      "note": "thread"
+    },
+    {
+      "title": "starfive jh7110-inno-hdmi-phy driver",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/04/1919",
+      "note": "thread"
+    },
+    {
+      "title": "inno-hdmi polarity 매크로 — lkml",
+      "url": "https://lkml.rescloud.iu.edu/2405.2/03852.html",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-06T18:34:14.889Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

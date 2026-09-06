@@ -1,0 +1,166 @@
+{
+  "id": "2026-09-07-linux-distro-stable-daily",
+  "topic": "linux-distro-stable",
+  "title": "2026-09-07 7.1.y EOL 종료 — 배포판 안정 커널",
+  "headline": "7.1.13이 7.1.y 최종 릴리스로 EOL이 되었고, 7.2.3·LTS 태그와 CephFS·NFS reexport stable 백포트 검토가 이어집니다.",
+  "date": "2026-09-07",
+  "summary": "7.1.y가 EOL로 종료되어 7.2.3이 활성 안정 브랜치가 됐으며, 5.10.269·5.15.220 LTS도 동일 배치에서 갱신됐습니다. CephFS fscrypt·trim dentry, NFSv4 reexport lock 거부, CIFS POSIX stat 등 stable 백포트가 메일링 리스트에서 검토 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "stable",
+    "LTS",
+    "CephFS"
+  ],
+  "highlights": [
+    {
+      "title": "NFSv4 reexport lock·delegation 거부",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "NFS reexport·nfsd 서버 운영자",
+      "verifyLink": "https://lore.kernel.org/stable/20260906164757.1617855-1-sashal@kernel.org/",
+      "if": "NFSv4 reexport 서버에서 lock·delegation을 사용 중이면,",
+      "do": "stable 백포트 적용 후 해당 요청이 nfserr_notsupp로 거부되는 동작을 반영하세요.",
+      "verify": "reexport 문서와 패치 스레드에서 EXPORT_OP_NOLOCKS 설정을 확인하세요."
+    },
+    {
+      "title": "CephFS vmalloc 버퍼 fscrypt 복호화",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "CephFS·fscrypt·stable 백포트 유지보수자",
+      "verifyLink": "https://lore.kernel.org/stable/20260906174214.1727071-1-sashal@kernel.org/",
+      "if": "CephFS+fscrypt를 non-x86에서 운영 중이면,",
+      "do": "ceph_fname_to_usr() bounce buffer 패치의 stable 백포트 포함 여부를 추적하세요.",
+      "verify": "stable 스레드에서 vmalloc() 버퍼 oops 재현 조건과 포함 브랜치(6.18.y 외)를 확인하세요."
+    },
+    {
+      "title": "ceph_trim_dentries busy loop 제거",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "CephFS 서버·클라이언트 운영 및 stable 백포트 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20260906164151.1611015-1-sashal@kernel.org/",
+      "if": "CephFS 마운트 웹 서버에서 CPU·readdir 지연이 있으면,",
+      "do": "cap pressure 없을 때 -EAGAIN 재큐잉을 중단하는 패치 적용을 검토하세요.",
+      "verify": "프로덕션에서 초당 ceph_trim_dentries() 호출 수와 lock_stat wait time을 비교하세요."
+    },
+    {
+      "title": "CIFS POSIX 확장 stat uid/gid 수정",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "CIFS/SMB 클라이언트·multiuser 마운트 운영자",
+      "verifyLink": "https://lore.kernel.org/stable/20260906181540.647469-1-pc@manguebit.org/",
+      "if": "multiuser+posix CIFS/SMB3 마운트에서 stat() uid/gid가 호출자 credentials로 잘못 보이면,",
+      "do": "tcon->posix_extensions 검사 패치의 stable 백포트 적용을 준비하세요.",
+      "verify": "stable review에 포함될 브랜치 목록은 확인이 필요합니다."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.1.13 stable · EOL**\n\n2026-09-02 공개된 7.1.13이 7.1.y 최종 릴리스이며, USB usbfs UAF·serial OOB·bridge mcast UAF·crypto·netfilter 등 76건의 보안 백포트가 포함됩니다.\n\n영향: 7.1.y가 EOL로 종료되어 더 이상 보안 업데이트를 받지 않으므로, 7.1 계열 사용자는 활성 7.2.y로 즉시 이전해야 합니다.\n\n> Note, the 7.1.y kernel series is now end-of-life. Please move to the 7.2.y kernel series at this point in time.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/02/1497)\n\n**Linux 7.2.3 stable**\n\n7.2.3이 현재 활성 7.2.y 안정 릴리스로, 7.1.13과 겹치는 USB·crypto·xfrm·네트워크 메모리 안전 백포트 71건을 포함합니다.\n\n영향: 7.1 EOL 이후 권장 업그레이드 대상이며, 동일 클래스의 취약점 수정을 최신 유지보수 브랜치에서 받을 수 있습니다.\n\n> I'm announcing the release of the 7.2.3 kernel. All users of the 7.2 kernel series must upgrade.\n\n[원문 확인](https://lwn.net/Articles/1092153/)\n\n**Linux 5.10.269 longterm**\n\n5.10.269 LTS에 USB UAF/OOB, xfrm espintcp UAF·auth-trunc leak, kcov PREEMPT_RT 경합, igmp UAF 등 43건의 백포트가 포함됩니다.\n\n영향: 오래된 5.10 기반 제품도 USB·IPsec·커버리지 수집 경로의 알려진 취약점 수정을 이번 태그로 받을 수 있습니다. 개별 CVE 번호 매핑은 이번 조사에서 확인하지 못했습니다.\n\n> Greg Kroah-Hartman has announced the 7.2.3, 7.1.13, 6.18.49, 6.12.108, 6.6.156, 6.1.187, 5.15.220, and 5.10.269 stable kernels.\n\n[원문 확인](https://lwn.net/Articles/1092151/)\n\n**Linux 5.15.220 longterm**\n\n5.15.220 LTS에 USB·crypto·xfrm·bridge mcast UAF, HID ft260 stack-use-after-return, fuse invalidate lock leak 등 69건의 백포트가 포함됩니다.\n\n영향: 아직 5.15에 머무는 팀은 보안 수정을 수확하면서 곧 예정된 브랜치 EOL에 맞춰 상위 LTS 이전 계획을 세워야 합니다. 5.15.y EOL 정확 일정은 kernel.org releases.json에서 재확인이 필요합니다.\n\n> HID: ft260: fix stack-use-after-return write in I2C read race\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.220)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ceph: properly decrypt filenames in vmalloc() buffers**\n\nceph_fname_to_usr()가 fscrypt scatterlist API 요구에 맞게 vmalloc()에 놓인 fname 버퍼를 bounce buffer로 처리하고, parse_reply_info_readdir()도 vmalloc 메시지에서 tname을 NULL로 두도록 수정합니다.\n\n영향: MDS 메시지가 kvmalloc()으로 vmalloc 영역에 놓이면 fscrypt_fname_disk_to_usr()에 잘못된 주소가 전달되어 비 x86에서 커널 oops가 발생하므로, CephFS+fscrypt stable 백포트를 추적해야 합니다. stable review에 포함될 정확한 브랜치 목록(6.18.y 외)은 확인이 필요합니다.\n\n> messages may be in vmalloc() buffers, resulting in oopses especially on non-x86 platforms\n\n[원문 확인](https://lore.kernel.org/stable/20260906174214.1727071-1-sashal@kernel.org/)\n\n**btrfs: have proper error handling in btrfs_init_reloc_root**\n\nbtrfs_init_reloc_root()가 create_reloc_root() 오류와 __add_reloc_root()의 ENOMEM/EEXIST를 BUG_ON 대신 정상 반환·btrfs_put_root()로 처리합니다.\n\n영향: 이후 reloc root 복구 실패 처리(Stable-dep-of 6d8ba4572922)의 전제 패치로, btrfs balance/relocation 경로에서 커널 패닉 대신 오류 전파가 필요합니다. 5.10.y 외 다른 stable 브랜치 포함 여부는 확인이 필요합니다.\n\n> create_reloc_root will return errors in the future, and __add_reloc_root can return ENOMEM or EEXIST, so handle these errors properly.\n\n[원문 확인](https://lore.kernel.org/stable/20260906171902.1684623-1-sashal@kernel.org/)\n\n**smb: client: fix uid/gid override in getattr with posix extensions**\n\nmultiuser+posix 마운트에서 cifs_getattr()가 tcon->posix_extensions를 확인해 SMB3 POSIX 확장으로 받은 서버 uid/gid를 fsuid/fsgid로 덮어쓰지 않도록 수정합니다.\n\n영향: multiuser CIFS/SMB3 POSIX 마운트에서 stat() uid/gid가 호출자 credentials로 잘못 보고되어 파일 권한·백업 정책이 깨질 수 있습니다. stable review에 포함될 브랜치 목록은 확인이 필요합니다.\n\n> the condition only checks for unix extensions (tcon->unix_ext) but not posix extensions (tcon->posix_extensions).\n\n[원문 확인](https://lore.kernel.org/stable/20260906181540.647469-1-pc@manguebit.org/)\n\n**nfsd: disallow file locking and delegations for NFSv4 reexport**\n\nNFS reexport에 EXPORT_OP_NOLOCKS를 설정하고 nfsd4_lock()/nfs4_set_delegation() 등에서 exportfs_cannot_lock() 검사를 추가해 NFSv4 reexport에서 lock·delegation 요청을 nfserr_notsupp로 거부합니다.\n\n영향: reexport 서버 재부팅 시 upstream NFS가 grace 상태가 아니어서 lock/delegation 복구를 보장할 수 없어, 데이터 무결성 위험을 막기 위해 stable 백포트가 필요합니다. 5.10.y 백포트에 Documentation/filesystems/nfs/reexport.rst가 제외된 이유와 운영 문서 반영 시점은 확인이 필요합니다.\n\n> Clients are no longer allowed to get file locks or delegations from a reexport server, any attempts will fail with operation not supported.\n\n[원문 확인](https://lore.kernel.org/stable/20260906164757.1617855-1-sashal@kernel.org/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**ceph: do not repeat ceph_trim_dentries() if no progress possible**\n\nexpire_dir_lease=false일 때 TOUCH 대신 KEEP을 반환하고, dentry 해제가 없으면 -EAGAIN 재큐잉을 중단해 cap pressure 없을 때 ceph_cap_reclaim_work() busy loop를 제거합니다.\n\n영향: 프로덕션 웹 서버에서 초당 500회 ceph_trim_dentries() 호출과 dentry_list_lock 경합이 관측됐으며, CephFS 마운트 서버의 CPU·readdir 지연에 직접 영향합니다.\n\n> This creates a busy loop that consumes CPU without making any progress when there is nothing to reclaim\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/07/07/2707)\n\n**arm64: dts: rockchip: fix hym8563 interrupt pin on Orange Pi 5 Plus**\n\nrk3588-orangepi-5-plus 보드 DTS에서 hym8563 RTC 인터럽트 핀을 잘못된 GPIO0_B0에서 GPIO0_C6(pull-up)으로 수정합니다.\n\n영향: 잘못된 인터럽트 라인으로 RTC alarm이 SoC에 도달하지 않아 rtcwake s2idle 진입 후 복귀하지 않는 것처럼 보이는 hang이 발생합니다. USB 2.0 host controller resume stall 등 별도 이슈와의 관계는 확인이 필요합니다.\n\n> the mainline board file uses RK_PB0, which is not connected to the RTC.\n\n[원문 확인](https://lore.kernel.org/stable/20260906181622.11991-1-royalnet026@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "high",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Greg Kroah-Hartman 7.1.y EOL 공지",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/02/1497",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-7.1.13",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.13",
+      "note": "changelog"
+    },
+    {
+      "title": "LWN 7.2.3 stable 릴리스",
+      "url": "https://lwn.net/Articles/1092153/",
+      "note": "article"
+    },
+    {
+      "title": "ChangeLog-7.2.3",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.3",
+      "note": "changelog"
+    },
+    {
+      "title": "LWN 2026-09-02 stable 배치",
+      "url": "https://lwn.net/Articles/1092151/",
+      "note": "article"
+    },
+    {
+      "title": "ChangeLog-5.10.269",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.269",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-5.15.220",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.220",
+      "note": "changelog"
+    },
+    {
+      "title": "ceph vmalloc fscrypt stable 백포트",
+      "url": "https://lore.kernel.org/stable/20260906174214.1727071-1-sashal@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "ceph_fname_to_usr vmalloc tolerance",
+      "url": "https://lkml.iu.edu/2605.3/04608.html",
+      "note": "thread"
+    },
+    {
+      "title": "btrfs_init_reloc_root 오류 처리",
+      "url": "https://lore.kernel.org/stable/20260906171902.1684623-1-sashal@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "ceph_trim_dentries busy loop",
+      "url": "https://lists.openwall.net/linux-kernel/2026/07/07/2707",
+      "note": "thread"
+    },
+    {
+      "title": "ceph_trim_dentries stable 백포트",
+      "url": "https://lore.kernel.org/stable/20260906164151.1611015-1-sashal@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "CIFS POSIX 확장 stat uid/gid",
+      "url": "https://lore.kernel.org/stable/20260906181540.647469-1-pc@manguebit.org/",
+      "note": "thread"
+    },
+    {
+      "title": "nfsd NFSv4 reexport lock 거부",
+      "url": "https://lore.kernel.org/stable/20260906164757.1617855-1-sashal@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "NFS reexport 커널 문서",
+      "url": "https://docs.kernel.org/7.1/filesystems/nfs/reexport.html",
+      "note": "article"
+    },
+    {
+      "title": "Orange Pi 5 Plus hym8563 RTC 핀 수정",
+      "url": "https://lore.kernel.org/stable/20260906181622.11991-1-royalnet026@gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-06T18:24:52.075Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

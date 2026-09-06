@@ -1,0 +1,127 @@
+{
+  "id": "2026-09-07-linux-perf-rt-weekly-rollup",
+  "topic": "linux-perf-rt",
+  "title": "2026-09-07 주간 요약",
+  "headline": "BPF verifier·callback map·bpf_spin_lock·graph kfunc 사용자 주목: bpf: Assign lock ide",
+  "date": "2026-09-07",
+  "summary": "오늘의 핵심: 릴리스/로드맵 0건, 회귀·보안 신호 8건, 핵심 변경 0건. 리서치 dossier 의 출처를 근거로 정리했습니다.",
+  "tags": [
+    "주간"
+  ],
+  "highlights": [
+    {
+      "title": "bpf: Assign lock identity to callback map values",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF verifier·callback map·bpf_spin_lock·graph kfunc 사용자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260905083418.3723623-7-memxor@gmail.com/",
+      "if": "BPF verifier·callback map·bpf_spin_lock·graph kfunc 사용자라면",
+      "do": "Kumar Kartikeya Dwivedi v2 시리즈 6/7이 callback frame(for-each·timer/workqueue·task",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/bpf/20260905083418.3723623-7-memxor@gmail.com/"
+    },
+    {
+      "title": "Fix acyclic ownership checks",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF BTF graph·local kptr·list/rbtree 소유 모델 설계자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260905090750.4064411-1-memxor@gmail.com/",
+      "if": "BPF BTF graph·local kptr·list/rbtree 소유 모델 설계자라면",
+      "do": "3패치 시리즈가 BTF 로드 시 graph ownership을 bounded walk로 검증하고(BTF_MAX_OWNERSHIP_DEPTH 8)",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/bpf/20260905090750.4064411-1-memxor@gmail.com/"
+    },
+    {
+      "title": "mm/slab: disallow kfree_rcu_sheaf() on PREEMPT_RT again",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "PREEMPT_RT·SLUB/kfree_rcu·스케줄러 pi_lock 경로 유지보수 담당",
+      "verifyLink": "https://patchew.org/linux/20260831-b4-kfree._5Frcu._5Fhotfix-v1-1-4f0fb882638b@kernel.org/",
+      "if": "PREEMPT_RT·SLUB/kfree_rcu·스케줄러 pi_lock 경로 유지보수 담당라면",
+      "do": "Vlastimil Babka 패치가 PREEMPT_RT에서 kfree_rcu_sheaf() 재허용(2a8bb29ec9b2)을 부분 되돌려 kvf",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://patchew.org/linux/20260831-b4-kfree._5Frcu._5Fhotfix-v1-1-4f0fb882638b@kernel.org/"
+    },
+    {
+      "title": "bpf: zero extend the result of an arena 32-bit cmpxchg",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "bpf_arena·arena atomic·x86 BPF JIT 사용자 및 kernel/bpf/fixups.c 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260903171542.1438050-1-eddyz87@gmail.com/",
+      "if": "bpf_arena·arena atomic·x86 BPF JIT 사용자 및 kernel/bpf/fixups.c 유지보수 담당라면",
+      "do": "arena pointer atomic이 BPF_PROBE_ATOMIC으로 rewrite된 뒤 is_cmpxchg_insn()이 BPF_ATOMI",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/bpf/20260903171542.1438050-1-eddyz87@gmail.com/"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**bpf: Assign lock identity to callback map values**\n\nKumar Kartikeya Dwivedi v2 시리즈 6/7이 callback frame(for-each·timer/workqueue·task-work)의 lockable map value에 고유 verifier ID를 부여하고, map-in-map에서는 map_uid로 inner m\n\n영향: 중첩 callback이 동일 map의 서로 다른 원소를 ID 0으로 공유하면 verifier가 한 원소에서 잡은 bpf_spin_lock을 다른 원소에서 해제하거나 graph kfunc을 잘못 허용해 동시 리스트 손상이 가능합니다. Nicholas Carlini가 보고한 verifier\n\n> Callback frame constructors also leave map-value arguments with ID zero, but their maps can have multiple elements. Consequently, nested callbacks can hold two distinct elements of the same map with a\n\n[원문 확인](https://lore.kernel.org/bpf/20260905083418.3723623-7-memxor@gmail.com/)\n\n**Fix acyclic ownership checks**\n\n3패치 시리즈가 BTF 로드 시 graph ownership을 bounded walk로 검증하고(BTF_MAX_OWNERSHIP_DEPTH 8), program-local referenced kptr·percpu kptr 체인 깊이도 같은 한도로 제한합니다. 기존 one-hop 근사가 \n\n영향: 자기 참조 또는 과도하게 긴 local kptr 소유 체인은 bpf_obj_drop 시 커널 스택을 고갈시켜 패닉할 수 있습니다. CAP_BPF 사용자가 Nicholas Carlini가 보고한 소유 그래프 검증 허점을 닫는 보안·안정성 수정입니다.\n\n> Bound and ensure acyclic ownership graphs for native data structures to fix a bug reported by Nicholas. See commit logs and tests for details.\n\n[원문 확인](https://lore.kernel.org/bpf/20260905090750.4064411-1-memxor@gmail.com/)\n\n**mm/slab: disallow kfree_rcu_sheaf() on PREEMPT_RT again**\n\nVlastimil Babka 패치가 PREEMPT_RT에서 kfree_rcu_sheaf() 재허용(2a8bb29ec9b2)을 부분 되돌려 kvfree_call_rcu()가 pi_lock 보유 중 local_trylock()으로 sleeping lock을 잡지 않게 합니다. Harry Y\n\n영향: set_cpus_allowed_force()→kvfree_call_rcu() 경로에서 PREEMPT_RT lockdep splat이 syzbot으로 보고됐으며, sheaf fast-path를 되살리려면 pi_lock 아래 allocator·lockdep 정책 합의가 필요합니다.\n\n> For the immediate fix, skip kfree_rcu_sheaf() on PREEMPT_RT again from kvfree_call_rcu().\n\n[원문 확인](https://patchew.org/linux/20260831-b4-kfree._5Frcu._5Fhotfix-v1-1-4f0fb882638b@kernel.org/)\n\n**bpf: zero extend the result of an arena 32-bit cmpxchg**\n\narena pointer atomic이 BPF_PROBE_ATOMIC으로 rewrite된 뒤 is_cmpxchg_insn()이 BPF_ATOMIC만 매칭해 32-bit cmpxchg zero-extension pass를 건너뛰던 verifier/JIT 경로를 고칩니다. BPF_PROBE\n\n영향: 성공한 x86 lock cmpxchg는 %eax 상위 32비트를 갱신하지 않아 BPF 32-bit zero-extend semantics와 어긋날 수 있으며, arena 32-bit atomic 사용자는 상위 레지스터 오염으로 잘못된 비교·루프에 빠질 수 있습니다.\n\n> is_cmpxchg_insn() matches BPF_MODE == BPF_ATOMIC only, so an arena cmpxchg misses said zero extension adjustment.\n\n[원문 확인](https://lore.kernel.org/bpf/20260903171542.1438050-1-eddyz87@gmail.com/)\n\n**bpf: Only check nmi_uaccess_okay() when signalling current**\n\nbpf_send_signal_task() kfunc 도입(6280cf7) 이후 task 대상 검사는 바뀌었지만 nmi_uaccess_okay()는 current만 보도록 남아, 호출 CPU가 커널 스레드일 때 타깃과 무관하게 -EPERM이 납니다. 패치는 시그널을 current에 보낼 \n\n영향: x86에서 bpf_timer·workqueue_execute_start 등 커널 스레드 위 tracepoint에서 다른 태스크로 시그널을 보내는 kfunc 사용자는 동일 호출이 CPU에 따라 성공/실패하는 간헐 회귀를 맞습니다.\n\n> if (unlikely(task->flags & (PF_KTHREAD | PF_EXITING))) return -EPERM; if (unlikely(!nmi_uaccess_okay())) return -EPERM;\n\n[원문 확인](https://github.com/torvalds/linux/commit/6280cf718db0c557b5fe44e2d2e8ad8e832696a7)\n\n**bpf: Fix non-linear SRH access in bpf_update_srh_state()**\n\nCen Zhang 패치는 bpf_update_srh_state()가 ipv6_find_hdr() 오프셋을 선형 head에 가정해 SRH를 캐시하던 경로를 seg6_get_srh()로 바꿉니다. skb pull로 head가 재할당될 수 있어 bpf_compute_data_pointers(\n\n영향: 비선형 skb에서 SEG6 LWT BPF helper가 slab-use-after-free(KASAN)를 일으킬 수 있어, SEG6·BPF LWT 프로그램을 운영하는 네트워크/eBPF 엔지니어는 stable 백포트와 Fixes: 486cdf21583e 영향 범위를 확인해야 합니다.\n\n> BUG: KASAN: slab-use-after-free in bpf_update_srh_state+0x1bc/0x200 net/core/filter.c:7027 bpf_update_srh_state()\n\n[원문 확인](https://lore-kernel.gnuweeb.org/bpf/20260901183151.16648-1-cenzhang@linux.microsoft.com/)\n\n**mm/slab: disallow kfree_rcu_sheaf() on PREEMPT_RT again**\n\nVlastimil Babka가 Sebastian Siewior 리뷰에 답해, pi_lock 아래 kfree_rcu_nolock()이 sheaf용 GFP_NOWAIT 할당 시 __GFP_KSWAPD_RECLAIM→wakeup_kswapd()로 스케줄러 잠금을 다시 잡을 수 있어 PREEM\n\n영향: 2a8bb29ec9b2가 되돌려진 뒤에도 free_to_pcs() trylock·kfree_rcu_nolock() 할당 경로가 pi_lock·스케줄러 잠금 아래 deadlock 위험을 남깁니다. PREEMPT_RT slab·스케줄러 교차 경로 유지보수자는 hotfix 채택과 set_cp\n\n> For the immediate fix, skip kfree_rcu_sheaf() on PREEMPT_RT again from kvfree_call_rcu().\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-rt-devel/20260831-b4-kfree_rcu_hotfix-v1-1-4f0fb882638b@kernel.org/)\n\n**mm/slab: disallow kfree_rcu_sheaf() on PREEMPT_RT again**\n\nVlastimil Babka 패치는 2a8bb29ec9b2가 PREEMPT_RT에서 kfree_rcu_sheaf()를 다시 허용한 변경을 부분 되돌려, kvfree_call_rcu()가 PREEMPT_RT에서 sheaves 경로를 건너뛰게 합니다. set_cpus_allowed_forc\n\n영향: PREEMPT_RT 프로파일에서 slab sheaves 최적화 회귀가 스케줄러 마이그레이션 경로(__balance_push_cpu_stop→set_cpus_allowed_force)까지 lockdep deadlock 경고를 일으킵니다. RT 커널·syzbot 재현을 추적하는 엔지니어는 \n\n> kvfree_rcu() is also called by set_cpus_allowed_force() with task_struct::pi_lock acquired and there it's not safe, as syzbot has reported.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-rt-devel/20260831-b4-kfree_rcu_hotfix-v1-1-4f0fb882638b@kernel.org/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "국부 드라이버/플랫폼 패치는 본문에서 제외했습니다. 자기 영역 키워드로 lore.kernel.org에서 직접 검색하세요."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "bpf: Assign lock identity to callback map values",
+      "url": "https://lore.kernel.org/bpf/20260905083418.3723623-7-memxor@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Fix acyclic ownership checks",
+      "url": "https://lore.kernel.org/bpf/20260905090750.4064411-1-memxor@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "mm/slab: disallow kfree_rcu_sheaf() on PREEMPT_RT again",
+      "url": "https://patchew.org/linux/20260831-b4-kfree._5Frcu._5Fhotfix-v1-1-4f0fb882638b@kernel.org/",
+      "note": "patch"
+    },
+    {
+      "title": "bpf: zero extend the result of an arena 32-bit cmpxchg",
+      "url": "https://lore.kernel.org/bpf/20260903171542.1438050-1-eddyz87@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Only check nmi_uaccess_okay() when signalling current",
+      "url": "https://github.com/torvalds/linux/commit/6280cf718db0c557b5fe44e2d2e8ad8e832696a7",
+      "note": "commit"
+    },
+    {
+      "title": "bpf: Fix non-linear SRH access in bpf_update_srh_state()",
+      "url": "https://lore-kernel.gnuweeb.org/bpf/20260901183151.16648-1-cenzhang@linux.microsoft.com/",
+      "note": "thread"
+    },
+    {
+      "title": "mm/slab: disallow kfree_rcu_sheaf() on PREEMPT_RT again",
+      "url": "https://lore-kernel.gnuweeb.org/linux-rt-devel/20260831-b4-kfree_rcu_hotfix-v1-1-4f0fb882638b@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "mm/slab: disallow kfree_rcu_sheaf() on PREEMPT_RT again",
+      "url": "https://lore-kernel.gnuweeb.org/linux-rt-devel/20260831-b4-kfree_rcu_hotfix-v1-1-4f0fb882638b@kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "source": "research-dossier",
+    "bucketCounts": {
+      "릴리스/로드맵": 0,
+      "회귀·보안 신호": 8,
+      "핵심 변경": 0,
+      "기타": 0
+    },
+    "entryCount": 8
+  }
+}

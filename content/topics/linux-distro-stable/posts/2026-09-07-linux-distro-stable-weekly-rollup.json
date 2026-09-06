@@ -1,0 +1,127 @@
+{
+  "id": "2026-09-07-linux-distro-stable-weekly-rollup",
+  "topic": "linux-distro-stable",
+  "title": "2026-09-07 주간 요약",
+  "headline": "CephFS·fscrypt·stable 백포트 유지보수자 주목: ceph: properly decrypt filenames in vmalloc(",
+  "date": "2026-09-07",
+  "summary": "오늘의 핵심: 릴리스/로드맵 0건, 회귀·보안 신호 8건, 핵심 변경 0건. 리서치 dossier 의 출처를 근거로 정리했습니다.",
+  "tags": [
+    "주간"
+  ],
+  "highlights": [
+    {
+      "title": "ceph: properly decrypt filenames in vmalloc() buffers",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "CephFS·fscrypt·stable 백포트 유지보수자",
+      "verifyLink": "https://lore.kernel.org/stable/20260906174214.1727071-1-sashal@kernel.org/",
+      "if": "CephFS·fscrypt·stable 백포트 유지보수자라면",
+      "do": "ceph_fname_to_usr()가 fscrypt scatterlist API 요구에 맞게 vmalloc()에 놓인 fname 버퍼를 boun",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/stable/20260906174214.1727071-1-sashal@kernel.org/"
+    },
+    {
+      "title": "btrfs: have proper error handling in btrfs_init_reloc_root",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "btrfs·stable LTS 백포트 유지보수자",
+      "verifyLink": "https://lore.kernel.org/stable/20260906171902.1684623-1-sashal@kernel.org/",
+      "if": "btrfs·stable LTS 백포트 유지보수자라면",
+      "do": "btrfs_init_reloc_root()가 create_reloc_root() 오류와 __add_reloc_root()의 ENOMEM/EEXI",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/stable/20260906171902.1684623-1-sashal@kernel.org/"
+    },
+    {
+      "title": "smb: client: fix uid/gid override in getattr with posix extensions",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "CIFS/SMB 클라이언트·multiuser 마운트 운영자",
+      "verifyLink": "https://lore.kernel.org/stable/20260906181540.647469-1-pc@manguebit.org/",
+      "if": "CIFS/SMB 클라이언트·multiuser 마운트 운영자라면",
+      "do": "multiuser+posix 마운트에서 cifs_getattr()가 tcon->posix_extensions를 확인해 SMB3 POSIX 확장으",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/stable/20260906181540.647469-1-pc@manguebit.org/"
+    },
+    {
+      "title": "nfsd: disallow file locking and delegations for NFSv4 reexport",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "NFS reexport·nfsd 서버 운영자",
+      "verifyLink": "https://lore.kernel.org/stable/20260906164757.1617855-1-sashal@kernel.org/",
+      "if": "NFS reexport·nfsd 서버 운영자라면",
+      "do": "NFS reexport에 EXPORT_OP_NOLOCKS를 설정하고 nfsd4_lock()/nfs4_set_delegation() 등에서 exp",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/stable/20260906164757.1617855-1-sashal@kernel.org/"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ceph: properly decrypt filenames in vmalloc() buffers**\n\nceph_fname_to_usr()가 fscrypt scatterlist API 요구에 맞게 vmalloc()에 놓인 fname 버퍼를 bounce buffer로 처리하고, parse_reply_info_readdir()도 vmalloc 메시지에서 tname을 NULL로 두도록 수정합니\n\n영향: MDS 메시지가 kvmalloc()으로 vmalloc 영역에 놓이면 fscrypt_fname_disk_to_usr()에 잘못된 주소가 전달되어 비 x86에서 커널 oops가 발생하므로, CephFS+fscrypt stable 백포트를 추적해야 합니다.\n\n> messages may be in vmalloc() buffers, resulting in oopses especially on non-x86 platforms\n\n[원문 확인](https://lore.kernel.org/stable/20260906174214.1727071-1-sashal@kernel.org/)\n\n**btrfs: have proper error handling in btrfs_init_reloc_root**\n\nbtrfs_init_reloc_root()가 create_reloc_root() 오류와 __add_reloc_root()의 ENOMEM/EEXIST를 BUG_ON 대신 정상 반환·btrfs_put_root()로 처리합니다.\n\n영향: 이후 reloc root 복구 실패 처리(Stable-dep-of 6d8ba4572922)의 전제 패치로, btrfs balance/relocation 경로에서 커널 패닉 대신 오류 전파가 필요합니다.\n\n> create_reloc_root will return errors in the future, and __add_reloc_root can return ENOMEM or EEXIST, so handle these errors properly.\n\n[원문 확인](https://lore.kernel.org/stable/20260906171902.1684623-1-sashal@kernel.org/)\n\n**smb: client: fix uid/gid override in getattr with posix extensions**\n\nmultiuser+posix 마운트에서 cifs_getattr()가 tcon->posix_extensions를 확인해 SMB3 POSIX 확장으로 받은 서버 uid/gid를 fsuid/fsgid로 덮어쓰지 않도록 수정합니다.\n\n영향: multiuser CIFS/SMB3 POSIX 마운트에서 stat() uid/gid가 호출자 credentials로 잘못 보고되어 파일 권한·백업 정책이 깨질 수 있습니다.\n\n> the condition only checks for unix extensions (tcon->unix_ext) but not posix extensions (tcon->posix_extensions).\n\n[원문 확인](https://lore.kernel.org/stable/20260906181540.647469-1-pc@manguebit.org/)\n\n**nfsd: disallow file locking and delegations for NFSv4 reexport**\n\nNFS reexport에 EXPORT_OP_NOLOCKS를 설정하고 nfsd4_lock()/nfs4_set_delegation() 등에서 exportfs_cannot_lock() 검사를 추가해 NFSv4 reexport에서 lock·delegation 요청을 nfserr_notsupp로\n\n영향: reexport 서버 재부팅 시 upstream NFS가 grace 상태가 아니어서 lock/delegation 복구를 보장할 수 없어, 데이터 무결성 위험을 막기 위해 stable 백포트가 필요합니다.\n\n> Clients are no longer allowed to get file locks or delegations from a reexport server, any attempts will fail with operation not supported.\n\n[원문 확인](https://lore.kernel.org/stable/20260906164757.1617855-1-sashal@kernel.org/)\n\n**nfsd: fix nfsd_file leak on inter-server COPY setup failure**\n\nnfsd4_setup_inter_ssc() 실패 시 nfsd4_copy()가 out: 정리 경로를 건너뛰던 버그를 수정해, 실패한 inter-server COPY마다 nfsd_file 참조가 해제됩니다.\n\n영향: NFSv4 inter-server COPY 실패마다 nfsd_file가 누적되어 inode/dentry/vfsmount가 pin되므로, NFS 서버 운영자는 메모리 고갈·장기 가동 안정성 문제를 피하려면 백포트가 필요합니다.\n\n> Each failed inter-server COPY leaks one nfsd_file, pinning file/inode/dentry/vfsmount.\n\n[원문 확인](https://www.spinics.net/lists/stable/msg1013244.html)\n\n**nfsd: fix BUG_ON in nfsd4_alloc_layout_stateid on racing delegation revoke**\n\nnfsd4_alloc_layout_stateid()가 delegation revoke와 경합할 때 fi_deleg_file 읽기에 적절한 동기화를 추가하고 BUG_ON을 graceful error return으로 대체합니다.\n\n영향: 두 NFS 클라이언트가 delegation recall/revoke와 LAYOUTGET를 동시에 트리거하면 서버 커널 패닉이 가능해, pNFS·delegation을 쓰는 NFS 서버는 우선 백포트 대상입니다.\n\n> This race is client-reachable: two NFS clients can trigger it by having one hold a delegation while another opens the same file\n\n[원문 확인](https://www.spinics.net/lists/stable/msg1012677.html)\n\n**nfsd: fix fcache_disposal UAF by inlining dispose state into nfsd_net**\n\nper-net nfsd_fcache_disposal 구조체를 제거하고 fcache_dispose_lock·fcache_dispose_list를 struct nfsd_net에 인라인해, netns teardown과 shrinker/GC/fsnotify 경합 시 UAF를 제거합니다.\n\n영향: NFS 서버 netns 종료·파일 캐시 shrinker/GC/fsnotify callback이 동시에 실행되면 use-after-free가 발생할 수 있어, nfsd를 netns별로 운영하는 환경에서 필수 수정입니다.\n\n> The global shrinker, laundrette, and fsnotify callbacks can still be inside nfsd_file_dispose_list_delayed() dereferencing that pointer, causing a use-after-free.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/06/02/1887)\n\n**mm: hugetlb: Return -ENOSPC on memcg charge failure**\n\nmem_cgroup_charge_hugetlb() 실패 시 alloc_hugetlb_folio()가 -ENOMEM 대신 -ENOSPC를 반환해 VM_FAULT_SIGBUS로 프로세스를 종료하도록 stable 백포트가 논의 중이다.\n\n영향: cgroup v2 메모리 제한 하 hugetlb fault가 VM_FAULT_OOM 무한 루프에 빠지는 DoS를 막아, hugetlb·memcg를 쓰는 서버·컨테이너 배포의 안정성에 직결된다.\n\n> Because HugeTLB allocations are high-order and use __GFP_RETRY_MAYFAIL, they bypass the OOM killer. Returning VM_FAULT_OOM to the #PF handler without triggering the OOM killer (or having it make progr\n\n[원문 확인](https://www.spinics.net/lists/stable/msg986026.html)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "국부 드라이버/플랫폼 패치는 본문에서 제외했습니다. 자기 영역 키워드로 lore.kernel.org에서 직접 검색하세요."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ceph: properly decrypt filenames in vmalloc() buffers",
+      "url": "https://lore.kernel.org/stable/20260906174214.1727071-1-sashal@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "btrfs: have proper error handling in btrfs_init_reloc_root",
+      "url": "https://lore.kernel.org/stable/20260906171902.1684623-1-sashal@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "smb: client: fix uid/gid override in getattr with posix extensions",
+      "url": "https://lore.kernel.org/stable/20260906181540.647469-1-pc@manguebit.org/",
+      "note": "thread"
+    },
+    {
+      "title": "nfsd: disallow file locking and delegations for NFSv4 reexport",
+      "url": "https://lore.kernel.org/stable/20260906164757.1617855-1-sashal@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "nfsd: fix nfsd_file leak on inter-server COPY setup failure",
+      "url": "https://www.spinics.net/lists/stable/msg1013244.html",
+      "note": "thread"
+    },
+    {
+      "title": "nfsd: fix BUG_ON in nfsd4_alloc_layout_stateid on racing delegation revoke",
+      "url": "https://www.spinics.net/lists/stable/msg1012677.html",
+      "note": "thread"
+    },
+    {
+      "title": "nfsd: fix fcache_disposal UAF by inlining dispose state into nfsd_net",
+      "url": "https://lists.openwall.net/linux-kernel/2026/06/02/1887",
+      "note": "thread"
+    },
+    {
+      "title": "mm: hugetlb: Return -ENOSPC on memcg charge failure",
+      "url": "https://www.spinics.net/lists/stable/msg986026.html",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "source": "research-dossier",
+    "bucketCounts": {
+      "릴리스/로드맵": 0,
+      "회귀·보안 신호": 8,
+      "핵심 변경": 0,
+      "기타": 0
+    },
+    "entryCount": 8
+  }
+}
