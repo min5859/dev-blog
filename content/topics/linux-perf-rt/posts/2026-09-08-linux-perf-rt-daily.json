@@ -1,0 +1,123 @@
+{
+  "id": "2026-09-08-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-09-08 sock_ops CVE — Perf/RT 렌즈",
+  "headline": "TCP sock_ops CVE-2026-74268, x86 BPF attach 가속, exec용 mm helper, libbpf·bpftool 회귀 수정이 이번 핵심입니다.",
+  "date": "2026-09-08",
+  "summary": "TCP child 소켓 강제 종료 경로에서 sock_ops cb flags가 남으면 lock 없는 tcp_done()에서 WARNING·패닉으로 이어질 수 있어 CVE-2026-74268으로 추적·수정됐습니다. x86 BPF trampoline size 계산 최적화, copy_remote_mm_str 기반 exec argv kfunc, libbpf light skeleton 로그 회귀, sparse CPU bpftool 수정도 함께 논의 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "TCP child sock_ops cb flags CVE-2026-74268",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF sock_ops·TCP listener·네트워크 스택 보안·stable 백포트 담당",
+      "verifyLink": "https://osv.dev/vulnerability/CVE-2026-74268",
+      "if": "BPF_SOCK_OPS_STATE_CB를 쓰는 TCP listener에서 child setup 실패·강제 종료 경로를 운영 중이라면",
+      "do": "upstream commit 990348e5bb45와 stable 백포트 반영 여부를 추적하세요",
+      "verify": "CVE-2026-74268 원문과 inet_csk_prepare_for_destroy_sock() 패치 diff를 확인하세요"
+    },
+    {
+      "title": "x86 BPF trampoline size 전역 버퍼 재사용",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "x86 BPF trampoline·tracing_multi·ftrace direct call 유지보수 담당",
+      "verifyLink": "https://github.com/kernel-patches/bpf/pull/13691",
+      "if": "tracing_multi·대규모 uprobes/kprobe attach에서 size 계산 alloc 오버헤드가 병목이라면",
+      "do": "late_initcall trampoline_size_image 재사용 패치의 bpf-next 머지 일정을 확인하세요",
+      "verify": "tracing_multi_bench_attach attach 시간 1.470s→0.754s 벤치 원문을 확인하세요"
+    },
+    {
+      "title": "copy_remote_mm_str() exec argv kfunc 기반",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "BPF LSM·exec 보안·user memory kfunc·mm helper 유지보수 담당",
+      "verifyLink": "https://lkml.iu.edu/2609.0/11082.html",
+      "if": "security_bprm_check() 시점 exec argv/env를 BPF LSM이 읽어야 한다면",
+      "do": "copy_remote_mm_str()과 bpf_copy_from_user_mm_str() kfunc 시리즈 머지를 추적하세요",
+      "verify": "copy_remote_vm_str() task 기반 한계와 mm_struct 직접 접근 규칙을 원문에서 확인하세요"
+    },
+    {
+      "title": "libbpf light skeleton log level 회귀",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "bpftool·libbpf light skeleton 사용자 및 BPF CI/개발 도구 유지보수자",
+      "verifyLink": "https://github.com/kernel-patches/bpf/pull/13695",
+      "if": "bpftool -d -L로 verifier 실패 시 bpf_trace_printk() 출력이 끊겼다면",
+      "do": "Mahe Tardy v2 패치가 bpf_gen__init()에 obj->log_level을 전달하는지 확인하세요",
+      "verify": "kernel-patches/bpf PR 13695 diff와 Fixes: b59e4ce8bcaa 회귀 상세를 직접 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**tcp: clear sock_ops cb flags before force-closing a child socket**\n\nTCP child 소켓이 listener의 bpf_sock_ops_cb_flags를 상속한 뒤 syn_recv 실패로 lock 없이 tcp_done()에 들어가면 tcp_call_bpf()가 sock_owned_by_me() WARNING을 일으킬 수 있습니다. inet_csk_prepare_for_destroy_sock()에서 cb flags를 0으로 지워 미설립 child에는 sock_ops callback이 실행되지 않게 합니다.\n\n영향: BPF_SOCK_OPS_STATE_CB listener 환경에서 child setup 실패가 IRQ 경로 WARNING·커널 패닉(DoS)으로 이어질 수 있어 stable 백포트 추적이 필요합니다.\n\n> If BPF_SOCK_OPS_STATE_CB_FLAG was inherited, tcp_done() -> tcp_set_state() calls tcp_call_bpf(), which expects the lock and trips sock_owned_by_me()\n\n[원문 확인](https://lkml.iu.edu/2606.1/08531.html)\n\n**libbpf: fix log level propagation for light skeleton loaders**\n\nbpftool이 bpf_object__load()로 전환되며 light skeleton syscall loader의 verifier log_level이 0으로 초기화되어 bpf_trace_printk() 디버그 출력 경로가 끊겼습니다. v2 패치는 do_skeleton()에서 설정한 obj->log_level을 bpf_gen__init()에 전달해 bpftool -d -L 동작을 복구합니다.\n\n영향: light skeleton·syscall loader BPF 개발 시 verifier 실패가 조용히 발생할 수 있어 bpftool -d 디버깅 워크플로 회복이 bring-up 생산성에 직결됩니다. bpf 트리 머지 일정과 kernel-space light skeleton BPF_LOG_KERNEL 경로 상호작용은 확인이 필요합니다.\n\n> subject: libbpf: fix log level propagation for light skeleton loaders version: 2\n\n[원문 확인](https://github.com/kernel-patches/bpf/pull/13695)\n\n**bpftool: fix sparse logical CPU handling**\n\nsparse logical CPU topology에서 bpftool이 per-CPU map dump 시 dense slot 번호를 CPU ID로 출력하고, prog profile은 compact CPU count를 logical ID span·PERF_EVENT_ARRAY stride로 써 perf_event_alloc()에서 fault가 납니다. possible CPU mask에서 logical ID를 enumerate하는 helper로 map 출력·prog profile 경로를 고칩니다.\n\n영향: ARM64 등 CPU hole이 있는 시스템에서 bpftool map dump·prog profile이 잘못된 CPU ID를 보여주거나 크래시해 sparse topology BPF 성능 분석이 불가능해집니다. arm64 QEMU 0,2-3 테스트 결과 원문 직접 확인은 아직 필요합니다.\n\n> The userspace side fills buf[] with one entry per possible CPU, storing the logical CPU ID at packed index slot (0, 1, 2, ...). For a mask like 0,2-3, this creates buf = {0, 2, 3}\n\n[원문 확인](https://github.com/kernel-patches/bpf/pull/13693)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**bpf, x86: Use global buffer for trampoline size generation**\n\nx86 arch_bpf_trampoline_size()가 호출마다 임시 trampoline 버퍼를 alloc/free하던 경로를 late_initcall로 한 번 할당한 trampoline_size_image를 재사용하도록 바꿉니다. tracing_multi_bench_attach attach 시간이 약 1.56s에서 0.80s로 줄었다고 보고됩니다.\n\n영향: 대량 ftrace/BPF trampoline multi-attach 워크로드에서 size 계산 alloc 오버헤드가 attach latency 병목이 됩니다. non-x86 arch_bpf_trampoline_size() 동일 패턴 필요 여부는 확인이 필요합니다.\n\n> Allocating a writable scratch page during kernel initialization and reusing it for all size calculations. This improves tracing_multi attachment time.\n\n[원문 확인](https://github.com/kernel-patches/bpf/pull/13691)\n\n**mm: Add copy_remote_mm_str()**\n\ncopy_remote_vm_str()는 task_struct로 address space를 얻어 exec 중 linux_binprm->mm처럼 task에 아직 연결되지 않은 mm에는 쓸 수 없습니다. mm_struct를 직접 받는 copy_remote_mm_str()을 MMU/NOMMU 공통 내부 인터페이스로 추가하고 copy_remote_vm_str()이 이를 호출합니다.\n\n영향: bpf_copy_from_user_mm_str() kfunc 기반으로 security_bprm_check() 시점 exec argv/env를 BPF LSM이 읽을 수 있게 합니다. bpf-next v4 시리즈 머지 일정과 NOMMU 지원 범위는 확인이 필요합니다.\n\n> Add copy_remote_mm_str(), which operates directly on a struct mm_struct.\n\n[원문 확인](https://lkml.iu.edu/2609.0/11082.html)\n\n**softirq: Preserve interrupt context during IRQ exit (v2 검증 진척)**\n\nv2는 non-RT/threadirqs/PREEMPT_RT x86 QEMU·Pi 400·SAM9X75에서 panic_on_warn=1 boot/stress·KCSAN/KMSAN 검증 통과를 보고합니다. HARDIRQ_OFFSET를 유지하고 direct softirq에서는 SOFTIRQ_OFFSET로 전환·복원하는 접근은 이전과 동일합니다.\n\n영향: IRQ exit window에서 ftrace/KCSAN/KMSAN attribution 오류가 PREEMPT_RT·sanitizer 기반 실시간 분석 신뢰성을 해칩니다. mainline vs PREEMPT_RT 트리 머지 일정과 production idle timer-latency 장기 영향은 확인이 필요합니다.\n\n> The exact v2 source passed non-RT, threadirqs and PREEMPT_RT x86-64 QEMU boot/stress, including CPU hotplug, with panic_on_warn=1\n\n[원문 확인](https://lkml.iu.edu/2609.0/12220.html)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "bpf, x86: global buffer for trampoline size (PR 13691)",
+      "url": "https://github.com/kernel-patches/bpf/pull/13691",
+      "note": "thread"
+    },
+    {
+      "title": "tcp: clear sock_ops cb flags (LKML thread)",
+      "url": "https://lkml.iu.edu/2606.1/08531.html",
+      "note": "thread"
+    },
+    {
+      "title": "CVE-2026-74268",
+      "url": "https://osv.dev/vulnerability/CVE-2026-74268",
+      "note": "cve"
+    },
+    {
+      "title": "mm: copy_remote_mm_str() (LKML thread)",
+      "url": "https://lkml.iu.edu/2609.0/11082.html",
+      "note": "thread"
+    },
+    {
+      "title": "bpf_copy_from_user_mm_str kfunc (LKML thread)",
+      "url": "https://lkml.iu.edu/2609.0/11172.html",
+      "note": "thread"
+    },
+    {
+      "title": "libbpf light skeleton log level fix (PR 13695)",
+      "url": "https://github.com/kernel-patches/bpf/pull/13695",
+      "note": "thread"
+    },
+    {
+      "title": "bpftool sparse logical CPU handling (PR 13693)",
+      "url": "https://github.com/kernel-patches/bpf/pull/13693",
+      "note": "thread"
+    },
+    {
+      "title": "softirq: preserve interrupt context during IRQ exit (LKML thread)",
+      "url": "https://lkml.iu.edu/2609.0/12220.html",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-07T18:38:25.470Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

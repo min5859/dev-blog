@@ -1,0 +1,173 @@
+{
+  "id": "2026-09-08-linux-distro-stable-daily",
+  "topic": "linux-distro-stable",
+  "title": "2026-09-08 7.2.4·CVE 백포트 — 배포판 안정 커널",
+  "headline": "7.2.4·6.12.109·6.18.50 LTS가 갱신됐고, CVE-2026-74268 등 critical stable 백포트가 제출됐습니다.",
+  "date": "2026-09-08",
+  "summary": "7.2.4가 활성 7.2.y 안정 릴리스로 7.1 EOL 이후 권장 업그레이드 대상이 되었고, 6.12.109·6.18.50 LTS도 동일 배치에서 갱신됐습니다. CVE-2026-74268(BPF sock_ops)·mmiotrace·cgroup·UCSI 등 stable 백포트와 THP PFN map 회귀 수정이 검토 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "CVE-2026-74268 BPF sock_ops 패닉",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF sock_ops·TCP 리스너·stable 백포트 유지보수자",
+      "verifyLink": "https://lore.kernel.org/stable/20260907-cve-2026-74268-v1-1-cacea38d7fb3@bootlin.com/",
+      "if": "BPF_SOCK_OPS_STATE_CB_FLAG를 쓰는 TCP 리스너·로드밸런서를 운영 중이면,",
+      "do": "stable 백포트 적용 전까지 SYN-RECV 실패 경로의 커널 패닉 위험을 인지하고 패치 포함 여부를 추적하세요.",
+      "verify": "stable 제출 스레드에서 inet_csk_prepare_for_destroy_sock() cb flags 초기화 패치와 포함 브랜치 목록을 확인하세요."
+    },
+    {
+      "title": "Linux 7.2.4 stable",
+      "priority": "상",
+      "impactType": "release",
+      "affectedAudience": "안정 커널 업데이트를 관리하는 배포·인프라 팀",
+      "verifyLink": "https://lwn.net/Articles/1092985/",
+      "if": "7.1.y 또는 이전 7.2.y를 운영 중이면,",
+      "do": "711건 백포트가 포함된 7.2.4로 즉시 업그레이드하세요.",
+      "verify": "ChangeLog-7.2.4에서 smack cred UAF·signal siginfo·rtl8xxxu UAF 등 적용 항목을 확인하세요."
+    },
+    {
+      "title": "THP tuneable PFN map 회귀",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "메모리 관리·GPU/DRM mmap·stable LTS 백포트 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20260907-hugepfn-allowable-orders-v2-1-b89728339148@kernel.org/",
+      "if": "THP always 설정 LTS에서 GPU/DRM shmem PFN map을 쓰면,",
+      "do": "huge PFN map에 THP tuneable을 적용하지 않도록 하는 stable v2 백포트 적용을 준비하세요.",
+      "verify": "stable review에 포함될 브랜치 목록은 확인이 필요합니다."
+    },
+    {
+      "title": "cgroup dying task UAF",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "cgroup v2·컨테이너 런타임·stable 백포트 유지보수자",
+      "verifyLink": "https://lore.kernel.org/stable/20260907170345.45316-1-mkoutny@suse.com/",
+      "if": "cgroup v2 procs/debug 인터페이스와 task exit 경합 환경에서 간헐적 크래시가 있으면,",
+      "do": "css_task_iter_next()의 tryget_task_struct() 패치 stable 백포트를 추적하세요.",
+      "verify": "stable review 포함 브랜치 목록(v6.19+ Cc)은 확인이 필요합니다."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.2.4 stable**\n\n2026-09-07 공개된 7.2.4가 현재 활성 7.2.y 안정 릴리스로, smack cred UAF·signal siginfo·wifi rtl8xxxu UAF·Chrome sensorhub 타임스탬프 등 711건의 백포트를 포함합니다.\n\n영향: 7.1 EOL 이후 권장 업그레이드 대상이며, Jann Horn이 확인한 LSM·드라이버 메모리 안전 수정을 최신 유지보수 브랜치에서 받을 수 있습니다.\n\n> I'm announcing the release of the 7.2.4 kernel. All users of the 7.2 kernel series must upgrade.\n\n[원문 확인](https://lwn.net/Articles/1092985/)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**tcp: clear sock_ops cb flags before force-closing a child socket**\n\nSYN-RECV 실패로 강제 종료되는 child socket이 listener의 bpf_sock_ops_cb_flags를 상속한 채 tcp_done()에서 잠금 없이 tcp_call_bpf()를 호출해 WARNING이 발생합니다. inet_csk_prepare_for_destroy_sock()에서 cb flags를 0으로 초기화합니다.\n\n영향: CVE-2026-74268(CVSS 9.8)로 분류된 BPF sock_ops 경로 버그로, BPF_SOCK_OPS_STATE_CB_FLAG를 쓰는 서버·로드밸런서는 stable 백포트 적용 전까지 커널 패닉 위험이 있습니다. 이번 stable 제출에 포함될 정확한 브랜치 목록(6.12.y·6.18.y·7.x 등)은 확인이 필요합니다.\n\n> Clear its cb flags in inet_csk_prepare_for_destroy_sock(), the common point for the IPv4, IPv6 and chtls forced-close paths\n\n[원문 확인](https://lore.kernel.org/stable/20260907-cve-2026-74268-v1-1-cacea38d7fb3@bootlin.com/)\n\n**tracing/mmiotrace: Add NULL check for mmio_trace_array in logging functions**\n\nmmio_trace_array가 NULL인 상태(초기화 전·비활성화 후)에 __trace_mmiotrace_rw()/__trace_mmiotrace_map()이 tr->array_buffer.buffer에 접근해 NULL dereference가 발생합니다. tr NULL 검사를 추가합니다.\n\n영향: CVE-2026-80689(CVSS 5.5)로 분류된 mmiotrace DoS 취약점에 대한 5.15/6.1/6.6 stable 백포트 시리즈가 제출되어, tracing을 켠 시스템은 패치 적용을 추적해야 합니다. 5.15/6.1/6.6 외 브랜치 포함 여부는 확인이 필요합니다.\n\n> Backport fix for CVE-2026-80689.\n\n[원문 확인](https://lore.kernel.org/stable/20260907163919.183961-1-alexevgmart@gmail.com/)\n\n**usb: typec: ucsi: displayport: Fix OOB altmode array index**\n\nUCSI displayport 드라이버가 GET_CURRENT_CAM 응답이 0xff가 아니면서 UCSI_MAX_ALTMODES 이상일 때 port_altmode[] 배열을 OOB 인덱싱해 커널 패닉이 날 수 있습니다. 범위 검사 후 -EINVAL을 반환합니다.\n\n영향: 잘못된 PPM 응답만으로 Type-C DisplayPort altmode 진입 경로에서 커널 크래시가 가능하므로, UCSI 기반 노트북·태블릿 배포는 stable 백포트를 우선 적용해야 합니다. stable review에 포함될 브랜치 목록은 확인이 필요합니다.\n\n> If the PPM returns an invalid GET_CURRENT_CAM response above UCSI_MAX_ALTMODES and not equal to 0xff, the kernel may crash with an array index OOB error.\n\n[원문 확인](https://lkml.iu.edu/2609.0/12056.html)\n\n**cgroup: Avoid iteration of dying tasks with zero refcount**\n\ncss_task_iter_next()가 dying_tasks 리스트의 refcount 0 task에 get_task_struct()를 호출해 UAF가 가능합니다. tryget_task_struct()로 바꿔 0 refcount task를 건너뜁니다.\n\n영향: cgroup v2 procs/debug 인터페이스와 task exit 경합에서 간헐적 크래시가 보고되어(SUSE 재현), cgroup 기반 컨테이너·systemd 배포는 stable 백포트를 추적해야 합니다. stable review 포함 브랜치 목록(v6.19+ Cc)은 확인이 필요합니다.\n\n> cgroup_task_release() is not synced via css_set_lock hence the race possibility.\n\n[원문 확인](https://lore.kernel.org/stable/20260907170345.45316-1-mkoutny@suse.com/)\n\n**drm/i915/dp_mst: Fix configuring FEC for a disconnected stream**\n\nMST topology가 disconnect된 상태에서 drm_dp_mst_port_downstream_of_parent()가 false를 반환해 FEC 동기화 검사가 일부 stream pipe를 누락합니다. parent_port==NULL일 때 downstream 검사를 건너뜁니다.\n\n영향: Intel i915 DP-MST 환경에서 atomic commit 시 FEC state mismatch로 modeset이 실패할 수 있어, 노트북·도킹 MST 디스플레이 사용자에게 stable 백포트가 필요합니다. stable review에 포함될 브랜치 목록은 확인이 필요합니다.\n\n> leading to a FEC state mismatch error.\n\n[원문 확인](https://lore.kernel.org/stable/20260907174413.741851-1-imre.deak@intel.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**mm/huge_memory: bypass THP tuneables for huge pfnmap mappings**\n\nhuge PFN map(VMA_PFNMAP·huge_fault)은 THP compaction/reclaim 대상이 아닌데 /sys/kernel/mm/transparent_huge_pages/ 튜닝에 막혀 huge fault-in이 거부되던 회귀를 수정합니다.\n\n영향: GPU/DRM shmem PFN map 등에서 4K fallback으로 성능이 크게 떨어졌으며(Crusoe·Red Hat 보고), LTS 배포가 THP always를 쓰는 환경에서는 stable 백포트가 필수입니다. stable review에 포함될 브랜치 목록은 확인이 필요합니다.\n\n> Failing to map huge PFN maps has resulted in significant real-world performance degradation, see links for details.\n\n[원문 확인](https://lore.kernel.org/stable/20260907-hugepfn-allowable-orders-v2-1-b89728339148@kernel.org/)\n\n**Linux 6.12.109 longterm**\n\n2026-09-07 공개된 6.12.109 LTS에 smack cred UAF·hugetlb huge_ptep_get()·rtl8xxxu rx_urb_wq UAF·i3c IBI OOB·i3c unregister UAF 등 395건의 백포트가 포함됩니다.\n\n영향: 6.12 LTS를 쓰는 엔터프라이즈·배포판은 이번 태그로 알려진 메모리 안전·Wi-Fi·I3C 수정을 한 번에 받을 수 있습니다.\n\n> I'm announcing the release of the 6.12.109 kernel. All users of the 6.12 kernel series must upgrade.\n\n[원문 확인](https://lwn.net/Articles/1092987/)\n\n**Linux 6.18.50 longterm**\n\n2026-09-07 공개된 6.18.50 LTS에 mm/rmap huge_ptep_get()·smack cred UAF·mt76 EEPROM·timekeeping·zloop 등 546건의 백포트가 포함됩니다.\n\n영향: 6.18 LTS 채택 배포는 7.x로 올리기 전까지 이번 릴리스로 최신 stable 수정을 받아야 하며, 7.2.4와 겹치는 Wi-Fi·LSM 수정도 포함됩니다.\n\n> I'm announcing the release of the 6.18.50 kernel. All users of the 6.18 kernel series must upgrade.\n\n[원문 확인](https://lwn.net/Articles/1092986/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Greg Kroah-Hartman 7.2.4 stable 릴리스",
+      "url": "https://lwn.net/Articles/1092985/",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-7.2.4 smack cred UAF",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.4",
+      "note": "changelog"
+    },
+    {
+      "title": "CVE-2026-74268 stable 백포트",
+      "url": "https://lore.kernel.org/stable/20260907-cve-2026-74268-v1-1-cacea38d7fb3@bootlin.com/",
+      "note": "thread"
+    },
+    {
+      "title": "CVE-2026-74268 OSV",
+      "url": "https://osv.dev/vulnerability/CVE-2026-74268",
+      "note": "cve"
+    },
+    {
+      "title": "THP PFN map stable v2",
+      "url": "https://lore.kernel.org/stable/20260907-hugepfn-allowable-orders-v2-1-b89728339148@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "THP PFN map spinics 아카이브",
+      "url": "https://www.spinics.net/lists/stable/msg1014995.html",
+      "note": "thread"
+    },
+    {
+      "title": "i915 DP-MST FEC stable 패치",
+      "url": "https://lore.kernel.org/stable/20260907174413.741851-1-imre.deak@intel.com/",
+      "note": "thread"
+    },
+    {
+      "title": "i915 DP-MST mail-archive",
+      "url": "https://www.mail-archive.com/intel-gfx@lists.freedesktop.org/msg384256.html",
+      "note": "thread"
+    },
+    {
+      "title": "CVE-2026-80689 stable 백포트",
+      "url": "https://lore.kernel.org/stable/20260907163919.183961-1-alexevgmart@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "CVE-2026-80689 NVD",
+      "url": "https://nvd.nist.gov/vuln/detail/cve-2026-80689",
+      "note": "cve"
+    },
+    {
+      "title": "UCSI displayport OOB v2",
+      "url": "https://lkml.iu.edu/2609.0/12056.html",
+      "note": "thread"
+    },
+    {
+      "title": "UCSI displayport stable 토론",
+      "url": "https://lore.kernel.org/stable/ap732UoS0zqjg_9r@black.igk.intel.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Greg Kroah-Hartman 6.12.109 stable 릴리스",
+      "url": "https://lwn.net/Articles/1092987/",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-6.12.109",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.12.109",
+      "note": "changelog"
+    },
+    {
+      "title": "Greg Kroah-Hartman 6.18.50 stable 릴리스",
+      "url": "https://lwn.net/Articles/1092986/",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-6.18.50",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.18.50",
+      "note": "changelog"
+    },
+    {
+      "title": "cgroup dying task stable v2",
+      "url": "https://lore.kernel.org/stable/20260907170345.45316-1-mkoutny@suse.com/",
+      "note": "thread"
+    },
+    {
+      "title": "cgroup dying task lkml",
+      "url": "https://lkml.iu.edu/2609.0/04988.html",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-07T18:33:41.357Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

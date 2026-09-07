@@ -1,0 +1,111 @@
+{
+  "id": "2026-09-08-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-09-08 Kconfig 회귀·Rust API — Linux Toolchain",
+  "headline": "oldconfig 개행 없는 입력 버그, checkkconfigsymbols 비교 오류, Rust jiffies 변환 API, container TOML 설정이 메일링 리스트에 올라왔습니다.",
+  "date": "2026-09-08",
+  "summary": "Erkan Erdem의 Kconfig 패치들이 conf 파서·문서·심볼 검증 회귀를 동시에 겨냥하고, Rust for Linux는 나노초→jiffies 변환 API를 제안합니다. Guillaume Tucker의 scripts/container TOML 프로파일 지원도 빌드 재현성 측면에서 주목할 만합니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "kbuild",
+    "Kconfig",
+    "Rust"
+  ],
+  "highlights": [
+    {
+      "title": "oldconfig 개행 없는 입력에서 마지막 문자 삭제",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "kbuild·Kconfig·자동화된 defconfig/syncconfig 운영자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/07/1276",
+      "if": "파이프나 CI 스크립트로 oldconfig·oldaskconfig에 개행 없는 int/hex 답을 넣는 워크플로를 운영 중이면",
+      "do": "42→4, 0xff→0xf처럼 값이 한 자리 줄어드는 증상이 있는지 재현 테스트를 돌려보세요",
+      "verify": "Erkan Erdem v2의 strcspn() 수정과 scripts/kconfig/tests 회귀 테스트 12건을 원문 스레드에서 확인하세요"
+    },
+    {
+      "title": "checkkconfigsymbols HEAD-relative 비교가 심볼 누락",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "kbuild·Kconfig 심볼 검증 스크립트 사용자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/07/1278",
+      "if": "checkkconfigsymbols.py로 --diff HEAD^..HEAD 같은 범위를 돌려 Kconfig 심볼 무결성을 검사한다면",
+      "do": "reset 전 revision 고정 없이 돌린 결과가 신뢰할 수 있는지, 새로 undefined된 심볼을 놓치지 않았는지 점검하세요",
+      "verify": "v2의 git rev-parse --verify 선행 고정 패치와 execute() stderr 인자 추가를 원문에서 확인하세요"
+    },
+    {
+      "title": "Rust Delta::to_jiffies_timeout() 추가",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust for Linux 시간 API·wait/timeout 경로 사용자",
+      "verifyLink": "https://ratatoskr.run/rust-for-linux/2026/09/17525223/t",
+      "if": "Rust 커널 코드에서 나노초 간격을 jiffies 타임아웃으로 변환하는 경로를 다룬다면",
+      "do": "C __msecs_to_jiffies()/nsecs_to_jiffies64() 대신 mul_u64_add_u64_div_u64() 기반 Rust 변환과 HZ=1000 한계를 원문 설명과 대조해보세요",
+      "verify": "FUJITA Tomonori v2의 rust/helpers/math.c 래퍼·KUnit·doctest 내용을 스레드에서 확인하세요"
+    },
+    {
+      "title": "scripts/container에 TOML 프로파일 설정",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "scripts/container·컨테이너 커널 빌드 사용자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/02/902",
+      "if": "컨테이너화된 커널 빌드·docs·CI에서 scripts/container 옵션을 반복 지정하고 있다면",
+      "do": ".container.toml과 -c/-p 프로파일로 image·runtime·registry 등을 고정할 수 있는지 v3 패치를 검토하세요",
+      "verify": "CLI가 설정 파일·profile보다 우선한다는 우선순위 규칙과 Python 3.11 tomllib 요구를 원문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**kconfig: preserve the final answer when input has no newline**\n\nErkan Erdem v2는 conf_string()이 fgets() 결과의 마지막 글자를 무조건 개행으로 가정해 잘라내 EOF 입력의 마지막 숫자/문자를 삭제하는 버그를 strcspn(line, \"\\n\")로 고칩니다. scripts/kconfig/tests/conf_no_newline에 oldconfig·oldaskconfig용 회귀 테스트 12건을 추가합니다.\n\n영향: 파이프나 자동화 스크립트로 oldconfig/oldaskconfig에 개행 없는 답을 넣는 CI·distro·LLVM allmodconfig 워크플로에서 int/hex 값이 조용히 한 자리 줄어드는 회귀를 막습니다.\n\n> For example, feeding 42 to an integer prompt stores 4, and feeding 0xff to a hexadecimal prompt stores 0xf.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/07/1276)\n\n**checkkconfigsymbols: resolve revisions before resetting the tree**\n\nErkan Erdem v2는 checkkconfigsymbols.py가 commit_a로 git reset --hard 한 뒤 commit_b를 해석해 HEAD^..HEAD가 자기 자신과 비교되는 문제를, 두 revision을 reset 전에 rev-parse --verify로 고정하는 방식으로 고칩니다.\n\n영향: Kconfig 심볼 무결성 검사를 커밋 범위·브랜치명으로 돌리는 kbuild·서브시스템 유지보수자가 HEAD-relative 비교에서 새로 undefined된 심볼을 놓치지 않게 합니다.\n\n> For example, --diff HEAD^..HEAD compares the parent with itself and silently misses newly undefined symbols.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/07/1278)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**docs: kconfig: fix shell function syntax in caveats**\n\nErkan Erdem v2는 kconfig-macro-language.rst caveats의 $(shell ...) 예제에 Kconfig 필수 쉼표 구분자를 넣고, Julian Braha 리뷰에 따라 쉼표 뒤 공백까지 제거합니다. 잘못된 예제는 shell 함수 대신 미정의 변수로 확장되어 CC_HAS_ENDIAN_FLAG 샘플이 파싱에 실패했습니다.\n\n영향: Kconfig 매크로 문법을 문서로 배우는 kbuild·LLVM/Kconfig 유지보수자가 복사-붙여넣기 예제로 실패하지 않도록, 공식 caveats가 실제 conf 파서 규칙과 일치해야 합니다.\n\n> These expressions expand as undefined variables rather than invoking the shell function, so the supposedly working CC_HAS_ENDIAN_FLAG example fails to parse.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/07/1268)\n\n**rust: time: add Delta::to_jiffies_timeout() for timeout conversion**\n\nFUJITA Tomonori v2는 Delta<Nsec>::to_jiffies_timeout()을 추가해 C __msecs_to_jiffies()/nsecs_to_jiffies64()의 HZ 의존 한계를 피하고, mul_u64_add_u64_div_u64()로 ceil(nanos*HZ/NSEC_PER_SEC)를 Rust에서 계산합니다. rust/helpers/math.c 래퍼와 RUST_TIME_KUNIT_TEST·포화/올림 doctest를 포함합니다.\n\n영향: Rust 커널 동기화·대기 API가 나노초 간격을 jiffies 타임아웃으로 안전히 변환해야 32비트 HZ=1000 등에서 MAX_JIFFY_OFFSET 초과·단위 혼동 회귀를 막을 수 있습니다.\n\n> With HZ=1000 a jiffy is a millisecond, so __msecs_to_jiffies() returns its argument unchanged and never caps it at MAX_JIFFY_OFFSET.\n\n[원문 확인](https://ratatoskr.run/rust-for-linux/2026/09/17525223/t)\n\n**scripts: add TOML config to container tool**\n\nGuillaume Tucker v3는 scripts/container에 .container.toml 지원을 추가합니다. DEFAULT·명명 profile 섹션, -c/--config-file·-p/--config-profile, CLI가 파일 값보다 우선하며 image/runtime/registry/uid/gid/env_file를 dataclass Config.from_toml()로 로드합니다. Python tomllib 사용으로 문서상 최소 Python 3.11이 필요합니다.\n\n영향: 컨테이너화된 커널 빌드·docs·CI에서 반복되는 scripts/container 옵션을 프로파일로 고정해 kbuild·LLVM·distro 툴체인 워크플로 재현성을 높입니다.\n\n> Add support for a TOML configuration file to the scripts/container tool.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/02/902)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "docs: kconfig: fix shell function syntax in caveats",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/07/1268",
+      "note": "thread"
+    },
+    {
+      "title": "kconfig: preserve the final answer when input has no newline",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/07/1276",
+      "note": "thread"
+    },
+    {
+      "title": "checkkconfigsymbols: resolve revisions before resetting the tree",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/07/1278",
+      "note": "thread"
+    },
+    {
+      "title": "rust: time: add Delta::to_jiffies_timeout() for timeout conversion",
+      "url": "https://ratatoskr.run/rust-for-linux/2026/09/17525223/t",
+      "note": "thread"
+    },
+    {
+      "title": "scripts: add TOML config to container tool",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/02/902",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-07T18:27:04.392Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
