@@ -1,0 +1,123 @@
+{
+  "id": "2026-09-09-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-09-09 libbpf·IRQ 컨텍스트 — Perf·RT 렌즈",
+  "headline": "libbpf BTF dedup 회귀 수정, softirq v2 sanitiser 검증, NOMMU kfunc wrap guard 누락이 주요 신호입니다.",
+  "date": "2026-09-09",
+  "summary": "libbpf는 BTF dedup array 비교 버그와 arena map 크기 검사 시점 변경 패치가 올라왔고, softirq IRQ exit v2는 KCSAN·KMSAN QEMU 테스트에서 context 분류가 개선된 것으로 보고됩니다. BPF user memory kfunc 리팩터에서는 !CONFIG_MMU addr+len wrap guard 누락 가능성이 bpf-ci에서 지적되었습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "libbpf BTF dedup array 비교 회귀 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "libbpf BTF dedup·CO-RE relocation·bpftool/libbpf 로더 유지보수 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/bpf/20260908164920.108074-2-caomingpei@gmail.com/",
+      "if": "62e23f183839 이후 recursive BTF dedup으로 CO-RE relocation metadata가 손상될 수 있다면",
+      "do": "btf_dedup_identical_types()의 a2 = btf_array(t2) 수정 패치를 libbpf·bpftool 빌드에 반영하고 CO-RE selftest를 재실행하세요",
+      "verify": "패치 스레드와 Fixes 커밋 62e23f183839을 확인하세요"
+    },
+    {
+      "title": "BPF kfunc NOMMU addr wrap guard 회귀",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF user memory kfunc·NOMMU·BPF LSM exec policy·bpf-ci 보안 리뷰 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/bpf/4ef240a5bea36ff84df9589671367832860795159386a4c8fba546a0fa8b786f@mail.kernel.org/",
+      "if": "!CONFIG_MMU에서 bpf_copy_from_user_task() 경로를 추적 중이라면",
+      "do": "access_remote_vm() 경유 리팩터가 access_process_vm()의 addr+len wrap guard를 빠뜨렸는지 diff와 maintainer 응답을 추적하세요",
+      "verify": "bpf-ci bot 지적 스레드와 mm/nommu.c 원문을 대조하세요"
+    },
+    {
+      "title": "softirq IRQ exit v2 sanitiser 검증",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "PREEMPT_RT·softirq/hardirq context·KCSAN/KMSAN/ftrace 유지보수 담당",
+      "verifyLink": "https://lkml.iu.edu/2609.0/12220.html",
+      "if": "IRQ return path에서 ftrace·KCSAN·KMSAN context 오분류를 추적 중이라면",
+      "do": "v2가 HARDIRQ_OFFSET를 tick_irq_exit() 직전까지 유지하는 변경과 QEMU sanitiser 결과를 리뷰하세요",
+      "verify": "v2 스레드의 KCSAN·KMSAN 테스트 인용을 확인하세요"
+    },
+    {
+      "title": "libbpf arena map 크기 검사 load 시점 이전",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "libbpf·BPF arena·cross-compile selftest·skeleton 생성 워크플로 유지보수 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/bpf/20260908-libbpf_arena_thing-v1-1-0092c0e0d91b@meta.com/",
+      "if": "x86에서 arm64(64K page) BPF selftest skeleton 생성이 -E2BIG로 실패한다면",
+      "do": "arena map 크기 검사를 bpf_object__relocate() load 단계로 옮긴 패치 적용 가능성을 검토하세요",
+      "verify": "패치 스레드에서 cross-compile 실패 사례 설명을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**libbpf: Fix array comparison in BTF dedup**\n\nbtf_dedup_identical_types()의 BTF_KIND_ARRAY 처리에서 두 번째 array descriptor를 t1에서 읽는 copy-paste 버그(a2 = btf_array(t1))를 t2로 수정합니다. 서로 다른 struct가 잘못 병합되어 CO-RE relocation metadata가 손상될 수 있었습니다.\n\n영향: 62e23f183839에서 도입한 recursive BTF dedup이 array 비교 오류로 CO-RE relocation을 깨뜨릴 수 있어 libbpf BTF dedup·CO-RE를 쓰는 BPF 프로그램 로더와 vmlinux/module BTF 처리에 회귀 위험이 있습니다.\n\n> a1 = btf_array(t1); - a2 = btf_array(t1); + a2 = btf_array(t2);\n\n[원문 확인](https://lore-kernel.gnuweeb.org/bpf/20260908164920.108074-2-caomingpei@gmail.com/)\n\n**bpf: mm_struct user memory kfuncs — !CONFIG_MMU address-wrap guard regression**\n\nbpf_copy_from_user_task()를 access_process_vm()에서 access_remote_vm() 경유 __bpf_copy_from_user_mm()로 리팩터하는 v6 시리즈에서, !CONFIG_MMU의 access_process_vm() addr+len wrap guard가 비문자열 경로에서 사라집니다. bpf-ci bot은 wrapping address가 unclamped read로 이어져 memory disclosure 또는 bus fault 가능성을 지적합니다.\n\n영향: NOMMU BPF 배포나 user memory kfunc 시리즈를 추적하는 팀은 changelog의 no behavior change 주장과 달리 bpf_copy_from_user_task() 동작이 바뀌고, BPF program이 넘긴 address에 대한 검증 공백이 생길 수 있습니다. security_bprm_check()용 mm kfunc 롤아웃 전에 수정이 필요할 수 있습니다. 작성자·maintainer의 bpf-ci 지적 응답·수정 패치 여부는 확인이 필요합니다.\n\n> When addr + len wraps to a small value, the check is false, len stays unclamped, and copy_from_user_page() reads past vma->vm_end.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/bpf/4ef240a5bea36ff84df9589671367832860795159386a4c8fba546a0fa8b786f@mail.kernel.org/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**softirq: Preserve interrupt context during IRQ exit (v2 진척)**\n\nv2는 __irq_exit_rcu()에서 HARDIRQ_OFFSET를 tick_irq_exit() 직전까지 유지하고, direct softirq에서는 SOFTIRQ_OFFSET로 전환·복원합니다. irq_count() == HARDIRQ_OFFSET로 softirq eligibility를 검사합니다. QEMU/sanitizer 테스트에서 KCSAN 25건 모두 interrupt context로 분류되었고, KMSAN은 24K IRQ-exit window에서 task state 변경이 0회로 보고됩니다.\n\n영향: PREEMPT_RT·threadirqs·sanitizer/ftrace를 쓰는 팀의 IRQ return path context accounting 오류가 KCSAN false attribution, KMSAN task metadata 오염, ftrace recursion slot 오선택으로 나타날 수 있어 RT/perf tracing 신뢰성에 직결됩니다. mainline·PREEMPT_RT 트리 머지 일정과 Pi 400 외 실기 cyclictest p99.9 차이 재현 여부는 확인이 필요합니다.\n\n> KCSAN attributed all 25 target reports to interrupt context. KMSAN selected or changed task state zero times in 24K IRQ-exit windows\n\n[원문 확인](https://lkml.iu.edu/2609.0/12220.html)\n\n**libbpf: defer arena map size check to load time**\n\ninit_arena_map_data()가 bpf_object__open() 시 빌드 호스트 page size로 arena map 크기를 검사해 x86(4K)에서 arm64(64K) BPF selftests를 cross-compile할 때 skeleton generation이 실패할 수 있었습니다. 패치는 크기 검사를 bpf_object__relocate()의 load 단계로 옮겨 실행 중 커널 page size로 arena data offset 계산 전에 map이 충분한지 확인합니다.\n\n영향: cross-arch BPF CI·skeleton 생성·arena map을 쓰는 selftest/도구는 빌드 호스트와 타깃 page size가 다를 때 libbpf가 오탐으로 -E2BIG를 내는 문제를 피해야 합니다. Sashiko review가 지적한 SHT_NOBITS .arena section NPD 가능성과 bpf-next 머지 일정은 확인이 필요합니다.\n\n> a1 = btf_array(t1); - a2 = btf_array(t1); + a2 = btf_array(t2);\n\n[원문 확인](https://lore-kernel.gnuweeb.org/bpf/20260908-libbpf_arena_thing-v1-1-0092c0e0d91b@meta.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "libbpf: defer arena map size check to load time",
+      "url": "https://lore-kernel.gnuweeb.org/bpf/20260908-libbpf_arena_thing-v1-1-0092c0e0d91b@meta.com/",
+      "note": "thread"
+    },
+    {
+      "title": "libbpf: Fix array comparison in BTF dedup",
+      "url": "https://lore-kernel.gnuweeb.org/bpf/20260908164920.108074-2-caomingpei@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "libbpf: Improve BTF dedup handling of identical BTF types",
+      "url": "https://github.com/jhovold/linux/commit/62e23f183839c3d718ab36ce1c0cf7cb4b9c05a4",
+      "note": "commit"
+    },
+    {
+      "title": "softirq: Preserve interrupt context during IRQ exit",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/05/154",
+      "note": "thread"
+    },
+    {
+      "title": "softirq v2: IRQ exit context accounting",
+      "url": "https://lkml.iu.edu/2609.0/12220.html",
+      "note": "thread"
+    },
+    {
+      "title": "bpf-ci: NOMMU addr+len wrap guard regression",
+      "url": "https://lore-kernel.gnuweeb.org/bpf/4ef240a5bea36ff84df9589671367832860795159386a4c8fba546a0fa8b786f@mail.kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "mm/nommu.c access_process_vm and access_remote_vm",
+      "url": "https://github.com/torvalds/linux/blob/master/mm/nommu.c",
+      "note": "commit"
+    },
+    {
+      "title": "bpf: mm_struct user memory kfuncs v5",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/07/2362",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-08T18:40:32.280Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

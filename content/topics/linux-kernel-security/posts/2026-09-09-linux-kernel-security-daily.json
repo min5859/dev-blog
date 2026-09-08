@@ -1,0 +1,158 @@
+{
+  "id": "2026-09-09-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-09-09 powerpc KASAN 게이트 — 커널 보안",
+  "headline": "powerpc KASAN 툴체인 요구가 강화되고, kpkeys 기반 페이지 테이블 하드닝 RFC 논의가 이어집니다.",
+  "date": "2026-09-09",
+  "summary": "Mukesh Kumar Chaurasiya의 powerpc KASAN 패치가 memintrinsic prefix 미지원 툴체인에서의 shadow 검사 우회를 막기 위해 HAVE_ARCH_KASAN 선택을 게이트합니다. Kevin Brodsky의 kpkeys RFC v9는 protection key로 커널 데이터를 read-only로 두는 하드닝 설계 논의를 계속합니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "powerpc KASAN memintrinsic prefix 필수화",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "powerpc KASAN·하드닝·CI를 다루는 아키텍처·보안 엔지니어",
+      "verifyLink": "https://lists.openwall.net/linux-hardening/2026/09/08/4",
+      "if": "powerpc에서 GENERIC_ENTRY와 KASAN을 함께 쓰는 CI·하드닝 빌드를 운영하는 경우",
+      "do": "GCC 9 등 구형 툴체인에서 KASAN이 비활성화되거나 빌드가 실패할 수 있으니 툴체인 요구사항을 점검하세요",
+      "verify": "패치 스레드에서 PPC_CC_HAS_KASAN_MEMINTRINSIC_PREFIX 게이트와 mem*() 우회 경로 설명을 확인하세요"
+    },
+    {
+      "title": "kpkeys 기반 페이지 테이블 하드닝 RFC",
+      "priority": "상",
+      "impactType": "project",
+      "affectedAudience": "커널 메모리 보호·arm64 MMU·linux-hardening 추적자",
+      "verifyLink": "https://lists.openwall.net/linux-hardening/2026/09/08/9",
+      "if": "protection key로 커널 페이지 테이블을 read-only로 두는 하드닝 방향을 추적하는 경우",
+      "do": "kpkeys context 정의·중첩 enter/leave 동작과 초기 PT walk 방식 재검토 가능성을 검토하세요",
+      "verify": "Kevin Brodsky 응답 스레드와 RFC v9 원문에서 pkey 권한 모델 설명을 확인하세요"
+    },
+    {
+      "title": "Intel VSEC deps bounds 어노테이션",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "x86 플랫폼 드라이버·bounds sanitizer 하드닝 추적자",
+      "verifyLink": "https://lists.openwall.net/linux-hardening/2026/09/08/3",
+      "if": "Intel VSEC 플랫폼 드라이버나 __counted_by_ptr 롤아웃을 추적하는 경우",
+      "do": "intel_vsec_platform_info::deps에 __counted_by_ptr(num_deps)가 추가된 패치의 머지 일정을 주시하세요",
+      "verify": "하드닝 스레드에서 CONFIG_UBSAN_BOUNDS·CONFIG_FORTIFY_SOURCE 활성화 설명을 확인하세요"
+    },
+    {
+      "title": "kpkeys guard 매크로 문서 정비",
+      "priority": "하",
+      "impactType": "project",
+      "affectedAudience": "kpkeys·커널 메모리 보호 RFC 추적자",
+      "verifyLink": "https://lists.openwall.net/linux-hardening/2026/09/08/5",
+      "if": "kpkeys RFC v9의 공개 API 문서 품질을 추적하는 경우",
+      "do": "guard 매크로 설명에서 cleanup.h 스타일의 \"helper to define\" 표현 수용 여부를 확인하세요",
+      "verify": "Mike Rapoport와 Kevin Brodsky의 리뷰 교환에서 문구 변경안을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.2.4 stable**\n\n2026-09-07 공개된 Linux 7.2.4가 현재 활성 7.2.y 안정 릴리스로, 711건의 백포트를 포함합니다.\n\n영향: 7.1.y EOL 이후 권장 업그레이드 대상이며, LSM·WiFi·I3C 경로의 메모리 안전 수정을 받을 수 있습니다.\n\n> I'm announcing the release of the 7.2.4 kernel. All users of the 7.2 kernel series must upgrade.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/07/2180)\n\n**Linux 7.1.13 stable · EOL**\n\n7.1.y 시리즈는 7.1.13이 최종 릴리스이며 EOL로 선언되었습니다.\n\n영향: 7.1.y는 더 이상 보안 업데이트를 받지 않으므로 활성 7.2.y로 이전이 필요합니다.\n\n> Note, the 7.1.y kernel series is now end-of-life. Please move to the 7.2.y kernel series at this point in time.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/02/1497)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**platform/x86/intel/vsec: Annotate deps with __counted_by_ptr()**\n\nThorsten Blum 패치가 intel_vsec_platform_info::deps 포인터에 __counted_by_ptr(num_deps)를 추가해 CONFIG_UBSAN_BOUNDS와 CONFIG_FORTIFY_SOURCE 기반 접근 범위 검사를 활성화합니다.\n\n영향: Intel VSEC 플랫폼 드라이버 경로에 bounds sanitizer 어노테이션을 확대하는 하드닝 정비입니다.\n\n> Add __counted_by_ptr() to intel_vsec_platform_info::deps to enable access bounds checking via CONFIG_UBSAN_BOUNDS and CONFIG_FORTIFY_SOURCE.\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/09/08/3)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**powerpc/kasan: require memintrinsic prefix support for KASAN**\n\nMukesh Kumar Chaurasiya의 패치가 powerpc에서 GENERIC_ENTRY와 KASAN을 함께 쓸 때 컴파일러 memintrinsic prefix 지원을 필수로 만들고, HAVE_ARCH_KASAN 선택을 PPC_CC_HAS_KASAN_MEMINTRINSIC_PREFIX에 게이트합니다.\n\n영향: 구형 툴체인(GCC 9 등)에서 mem*() 호출이 KASAN shadow 검사를 우회할 수 있는 경로를 막습니다. .noinstr.text에 mem_64.S 등을 옮기는 장기 대안의 머지 일정은 확인하지 못했습니다.\n\n> plain mem*() calls from instrumented code fall through to the raw assembly implementations in mem_64.S / copy_32.S, completely bypassing the KASAN shadow check.\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/09/08/4)\n\n**pkeys-based page table hardening**\n\nKevin Brodsky가 Linu Cherian의 kpkeys RFC v9 리뷰에 응답해 kpkeys/kpkeys context 정의를 문서에 추가하고, 컨텍스트별 pkey 권한 모델·중첩 enter/leave 동작을 설명했습니다.\n\n영향: protection key로 커널 페이지 테이블을 기본 read-only로 두는 하드닝 RFC의 핵심 설계 논의가 계속됩니다. v7.3 머지 목표가 아니며 성능 오버헤드·다른 arch 확장 일정은 확인이 필요합니다.\n\n> The enter/leave logic does support nesting, since leave() restores the pkeys register as it was on enter(), but whether the inner context has sufficient permissions will depend on the situation.\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/09/08/9)\n\n**mm: Introduce kpkeys**\n\nKevin Brodsky의 kpkeys RFC v9 01/25 패치에 대해 Mike Rapoport가 guard 매크로 문서 설명에서 \"define\" 대신 cleanup.h 스타일의 \"helper to define\" 표현을 제안했습니다.\n\n영향: kpkeys API 문서·가독성에 대한 사소한 리뷰이지만, 커널 pkey 기반 하드닝 프레임워크의 공개 인터페이스가 정리되는 과정을 보여줍니다.\n\n> Then maybe \"helper to define\", like cleanup.h does?\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/09/08/5)\n\n**Linux 6.12.109 longterm**\n\n2026-09-07 공개된 6.12.109 LTS에 smack cred UAF, hugetlb huge_ptep_get(), rtl8xxxu rx_urb_wq UAF, i3c IBI OOB 등 395건의 백포트가 포함됩니다.\n\n영향: 6.12 기반 장기 지원 제품이 LSM·WiFi·I3C 경로의 알려진 메모리 안전 결함 수정을 이번 태그로 받을 수 있습니다. 개별 백포트의 CVE 번호 매핑은 이번 조사에서 확인하지 못했습니다.\n\n> I'm announcing the release of the 6.12.109 kernel. All users of the 6.12 kernel series must upgrade.\n\n[원문 확인](https://lkml.iu.edu/2609.0/16278.html)\n\n**Linux 6.18.50 longterm**\n\n2026-09-07 공개된 6.18.50 LTS에 smack cred UAF, timekeeping adjtimex 반환값 검사, hugetlb huge_ptep_get(), wifi mt7996 EEPROM 검증 등 546건의 백포트가 포함됩니다.\n\n영향: 6.18 LTS 사용자는 LSM·시간 동기·WiFi 드라이버의 보안·안정성 수정을 최신 longterm 태그로 수확할 수 있습니다. 개별 백포트의 CVE 번호 매핑은 이번 조사에서 확인하지 못했습니다.\n\n> I'm announcing the release of the 6.18.50 kernel. All users of the 6.18 kernel series must upgrade.\n\n[원문 확인](https://lkml.iu.edu/2609.0/16292.html)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Linux 7.1.13 stable EOL 공지",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/02/1497",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-7.1.13",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.13",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 7.2.4 stable 공지",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/07/2180",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-7.2.4",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.4",
+      "note": "changelog"
+    },
+    {
+      "title": "powerpc/kasan memintrinsic prefix 패치",
+      "url": "https://lists.openwall.net/linux-hardening/2026/09/08/4",
+      "note": "thread"
+    },
+    {
+      "title": "intel/vsec __counted_by_ptr 패치",
+      "url": "https://lists.openwall.net/linux-hardening/2026/09/08/3",
+      "note": "thread"
+    },
+    {
+      "title": "__counted_by_ptr 매크로 소개",
+      "url": "https://lists.openwall.net/linux-hardening/2026/01/16/7",
+      "note": "thread"
+    },
+    {
+      "title": "kpkeys guard 매크로 문서 리뷰",
+      "url": "https://lists.openwall.net/linux-hardening/2026/09/08/5",
+      "note": "thread"
+    },
+    {
+      "title": "kpkeys page table hardening RFC 리뷰",
+      "url": "https://lists.openwall.net/linux-hardening/2026/09/08/9",
+      "note": "thread"
+    },
+    {
+      "title": "kpkeys RFC v9 제안",
+      "url": "https://lists.openwall.net/linux-hardening/2026/09/01/17",
+      "note": "thread"
+    },
+    {
+      "title": "early page table walk 방식 재검토 제안",
+      "url": "https://lists.openwall.net/linux-hardening/2026/09/07/35",
+      "note": "thread"
+    },
+    {
+      "title": "Linux 6.12.109 longterm 공지",
+      "url": "https://lkml.iu.edu/2609.0/16278.html",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-6.12.109",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.12.109",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 6.18.50 longterm 공지",
+      "url": "https://lkml.iu.edu/2609.0/16292.html",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-6.18.50",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.18.50",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-08T18:28:54.429Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

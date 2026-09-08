@@ -1,0 +1,136 @@
+{
+  "id": "2026-09-09-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-09-09 KCOV·vDSO 검사 — Linux 툴체인",
+  "headline": "KCOV entry/exit·메모리 추적 확장 RFC, vdsocheck 빌드 검사, ftrace 패치 거부 처리, Rust DRM GEM 회귀 수정이 툴체인 스레드를 이끈다.",
+  "date": "2026-09-09",
+  "summary": "Jann Horn의 KCOV RFC v3와 Thomas Weißschuh의 vdsocheck 도구가 커널 퍼징·빌드 검증 경로를 확장한다. ftrace 코어 변경과 Rust drm/gem pin_init 수정은 arm64 kCFI·DRM 빌드 회귀를 막는다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "툴체인",
+    "KCOV",
+    "kbuild"
+  ],
+  "highlights": [
+    {
+      "title": "vdso: Add the vdsocheck tool",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "vDSO·kbuild·크로스 컴파일 빌드 유지보수자",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20260908-vdso-absolute-reloc-v5-12-3a93791af1cf@linutronix.de/",
+      "if": "크로스 컴파일 환경에서 vDSO 빌드 경로를 유지보수하는 경우",
+      "do": "Rust 미설치 시 shell/readelf 폴백 동작과 absolute relocation 검사 결과를 빌드 로그에서 확인하세요",
+      "verify": "v5 시리즈 merge 일정과 Kconfig 전환 옵션 제거 시점은 스레드에서 추가 확인이 필요합니다"
+    },
+    {
+      "title": "KCOV: entry/exit records, memory access records, and delay injection",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "KCOV·LLVM SanitizerCoverage·커널 퍼징·KASAN 사용자",
+      "verifyLink": "https://lore.kernel.org/llvm/20260908-kcov-extrecord-v3-0-dcbc11593e88@google.com/",
+      "if": "커스텀 Clang·KCOV 기반 퍼징 워크플로를 운영하는 경우",
+      "do": "LLVM >=23.1.0 및 trace-pc-entry-exit 지원 여부를 빌드 환경에서 점검하세요",
+      "verify": "distro/CI 기본 KCOV 빌드의 성능·빌드 시간 영향은 RFC v3 스레드 논의를 따라 확인하세요"
+    },
+    {
+      "title": "ftrace: Let ftrace_call_adjust() reject a patch site",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "ftrace·arm64 kCFI·Rust-for-Linux 빌드 설정 추적자",
+      "verifyLink": "https://lkml.iu.edu/2609.0/09053.html",
+      "if": "arm64 CALL_OPS+kCFI 또는 ftrace_init_nop 경로를 테스트하는 경우",
+      "do": "ftrace_call_adjust()가 0을 반환하는 패치 사이트가 skipped로 처리되는지 부팅 테스트에서 확인하세요",
+      "verify": "RFC v2 제출·merge 일정과 prefix NOP 검사 반영 순서는 스레드에서 확인이 필요합니다"
+    },
+    {
+      "title": "rust/drm/gem: initialize callbacks with ..pin_init::zeroed()",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "Rust for Linux·DRM GEM 바인딩 사용자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260908175427.47207-1-klarasmodin@gmail.com/",
+      "if": "CONFIG_DRM_RUST 등 Rust GEM 경로를 allmodconfig·CI에서 빌드하는 경우",
+      "do": "C drm/gem API 콜백 추가 시 Rust VTABLE 갱신 누락 여부를 pin_init::zeroed() 패턴으로 점검하세요",
+      "verify": "b67d2d039f64 Fixes 체인 upstream 반영 후 merge 여부를 원문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ftrace: Let ftrace_call_adjust() reject a patch site**\n\nJose Fernandez RFC 1/8은 ftrace_process_locs()가 ftrace_call_adjust()가 0을 반환한 패치 사이트를 skipped로 처리하도록 kernel/trace/ftrace.c를 수정한다. Steven Rostedt는 arm64 mis-alignment에 국한된 주석 대신 \"The architecture may return 0 to reject a patch site\" 일반 주석을 승인했다.\n\n영향: arm64 CALL_OPS+kCFI 시리즈가 정렬되지 않거나 prefix NOP 레이아웃에 맞지 않는 사이트를 거부하는 전제이며, 코어 ftrace가 아키텍처 거부 값을 올바르게 처리하지 않으면 ftrace_init_nop() BUG_ON() 부팅 크래시 위험이 있다.\n\n> Test the adjusted address too and count the site as skipped.\n\n[원문 확인](https://lkml.iu.edu/2609.0/09053.html)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**vdso: Add the vdsocheck tool**\n\nThomas Weißschuh v5 12/24은 Rust 기반 lib/vdso/check/vdsocheck로 vDSO 오브젝트의 허용되지 않은 absolute relocation을 빌드 시 검사한다. Peter Zijlstra가 Rust 설치 필요성을 묻자 Thomas는 Rust가 없으면 기존 shell/readelf 검사로 폴백하고 CONFIG_RUST는 필요 없다고 답했다.\n\n영향: GCC 등이 vDSO에 잘못된 absolute relocation을 내면 런타임에 깨지는 문제(arm64 0c314cda9325 워크어라운드 계열)를 빌드 단계에서 잡는 도구이며, Rust 툴체인 없는 일반 커널 빌드에 강제 의존을 추가하지 않는지 확인해야 한다.\n\n> Introduce a tool to check for absolute relocations during the build, as the current inline-shell logic is not expressive enough.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20260908-vdso-absolute-reloc-v5-12-3a93791af1cf@linutronix.de/)\n\n**KCOV: entry/exit records, memory access records, and delay injection**\n\nJann Horn RFC v3 12패치는 KCOV를 세 부분으로 확장한다: KCOV_TRACE_PC_EXT 함수 entry/exit 레코드, CONFIG_KCOV_MEMORY 메모리 접근·해제·값·타이밍 추적, KCOV_SET_DI 등 delay injection API로 멀티스레드 실행 순서를 강제한다. LLVM trace-pc-entry-exit 지원(dc5c6d008f48, LLVM 23 예상)이 전제다.\n\n영향: KCOV·LLVM SanitizerCoverage·KASAN을 묶어 레이스 조건 단위 테스트·퍼징·수동 재현 도구를 만들 수 있어, 커스텀 Clang/KCOV 빌드와 fuzzing 워크플로를 추적하는 툴체인 엔지니어에게 영향이 크다.\n\n> Part 1: Adds function entry/exit records\n - Part 2: Adds information about memory accesses\n - Part 3: Adds an API for delay injection\n\n[원문 확인](https://lore.kernel.org/llvm/20260908-kcov-extrecord-v3-0-dcbc11593e88@google.com/)\n\n**rust/drm/gem: initialize callbacks with ..pin_init::zeroed()**\n\nKlara Modin 패치는 drm/gem handle_free 콜백 추가(b67d2d039f64) 후 Rust drm::gem VTABLE이 갱신되지 않아 빌드가 깨지는 문제를, 개별 None 대신 ..pin_init::zeroed()로 미지정 콜백을 None으로 초기화하도록 고친다.\n\n영향: C drm/gem API가 콜백을 추가할 때 Rust 바인딩이 누락되면 CONFIG_DRM_RUST 등 Rust GEM 경로에서 allmodconfig·CI 빌드가 실패하므로, pin_init 패턴이 후속 C API 확장의 회귀 방지 모델이 된다.\n\n> use ..pin_init::zeroed() to make all unlisted callbacks None, and remove the existing None-initializations.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260908175427.47207-1-klarasmodin@gmail.com/)\n\n**x86/elf, um/x86/elf: Move relocation constants to UAPI**\n\nThomas Weißschuh v5 02/24은 x86·um ELF relocation 상수를 include/uapi/linux/elf-r.h로 옮겨 vdsocheck·크로스 컴파일 userspace가 쓸 수 있게 한다. Boris Petkov는 UAPI가 아닌 include/linux/ 또는 tools/ 헤더 복사로 충분하다며 UAPI 고정(ABI stone) 우려를 제기했다.\n\n영향: vdso absolute relocation 시리즈 전반의 ELF 상수 공유 방식과 tools/ UAPI 동기화 정책을 결정하므로, kbuild·perf·BPF 등 tools/ 사용자는 헤더 위치·안정성 논의 결과를 따라야 한다.\n\n> These constants are useful for cross-platform userspace, for example to process ELF files during kernel cross-compilation.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20260908-vdso-absolute-reloc-v5-2-3a93791af1cf@linutronix.de/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "vdso: Add the vdsocheck tool",
+      "url": "https://lore.kernel.org/linux-kbuild/20260908-vdso-absolute-reloc-v5-12-3a93791af1cf@linutronix.de/",
+      "note": "thread"
+    },
+    {
+      "title": "vdsocheck Rust 폴백 답변",
+      "url": "https://lore.kernel.org/linux-kbuild/20260908073707.GV4120091@noisy.programming.kicks-ass.net/",
+      "note": "thread"
+    },
+    {
+      "title": "ftrace: Let ftrace_call_adjust() reject a patch site",
+      "url": "https://lkml.iu.edu/2609.0/09053.html",
+      "note": "thread"
+    },
+    {
+      "title": "ftrace reject 주석 논의",
+      "url": "https://lore.kernel.org/rust-for-linux/20260908095253.520c278c@gandalf.local.home/",
+      "note": "thread"
+    },
+    {
+      "title": "KCOV: entry/exit records, memory access records, and delay injection",
+      "url": "https://lore.kernel.org/llvm/20260908-kcov-extrecord-v3-0-dcbc11593e88@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "KCOV CONFIG_KCOV_EXT_RECORDS LLVM 요구사항",
+      "url": "https://lore.kernel.org/llvm/20260908-kcov-extrecord-v3-12-dcbc11593e88@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "rust/drm/gem: initialize callbacks with ..pin_init::zeroed()",
+      "url": "https://lore.kernel.org/rust-for-linux/20260908175427.47207-1-klarasmodin@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "x86/elf: Move relocation constants to UAPI",
+      "url": "https://lore.kernel.org/linux-kbuild/20260908-vdso-absolute-reloc-v5-2-3a93791af1cf@linutronix.de/",
+      "note": "thread"
+    },
+    {
+      "title": "UAPI vs include/linux/ 노출 논의",
+      "url": "https://lore.kernel.org/linux-kbuild/20260908161740-0d79e592-87a6-43c5-9174-84ce1904e639@linutronix.de/",
+      "note": "thread"
+    },
+    {
+      "title": "UAPI 불필요 반박 (Boris Petkov)",
+      "url": "https://lore.kernel.org/linux-kbuild/20260908151238.GBaqAl5iKb64meuPJl@fat_crate.local/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-08T18:32:07.235Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
