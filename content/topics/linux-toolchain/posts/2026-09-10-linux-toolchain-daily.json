@@ -1,0 +1,138 @@
+{
+  "id": "2026-09-10-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-09-10 kbuild 병렬화 가속 — 툴체인",
+  "headline": "Lorenzo Stoakes kbuild 병렬화 시리즈가 allmodconfig 최대 36% 단축을 주장하며 Linus가 Rust 외 대부분 merge를 지지했다.",
+  "date": "2026-09-10",
+  "summary": "kbuild·kallsyms·modpost·objtool·mksysmap·Rust 빌드 경로의 단일 스레드 병목을 병렬화·캐싱하는 23패치 시리즈가 빌드 시간을 크게 줄일 전망이다. Rust DRM GEM 빌드 회귀, dyndbg classmap 검증 강화, auxiliary DeviceId 길이 검사, x86 ELF relocation UAPI 이동도 함께 추적해야 한다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "kbuild 병렬화로 allmodconfig 최대 36% 단축",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "kbuild·modpost·objtool·Rust 빌드 유지보수자, CI allmodconfig 운영자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/08/2774",
+      "if": "일상 allmodconfig·증분 빌드·no-op 빌드 시간이 병목이라면",
+      "do": "Lorenzo Stoakes 23패치 시리즈 리뷰 진척과 merge 범위를 추적하세요",
+      "verify": "Openwall 스레드에서 패치별 빌드 수치와 Linus merge 의사를 확인하세요"
+    },
+    {
+      "title": "C GEM handle_free 추가 후 Rust DRM GEM 빌드 회귀",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "Rust DRM GEM 드라이버 작성자, drm/gem Rust 추상화 유지보수자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/08/2396",
+      "if": "CONFIG_RUST_DRM_GEM 또는 shmem helper를 켠 Rust DRM 드라이버를 빌드한다면",
+      "do": "Klara Modin 패치와 shmem.rs follow-up 포함 여부를 리뷰 스레드에서 확인하세요",
+      "verify": "arm64 Tyr 빌드 로그의 handle_free 누락 오류와 패치 diff를 대조하세요"
+    },
+    {
+      "title": "dyndbg classmap·descriptor 검증 강화",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "dynamic_debug·dyndbg classmap API 사용자, kbuild selftest 유지보수자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/09/111",
+      "if": "dyndbg classmap API를 쓰는 DRM·서브시스템 모듈을 유지한다면",
+      "do": "Jim Cromie v9 34/39 변경의 compile-time static_assert·런타임 overlap 검사를 selftest에 반영하세요",
+      "verify": "modprobe 시 unknown class_id 경고와 multi-classmap 충돌 pr_err 동작을 확인하세요"
+    },
+    {
+      "title": "Rust auxiliary DeviceId 이름 길이 검사",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust auxiliary 디바이스·드라이버 작성자, driver-core Rust 추상화 유지보수자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/09/276",
+      "if": "Rust auxiliary 디바이스 ID 테이블을 작성하거나 Nova 등 auxiliary Rust 드라이버를 개발한다면",
+      "do": "assert 범위·panic 대신 오류 반환·Fixes 태그 등 리뷰 방향이 정리될 때까지 패치 추적을 유지하세요",
+      "verify": "Greg·Danilo 리뷰 코멘트에서 구분자·NUL 포함 길이 검사와 API 형태 변경 여부를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**kbuild: significantly speed up kernel builds**\n\nLorenzo Stoakes 23패치 시리즈가 kbuild·kallsyms·modpost·objtool·mksysmap·Rust 빌드 경로의 단일 스레드 병목을 병렬화·캐싱해 allmodconfig 최대 36%, 증분 빌드 ~70%, no-op ~90% 단축을 주장한다. Linus Torvalds는 Rust 병렬화 패치는 아직 미성이지만 나머지는 merge 지지 의사를 밝혔다.\n\n영향: 일상 커널 빌드·CI allmodconfig·증분 빌드 시간에 직접 영향을 주며, objtool·modpost 등 서브시스템 리뷰 경로도 함께 추적해야 한다. Rust 병렬화 패치(20–22/23) 재제출 일정과 objtool 변경(18–19/23) maintainer 승인 경로는 확인이 필요하다.\n\n> This series makes allmodconfig builds up to 36% faster, incremental builds up to ~70% faster, and noop builds up to ~90% faster.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/08/2774)\n\n**rust/drm/gem: initialize callbacks with ..pin_init::zeroed()**\n\nKlara Modin 패치는 C측 drm/gem handle_free 콜백 추가(b67d2d039f64) 후 Rust drm_gem_object_funcs 초기화가 누락되어 빌드가 깨지는 문제를 ..pin_init::zeroed()로 미지정 콜백을 None으로 채우도록 고친다. 리뷰에서는 shmem.rs VTABLE도 동일 수정이 필요하다는 빌드 실패가 확인됐다.\n\n영향: CONFIG_RUST_DRM_GEM 및 shmem helper를 켠 Rust DRM 드라이버 빌드가 C GEM API 변경에 따라 깨질 수 있어 follow-up 패치를 봐야 한다. shmem.rs 수정이 동일 패치에 포함되는지는 확인이 필요하다.\n\n> When the commit b67d2d039f64 added the handle_free callback, it did not update the rust abstraction, which will cause a build failure when that is enabled.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/08/2396)\n\n**dyndbg: harden classmap and descriptor validation**\n\nJim Cromie v9 34/39는 DYNAMIC_DEBUG_CLASSMAP_USE_ offset compile-time static_assert, ddebug_add_module() 런타임 overlap 검사, 모듈 로드 시 unknown class_id 조기 경고, ddebug_match_desc() WARN_ONCE를 pr_warn_ratelimited로 낮춘다.\n\n영향: dyndbg classmap API를 쓰는 DRM·서브시스템 모듈이 잘못된 offset·class_id 충돌을 modprobe 시점에 잡지 못하면 디버그 쿼리가 조용히 실패하므로 v9 시리즈 검증 변경을 따라야 한다. v9 39패치 시리즈 전체 merge 일정과 DRM classmap 회귀 selftest golden record 갱신 범위는 확인이 필요하다.\n\n> Mirror the compile-time limits of _DEFINE by adding a static_assert to validate the _offset value passed to DYNAMIC_DEBUG_CLASSMAP_USE_.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/09/111)\n\n**rust: auxiliary: validate DeviceId name length**\n\nGeorgios Androutsopoulos 패치는 DeviceId::new()가 modname·name을 40바이트 auxiliary_device_id::name에 복사할 때 길이를 명시 검사해 배열 인덱스 오류 대신 길이 제한 메시지를 내도록 assert!를 추가한다. Greg Kroah-Hartman은 panic 대신 오류 반환을, Danilo Krummrich는 Fixes: 태그 불필요·구분자·NUL 포함 길이 검사 누락·const 컨텍스트 한정 사용을 지적했다.\n\n영향: Rust auxiliary 디바이스 ID 테이블 작성 시 이름 길이 초과가 컴파일 타임에 잡히도록 하는 DX 개선이지만, assert 범위·panic 정책이 정리되기 전에는 Nova 등 auxiliary Rust 드라이버 작성자가 리뷰 방향을 따라야 한다. 구분자·NUL 전체 길이 검사와 Result 반환 API 변경 여부는 확인이 필요하다.\n\n> Check the invariant explicitly instead, so the failure states the length limit rather than an array index.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/09/276)\n\n**x86/elf, um/x86/elf: Move relocation constants to UAPI**\n\nThomas Weißschuh v5 02/24는 x86·um x86 ELF relocation 상수를 arch-private 헤더에서 uapi/linux/elf-r.h로 옮겨 tools/·vdsocheck 등 크로스 플랫폼 빌드 도구가 쓸 수 있게 한다. Borislav Petkov는 UAPI 고정화 우려를, Thomas는 ABI 스펙상 이미 고정된 값이며 tools UAPI 복사 정책과도 맞다고 반박했다.\n\n영향: vdso absolute relocation 검사 시리즈와 tools 헤더 동기화의 기반이라 kbuild·vDSO·크로스 컴파일 도구가 UAPI ELF 상수에 의존하게 되는지 추적해야 한다. v5 vdso 시리즈 merge 시 UAPI 승인 vs tools/include 복사만으로 충분한지 maintainer 합의는 확인이 필요하다.\n\n> Move them from the kernel-private architecture-specific header to the UAPI.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/08/431)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "kbuild: significantly speed up kernel builds",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/08/2774",
+      "note": "thread"
+    },
+    {
+      "title": "Linus merge 지지 의사 (kbuild 병렬화)",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/09/1958",
+      "note": "thread"
+    },
+    {
+      "title": "rust/drm/gem: initialize callbacks with ..pin_init::zeroed()",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/08/2396",
+      "note": "thread"
+    },
+    {
+      "title": "CONFIG_RUST_DRM_GEM_SHMEM_HELPER arm64 Tyr 빌드 실패",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/08/2652",
+      "note": "thread"
+    },
+    {
+      "title": "dyndbg: harden classmap and descriptor validation",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/09/111",
+      "note": "thread"
+    },
+    {
+      "title": "rust: auxiliary: validate DeviceId name length",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/09/276",
+      "note": "thread"
+    },
+    {
+      "title": "Greg Kroah-Hartman panic 대신 오류 반환 요청",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/09/597",
+      "note": "thread"
+    },
+    {
+      "title": "Danilo Krummrich 구분자·NUL 길이 검사 지적",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/09/1262",
+      "note": "thread"
+    },
+    {
+      "title": "x86/elf: Move relocation constants to UAPI",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/08/431",
+      "note": "thread"
+    },
+    {
+      "title": "Borislav Petkov UAPI 고정화 우려",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/08/1939",
+      "note": "thread"
+    },
+    {
+      "title": "Thomas Weißschuh ELF ABI 스펙 고정 반박",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/09/413",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-09T18:35:33.422Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,153 @@
+{
+  "id": "2026-09-10-linux-daily-briefing",
+  "topic": "linux",
+  "title": "2026-09-10 BPF 락업·MPTCP — 리눅스 개발",
+  "headline": "대형 BPF htab 배치 조회가 CPU를 장시간 점유해 soft lockup을 유발하는 수정안과 MPTCP 경로 관리 회귀 패치가 주목받고 있습니다.",
+  "date": "2026-09-10",
+  "summary": "BPF htab 네이티브 batch 경로에 재스케줄 지점을 넣는 v2 패치가 soft lockup 재현 사례를 다루고 있습니다. MPTCP in-kernel PM의 id 0 제거 경로 정리와 cgroup proxy execution CPU 계정 수정도 리뷰가 진행 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "BPF htab batch soft lockup",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "BPF map batch API 사용자, 컨테이너/관측성 플랫폼 엔지니어",
+      "verifyLink": "https://patchew.org/linux/20260909-b4-htab-batch-resched-v2-1-0cb529d8f95a@toxicpanda.com/",
+      "if": "대형 sparse htab에서 batch 조회를 씁니다",
+      "do": "운영 환경 batch 부하를 점검하고 패치 적용을 검토하세요",
+      "verify": "patchew 원문에서 soft lockup 재현 조건을 확인하세요"
+    },
+    {
+      "title": "MPTCP id 0 ADD_ADDR 정리",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "MPTCP in-kernel path manager 사용자, 네트워크 스택/자가 테스트 담당자",
+      "verifyLink": "https://lkml.iu.edu/2608.3/01648.html",
+      "if": "in-kernel PM에서 id 0 경로를 제거합니다",
+      "do": "PM 재선택 시 WARN 재현 여부를 자가 테스트로 확인하세요",
+      "verify": "netdev 스레드의 포트 lookup 이슈 제기를 확인하세요"
+    },
+    {
+      "title": "cgroup proxy CPU 계정",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "cgroup v2/proxy execution 사용자, 스케줄러·컨테이너 플랫폼 엔지니어",
+      "verifyLink": "https://lkml.iu.edu/2609.0/09258.html",
+      "if": "proxy execution으로 cgroup CPU 통계를 봅니다",
+      "do": "donor·executor cgroup 불일치 시 cpu.stat 오차를 모니터링하세요",
+      "verify": "lkml 스레드에서 v2 패치와 Stultz Ack를 확인하세요"
+    },
+    {
+      "title": "arm-smmu-v3 PRI 응답",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "IOMMU/SMMUv3·VFIO·PCIe 가상화 플랫폼 개발자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/01/69",
+      "if": "SMMUv3에서 PCIe PRI page fault를 다룹니다",
+      "do": "IOPF 응답 경로 분기 동작을 플랫폼에서 검증하세요",
+      "verify": "openwall 스레드에서 PRI_RESP 분기와 리뷰를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.2.4 stable**\n\n9월 7일 Greg Kroah-Hartman이 Linux 7.2.4 안정 릴리스를 올렸고, ChangeLog에는 711건의 백포트가 포함됩니다.\n\n영향: 7.2.y를 추적하는 시스템의 최신 안정 수정 묶음이며, 7.1 EOL 이후 실질적인 업그레이드 경로입니다.\n\n> platform/chrome: sensorhub: Fix dropped timestamp events and log spam\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.4)\n\n**Linux 7.3-rc2 mainline**\n\nLinus Torvalds가 9월 6일 Linux 7.3-rc2를 공개했으며, filesystem·drm·networking·bpf·드라이버·도구링 수정이 섞인 통상보다 큰 rc2로 보입니다.\n\n영향: 7.3 개발 주기 초반 회귀를 조기에 잡는 기준점이며, 머지 윈도우 이후 첫 대규모 통합 테스트 타깃입니다. 원문 확인을 권장합니다.\n\n> But not this time - this is a \"full fat\" rc release. And it's not some single cause.\n\n[원문 확인](https://lkml.iu.edu/2609.0/14094.html)\n\n**Linux 7.1.13 stable · EOL**\n\n7.1.y 시리즈는 7.1.13이 마지막 안정 릴리스로 EOL 상태가 유지됩니다.\n\n영향: 7.1 커널을 쓰는 배포·서비스는 이 브랜치의 보안·버그 수정을 더 받지 못하므로 7.2.y로 올려야 합니다.\n\n> Note, the 7.1.y kernel series is now end-of-life.  Please move to the 7.2.y kernel series at this point in time.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/02/1497)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**bpf: Avoid soft lockup in __htab_map_lookup_and_delete_batch()**\n\nJose Fernandez v2 패치는 htab 네이티브 batch 경로에 재스케줄 지점을 추가해, 64개 연속 빈 버킷마다와 copy_to_user() 후 cond_resched_tasks_rcu_qs()를 호출합니다.\n\n영향: 대형 sparse htab에서 BPF_MAP_LOOKUP_BATCH 한 번이 수십 초 CPU를 잡아 soft lockup과 RCU-tasks grace period 지연을 유발할 수 있어 BPF/perf 운영 환경의 전역 응답성에 영향을 줍니다.\n\n> buckets held a CPU inside the batch op for 77+ seconds and triggered the soft lockup watchdog.\n\n[원문 확인](https://patchew.org/linux/20260909-b4-htab-batch-resched-v2-1-0cb529d8f95a@toxicpanda.com/)\n\n**mptcp: pm: kernel: drop pending ADD_ADDR when removing ID0**\n\nin-kernel PM의 id 0 제거 경로에서 pending ADD_ADDR announcement를 mptcp_pm_announced_remove()로 정리하고 add_addr_signaled를 줄이며, lookup 키는 msk local address에 port를 0으로 맞춥니다.\n\n영향: id 0 제거 시 anno_list 정리가 빠지면 이후 PM 재선택에서 WARN_ON_ONCE(mptcp_pm_is_kernel())가 발생할 수 있습니다. 포트 관련 follow-up은 원문에서 확인이 필요합니다.\n\n> Id 0 path: mptcp_nl_remove_id_zero_address() skips cleanup entirely.\n\n[원문 확인](https://lkml.iu.edu/2608.3/01648.html)\n\n**mptcp port-zero lookup 이슈**\n\nSashiko가 mptcp_nl_remove_id_zero_address()의 port-zero lookup 관련 High 이슈를 제기했습니다.\n\n영향: 정리 경로의 port 처리가 불완전할 수 있어 in-kernel PM 사용자는 재현·리뷰 진행을 따라가야 합니다.\n\n> [High] Incomplete fix: in mptcp_nl_remove_id_zero_address() the new cleanup forces `anno_addr.port = 0`\n\n[원문 확인](https://lists.openwall.net/netdev/2026/09/09/364)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**sched: Account cgroup CPU time to the execution context**\n\nHui Su v2 패치는 proxy execution 시 cgroup CPU 시간을 donor가 아니라 실제 실행 태스크(rq->curr)에 기록하도록 kernel/sched/fair.c의 cgroup_account_cputime() 호출을 바꿉니다. John Stultz가 9월 9일 tentative Ack를 달았습니다.\n\n영향: donor와 executor가 다른 cgroup에 있을 때 cpu.stat·태스크 런타임이 어긋나 리소스 계정·모니터링이 잘못될 수 있습니다.\n\n> Keep scheduling state associated with the donor, but charge cgroup CPU usage to rq->curr.\n\n[원문 확인](https://lkml.iu.edu/2609.0/09258.html)\n\n**iommu/arm-smmu-v3: Submit CMDQ_OP_PRI_RESP for IOPF event**\n\narm-smmu-v3 PRI 지원 시리즈는 IOPF page request에 대해 arm_smmu_page_response()가 stall_enabled면 CMDQ_OP_RESUME, pri_enabled면 CMDQ_OP_PRI_RESP를 내도록 분기합니다.\n\n영향: PCIe PRI 기반 IOMMU page fault 응답 경로가 완성되어 SMMUv3에서 하드웨어 page request를 소프트웨어 IOPF로 처리할 수 있습니다.\n\n> arm_smmu_page_response() can therefore key on the master state: CMDQ_OP_RESUME for stall_enabled, CMDQ_OP_PRI_RESP for pri_enabled\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/01/69)\n\n**arm64: Add user and kernel page-fault tracepoints**\n\nJustinien Bouron 패치는 generic page_fault tracepoint를 arm64 do_page_fault()에서 kprobe_page_fault() 이후에 호출합니다. Bouron은 v2가 traction이 없다고 답했으며, merge/ack 상태는 미확인입니다.\n\n영향: arm64에서 user/kernel page fault를 ftrace/perf exceptions 이벤트로 볼 수 있게 해 관측·프로파일링 도구 호환성을 맞추려는 시도로 보입니다.\n\n> Moved the tracepoint after kprobe_page_fault(), as recommended by Leo Yan.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/02/1344)"
+    },
+    {
+      "heading": "기타",
+      "body": "**Linux next-20260909 linux-next**\n\nMark Brown가 9월 9일 linux-next 일일 트리를 게시했으며, Linus 트리 대비 non-merge 커밋 4700건, 4951 파일 변경(+267053/-68394)이며 clang-fixes 재구성과 wireless-next/wireless 충돌이 있었습니다.\n\n영향: 다음 머지 윈도우 후보 변경의 일일 통합 스냅샷으로, 서브시스템 간 충돌·빌드 상태를 조기에 확인하는 기준 트리입니다.\n\n> Non-merge commits (relative to Linus' tree): 4700  4951 files changed, 267053 insertions(+), 68394 deletions(-)\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/09/2221)\n\n**국부 패치 제외 안내**\n\nath12k dangling pointer 수정(이미 Applied)과 Motorcomm YT921x DSA MIB tear 수정 등 드라이버 국소 이슈는 이번 본문에서 제외했습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Linux 7.1.13 릴리스 및 7.1.y EOL",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/02/1497",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-7.1.13",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.13",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 7.3-rc2 announcement",
+      "url": "https://lkml.iu.edu/2609.0/14094.html",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-7.2.4",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.4",
+      "note": "changelog"
+    },
+    {
+      "title": "linux-next Tree for Sep 9",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/09/2221",
+      "note": "changelog"
+    },
+    {
+      "title": "bpf htab batch resched v2",
+      "url": "https://patchew.org/linux/20260909-b4-htab-batch-resched-v2-1-0cb529d8f95a@toxicpanda.com/",
+      "note": "thread"
+    },
+    {
+      "title": "sched cgroup CPU accounting v2",
+      "url": "https://lkml.iu.edu/2609.0/09258.html",
+      "note": "thread"
+    },
+    {
+      "title": "sched cgroup tentative Ack",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/09/370",
+      "note": "thread"
+    },
+    {
+      "title": "arm-smmu-v3 PRI_RESP for IOPF",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/01/69",
+      "note": "thread"
+    },
+    {
+      "title": "arm-smmu-v3 Jonathan Cameron review",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/03/2555",
+      "note": "thread"
+    },
+    {
+      "title": "mptcp drop pending ADD_ADDR on id 0 remove",
+      "url": "https://lkml.iu.edu/2608.3/01648.html",
+      "note": "thread"
+    },
+    {
+      "title": "mptcp port-zero lookup High issue",
+      "url": "https://lists.openwall.net/netdev/2026/09/09/364",
+      "note": "thread"
+    },
+    {
+      "title": "arm64 page-fault tracepoints v2",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/02/1344",
+      "note": "thread"
+    },
+    {
+      "title": "arm64 perf sw page-fault discussion",
+      "url": "https://lkml.iu.edu/2605.2/07459.html",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-09T18:08:39.392Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-newsletter-from-dossier-ko.md"
+  }
+}

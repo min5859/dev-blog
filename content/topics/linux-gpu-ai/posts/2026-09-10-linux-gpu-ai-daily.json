@@ -1,0 +1,130 @@
+{
+  "id": "2026-09-10-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-09-10 HDR SDP 공용화 — GPU·AI 렌즈",
+  "headline": "dri-devel에서 drm/dp HDR SDP 공용화, amdxdna mmap 회귀 수정, nova-core MMU v2 리뷰, msm A750 타임스탬프 교체가 진행됐다.",
+  "date": "2026-09-10",
+  "summary": "Igor Paunovic v2는 i915 HDR SDP 패킹을 공용 helper로 옮기고 max_bpc reset 버그를 고쳤으며, Lizhi Hou는 amdxdna mmap에서 handle_mm_fault() 오용을 제거했다. nova-core MMU v2 페이지 테이블 패치는 Danilo Krummrich 리뷰를 받았고, drm/msm A750은 CX AO Counter로 타임스탬프를 읽도록 바뀌었다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "GPU",
+    "AI"
+  ],
+  "highlights": [
+    {
+      "title": "drm/dp HDR metadata SDP 공용화",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "DesignWare DP bridge·Rockchip display·i915 DP/HDR 통합 담당",
+      "verifyLink": "https://patchew.org/linux/20260909163206.36409-1-royalnet026@gmail.com/",
+      "if": "dw-dp HDR 경로나 Wayland HDR 컴포저 통합을 담당하는 경우",
+      "do": "공용 drm_dp_hdr_metadata_infoframe_sdp_pack()와 max_bpc 프로퍼티 시리즈 병합 여부를 추적하세요",
+      "verify": "v2 cover에서 HDR 출력 패치 2개가 RK3588 dw-dp 시리즈 의존으로 보류됐다는 점을 원문에서 확인하세요"
+    },
+    {
+      "title": "accel/amdxdna handle_mm_fault() 회귀 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "accel/amdxdna·AMD NPU userspace mmap/HMM 통합 담당",
+      "verifyLink": "https://lkml.iu.edu/hypermail/linux/kernel/2609.1/05204.html",
+      "if": "AMD XDNA AI 가속기 GEM mmap·BO import/export 경로를 다루는 경우",
+      "do": "shmem BO에 remap_pfn_range() 대안과 maintainer 응답을 추적하세요",
+      "verify": "Sashiko AI가 shmem folio에 remap_pfn_range()가 MM 불변식을 깨는 [High] 이슈를 제기했으니 리뷰 스레드를 확인하세요"
+    },
+    {
+      "title": "nova-core MMU v2 페이지 테이블 타입",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "nova-core GPU 메모리 관리·Rust pagetable 추상화 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/DLB09PIR3ACS.1CTHUJA4H9PIR@kernel.org/",
+      "if": "nova-core BAR1·VMM 매핑이나 Rust pagetable 추상화를 유지하는 경우",
+      "do": "Danilo가 요청한 fallible 생성자·aperture 타입 제한 반영 여부를 추적하세요",
+      "verify": "패치 changelog의 'Hopper and later'와 모듈 주석의 'Turing, Ampere and Ada' 범위 정합은 추가 확인이 필요합니다"
+    },
+    {
+      "title": "drm/msm/a6xx A750 CX AO Counter 타임스탬프",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "drm/msm·freedreno A750/SM8650 GMU 통합 담당",
+      "verifyLink": "https://lkml.iu.edu/hypermail/linux/kernel/2609.1/04558.html",
+      "if": "SM8650 A750 GMU 프로파일링·동기화 타임스탬프를 다루는 경우",
+      "do": "CX AO Counter와 ALWAYS_ON_COUNTER 동작 차이에 대한 Akhil 질문 응답을 확인하세요",
+      "verify": "v2 merge 전 최종 Reviewed-by 상태와 KGSL system time 사용 여부는 아직 확인되지 않았습니다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**accel/amdxdna: Fix unsafe use of handle_mm_fault()**\n\nLizhi Hou 패치는 mmap 콜백에서 VMA가 아직 링크되지 않은 상태의 handle_mm_fault() 호출을 제거하고, shmem BO는 remap_pfn_range()로 직접 매핑하며 import BO는 invalid mapping으로 첫 command submission 시 fault하도록 바꾼다.\n\n영향: AMD XDNA AI 가속기 드라이버의 GEM mmap 경로는 BO import/export 이후 MM API 계약을 지켜야 하며, 잘못된 fault 경로는 userspace mmap 실패나 메모리 관리 불변식 위반으로 이어질 수 있다.\n\n> handle_mm_fault() must not be called from the mmap callback because the VMA has not yet been linked. For shmem BOs, use remap_pfn_range() instead.\n\n[원문 확인](https://lkml.iu.edu/hypermail/linux/kernel/2609.1/05204.html)\n\nSashiko AI는 shmem folio에 remap_pfn_range()가 special PTE를 만들어 MM 불변식을 깨는 [High] 이슈를 제기했다. shmem BO에 remap_pfn_range()가 적절한 대안인지, vmf_insert·fault handler 경로가 더 맞는지 maintainer 응답이 필요하다.\n\n> [High] Using remap_pfn_range() to map normal refcounted shmem folios creates special PTEs, violating MM invariants.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260909164911.91F811F000FF@smtp.kernel.org/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/dp: shared HDR metadata SDP helper, and max bpc for dw-dp**\n\nIgor Paunovic v2는 원래 5패치 HDR 시리즈를 3패치로 축소해 i915의 HDR metadata SDP 패킹을 공용 drm_dp_hdr_metadata_infoframe_sdp_pack()로 옮기고, bridge-connector reset 시 max_bpc 보존 버그를 고치며, Rockchip dw-dp에 max_bpc 커넥터 프로퍼티를 붙인다. 실제 HDR SDP 전송 패치 2개는 RK3588 dw-dp 개선 시리즈 미병합으로 보류된다.\n\n영향: dw-dp HDR 경로와 Wayland HDR 컴포저는 공용 DP helper와 max_bpc 프로퍼티·reset 보존이 선행돼야 하며, max_bpc는 상한 클램프용이라 userspace가 비트심도를 낮출 수 있는 제어점을 제공한다.\n\n> The two patches that actually enabled HDR output on dw-dp are not here. What is left is useful without them: 1/3 moves i915's private HDR metadata SDP packing into a shared DP helper\n\n[원문 확인](https://patchew.org/linux/20260909163206.36409-1-royalnet026@gmail.com/)\n\n작성자는 plain drm-misc-next에서 이 3패치 시리즈의 하드웨어 부트 테스트를 하지 않았다고 명시했다. Cristian HDMI 2.0 시리즈가 connector->max_bpc를 제거하면 패치 2/3·3/3 재작업이 필요할 수 있다.\n\n**gpu: nova-core: mm: Add MMU v2 page table types**\n\nDanilo Krummrich가 Eliot Courtney가 재게시한 nova-core MMU v2 페이지 테이블 패치(07/16)를 검토하며, PteOps::new()가 지원하지 않는 aperture에 pr_warn 후 invalid PTE를 반환하는 패턴과 pr_* 사용을 지적하고, aperture 타입 제한 또는 fallible 생성자·dev_* 로깅을 요청한다.\n\n영향: nova-core의 Turing/Ampere/Ada MMU v2 PTE/PDE 타입은 BAR1·VMM 매핑의 기초이며, 잘못된 aperture 처리나 로깅 방식은 이후 page-table walker 전체의 오류 처리 모델에 영향을 준다.\n\n> The aperture argument should either be of a type that can only contain valid Aperture variants or the constructor should just be fallible. The same goes for the v3 code and the Pde code.\n\n[원문 확인](https://lore.kernel.org/dri-devel/DLB09PIR3ACS.1CTHUJA4H9PIR@kernel.org/)\n\nDanilo 리뷰에 대한 작성자 응답·패치 수정 여부는 lore.kernel.org Anubis 차단으로 직접 확인하지 못했다.\n\n**drm/msm/a6xx: Use CX AO Counter register for timestamp on a750 GPUs**\n\nNeil Armstrong는 A750에서 GMU_ALWAYS_ON_COUNTER 대신 CX AO Counter 레지스터로 timestamp를 읽도록 수정했고, v2에서 SM8650 A750은 잘못된 오프셋이 0을 반환한다는 동작 차이를 설명한다. Akhil P Oommen은 두 카운터의 동작 차이가 있는지 질문했다.\n\n영향: freedreno/msm A750(SM8650) GMU timestamp는 GPU 프로파일링·동기화에 쓰이며, 잘못된 레지스터를 읽으면 항상 0이 되어 타이밍 측정이 무력화된다.\n\n> The GMU_ALWAYS_ON_COUNTER at offset 0x1f888 doesn't seem to exist on the SM8650 A750 GMU and returns 0, but the CX AO counter at offset 0x1f880 returns some proper timestamp data.\n\n[원문 확인](https://lkml.iu.edu/hypermail/linux/kernel/2609.1/04558.html)\n\nv1은 레지스터 오프셋이 뒤바뀐 문제로 Neil이 v2를 재제출했다. v2 merge 전 최종 Reviewed-by 상태는 확인되지 않았으며, Konrad Dybcio가 KGSL이 이 레지스터에 system time을 쓰는지 물었고 Neil은 GMU counter라 확신하지 못한다고 답했다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/dp HDR SDP helper v2 cover",
+      "url": "https://patchew.org/linux/20260909163206.36409-1-royalnet026@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "nova-core MMU v2 page table types (07/16)",
+      "url": "https://lkml.iu.edu/hypermail/linux/kernel/2609.1/03183.html",
+      "note": "patch"
+    },
+    {
+      "title": "Danilo Krummrich nova-core MMU v2 review",
+      "url": "https://lore.kernel.org/dri-devel/DLB09PIR3ACS.1CTHUJA4H9PIR@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "nova-core page table·VMM·BAR1 series cover",
+      "url": "https://lkml.iu.edu/hypermail/linux/kernel/2609.1/03180.html",
+      "note": "thread"
+    },
+    {
+      "title": "accel/amdxdna Fix unsafe use of handle_mm_fault()",
+      "url": "https://lkml.iu.edu/hypermail/linux/kernel/2609.1/05204.html",
+      "note": "patch"
+    },
+    {
+      "title": "Sashiko AI amdxdna remap_pfn_range() review",
+      "url": "https://lore.kernel.org/dri-devel/20260909164911.91F811F000FF@smtp.kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/msm/a6xx CX AO Counter timestamp v2",
+      "url": "https://lkml.iu.edu/hypermail/linux/kernel/2609.1/04558.html",
+      "note": "patch"
+    },
+    {
+      "title": "drm/msm/a6xx A750 timestamp series cover",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/08/1758",
+      "note": "thread"
+    },
+    {
+      "title": "Akhil P Oommen CX AO vs ALWAYS_ON_COUNTER question",
+      "url": "https://lore.kernel.org/dri-devel/33be46a9-207d-4f0d-b3e8-18adb8197a57@oss.qualcomm.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-09T18:54:54.321Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

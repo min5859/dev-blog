@@ -1,0 +1,135 @@
+{
+  "id": "2026-09-10-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-09-10 htab 배치 lockup — 성능·RT",
+  "headline": "대형 BPF htab 배치 조회가 PREEMPT_NONE arm64에서 77초 이상 CPU를 점유해 soft lockup을 유발하는 문제가 v2 yield point 패치로 논의됩니다.",
+  "date": "2026-09-10",
+  "summary": "BPF htab 배치 syscall·sockops 보안·데이터플레인 회귀, TCP per-socket ECN 옵션, Qualcomm DPU PREEMPT_RT IRQ 분리 패치가 동시에 리뷰 중입니다. 성능·RT 담당자는 Tasks RCU grace period 정체와 IRQ context sleeping 회귀를 함께 추적해야 합니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "BPF",
+    "PREEMPT_RT"
+  ],
+  "highlights": [
+    {
+      "title": "BPF htab 배치 조회 soft lockup·Tasks RCU 정체",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "BPF htab map·배치 syscall·대규모 맵 운영·PREEMPT_NONE/PREEMPT RT 커널 담당",
+      "verifyLink": "https://patchew.org/linux/20260909-b4-htab-batch-resched-v2-1-0cb529d8f95a@toxicpanda.com/",
+      "if": "LRU hash 등 대형 htab을 BPF_MAP_LOOKUP_BATCH로 주기적으로 조회하는 PREEMPT_NONE arm64 환경인 경우",
+      "do": "v2 패치의 cond_resched_tasks_rcu_qs() yield point 동작과 bpf-next 머지 일정을 추적하세요",
+      "verify": "144-CPU arm64 PREEMPT_NONE에서 16M 버킷 LRU hash 배치 조회 77초 soft lockup 재현 스레드를 확인하세요"
+    },
+    {
+      "title": "drm/msm DPU core IRQ PREEMPT_RT 분리",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "PREEMPT_RT·Qualcomm msm/drm·DPU display·모바일/데스크톱 RT 테스트 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260909-drm-mis-next-split-irq-v1-1-89bc9c512c53@oss.qualcomm.com/",
+      "if": "Qualcomm SDM845 DPU 기반 PREEMPT_RT에서 GLMark2 등 그래픽 워크로드 후 디스플레이 크래시가 발생하는 경우",
+      "do": "hardirq ack·기록과 dpu_core_irq_thread() callback dispatch 분리 패치를 RT bring-up에 적용해 보세요",
+      "verify": "PREEMPT_RT에서 dpu_core_irq() callback이 sleepable lock을 잡아 크래시하는 원문 스레드를 확인하세요"
+    },
+    {
+      "title": "sockops rtt_min OOB read로 커널 포인터 유출",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF sockops·TCP 연결 설정 경로·BPF verifier context rewrite 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/03/1196",
+      "if": "BPF_SOCK_OPS_RWND_INIT 등 request_sock 경로에서 skops->rtt_min을 읽는 sockops 프로그램을 운영하는 경우",
+      "do": "SOCK_OPS_GET_FIELD(rtt_min, rtt_min.s[0].v, struct tcp_sock) guard 적용 패치와 stable backport 일정을 확인하세요",
+      "verify": "tcp_conn_request() 경로에서 rtt_min=0xffff8881 형태의 dirty memory 반환 사례를 원문에서 확인하세요"
+    },
+    {
+      "title": "bpf_fib_lookup() neighbour HA torn read 수정",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "XDP/tc·bpf_fib_lookup()·neighbour table·데이터플레인 포워딩 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/09/225",
+      "if": "XDP/tc에서 bpf_fib_lookup()로 포워딩하며 neighbour table 업데이트와 경쟁하는 경우",
+      "do": "bpf_fib_dmac_snapshot() seqlock 루프 패치와 maintainer가 요청한 lockup-safe seqlock 조정 v2를 추적하세요",
+      "verify": "qemu 재현에서 패치 전 211/16300000 torn·패치 후 0/38060000 결과를 원문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**bpf: Fix out-of-bounds read of rtt_min in sock_ops**\n\nsock_ops_convert_ctx_access()의 rtt_min만 is_locked_tcp_sock 검사 없이 request_sock을 tcp_sock으로 캐스트해 OOB read가 발생합니다.\n\n영향: BPF_SOCK_OPS_RWND_INIT 등 request_sock 경로에서 skops->rtt_min 접근 시 커널 포인터 상위 비트(예: 0xffff8881)가 유출될 수 있어 sockops 프로그램·보안 검증에 직접 영향이 있습니다.\n\n> on the tcp_conn_request() path sock_ops->sk is a request_sock (non-full), and the ctx rewrite casts it to a tcp_sock (full) and reads rtt_min past the end of the request_sock\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/03/1196)\n\n**bpf, x86: Use resolved pointer for timed may_goto**\n\nprivate-stack용 fixups.c ABI 변경(d8319a04dafc)과 x86 trampoline 포인터 ABI 전환 사이에 bisect 불가 window가 있어, 중간 커밋에서 x86이 이미 resolved pointer인 r10에 leaq (%rbp,%r10,1)를 실행해 wild pointer write 가능성이 제기됐습니다. 작성자는 패치 스쿼시를 검토 중입니다.\n\n영향: timed may_goto는 verifier loop bound·private-stack JIT와 맞물려 bisect/backport 시 x86_64에서 may_goto 프로그램 oops 위험이 있을 수 있습니다. grace period·JIT correctness 회귀 추적 시 시리즈 순서가 중요합니다.\n\n> At commit d8319a04dafc (i.e. HEAD~1), does x86 still execute 'leaq (%rbp, %r10, 1), %r10' on a register that already holds a resolved pointer\n\n[원문 확인](https://lore.kernel.org/bpf/CAE5sdEhdsPvK8UD-SEZ=YNX5_GpHkUV8mivRW1j=6hJ6XkM7Zw@mail.gmail.com/)\n\n**bpf: fix reading neigh ha in bpf_fib_lookup()**\n\nbpf_ipv4/ipv6_fib_lookup()가 neigh->ha를 lockless memcpy해 torn L2 주소를 반환할 수 있어, ETH_ALEN만 복사하는 seqlock 루프 bpf_fib_dmac_snapshot()을 추가합니다.\n\n영향: XDP/tc에서 bpf_fib_lookup()로 포워딩하는 경로는 neighbour 업데이트와 경쟁 시 잘못된 dmac으로 패킷을 보낼 수 있습니다. qemu 재현에서 패치 전 1630만 회 중 211건 torn address가 관측됐습니다.\n\n> A BPF program calling bpf_fib_lookup() while the neighbour is being updated can therefore be handed a torn address, and XDP/tc then forwards the packet to a bogus L2 destination\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/09/225)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**bpf: Avoid soft lockup in __htab_map_lookup_and_delete_batch()**\n\nv2는 htab 네이티브 BPF_MAP_LOOKUP_BATCH 경로에 64개 연속 빈 버킷마다 RCU/인스트루멘테이션 비활성 구간을 빠져나와 cond_resched_tasks_rcu_qs()를 호출하고, copy_to_user() 이후 per-bucket 루프에도 동일하게 삽입합니다.\n\n영향: 대형 htab(LRU hash 등)을 주기적으로 배치 조회하는 관측·맵 관리 워크로드는 PREEMPT_NONE arm64에서 77초 이상 CPU를 붙잡아 soft lockup을 유발할 수 있고, 동시에 ftrace/BPF trampoline teardown을 Tasks RCU grace period에서 막을 수 있습니다.\n\n> On a 144-CPU arm64 host running a CONFIG_PREEMPT_NONE kernel, periodic BPF_MAP_LOOKUP_BATCH calls against an LRU hash map with 16,777,216 buckets held a CPU inside the batch op for 77+ seconds\n\n[원문 확인](https://patchew.org/linux/20260909-b4-htab-batch-resched-v2-1-0cb529d8f95a@toxicpanda.com/)\n\n**tcp: add TCP_ECN and TCP_ECN_OPTION socket options**\n\n전역 sysctl net.ipv4.tcp_ecn·tcp_ecn_option 대신 소켓별 TCP_ECN(0–5 또는 255=sysctl fallback)과 TCP_ECN_OPTION(0–3 또는 255)을 추가하고, tcp_ecn_mode_eff()/tcp_accecn_option_eff()로 per-socket override를 해석합니다.\n\n영향: Android 등 멀티패스 환경에서 깨진 middlebox 때문에 전역 ECN/AccECN을 끄면 다른 경로의 L4S 이점까지 잃습니다. sockops/BPF로 소켓 단위 제어가 가능하면 경로별로 ECN을 조정하는 관측·정책 프로그램을 만들 수 있습니다.\n\n> Introduce two new TCP socket options to enable granular, per-connection dynamic adaptation based on runtime network metrics and diagnostics\n\n[원문 확인](https://marc.info/?l=linux-kernel&m=178896636616260&w=2)\n\n**drm/msm: split DPU core IRQ handler under CONFIG_PREEMPT_RT**\n\nPREEMPT_RT에서 dpu_core_irq()가 hardirq로 동작하는데 encoder callback이 sleepable lock을 잡아 GLMark2 후 디스플레이 크래시가 납니다. RT에서만 최소 hardirq ack+기록과 dpu_core_irq_thread() callback dispatch로 분리하고, irq_lock을 raw_spinlock_t로 바꿉니다.\n\n영향: Qualcomm SDM845 DPU 기반 PREEMPT_RT 데스크톱/모바일 bring-up에서 그래픽 워크로드가 IRQ context sleeping으로 죽는 대표 사례입니다. RT IRQ threading 패턴을 DRM 서브시스템에 어떻게 적용하는지 보여줍니다.\n\n> Sleeping inside a hardirq handler is not allowed and eventually crashes the display, which is what happens after running GLMark2 for a while\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260909-drm-mis-next-split-irq-v1-1-89bc9c512c53@oss.qualcomm.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "bpf: Avoid soft lockup in __htab_map_lookup_and_delete_batch() v2",
+      "url": "https://patchew.org/linux/20260909-b4-htab-batch-resched-v2-1-0cb529d8f95a@toxicpanda.com/",
+      "note": "thread"
+    },
+    {
+      "title": "cond_resched() PREEMPT no-op 및 Tasks RCU QS 미보고",
+      "url": "https://lists.openwall.net/linux-kernel/2026/07/16/142",
+      "note": "thread"
+    },
+    {
+      "title": "tcp: add TCP_ECN and TCP_ECN_OPTION socket options",
+      "url": "https://marc.info/?l=linux-kernel&m=178896636616260&w=2",
+      "note": "thread"
+    },
+    {
+      "title": "drm/msm: split DPU core IRQ handler under CONFIG_PREEMPT_RT",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260909-drm-mis-next-split-irq-v1-1-89bc9c512c53@oss.qualcomm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf, x86: Use resolved pointer for timed may_goto",
+      "url": "https://lore.kernel.org/bpf/CAE5sdEhdsPvK8UD-SEZ=YNX5_GpHkUV8mivRW1j=6hJ6XkM7Zw@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "private-stack JIT x86 trampoline frame remapping",
+      "url": "https://lkml.iu.edu/2608.3/01997.html",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: fix reading neigh ha in bpf_fib_lookup()",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/09/225",
+      "note": "thread"
+    },
+    {
+      "title": "bpf_fib_lookup seqlock maintainer review",
+      "url": "https://lore.kernel.org/bpf/CABFh=a7Z=heZODVsXwisY3VwULDy-Rq1hwO09exgX2d0-KzgUQ@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Fix out-of-bounds read of rtt_min in sock_ops",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/03/1196",
+      "note": "thread"
+    },
+    {
+      "title": "sock_ops rtt_min SOCK_OPS_GET_FIELD() guard",
+      "url": "https://lkml.iu.edu/2609.0/07250.html",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-09T18:45:46.360Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
