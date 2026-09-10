@@ -1,0 +1,123 @@
+{
+  "id": "2026-09-11-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-09-11 kexec DMA 회귀 — Arch·Platform",
+  "headline": "ZynqMP GQSPI kexec DMA 회귀, arm64 FEAT_RME GPF 처리, x86 pgtable_level enum 정리, RISC-V KVM lazy VMID rollover가 이번 수집의 핵심입니다.",
+  "date": "2026-09-11",
+  "summary": "ZynqMP GQSPI 드라이버는 kexec 시 DMA가 이전 커널 RAM을 계속 쓰는 회귀를 shutdown 핸들러로 막는 패치가 제안되었습니다. arm64 GPF 처리, x86 ptdump enum 정리, RISC-V KVM VMID lazy rollover도 함께 추적할 항목입니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "spi-zynqmp-gqspi: kexec 시 DMA 회귀",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Xilinx ZynqMP GQSPI를 쓰는 플랫폼·부트/kexec 엔지니어",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/10/1467",
+      "if": "Zynq Ultrascale+ MPSoC에서 kexec·firmware 업데이트 경로를 운영하는 경우",
+      "do": "->shutdown 패치 merge 여부와 Cc: stable@vger.kernel.org 백포트 범위를 추적하세요",
+      "verify": "kexec 중 진행 중인 DMA 읽기가 QSPIDMA_DST_ADDR로 이전 커널 RAM을 손상시키는지 원문 스레드를 확인하세요"
+    },
+    {
+      "title": "arm64: FEAT_RME Granule Protection Fault 처리",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "arm64 MM·fault.c 유지보수자 및 FEAT_RME/KVM CCA 추적 엔지니어",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/07/2217",
+      "if": "FEAT_RME·KVM CCA에서 delegated granule 접근 fault 경로를 다루는 경우",
+      "do": "v17 패치 리뷰와 Suzuki K Poulose의 user_mode()·BUS_OBJERR 제안 반영 여부를 추적하세요",
+      "verify": "페이지 워크 GPF는 커널 oops, 비-워크 GPF는 exception-table fixup 후 SIGBUS로 처리되는지 원문을 확인하세요"
+    },
+    {
+      "title": "RISC-V KVM: VMID rollover lazy 처리",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "RISC-V KVM 유지보수자 및 다중 vCPU KVM 호스트 운영자",
+      "verifyLink": "https://patchew.org/linux/20260910151227.986678-1-wenlongli486@gmail.com/",
+      "if": "RISC-V KVM에서 VMID 소진 시 vCPU exit·지연을 줄이려는 경우",
+      "do": "v2 lazy rollover의 G-stage TLB·VMID 격리 정합성 리뷰 결과를 확인하세요",
+      "verify": "on_each_cpu_mask() IPI 대신 게스트 진입 전 로컬 HFENCE.GVMA flush로 VMID를 활성화하는지 원문을 확인하세요"
+    },
+    {
+      "title": "x86: effective_prot_pXd() pgtable_level enum",
+      "priority": "하",
+      "impactType": "api-abi",
+      "affectedAudience": "x86 MM·pgtable 공통화 및 folded page table 설정을 추적하는 엔지니어",
+      "verifyLink": "https://lkml.iu.edu/2609.0/04237.html",
+      "if": "compile-time folded page table RFC v3 시리즈를 추적하는 경우",
+      "do": "Dave Hansen Acked-by와 David Hildenbrand의 mm_first_pgtable_level() 연계 설명 제안을 함께 확인하세요",
+      "verify": "effective_prot_pXd()가 하드코딩 정수 대신 pgtable_level enum을 쓰며 기능 변화가 없는지 원문을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**spi: spi-zynqmp-gqspi: stop the controller on shutdown**\n\nZynqMP GQSPI 드라이버에 ->shutdown 핸들러를 추가해 kexec 시 DMA가 이전 커널 RAM에 계속 쓰는 문제를 막습니다. 진행 중인 DMA 읽기가 있으면 QSPIDMA_DST_ADDR가 유효하지 않은 물리 주소를 향해 데이터를 써 새 커널 텍스트·페이지 테이블·initrd를 손상시킬 수 있습니다.\n\n영향: 플랫폼 버스 장치는 PCI와 달리 kexec 경로에서 bus mastering을 자동 해제하지 않아, Zynq Ultrascale+ MPSoC에서 kexec·firmware 업데이트 시 메모리 무결성이 깨질 수 있습니다. stable 백포트 후보(Cc: stable)입니다.\n\n> A controller that is still executing a DMA read may therefore keep writing to memory across a kexec. ... the writes can corrupt whatever now occupies it: kernel text or data, page tables, or the initr\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/10/1467)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**arm64: mm: Handle Granule Protection Faults (GPFs)**\n\nv17 패치가 arch/arm64/mm/fault.c에 FEAT_RME Granule Protection Fault(GPF) 처리를 추가합니다. 페이지 테이블 워크 중 GPF는 do_gpf_ptw()로 커널 버그(oops) 처리하고, 일반 GPF는 do_gpf()가 exception-table fixup을 시도한 뒤 SIGBUS로 사용자 공간에 전달합니다. Suzuki K Poulose는 do_gpf()에 명시적 user_mode() 검사와 SIGBUS 코드를 BUS_OBJERR로 맞출 것을 제안했습니다.\n\n영향: FEAT_RME·KVM CCA 등에서 delegated granule 접근 시 커널이 unknown fault 대신 구조화된 동작을 갖게 됩니다. arm64 MM 유지보수자는 리뷰 피드백이 반영되기 전 merge 여부와 사용자/커널 경로 구분을 추적해야 합니다.\n\n> A fault during a page walk signals a bug in the kernel and is handled by oopsing the kernel. A non-page walk fault could be caused by user space having access to a page which has been delegated to the\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/07/2217)\n\n**x86: mm: use pgtable_level enum in effective_prot_pXd()**\n\nYeoreum Yun의 RFC v3 13/21 패치가 x86 dump_pagetables.c의 effective_prot_pXd()에서 하드코딩된 페이지 테이블 레벨 정수를 pgtable_level enum으로 교체합니다. 기능 변화는 없으며 Dave Hansen이 Acked-by를 달았고, David Hildenbrand은 다음 패치의 mm_first_pgtable_level() 연계를 커밋 설명에 명시하라고 제안했습니다.\n\n영향: compile-time folded page table 대응 RFC의 선행 단계로, generic MM가 심볼릭 pgtable_level을 쓰도록 x86 ptdump 코드를 맞춥니다. folded pgtable·ptdump를 다루는 MM 개발자는 시리즈 후속 패치와 함께 봐야 합니다.\n\n> Instead of using hard-coded integer in effective_prot_pXd(), use pgtable level enum. There should be no functional change.\n\n[원문 확인](https://lkml.iu.edu/2609.0/04237.html)\n\n**RISC-V: KVM: Avoid synchronous IPIs on VMID rollover**\n\nWenlong Li의 v2 패치가 RISC-V KVM VMID rollover를 lazy 방식으로 바꿉니다. 기존 on_each_cpu_mask() IPI 브로드캐스트 대신 CPU별 pending HFENCE.GVMA를 두고, 게스트 진입 직전에 로컬 flush 후 VMID를 활성화합니다. 64비트 software VMID(세대+하드웨어 VMID)와 per-CPU 예약 VMID로 조기 재사용을 막습니다.\n\n영향: VMID 소진 시 다른 CPU의 vCPU가 불필요하게 VM exit하는 문제를 줄여 RISC-V KVM 호스트 성능·지연에 영향을 줍니다. G-stage TLB·VMID 격리 정합성 검증이 리뷰에서 핵심입니다. lazy rollover가 cross-VM TLB 격리를 항상 보장하는지는 maintainer 리뷰 결과 확인이 필요합니다.\n\n> The current VMID rollover path synchronously invokes HFENCE.GVMA on all online CPUs using on_each_cpu_mask(). This sends IPIs to remote CPUs and causes a vCPU running in guest mode on a targeted CPU t\n\n[원문 확인](https://patchew.org/linux/20260910151227.986678-1-wenlongli486@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "arm64: Handle Granule Protection Faults (GPFs)",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/07/2217",
+      "note": "thread"
+    },
+    {
+      "title": "arm64 GPF fault handling patch",
+      "url": "https://lkml.iu.edu/2609.0/16354.html",
+      "note": "thread"
+    },
+    {
+      "title": "Suzuki K Poulose: user_mode() and BUS_OBJERR feedback",
+      "url": "https://lore.kernel.org/linux-arm-kernel/aqLsnngKRbMRu211@arm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "x86: use pgtable_level enum in effective_prot_pXd()",
+      "url": "https://lkml.iu.edu/2609.0/04237.html",
+      "note": "thread"
+    },
+    {
+      "title": "Dave Hansen Acked-by on pgtable_level enum",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/02/2844",
+      "note": "thread"
+    },
+    {
+      "title": "David Hildenbrand: mm_first_pgtable_level() commit message",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/10/1413",
+      "note": "thread"
+    },
+    {
+      "title": "spi-zynqmp-gqspi: stop the controller on shutdown",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/10/1467",
+      "note": "thread"
+    },
+    {
+      "title": "RISC-V KVM: Avoid synchronous IPIs on VMID rollover",
+      "url": "https://patchew.org/linux/20260910151227.986678-1-wenlongli486@gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-10T18:47:07.936Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
