@@ -1,0 +1,133 @@
+{
+  "id": "2026-09-12-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-09-12 amdgpu P2P PM 복원 — GPU·AI 렌즈",
+  "headline": "amdgpu P2P 경로 runtime PM 참조 v3가 나왔고, PL111·vmwgfx는 860e748 blend WARN 회귀를 정리 중입니다.",
+  "date": "2026-09-12",
+  "summary": "amdgpu P2P dma-buf attachment 수명 동안 runtime PM 참조를 복원하는 v3 패치가 멀티 GPU compositor 멈춤 해소를 목표로 검토 중입니다. 860e748bddcc blend-mode 검증은 PL111 alpha 포맷 제거와 vmwgfx property 추가로 후속 정리가 이어집니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "amdgpu P2P dma-buf runtime PM 참조 복원",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "amdgpu dma-buf/P2P·멀티 GPU compositor·runtime PM 유지보수자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260911183825.935140-1-mike@fireburn.co.uk/",
+      "if": "멀티 GPU·APU+dGPU 오프로드에서 dGPU autosuspend 후 compositor가 멈춘다면",
+      "do": "amdgpu_dma_buf_attach/detach v3 패치와 runtime PM usage count 동작을 확인하세요",
+      "verify": "HawkPoint APU + Navi 48 kwin_wayland 재현·v3 underflow 없음 보고를 lore 스레드 원문과 대조하세요"
+    },
+    {
+      "title": "drm/pl111 alpha 포맷 제거로 blend WARN 회귀 해소",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "drm/pl111·ARM vexpress/syzkaller·DRM blend-mode 검증 추적자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/CAD++jL=fnA9qV9XpAScM5knc+aY4eHG3r9a5RrGnhvVqORwMhA@mail.gmail.com/",
+      "if": "panic_on_warn 환경에서 vexpress-a15 PL111 부팅이 860e748 WARN으로 막힌다면",
+      "do": "drm-misc-next에 적용된 alpha 포맷 제거 v3를 backport·CI 경로에 반영할지 검토하세요",
+      "verify": "syzkaller issue 7805와 860e748bddcc commit 원문으로 원인·수정을 확인하세요"
+    },
+    {
+      "title": "drm/msm HDMI power_on 실패 시 MMIO 접근 중단",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "drm/msm HDMI·Qualcomm display·stable backport 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/11/1102",
+      "if": "Qualcomm MSM HDMI bring-up에서 power domain 꺼진 상태 MMIO abort가 난다면",
+      "do": "msm_hdmi_power_on() 오류 반환·atomic_pre_enable() early return v4 시리즈를 검토하세요",
+      "verify": "power_on 실패 시 PHY rollback 경로를 openwall 스레드 원문과 대조하세요"
+    },
+    {
+      "title": "accel/amdxdna HMM map 초기화 순서 정리",
+      "priority": "중",
+      "impactType": "project",
+      "affectedAudience": "accel/amdxdna·AMD NPU 드라이버 유지보수자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260911163907.1193852-1-lizhi.hou@amd.com/",
+      "if": "amdxdna HMM/mmap notifier 등록 경로를 리뷰한다면",
+      "do": "map 구조체를 mmu_interval_notifier_insert_locked() 전에 완전 초기화하는 패치를 확인하세요",
+      "verify": "Max Zhen Reviewed-by와 초기화 순서 변경을 lore 스레드 원문과 대조하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm/pl111: drop alpha formats the hardware cannot scan out**\n\nPL110/PL111이 하드웨어에서 쓰지 않는 ARGB/ABGR 등 alpha 포맷을 pl111_drv.c·pl111_versatile.c·pl111_display.c의 모든 variant 테이블과 switch case에서 제거합니다. v3는 v2가 놓친 board-specific 테이블까지 포함합니다.\n\n영향: 860e748bddcc의 blend-mode 검증 WARN이 panic_on_warn 환경에서 syzkaller vexpress-a15 manager 부팅을 막습니다. alpha 포맷을 광고하지 않으면 XRGB/XBGR 동작은 동일하고, CI·embedded PL111 보드에서 7.3+ 회귀를 해소합니다.\n\n> Patch applied to drm-misc-next with Thomas' review tag.\n\n[원문 확인](https://lore.kernel.org/dri-devel/CAD++jL=fnA9qV9XpAScM5knc+aY4eHG3r9a5RrGnhvVqORwMhA@mail.gmail.com/)\n\n**drm/vmwgfx: Add blend mode property**\n\nvmw_du_init()에서 primary plane에 DRM_MODE_BLEND_PIXEL_NONE, cursor plane에 DRM_MODE_BLEND_PREMULTI blend mode property를 추가해 860e748bddcc 검증 WARN 로그 스팸을 막습니다.\n\n영향: VirtualBox/vmwgfx 등 가상 GPU 환경에서도 alpha 포맷 plane이 blend property 없이 WARN을 뿜습니다. ast·qxl·virtio-gpu 등과 같은 860e748bddcc 후속 정리로, vmwgfx 사용자·CI에서 드라이버 로드 시 경고 폭주를 줄입니다.\n\n> This stops the log spamming introduced by the referenced fixes commit.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260911175607.1127474-1-ian.forbes@broadcom.com/)\n\ndrm-misc-next 머지 여부는 확인 필요합니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/amdgpu: hold a runtime PM reference for P2P dma-buf attachments**\n\nv3 패치가 amdgpu_dma_buf_attach()/detach()에서 P2P attachment 수명 동안 pm_runtime_get_if_active() 참조를 잡고, exporter가 비활성이면 peer2peer를 끕니다. 2024년 030631e97b20에서 제거된 runtime PM 참조를 P2P VRAM pin/map 경로에 한해 복원하며, 예전 pm_runtime_get_sync() 대신 deadlock을 피합니다.\n\n영향: 멀티 GPU·APU+dGPU 오프로드에서 idle dGPU가 runtime suspend된 상태로 dma-buf가 VRAM으로 migrate되면 SDMA가 꺼져 \"Move buffer fallback to memcpy unavailable\"로 compositor가 멈출 수 있습니다. HawkPoint APU + Navi 48 오프로드에서 kwin_wayland가 재현됐고, ROCm/P2P dma-buf·runtime PM 추적자에게 stable backport 후보입니다.\n\n> Take it in attach and drop it in detach. pm_runtime_get_if_active() never resumes the device, so it cannot deadlock against the reservation taken during resume.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260911183825.935140-1-mike@fireburn.co.uk/)\n\nSashiko AI review가 pm_runtime_get_if_active() 음수 반환 시 peer2peer=false 건너뛰기·usage count underflow 가능성을 High로 지적했으나 maintainer 응답은 확인 필요합니다. 패치는 Cc: stable이지만 ea3c97ff59ae는 upstream mainline에 아직 없습니다.\n\n**accel/amdxdna: Fully initialize map structure before registering notifier**\n\namdxdna_hmm_register()에서 amdxdna_umap의 range·abo·refcnt·hmm_unreg_work를 mmu_interval_notifier_insert_locked() 호출 전에 채우도록 초기화 순서만 바꿉니다. mmap_write_lock()이 callback을 막지만, notifier 등록 전에 구조체를 완전히 구성합니다.\n\n영향: AMD XDNA NPU 드라이버의 HMM/mmap 경로에서 notifier callback이 부분 초기화된 map을 보는 순서 혼동을 줄입니다. 동작 변경은 없고 코드 리뷰·유지보수성 개선이지만, amdxdna GEM/HMM 수명 관리 추적자에게 의미 있습니다.\n\n> Fully initialize the map structure before registering the notifier so that the structure is completely constructed before it is published.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260911163907.1193852-1-lizhi.hou@amd.com/)\n\n**drm/msm/hdmi: Handle msm_hdmi_power_on() errors during .atomic_pre_enable()**\n\nv4 시리즈 2/7에서 msm_hdmi_power_on()이 int를 반환하고 pm_runtime_resume_and_get()·extp_clk enable 실패 시 early return합니다. atomic_pre_enable()은 PHY enable/power_on 실패 시 MMIO 접근 전에 중단하고 stable Cc가 붙습니다.\n\n영향: power domain이 꺼진 상태에서 HDMI bridge가 MMIO를 건드리면 imprecise abort가 날 수 있습니다. Qualcomm MSM HDMI·Eliza 전 정리 시리즈의 일부로, 모바일/embedded HDMI bring-up 담당자에게 backport 검토가 필요합니다.\n\n> Properly handle power up failures during .atomic_pre_enable() by aborting the .atomic_pre_enable() to avoid accessing registers why blocks did not bring up.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/11/1102)\n\nKonrad Dybcio는 clk_set_rate 실패 경로도 abort해야 한다고 지적했습니다. clk_set_rate() 실패 후 계속 진행하는 경로에 대한 Kozlowski 응답·v5 수정은 확인 필요합니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "amdgpu P2P dma-buf runtime PM v3 스레드",
+      "url": "https://lore.kernel.org/dri-devel/20260911183825.935140-1-mike@fireburn.co.uk/",
+      "note": "thread"
+    },
+    {
+      "title": "030631e97b20 runtime PM 참조 revert",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=030631e97b209481edbac38000d2a60fd340f6b1",
+      "note": "commit"
+    },
+    {
+      "title": "amdxdna HMM map 초기화 순서 패치",
+      "url": "https://lore.kernel.org/dri-devel/20260911163907.1193852-1-lizhi.hou@amd.com/",
+      "note": "thread"
+    },
+    {
+      "title": "amdxdna Max Zhen Reviewed-by",
+      "url": "https://lore.kernel.org/dri-devel/e8e52df0-c0b5-4823-b5c7-58ef3d341818@amd.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/pl111 alpha 포맷 제거 적용 공지",
+      "url": "https://lore.kernel.org/dri-devel/CAD++jL=fnA9qV9XpAScM5knc+aY4eHG3r9a5RrGnhvVqORwMhA@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "860e748bddcc blend-mode 검증 WARN",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=860e748bddcc9291cbdd23e801640aeeba30cc44",
+      "note": "commit"
+    },
+    {
+      "title": "syzkaller vexpress-a15 PL111 panic_on_warn",
+      "url": "https://github.com/google/syzkaller/issues/7805",
+      "note": "article"
+    },
+    {
+      "title": "drm/vmwgfx blend mode property 패치",
+      "url": "https://lore.kernel.org/dri-devel/20260911175607.1127474-1-ian.forbes@broadcom.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/msm HDMI power_on 오류 처리 v4",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/11/1102",
+      "note": "thread"
+    },
+    {
+      "title": "msm HDMI clk_set_rate 실패 경로 지적",
+      "url": "https://lore.kernel.org/dri-devel/dc49be3b-5b8e-420a-be34-09bb27fc65f3@oss.qualcomm.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-11T19:00:01.847Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

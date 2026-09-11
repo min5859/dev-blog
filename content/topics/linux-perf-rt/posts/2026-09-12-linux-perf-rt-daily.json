@@ -1,0 +1,106 @@
+{
+  "id": "2026-09-12-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-09-12 irq_work·BPF 보안 — Perf/RT",
+  "headline": "PREEMPT_RT irq_work CPU hotplug 고착 수정, BPF 소켓 family 불일치 차단, Tasks RCU 트램폴린 nesting 기반 패치가 올라왔습니다.",
+  "date": "2026-09-12",
+  "summary": "Sebastian Siewior의 irq_work 3패치 시리즈가 PREEMPT_RT CPU 오프라인 시 lazy work 미flush 문제를 다루고, Shihuang Liu의 bpf_sk_assign() v2가 L3·소켓 family 불일치를 거부합니다. Josef Bacik의 Tasks RCU RFC v2 1/15는 트램폴린 nesting 카운터 API를 추가하며 후속 15패치 시리즈의 기반을 마련합니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "PREEMPT_RT",
+    "BPF",
+    "RCU"
+  ],
+  "highlights": [
+    {
+      "title": "irq_work: CPU-hotplug improvements on PREEMPT_RT",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "PREEMPT_RT·CPU hotplug·irq_work 사용자",
+      "verifyLink": "https://patchew.org/linux/20260911143815.997254-1-bigeasy@linutronix.de/",
+      "if": "PREEMPT_RT에서 CPU hotplug 후 printk 지연, irq_work_sync() 영구 대기, 또는 단일 irq_work 영구 claim이 보인다면",
+      "do": "3패치 시리즈의 smpboot park 전 콜백 실행과 smpcfd_dead_cpu()의 irq_work_run_cpu() 변경을 검토하고 hotplug 시나리오 테스트에 반영할 것",
+      "verify": "patchew 커버레터와 9/11 리스트 스레드에서 패치 2/3·3/3 동작을 확인할 것"
+    },
+    {
+      "title": "bpf: reject incompatible socket assignments",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF TC/ingress·네트워킹 보안 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/11/2227",
+      "if": "TC ingress bpf_sk_assign()으로 패킷 L3 family와 다른 AF 소켓을 붙이는 BPF 프로그램을 운영 중이라면",
+      "do": "v2 1/2의 bpf_sk_assign()·bpf_sk_assign_tcp_reqsk() family 검사와 -EAFNOSUPPORT 반환 동작을 selftest 및 배포 경로에 맞게 검증할 것",
+      "verify": "9/11 리스트 스레드에서 helper 검사 위치와 IP_RETOPTS 관련 설명을 원문으로 확인할 것"
+    },
+    {
+      "title": "rcu-tasks: Add per-task trampoline nesting count",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "RCU·ftrace·BPF·kprobes 유지보수 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/11/1625",
+      "if": "Tasks RCU grace period가 ftrace·BPF·kprobes 트램폴린 텍스트 수명과 맞물려 길어지는 경로를 추적 중이라면",
+      "do": "RFC v2 1/15의 rcu_tramp_nesting 필드와 enter/exit API 추가를 읽고 후속 ftrace/BPF/kprobes 연동 패치 흐름을 모니터링할 것",
+      "verify": "9/11·9/10 리스트 스레드에서 시리즈 목표와 현재 패치 범위를 확인할 것"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**irq_work: CPU-hotplug improvements on PREEMPT_RT**\n\nSebastian Siewior 3패치 시리즈가 PREEMPT_RT에서 CPU 오프라인 시 lazy irq_work가 irq_work/%u 스레드에 남는 문제를 다룬다. smpboot 스레드가 park 전에 콜백을 실행하고, smpcfd_dead_cpu()에서 irq_work_run_cpu()로 죽는 CPU의 lazy_list를 컨트롤 CPU에서 비운다.\n\n영향: PREEMPT_RT에서 !IRQ_WORK_HARD_IRQ 콜백은 per-CPU kthread에서만 실행되며, CPU hotplug 시 남은 lazy work는 printk 지연·irq_work_sync() 영구 대기·단일 irq_work 영구 claim 같은 드물지만 치명적인 고착을 일으킬 수 있다.\n\n> Turns out the queue of callbacks gets never flushed on CPU shutdown. !PREEMPT_RT has a flush but on PREEMPT_RT the thread context is required.\n\n[원문 확인](https://patchew.org/linux/20260911143815.997254-1-bigeasy@linutronix.de/)\n\n> Add irq_work_run_cpu() which invokes the irq_work callbacks of the specified dead CPU. Invoke it from smpcfd_dead_cpu().\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/11/1720)\n\n> Honor the park request once thread function does not need to run.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/11/1721)\n\nSashiko가 지적한 this_cpu_*() 가정 위반(cgrp_dead_tasks_iwork)과 irq_work_run_cpu()의 RCU/UAF 위험이 패치 2/3에서 해소되는지는 확인이 필요하다. cgrp_dead_tasks_iwork·wake_up_klogd_work follow-up 패치 머지 여부도 확인이 필요하다.\n\n**bpf: reject incompatible socket assignments**\n\nShihuang Liu v2 1/2가 bpf_sk_assign()과 bpf_sk_assign_tcp_reqsk()에 패킷 L3 family와 소켓 family 불일치 검사를 추가하고, reqsk는 rsk_ops->family로 검사한다. IPv4 패킷을 dual-stack AF_INET6 소켓에 붙이는 경우는 허용하며, 불일치 시 -EAFNOSUPPORT를 반환한다.\n\n영향: TC ingress bpf_sk_assign()이 IPv6 패킷에 AF_INET 소켓을 붙이면 수신 경로가 IPv6 skb를 IPv4 메타데이터로 해석할 수 있고, IP_RETOPTS 활성 시 __ip_options_echo()가 스택 버퍼를 넘어 쓸 수 있다.\n\n> When IP_RETOPTS is enabled, this can cause __ip_options_echo() to copy beyond its stack buffer.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/11/2227)\n\n> Move family validation out of the IPv6 receive fast path and into bpf_sk_assign() and bpf_sk_assign_tcp_reqsk().\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/11/2227)\n\n시리즈 2/2 selftest 내용과 bpf fixes tree 머지·stable backport 계획은 확인이 필요하다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**rcu-tasks: Add per-task trampoline nesting count**\n\nJosef Bacik RFC v2 시리즈 1/15가 task_struct::rcu_tramp_nesting와 rcu_tasks_trampoline_enter()/exit() API를 추가하고, Tasks RCU stall 출력·PROVE_RCU userspace 복귀 검사·trace_recursion.h 주석을 넣는다. 이 패치만으로는 카운터를 올리거나 quiescent-state 판단에 쓰지 않으며, 후속 패치에서 ftrace/BPF/kprobes 트램폴린과 연동된다.\n\n영향: Tasks RCU는 ftrace·BPF·kprobes 트램폴린 텍스트 수명을 지키는 핵심 메커니즘이다. 현재는 선점된 태스크를 항상 트램폴린 안에 있다고 가정해 grace period가 길어질 수 있으며, 이 카운터는 선점을 quiescent state로 인정하는 15패치 시리즈의 기반이다.\n\n> Nothing increments the count and nothing consults it for quiescent-state decisions yet; both come in later patches.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/11/1625)\n\n> rcu-tasks: let preemption outside trampolines be a quiescent state\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/10/2666)\n\nPaul McKenney의 line-saving nit 리뷰가 v2에 반영됐는지와 전체 15패치 시리즈의 머지 타임라인은 확인이 필요하다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "rcu-tasks: Add per-task trampoline nesting count (RFC v2 1/15)",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/11/1625",
+      "note": "thread"
+    },
+    {
+      "title": "rcu-tasks: let preemption outside trampolines be a quiescent state",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/10/2666",
+      "note": "thread"
+    },
+    {
+      "title": "irq_work: CPU-hotplug improvements on PREEMPT_RT (cover letter)",
+      "url": "https://patchew.org/linux/20260911143815.997254-1-bigeasy@linutronix.de/",
+      "note": "thread"
+    },
+    {
+      "title": "irq_work: Add irq_work_run_cpu() (2/3)",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/11/1720",
+      "note": "thread"
+    },
+    {
+      "title": "irq_work: Honor park request after pending work (3/3)",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/11/1721",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: reject incompatible socket assignments (v2 1/2)",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/11/2227",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-11T18:43:52.370Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

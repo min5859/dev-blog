@@ -1,0 +1,120 @@
+{
+  "id": "2026-09-12-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-09-12 RISC-V rc3 안정화 — 아키·플랫폼",
+  "headline": "v7.3-rc3 RISC-V pull과 KVM·SSE·PLIC·ucopy 후속 패치가 RISC-V 아키·플랫폼 안정화와 성능 경로를 동시에 건드린다.",
+  "date": "2026-09-12",
+  "summary": "Paul Walmsley의 v7.3-rc3 RISC-V pull이 pointer masking revert와 kprobe·PMU·hwprobe 수정을 묶어 올렸다. KVM VMID lazy rollover, SSE shutdown 마스킹, PLIC fail-fast, runtime ucopy 확장 패치가 리뷰·테스트 대상이다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "RISC-V",
+    "아키텍처"
+  ],
+  "highlights": [
+    {
+      "title": "RISC-V updates for v7.3-rc3",
+      "priority": "상",
+      "impactType": "release",
+      "affectedAudience": "RISC-V 아키텍처·perf·kprobe 유지보수자 및 7.3-rc 계열 테스트 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/11/2294",
+      "if": "7.3-rc3 RISC-V 빌드에서 pointer masking·kprobe·PMU 경로를 다룬다면",
+      "do": "pull 범위의 revert·kprobe·hwprobe·PMU 수정을 회귀 테스트 계획에 반영하세요",
+      "verify": "Paul Walmsley pull 스레드에서 변경 목록과 revert 근거를 확인하세요"
+    },
+    {
+      "title": "RISC-V: KVM: Avoid synchronous IPIs on VMID rollover",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "RISC-V KVM 유지보수자 및 다중 vCPU KVM 호스트 운영자",
+      "verifyLink": "https://patchew.org/linux/20260911152314.1076817-1-wenlongli486@gmail.com/",
+      "if": "RISC-V KVM 호스트에서 VMID rollover로 vCPU exit 지연이 관측된다면",
+      "do": "lazy flush v3 리뷰 진행과 QEMU 2비트 VMID 스트레스 테스트 결과를 추적하세요",
+      "verify": "Wenlong Li v3 패치 스레드에서 HGATP 프로그래밍 순서와 테스트 범위를 확인하세요"
+    },
+    {
+      "title": "riscv: sse: mask events during shutdown and kexec",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "RISC-V SSE·kexec·crash dump 유지보수자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/11/1377",
+      "if": "SSE 지원 RISC-V 플랫폼에서 kexec·kdump 경로를 운영한다면",
+      "do": "shutdown·crash 경로 SSE 마스킹과 crash kernel 일반 kexec 제한 정책을 배포 가이드에 반영하세요",
+      "verify": "Zhanpeng Zhang v10 SSE 시리즈 스레드에서 mask 경로와 kexec 거부 조건을 확인하세요"
+    },
+    {
+      "title": "irqchip/sifive-plic: Panic if initialization fails",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "RISC-V PLIC·irqchip 및 SiFive/Allwinner PLIC 보드 유지보수자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/11/1803",
+      "if": "SiFive·Allwinner PLIC 기반 RISC-V 보드 부팅 경로를 유지한다면",
+      "do": "PLIC probe 실패 시 panic 동작으로 부팅 실패 원인을 즉시 노출하도록 테스트하세요",
+      "verify": "Nam Cao PLIC 패치 스레드에서 platform·early probe panic 경로를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**RISC-V updates for v7.3-rc3**\n\nPaul Walmsley가 v7.3-rc3용 RISC-V pull을 올렸다. 핵심은 pointer masking과 tagged address ABI를 혼동한 패치를 revert하고, !CONFIG_STRICT_MODULE_RWX에서 kprobe·런타임 패치 fault, hwprobe 초기화 버그, rv32 PMU SBI perf 비트맵 오류 등을 수정한다. ucopy 정렬 최적화(b94cec5761d2)와 hwprobe/FPU·DT·CFI 정리도 포함된다.\n\n영향: 7.3-rc3 안정화에 직결되는 RISC-V 회귀·ABI·perf·kprobe 경로 수정 묶음이다. pointer masking 사용자와 !STRICT_MODULE_RWX 빌드, rv32 PMU·kprobe 운영자는 이번 pull 범위를 추적해야 한다.\n\n> there's one notable fix here, reverting an earlier bogus fix to the pointer masking code that confused the RISC-V hardware pointer masking implementation with the Linux kernel tagged address feature\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/11/2294)\n\npointer masking revert의 stable 백포트 범위는 확인 필요하다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**RISC-V: KVM: Avoid synchronous IPIs on VMID rollover**\n\nWenlong Li v3가 RISC-V KVM VMID rollover를 lazy 방식으로 바꾼다. on_each_cpu_mask()로 모든 CPU에 HFENCE.GVMA IPI를 보내는 대신 CPU별 pending flush를 두고, 게스트 진입 직전에 로컬 flush 후 HGATP·active VMID를 활성화한다. 64비트 software VMID(세대+하드웨어 ID)와 per-CPU 예약으로 조기 재사용을 막는다.\n\n영향: VMID 소진 시 다른 CPU의 vCPU가 불필요하게 VM exit하는 문제를 줄여 RISC-V KVM 호스트 지연·처리량에 영향을 준다. G-stage TLB·VMID 격리 정합성이 리뷰 핵심이다.\n\n> The current VMID rollover path synchronously invokes HFENCE.GVMA on all online CPUs using on_each_cpu_mask(). This sends IPIs to remote CPUs and causes a vCPU running in guest mode on a targeted CPU t\n\n[원문 확인](https://patchew.org/linux/20260911152314.1076817-1-wenlongli486@gmail.com/)\n\nlazy rollover가 cross-VM G-stage TLB 격리를 항상 보장하는지 maintainer 리뷰 결과는 확인 필요하다.\n\n**riscv: sse: mask events during shutdown and kexec**\n\nZhanpeng Zhang v10 3/9가 panic stop·CPU stop·restart·poweroff·crash shutdown 경로에서 로컬 hart의 SSE를 mask한다. firmware가 Linux 핸들러를 더 이상 유효하지 않은 컨텍스트에서 호출하지 못하게 한다. crash kernel에서 SSE 등록을 정리할 수 없으면 일반 kexec를 -EOPNOTSUPP로 거부한다.\n\n영향: SSE는 일반 S-mode 인터럽트와 독립적으로 전달되므로 shutdown·kexec·crash 경로에서 firmware→핸들러 진입을 막지 않으면 use-after-teardown 위험이 있다. SSE 지원 플랫폼의 kdump·kexec 운영 정책에 직접 영향을 준다.\n\n> SSE delivery is independent of normal S-mode interrupts. Firmware may also retain an event registration until Linux explicitly unregisters it.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/11/1377)\n\n**riscv: runtime enablement for native misaligned ucopy**\n\nAndy Chiu v1 시리즈가 b94cec5761d2 이후 ucopy 최적화를 NONPORTABLE 없이도 쓸 수 있게 한다. 런타임에 fast unaligned access가 감지되면 uaccess.S의 software aligning 경로를 건너뛰고, 이를 위해 asm jump table 헬퍼를 추가한다.\n\n영향: distro 기본(포터블) RISC-V 커널도 하드웨어 비정렬 접근이 빠른 SoC에서 ucopy hot path 성능을 얻을 수 있다. v7.3-rc3에 이미 들어간 compile-time 최적화의 runtime 확장이다.\n\n> makes the optimization available to distro kernels compiled without NONPORTABLE config. Now, the kernel can skip the software aligning code in ucopy after fast unaligned access is detected at runtime.\n\n[원문 확인](https://patchew.org/linux/20260911182402.1434257-1-tchiu@tenstorrent.com/)\n\nruntime jump table이 RV32·nommu 구성에서도 안전한지는 확인 필요하다.\n\n**irqchip/sifive-plic: Panic if initialization fails**\n\nNam Cao 패치가 SiFive PLIC 초기화 실패 시 unwinding 대신 panic()으로 즉시 중단한다. plic_probe()의 fail cleanup 경로를 제거하고 platform·early probe에서 오류를 panic으로 승격한다.\n\n영향: PLIC 없이는 RISC-V 보드에서 장치 인터럽트가 동작하지 않아 probe 실패 후 부분 초기화 상태로 진행하는 것은 의미가 없다. fail-fast로 부팅 실패를 명확히 한다.\n\n> If PLIC initialization fails, the driver unwinds and returns an error. However, that is futile because the system cannot function without the PLIC: all device interrupts are routed through it.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/11/1803)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "RISC-V updates for v7.3-rc3 pull",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/11/2294",
+      "note": "thread"
+    },
+    {
+      "title": "pointer masking pmm/pmlen revert 설명",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/20/55",
+      "note": "thread"
+    },
+    {
+      "title": "RISC-V KVM lazy VMID rollover v3",
+      "url": "https://patchew.org/linux/20260911152314.1076817-1-wenlongli486@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv SSE mask during shutdown and kexec v10",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/11/1377",
+      "note": "thread"
+    },
+    {
+      "title": "riscv runtime native misaligned ucopy v1",
+      "url": "https://patchew.org/linux/20260911182402.1434257-1-tchiu@tenstorrent.com/",
+      "note": "thread"
+    },
+    {
+      "title": "SiFive PLIC panic on initialization failure",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/11/1803",
+      "note": "thread"
+    },
+    {
+      "title": "SiFive PLIC early DT probe panic",
+      "url": "https://patchew.org/linux/20260911145037.427896-1-namcao@linutronix.de/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-11T18:57:13.357Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
