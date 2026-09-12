@@ -1,0 +1,143 @@
+{
+  "id": "2026-09-13-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-09-13 7.3 kbuild 1차수정 — 툴체인 렌즈",
+  "headline": "7.3 kbuild-fixes 1차 pull, clang PAT 빌드 실패, modpost 병렬화 논의, Rust powerpc·drm/tyr·RUFS 동시 진행",
+  "date": "2026-09-13",
+  "summary": "Nicolas Schier가 7.3-rc2 기준 kbuild-fixes-7.3-1로 kbuild 회귀·심볼 누출 4건을 Linus에 pull 요청했다. 동시에 x86 PAT W^X 패치의 clang 빌드 실패, modpost 병렬화 리뷰, Rust powerpc WARN·drm/tyr reset·RUFS SCSI 논쟁이 툴체인 담당자의 즉시 테스트·설계 검토 항목으로 올라왔다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "Kbuild fixes for 7.3 #1",
+      "priority": "상",
+      "impactType": "release",
+      "affectedAudience": "kbuild·clang 빌드·kallsyms 유지보수 담당",
+      "verifyLink": "https://git.kernel.org/pub/scm/linux/kernel/git/kbuild/linux.git/tag/?h=kbuild-fixes-7.3-1",
+      "if": "7.3-rc2 기준 allmodconfig·clang 빌드·kallsyms 크기를 추적하는 경우",
+      "do": "kbuild-fixes-7.3-1 태그 4건 수정을 적용해 asm-headers filechk, sorttable, mksysmap, arm64 PIE 심볼 회귀를 재현·검증하세요",
+      "verify": "kbuild-fixes-7.3-1 changelog에서 MODULE_INFO() 필터 수정과 bzImage 약 32KiB 절감 내용을 확인하세요"
+    },
+    {
+      "title": "x86/mm/pat: use pr_warn() for early W^X warnings",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "LLVM 커널 빌드·x86 PAT/W^X 검증 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/12/93",
+      "if": "clang 22.1.3 x86_64-allnoconfig W=1 스모크 테스트를 운영하는 경우",
+      "do": "v2의 pr_warn_once(1, ...) 호출을 v3에서 첫 인자 제거 후 재빌드해 컴파일 오류 해소 여부를 확인하세요",
+      "verify": "kernel test robot이 보고한 set_memory.c:708 구문 오류와 pr_warn_once 매크로 인자 규약 스레드를 대조하세요"
+    },
+    {
+      "title": "drivers/rufs: add Rust UFS host controller driver",
+      "priority": "상",
+      "impactType": "project",
+      "affectedAudience": "Rust-for-Linux·UFS/블록·SCSI 스택 작성자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/12/492",
+      "if": "Rust UFSHCI가 SCSI midlayer를 우회하는 blk-mq 직접 노출 설계를 검토하는 경우",
+      "do": "Greg KH·James Bottomley·Bart Van Assche의 SCSI 중복·corner case 재발명 경고를 반영해 midlayer 전환 또는 bindgen 공유 방향을 재평가하세요",
+      "verify": "RUFS RFC 스레드에서 USB storage 우회 실패 사례와 JEDEC SCSI 명령 확장 반박 논지를 원문으로 확인하세요"
+    },
+    {
+      "title": "powerpc: Add ARCH_WARN_ASM and KUnit tests for Rust WARN() support",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "Rust-for-Linux·powerpc 아키텍처 유지보수 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/12/268",
+      "if": "powerpc에서 Rust 커널 빌드의 WARN() 경로를 확장하려는 경우",
+      "do": "v4의 ARCH_WARN_ASM·ARCH_WARN_REACHABLE 추가와 CONFIG_RUST_BUG_POWERPC_KUNIT_TEST 5개 테스트를 ppc32 QEMU·ppc64le에서 재실행하세요",
+      "verify": "powerpc ARCH_WARN_ASM 부재로 generated_arch_warn_asm.rs.S macro expansion이 실패한다는 v4 스레드 설명을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Kbuild fixes for 7.3 #1**\n\nNicolas Schier가 Linux 7.3-rc2 기준 kbuild-fixes-7.3-1 태그로 4건 수정을 Linus에 pull 요청했다. asm-headers filechk 임시파일 삭제 레이스, clang-23+ sorttable long_size 미사용 경고, mksysmap MODULE_INFO() kallsyms 누출(약 32KiB bzImage 절감), arm64 PIE __pi_ namespace 심볼 kallsyms 노출을 고친다.\n\n영향: 7.3 안정화 주기 초반 kbuild 회귀·심볼 누출 수정은 allmodconfig·clang 빌드·kallsyms 크기를 추적하는 툴체인 담당자의 즉시 테스트 기준점이며, Lorenzo 속도개선 시리즈 선행 수정 2건이 포함돼 대형 kbuild 패치 통합 속도에도 영향을 준다. Linus merge 여부와 7.3-rc3 포함 시점, Lorenzo kbuild 속도개선 23패치 시리즈 본 pull 일정은 확인 필요.\n\n> First round of Kbuild fixes for 7.3\n\n> Update regexp to remove kallsyms entries from kernel binary, saves about 32 KiB of bzImage.\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/kbuild/linux.git/tag/?h=kbuild-fixes-7.3-1)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**x86/mm/pat: use pr_warn() for early W^X warnings**\n\nMike Rapoport v2는 kernel_set_to_readonly 이전 W^X 위반을 WARN_ONCE 대신 pr_warn_once()로 낮춘다. 그러나 2026-09-12 kernel test robot이 clang 22.1.3 x86_64-allnoconfig W=1 빌드에서 pr_warn_once(1, ...) 호출이 매크로 인자 규약을 어겨 컴파일 오류를 보고했다.\n\n영향: llvm 리스트로 올라온 빌드 실패는 Clang 기반 CI·allnoconfig 스모크 테스트에서 패치가 깨짐을 즉시 드러낸다. pr_warn_once는 WARN_ONCE와 달리 조건 인자를 받지 않아 v3에서 첫 인자 제거가 필요하다. v3 재통과 여부와 early boot false positive 경고 정책에 대한 mm maintainer 최종 의견은 확인 필요.\n\n> retain the warning even if it's bogus, but make it scream less loudly: use pr_warn_once() rather than WARN_ONCE().\n\n> arch/x86/mm/pat/set_memory.c:708:16: error: expected ')'\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/12/93)\n\n**powerpc: Add ARCH_WARN_ASM and KUnit tests for Rust WARN() support**\n\nMukesh Kumar Chaurasiya v4 2패치가 powerpc에 누락된 ARCH_WARN_ASM·ARCH_WARN_REACHABLE를 추가하고 _EMIT_BUG_ENTRY를 (label,file,line,flags) 문자열 합성으로 리팩터한다. Rust WARN()이 생성하는 generated_arch_warn_asm.rs.S가 ppc에서 macro expansion 오류로 실패하는 문제를 해소하고, CONFIG_RUST_BUG_POWERPC_KUNIT_TEST로 bug table 5개 테스트를 추가한다.\n\n영향: x86·arm64·s390·riscv에 이미 있는 Rust WARN() 아키텍처 훅이 powerpc에 빠져 Rust 커널 빌드가 막혀 있었다. KUnit으로 __bug_table 방출을 검증하면 Rust-for-Linux 툴체인이 ppc32/ppc64에서 WARN 경로를 안전하게 확장할 수 있다. rust-for-linux·powerpc maintainer 리뷰 반영 후 merge 일정은 확인 필요.\n\n> powerpc currently has no ARCH_WARN_ASM or ARCH_WARN_REACHABLE definitions, which causes Rust kernel builds on powerpc to fail\n\n> Tested on ppc64le pseries: pass:5 fail:0 skip:0.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/12/268)\n\n**modpost: perform srcversion hashing in parallel**\n\nLorenzo Stoakes 패치는 modpost srcversion 해싱을 pthread thread pool로 병렬화해 allmodconfig에서 modpost 시간을 약 절반·전체 빌드를 약 10% 단축한다고 주장한다. Yann Droneaud는 2026-09-12에 make jobserver 감독 하 병렬화를 제안했고, Lorenzo는 별도 module_ver_remove 시리즈 때문에 이 패치를 23패치 시리즈에서 빼려 한다.\n\n영향: modpost는 allmodconfig 증분 빌드의 serial tail이며 병렬화·jobserver 통합은 kbuild 성능 개선 논의의 핵심이다. 패치가 시리즈에서 빠지면 당장 mainline 이득은 없지만 리뷰 요구사항은 후속 재제출 시 반영해야 한다. module_ver_remove와 parallel hashing 상호작용, jobserver 통합 없이 재제출될지 여부는 확인 필요.\n\n> If you're going parallel, it would be nicer to do it under make's jobserver supervision.\n\n> Combined with the per-file hashing commit this cuts modpost's run time nearly in half for an allmodconfig build.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/12/490)"
+    },
+    {
+      "heading": "기타",
+      "body": "**drm/tyr: GPU reset infrastructure**\n\nOnur Özkan v7 3패치가 drm/tyr에 전용 workqueue 기반 GPU reset 인프라를 추가한다. SRCU gate와 mutex로 하드웨어 접근을 차단하고 reset 중복 큐잉을 막으며, teardown 시 reset work를 drain한다. v7은 address-space마다 gate를 한 번만 잡아 deadlock을 피하고 iomem을 hardware gate 뒤로 옮긴다.\n\n영향: Rust SRCU 추상화·workqueue cancel_sync 선행 패치에 의존하는 첫 Rust DRM reset 경로로, Rust-for-Linux 툴체인이 실제 GPU 드라이버에서 동시성·리셋 수명 관리 패턴을 검증하는 사례다. reset 실패 시 GPU unplug TODO 처리 일정과 panthor_device_schedule_reset()와 같은 PM 검사 추가 여부는 확인 필요.\n\n> Use an SRCU based gate with mutex-protected reader admission to block hardware accesses while reset work runs\n\n> This is the initial reset infrastructure only. It is not wired to a reset source yet\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/12/440)\n\n**drivers/rufs: add Rust UFS host controller driver**\n\nRUFS RFC의 SCSI midlayer 우회·blk-mq 직접 노출 설계가 2026-09-12에 격렬한 리뷰를 받았다. Greg KH는 USB storage 우회 실패 사례를 들어 SCSI 중복을 경고하고, James Bottomley는 코드량이 아니라 SCSI 기능 중복·에러 처리 재발명 위험을 지적한다. Bart Van Assche는 JEDEC 비표준 SCSI 명령 확장 논리에 반대한다.\n\n영향: Rust UFSHCI가 SCSI 스택을 건너뛰는지는 Rust 블록·SCSI 바인딩 경계와 향후 유지보수 비용을 결정한다. senior maintainer의 실패 사례 경고는 Rust-for-Linux 드라이버가 기존 midlayer를 재구현할 때 반드시 검토해야 할 선례다. RUFS가 SCSI midlayer로 전환·bindgen 공유할지, non-RFC 버전 전 선행 Rust block·DMA 추상화 시리즈 머지 일정은 확인 필요.\n\n> So I wouldn't recommend it, as long as UFS builds on top of the SCSI commands and the like, you should not attempt to duplicate it\n\n> The problem isn't necessarily the duplication of code per-se it's the duplication of function without understanding the subtlety.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/12/492)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "kbuild-fixes-7.3-1",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/kbuild/linux.git/tag/?h=kbuild-fixes-7.3-1",
+      "note": "changelog"
+    },
+    {
+      "title": "kbuild: Fix builds with clang-23 or newer",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/kbuild/linux.git/commit/?id=4f73462856576797b8f3c55564a9be99f76dc67b",
+      "note": "commit"
+    },
+    {
+      "title": "x86/mm/pat: use pr_warn() for early W^X warnings v2",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/11/1287",
+      "note": "thread"
+    },
+    {
+      "title": "kernel test robot: clang 22.1.3 pr_warn_once build failure",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/12/93",
+      "note": "thread"
+    },
+    {
+      "title": "powerpc: Add ARCH_WARN_ASM and KUnit tests for Rust WARN() support v4",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/12/268",
+      "note": "thread"
+    },
+    {
+      "title": "modpost parallel hashing: jobserver supervision proposal",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/12/490",
+      "note": "thread"
+    },
+    {
+      "title": "modpost parallel hashing: series drop plan",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/11/1192",
+      "note": "thread"
+    },
+    {
+      "title": "modpost parallel hashing: performance claim",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/08/2847",
+      "note": "thread"
+    },
+    {
+      "title": "drm/tyr: GPU reset infrastructure v7",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/12/440",
+      "note": "thread"
+    },
+    {
+      "title": "drivers/rufs: Greg KH on SCSI midlayer bypass",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/12/492",
+      "note": "thread"
+    },
+    {
+      "title": "drivers/rufs: James Bottomley on SCSI duplication",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/12/587",
+      "note": "thread"
+    },
+    {
+      "title": "drivers/rufs: Bart Van Assche on JEDEC SCSI commands",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/12/581",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-12T18:43:01.526Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

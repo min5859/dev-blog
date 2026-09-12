@@ -1,0 +1,125 @@
+{
+  "id": "2026-09-13-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-09-13 MSM THP·eDP 회귀 — GPU·AI",
+  "headline": "MSM GEM THP가 darktable 벤치 2배 이상 가속을 보고했고, amdgpu eDP ASSR 회귀·a6xx+ GMU timeout 수정이 dri-devel에 올라왔습니다.",
+  "date": "2026-09-13",
+  "summary": "drm/msm은 GEM 버퍼용 THP tmpfs 마운트와 GMU firmware init timeout 연장을 제안했습니다. drm/amd/display는 Vilboz Chromebook eDP ASSR 회귀를 고치는 패치가 리뷰 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "drm",
+    "gpu"
+  ],
+  "highlights": [
+    {
+      "title": "drm/msm: GEM 버퍼용 THP 활성화",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "drm/msm·Freedreno·Qualcomm Adreno GEM/메모리 경로 유지보수자",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/dri-devel/20260912145922.24115-1-robin.clark@oss.qualcomm.com/",
+      "if": "Adreno/MSM 스택에서 대용량 GEM mmap·CPU 접근 성능을 추적한다면",
+      "do": "v2 THP 시리즈의 msm_drm_init() 초기화·shrinker modparam 변경과 Sashiko AI가 지적한 ERR_PTR 처리 우려를 함께 검토하세요",
+      "verify": "Rob Clark maintainer 응답·v3 err 처리 수정과 drm-misc-next 머지 일정은 확인되지 않았으니 lore 스레드를 직접 확인하세요"
+    },
+    {
+      "title": "drm/amd/display: ASSR 실패 시 eDP 모드 보존",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "drm/amd/display·eDP link training·AMD APU Chromebook 유지보수자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/12/623",
+      "if": "eDP ASSR·Chromebook display bring-up을 담당한다면",
+      "do": "panel_mode_initialized 플래그 패치가 첫 link training 전 zero-init panel_mode 오판을 막는지 Vilboz 등 대상 보드에서 검증하세요",
+      "verify": "drm-misc-next·stable backport(Cc) 여부와 maintainer 응답은 확인되지 않았으니 스레드와 커밋 56d8ce9d8c17을 대조하세요"
+    },
+    {
+      "title": "drm/msm/a6xx+: GMU FW init timeout 연장",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "drm/msm a6xx+·GMU firmware·Qualcomm Adreno 모바일 GPU 유지보수자",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/dri-devel/20260912150915.28700-1-robin.clark@oss.qualcomm.com/",
+      "if": "a6xx+ GMU firmware init timeout 회귀를 추적한다면",
+      "do": "gmu_poll_timeout() 마지막 인자를 10000에서 100000으로 늘리는 패치 적용 후 간헐적 init timeout 로그가 사라지는지 확인하세요",
+      "verify": "Akhil P Oommen Reviewed-by가 달린 스레드와 실제 보드 부팅 로그에서 GMU init 완료 시점을 대조하세요"
+    },
+    {
+      "title": "drm/panel: BOE TV101WUM-NM0 패널 추가",
+      "priority": "중",
+      "impactType": "project",
+      "affectedAudience": "drm/panel·Novatek NT51021·MediaTek DRM·Amazon Fire HD 10 mainlining 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/dri-devel/20260912-add-boe-tv101wum-nm0-v1-0-3057a08e8b80@gmail.com/",
+      "if": "Fire HD 10·mediatek-drm 기반 embedded display bring-up을 한다면",
+      "do": "novatek-nt51021 v2 시리즈 의존 2패치의 51핀·SYNC_EVENT_VDO_MODE·cont_clock=1 설정과 DT binding 흐름을 따라보세요",
+      "verify": "의존 시리즈 [PATCH v2 0/3] Novatek NT51021 DSI panel IC driver의 drm-misc 머지 여부는 확인되지 않았으니 패널 시리즈 머지 상태를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm/amd/display: ASSR 실패 시 eDP 모드 보존**\n\n56d8ce9d8c17 이후 ASSR 실패 시 저장된 panel_mode를 보는 로직이, dc_link zero-init 때문에 첫 link training 전에도 default mode가 이미 적용된 것처럼 보이는 버그를 고칩니다. panel_mode_initialized 플래그를 추가해 실제 dp_set_panel_mode() 호출 후에만 저장 모드를 참조합니다.\n\n영향: 첫 ASSR 실패 시 eDP scrambling mode가 잘못 train되면 Google Vilboz Chromebook에서 패널이 대부분 검고 상단이 깨지는 회귀가 납니다.\n\n> When link training during engine recovery, ASSR might fail causing panel mode to be reset to default. This should not happen for eDP\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=56d8ce9d8c17bea955b0c2551ee86149486890ae)\n\n> On a Google Vilboz Chromebook running self-built coreboot firmware and PSP verstage, this leaves the panel mostly black with corrupted output\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/12/623)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/msm: Enable THP for GEM buffers**\n\nv2 1/2가 msm_drm_init() 초기에 transparent_hugepage 모듈 파라미터(기본 true)와 drm_gem_huge_mnt_create(dev, \"within_size\")로 MSM GEM 버퍼용 전용 THP tmpfs 마운트를 켭니다. v2는 THP 초기화 시점을 앞당겼고 2/2는 shrinker blocking 비활성 modparam을 추가합니다.\n\n영향: 페이지 할당·pinning 병목이 있던 사진 처리 워크로드에서 darktable 벤치마크가 2배 이상 빨라졌다고 보고돼, Adreno/MSM 스택에서 대용량 GEM mmap·CPU 접근 성능을 추적하는 담당자에게 직접적입니다. Sashiko AI review는 drm_gem_huge_mnt_create() 실패 시 ERR_PTR 처리 순서가 잘못되면 GEM UAF·할당 실패가 날 수 있다고 High로 지적했습니다.\n\n> More than 2x speedup on darktable benchmark which was bottlenecked on page allocation/pinning.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/20260912145922.24115-1-robin.clark@oss.qualcomm.com/)\n\n> it can lead to a use-after-free or continuous allocation failures. Should this code check for IS_ERR() or check the err variable first\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/20260912151239.A854E1F000FF@smtp.kernel.org/raw)\n\n**drm/msm/a6xx+: Increase GMU FW init timeout**\n\na6xx_gmu.c의 GMU firmware init poll timeout을 10ms(10000µs)에서 kgsl과 동일한 100ms(100000µs)로 늘립니다. gmu_poll_timeout()의 마지막 인자만 10000→100000으로 변경합니다.\n\n영향: 드물게 10ms를 넘기면 \"GMU firmware initialization timed out\" 후 GPU가 불안정해지는 회귀를 막습니다.\n\n> very occasionally goes a bit above 10ms, leading to a \"GMU firmware inialization timed out\", from which point things go south.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/20260912150915.28700-1-robin.clark@oss.qualcomm.com/)\n\n**drm/panel: novatek-nt51021: add the BOE TV101WUM-NM0**\n\n2패치 시리즈가 Amazon Fire HD 10 (2017)용 BOE TV101WUM-NM0 10.1\" DSI 패널(51핀, SYNC_EVENT_VDO_MODE·cont_clock=1) 지원을 novatek-nt51021 패널 IC 드라이버 v2 시리즈에 의존해 추가합니다. init/timing은 Amazon vendor kernel에서 가져왔습니다.\n\n영향: NT51021 DSI 패널 IC 메인라인화의 후속 보드 지원으로, Fire HD 10·mediatek-drm 기반 embedded display bring-up 담당자가 upstream 패널 테이블·DT binding 흐름을 따라야 합니다.\n\n> The pin count is 51 instead of 46 - The vendor asks for SYNC_EVENT_VDO_MODE with cont_clock=1 instead of burst mode.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/20260912-add-boe-tv101wum-nm0-v1-0-3057a08e8b80@gmail.com/)\n\n> Tested on the Amazon Fire HD 10 (2017) driven by mediatek-drm: 1200x1920 at 62.5 Hz across a cold boot\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/20260912-add-boe-tv101wum-nm0-v1-0-3057a08e8b80@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "**drm/amdgpu: Remove redundant mode2 restore check**\n\nDan Carpenter 패치가 soc_v1_0.c MODE2 reset 경로에서 이미 성공한 r 변수를 다시 검사하는 중복 if를 제거하고 들여쓰기를 정리합니다. Fixes: 208e5d4b3f1e2 (soc_v1_0 reset handler)를 가리킵니다.\n\n영향: 동작 변경은 없는 코드 정리로 보이지만, amdgpu SOC reset·MODE2 복구 경로를 읽는 유지보수자에게 가독성을 높일 수 있습니다. Fixes 대상 커밋이 mainline에 없어 backport·리뷰 맥락 확인이 필요할 수 있습니다.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/94ccd0e0f47be9ec1985cbc786093c01d7693aa5.1789224159.git.error27@gmail.com/)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/msm: Enable THP for GEM buffers v2",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/20260912145922.24115-1-robin.clark@oss.qualcomm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Sashiko AI review: THP ERR_PTR 처리",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/20260912151239.A854E1F000FF@smtp.kernel.org/raw",
+      "note": "thread"
+    },
+    {
+      "title": "drm/panel: BOE TV101WUM-NM0",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/20260912-add-boe-tv101wum-nm0-v1-0-3057a08e8b80@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/amdgpu: Remove redundant mode2 restore check",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/94ccd0e0f47be9ec1985cbc786093c01d7693aa5.1789224159.git.error27@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/msm/a6xx+: Increase GMU FW init timeout",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/20260912150915.28700-1-robin.clark@oss.qualcomm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "GMU timeout Reviewed-by",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/12/633",
+      "note": "thread"
+    },
+    {
+      "title": "ASSR eDP panel_mode 저장 커밋",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=56d8ce9d8c17bea955b0c2551ee86149486890ae",
+      "note": "commit"
+    },
+    {
+      "title": "drm/amd/display: Preserve eDP mode on ASSR failure",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/12/623",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-12T18:58:27.082Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,133 @@
+{
+  "id": "2026-09-13-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-09-13 trampoline detach UAF — Linux Perf·RT",
+  "headline": "프리엠트 커널에서 BPF trampoline detach 중 int3 UAF가 재현됐고, htab batch soft lockup 수정은 bpf-next에 머지됐다.",
+  "date": "2026-09-13",
+  "summary": "Florent Revest v2가 detach된 prog 호출을 점프로 건너뛰어 sleepable·preempt 경로 UAF를 막는다. Josef Bacik의 htab batch yield 패치는 bpf-next master에 적용됐고, x86 BPF trampoline Tasks RCU nesting RFC는 설계 논의가 이어진다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "detach된 prog UAF 방지 trampoline 패치",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF trampoline·LSM hook attach/detach를 운영하는 BPF 및 tracing 유지보수자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/12/408",
+      "if": "프리엠트 가능 커널에서 LSM·fentry/fexit trampoline attach/detach가 겹치는 환경을 운영한다면",
+      "do": "Florent Revest v2 패치의 trampoline image NOP·점프 건너뛰기 동작과 bpf.git master 반영 여부를 추적하세요",
+      "verify": "openwall 스레드에서 프로덕션 int3 Oops 재현 경로와 v2 diff를 직접 확인하세요"
+    },
+    {
+      "title": "htab batch soft lockup 수정 bpf-next 머지",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "대용량 BPF hash/LRU map batch API를 쓰는 map·perf·tracing 개발자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/09/2491",
+      "if": "16M bucket급 LRU hash에서 BPF_MAP_LOOKUP_BATCH를 주기적으로 호출한다면",
+      "do": "85136bf22404가 포함된 bpf-next 트리에서 cond_resched_tasks_rcu_qs() yield 동작을 검증하세요",
+      "verify": "16M bucket 77초 이상 CPU 점유 사례와 64 consecutive empty bucket yield 설계를 스레드에서 확인하세요"
+    },
+    {
+      "title": "x86 BPF trampoline Tasks RCU nesting RFC",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "BPF trampoline·Tasks RCU·PREEMPT_LAZY 상호작용을 추적하는 BPF 및 RCU 개발자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/12/145",
+      "if": "PREEMPT_LAZY에서 BPF trampoline teardown이 수 분 지연되는 증상을 본다면",
+      "do": "Josef Bacik RFC v2의 rcu_tramp_nesting inc/dec와 Alexei·Paul McKenney 설계 피드백을 함께 읽으세요",
+      "verify": "rcu_tramp_nesting과 trc_reader_nesting 통합안 채택 여부는 아직 확인이 필요합니다"
+    },
+    {
+      "title": "MIPS BPF JIT BPF_MEMSX 지원",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "MIPS/MIPS64에서 BPF JIT를 쓰는 플랫폼·네트워킹 BPF 개발자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/08/21/135",
+      "if": "MIPS에서 verifier-valid MEMSX insn이 있는 BPF program을 JIT로 실행한다면",
+      "do": "MOVSX·SDIV/SMOD 선행 시리즈 머지 후 Nicholas Dudar MEMSX 패치 적용 순서를 확인하세요",
+      "verify": "2026-09-12 lore 재게시본 변경 여부와 bpf-next 큐 반영 시점은 확인이 필요합니다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**__htab_map_lookup_and_delete_batch() soft lockup 수정 v2 bpf-next 머지**\n\nv2는 64개 연속 빈 bucket마다 RCU critical section을 빠져나와 cond_resched_tasks_rcu_qs()를 호출하고, bucket 루프에도 동일 yield를 넣는다. bpf-next master에 적용됐다(85136bf22404).\n\n영향: 대형 htab에서 BPF_MAP_LOOKUP_BATCH 한 번이 수십 초 CPU를 붙잡아 soft lockup을 유발하고, PREEMPT/PREEMPT_LAZY에서 plain cond_resched()는 Tasks RCU QS도 못 내줘 trampoline teardown까지 막을 수 있다.\n\n> periodic BPF_MAP_LOOKUP_BATCH calls against an LRU hash map with 16,777,216 buckets held a CPU inside the batch op for 77+ seconds\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/09/2491)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**bpf: Skip detached progs in trampoline images that are still in use**\n\nFlorent Revest v2가 trampoline image마다 각 prog 호출 앞에 패치 가능한 NOP을 두고, detach 시 아직 살아 있는 image에서 해당 prog 호출을 점프로 건너뛰게 한다. sleepable prog·preempt 구간에서 해제된 prog를 호출해 int3 UAF가 나던 경로를 막는다.\n\n영향: 프리엠트 가능 커널에서 LSM·fentry/fexit trampoline attach/detach가 겹치면 프로덕션에서 실제 크래시가 났고 fuzzer/KASAN으로도 재현됐다. trampoline 수명 관리·detach 경로를 다루는 BPF/LSM 엔지니어에게 우선순위가 높다.\n\n> We hit this in production on preemptible kernels when progs attached through trampolines got detached while their hooks were busy\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/12/408)\n\nbpf.git master 머지 여부와 arm64/loongarch BPF_MAX_TRAMP_LINKS 축소가 최종 트리에 어떻게 반영되는지는 확인이 필요합니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**bpf: Avoid soft lockup in __htab_map_lookup_and_delete_batch()**\n\n__htab_map_lookup_and_delete_batch()에 64개 연속 빈 bucket마다 RCU critical section을 빠져나와 cond_resched_tasks_rcu_qs()를 호출하고, bucket 루프에도 동일 yield를 넣는다.\n\n영향: 대형 htab에서 BPF_MAP_LOOKUP_BATCH 한 번이 수십 초 CPU를 붙잡아 soft lockup을 유발하고, PREEMPT/PREEMPT_LAZY에서 plain cond_resched()는 Tasks RCU QS도 못 내줘 trampoline teardown까지 막을 수 있다.\n\n> Leave the critical section after 64 consecutive empty buckets, call cond_resched_tasks_rcu_qs(), and resume at the saved bucket cursor\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/09/2491)\n\n**bpf, x86: Maintain Tasks RCU trampoline nesting in the BPF trampoline**\n\nJosef Bacik RFC v2 08/15가 x86 BPF trampoline JIT에 current->rcu_tramp_nesting inc/dec를 넣어, fentry/fexit/fmod_ret/LSM glue 구간에서 preempt돼도 Tasks RCU quiescent로 오인되지 않게 한다. original function 호출 전후에는 im->pcref가 frame을 잡으므로 count를 내린다.\n\n영향: PREEMPT_LAZY에서 cond_resched()가 no-op인 kworker가 Tasks RCU grace period를 막아 BPF trampoline teardown이 수 분 지연될 수 있다. Alexei·Paul McKenney가 BPF trampoline 오버헤드와 trc_reader_nesting 중복 가능성을 짚으며 설계 논의 중이다.\n\n> bpf trampoline is already quite heavy. I'd like to find ways to reduce its overhead instead of adding more.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/12/145)\n\n**bpf, mips: Add BPF_MEMSX support to the JITs**\n\nNicholas Dudar가 MIPS32/MIPS64 BPF JIT에 BPF_MEMSX byte/half/word signed load를 추가한다. MIPS32는 load-delay 후 bit 31을 high word로 전파하고, MOVSX·SDIV/SMOD 시리즈 선행 머지가 필요하다.\n\n영향: verifier가 허용하는 MEMSX insn 하나만 있어도 JIT fallback이 걸리거나 mixed program이 miscompile될 수 있어, MIPS BPF JIT parity 작업의 다음 조각이다.\n\n> Both MIPS JITs predate this mode and reject all three verifier-valid encodings when JIT execution is required.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/08/21/135)"
+    },
+    {
+      "heading": "기타",
+      "body": "**perf test: Use sqrtloop workload to test bperf event**\n\nupstream d36e5b36a292는 stat_bpf_counters.sh workload를 brstack에서 fork()를 쓰는 sqrtloop로 바꿔 bperf event inheritance를 검증한다. 2026-09-12 메일은 6.1-stable 리뷰용 backport 제안이다.\n\n영향: bperf counter selftest가 fork inheritance를 실제로 검증해야 hybrid/stable CI에서 BPF perf counter 회귀를 조기에 잡을 수 있다. stable-dep-of b02027776ac5와 함께 6.1.y test 안정화 축이다.\n\n> Replace `brstack` workload with `sqrtloop` workload, because `sqrtloop` workload contains fork(), which is suitable for testing the bperf event inheritance feature.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2024/10/21/669)\n\n6.1-stable 큐에 실제 반영·ACK 여부와 upstream commit d36e5b36a292와 stable 큐의 정확한 Fixes/Stable-dep-of 체인은 확인이 필요합니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "bpf: Skip detached progs in trampoline images (Florent Revest v2)",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/12/408",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Avoid soft lockup in __htab_map_lookup_and_delete_batch()",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/09/2491",
+      "note": "thread"
+    },
+    {
+      "title": "htab batch RCU quiesce 확인 (Josef Bacik)",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/09/2864",
+      "note": "thread"
+    },
+    {
+      "title": "bpf, x86: Tasks RCU trampoline nesting RFC v2",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/10/2654",
+      "note": "thread"
+    },
+    {
+      "title": "BPF trampoline 오버헤드 우려 (Alexei Starovoitov)",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/12/145",
+      "note": "thread"
+    },
+    {
+      "title": "rcu_read_lock_trace 통합 논의 (Paul McKenney)",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/12/196",
+      "note": "thread"
+    },
+    {
+      "title": "bpf, mips: BPF_MEMSX JIT 지원",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/21/135",
+      "note": "thread"
+    },
+    {
+      "title": "MIPS MEMSX 선행 MOVSX·SDIV/SMOD 의존",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/21/133",
+      "note": "thread"
+    },
+    {
+      "title": "perf test sqrtloop bperf inheritance",
+      "url": "https://lists.openwall.net/linux-kernel/2024/10/21/669",
+      "note": "thread"
+    },
+    {
+      "title": "stat_bpf_counters.sh workload 교체",
+      "url": "https://lkml.iu.edu/2409.0/04952.html",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-12T18:50:12.388Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

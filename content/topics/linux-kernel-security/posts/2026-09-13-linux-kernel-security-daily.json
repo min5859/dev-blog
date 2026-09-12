@@ -1,0 +1,113 @@
+{
+  "id": "2026-09-13-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-09-13 IPQ UBSAN·KASAN — 커널 보안",
+  "headline": "IPQ CMN PLL UBSAN OOB 수정과 PowerPC KASAN 리뷰 피드백 반영이 하드닝 쪽 신규 동향이다",
+  "date": "2026-09-13",
+  "summary": "이번 수집에서는 Qualcomm IPQ clk 드라이버 UBSAN 경계 초과, PowerPC KASAN 툴체인 게이트 리뷰 반영, KUnit user namespace 빌드 수정이 새로 올라왔다. 어제 다룬 stable·longterm 릴리스 항목은 추가 진척이 없어 본문에서 생략했다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "clk: qcom ipq-cmn-pll num 초기화",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Qualcomm IPQ SoC clk 드라이버 유지보수자 및 UBSAN/KASAN 기반 커널 CI 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/05/927",
+      "if": "IPQ SoC에서 GCC 15.1+/Clang 20.1+와 CONFIG_UBSAN_BOUNDS·UBSAN_TRAP 빌드를 쓴다면",
+      "do": "ipq_cmn_pll_register_clks()에서 .num 선행 설정 패치 채택 여부를 확인하세요",
+      "verify": "실제 IPQ 하드웨어 probe 실패 재현 리포트는 아직 없으니 런타임 검증이 필요합니다"
+    },
+    {
+      "title": "powerpc/kasan memintrinsic prefix 게이트",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "PowerPC 아키텍처 유지보수자 및 KASAN 기반 커널 하드닝·CI 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/11/2305",
+      "if": "PowerPC에서 KASAN을 켠 빌드·CI를 운영한다면",
+      "do": "prefix 미지원 툴체인에서 HAVE_ARCH_KASAN 노출을 막는 V2 패치 머지 여부를 추적하세요",
+      "verify": "mem_64.S/copy_32.S .noinstr.text 장기 수정 후 구형 툴체인 KASAN 재개 가능성은 후속 패치를 확인하세요"
+    },
+    {
+      "title": "powerpc/kasan 부트 경로 주석 정리",
+      "priority": "중",
+      "impactType": "project",
+      "affectedAudience": "PowerPC 부트·KASAN 통합 유지보수자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/08/1098",
+      "if": "PowerPC 초기 부트와 KASAN 통합을 함께 다룬다면",
+      "do": "Christophe Leroy 리뷰가 반영된 V2 주석 문구를 원문과 대조해 확인하세요",
+      "verify": "PTRRELOC-adjusted 포인터와 MMU 미설정 시점 memcpy 제약이 최종 패치에 어떻게 기술됐는지 스레드를 따라가세요"
+    },
+    {
+      "title": "KUnit user namespace 빌드 수정",
+      "priority": "하",
+      "impactType": "build",
+      "affectedAudience": "KUnit·user namespace 테스트를 켠 커널 CI/개발자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/11/1469",
+      "if": "CONFIG_KUNIT과 btrfs self-test를 동시에 켠 CI를 돌린다면",
+      "do": "insert_extent()/sort_idmaps() 이름 충돌·프로토타입 누락 수정 패치 적용 여부를 확인하세요",
+      "verify": "이번 수정은 빌드·테스트 인프라 정리이며 런타임 보안 동작 변경은 아닙니다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**clk: qcom: ipq-cmn-pll: Assign .num before accessing .hws**\n\nipq_cmn_pll_register_clks()에서 clk_hw_onecell_data의 __counted_by(num) 배열 hws[]에 접근 전에 num을 설정하지 않아 CONFIG_UBSAN_BOUNDS에서 OOB가 발생할 수 있다. 패치는 할당 직후 hw_data->num = num_clks + 1로 초기화를 앞당긴다.\n\n영향: GCC 15.1+/Clang 20.1+와 UBSAN_TRAP을 쓰는 IPQ SoC 빌드에서는 probe 단계에서 CMN PLL 클럭 제공이 실패할 수 있어, 하드닝·배포 빌드 설정을 추적하는 담당자가 stable 후보를 확인해야 한다.\n\n> If registering one of the fixed rate clocks fails, the unwind loop under unregister_fixed_clk reads .hws[] while .num is still zero as well.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/05/927)\n\n메인테이너 Bjorn Andersson은 diff를 승인했으나 패치는 compile-tested only이며 UBSAN 경로는 미검증이다. 실제 IPQ 하드웨어에서 CONFIG_UBSAN_BOUNDS/TRAP 환경의 probe 실패 재현 여부는 아직 공개된 런타임 리포트가 없다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**powerpc/kasan: require memintrinsic prefix support for KASAN**\n\nChristophe Leroy는 V1 리뷰에서 cputable.c·prom_init.c의 KASAN 관련 memcpy 주석이 소스에 과도하다고 지적하고, __asan_memcpy 접근에서도 PTRRELOC 부트 이슈가 남는지 질문했다. V2는 주석을 MMU 미설정·PTRRELOC-adjusted 포인터 맥락으로 재작성해 답한다.\n\n영향: PowerPC 초기 부트 경로의 relocation 민감성은 KASAN 툴체인 게이트와 별개로 남는 설계 제약이므로, 하드닝 담당자는 리뷰 피드백이 반영된 최종 패치 문구를 확인해야 한다.\n\n> This explanation belongs to the commit message not to the source code.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/08/1098)\n\n> Use memcpy() instead of *t = *s because t is a PTRRELOC-adjusted pointer and this code runs before the MMU mapping is established.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/11/2305)\n\n**Minor bugfixes for kunit userns tests**\n\nChristian Brauner의 2건 패치는 KUnit user namespace 테스트가 노출한 insert_extent()/sort_idmaps() 전역 심볼 이름 충돌(btrfs self-test)과 CONFIG_KUNIT 시 프로토타입 누락 경고를 수정한다.\n\n영향: user namespace KUnit은 ID 매핑 로직 검증에 쓰이지만 이번 수정은 빌드·테스트 인프라 정리로, 런타임 보안 동작 자체는 바꾸지 않는다.\n\n> two fixes for the kunit userns tests.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/11/1469)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "clk: qcom ipq-cmn-pll .num 초기화 패치",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/05/927",
+      "note": "thread"
+    },
+    {
+      "title": "clk: qcom ipq-cmn-pll 리뷰 승인",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/10/2753",
+      "note": "thread"
+    },
+    {
+      "title": "powerpc/kasan V1 리뷰 피드백",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/08/1098",
+      "note": "thread"
+    },
+    {
+      "title": "powerpc/kasan memintrinsic prefix V2",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/11/2305",
+      "note": "thread"
+    },
+    {
+      "title": "KUnit userns 테스트 수정 시리즈",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/11/1469",
+      "note": "thread"
+    },
+    {
+      "title": "userns insert_extent 이름 변경 패치",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/11/2484",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-12T18:38:25.217Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
