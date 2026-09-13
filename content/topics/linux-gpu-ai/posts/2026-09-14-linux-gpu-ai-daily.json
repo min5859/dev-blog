@@ -1,0 +1,133 @@
+{
+  "id": "2026-09-14-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-09-14 패널 UAF 수정 — GPU·DRM 렌즈",
+  "headline": "Novatek NT35950 패널 attach 실패 UAF 수정과 IPU·host1x remove 경로 클럭·RPM 정리, mxsfb LCDIF bus-width 지원이 dri-devel에 올라왔습니다.",
+  "date": "2026-09-14",
+  "summary": "NT35950 dual-DSI 패널 probe 실패 시 전역 panel list에 UAF 가능성이 보고됐고, i.MX IPU PRG·Tegra host1x remove 경로에서 클럭·runtime PM usage 누수 수정이 제안됐습니다. mxsfb LCDIF bus-width DT 속성과 BOE NT51021 태블릿 패널 드라이버 시리즈도 리뷰가 진행 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "drm/panel: novatek-nt35950 attach 실패 UAF",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "drm/panel 및 DSI 패널 드라이버 유지보수자, dual-DSI 보드 포팅 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/13/533",
+      "if": "Novatek NT35950 dual-DSI 패널 probe 실패·재시도 경로를 다루는 경우",
+      "do": "attach 실패 시 패널 레지스트리 정리 패치 적용 여부와 stable 백포트 필요성을 검토하세요.",
+      "verify": "openwall 스레드와 Fixes 커밋 623a3531e9cf를 대조해 재현 조건과 maintainer ack 여부를 확인하세요."
+    },
+    {
+      "title": "gpu: ipu-v3: prg clock cleanup on remove",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "gpu/ipu-v3 및 imx DRM 유지보수자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/13/530",
+      "if": "i.MX6QP IPU PRG 드라이버 unbind·모듈 재로드를 테스트하는 경우",
+      "do": "remove 경로에서 pm_runtime_disable() 후 clk_disable_unprepare() 호출 여부를 점검하세요.",
+      "verify": "active 상태 unbind 시 IPG·AXI 클럭이 남는다는 스레드 설명을 원문에서 확인하세요."
+    },
+    {
+      "title": "gpu: host1x runtime PM reference leak on remove",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "gpu/host1x 및 Tegra DRM 유지보수자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/13/449",
+      "if": "Tegra host1x 기반 tegra-drm·엔진 드라이버에서 반복 bind/unbind를 수행하는 경우",
+      "do": "remove 경로에 pm_runtime_put_sync_suspend() 추가 패치를 추적하고 RPM counter 불균형을 모니터링하세요.",
+      "verify": "pm_runtime_force_suspend()만으로 usage counter가 감소하지 않는다는 스레드 설명을 확인하세요."
+    },
+    {
+      "title": "drm: mxsfb LCDIF interface bus width",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "drm/mxsfb 및 i.MX LCDIF 보드 DT 담당자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/13/427",
+      "if": "i.MX LCDIF에서 물리 bus width와 panel format이 다른 보드를 포팅하는 경우",
+      "do": "LCDIF endpoint bus-width DT 속성 추가 및 drm-misc-next merge 진행을 추적하세요.",
+      "verify": "18-bit LCDIF가 24-bit panel을 구동할 때 색상 오류 재현 조건을 August 스레드 원문에서 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm/panel: novatek-nt35950: fix potential use-after-free on attach failure**\n\nnt35950_probe()가 DSI attach 전에 drm_panel_add()로 패널을 등록하는데, attach 실패 시 패널을 레지스트리에서 제거하지 않아 devm 해제 후 전역 panel list에 dangling pointer가 남습니다. dual-DSI에서는 DSI1 attach 실패 시 DSI0 detach도 누락됩니다.\n\n영향: Novatek NT35950 dual-DSI 패널을 쓰는 보드에서 probe 실패·재시도 시 UAF가 발생할 수 있어, panel/DSI 드라이버 유지보수자는 stable 백포트 여부를 검토해야 합니다. maintainer ack·stable 백포트 포함 여부와 실제 attach 실패 보드에서의 재현 테스트 결과는 확인이 필요합니다.\n\n> Leaving the panel registered therefore leaves the global panel list pointing at freed memory, which can result in a potential use-after-free when the stale entry is later accessed.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/13/533)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**gpu: ipu-v3: prg: fix clock cleanup on remove**\n\nipu_prg_remove()가 runtime PM을 비활성화하지 않고 리스트에서만 제거해, runtime active 상태에서 드라이버 unbind 시 IPG·AXI 클럭이 켜진 채 남습니다. 패치는 pm_runtime_disable() 후 필요 시 clk_disable_unprepare()를 호출합니다.\n\n영향: i.MX6QP IPU PRG를 쓰는 imx DRM 스택에서 모듈 재로드·unbind 시 클럭 누수와 전력·리소스 문제가 생길 수 있어, IPU/DRM 통합 담당자가 remove 경로를 확인해야 합니다. 2019년 유사 수정과의 관계 및 unbind 시 실측 시나리오는 확인이 필요합니다.\n\n> removing the driver while the device is active leaves both clocks enabled.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/13/530)\n\n**gpu: host1x: fix runtime PM reference leak on remove**\n\nhost1x_probe()가 pm_runtime_resume_and_get()으로 잡은 usage reference를 remove 경로에서 pm_runtime_force_suspend()만 호출해 해제하지 않아, 반복 bind/unbind 시 runtime PM usage counter가 불균형해집니다. 패치는 force_suspend 전에 pm_runtime_put_sync_suspend()를 추가합니다.\n\n영향: Tegra host1x 기반 tegra-drm·엔진 드라이버에서 모듈 재로드나 hotplug 테스트 시 RPM counter 누수가 누적될 수 있어, Tegra GPU 스택 담당자는 remove 경로를 점검해야 합니다. 반복 bind/unbind에서 counter 불균형이 실측된 Tegra SoC 환경과 stable 백포트 대상 브랜치는 확인이 필요합니다.\n\n> pm_runtime_force_suspend() disables runtime PM and invokes the runtime suspend callback when necessary, but it does not decrement the runtime PM usage counter.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/13/449)\n\n**drm: mxsfb: Support LCDIF interface bus width**\n\nv4 시리즈는 LCDIF 출력 endpoint bus-width(16/18/24) DT 속성을 추가하고, mxsfb가 downstream panel format보다 이 물리 bus width를 우선해 LCD_DATABUS_WIDTH를 설정합니다. Colibri iMX6ULL/iMX7 18-bit 배선용 DTS도 포함됩니다.\n\n영향: 물리 LCDIF bus width와 panel이 보고하는 format이 다를 때 색상 비트 매핑이 어긋나 잘못된 색이 나오는 문제를 DT로 명시적으로 해결하므로, i.MX LCDIF·Toradex 보드 포팅 담당자가 시리즈 적용을 추적해야 합니다. drm-misc-next merge 일정·maintainer 응답과 bus-width 미지정 시 기존 동작 보존 검증은 확인이 필요합니다.\n\n> Configuring LCDIF solely from the display's 24-bit format in this case selects the wrong LCD_DATABUS_WIDTH mode, changing the color-bit assignment on the LCD_DATA pins and resulting in incorrect color\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/08/13/768)\n\n**drivers: gpu: drm: panel: Add BOE NT51021 driver**\n\nv3 시리즈가 Novatek NT51021 기반 BOE 8·10인치 DSI 패널 드라이버를 추가합니다(Xiaomi Mi Pad 4/4 Plus, Amazon Fire HD 10). Sashiko AI는 boe_tv101wum_nm0 variant에서 teardown 시 unconditional CABC off가 I2C backlight 경로와 충돌할 수 있다고 지적했습니다.\n\n영향: xiaomi-clover 등 mainlining 대상 태블릿에 디스플레이 지원을 열 수 있으나, variant별 init/teardown 시퀀스 차이로 리뷰·하드웨어 검증이 필요할 수 있습니다. nm0 variant에서 unconditional CABC off의 실제 하드웨어 영향과 xiaomi-clover DT 시리즈와의 merge 순서는 확인이 필요합니다.\n\n> Add driver for BOE NT51021-based 8-inch and 10-inch DSI video mode panels used in Xiaomi Mi Pad 4, Mi Pad 4 Plus (xiaomi-clover) and Amazon Fire HD 10 (2017) (amazon-suez) tablets.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/13/589)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/panel novatek-nt35950 UAF fix 스레드",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/13/533",
+      "note": "thread"
+    },
+    {
+      "title": "NT35950 패널 드라이버 최초 추가 커밋",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=623a3531e9cf",
+      "note": "commit"
+    },
+    {
+      "title": "gpu/ipu-v3 prg clock cleanup 스레드",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/13/530",
+      "note": "thread"
+    },
+    {
+      "title": "i.MX6QP PRG 드라이버 최초 추가 커밋",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=ea9c260514c1",
+      "note": "commit"
+    },
+    {
+      "title": "gpu/host1x runtime PM reference leak 스레드",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/13/449",
+      "note": "thread"
+    },
+    {
+      "title": "host1x runtime PM 지원 최초 추가 커밋",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=6b6776e2ab8a",
+      "note": "commit"
+    },
+    {
+      "title": "mxsfb LCDIF bus-width 색상 오류 설명 스레드",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/13/768",
+      "note": "thread"
+    },
+    {
+      "title": "mxsfb drm-misc-next 적용 요청 ping",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/13/427",
+      "note": "thread"
+    },
+    {
+      "title": "BOE NT51021 패널 드라이버 v3 시리즈",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/13/589",
+      "note": "thread"
+    },
+    {
+      "title": "BOE NT51021 nm0 variant CABC off 리뷰",
+      "url": "https://ratatoskr.run/dri-devel/2026/09/17569002",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-13T18:38:44.416Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

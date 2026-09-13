@@ -1,0 +1,127 @@
+{
+  "id": "2026-09-14-linux-kernel-security-weekly-rollup",
+  "topic": "linux-kernel-security",
+  "title": "2026-09-14 주간 요약",
+  "headline": "네트워크 스택·LWT/IP 터널 유지보수자 및 FORTIFY/KASAN 기반 배포 빌드 담당 주목: net: ip_tunnel: initiali",
+  "date": "2026-09-14",
+  "summary": "오늘의 핵심: 릴리스/로드맵 0건, 회귀·보안 신호 8건, 핵심 변경 0건. 리서치 dossier 의 출처를 근거로 정리했습니다.",
+  "tags": [
+    "주간"
+  ],
+  "highlights": [
+    {
+      "title": "net: ip_tunnel: initialize `options_len` before referencing options",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "네트워크 스택·LWT/IP 터널 유지보수자 및 FORTIFY/KASAN 기반 배포 빌드 담당",
+      "verifyLink": "https://lists.openwall.net/linux-hardening/2026/09/13/1",
+      "if": "네트워크 스택·LWT/IP 터널 유지보수자 및 FORTIFY/KASAN 기반 배포 빌드 담당라면",
+      "do": "ip_tun_build_state()에서 GENEVE 옵션을 파싱할 때 options_len을 나중에 설정해 FORTIFY memcpy가 크기 ",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lists.openwall.net/linux-hardening/2026/09/13/1"
+    },
+    {
+      "title": "powerpc/kasan: require memintrinsic prefix support for KASAN",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "PowerPC 아키텍처 유지보수자 및 KASAN 기반 커널 하드닝·CI 담당",
+      "verifyLink": "https://lists.openwall.net/linux-hardening/2026/09/11/11",
+      "if": "PowerPC 아키텍처 유지보수자 및 KASAN 기반 커널 하드닝·CI 담당라면",
+      "do": "PowerPC가 GENERIC_ENTRY를 선택하면 KASAN mem* C 래퍼가 비활성화되는데, GCC 9 등 memintrinsic pref",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lists.openwall.net/linux-hardening/2026/09/11/11"
+    },
+    {
+      "title": "clk: qcom: ipq-cmn-pll: Assign .num before accessing .hws",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Qualcomm IPQ SoC clk 드라이버 유지보수자 및 UBSAN/KASAN 기반 커널 CI 담당",
+      "verifyLink": "https://lists.openwall.net/linux-hardening/2026/09/12/2",
+      "if": "Qualcomm IPQ SoC clk 드라이버 유지보수자 및 UBSAN/KASAN 기반 커널 CI 담당라면",
+      "do": "ipq_cmn_pll_register_clks()가 __counted_by(num)로 표시된 hws[]에 접근·unwind 전에 num을 0으로",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lists.openwall.net/linux-hardening/2026/09/12/2"
+    },
+    {
+      "title": "fuse: return -E2BIG for an oversized SETXATTR over io-uring",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "FUSE·io_uring 서브시스템 유지보수자 및 FUSE 기반 파일시스템 서버 개발자",
+      "verifyLink": "https://lists.openwall.net/linux-hardening/2026/09/10/3",
+      "if": "FUSE·io_uring 서브시스템 유지보수자 및 FUSE 기반 파일시스템 서버 개발자라면",
+      "do": "Xiang Mei v7 2/2 패치가 FUSE io-uring 경로에서 SETXATTR 버퍼 초과 시 -EIO 대신 -E2BIG을 반환해 dev",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lists.openwall.net/linux-hardening/2026/09/10/3"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**net: ip_tunnel: initialize `options_len` before referencing options**\n\nip_tun_build_state()에서 GENEVE 옵션을 파싱할 때 options_len을 나중에 설정해 FORTIFY memcpy가 크기 0 버퍼에 4바이트를 쓰려다 커널 패닉이 발생합니다. 패치는 tunnel_key_opts_set()과 같이 options_len을 옵션 참조 전\n\n영향: CAP_NET_ADMIN 권한으로 geneve_opts가 포함된 LWT IP 터널 라우트를 추가하는 경로에서 CONFIG_FORTIFY_SOURCE+GCC 15+ 빌드가 즉시 BUG_ON으로 죽을 수 있어, 오버레이 네트워크·하드닝 빌드 운영자가 net v2 패치 채택을 추적해야 합니다\n\n> memcpy: detected buffer overflow: 4 byte write of buffer size 0 kernel BUG at lib/string_helpers.c:1044!\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/09/13/1)\n\n**powerpc/kasan: require memintrinsic prefix support for KASAN**\n\nPowerPC가 GENERIC_ENTRY를 선택하면 KASAN mem* C 래퍼가 비활성화되는데, GCC 9 등 memintrinsic prefix 미지원 툴체인에서는 instrumented 코드의 memset/memcpy/memmove가 mem_64.S 어셈블리로 빠져 KASAN sh\n\n영향: PowerPC KASAN 빌드·CI가 구형 툴체인에서 메모리 오염을 탐지하지 못하는 false sense of security를 줄 수 있어, 아키텍처·하드닝 담당자가 툴체인 요구사항 강제 패치 머지를 추적해야 합니다.\n\n> plain mem*() calls from instrumented code fall through to the raw assembly implementations in mem_64.S / copy_32.S, completely bypassing the KASAN shadow check.\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/09/11/11)\n\n**clk: qcom: ipq-cmn-pll: Assign .num before accessing .hws**\n\nipq_cmn_pll_register_clks()가 __counted_by(num)로 표시된 hws[]에 접근·unwind 전에 num을 0으로 두어 CONFIG_UBSAN_BOUNDS에서 OOB가 발생합니다. 패치는 할당 직후 hw_data->num = num_clks + 1로 초기화\n\n영향: UBSAN_TRAP·FORTIFY를 켠 IPQ SoC 하드닝 빌드에서 CMN PLL 클럭 probe가 실패할 수 있어, Qualcomm clk 드라이버와 bounds sanitizer 어노테이션 회귀를 추적하는 담당자가 stable 후보를 확인해야 합니다.\n\n> hw_data->hws[] is annotated with __counted_by(num), so hw_data->num must hold the element count before the array is accessed.\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/09/12/2)\n\n**fuse: return -E2BIG for an oversized SETXATTR over io-uring**\n\nXiang Mei v7 2/2 패치가 FUSE io-uring 경로에서 SETXATTR 버퍼 초과 시 -EIO 대신 -E2BIG을 반환해 dev/pipe 전송과 동일한 errno를 맞춥니다. 같은 v7 시리즈 1/2는 fuse_copy_fill()의 BUG_ON을 제거해 io-uring\n\n영향: FUSE io-uring은 비권한 사용자가 작은 payload 버퍼로 setxattr를 호출해 호스트를 패닉시킬 수 있는 경로가 있었고, errno 정합성 수정은 userspace 오류 처리와 stable 백포트(Cc: stable) 범위를 함께 정의합니다.\n\n> Over io-uring the copy fails with -EIO for every opcode, so the two transports report different errnos for the same condition. Map that -EIO to -E2BIG for SETXATTR.\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/09/10/3)\n\n**pkeys-based page table hardening**\n\nKevin Brodsky가 Linu Cherian의 kpkeys RFC v9 리뷰에 응답해, kpkeys context별 pkey 권한 모델이 use-case마다 달라질 수 있음을 설명하고, enter/leave 중첩은 지원되지만 context별 권한 정의가 필요하다고 답했습니다.\n\n영향: protection key로 커널·사용자 페이지 테이블을 기본 read-only로 두는 kpkeys_hardened_pgtables RFC의 핵심 설계 논의가 계속되며, arm64 POE 8 pkey 한계와 context 중첩 문서화가 머지 전 결정 사항입니다.\n\n> The enter/leave logic does support nesting, since leave() restores the pkeys register as it was on enter()\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/09/10/6)\n\n**dmaengine: pxa: fix double counting of the hw descriptors**\n\npxad_alloc_desc()가 kzalloc_flex()로 전환된 뒤 GCC 15.1/clang 22.1 이상에서 __counted_by()가 nb_desc를 자동 설정하는데, 기존 증가 루프가 남아 nb_desc가 두 배로 계산되는 회귀를 수정했습니다. Vinod Koul이 f65\n\n영향: __counted_by/kzalloc_flex 하드닝 어노테이션과 기존 수동 카운터 로직이 충돌하면 bounds 검사 기반이 잘못된 크기를 갖게 되어, fortify/UBSan 환경에서의 신뢰성을 해칩니다.\n\n> kzalloc_flex(), which sets the __counted_by() counter sw_desc->nb_desc itself - but only where the compiler has __builtin_counted_by_ref(), so from gcc 15.1 or clang 22.1 on.\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/09/10/9)\n\n**userns: Add __counted_by_ptr attribute to struct uid_gid_map**\n\nBill Wendling v5 패치가 struct uid_gid_map의 forward/reverse 포인터에 __counted_by_ptr(nr_extents)를 추가하고, insert_extent()를 nr_extents를 먼저 증가시킨 뒤 인덱싱하도록 재구성합니다. Christia\n\n영향: user namespace ID 매핑 경로에 KASAN·fortify bounds 검사를 확대하는 하드닝 정비이며, __counted_by_ptr 롤아웃과 user namespace 유지보수자에게 직접 관련됩니다.\n\n> This enables KASAN and fortified bounds-checking to detect out-of-bounds accesses to the pointer field at runtime.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/08/2997)\n\n**mm: kpkeys: Protect regular page tables**\n\nKevin Brodsky의 kpkeys RFC v9 12/25에 대해 Mike Rapoport가 pagetable_alloc()의 kpkeys_hardened_pgtables_enabled() 분기를 alloc 후 pkey 설정 시퀀스로 대체할 수 있는지 제안했고, Kevin은 대형 블\n\n영향: pkey 기반 페이지 테이블 하드닝의 핵심 할당 경로 API가 정착되는 과정이며, 향후 대형 블록 지원과의 트레이드오프가 커널 메모리 보호 설계에 직접 영향을 줍니다.\n\n> Can we make it a sequence rather than a branch? kpkeys_pgtable_alloc() does alloc_pages and then sets their pkeys\n\n[원문 확인](https://lore.kernel.org/linux-hardening/aqGWhJjE1VUZf8_3@kernel.org/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "국부 드라이버/플랫폼 패치는 본문에서 제외했습니다. 자기 영역 키워드로 lore.kernel.org에서 직접 검색하세요."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "net: ip_tunnel: initialize `options_len` before referencing options",
+      "url": "https://lists.openwall.net/linux-hardening/2026/09/13/1",
+      "note": "thread"
+    },
+    {
+      "title": "powerpc/kasan: require memintrinsic prefix support for KASAN",
+      "url": "https://lists.openwall.net/linux-hardening/2026/09/11/11",
+      "note": "thread"
+    },
+    {
+      "title": "clk: qcom: ipq-cmn-pll: Assign .num before accessing .hws",
+      "url": "https://lists.openwall.net/linux-hardening/2026/09/12/2",
+      "note": "thread"
+    },
+    {
+      "title": "fuse: return -E2BIG for an oversized SETXATTR over io-uring",
+      "url": "https://lists.openwall.net/linux-hardening/2026/09/10/3",
+      "note": "thread"
+    },
+    {
+      "title": "pkeys-based page table hardening",
+      "url": "https://lists.openwall.net/linux-hardening/2026/09/10/6",
+      "note": "thread"
+    },
+    {
+      "title": "dmaengine: pxa: fix double counting of the hw descriptors",
+      "url": "https://lists.openwall.net/linux-hardening/2026/09/10/9",
+      "note": "thread"
+    },
+    {
+      "title": "userns: Add __counted_by_ptr attribute to struct uid_gid_map",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/08/2997",
+      "note": "thread"
+    },
+    {
+      "title": "mm: kpkeys: Protect regular page tables",
+      "url": "https://lore.kernel.org/linux-hardening/aqGWhJjE1VUZf8_3@kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "source": "research-dossier",
+    "bucketCounts": {
+      "릴리스/로드맵": 0,
+      "회귀·보안 신호": 8,
+      "핵심 변경": 0,
+      "기타": 0
+    },
+    "entryCount": 8
+  }
+}

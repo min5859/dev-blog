@@ -1,0 +1,116 @@
+{
+  "id": "2026-09-14-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-09-14 RT hotplug·cache — Perf/RT",
+  "headline": "PREEMPT_RT CPU hotplug에서 irq_work flush 누락과 ARM cacheinfo 부트 경고가 패치·검토 중이며, BPF trampoline·Tasks RCU 설계 논의도 이어집니다.",
+  "date": "2026-09-14",
+  "summary": "Sebastian Siewior의 irq_work CPU-hotplug 시리즈가 PREEMPT_RT shutdown 시 lazy 큐 미 flush 문제를 고치고, Karl Mehltretter 시리즈가 ARM cacheinfo early 할당으로 secondary CPU 부트 sleeping-lock 경고를 없앱니다. BPF 쪽에서는 Tasks RCU trampoline 설계 합의와 arm64 AAPCS64 인자 배치 버그 수정이 병행됩니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "PREEMPT_RT",
+    "perf",
+    "BPF"
+  ],
+  "highlights": [
+    {
+      "title": "PREEMPT_RT CPU shutdown 시 irq_work lazy 큐 미 flush",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "PREEMPT_RT CPU hotplug·irq_work·smpboot 경로를 추적하는 RT 커널 개발자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/11/1741",
+      "if": "PREEMPT_RT에서 CPU hotplug·cgroup·klogd irq_work 경로를 다루는 경우",
+      "do": "Sebastian Siewior 3패치의 smpboot park 전 thread-function 호출과 control CPU explicit flush를 추적하세요",
+      "verify": "openwall 스레드에서 lazy 큐 미 flush와 Sashiko bot의 this_cpu_*·RCU UAF High 지적을 확인하세요"
+    },
+    {
+      "title": "ARM cacheinfo early 할당으로 PREEMPT_RT 부트 경고 제거",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "ARM32 PREEMPT_RT 부트·cache sysfs·CPU hotplug를 다루는 플랫폼 엔지니어",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260912195552.76673-1-kmehltretter@gmail.com/",
+      "if": "ARM32 PREEMPT_RT 보드에서 secondary CPU 부트 시 sleeping-lock 경고를 보는 경우",
+      "do": "Karl Mehltretter 4패치의 boot CPU early cacheinfo 할당과 topology.c 변경을 검토하세요",
+      "verify": "lore 스레드에서 Raspberry Pi 400 32-bit PREEMPT_RT 7.2.6-rc1 boot warning 제거·12개 cache sysfs 일치 결과를 확인하세요"
+    },
+    {
+      "title": "arm64 BPF trampoline AAPCS64 16-byte 정렬 hole 버그 수정",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "arm64 BPF trampoline·fentry/fexit attach를 다루는 BPF JIT 개발자",
+      "verifyLink": "https://lore.kernel.org/bpf/1994d80f-2e3f-4d44-ab1a-8a293c8c00b2@linux.dev/",
+      "if": "arm64에서 __int128 aggregate나 16-byte 정렬 인자 뒤 fentry/fexit BPF를 쓰는 경우",
+      "do": "Yonghong Song 패치의 bpf_jit_place_args() 슬롯 저장과 MAX_BPF_FUNC_ARGS 상한 적용 여부를 확인하세요",
+      "verify": "lore 스레드에서 calc_arg_aux/save_args/restore_args의 연속 슬롯 번호와 AAPCS64 정렬 불일치 인용을 대조하세요"
+    },
+    {
+      "title": "BPF trampoline 유지·Tasks RCU 사용자 rcu_read_lock_trace() 전환 합의",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "BPF trampoline·Tasks RCU·faultable tracepoint를 함께 추적하는 BPF·tracing 개발자",
+      "verifyLink": "https://lore.kernel.org/bpf/509e8eff-2a9c-4927-956c-73708ee4fe5a@paulmck-laptop/",
+      "if": "PREEMPT_LAZY Tasks RCU grace period와 BPF trampoline 오버헤드를 함께 추적하는 경우",
+      "do": "Alexei Starovoitov·Paul McKenney 합의안과 Josef Bacik RFC v2 x86 JIT inc/dec 패치 중 어느 쪽이 채택되는지 추적하세요",
+      "verify": "tracing maintainer 의견 수렴 전임을 감안해 lore 스레드의 rcu_read_lock_trace() 전환 제안을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ARM: allocate the cacheinfo early to fix the PREEMPT_RT boot warning**\n\nKarl Mehltretter 4패치 시리즈가 ARM cacheinfo를 부트 CPU에서 미리 할당하도록 바꾼다. populate_cache_leaves() OOB 방지, external cache 카운트, CLIDR 가드 후 topology.c에서 early allocation을 켠다.\n\n영향: PREEMPT_RT에서 secondary CPU 부트 시 cacheinfo 할당이 sleeping lock 경고를 냈다. ARM32 보드(QEMU virt, vexpress, realview, Raspberry Pi 400)에서 RT·non-RT로 검증됐다.\n\n> This series moves ARM cacheinfo allocation to the boot CPU to avoid sleeping-lock warnings during PREEMPT_RT secondary-CPU startup.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260912195552.76673-1-kmehltretter@gmail.com/)\n\n**bpf, arm64: Place trampoline arguments by the arm64 calling convention**\n\nYonghong Song 패치가 arm64 BPF trampoline의 calc_arg_aux/save_args/restore_args가 AAPCS64 16-byte 정렬 hole을 무시해 인접 8바이트를 읽던 버그를 고친다. bpf_jit_place_args() 슬롯 위치를 struct arg_aux에 저장하고 MAX_BPF_FUNC_ARGS 슬롯 상한을 둔다.\n\n영향: __int128을 담은 aggregate나 16-byte 정렬 인자 뒤 인자가 잘못 복사되면 fentry/fexit BPF program이 엉뚱한 스택/레지스터 값을 읽고 원 함수 인자도 shift된다.\n\n> calc_arg_aux(), save_args() and restore_args() number argument registers and stack slots consecutively, while AAPCS64 rounds both up to an even one for an argument aligned to 16 bytes\n\n[원문 확인](https://lore.kernel.org/bpf/1994d80f-2e3f-4d44-ab1a-8a293c8c00b2@linux.dev/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**irq_work: CPU-hotplug improvements on PREEMPT_RT**\n\nSebastian Siewior 3패치가 PREEMPT_RT에서 CPU shutdown 시 lazy irq_work 큐가 flush되지 않는 문제를 고친다. smpboot thread가 park 전 thread-function을 호출하고, CPU dead 후 control CPU에서 explicit flush를 추가한다.\n\n영향: 드물지만 발생 시 cgroup·klogd irq_work가 죽는 CPU에 남아 RT CPU hotplug에서 메모리 누수·printk 지연을 유발한다. Sashiko bot이 remote flush의 this_cpu_*·RCU UAF 위험을 High로 지적했다.\n\n> Turns out the queue of callbacks gets never flushed on CPU shutdown. !PREEMPT_RT has a flush but on PREEMPT_RT the thread context is required.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/11/1741)\n\n**bpf, x86: Maintain Tasks RCU trampoline nesting in the BPF trampoline**\n\nAlexei Starovoitov와 Paul McKenney가 Josef Bacik의 rcu_tramp_nesting 추가 대신 BPF trampoline을 그대로 두고 RCU Tasks 사용자를 rcu_read_lock_trace()로 옮기는 방향에 합의했다. faultable tracepoint는 추가 t->trc_reader_nesting++만 필요하다.\n\n영향: PREEMPT_LAZY에서 Tasks RCU grace period 지연을 줄이려는 RFC와 BPF trampoline 오버헤드 충돌한다. 통합안이 채택되면 x86 trampoline JIT에 inc/dec를 넣지 않을 수 있다. tracing maintainer 의견 수렴 전이라 최종 설계가 바뀔 수 있다.\n\n> Pretty much. This way bpf trampoline stays as-is. No extra overhead there. rcu tasks users (faultable tracepoints and what else ? ) switch to rcu_read_lock_trace().\n\n[원문 확인](https://lore.kernel.org/bpf/509e8eff-2a9c-4927-956c-73708ee4fe5a@paulmck-laptop/)\n\n**bpf, x86: Maintain Tasks RCU trampoline nesting in the BPF trampoline (arm per-CPU 비용)**\n\nDavid Laight가 Paul McKenney의 per-CPU SRCU-fast Tasks Trace RCU 구현이 arm에서 per-CPU increment 비용이 크다고 지적했다. 미적용 arm64/s390 per-cpu 개선 패치 없으면 current->xxx 접근에 preemption disable가 필요하다.\n\n영향: Tasks RCU를 per-task counter 대신 per-CPU SRCU-fast로 옮기면 x86은 빠르지만 arm RT 경로에서 preempt enable 조건부 호출 오버헤드가 생길 수 있다. Paul McKenney가 언급한 arm per-CPU increment 최근 개선이 이 우려를 상쇄하는지는 확인이 필요하다.\n\n> It is fine on x86, but on arm incrementing a per-cpu variable is significantly expensive.\n\n[원문 확인](https://lore.kernel.org/bpf/20260913122859.4d5067cd@pumpkin/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "medium",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ARM cacheinfo early allocation for PREEMPT_RT boot warning",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260912195552.76673-1-kmehltretter@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "irq_work lazy queue not flushed on PREEMPT_RT CPU shutdown",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/11/1741",
+      "note": "thread"
+    },
+    {
+      "title": "irq_work_run_cpu() and remote flush this_cpu_* concerns",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/11/1746",
+      "note": "thread"
+    },
+    {
+      "title": "BPF trampoline stays as-is; RCU Tasks users switch to rcu_read_lock_trace()",
+      "url": "https://lore.kernel.org/bpf/509e8eff-2a9c-4927-956c-73708ee4fe5a@paulmck-laptop/",
+      "note": "thread"
+    },
+    {
+      "title": "arm per-CPU increment cost vs x86 for Tasks RCU",
+      "url": "https://lore.kernel.org/bpf/20260913122859.4d5067cd@pumpkin/",
+      "note": "thread"
+    },
+    {
+      "title": "arm64 BPF trampoline AAPCS64 argument placement fix",
+      "url": "https://lore.kernel.org/bpf/1994d80f-2e3f-4d44-ab1a-8a293c8c00b2@linux.dev/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-13T18:32:07.423Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

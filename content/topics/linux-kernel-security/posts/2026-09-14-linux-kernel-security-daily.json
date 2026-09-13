@@ -1,0 +1,150 @@
+{
+  "id": "2026-09-14-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-09-14 GENEVE 터널 회귀 — 커널 보안",
+  "headline": "ip_tunnel GENEVE 옵션 파싱 회귀로 FORTIFY 빌드가 패닉하고, 7.1.y EOL 이후 7.2.5·LTS stable 업그레이드가 급선무입니다.",
+  "date": "2026-09-14",
+  "summary": "신규 net 패치가 GENEVE LWT 터널 라우트 추가 시 options_len 미초기화로 FORTIFY BUG_ON을 유발합니다. 7.1.13 EOL과 7.2.5·6.18.51·6.12.109 stable 릴리스가 메모리 안전 백포트를 수확합니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "보안",
+    "하드닝"
+  ],
+  "highlights": [
+    {
+      "title": "net: ip_tunnel GENEVE options_len 미초기화 회귀",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "네트워크 스택·LWT/IP 터널 유지보수자 및 FORTIFY/KASAN 기반 배포 빌드 담당",
+      "verifyLink": "https://lists.openwall.net/linux-hardening/2026/09/13/1",
+      "if": "CAP_NET_ADMIN으로 geneve_opts가 포함된 LWT IP 터널 라우트를 CONFIG_FORTIFY_SOURCE+GCC 15+ 빌드에서 추가한다면",
+      "do": "net v2 패치 채택과 stable 백포트 일정을 추적하세요",
+      "verify": "linux-hardening 스레드에서 bb5e62f2d547 회귀 수정과 FORTIFY memcpy 패닉 재현 조건을 확인하세요"
+    },
+    {
+      "title": "Linux 7.1.13 stable · EOL",
+      "priority": "상",
+      "impactType": "release",
+      "affectedAudience": "7.1.y stable 커널 사용자 및 배포·백포트 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/02/1497",
+      "if": "7.1.y stable 브랜치를 운영 중이라면",
+      "do": "7.2.y로 즉시 이전하세요",
+      "verify": "Greg K-H EOL 공지와 ChangeLog-7.1.13의 usbfs UAF 등 76건 백포트를 확인하세요"
+    },
+    {
+      "title": "powerpc/kasan memintrinsic prefix 게이트",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "PowerPC 아키텍처 유지보수자 및 KASAN 기반 커널 하드닝·CI 담당",
+      "verifyLink": "https://lists.openwall.net/linux-hardening/2026/09/11/11",
+      "if": "PowerPC에서 구형 GCC 등 memintrinsic prefix 미지원 툴체인으로 KASAN 빌드·CI를 돌리고 있다면",
+      "do": "V2 패치 mainline 머지와 PPC_CC_HAS_KASAN_MEMINTRINSIC_PREFIX 툴체인 요구사항 강제 여부를 추적하세요",
+      "verify": "instrumented mem*() 호출이 mem_64.S로 빠져 KASAN shadow 검사를 우회한다는 hardening 스레드를 확인하세요"
+    },
+    {
+      "title": "Linux 7.2.5 stable",
+      "priority": "중",
+      "impactType": "release",
+      "affectedAudience": "7.2.y stable 커널 사용자 및 배포·백포트 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/11/1273",
+      "if": "7.1 EOL 이후 단기 stable 업그레이드 대상을 찾고 있다면",
+      "do": "7.2.5로 업그레이드하세요",
+      "verify": "ChangeLog-7.2.5의 ksmbd pipe read 힙 노출·oplock break UAF 등 557건 백포트를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.1.13 stable · EOL**\n\n2026-09-02 공개된 7.1.13이 7.1.y 마지막 릴리스로 76건의 백포트를 담고 있으며, usbfs UAF·USB serial OOB read·bridge mcast UAF·xfrm/tcp-ao UAF 등 메모리 안전 수정이 포함됩니다.\n\n영향: 7.1.y가 EOL로 더 이상 보안 수정을 받지 않으므로 단기 stable 사용자는 7.2.y로 즉시 이전해야 합니다.\n\n> Note, the 7.1.y kernel series is now end-of-life.  Please move to the\n7.2.y kernel series at this point in time.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/02/1497)\n\n**Linux 7.2.5 stable**\n\n2026-09-11 공개된 7.2.5 stable에 557건의 백포트가 포함되며, ksmbd pipe read compound 패딩 미초기화 힙 노출·ksmbd oplock break UAF·ab8500_fg remove UAF·bpf stackid 리팩터 등이 상위에 올라옵니다.\n\n영향: 7.1 EOL 이후 단기 stable 사용자의 기본 업그레이드 대상이며 SMB·전원·BPF 경로의 메모리 안전·정보 노출 수정을 한 번에 수확할 수 있습니다.\n\n> I'm announcing the release of the 7.2.5 kernel.\n\nAll users of the 7.2 kernel series must upgrade.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/11/1273)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**net: ip_tunnel: initialize `options_len` before referencing options**\n\nip_tun_build_state()에서 GENEVE 옵션을 파싱할 때 options_len을 나중에 설정해 FORTIFY memcpy가 크기 0 버퍼에 4바이트를 쓰려다 커널 패닉이 발생합니다. 패치는 tunnel_key_opts_set()과 같이 options_len을 옵션 참조 전에 초기화합니다.\n\n영향: CAP_NET_ADMIN 권한으로 geneve_opts가 포함된 LWT IP 터널 라우트를 추가하는 경로에서 CONFIG_FORTIFY_SOURCE+GCC 15+ 빌드가 즉시 BUG_ON으로 죽을 수 있습니다.\n\n> memcpy: detected buffer overflow: 4 byte write of buffer size 0\n  kernel BUG at lib/string_helpers.c:1044!\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/09/13/1)\n\nnet maintainer 머지·stable 백포트 일정·CVE 할당 여부는 확인 필요합니다.\n\n**clk: qcom: ipq-cmn-pll: Assign .num before accessing .hws**\n\n패치는 f81715a4c87c에서 도입된 IPQ CMN PLL 드라이버 회귀를 수정하며 stable Cc가 있습니다. compile-tested only이며 실제 IPQ 하드웨어 UBSAN probe 실패 재현 리포트는 확인 필요합니다.\n\n> Fixes: f81715a4c87c (\"clk: qcom: Add CMN PLL clock controller driver for IPQ SoC\")\nCc: stable@vger.kernel.org\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/09/12/2)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**fuse: return -E2BIG for an oversized SETXATTR over io-uring**\n\nFUSE io-uring 경로에서 SETXATTR 버퍼 초과 시 -EIO를 반환해 /dev/fuse pipe 경로의 -E2BIG과 errno가 달랐습니다. v7 2/2 패치는 SETXATTR opcode에서 -EIO를 -E2BIG으로 매핑해 두 전송 경로를 일치시킵니다.\n\n영향: errno 불일치는 userspace 오류 처리·회귀 테스트와 stable 백포트 범위를 흐리며, 같은 날 v8 시리즈가 올라와 errno 정합성과 패닉 방지 수정의 최종 머지 형태를 함께 추적해야 합니다.\n\n> Over io-uring the copy fails with -EIO for every opcode, so the two\ntransports report different errnos for the same condition.\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/09/10/3)\n\nv8 시리즈 mainline·stable 머지 일정과 v7 1/2 패닉 수정 백포트 묶음 여부는 확인 필요합니다."
+    },
+    {
+      "heading": "기타",
+      "body": "**Linux 6.18.51 longterm**\n\n2026-09-11 공개된 6.18.51 LTS에 545건의 백포트가 포함되며, ksmbd pipe read 힙 노출·ab8500_fg UAF·mm/damon·hugetlb/zram 등 메모리·스토리지 경로 수정이 상위에 올라옵니다.\n\n영향: 6.18 LTS 기반 장기 지원 제품이 SMB·전원·메모리 관리 경로의 최신 보안·안정성 수정을 이번 longterm 태그로 받을 수 있습니다.\n\n> I'm announcing the release of the 6.18.51 kernel.\n\nAll users of the 6.18 kernel series must upgrade.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/11/1290)\n\n**Linux 6.12.109 longterm**\n\n2026-09-07 공개된 6.12.109 LTS에 395건의 백포트가 포함되며, smack cred UAF·rtl8xxxu rx_urb_wq UAF·i3c master IBI OOB·dm-stats per-cpu 할당 실패 크래시 등이 상위에 올라옵니다.\n\n영향: 6.12 LTS는 다수 배포판의 기반 브랜치이므로 LSM·WiFi·I3C·device-mapper 경로의 메모리 안전 수정을 이번 태그로 수확하는 것이 보안 유지보수의 핵심입니다.\n\n> smack: fix cred UAF in smack_file_send_sigiotask()\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.12.109)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "net: ip_tunnel options_len 회귀 수정",
+      "url": "https://lists.openwall.net/linux-hardening/2026/09/13/1",
+      "note": "thread"
+    },
+    {
+      "title": "powerpc/kasan memintrinsic prefix 게이트",
+      "url": "https://lists.openwall.net/linux-hardening/2026/09/11/11",
+      "note": "thread"
+    },
+    {
+      "title": "clk: qcom ipq-cmn-pll num 초기화",
+      "url": "https://lists.openwall.net/linux-hardening/2026/09/12/2",
+      "note": "thread"
+    },
+    {
+      "title": "fuse SETXATTR -E2BIG errno 정합",
+      "url": "https://lists.openwall.net/linux-hardening/2026/09/10/3",
+      "note": "thread"
+    },
+    {
+      "title": "fuse v8 시리즈",
+      "url": "https://lists.openwall.net/linux-hardening/2026/09/10/",
+      "note": "thread"
+    },
+    {
+      "title": "Linux 7.1.13 EOL 공지",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/02/1497",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-7.1.13",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.13",
+      "note": "changelog"
+    },
+    {
+      "title": "kernel.org stable 표",
+      "url": "https://www.kernel.org/",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 7.2.5 릴리스 공지",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/11/1273",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-7.2.5",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.5",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 6.18.51 릴리스 공지",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/11/1290",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-6.18.51",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.18.51",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-6.12.109",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.12.109",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-13T18:19:34.644Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
