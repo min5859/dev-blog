@@ -1,0 +1,156 @@
+{
+  "id": "2026-09-15-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-09-15 dma_fence UAF 회귀 — GPU/AI",
+  "headline": "dma_fence 이름 조회 회귀와 drm_sched teardown UAF 논의가 GPU sync_file 경로 안정성을 다시 점검하게 했다.",
+  "date": "2026-09-15",
+  "summary": "Christian König v2 패치가 signaled 비트와 ops 복합 검사를 복원해 release/wait 백엔드의 문자열 UAF 회귀를 막는다. drm_sched RCU 문서화와 xe teardown 지적, amdgpu VM 패치 철회, vc4 V3D reset binding 리뷰가 이어졌다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "GPU",
+    "dma_fence",
+    "drm_sched"
+  ],
+  "highlights": [
+    {
+      "title": "dma_fence 이름 조회 signaled+ops 복합 검사 복원",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "dma_fence·drm_sched·sync_file를 다루는 GPU/KMS 드라이버 유지보수자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/07/1540/1",
+      "if": "drm_sched_fence 등 release/wait을 유지하는 백엔드에서 fence 이름을 export하거나 SYNC_IOC_FILE_INFO로 조회한다면",
+      "do": "035219a760ed 이후 stable 7.2+ 백포트 전까지 signaled+ops 복합 검사 복원 패치 적용 여부를 확인하세요",
+      "verify": "openwall 스레드와 035219a760ed 커밋에서 ops 단독 검사로 인한 RCU 보호 상실 경로를 대조하세요"
+    },
+    {
+      "title": "drm_sched_fini RCU grace period 문서화",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "drm_gpu_scheduler teardown·dma_fence export를 구현하는 GPU 드라이버 개발자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/09/1552",
+      "if": "xe·amdgpu 등 per-context·per-queue 스케줄러에서 finished fence를 userspace에 export한다면",
+      "do": "마지막 hardware fence signaling과 scheduler teardown 사이 RCU grace period 대기 요구가 teardown 코드에 반영됐는지 점검하세요",
+      "verify": "리뷰 스레드에서 hardware fence signal이 scheduler fence signal을 유발한다는 정정 문구를 확인하세요"
+    },
+    {
+      "title": "drm_sched 문서화만으로는 teardown UAF 불충분 지적",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "drm/xe·drm_sched teardown 및 sync_file export 경로를 다루는 GPU 드라이버 개발자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260914184846.4ADC41F000FF@smtp.kernel.org/",
+      "if": "xe execlist_exec_queue_fini()처럼 drm_sched_fini() 직후 embedding structure를 해제하는 경로를 다룬다면",
+      "do": "미해결 job·unsignaled fence가 남은 상태에서 SYNC_IOC_FILE_INFO가 timeline name에 접근할 수 있는지 재현 테스트를 검토하세요",
+      "verify": "Sashiko 지적 스레드와 9월 4일 timeline name UAF 논의 원문을 함께 확인하세요"
+    },
+    {
+      "title": "amdgpu_vm_clear_freed 실패 시 mapping 재추가 패치 철회",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "drm/amdgpu VM·page table update·amdgpu_vm_clear_freed 경로 유지보수자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/47b7f1e6-0c14-42c1-8224-d5d86cc08159@amd.com/",
+      "if": "amdgpu CPU VM update 경로에서 interruptible wait와 PTE clear 순서를 추적한다면",
+      "do": "vm->freed 재추가 대안이 maintainer Clear NAK됐으므로 follow-up 패치 계획을 기다리세요",
+      "verify": "oushinnyo 철회 메일과 König의 freed page table clear 요구 원문을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**dma-buf/dma-fence: fix checking signaling bit for timeline and driver name v2**\n\nChristian König v2 패치가 dma_fence_driver_name()·dma_fence_timeline_name()에서 ops 포인터 검사와 signaled 비트 검사를 함께 수행한다. 035219a760ed가 signaled 검사를 ops 검사로 바꾼 뒤 release/wait 콜백이 남아 ops가 NULL로 지워지지 않는 구현에서 RCU 보호가 깨져 문자열 UAF가 다시 가능해졌다.\n\n영향: GPU 드라이버·sync_file·SYNC_IOC_FILE_INFO 경로는 fence 이름 조회에 이 공통 헬퍼에 의존한다. drm_sched_fence 등 아직 release를 유지하는 백엔드는 stable 7.2+ 백포트 전까지 signaled+ops 복합 검사가 없으면 UAF 회귀 위험이 남는다. v2 시리즈의 maintainer ACK·머지 상태는 확인 필요하다.\n\n> So those implementations lost the RCU protection after signaling of the returned string resulting in potential use after free.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/07/1540/1)\n\n> Replace the signaled-bit check in dma_fence_timeline_name() and dma_fence_driver_name().\n\n[원문 확인](https://github.com/torvalds/linux/commit/035219a760ed)\n\n**drm/sched: document the RCU dependency (Sashiko AI 리뷰)**\n\nSashiko AI가 drm/sched RCU 문서화 패치를 검토해, 단일 RCU grace period 대기만으로는 scheduler teardown UAF를 막기에 불충분하며 userspace에서 여전히 reachable하다고 지적했다. 미해결 job·unsignaled fence가 남은 xe execlist_exec_queue_fini() 경로에서 drm_sched_fini() 직후 kfree(exl)이 일어나 SYNC_IOC_FILE_INFO가 해제된 timeline 이름에 접근할 수 있다.\n\n영향: 문서화 패치가 머지되더라도 xe 등 드라이버가 queue/context destroy 시 RCU grace period 없이 스케줄러를 해제하면 export된 sync_file fd 조회에서 UAF가 재현될 수 있다. execlist 경로가 최신 xe에서 kfree_rcu 등으로 이미 수정됐는지는 확인 필요하다.\n\n> The documented RCU grace period requirement for scheduler teardown is insufficient to prevent Use-After-Free, and the underlying UAF remains reachable from userspace.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260914184846.4ADC41F000FF@smtp.kernel.org/)\n\n> A subsequent SYNC_IOC_FILE_INFO ioctl (which calls get_timeline_name()) then reads the freed scheduler\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/04/703)\n\n**drm/amdgpu: keep freed VM mappings on clear failure**\n\noushinnyo는 amdgpu_vm_clear_freed() 실패 시 mapping을 vm->freed에 다시 넣는 v1 접근을 철회했다. Christian König은 실패 시 housekeeping을 전부 되돌려야 해서 재추가도 쉽지 않다고 했고, amdgpu_vm_cpu_prepare()의 interruptible wait는 사실상 hotplug 때만 의미 있다고 봤다.\n\n영향: CPU VM update 경로에서 interruptible wait가 PTE clear 전에 끊기면 VA 재사용·stale reference 위험이 제기됐지만, maintainer는 유효한 실패는 hot-unplug뿐이라 현재 접근을 거부했다. interruptible wait 경로의 실제 재현·minimal reproducer는 확인 필요하다.\n\n> I understand that re-adding the mapping to vm->freed is not a valid approach, so I will drop this patch.\n\n[원문 확인](https://lore.kernel.org/dri-devel/47b7f1e6-0c14-42c1-8224-d5d86cc08159@amd.com/)\n\n> Clear NAK to that approach. Freed up areas of the page tables must be cleared when that function is called\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/07/1595)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/sched: document the RCU dependency**\n\n2/2 패치가 drm_sched_fini() 주석에 마지막 하드웨어 fence signaling 이후 RCU grace period를 기다려야 한다는 요구를 추가한다. Tvrtko Ursulin의 dma_fence 이름 RCU 보호 이후 drm_sched_fence timeline 이름 수명 규칙이 코드에 명시되지 않았던 공백을 메운다.\n\n영향: per-context·per-queue 스케줄러를 쓰는 xe·amdgpu 등은 export된 finished fence가 스케줄러보다 오래 살 수 있다. teardown 순서를 잘못 잡으면 SYNC_IOC_FILE_INFO 등 userspace 조회에서 스케줄러 이름 UAF가 난다. Philipp Stanner 제안 문구가 최종 패치에 반영됐는지, 문서화만으로 충분한지는 확인 필요하다.\n\n> Add a few words on the function documentation to note that we need an RCU grace period between signaling the last scheduler fence and scheduler teardown.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/09/1552)\n\n> Yes, of course. Signaling the HW fence then causes the scheduler fence to signal as well.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/09/1983)\n\n> Reason is simply to also support drivers that implement release() and wait(), preventing ops from being set to NULL.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/09/1681)\n\n**dt-bindings: display: bcm2835-v3d: Add an optional reset line**\n\nMaíra Canal이 vc4 V3D reset binding 리뷰에서 Broadcom 피드백(Cygnus 등 구형 칩은 reset line 없음)을 받은 뒤, Krzysztof Kozlowski에게 reset line이 모든 디바이스에 없다는 점을 binding에 명시해야 하는지 묻고 있다. property는 optional로 유지해 Cygnus DT 호환을 보장한다.\n\n영향: Raspberry Pi vc4 스택은 V3D hang 복구를 위해 PM block reset line을 쓰려 한다. binding 문구가 정리되면 BCM2835 계열은 hardware reset, Cygnus 등은 driver-side recovery만 쓰는 동작이 DT에서 명확해진다. Cygnus 등 reset 미지원 디바이스 기술 방식과 4패치 시리즈 ACK·머지 일정은 확인 필요하다.\n\n> Considering Florian's feedback, what would you suggest, Krzysztof? Should I document that not all devices have a reset line?\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/ff452f18-7f4f-4274-ad95-9937af972353@igalia.com/raw)\n\n> I suggest to drop reference to driver and instead describe the hardware.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-arm-kernel/3ab273be-e811-45e4-adf1-75532c840bc8@igalia.com/)\n\n> The reset line is optional, so device trees that do not describe one keep working\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-arm-kernel/20260816-vc4-reset-control-v1-0-896444373716@igalia.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "dma_fence signaled+ops 검사 회귀 논의",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/07/1540/1",
+      "note": "thread"
+    },
+    {
+      "title": "035219a760ed: signaled-bit 검사를 ops 검사로 교체",
+      "url": "https://github.com/torvalds/linux/commit/035219a760ed",
+      "note": "commit"
+    },
+    {
+      "title": "dma_fence_ops signaled+ops 동시 검사 주석 제안",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/09/1681",
+      "note": "thread"
+    },
+    {
+      "title": "drm_sched_fini RCU grace period 문서화 패치",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/09/1552",
+      "note": "thread"
+    },
+    {
+      "title": "hardware fence signal이 scheduler fence signal 유발",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/09/1983",
+      "note": "thread"
+    },
+    {
+      "title": "035219a760ed 이전 RCU grace period 동작",
+      "url": "https://lkml.iu.edu/2609.0/15632.html",
+      "note": "thread"
+    },
+    {
+      "title": "drm_sched RCU 문서화 UAF 불충분 지적",
+      "url": "https://lore.kernel.org/dri-devel/20260914184846.4ADC41F000FF@smtp.kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "export finished fence timeline name UAF",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/04/703",
+      "note": "thread"
+    },
+    {
+      "title": "amdgpu_vm_clear_freed 패치 철회",
+      "url": "https://lore.kernel.org/dri-devel/47b7f1e6-0c14-42c1-8224-d5d86cc08159@amd.com/",
+      "note": "thread"
+    },
+    {
+      "title": "amdgpu vm->freed 재추가 Clear NAK",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/07/1595",
+      "note": "thread"
+    },
+    {
+      "title": "interruptible CPU wait PTE clear 전 중단 시나리오",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/05/153",
+      "note": "thread"
+    },
+    {
+      "title": "bcm2835-v3d optional reset line binding 질의",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/ff452f18-7f4f-4274-ad95-9937af972353@igalia.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "DT binding hardware 설명 요청",
+      "url": "https://lore-kernel.gnuweeb.org/linux-arm-kernel/3ab273be-e811-45e4-adf1-75532c840bc8@igalia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "vc4 V3D optional reset line 시리즈",
+      "url": "https://lore-kernel.gnuweeb.org/linux-arm-kernel/20260816-vc4-reset-control-v1-0-896444373716@igalia.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-14T18:55:24.079Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

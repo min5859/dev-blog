@@ -1,0 +1,141 @@
+{
+  "id": "2026-09-15-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-09-15 SELinux bpffs — Android 커널",
+  "headline": "ACK mainline에 SELinux bpffs 초기화 버그 수정이 추가되고 NMI·suspend 회귀 패치와 drm-next 병합이 이어집니다.",
+  "date": "2026-09-15",
+  "summary": "신규로 SELinux BPF inode 초기화 순서 버그와 dma-heap kernel-doc 복원이 반영됐습니다. NMI dump_tasks·wakeup reasons·wrapfd dmabuf 등 회귀·동기화 수정도 ACK mainline에 계속 머지되고 있습니다.",
+  "tags": [
+    "안드로이드",
+    "커널",
+    "SELinux",
+    "GKI",
+    "dma-buf"
+  ],
+  "highlights": [
+    {
+      "title": "SELinux bpffs SBLABEL_MNT 검사 순서 수정",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "Android 보안·BPF/SELinux 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/8f0a5b31aee19510e75741c9687cf0d9321fa7ed",
+      "if": "bpffs 마운트와 SELinux inode 초기화 경로를 담당한다면",
+      "do": "selinux_inode_init_security()에서 SBLABEL_MNT·selinux_initialized 검사가 isec 초기화 전에 수행되도록 머지 후 동작을 재검증하세요",
+      "verify": "genfscon bpffs 마운트 후 inode_doinit_with_dentry()가 정상 동작하는지 원문 커밋과 LKML 스레드를 대조해 확인하세요"
+    },
+    {
+      "title": "NMI 컨텍스트 dump_tasks() 데드락 방지",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "ACK 메모리 서브시스템·LMKD 연동 개발자",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/db2acc01b75f9a30bfef0f4d2a6f413542cc32ac",
+      "if": "OOM·메모리 압박 경로에서 dump_tasks()를 호출한다면",
+      "do": "NMI에서 spin_trylock 기반 find_lock_task_mm()과 memcg OOM 덤프 조기 반환 변경이 포함된 빌드를 적용하세요",
+      "verify": "Bug 538262381 추적 커밋과 NMI 호출 경로에서 데드락이 재현되지 않는지 확인하세요"
+    },
+    {
+      "title": "wakeup reasons 순환 락 의존 제거",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Android PM·suspend/resume 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/c439eb78736dc606256bac910652f186c4933d08",
+      "if": "suspend/resume 디버깅과 wakeup source 분석을 담당한다면",
+      "do": "IRQ 정보를 버퍼에 복사한 뒤 unlock 후 또는 early resume에서 출력하도록 변경된 wakeup reasons 로그 경로를 반영하세요",
+      "verify": "lockdep가 보고한 wakeup_reason_lock·console_owner·irq_desc_lock_class 순환 의존이 해소됐는지 Bug 434695614·431914884 기준으로 확인하세요"
+    },
+    {
+      "title": "wrapfd dma_buf unlocked API 전환",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "wrapfd·dmabuf HAL 드라이버 개발자",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/56a91e3eaa38c8d78cc1b0cc5714b3e434123ffc",
+      "if": "wrapfd 또는 dmabuf HAL 경로를 유지한다면",
+      "do": "reservation 락을 보유하지 않는 wrapfd에서 dma_buf_vmap/vunmap_unlocked 변형을 사용하도록 빌드를 맞추세요",
+      "verify": "Bug 480234490 수정이 android-mainline에도 동일하게 머지됐는지는 이 커밋만으로 확인되지 않으므로 브랜치별 반영 상태를 별도로 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**drm-next-2026-06-17 android-mainline 병합**\n\ndrm-next-2026-06-17 태그를 android-mainline에 병합하고 drivers/dma-buf/heaps/cma_heap.c·system_heap.c의 trivial merge conflict를 해결합니다.\n\n영향: v7.2-rc1 방향의 DRM/dma-buf upstream 변경을 ACK에 반영해 graphics·dmabuf 스택이 mainline을 추적합니다.\n\n> Resolves trivial merge conflicts in: drivers/dma-buf/heaps/cma_heap.c drivers/dma-buf/heaps/system_heap.c\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/01ee4ea37e86aacce089f0ccb2e3e0e02bfc7fae)\n\n병합에 포함된 개별 DRM/dma-buf 변경의 ACK별 영향은 이 merge 커밋 메시지만으로는 전부 파악되지 않습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**SELinux bpffs SBLABEL_MNT 검사 순서 수정**\n\nselinux_inode_init_security()에서 SBLABEL_MNT 및 selinux_initialized 검사를 isec->initialized 설정 전으로 옮깁니다.\n\n영향: bpffs xattr 지원 이후 genfscon bpffs 마운트가 SBLABEL_MNT 검사에 실패해도 isec이 initialized로 남아 inode_doinit_with_dentry()가 깨지는 SELinux 버그를 수정합니다.\n\n> genfscon bpffs mounts fail the SBLABEL_MNT check as expected (no xattrs) and yet leave the isec->initialized.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/8f0a5b31aee19510e75741c9687cf0d9321fa7ed)\n\n**NMI 컨텍스트 dump_tasks() 안전화**\n\nNMI 컨텍스트에서 dump_tasks()가 find_lock_task_mm()에 spin_trylock을 쓰고 memcg OOM 덤프는 조기 반환하도록 바꿔 비NMI-safe 락 사용을 피합니다.\n\n영향: export된 dump_tasks()가 NMI(메모리 압박·OOM 디버깅 등)에서 호출될 때 데드락할 수 있어 LMKD·메모리 분석 경로의 안정성에 직접 영향을 줍니다.\n\n> Using spin_trylock(&t->alloc_lock) in find_lock_task_mm() when in_nmi(). Returning early if a memcg oom dump is requested in NMI context.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/db2acc01b75f9a30bfef0f4d2a6f413542cc32ac)\n\n**wakeup reasons 순환 락 의존 수정**\n\nwakeup reasons suspend 디버그 로그에서 wakeup_reason_lock·console_owner 및 irq_desc_lock_class 순환 락 의존을 제거하고, IRQ 정보는 버퍼에 복사한 뒤 unlock 후 또는 early resume에서 출력합니다.\n\n영향: lockdep가 보고한 suspend/resume 경로 잠재 데드락을 수정해 wakeup source 분석·suspend 디버깅 시 시스템 정지 위험을 줄입니다.\n\n> print_wakeup_sources() holds wakeup_reason_lock while calling pr_info(), creating a lock inversion\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/c439eb78736dc606256bac910652f186c4933d08)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**wrapfd dma_buf unlocked API 사용**\n\nwrapfd 드라이버가 dma_buf_vmap/vunmap 대신 reservation 락을 내부에서 처리하는 dma_buf_{vmap,vunmap}_unlocked 변형을 사용합니다.\n\n영향: wrapfd가 dma-buf reservation 락을 보유하지 않은 상태에서 locked API를 호출해 동기화가 깨질 수 있었고(Bug 480234490), dmabuf 기반 HAL 경로의 정확성에 영향을 줍니다.\n\n> in the wrapfd driver, the reservation object lock isn't held; therefore, use the unlocked version of those functions\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/56a91e3eaa38c8d78cc1b0cc5714b3e434123ffc)\n\nandroid-mainline 브랜치에도 동일 수정이 머지됐는지는 이 커밋만으로 확인되지 않습니다.\n\n**GKI CRYPTO_LZ4 암묵 선택 정리**\n\nHIBERNATION Kconfig가 LZ4를 암묵적으로 선택하므로 gki_defconfig에서 CRYPTO_LZ4 명시 옵션을 제거합니다.\n\n영향: GKI defconfig가 upstream PM 변경과 일치하도록 정리되어, 하이버네이션 LZ4 압축은 별도 명시 없이도 활성화됩니다.\n\n> The CRYPTO_LZ4 config is now implicitly selected via HIBERNATION, so remove it from our gki_defconfig files.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/87aba67d69fd0706152ae2d9dec68c2cfc274459)\n\n**selftest/mm MAP_DROPPABLE 빌드 복구**\n\nbionic 헤더에 MAP_DROPPABLE이 없어 깨지는 tools/testing/selftests/mm/mlock2-tests.c 빌드를 위해 임시 로컬 정의를 추가합니다.\n\n영향: ACK selftest/mm 빌드가 복구되어 droppable mapping 검증 테스트가 다시 컴파일·실행 가능합니다.\n\n> add a local temporary workaround while these get updated\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/6b38b459a2223ba6486317bd9ae4ee399582d8cd)\n\nbionic에 MAP_DROPPABLE이 반영되면 이 workaround 제거 시점은 확인이 필요합니다.\n\n**GKI Tegra pinmux 드라이버 비활성화**\n\nupstream에서 추가된 Tegra238/264 pinmux 드라이버를 gki_defconfig에서 명시적으로 비활성화합니다.\n\n영향: CONFIG_ARCH_TEGRA로 기본 빌드되지만 GKI에 불필요한 Tegra pinmux 드라이버를 제외해 GKI 이미지·빌드 부담을 줄입니다.\n\n> These get built by default via CONFIG_ARCH_TEGRA but are not needed in GKI, so explicitly disable them.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/bef97a3ba93cb17037265de3ccabc844b378dd5a)\n\n**dma-heap struct dma_heap kernel-doc 복원**\n\ndrm-next 병합으로 누락된 struct dma_heap kernel-doc(@heap_devt, @list, @heap_cdev)를 복원하고 @refcount 문서를 추가합니다. 기능 코드는 변경하지 않습니다.\n\n영향: dma-heap API 문서와 kernel-doc 경고가 복구되어 ACK dma-buf/heaps 유지보수·리뷰 시 참조가 가능합니다.\n\n> No functional change.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/d6549754be00560c3cd7afb7f1cd3e91c14e78b0)\n\n**mem_accounting 심볼 중복 export revert**\n\nupstream f78a0607c8bf가 mem_accounting 심볼 export를 추가했으므로 Android 측 중복 export 패치(159a7a24)를 revert합니다.\n\n영향: 중복 EXPORT_SYMBOL로 인한 빌드·GKI ABI 충돌을 피하고 upstream export만 사용합니다.\n\n> the export has now been added by upstream commit f78a0607c8bf (\"dma-buf: heaps: Export mem_accounting parameter\").\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/9fb882e31c318d88c36b9b0b173ce7f7d6d801e5)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "SELinux bpffs SBLABEL_MNT 검사 순서 수정",
+      "url": "https://android.googlesource.com/kernel/common/+/8f0a5b31aee19510e75741c9687cf0d9321fa7ed",
+      "note": "commit"
+    },
+    {
+      "title": "SELinux bpffs inode 초기화 문제 LKML 스레드",
+      "url": "https://lore.kernel.org/all/akWdcp6P0FkNDzBk@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "NMI 컨텍스트 dump_tasks() 안전화",
+      "url": "https://android.googlesource.com/kernel/common/+/db2acc01b75f9a30bfef0f4d2a6f413542cc32ac",
+      "note": "commit"
+    },
+    {
+      "title": "wakeup reasons 순환 락 의존 수정",
+      "url": "https://android.googlesource.com/kernel/common/+/c439eb78736dc606256bac910652f186c4933d08",
+      "note": "commit"
+    },
+    {
+      "title": "wrapfd dma_buf unlocked API 사용",
+      "url": "https://android.googlesource.com/kernel/common/+/56a91e3eaa38c8d78cc1b0cc5714b3e434123ffc",
+      "note": "commit"
+    },
+    {
+      "title": "drm-next-2026-06-17 android-mainline 병합",
+      "url": "https://android.googlesource.com/kernel/common/+/01ee4ea37e86aacce089f0ccb2e3e0e02bfc7fae",
+      "note": "commit"
+    },
+    {
+      "title": "GKI CRYPTO_LZ4 암묵 선택 정리",
+      "url": "https://android.googlesource.com/kernel/common/+/87aba67d69fd0706152ae2d9dec68c2cfc274459",
+      "note": "commit"
+    },
+    {
+      "title": "selftest/mm MAP_DROPPABLE 빌드 복구",
+      "url": "https://android.googlesource.com/kernel/common/+/6b38b459a2223ba6486317bd9ae4ee399582d8cd",
+      "note": "commit"
+    },
+    {
+      "title": "GKI Tegra pinmux 드라이버 비활성화",
+      "url": "https://android.googlesource.com/kernel/common/+/bef97a3ba93cb17037265de3ccabc844b378dd5a",
+      "note": "commit"
+    },
+    {
+      "title": "dma-heap struct dma_heap kernel-doc 복원",
+      "url": "https://android.googlesource.com/kernel/common/+/d6549754be00560c3cd7afb7f1cd3e91c14e78b0",
+      "note": "commit"
+    },
+    {
+      "title": "mem_accounting 심볼 중복 export revert",
+      "url": "https://android.googlesource.com/kernel/common/+/9fb882e31c318d88c36b9b0b173ce7f7d6d801e5",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-14T18:06:41.258Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/android-newsletter-from-dossier-ko.md"
+  }
+}

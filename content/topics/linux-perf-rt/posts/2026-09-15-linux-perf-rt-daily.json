@@ -1,0 +1,105 @@
+{
+  "id": "2026-09-15-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-09-15 BPF gotox CFG — 성능·RT",
+  "headline": "BPF indirect jump CFG 보완, kcov coverage leak 억제, irq_work early-boot 이슈가 이번 PREEMPT_RT·성능 렌즈의 핵심 신호입니다.",
+  "date": "2026-09-15",
+  "summary": "Daniel Borkmann BPF 패치가 compute_subprog_jts()와 check_indirect_jump() 간 jump table 불일치로 서브프로그램 밖 gotox가 들어가는 CFG 오류를 막는다. Karl Mehltretter kcov v3와 Sebastian Siewior irq_work follow-up이 PREEMPT_RT wake·부트 경로의 회귀·런타임 이슈를 다룬다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "PREEMPT_RT",
+    "BPF"
+  ],
+  "highlights": [
+    {
+      "title": "bpf: 서브프로그램 밖 indirect jump 거부",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF verifier·gotox/INSN_ARRAY·x86 JIT를 다루는 BPF 유지보수자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260914170326.249953-5-daniel@iogearbox.net/",
+      "if": "indirect jump(gotox) 프로그램·verifier·x86 JIT 경로를 유지보수한다면",
+      "do": "패치 머지 전까지 cross-subprog jump table 조합을 위험 신호로 보고 검증을 강화한다",
+      "verify": "lore.kernel.org BPF 패치 스레드에서 시리즈 길이·Reviewed-by·머지 상태를 확인한다"
+    },
+    {
+      "title": "kcov: timer·scheduler coverage leak 억제",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "PREEMPT_RT·KCOV·syzkaller·스케줄러 instrumentation을 함께 다루는 커널 개발자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/14/391",
+      "if": "PREEMPT_RT 커널에서 KCOV selftest나 syzkaller fuzzing을 돌린다면",
+      "do": "v3 6패치 시리즈 진행과 arm64·RISC-V selftest follow-up 필요 여부를 추적한다",
+      "verify": "openwall 스레드에서 __schedule()·try_to_wake_up() guard와 matched execution 벤치 결과를 확인한다"
+    },
+    {
+      "title": "irq_work: per-CPU 초기화 전 queue 문제",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "PREEMPT_RT 부트·per-CPU 초기화·irq_work·printk 경로를 추적하는 RT 커널 개발자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/14/2104",
+      "if": "early-boot printk나 irq_work_queue() 호출 경로를 다룬다면",
+      "do": "Sep 11 CPU-hotplug 시리즈와 early-boot 이슈의 통합 수정 일정을 추적한다",
+      "verify": "follow-up 스레드에서 queue 금지 또는 setup 전 lazy flush 해결책 논의를 확인한다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**bpf: Reject indirect jumps that leave their subprogram**\n\nDaniel Borkmann 패치가 compute_subprog_jts()가 수집한 jump table과 check_indirect_jump()가 따라가는 INSN_ARRAY map 불일치를 막고, map 수집 시 서브프로그램 경계를 넘는 map을 거부하며 gotox target을 해당 서브프로그램 안으로 한정한다.\n\n영향: x86 JIT gotox가 서브프로그램 경계를 넘으면 BPF call frame 없이 다른 서브프로그램에 진입해 실행 시 크래시할 수 있어, indirect jump 지원(Fixes 493d9e0d6083)을 추적하는 개발자는 패치 머지 전까지 cross-subprog jump table 조합을 위험 신호로 봐야 한다.\n\n> The two disagree, so bpf_insn_successors() reports a subset of the edges the BPF program can take and a gotox can enter a subprog the CFG never walked.\n\n[원문 확인](https://lore.kernel.org/bpf/20260914170326.249953-5-daniel@iogearbox.net/)\n\n패치 시리즈 길이·Reviewed-by·머지 상태는 lore 직접 fetch 불가로 별도 확인이 필요하다. 6월 subprog bounds 시리즈와 이번 compute_subprog_jts() 보완의 최종 통합 형태도 확인이 필요하다.\n\n**kcov: Suppress timer and scheduler coverage leaks**\n\nKarl Mehltretter v3 6패치가 nestable KCOV_PAUSED 비트와 kcov_pause guard를 추가하고, deferred hrtimer rearm, __schedule(), try_to_wake_up(), wake_up_new_task()에서 instrumented callee의 비결정적 coverage를 막으며 READ_ONCE/WRITE_ONCE·barrier로 pause 상태를 공유한다.\n\n영향: PREEMPT_RT wakeups와 스케줄러 callee가 KCOV syscall coverage를 오염시켜 CONFIG_KCOV_SELFTEST가 실패하고 syzkaller fuzzing 효율이 떨어지므로, RT 커널에서 KCOV·fuzzer를 돌리는 팀은 이 시리즈 진행을 추적해야 한다.\n\n> Instrumented callees can still record when uninstrumented timer and scheduler paths run with in_task() true.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/14/391)\n\nx86-64 KCOV selftest 10/10 boot(PREEMPT_RT 포함)와 matched execution에서 corpus 42-54%, coverage 14-19% 증가가 보고됐다. Alexander Potapenko가 제안한 pause 주석 wording 변경이 v4에 반영되는지, arm64·RISC-V selftest 실패 follow-up은 확인이 필요하다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**irq_work: CPU-hotplug improvements on PREEMPT_RT**\n\nSebastian Siewior Sep 14 follow-up에서 per-CPU 데이터 초기화 전 printk()가 irq_work를 queue하면 IRQ_WORK_CLAIMED work item이 모든 CPU per-CPU view에 복사되고, 인터럽트 enable 후 각 CPU가 원본 irq_work 포인터로 callback을 반복 호출하는 문제를 지적한다.\n\n영향: 드문 early-boot 경로지만 irq_work_queue()가 per-CPU setup 전에 쓰이면 RT 부트·hotplug 이후 printk·irq_work 상태가 오염될 수 있고, printk workaround가 퍼지면 유사 early user가 늘어날 위험이 있다.\n\n> the work item has the IRQ_WORK_CLAIMED bit set and this work item is copied to every CPU's view of the per-CPU data.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/14/2104)\n\n해결책 후보는 per-CPU setup 전 irq_work_queue() 금지 또는 setup 전 lazy queue flush다. Sep 11 irq_work CPU-hotplug 3패치 시리즈의 remote flush·RCU UAF 리뷰 지적과 이 early-boot 이슈의 통합 수정 일정, printk two-irq_works follow-up 패치 반영 여부는 확인이 필요하다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "bpf: Reject indirect jumps that leave their subprogram",
+      "url": "https://lore.kernel.org/bpf/20260914170326.249953-5-daniel@iogearbox.net/",
+      "note": "thread"
+    },
+    {
+      "title": "BPF gotox subprog bounds (June thread)",
+      "url": "https://lists.openwall.net/linux-kernel/2026/06/13/358",
+      "note": "thread"
+    },
+    {
+      "title": "BPF indirect jump support (493d9e0d6083)",
+      "url": "https://github.com/amir73il/linux/commit/493d9e0d608339a32f568504d5fd411a261bb0af",
+      "note": "commit"
+    },
+    {
+      "title": "ARM: allocate the cacheinfo early to fix the PREEMPT_RT boot warning",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/12/802",
+      "note": "thread"
+    },
+    {
+      "title": "kcov: Suppress timer and scheduler coverage leaks",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/14/391",
+      "note": "thread"
+    },
+    {
+      "title": "irq_work: CPU-hotplug improvements on PREEMPT_RT (follow-up)",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/14/2104",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-14T18:47:36.853Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
