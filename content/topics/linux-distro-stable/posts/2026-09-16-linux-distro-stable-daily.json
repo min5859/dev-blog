@@ -1,0 +1,153 @@
+{
+  "id": "2026-09-16-linux-distro-stable-daily",
+  "topic": "linux-distro-stable",
+  "title": "2026-09-16 stable 백포트 다발 — 배포·stable",
+  "headline": "HP BIOS·vsock·ASUS WMI 등 stable@ Cc 백포트가 제출됐고, arm-smmu-v3는 브랜치별 백포트 경로가 갈립니다.",
+  "date": "2026-09-16",
+  "summary": "플랫폼·vsock·ASUS WMI·amdgpu 등에서 stable 백포트 제출이 이어졌고, arm-smmu-v3는 6.12.y와 7.2.y에서 필요한 수정이 다릅니다. amd-pstate dynamic EPP는 6.18-stable 리뷰에서 upstream 7.1 방향과 충돌 가능성이 제기됐습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "hp-bioscfg slab OOB write",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "HP 플랫폼·stable 백포트 담당",
+      "verifyLink": "https://patchew.org/linux/20260915174615.63924-1-meatuni001@gmail.com/mbox",
+      "if": "HP BIOS 설정 드라이버를 쓰는 이미지에서 부팅 시 KASAN이 slab OOB를 보고하면",
+      "do": "stable@ Cc 백포트 제출 상태와 대상 브랜치 목록을 추적하세요",
+      "verify": "patchew 스레드에서 worst-case 할당 수정과 Fixes 태그를 확인하세요"
+    },
+    {
+      "title": "vsock 빈 child_ns_mode write",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "vsock·container 런타임·stable 백포트 담당",
+      "verifyLink": "https://patchew.org/linux/20260915173050.3176344-1-qwe.aldo@gmail.com/mbox",
+      "if": "컨테이너·가상화 스택에서 vsock namespace 격리와 child_ns_mode sysctl을 쓰면",
+      "do": "빈 write로 child mode가 잠기는 경로를 막는 stable 백포트 반영 여부를 확인하세요",
+      "verify": "Reviewed-by와 stable@ Cc 여부를 스레드에서 확인하세요"
+    },
+    {
+      "title": "asus-wmi kbd_led UAF",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "ASUS WMI 플랫폼·stable 백포트 담당",
+      "verifyLink": "https://patchew.org/linux/20260915172608.14234-1-denis.benato@linux.dev/mbox",
+      "if": "ASUS WMI 노트북에서 모듈 언로드나 remove 경로를 운영하면",
+      "do": "asus_wmi_led_exit() 명시 unregister 백포트가 stable 큐에 들어갔는지 추적하세요",
+      "verify": "devres와 remove() 호출 순서 설명이 담긴 스레드를 확인하세요"
+    },
+    {
+      "title": "arm-smmu-v3 devm teardown",
+      "priority": "중",
+      "impactType": "backport",
+      "affectedAudience": "arm-smmu-v3·Tegra IOMMU·6.12/6.18/7.2 stable 백포트 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/15/193",
+      "if": "Tegra241 CMDQV나 arm-smmu-v3 devm teardown을 6.12·6.18·7.2에서 운영하면",
+      "do": "브랜치별로 필요한 백포트(7.2용·6.12 적응용)를 분리해 계획하세요",
+      "verify": "Sasha Levin 큐잉 코멘트와 Nicolin Chen 리뷰를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**platform/x86: hp-bioscfg: fix slab-out-of-bounds write in hp_convert_hexstr_to_str**\n\nhp_convert_hexstr_to_str()가 ACPI 펌웨어 길이(input_len)만큼 kmalloc한 뒤 NUL 종료자를 쓰는데, 짧은 인코딩 값에서는 디코드 결과+종료자가 할당 크기를 넘어 slab OOB write가 납니다.\n\n영향: HP BIOS 설정 드라이버를 쓰는 배포·OEM 이미지는 부팅 시 udev-worker 경로에서 KASAN이 잡은 1바이트 OOB가 재현될 수 있어, stable 큐 반영 여부를 추적해야 합니다.\n\n> KASAN caught exactly this during BIOS attribute enumeration on boot, triggered by a one-byte encoded input value:\n\nBUG: KASAN: slab-out-of-bounds in hp_convert_hexstr_to_str\n\n[원문 확인](https://patchew.org/linux/20260915174615.63924-1-meatuni001@gmail.com/mbox)\n\n**vsock: ignore empty child namespace mode writes**\n\nchild_ns_mode sysctl에 빈 write가 들어오면 __vsock_net_mode_string()이 new_mode를 갱신하지 않은 채 성공을 반환하고, caller가 초기화되지 않은 enum을 write-once child mode에 영구 저장할 수 있습니다.\n\n영향: vsock namespace 격리를 쓰는 컨테이너·가상화 스택은 잘못된 빈 write가 child_ns_mode를 잠가버릴 수 있어 stable 반영을 봐야 합니다.\n\n> __vsock_net_mode_string() returns success without updating new_mode when the transfer length is zero. Its caller then reads the uninitialized enum and may permanently store a stack-derived value in th\n\n[원문 확인](https://patchew.org/linux/20260915173050.3176344-1-qwe.aldo@gmail.com/mbox)\n\n**platform/x86: asus-wmi: fix use-after-free unregistering kbd_led led**\n\nasus_wmi_remove()가 struct asus_wmi를 해제한 뒤 devres가 devm_led_classdev_unregister()를 호출해 kbd_led UAF가 납니다.\n\n영향: ASUS WMI 노트북·모듈 언로드 경로를 쓰는 배포는 간헐적 크래시와 led classdev 상태 손상이 날 수 있어 stable 큐를 추적해야 합니다.\n\n> The driver core calls .remove() before devres_release_all(), so the deferred devres release runs led_classdev_unregister() on memory that has already been freed.\n\n[원문 확인](https://patchew.org/linux/20260915172608.14234-1-denis.benato@linux.dev/mbox)\n\n**drm/amdgpu: Skip KFD mapping clear before initialization**\n\namdgpu_amdkfd_clear_kfd_mapping()가 kfd_dev만 보고 nodes[]를 순회하는데, PCIe atomics 미지원 등으로 KFD 초기화가 중간에 실패하면 nodes[0]이 없는 상태에서 GPU reset이 NULL dereference할 수 있습니다.\n\n영향: amdgpu+KFD를 쓰는 배포·데스크톱는 mode1 reset·compute ring timeout 시 커널 패닉 위험이 있어 stable 백포트 일정을 봐야 합니다. stable 머지 시점·대상 브랜치는 아직 확인되지 않았습니다.\n\n> NULL pointer dereference in amdgpu_amdkfd_clear_kfd_mapping during GPU reset\n\n[원문 확인](https://lore.kernel.org/stable/20260915180149.2162871-1-mario.limonciello@amd.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**iommu/arm-smmu-v3: Disable implementations during devm teardown**\n\n7.2.y stable-only 패치가 arm_smmu_disable_action()에서 CMDQ가 살아 있을 때 impl_ops->device_disable()를 호출하도록 옮깁니다. Sasha Levin은 6.18에 큐했고, 6.12.y는 tegra241 CMDQV UAF 수정(9ff145a25c5c)의 별도 적응 백포트가 필요하다고 밝혔습니다.\n\n영향: Tegra241 CMDQV·arm-smmu-v3 devm teardown을 쓰는 LTS/배포는 브랜치마다 필요한 수정이 달라 백포트 계획을 분기별로 잡아야 합니다. 6.12.y 적응 백포트 제출·머지 시점은 아직 확인되지 않았습니다.\n\n> Now that arm_smmu_disable_action() manages normal teardown, invoke the implementation callback there while the command queue is still alive.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/10/647)\n\n**cpufreq/amd-pstate: Add dynamic energy performance preference**\n\n6.18-stable 리뷰에 CONFIG_X86_AMD_PSTATE_DYNAMIC_EPP를 도입하는 백포트가 올라왔고, Christoph Hellwig가 upstream 7.1에서 이미 Kconfig 옵션을 제거한 점과 충돌한다고 질문했습니다.\n\n영향: 6.18 LTS·배포 채널은 dynamic EPP 기본 동작이 upstream 7.1 이후 방향과 어긋날 수 있어, stable 리뷰 결과를 보고 백포트·설정 정책을 맞춰야 합니다. 6.18-stable 리뷰 패치 최종 처리(유지·수정·drop)는 아직 확인되지 않았습니다.\n\n> This introduces X86_AMD_PSTATE_DYNAMIC_EPP for 6.18, while it was already removed again upstream, in v7.1-rc2-7-ge4e9b7b38d5d (\"cpufreq/amd-pstate: Drop Kconfig option for dynamic EPP\").\n\n[원문 확인](https://lore.kernel.org/stable/1789495960@msgid.manchmal.in-ulm.de/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "platform/x86: hp-bioscfg: fix slab-out-of-bounds write",
+      "url": "https://patchew.org/linux/20260915174615.63924-1-meatuni001@gmail.com/mbox",
+      "note": "thread"
+    },
+    {
+      "title": "vsock: ignore empty child namespace mode writes",
+      "url": "https://patchew.org/linux/20260915173050.3176344-1-qwe.aldo@gmail.com/mbox",
+      "note": "thread"
+    },
+    {
+      "title": "vsock stable 백포트 리뷰",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/15/2235",
+      "note": "thread"
+    },
+    {
+      "title": "platform/x86: asus-wmi: fix use-after-free unregistering kbd_led",
+      "url": "https://patchew.org/linux/20260915172608.14234-1-denis.benato@linux.dev/mbox",
+      "note": "thread"
+    },
+    {
+      "title": "asus-wmi led unregister 수정",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/15/2554",
+      "note": "thread"
+    },
+    {
+      "title": "iommu/arm-smmu-v3: Disable implementations during devm teardown",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/10/647",
+      "note": "thread"
+    },
+    {
+      "title": "arm-smmu-v3 stable 리뷰",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/11/2797",
+      "note": "thread"
+    },
+    {
+      "title": "arm-smmu-v3 stable 큐잉",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/15/193",
+      "note": "thread"
+    },
+    {
+      "title": "drm/amdgpu: Skip KFD mapping clear before initialization",
+      "url": "https://lore.kernel.org/stable/20260915180149.2162871-1-mario.limonciello@amd.com/",
+      "note": "thread"
+    },
+    {
+      "title": "amdgpu_amdkfd_clear_kfd_mapping NULL dereference",
+      "url": "https://gitlab.freedesktop.org/drm/amd/-/work_items/5833",
+      "note": "article"
+    },
+    {
+      "title": "amdgpu reset 시 KFD mapping clear 추가",
+      "url": "https://github.com/torvalds/linux/commit/353f7430d1eccd481cc089decd1fc377d4312f4a",
+      "note": "commit"
+    },
+    {
+      "title": "cpufreq/amd-pstate dynamic EPP stable 리뷰",
+      "url": "https://lore.kernel.org/stable/1789495960@msgid.manchmal.in-ulm.de/",
+      "note": "thread"
+    },
+    {
+      "title": "cpufreq/amd-pstate: Drop Kconfig option for dynamic EPP",
+      "url": "https://lists.openwall.net/linux-kernel/2026/05/12/2676",
+      "note": "thread"
+    },
+    {
+      "title": "7.1 merge: dynamic EPP opt-in-only",
+      "url": "https://github.com/torvalds/linux/commit/a67f3113331d9fb3eb0664602d9b581cb2df7294",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-15T18:41:07.565Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

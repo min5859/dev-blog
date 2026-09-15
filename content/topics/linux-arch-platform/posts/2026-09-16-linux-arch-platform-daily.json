@@ -1,0 +1,160 @@
+{
+  "id": "2026-09-16-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-09-16 pKVM·JH7110 디스플레이 — 아키텍처·플랫폼",
+  "headline": "pKVM protected VM 타이머 회귀와 arm64 KVM MPAM trap 논의가 이어지고, JH7110 HDMI·SpacemiT reset 유지보수 경로가 정리됩니다.",
+  "date": "2026-09-16",
+  "summary": "arm64 pKVM에서 arch timer SET_ONE_REG WARN 회귀와 guest MPAM 접근 trap 설계가 리뷰 중이며, RISC-V JH7110 디스플레이 부모 드라이버와 SpacemiT reset MAINTAINERS 정리가 진행됩니다. Toradex Lino iMX93 DTS의 ethphy1 인터럽트 방식과 pKVM ITS emulation 할당 경로도 merge 전 검증이 필요합니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "아키텍처",
+    "플랫폼"
+  ],
+  "highlights": [
+    {
+      "title": "KVM: arm64: protected VM CNTVCT_EL0/CNTPCT_EL0 SET_ONE_REG 회귀",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "arm64 pKVM·protected VM·arch timer 유지보수 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/15/2377",
+      "if": "protected VM에서 CNTVCT/CNTPCT에 SET_ONE_REG를 쓰는 VMM·selftest 경로가 있다면,",
+      "do": "timer_set_offset() WARN() 가능성을 염두에 두고 v19에서 timer 코드 재배치 방향을 추적하세요.",
+      "verify": "Marc Zyngier가 요구한 hyp vCPU offset host 변경 불가 조건을 리뷰 스레드에서 확인하세요."
+    },
+    {
+      "title": "KVM: arm64: Trap guest MPAM accesses whenever MPAM is implemented",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "arm64 KVM·MPAM·nested virtualization 유지보수 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/11/1137",
+      "if": "nested virt·MPAM 지원 arm64 KVM 환경을 운영한다면,",
+      "do": "guest MPAM trap 조건과 NV hot path recursive trap 회피 설계를 추적하세요.",
+      "verify": "Marc Zyngier의 MPAMIDR_EL1 recursive trap 지적과 Fuad Tabba v3 trap 조건을 원문에서 확인하세요."
+    },
+    {
+      "title": "soc: starfive: Add jh7110-hdmi-subsystem driver",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "StarFive JH7110·VisionFive 2 디스플레이/HDMI 드라이버·DT 유지보수 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/15/2577",
+      "if": "VisionFive 2 등 JH7110 보드에서 HDMI bring-up을 진행한다면,",
+      "do": "v4 12/20 부모 드라이버의 regmap·자식 populate 구조를 upstream 시리즈와 맞춰 추적하세요.",
+      "verify": "v4 00/20 커버 레터와 12/20 패치 설명을 openwall 스레드에서 확인하세요."
+    },
+    {
+      "title": "KVM: arm64: Implement HVC interface for ITS emulation setup",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "arm64 pKVM·GICv3 ITS·PREEMPT_RT·Android KVM 유지보수 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/15/1771",
+      "if": "pKVM에서 MSI-heavy 워크로드나 PREEMPT_RT 빌드를 검증한다면,",
+      "do": "ITS_PAGES=2 고정 할당과 lock 아래 GFP_ATOMIC 경로의 PREEMPT_RT·ENOSPC 리스크를 점검하세요.",
+      "verify": "Fuad Tabba의 ITS driver setup·MAPD 리뷰 코멘트를 lkml 스레드에서 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**KVM: arm64: protected VM: Handle set_one_reg CNTVCT_EL0/CNTPCT_EL0**\n\nSuzuki Poulose v18 패치는 protected VM에서 CNTVCT/CNTPCT SET_ONE_REG 시 vm_offset NULL로 timer_set_offset() WARN()이 나는 문제를, 오프셋을 0으로 고정하고 KVM_ARCH_FLAG_VM_COUNTER_OFFSET를 pKVM init 시 설정해 해결한다. Marc Zyngier는 timer 코드로 옮기고 hyp vCPU offset이 host가 바꿀 수 없게 해야 한다고 지적했고 Suzuki는 Ack했다.\n\n영향: pKVM protected guest의 arch timer 오프셋 정책(항상 0)과 userspace SET_ONE_REG 경로가 충돌해 WARN/regression을 일으키던 문제로, Android/pKVM 타이머 selftest·VMM 동작에 직접 영향을 준다.\n\n> However we don't prevent the userspace from trying to write to the CNTVCT/CNTPCT registers. This would lead to KVM triggering a WARN() in timer_set_offset() as the vm_offset pointer is set to NULL.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/15/2377)\n\n> I don't think this is right. Protected guests have no offset, and this needs to be ensured by the hypervisor. Here, the host can change the offset any time it wants, and that's not acceptable.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/15/2449)\n\n**KVM: arm64: Trap guest MPAM accesses whenever MPAM is implemented**\n\nFuad Tabba v3 패치는 per-CPU HAS_MPAM 플래그로 guest MPAM 접근을 trap하고, Marc Zyngier는 NV에서 MPAMIDR_EL1 런타임 read가 recursive trap을 유발한다며 HAS_MPAM_HCR 플래그를 cpu_hyp_init_context()에서 1회 probe하라고 요청했다. Fuad는 arm64.nompam override 적용 ID 레지스터 read와 HAS_HCR 플래그 도입으로 v4를 준비 중이다.\n\n영향: MPAM이 ID에만 존재하고 MPAMEN이 없을 때 guest가 레지스터에 도달하는 보안/격리 구멍을 막는 arm64 KVM 핫패스 변경이며, nested virt 환경에서는 trap 경로 설계가 성능·정확성 모두에 영향을 준다.\n\n> Gate on what finalise_el2_state() tests instead: this CPU's ID registers with the arm64.nompam override applied, and its MPAMIDR_EL1.HAS_HCR before writing MPAMHCR_EL2\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/11/1137)\n\n> This is going to suck under NV. The host hypervisor is of course going to set MPAMHCR_EL2.TRAP_MPAMIDR_EL1, and we're in for a recursive trap on the hottest possible path in KVM.\n\n[원문 확인](https://lkml.iu.edu/2609.1/13328.html)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**soc: starfive: Add jh7110-hdmi-subsystem driver**\n\nJH7110 디스플레이 서브시스템 v4(20패치)의 12/20 패치로, starfive,jh7110-hdmi-subsystem 부모 드라이버가 공유 regmap을 만들고 hdmi_phy·hdmi_controller 자식 디바이스를 populate한다. NoC/PD_VOUT 전원·클럭은 vout 서브시스템 부모가 유지한다.\n\n영향: VisionFive 2 등 JH7110 보드에서 HDMI PHY·브릿지 간 순환 클럭 의존을 끊는 soc 래퍼가 upstream 경로에 올라가며, RISC-V 플랫폼 디스플레이 bring-up의 핵심 조각이다.\n\n> This driver binds to the starfive,jh7110-hdmi-subsystem node. It maps the shared register block, creates a regmap, and calls devm_of_platform_populate()\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/15/2577)\n\n> [PATCH v4 00/20] drm: starfive: jh7110: Enable display subsystem\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/15/2201)\n\n**MAINTAINERS: add entry for SpacemiT reset controller driver**\n\n2026-06-03 이후 대기 중이던 SpacemiT reset controller MAINTAINERS 항목에 대해 Philipp Zabel이 2026-09-15에 Yixun Lan이 SpacemiT SoC 트리로 pick up해도 된다고 답했다. 패치는 drivers/reset/spacemit/와 spacemit,k3-resets.h를 Guodong Xu 소유로 등록한다.\n\n영향: SpacemiT K1/K3 reset 드라이버의 리뷰·머지 경로가 reset 서브시스템 트리 대신 SpacemiT SoC 트리로 정리되어, RISC-V 플랫폼 드라이버 유지보수 흐름이 명확해진다.\n\n> Please feel free to pick it up into the SpacemiT SoC tree.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/15/2247)\n\n> Add a MAINTAINERS entry for the SpacemiT reset controller driver (drivers/reset/spacemit/) and its reset-ID header.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/06/02/2511)\n\n**arm64: dts: freescale: Add Lino iMX93**\n\nToradex Lino iMX93 DTS v2 리뷰에서 ethphy1(어댑터 GPIO expander 경유)에 IRQ_TYPE_EDGE_FALLING을 쓰는 설계가 Andrew Lunn과 논쟁 중이다. Francesco Dolcini는 expander가 edge만 지원하고 보드에서 동작 확인했다고 주장하며, Andrew는 연속 edge race로 link down 영구화 가능성과 phylib poll 대안을 제시했다.\n\n영향: Lino-Verdin 어댑터 기반 i.MX93 보드의 이더넷 link 이벤트 처리 방식(인터럽트 vs poll)이 merge 전에 확정되어야 하며, edge-only GPIO expander 패턴은 다른 NXP/TI 보드에도 유사하게 적용된다.\n\n> Falling interrupts is probably wrong. They are normally level, active low.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/15/2187)\n\n> It works, until it does not work, because you hit a race condition with the hardware, two interrupts in quick succession.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/15/2646)\n\n**KVM: arm64: Implement HVC interface for ITS emulation setup**\n\npKVM ITS hardening v2 13/13 패치는 pkvm_init_its_emulation()에서 ITS_PAGES=2(고정 8KiB) priv_state를 alloc_pages_exact(GFP_ATOMIC)로 할당해 __pkvm_its_emulate_setup HVC를 호출한다. Fuad Tabba는 its_emulate_release_locks() 콜백이 raw spinlock+IRQ off 아래서 실행되어 PREEMPT_RT에서 page allocator sleeping lock 문제와, 고정 2페이지로 MSI device 다수 시 track slot 고갈(-ENOSPC) 가능성을 지적했다.\n\n영향: pKVM finalize 경로의 GIC ITS emulation setup은 Android protected KVM 부팅·MSI-heavy 워크로드에서 병목/실패 지점이 될 수 있으며, PREEMPT_RT 빌드와 대형 ITS table sizing은 플랫폼 검증 범위에 포함돼야 한다.\n\n> Once its_emulate_release_locks() has a caller, all of these run under its_lock and every its->lock with interrupts off. Could the buffers be allocated before the locks are taken?\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/15/1771)\n\n> A duplicate MAPD for the same device and pfn pins again here, so the refcount climbs with no new slot and track_pfn_remove()'s single unpin can't free the page.\n\n[원문 확인](https://lkml.iu.edu/2609.1/19571.html)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "soc: starfive: jh7110-hdmi-subsystem driver (v4 12/20)",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/15/2577",
+      "note": "thread"
+    },
+    {
+      "title": "drm: starfive: jh7110: Enable display subsystem (v4 00/20)",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/15/2201",
+      "note": "thread"
+    },
+    {
+      "title": "KVM: arm64: Trap guest MPAM accesses (v3)",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/11/1137",
+      "note": "thread"
+    },
+    {
+      "title": "Marc Zyngier MPAMIDR_EL1 recursive trap under NV",
+      "url": "https://lkml.iu.edu/2609.1/13328.html",
+      "note": "thread"
+    },
+    {
+      "title": "MAINTAINERS: SpacemiT SoC tree pick up 허용",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/15/2247",
+      "note": "thread"
+    },
+    {
+      "title": "MAINTAINERS: SpacemiT reset controller driver",
+      "url": "https://lists.openwall.net/linux-kernel/2026/06/02/2511",
+      "note": "thread"
+    },
+    {
+      "title": "KVM: arm64: protected VM CNTVCT/CNTPCT SET_ONE_REG (v18)",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/15/2377",
+      "note": "thread"
+    },
+    {
+      "title": "Marc Zyngier protected VM timer offset 리뷰",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/15/2449",
+      "note": "thread"
+    },
+    {
+      "title": "Sashiko protected VM timer offset write 경로 보고",
+      "url": "https://lore.kernel.org/all/20260908164641.416911F00A3A@smtp.kernel.org",
+      "note": "thread"
+    },
+    {
+      "title": "arm64: dts: freescale: Add Lino iMX93 (ethphy1 DTS)",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/11/951",
+      "note": "thread"
+    },
+    {
+      "title": "Andrew Lunn ethphy1 edge interrupt 지적",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/15/2187",
+      "note": "thread"
+    },
+    {
+      "title": "Francesco Dolcini edge race·poll 대안 논의",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/15/2646",
+      "note": "thread"
+    },
+    {
+      "title": "pKVM ITS emulation HVC setup (13/13)",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/07/1766",
+      "note": "thread"
+    },
+    {
+      "title": "Fuad Tabba ITS driver setup lock·GFP_ATOMIC 리뷰",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/15/1771",
+      "note": "thread"
+    },
+    {
+      "title": "Fuad Tabba ITS MAPD tracking 견고성 리뷰",
+      "url": "https://lkml.iu.edu/2609.1/19571.html",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-15T19:03:13.072Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

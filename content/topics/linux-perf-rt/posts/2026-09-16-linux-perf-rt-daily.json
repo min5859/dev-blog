@@ -1,0 +1,156 @@
+{
+  "id": "2026-09-16-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-09-16 syscall fd 반대 — 성능·RT 렌즈",
+  "headline": "syscall exit fd staging이 Linus 반대를 받았고, PREEMPT_RT DEFINE_MUTEX 정적 강제·libbpf 보안·ETM race 수정이 동시에 논의 중이다.",
+  "date": "2026-09-16",
+  "summary": "Christian Brauner의 syscall exit fd staging RFC는 Linus Torvalds의 강한 반대로 재설계 여부가 불확실하다. PREEMPT_RT lockdep 강화, bpftool/libbpf 수정, ARM ETM sysfs race 패치가 perf·BPF·RT 트레이싱 워크로드에 직접 영향을 준다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "BPF",
+    "PREEMPT_RT",
+    "perf"
+  ],
+  "highlights": [
+    {
+      "title": "syscall exit fd staging RFC",
+      "priority": "상",
+      "impactType": "project",
+      "affectedAudience": "syscall exit·fd 설치·BPF fd 생성 경로를 다루는 커널/VFS·tracing 엔지니어",
+      "verifyLink": "https://lore.kernel.org/bpf/CAHk-=wjeamU=_RYT9cR3dZJ2N-Teo-N1+aYh7jwhrB=iWXD0cg@mail.gmail.com/",
+      "if": "syscall exit·ptrace·audit 순서에 fd 설치가 들어가는 패치를 추적한다면",
+      "do": "BPF/perf tracepoint 관찰 경로와의 상호작용을 머지 전까지 설계 변경을 주시하세요",
+      "verify": "Linus 반대 의견과 fd_slots_commit() 연결 범위를 lore 스레드에서 확인하세요"
+    },
+    {
+      "title": "DEFINE_MUTEX() 정적 저장소 강제",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "PREEMPT_RT·lockdep·DEFINE_MUTEX 사용자 및 locking 서브시스템 유지보수자",
+      "verifyLink": "https://lkml.iu.edu/2609.1/17617.html",
+      "if": "PREEMPT_RT·lockdep 환경에서 DEFINE_MUTEX를 스택 변수로 쓰고 있다면",
+      "do": "mutex_init() 경로로 옮기고 ASSERT_STATIC_STORAGE() 선행 커밋 머지 후 재게시를 기다리세요",
+      "verify": "treewide 선언 매크로 변경 범위를 lkml 스레드에서 확인하세요"
+    },
+    {
+      "title": "libbpf struct_ops local bitfield 거부",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "libbpf struct_ops·sched_ext·BTF struct_ops map을 다루는 BPF 개발자",
+      "verifyLink": "https://ci.syzbot.org/series/6df34dc1-8c77-4b82-ab96-38cfb3e5fc54/all_patches",
+      "if": "libbpf로 struct_ops·sched_ext BTF map을 로드한다면",
+      "do": "패치 적용 전까지 local bitfield를 사용하지 말고 v2 패치 머지를 추적하세요",
+      "verify": "bitfield offset 검증과 member range 검사 로직을 syzbot 시리즈 페이지에서 확인하세요"
+    },
+    {
+      "title": "ARM ETM sysfs·perf 동시 사용 race",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "ARM CoreSight ETM·perf PMU·sysfs 기반 on-target tracing 엔지니어",
+      "verifyLink": "https://patchew.org/linux/20260725113645.57519-1-yeoreum.yun@arm.com/",
+      "if": "ARM CoreSight ETM에서 perf와 sysfs를 동시에 쓰고 있다면",
+      "do": "v11 머지 전까지 sysfs+perf 혼용을 피하고 active_config/config 분리 패치를 추적하세요",
+      "verify": "sched-out/in 사이 설정 불일치 증상과 v11 IPI 변경을 patchew·linaro 스레드에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**libbpf: Reject local struct_ops bitfields before data access**\n\nMingpei Cao v2 1/3은 bpf_map__init_kern_struct_ops()가 local/kernel bitfield를 데이터 포인터 계산 전에 -ENOTSUP로 거부하고, 모든 member offset·alignment을 byte 범위로 검증한 뒤 포인터를 만든다.\n\n영향: bitfield member->offset의 bit 위치·width를 byte offset으로 쓰면 libbpf_is_mem_zeroed()가 st_ops->data 밖을 읽어 libbpf가 크래시할 수 있다. struct_ops·sched_ext 등 BTF 기반 로더는 패치 적용 전까지 local bitfield를 금지해야 한다.\n\n> libbpf_is_mem_zeroed() could then read outside the local struct_ops data.\n\n[원문 확인](https://ci.syzbot.org/series/6df34dc1-8c77-4b82-ab96-38cfb3e5fc54/all_patches)\n\n---\n\n**fix several inconsistencies with sysfs configuration in etmX**\n\nYeoreum Yun v11(27패치)은 ETM3x/ETM4x에서 active_config(실행 중 설정)와 config(sysfs 설정)를 분리하고, perf/sysfs 동시 enable·sched-in/out 중 sysfs 변경으로 config가 어긋나는 race를 막는다. v11은 etm3 sysfs 직접 레지스터 읽기를 IPI로 바꾸고 path 포인터를 target CPU에서 원자적으로 갱신한다.\n\n영향: perf와 sysfs가 동시에 ETM을 켜면 drvdata->config가 corrupt되거나 sched-out/in 사이 설정이 달라져 CoreSight trace가 조용히 잘못될 수 있다. ARM perf/RT 트레이싱은 v11 머지 전까지 sysfs+perf 혼용을 피해야 한다.\n\n> active_config, which is applied configuration for the current session; config, which stores the settings configured via sysfs.\n\n[원문 확인](https://patchew.org/linux/20260725113645.57519-1-yeoreum.yun@arm.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**file: handle files on syscall exit**\n\nChristian Brauner RFC POC 시리즈는 fd_prepare()/fd_stage()로 예약한 fd를 syscall exit에서 성공 시 설치·실패 시 해제하도록 바꾼다. SYSCALL_WORK_FD_SLOTS/TIF_FD_SLOTS와 fd_slots_commit()이 generic entry 및 arch별 syscall exit 경로에 연결된다.\n\n영향: Linus Torvalds가 106파일·약 100줄 순증과 arch 어셈블리 확장을 이유로 강하게 반대했다. syscall exit·ptrace·audit 순서에 fd 설치가 들어가면 BPF/perf tracepoint 관찰 경로와 상호작용할 수 있어, 머지 전까지 설계 방향 추적이 필요하다.\n\n> When the syscall returns success the exit path installs every staged file. When it returns an error it drops the descriptors and the files.\n\n[원문 확인](https://ci.syzbot.org/patches/1711ba4d-1394-41d7-aac9-1a52afbaff85)\n\n---\n\n**locking/mutex: assert static storage for DEFINE_MUTEX()**\n\nYury Norov 17패치 시리즈 1/17이 DEFINE_MUTEX()에 ASSERT_STATIC_STORAGE()를 추가해 lockdep class key가 필요한 자동(스택) 변수 선언을 컴파일 타임에 거부한다. PREEMPT_RT mutex 변형과 memblock/vma tools stub도 맞추고, WireGuard allowedips selftest는 mutex_init()만 쓰도록 정리한다.\n\n영향: PREEMPT_RT·lockdep 환경에서 스택 mutex 초기화는 'non-static key' 경고로 lockdep을 꺼버릴 수 있다. RT 트리와 selftest를 유지하는 팀은 DEFINE_MUTEX를 스택에 두지 말고 mutex_init() 경로로 옮겨야 한다.\n\n> Reject automatic local declarations with ASSERT_STATIC_STORAGE(), in both the regular and PREEMPT_RT variants.\n\n[원문 확인](https://lkml.iu.edu/2609.1/17617.html)\n\n---\n\n**bpftool: Compute map size of light skeletons at runtime**\n\nLeon Hwang v3 패치는 light skeleton 생성 시 bpftool이 호스트 page size로 고정한 mmap 크기 대신 map value size와 max_entries를 생성 코드에 넘기고, skel_map_mmap_sz()가 런타임 page size로 roundup한다.\n\n영향: 64K-page 호스트에서 생성한 skeleton을 4K-page VM에서 로드하면 oversized mmap으로 errno 22가 나 selftest(atomics 등)가 실패한다. cross-arch BPF CI·배포 환경에서는 bpftool/libbpf 업데이트 전까지 page size 불일치를 의심해야 한다.\n\n> test_atomics:FAIL:atomics skeleton load unexpected error: -12 (errno 22)\n\n[원문 확인](https://lkml.iu.edu/2609.1/19651.html)\n\n---\n\n**libbpf: Fix program log buffer size validation**\n\nLuís Vieira v2는 bpf_program__set_log_buf()가 prog->log_size 대신 인자 log_size를 UINT_MAX와 비교하고, log_buf/log_size 쌍을 bpf_prog_load()와 같이 (!!log_buf != !!log_size)로 검증한다. v1 selftest는 리뷰 반영으로 제거 예정이다.\n\n영향: SIZE_MAX>UINT_MAX 플랫폼에서 oversized log_size가 통과하면 verifier 로그 설정이 잘못되어 디버깅이 어렵다. BPF 로더·CI는 libbpf 수정 전까지 set_log_buf 검증을 신뢰하지 말아야 한다.\n\n> I'll update the setter to validate the buffer/size pair consistently with bpf_prog_load().\n\n[원문 확인](https://lkml.iu.edu/2609.1/16817.html)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "file: handle files on syscall exit (fd_prepare/fd_stage)",
+      "url": "https://ci.syzbot.org/patches/1711ba4d-1394-41d7-aac9-1a52afbaff85",
+      "note": "thread"
+    },
+    {
+      "title": "SYSCALL_WORK_FD_SLOTS and fd_slots_commit()",
+      "url": "https://ci.syzbot.org/patches/a980864f-4b49-45b8-a5ac-2f09ea90674a",
+      "note": "thread"
+    },
+    {
+      "title": "Linus opposition to syscall exit fd staging",
+      "url": "https://lore.kernel.org/bpf/CAHk-=wjeamU=_RYT9cR3dZJ2N-Teo-N1+aYh7jwhrB=iWXD0cg@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "locking/mutex: ASSERT_STATIC_STORAGE for DEFINE_MUTEX()",
+      "url": "https://lkml.iu.edu/2609.1/17617.html",
+      "note": "thread"
+    },
+    {
+      "title": "treewide static storage enforcement for lock macros",
+      "url": "https://lkml.iu.edu/2609.1/17616.html",
+      "note": "thread"
+    },
+    {
+      "title": "Peter Zijlstra repost request after ASSERT_STATIC_STORAGE",
+      "url": "https://lkml.iu.edu/2609.1/19712.html",
+      "note": "thread"
+    },
+    {
+      "title": "bpftool: runtime light skeleton map mmap size",
+      "url": "https://lkml.iu.edu/2609.1/19651.html",
+      "note": "thread"
+    },
+    {
+      "title": "libbpf: bpf_program__set_log_buf validation issue",
+      "url": "https://lkml.iu.edu/2609.1/15589.html",
+      "note": "thread"
+    },
+    {
+      "title": "libbpf: log buffer size validation v2",
+      "url": "https://lkml.iu.edu/2609.1/16817.html",
+      "note": "thread"
+    },
+    {
+      "title": "bpf_program__set_log_buf API reference",
+      "url": "https://docs.ebpf.io/ebpf-library/libbpf/userspace/bpf_program__set_log_buf/",
+      "note": "article"
+    },
+    {
+      "title": "libbpf: reject local struct_ops bitfields",
+      "url": "https://ci.syzbot.org/series/6df34dc1-8c77-4b82-ab96-38cfb3e5fc54/all_patches",
+      "note": "thread"
+    },
+    {
+      "title": "ETM sysfs race during active perf session",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/11/1201",
+      "note": "thread"
+    },
+    {
+      "title": "ETM active_config and config separation",
+      "url": "https://patchew.org/linux/20260725113645.57519-1-yeoreum.yun@arm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "ETM v11 atomic path pointer update via IPI",
+      "url": "https://lists.linaro.org/archives/list/coresight@lists.linaro.org/message/ZGJZZR53565ADVFDCOWVH3V6CHPYR4TU/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-15T18:56:35.816Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

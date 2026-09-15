@@ -1,0 +1,153 @@
+{
+  "id": "2026-09-16-linux-daily-briefing",
+  "topic": "linux",
+  "title": "2026-09-16 7.2.6·LLC 수정 — 리눅스 개발",
+  "headline": "최신 안정 커널 7.2.6이 나왔고, CPU 핫플러그 때 스케줄러가 캐시 용량을 잘못 읽는 회귀 수정이 검토 중입니다.",
+  "date": "2026-09-16",
+  "summary": "7.2.6 stable이 1815개 백포트로 갱신됐으며 7.1.y는 EOL 상태입니다. 스케줄러 LLC 용량 회귀와 HugeTLB soft offline sysctl 확장이 메일링 리스트에서 주목받고 있습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "CPU hotplug LLC 용량 회귀",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "스케줄러·CPU hotplug·cpuset 운영자, cache-aware scheduling 테스트 담당자",
+      "verifyLink": "https://lkml.iu.edu/2609.1/11838.html",
+      "if": "CONFIG_SCHED_CACHE와 CPU hotplug를 쓰는 경우",
+      "do": "hotplug 후 LLC 추정값이 비정상이면 v2 패치 적용을 검토하세요",
+      "verify": "LKML v2 패치 스레드와 Reviewed-by 메일을 확인하세요"
+    },
+    {
+      "title": "7.2.6 stable 출시",
+      "priority": "상",
+      "impactType": "release",
+      "affectedAudience": "7.2.y stable 커널 운영자, 배포판·클라우드 이미지 유지보수 담당자",
+      "verifyLink": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.6",
+      "if": "7.2.y stable 커널을 운영하는 경우",
+      "do": "7.2.6으로 업그레이드하고 ksmbd·perf·tcp 등 수정 반영을 확인하세요",
+      "verify": "ChangeLog-7.2.6과 kernel.org 최신 stable 표시를 확인하세요"
+    },
+    {
+      "title": "7.1.y EOL",
+      "priority": "중",
+      "impactType": "release",
+      "affectedAudience": "7.1 커널을 운영하는 stable 배포 담당자 및 장기 고정 버전 사용자",
+      "verifyLink": "https://lkml.iu.edu/2609.0/04382.html",
+      "if": "7.1.y 브랜치에 머무르는 경우",
+      "do": "7.2.y로 이전 계획을 세우고 보안·버그 수정 공백을 피하세요",
+      "verify": "Greg Kroah-Hartman EOL 안내 메일과 kernel.org [EOL] 표시를 확인하세요"
+    },
+    {
+      "title": "HugeTLB soft offline 제어",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "HugeTLB·메모리 RAS·서버 가용성 운영자, mm/memory-failure 메인테이너",
+      "verifyLink": "https://lkml.iu.edu/2609.1/17300.html",
+      "if": "GHES·RAS 경로로 HugeTLB 워크로드를 운영하는 경우",
+      "do": "sysctl 확장 논의를 추적하고 머지 전 인터페이스 변경을 검토하세요",
+      "verify": "v3 패치 스레드와 maintainer 리뷰 메일을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**7.2.6 stable**\n\nGreg Kroah-Hartman이 2026-09-14 Linux 7.2.6 stable을 릴리스했으며 changelog 기준 1815개 백포트 커밋이 포함됩니다.\n\n영향: 7.2.y 사용자에게 권장 업그레이드 경로이며 ksmbd OOB read, perf 스택 버퍼 오버플로, tcp urgent 데이터 손상 등이 상위에 나열됩니다.\n\n> There are more than 1,800 patches in 7.2.6 alone.\n\n[원문 확인](https://lwn.net/Articles/1093985/)\n\n**7.3-rc3 mainline**\n\n9월 13일 rc3가 공개됐으며 Linus는 파일시스템 변경 비중이 평소보다 크다고 언급했습니다.\n\n영향: 메인라인 추적자와 배포 메인테이너가 조기 회귀·파일시스템·드라이버 버그를 발견하는 테스트 창구입니다.\n\n> Another fairly large rc release, and again one with a bigger filesystem footprint that we usually see.\n\n[원문 확인](https://lkml.iu.edu/2609.1/13946.html)\n\n**7.1.13 stable EOL**\n\n7.1.y 최종 릴리스(7.1.13) 이후 EOL 상태가 유지됩니다. 7.2.y 이전이 필요합니다.\n\n영향: 7.1.y에 머무르면 이후 upstream 보안·버그 수정을 받을 수 없습니다.\n\n> Note, the 7.1.y kernel series is now end-of-life. Please move to the 7.2.y kernel series at this point in time.\n\n[원문 확인](https://lkml.iu.edu/2609.0/04382.html)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**sched/cache: Refresh LLC capacity across CPU hotplug**\n\nCPU hotplug 시 cacheinfo와 scheduler domain 재구성 순서 때문에 sd->llc_bytes가 남은 CPU에 잘못 남는 버그를 v2 패치가 수정합니다. Ryzen 5 7535U에서 SMT 한 스레드 offline 시 16MiB LLC가 15379114 bytes로 과소 추정되는 사례가 제시되었습니다.\n\n영향: CONFIG_SCHED_CACHE 환경에서 LLC 용량 과소 추정은 exceed_llc_capacity()가 실제로 맞는 작업 집합도 거부해 스케줄링·집계 효율을 떨어뜨릴 수 있습니다.\n\n> During CPU teardown, sched_cpu_deactivate() rebuilds scheduler domains before cacheinfo_cpu_pre_down() removes the CPU from shared_cpu_map.\n\n[원문 확인](https://lkml.iu.edu/2609.1/11838.html)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**mm/memory-failure: Support disabling soft offline for HugeTLB pages**\n\nKyle Meyer v3 패치는 /proc/sys/vm/enable_soft_offline을 비트마스크로 바꿔 HugeTLB 페이지만 soft offline을 막을 수 있게 합니다. soft offline은 HugeTLB 페이지를 dissolve해 부팅 후 고정된 HugeTLB 풀을 영구 축소할 수 있습니다.\n\n영향: GHES·RAS 경로로 soft offline이 트리거될 때 HugeTLB 워크로드는 전역 sysctl을 끄지 않고도 HugeTLB만 보호할 수 있으나, Michal Hocko는 인터페이스 확장에 반대했고 Andrew Morton은 mm-unstable/linux-next 기준 리베이스를 요청했습니다.\n\n> Convert enable_soft_offline to a bitmask and support disabling soft offline for HugeTLB pages\n\n[원문 확인](https://lkml.iu.edu/2609.1/17300.html)"
+    },
+    {
+      "heading": "기타",
+      "body": "**next-20260915 linux-next**\n\nkernel.org linux-next 목록에 next-20260915 스냅샷이 2026-09-15 날짜로 등록되었습니다. 확인 가능한 최신 Mark Brown 공지는 9월 14일 트리로, Linus 트리 대비 5814개 non-merge 커밋·6145개 파일 변경을 보고합니다. next-20260915에 대한 Sep 15 Tree 공지 메일은 확인되지 않았습니다.\n\n영향: linux-next는 다음 메인라인 머지 창구로, 서브시스템 통합·빌드 회귀를 조기에 잡는 통합 테스트 트리입니다.\n\n> Non-merge commits (relative to Linus' tree): 5814\n\n[원문 확인](https://lkml.iu.edu/2609.1/19153.html)\n\nEcoNet EN751221 MIPS SoC 전용 DSA device-tree binding은 단일 보드·SoC 범위에 국한되어 일반 엔지니어 대상에서 제외했습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "7.1.13 EOL 안내 (Greg Kroah-Hartman)",
+      "url": "https://lkml.iu.edu/2609.0/04382.html",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-7.1.13",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.13",
+      "note": "changelog"
+    },
+    {
+      "title": "7.3-rc3 release (Linus Torvalds)",
+      "url": "https://lkml.iu.edu/2609.1/13946.html",
+      "note": "thread"
+    },
+    {
+      "title": "7.3-rc3 prepatch (LWN)",
+      "url": "https://lwn.net/Articles/1093962/",
+      "note": "article"
+    },
+    {
+      "title": "ChangeLog-7.2.6",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.6",
+      "note": "changelog"
+    },
+    {
+      "title": "7.2.6 stable releases (LWN)",
+      "url": "https://lwn.net/Articles/1093985/",
+      "note": "article"
+    },
+    {
+      "title": "kernel.org 릴리스 목록",
+      "url": "https://www.kernel.org/",
+      "note": "changelog"
+    },
+    {
+      "title": "linux-next daily tree (Mark Brown)",
+      "url": "https://lkml.iu.edu/2609.1/19153.html",
+      "note": "thread"
+    },
+    {
+      "title": "sched/cache LLC hotplug v2",
+      "url": "https://lkml.iu.edu/2609.1/11838.html",
+      "note": "thread"
+    },
+    {
+      "title": "sched/cache v2 Reviewed-by (K Prateek Nayak)",
+      "url": "https://lkml.iu.edu/2609.1/19759.html",
+      "note": "thread"
+    },
+    {
+      "title": "enable_soft_offline bitmask v3",
+      "url": "https://lkml.iu.edu/2609.1/17300.html",
+      "note": "thread"
+    },
+    {
+      "title": "Andrew Morton rebase 요청",
+      "url": "https://lkml.iu.edu/2609.1/17350.html",
+      "note": "thread"
+    },
+    {
+      "title": "Michal Hocko 인터페이스 반대 의견",
+      "url": "https://lkml.iu.edu/2609.1/18238.html",
+      "note": "thread"
+    },
+    {
+      "title": "Kyle Meyer HugeTLB 재할당 반박",
+      "url": "https://lkml.iu.edu/2609.1/19929.html",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-15T18:03:21.307Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-newsletter-from-dossier-ko.md"
+  }
+}
