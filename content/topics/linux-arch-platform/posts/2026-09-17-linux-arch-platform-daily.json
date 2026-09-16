@@ -1,0 +1,158 @@
+{
+  "id": "2026-09-17-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-09-17 RISC-V PCIe ACS — Arch·Platform",
+  "headline": "RISC-V RIMT에서 PCI 프로브 전 ACS 요청이 겹치고, stmmac RX SG·meson HDMI 참조 누수·K3 UFS·powerpc KASAN 게이트가 동시에 움직입니다.",
+  "date": "2026-09-17",
+  "summary": "RISC-V ACPI IOMMU 경로에서는 ACS를 언제 켤지에 대한 두 패치가 메일링 리스트에서 맞섰고, ARM 쪽은 stmmac RX scatter와 meson HDMI probe 레퍼런스 회귀 수정이 올라왔습니다. SpacemiT K3 UFS 드라이버 v5는 Tested-by를 받았고, Milk-V Duo S reserved-memory 논쟁과 powerpc KASAN memintrinsic 전제는 빌드·검증 신뢰와 직결됩니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "riscv: iommu: ask for ACS to be enabled",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "RISC-V ACPI RIMT·PCI·IOMMU 유지보수 담당",
+      "verifyLink": "https://lkml.iu.edu/hypermail/linux/kernel/2609.2/00981.html",
+      "if": "RISC-V ACPI RIMT·PCI bring-up에서 peer-to-peer 격리를 전제한다면",
+      "do": "BillXiang 패치의 riscv_acpi_rimt_init() 말미 pci_request_acs() 한 줄과 Fang Yu v2·Sunil V L RIMT 스캔 계열 중 어느 쪽이 머지되는지 스레드를 추적하세요.",
+      "verify": "LKML 원문에서 PCI probe 시 ACS 활성화 문구와 기존 패치 존재 여부를 확인하세요."
+    },
+    {
+      "title": "net: stmmac: fix rx Scatter-Gather support",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "ARM SoC stmmac/dwmac·IOMMU 기반 네트워크 bring-up 담당",
+      "verifyLink": "https://lists.openwall.net/netdev/2026/09/16/442",
+      "if": "IOMMU 있는 플랫폼에서 stmmac 기본 RX 버퍼로 jumbo·대형 프레임을 받는다면",
+      "do": "Lorenzo Bianconi [PATCH net] 시리즈를 적용한 뒤 Maxime Chevallier dma_buf_sz/MTU 패치와 함께 회귀 테스트를 계획하세요.",
+      "verify": "netdev 스레드에서 non-SPH secondary buffer 할당 수정과 SMMU fault 설명을 읽어보세요."
+    },
+    {
+      "title": "scsi: ufs: spacemit: k3: Add UFS Host Controller driver",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "SpacemiT K3·RISC-V 스토리지·UFSHCD 유지보수 담당",
+      "verifyLink": "https://lkml.iu.edu/2609.1/20816.html",
+      "if": "SpacemiT K3에서 UFS 부트·스토리지를 준비 중이라면",
+      "do": "Yixun Lan v5 3패치 시리즈(플랫폼 드라이버·DT 바인딩)와 9월 16일 Aurelien Jarno Tested-by 이후 리뷰 흐름을 따라가세요.",
+      "verify": "v5 커버 메일과 vendor PHY·레지스터 설정 설명이 하드웨어와 맞는지 원문을 대조하세요."
+    },
+    {
+      "title": "powerpc/kasan: require memintrinsic prefix support for KASAN",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "powerpc KASAN·툴체인·GENERIC_ENTRY 담당",
+      "verifyLink": "https://lkml.iu.edu/2609.1/18530.html",
+      "if": "powerpc에서 KASAN 빌드를 켜 두었다면",
+      "do": "Mukesh Kumar Chaurasiya V3의 PPC_CC_HAS_KASAN_MEMINTRINSIC_PREFIX 게이트와 Christophe Leroy 9월 16일 GENERIC_ENTRY 관련 답장을 검토하세요.",
+      "verify": "구 GCC에서 mem*()가 mem_64.S로 빠져 shadow 검사를 우회한다는 주장을 스레드에서 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**riscv: iommu: ask for ACS to be enabled**\n\nBillXiang 패치가 ACPI RIMT 초기화 함수 riscv_acpi_rimt_init() 성공 경로 말미에 pci_request_acs() 한 줄을 추가해 PCI 프로브 전에 ACS를 요청하려 합니다. Sunil V L은 동일 목적의 RIMT 스캔 기반 패치가 이미 리스트에 있다고 답했습니다.\n\n영향: RISC-V ACPI+IOMMU 플랫폼에서 ACS가 늦게 켜지면 PCIe peer-to-peer 격리가 기대대로 동작하지 않을 수 있어, IOMMU·PCI bring-up 담당자는 단순 한 줄 추가와 RIMT 노드 스캔 방식 중 어느 쪽이 머지될지 추적해야 합니다. BillXiang 패치 철회·대체 여부와 RIMT 전체 스캔 패치의 merge tree는 확인이 필요합니다.\n\n> Make sure ACS will be enabled during PCI probe\n\n[원문 확인](https://lkml.iu.edu/hypermail/linux/kernel/2609.2/00981.html)\n\n**net: stmmac: fix rx Scatter-Gather support**\n\nLorenzo Bianconi [PATCH net] 패치는 SPH(split-header)가 꺼진 RX에서도 sec_page·buffer2를 항상 할당·유효화해, dma_buf_sz를 넘는 프레임이 다음 descriptor로 scatter될 때 unmapped buffer2로 DMA가 쓰며 SMMU fault가 나는 문제를 고칩니다(Fixes: 88ebe2cf7f3f).\n\n영향: IOMMU 있는 ARM SoC에서 stmmac 기본 RX 버퍼(약 1536B)로 jumbo·대형 프레임을 받으면 arm-smmu translation fault로 RX가 깨지므로, dwmac/stmmac 플랫폼 담당자는 net fix와 Maxime Chevallier의 dma_buf_sz/MTU 시리즈 조합 테스트가 필요합니다.\n\n> the DMA wrote the overflow into the unmapped secondary-buffer address, triggering an SMMU translation fault on IOMMU-based platforms\n\n[원문 확인](https://lists.openwall.net/netdev/2026/09/16/442)\n\n**drm/meson: Fix platform device reference leak in meson_encoder_hdmi_probe()**\n\nWentao Liang 패치는 meson_encoder_hdmi_probe()에서 of_find_device_by_node()로 얻은 HDMI transceiver platform device 참조를 CEC notifier 등록 성공 후 put_device()로 해제해, 성공 probe 경로에서 누적되던 refcount leak을 막습니다(Fixes: 0af5e0b41110).\n\n영향: Amlogic meson HDMI/CEC 경로는 bridge 전환 이후 probe 레퍼런스 관리가 까다로워, 장기 부팅·reprobe 시 device leak이 DRM HDMI bring-up 안정성을 해칠 수 있습니다.\n\n> of_find_device_by_node() takes a reference on the HDMI transceiver device, but the successful probe path never releases it\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/16/2502)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**riscv: dts: sophgo: sg2000-milkv-duo-s: reserve memory for RTOS**\n\nAndrei Lalaev 패치가 sg2000-milkv-duo-s.dts에 reserved-memory 노드(coprocessor_rtos, 0x9fe00000·2MB, no-map)를 추가해 FSBL이 RAM 끝 2MB에 올리는 coprocessor 펌웨어 영역을 Linux가 쓰지 않게 합니다.\n\n영향: Milk-V Duo S에서 Linux+RTOS/remoteproc를 쓰는 팀은 메모리 carve-out이 없으면 커널이 coprocessor RAM을 덮어쓸 수 있으나, 리뷰어들은 하드웨어 고정이 아닌 FSBL 런타임 DT fixup이 맞다고 반대했습니다. upstream merge 가능성과 보드별 memmap.py·DTS 동기화 방식은 확인이 필요합니다.\n\n> The FSBL loads the coprocessor firmware into the last 2 MB of RAM. Reserve this region to prevent Linux from using it.\n\n[원문 확인](https://lkml.iu.edu/hypermail/linux/kernel/2609.2/02254.html)\n\n**scsi: ufs: spacemit: k3: Add UFS Host Controller driver**\n\nYixun Lan v5 시리즈 2/3 패치가 SpacemiT K3용 UFSHCD 플랫폼 드라이버(ufs-spacemit.c, CONFIG_SCSI_UFS_SPACEMIT, COMPILE_TEST)를 추가하고 JEDEC UFS 2.2·UniPro·M-PHY 호환 컨트롤러에 vendor PHY·레지스터 설정을 넣습니다. 9월 16일 Aurelien Jarno가 linux-riscv에서 Tested-by로 답장했습니다.\n\n영향: SpacemiT K3 RISC-V 보드에서 eMMC/UFS 부트·스토리지는 이 드라이버와 DT 바인딩(v5 0/3) merge가 관문이며, Kconfig의 ARCH_SPACEMIT||COMPILE_TEST는 CI·distro 빌드 검증에도 영향을 줍니다.\n\n> UFS host on SpacemiT needs some vendor specific configuration before accessing the hardware which includes PHY configuration\n\n[원문 확인](https://lkml.iu.edu/2609.1/20816.html)\n\n**powerpc/kasan: require memintrinsic prefix support for KASAN**\n\nMukesh Kumar Chaurasiya(IBM) V3 패치는 PPC_CC_HAS_KASAN_MEMINTRINSIC_PREFIX로 HAVE_ARCH_KASAN 선택을 게이트하고, powerpc의 GENERIC_ENTRY와 구 GCC(예: GCC 9)에서 instrumented mem*()가 어셈블리로 빠져 KASAN shadow 검사를 우회하는 문제를 막습니다. 9월 16일 Christophe Leroy가 스레드에서 동일 논거를 이어 검토합니다.\n\n영향: powerpc 플랫폼에서 KASAN 빌드가 조용히 무력화되면 arch CI·메모리 안전 검증 신뢰가 깨지며, .noinstr.text에 mem* 어셈블리를 넣는 대안은 PPC64 stub overflow 등 추가 작업이 필요합니다. reported early boot hang과 shadow bypass의 동일 근인 여부는 확인이 필요합니다.\n\n> plain mem*() calls from instrumented code fall through to the raw assembly implementations in mem_64.S / copy_32.S, completely bypassing the KASAN shadow check.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/08/484)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "high",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "riscv: iommu: ask for ACS to be enabled",
+      "url": "https://lkml.iu.edu/hypermail/linux/kernel/2609.2/00981.html",
+      "note": "thread"
+    },
+    {
+      "title": "Sunil V L: existing RIMT ACS patch",
+      "url": "https://lkml.iu.edu/hypermail/linux/kernel/2609.2/01173.html",
+      "note": "thread"
+    },
+    {
+      "title": "Fang Yu: RIMT scan pci_request_acs",
+      "url": "https://lkml.iu.edu/2609.0/08034.html",
+      "note": "thread"
+    },
+    {
+      "title": "sg2000-milkv-duo-s reserved-memory for RTOS",
+      "url": "https://lkml.iu.edu/hypermail/linux/kernel/2609.2/02254.html",
+      "note": "thread"
+    },
+    {
+      "title": "Yao Zi: upstream DT reserved region",
+      "url": "https://lkml.iu.edu/hypermail/linux/kernel/2609.2/02293.html",
+      "note": "thread"
+    },
+    {
+      "title": "Samuel Holland: FSBL runtime DT fixup",
+      "url": "https://lkml.iu.edu/hypermail/linux/kernel/2609.2/02311.html",
+      "note": "thread"
+    },
+    {
+      "title": "ufs-spacemit v5 2/3 platform driver",
+      "url": "https://lkml.iu.edu/2609.1/20816.html",
+      "note": "thread"
+    },
+    {
+      "title": "ufs-spacemit v5 0/3 series cover",
+      "url": "https://lkml.iu.edu/2609.1/20815.html",
+      "note": "thread"
+    },
+    {
+      "title": "SpacemiT UFS JEDEC/UniPro/M-PHY",
+      "url": "https://lists.openwall.net/linux-kernel/2026/07/02/152",
+      "note": "thread"
+    },
+    {
+      "title": "net: stmmac: fix rx Scatter-Gather support",
+      "url": "https://lists.openwall.net/netdev/2026/09/16/442",
+      "note": "thread"
+    },
+    {
+      "title": "syzbot series: stmmac RX SG",
+      "url": "https://ci.syzbot.org/series/da760803-5f1a-4308-81a9-d380fdd58088",
+      "note": "article"
+    },
+    {
+      "title": "drm/meson: HDMI transceiver reference leak",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/16/2502",
+      "note": "thread"
+    },
+    {
+      "title": "powerpc KASAN memintrinsic bypass",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/08/484",
+      "note": "thread"
+    },
+    {
+      "title": "powerpc/kasan V3 Kconfig gate",
+      "url": "https://lkml.iu.edu/2609.1/18530.html",
+      "note": "thread"
+    },
+    {
+      "title": "Christophe Leroy: GENERIC_ENTRY mem* wrappers",
+      "url": "https://lkml.iu.edu/hypermail/linux/kernel/2609.2/00971.html",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-16T19:01:37.011Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

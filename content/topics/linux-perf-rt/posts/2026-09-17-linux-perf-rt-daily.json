@@ -1,0 +1,123 @@
+{
+  "id": "2026-09-17-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-09-17 RT·BPF UAF — Perf·RT",
+  "headline": "PREEMPT_RT non_block 구간 슬리핑 스핀락 splat 수정안과 BPF dev-bound·LWT·verifier UAF 패치가 동시에 논의됩니다.",
+  "date": "2026-09-17",
+  "summary": "Sebastian Siewior v2는 non_block_start()/end() 안에서 RT 슬리핑 스핀락 contention 시 잘못된 might_sleep() splat을 줄입니다. BPF 쪽은 netdev unregister 레이스, LWT encap 후 stale IPCB, binfmt_misc 연계 verifier UAF를 막는 패치들이 올라왔습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "PREEMPT_RT non_block 구간 슬리핑 스핀락",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "PREEMPT_RT 스케줄러·RT 스핀락·non_block_start() 호출부(mm, pwm 등) 유지보수자",
+      "verifyLink": "https://lkml.iu.edu/hypermail/linux/kernel/2609.2/01946.html",
+      "if": "mm·pwm 등 non_block_start()/end() 경로에서 PREEMPT_RT spinlock contention을 재현한다면",
+      "do": "rt_sleeping_lock 인자가 들어간 v2 패치와 syzbot 재현 커밋 312364f3534cc를 함께 추적하세요",
+      "verify": "LKML 스레드와 원인 커밋 링크에서 __might_resched()·rtlock_might_resched() 변경을 확인하세요"
+    },
+    {
+      "title": "dev-bound BPF와 netdev unregister 레이스",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF dev-bound·XDP 오프로드·netdev unregister 경로 개발자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260916172944.1337289-2-bestswngs@gmail.com/",
+      "if": "iface 삭제와 dev-bound 프로그램 로드를 동시에 돌린다면",
+      "do": "NETREG_REGISTERED 이탈 후 새 ondev 생성 거부 패치 적용 전까지 해당 시나리오를 위험 구간으로 두세요",
+      "verify": "스레드에서 KASAN slab-use-after-free 스택과 거부 로직 인용을 원문으로 확인하세요"
+    },
+    {
+      "title": "LWT encap 후 stale IPv4 IPCB opt",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF LWT encap·IPv4/ICMP·네트워크 verifier 경로 개발者",
+      "verifyLink": "https://lkml.iu.edu/hypermail/linux/kernel/2609.2/02124.html",
+      "if": "ingress LWT BPF encap과 ICMP 오류 경로를 함께 테스트한다면",
+      "do": "Weiming Shi v2 머지 전 encap+ICMP 조합을 KASAN 회귀 테스트에 포함하세요",
+      "verify": "hypermail 스레드에서 bpf_lwt_push_ip_encap()과 __ip_options_echo OOB 인용을 대조하세요"
+    },
+    {
+      "title": "binfmt_misc_bpf verifier trusted BTF UAF",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "binfmt_misc_bpf·BPF verifier trusted BTF·VFS kfunc 통합 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260916183303.3504885-1-mason@kernel.org/",
+      "if": "binfmt_misc BPF struct_ops와 verifier selftest를 추적한다면",
+      "do": "Chris Mason 시리즈와 Brauner binfmt_misc_bpf v2 합류 관계를 보며 fix 확신이 낮다는 작성자 코멘트를 염두에 두세요",
+      "verify": "lore 스레드의 verifier 수정·selftest 제목과 fsdevel 스레드의 trusted BTF pointer 설명을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**sched: Allow sleeping spinlocks on PREEMPT_RT within non_block_start()/end block.**\n\nSebastian Siewior v2 패치는 __might_resched()에 rt_sleeping_lock 인자를 추가하고 PREEMPT_RT에서 spinlock_t·rwlock_t가 쓰는 rtlock_might_resched()에는 true를 넘겨, non_block_start()/end() 구간에서도 슬리핑 스핀락 contention 시 might_sleep()이 잘못된 splat을 내지 않게 합니다.\n\n영향: non_block_start()는 mm·pwm 등 전진 보장이 필요한 경로를 감싸는데, RT에서는 spinlock이 슬리핑 락으로 바뀌어 syzbot이 보고한 WARN/splat이 납니다. PREEMPT_RT·lockdep·hrtimer/pwm 사용자는 이 수정이 RT 트리에 들어가기 전까지 동일 패턴 회귀를 예상해야 합니다.\n\n> On PREEMPT_RT this leads to a splat because spinlock_t and rwlock_t are turned into a sleeping spinlock which have a might_sleep() as they could schedule() on lock contention.\n\n[원문 확인](https://lkml.iu.edu/hypermail/linux/kernel/2609.2/01946.html)\n\n**bpf: reject dev-bound programs on unregistering devices**\n\n패치는 bpf_prog_dev_bound_init()과 netdev unregister 경로 사이 레이스를 막기 위해, 장치가 NETREG_REGISTERED를 벗어나면 새 dev-bound offload 상태 생성을 거부하고 KASAN slab-use-after-free를 재현·수정합니다.\n\n영향: dev-bound XDP·오프로드 프로그램은 netdev 수명과 prog->aux->offload->netdev 포인터가 묶여 있어, unregister 직후 로드가 성공하면 verifier/kfunc 경로에서 UAF가 납니다. BPF 오프로드·XDP dev-bound selftest·netdevsim/하드웨어 오프로드 팀은 이 race 수정 전까지 iface 삭제와 prog 로드 동시 시나리오를 위험 구간으로 봐야 합니다.\n\n> BUG: KASAN: slab-use-after-free in bpf_dev_bound_resolve_kfunc (kernel/bpf/offload.c:846)\n\n[원문 확인](https://lore.kernel.org/bpf/20260916172944.1337289-2-bestswngs@gmail.com/)\n\n**bpf: clear stale IPv4 options after LWT encapsulation**\n\nWeiming Shi v2는 bpf_lwt_push_ip_encap()이 헤더를 앞에 붙인 뒤 IPCB(skb)->opt가 내부 IPv4 헤더를 가리키는 문제를 고치고, LWT BPF 실행 중 control-block family를 추적·리셋해 ICMP 오류 경로의 stack OOB를 막습니다.\n\n영향: ingress LWT BPF encap은 데이터 플레인에서 흔한 패턴인데, stale IPCB 메타데이터는 __ip_options_echo에서 255바이트 스택 쓰기로 이어질 수 있습니다. LWT·BPF 네트워킹·KASAN CI를 돌리는 팀은 v2 머지 전까지 encap+ICMP 조합을 회귀 테스트 대상으로 두는 것이 좋습니다.\n\n> BUG: KASAN: stack-out-of-bounds in __ip_options_echo\n\n[원문 확인](https://lkml.iu.edu/hypermail/linux/kernel/2609.2/02124.html)\n\n**Fix use-after-free related to binfmt-misc-bpf.c**\n\nChris Mason 2패치 시리즈는 binfmt_misc_bpf.c 리뷰 중 발견된 verifier의 trusted BTF walk UAF를 kernel/bpf/verifier.c에서 막고, bpf_put_file() 주변 f_inode walk을 검증하는 selftests(bpf/progs/verifier_vfs_accept·reject)를 추가합니다.\n\n영향: binfmt_misc BPF struct_ops는 exec 경로와 verifier trusted pointer 규칙이 맞물리므로, 파일 객체 해제 후 inode walk가 통과하면 로드·검증 단계에서 UAF가 날 수 있습니다. binfmt_misc_bpf 시리즈를 추적하는 BPF·VFS 통합 개발자는 Mason 패치가 Brauner 시리즈에 어떻게 합쳐지는지 봐야 합니다.\n\n> bpf: fix UAF via trusted BTF walk after release\n\n[원문 확인](https://lore.kernel.org/bpf/20260916183303.3504885-1-mason@kernel.org/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "sched: sleeping spinlocks in non_block on PREEMPT_RT (LKML)",
+      "url": "https://lkml.iu.edu/hypermail/linux/kernel/2609.2/01946.html",
+      "note": "thread"
+    },
+    {
+      "title": "kernel.h: Add non_block_start/end()",
+      "url": "https://github.com/torvalds/linux/commit/312364f3534cc974b79a96d062bde2386315201f",
+      "note": "commit"
+    },
+    {
+      "title": "bpf: reject dev-bound programs on unregistering devices",
+      "url": "https://lore.kernel.org/bpf/20260916172944.1337289-2-bestswngs@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Introduce device-bound XDP programs",
+      "url": "https://github.com/torvalds/linux/commit/2b3486bc2d237ec345b3942b7be5deabf8c8fed1",
+      "note": "commit"
+    },
+    {
+      "title": "bpf: clear stale IPv4 options after LWT encapsulation",
+      "url": "https://lkml.iu.edu/hypermail/linux/kernel/2609.2/02124.html",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: implement BPF_LWT_ENCAP_IP mode in bpf_lwt_push_encap",
+      "url": "https://github.com/torvalds/linux/commit/52f278774e79",
+      "note": "commit"
+    },
+    {
+      "title": "Fix use-after-free related to binfmt-misc-bpf.c",
+      "url": "https://lore.kernel.org/bpf/20260916183303.3504885-1-mason@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "binfmt_misc BPF handler (trusted BTF pointer)",
+      "url": "https://www.spinics.net/lists/linux-fsdevel/msg344931.html",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-16T18:57:12.270Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,131 @@
+{
+  "id": "2026-09-17-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-09-17 RUFS·Rust 수정 — 툴체인",
+  "headline": "Rust num·warn_on·pin-init과 dyndbg 쿼리 한도 조정, RUFS RFC에서 sysfs ABI·SCSI midlayer 논의가 이어졌습니다.",
+  "date": "2026-09-17",
+  "summary": "Rust-for-Linux와 kbuild 쪽에서 문서화, KUnit, proc-macro hygiene, dyndbg 파서 상한 패치가 올라왔습니다. RUFS 스레드에서는 유저스페이스 ABI와 midlayer 우회 설계에 대한 maintainer·작성자 답이 교환되었습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "Rust-for-Linux",
+    "kbuild",
+    "dynamic_debug"
+  ],
+  "highlights": [
+    {
+      "title": "RUFS: sysfs ABI와 SCSI midlayer 우회 논의",
+      "priority": "상",
+      "impactType": "project",
+      "affectedAudience": "RUFS·ufshcd·linux-scsi·linux-block maintainer 및 Rust 스토리지 드라이버 관심자",
+      "verifyLink": "https://ratatoskr.run/linux-arm-msm/2026/09/17588070",
+      "if": "RUFS가 blk-mq 단독 경로로 갈 때 도구·테스트 호환을 점검한다면",
+      "do": "Greg Kroah-Hartman의 midlayer 중복 경고와 Jaemyung Lee의 미구현 영역·ufshcd 비교 제안 스레드를 함께 읽어보세요",
+      "verify": "동일 스레드에서 sense/retry·abort/reset·PM·discovery 등 누락 항목 언급과 최종 설계 방향은 아직 확인이 필요합니다"
+    },
+    {
+      "title": "rust num: sealed Integer 문서화(v3)",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust-for-Linux·rust/kernel/num 및 Bounded API 사용자",
+      "verifyLink": "https://ratatoskr.run/rust-for-linux/2026/09/17587376/t",
+      "if": "Bounded의 unsafe justification을 리뷰하거나 audit한다면",
+      "do": "Younes Akhouayri v3에서 Integer seal 근거가 supertrait·fits_within·SAFETY 주석에 어떻게 적히는지 패치를 따라가 보세요",
+      "verify": "linux-next·rust-fixes 반영 일정과 bounded.rs 외 num 서브모듈 확장 범위는 확인이 필요합니다"
+    },
+    {
+      "title": "dyndbg: query-cmd MAXWORDS 9→15",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "dynamic_debug·kselftest·DRM 등 dyndbg 쿼리 확장 추적 담당",
+      "verifyLink": "https://ratatoskr.run/b4-sent/2026/09/17587578",
+      "if": "6개 dyndbg 키워드를 모두 쓰는 쿼리나 classmap selftest를 다룬다면",
+      "do": "Jim Cromie v10 12/38에서 ddebug_exec_query() 상한과 golden 해시 갱신을 selftest와 맞춰 검토하세요",
+      "verify": "v10 시리즈 kbuild merge 일정과 words[] 스택 크기에 대한 maintainer 코멘트는 확인이 필요합니다"
+    },
+    {
+      "title": "pin-init: mixed site hygiene로 slot 충돌 회피",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "pin-init·Rust 드라이버 초기화 매크로 사용자 및 proc-macro 유지보수 담당",
+      "verifyLink": "https://ratatoskr.run/rust-for-linux/2026/09/17586141",
+      "if": "필드명 slot을 쓰는 Rust 드라이버가 pin-init 매크로를 쓴다면",
+      "do": "Gary Guo 패치가 생성 slot 식별자를 Span::mixed_site()로 바꾸는지 스레드와 Fixes 4883830e9784 맥락을 대조해 보세요",
+      "verify": "syn rewrite 이후 다른 내부 식별자 충돌 가능성은 medium 신뢰도이므로 원문을 직접 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**rust: pin-init: internal: pin_init: emit `slot` using mixed site hygiene**\n\nGary Guo 패치가 syn/quote 기본 call-site hygiene로 생성된 `slot` 식별자를 `Span::mixed_site()`로 바꿔, 사용자 필드명 `slot`과 pin-init 매크로 생성 식별자 충돌을 막는다(Fixes: 4883830e9784 syn rewrite).\n\n영향: pin-init은 Rust 드라이버 초기화의 공통 경로라 필드명 충돌은 컴파일 실패·잘못된 hygiene로 이어지며, syn 기반 매크로 리라이트 이후 회귀를 조기에 막는 툴체인 수정이다.\n\n> Syn/quote's default is the call site hygiene. If user provides a field named `slot`, it will conflict with pin-init generated `slot` identifier. Change it to use mixed site hygiene instead.\n\n[원문 확인](https://ratatoskr.run/rust-for-linux/2026/09/17586141)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**rust: num: document why Integer is sealed**\n\nYounes Akhouayri v3 패치가 sealed `Integer` 트레이트 옆에 설명을 추가하고, `fits_within` 및 `Bounded`의 SAFETY 주석에 seal에 의존하는 이유(원시 정수 semantics·비트폭·시프트/변환)를 명시한다.\n\n영향: 이미 머지된 Integer sealing 이후 `Bounded`의 unsafe justification을 리뷰·audit할 때, 왜 외부 impl이 금지되는지가 코드와 주석에 남아야 하므로 Rust kernel crate 유지보수자가 soundness 논의를 추적할 때 필수다.\n\n> Explain why Integer is sealed next to its private supertrait. Document the dependency inside fits_within, so callers can rely on its result without repeating that explanation.\n\n[원문 확인](https://ratatoskr.run/rust-for-linux/2026/09/17587376/t)\n\n**rust: bug: add a KUnit test for warn_on!**\n\nFUJITA Tomonori 패치가 `CONFIG_RUST_BUG_KUNIT_TEST`(depends on BUG)를 추가하고, KUnit warning suppression 블록 안에서 `warn_on!(false)`/`warn_on!(true)` 후 경고 카운트가 1인지 검증하는 `rust_kernel_bug` KUnit 테스트를 `rust/kernel/bug.rs`에 넣는다.\n\n영향: Rust `warn_on!`은 아키텍처별 `warn_flags!` 생성 코드에 의존하므로, 억제·카운트 경로가 실제 커널 WARN 경로를 타는지 자동 검증이 없으면 툴체인·arch 확장 시 조용히 깨질 수 있다.\n\n> The test runs warn_on!(false) and warn_on!(true) inside a KUnit warning suppression block, then checks that one warning was counted. The counter is incremented by the kernel warning path, not by warn_\n\n[원문 확인](https://ratatoskr.run/rust-for-linux/2026/09/17586918/t)\n\n**dyndbg: bump num-tokens in a query-cmd from 9 to 15**\n\nJim Cromie dyndbg v10 시리즈 12/38 패치가 `ddebug_exec_query()`의 `MAXWORDS`를 9에서 15로 올려 6개 dyndbg 키워드를 모두 쓰는 합법 쿼리(최소 13 토큰)를 파싱할 수 있게 하고, dyndbg selftest golden 해시를 갱신한다.\n\n영향: dyndbg 쿼리 문법 확장·classmap selftest를 쓰는 kbuild/디버그 담당자는 토큰 상한이 낮으면 정상 쿼리가 조기 실패해 grammar selftest와 실제 debugfs 사용이 어긋난다.\n\n> Current MAXWORDS in ddebug_exec_query() is too small to accept a legal query-command using all 6 keywords. We *need* 13, but this adds a few extra to allow certain errors to fail on subsequent, more m\n\n[원문 확인](https://ratatoskr.run/b4-sent/2026/09/17587578)\n\n**drivers/rufs: add Rust UFS host controller driver (sysfs ABI)**\n\nRUFS RFC 스레드에서 Bart Van Assche가 Andreas Hindborg의 유저스페이스 비용 논의에 답해, 커널이 어떤 UFS 드라이버를 켰는지 유저스페이스가 알 필요가 없고 sysfs ABI는 안정적이어야 한다고 지적한다.\n\n영향: RUFS가 SCSI midlayer를 건너뛰면 블록·sysfs·도구 체인 ABI가 기존 ufshcd+SCSI 경로와 달라질 수 있어, Rust 스토리지 스택을 도구체인 렌즈로 볼 때 사용자 공간·테스트 호환 논점이 핵심이다.\n\n> Why should user space code have to know what UFS driver has been activated in the kernel? sysfs ABIs are assumed to be stable, isn't it?\n\n[원문 확인](https://ratatoskr.run/linux-arm-msm/2026/09/17588002)\n\n**drivers/rufs: maintainer 답변(standalone vs ufshcd)**\n\nJaemyung Lee가 Greg Kroah-Hartman의 USB/SCSI midlayer 우회 실패 사례 인용에 답해, RUFS 초기 구현만으로 standalone이 단순하다고 보기 어렵고 sense/retry·abort/reset·PM·discovery 등 미구현 영역이 핵심이며 `ufshcd` 개선과 설계 비교가 다음 단계라고 밝힌다.\n\n영향: maintainer가 midlayer 중복을 경고한 맥락에서 RFC 방향이 standalone 유지 vs 기존 스택 개선으로 갈릴 수 있어, Rust-for-Linux 대형 드라이버가 툴체인·스토리지 아키텍처 선택에 미치는 영향을 추적하는 데 중요하다.\n\n> The difficult parts are exactly the parts that are still missing: sense and retry policy, abort and reset escalation, late completion, power management, device discovery, and existing userspace interf\n\n[원문 확인](https://ratatoskr.run/linux-arm-msm/2026/09/17588070)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "rust num Integer sealing documentation (v3 thread)",
+      "url": "https://ratatoskr.run/rust-for-linux/2026/09/17587376/t",
+      "note": "thread"
+    },
+    {
+      "title": "docs-rust-num-integer-sealing-safety v2",
+      "url": "https://patchew.org/linux/20260908-docs-rust-num-integer-sealing-safety-v2-1-e8c65234db82@younes.io/",
+      "note": "thread"
+    },
+    {
+      "title": "KUnit test for warn_on!",
+      "url": "https://ratatoskr.run/rust-for-linux/2026/09/17586918/t",
+      "note": "thread"
+    },
+    {
+      "title": "dyndbg MAXWORDS v10 (b4-sent)",
+      "url": "https://ratatoskr.run/b4-sent/2026/09/17587578",
+      "note": "thread"
+    },
+    {
+      "title": "dyndbg MAXWORDS v9 (LKML hypermail)",
+      "url": "https://lkml.iu.edu/hypermail/linux/kernel/2609.1/02967.html",
+      "note": "thread"
+    },
+    {
+      "title": "pin-init mixed site hygiene",
+      "url": "https://ratatoskr.run/rust-for-linux/2026/09/17586141",
+      "note": "thread"
+    },
+    {
+      "title": "RUFS sysfs ABI (linux-arm-msm thread)",
+      "url": "https://ratatoskr.run/linux-arm-msm/2026/09/17588002",
+      "note": "thread"
+    },
+    {
+      "title": "RUFS RFC (patchew)",
+      "url": "https://patchew.org/linux/20260912-rufs-private-v1-1-716db733e655@samsung.com/",
+      "note": "thread"
+    },
+    {
+      "title": "RUFS maintainer discussion",
+      "url": "https://ratatoskr.run/linux-arm-msm/2026/09/17588070",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-16T18:47:45.778Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

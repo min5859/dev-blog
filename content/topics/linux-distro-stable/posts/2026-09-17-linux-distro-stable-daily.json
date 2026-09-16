@@ -1,0 +1,133 @@
+{
+  "id": "2026-09-17-linux-distro-stable-daily",
+  "topic": "linux-distro-stable",
+  "title": "2026-09-17 Stable 백포트·UAF — 배포판 Stable",
+  "headline": "ftrace·siw UAF stable 큐와 TI DSI83 IRQ storm·cxgb4 skb 누수 회귀 수정이 lore에 올라왔고, 여러 패치는 자동 백포트에 실패했습니다.",
+  "date": "2026-09-17",
+  "summary": "이번 수집은 kernel.org 정기 릴리스보다 stable 메일링 리스트 백포트·회귀·보안 패치가 중심입니다. 배포 담당자는 대상 브랜치별 자동 적용 실패 메시지와 수동 머지 필요 여부를 함께 확인하는 것이 좋습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "tracing: tracer options open 시 trace_array UAF",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "ftrace/tracing·stable 백포트·배포 진단 도구 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20260916184035.1790428-1-sashal@kernel.org/",
+      "if": "동적 tracing instance와 tracer options 파일을 동시에 쓰는 진단 스택을 운영한다면",
+      "do": "Fixes 7e2cfbd2d3c86 회귀 수정이 담당 LTS/stable 브랜치에 포함됐는지 changelog와 배포 커널 버전을 대조하세요",
+      "verify": "trace_array_tracer_options_get() 도입 여부와 6.6-stable 자동 적용 실패 스레드를 원문에서 확인하세요"
+    },
+    {
+      "title": "RDMA/siw: siw_accept_newconn() new_cep UAF",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "RDMA/siw·stable 백포트·가상 RDMA 스택 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20260916184109.2092928-1-vulab@iscas.ac.cn/",
+      "if": "Soft-iWARP(siw) RDMA를 가상화·테스트 환경에서 쓴다면",
+      "do": "accept 오류 경로 패치가 stable 큐에 반영됐는지 보안 업데이트 주기에 맞춰 추적하세요",
+      "verify": "socket teardown 순서 수정과 stable 브랜치 머지 상태는 아직 미확인이므로 lore 스레드를 직접 확인하세요"
+    },
+    {
+      "title": "drm/bridge: ti-sn65dsi83 reset 실패 시 IRQ storm",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "DRM bridge·TI sn65dsi83 드라이버·stable 백포트 담당",
+      "verifyLink": "https://lore.kernel.org/stable/8046cf0a251bf18176207eb28a0137ac4f849d3c.1789584440.git.esben@geanix.com/",
+      "if": "TI DSI83 브릿지 임베디드·산업 디스플레이 보드를 유지한다면",
+      "do": "drm_bridge_helper_reset_crtc 전환 이후 회귀 수정의 대상 stable 브랜치(6.18.y 충돌 등)를 백포트 큐에서 확인하세요",
+      "verify": "reset_pipe 실패 시 enable_irq() 호출 회귀와 6.18-stable 미적용 공지를 원문에서 확인하세요"
+    },
+    {
+      "title": "tracing/hist: histogram 직접 호출로 약 13% 가속",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "tracing histogram·stable 백포트·성능 관측 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20260916183655.1773427-1-sashal@kernel.org/",
+      "if": "고부하 trace histogram 트리거로 성능 관측을 한다면",
+      "do": "retpoline 환경 hot path 개선 백포트를 배포 커널에 포함할지 정책을 검토하세요",
+      "verify": "upstream 벤치마크 13% 수치가 자체 워크로드와 동일한지는 미검증이므로 적용 전 벤치를 돌려보세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**tracing: Take trace_array reference when opening a tracer options file**\n\ntracer options 파일 open 시 topts 배열 원소 포인터로 trace_array ref를 잡는데, 인스턴스 삭제와 경합하면 원소가 먼저 free되어 UAF가 납니다. trace_array_tracer_options_get()으로 lock 아래 올바른 trace_array를 찾아 ref++ 하도록 stable 백포트합니다.\n\n영향: 동적 tracing instance를 쓰는 진단·모니터링 스택은 race로 커널 UAF가 날 수 있어, LTS/stable 배포는 Fixes 7e2cfbd2d3c86 회귀 수정의 백포트 포함 여부를 확인해야 합니다.\n\n> there's a race condition where the element itself could be freed by the removal of the instance the trace_array represents causing a use-after-free\n\n[원문 확인](https://lore.kernel.org/stable/20260916184035.1790428-1-sashal@kernel.org/)\n\n**RDMA/siw: Fix new_cep use-after-free in siw_accept_newconn()**\n\nsiw_accept_newconn() 오류 경로에서 listening endpoint ref를 먼저 put해 socket만 남은 뒤 siw_socket_disassoc()가 cep를 free하고, 이어지는 new_cep->sock = NULL이 freed memory에 쓰이던 UAF를 socket teardown 순서로 고칩니다.\n\n영향: Soft-iWARP(siw) RDMA를 쓰는 가상화·테스트 환경은 accept 오류 경로 UAF로 커널 메모리 corruption 위험이 있어 stable 백포트 포함 여부를 배포 보안 주기에 맞춰 확인해야 합니다. 재현 조건·stable 브랜치 머지 상태는 미확인입니다.\n\n> siw_socket_disassoc() drops that last reference and frees the endpoint, leaving the subsequent 'new_cep->sock = NULL' writing into freed memory.\n\n[원문 확인](https://lore.kernel.org/stable/20260916184109.2092928-1-vulab@iscas.ac.cn/)\n\n**drm/bridge: ti-sn65dsi83: Fix error handling in sn65dsi83_reset_work()**\n\ndrm_bridge_helper_reset_crtc() 전환 이후 sn65dsi83_reset_pipe()가 항상 0을 반환해 reset 실패 시에도 enable_irq()가 호출되던 회귀를 고칩니다. 오류 시 non-zero 반환을 복원하고 drm_bridge_exit()로 critical section을 항상 닫습니다.\n\n영향: TI DSI83 브릿지를 쓰는 임베디드·산업 디스플레이 보드는 reset 실패 시 IRQ storm 위험이 있어 stable 백포트 큐와 대상 브랜치(6.18.y 등 충돌)를 추적해야 합니다. 6.18.y 외 어떤 stable/longterm 브랜치에 머지됐는지는 미확인입니다.\n\n> In order get back to a situation where enable_irq() is not called on sn65dsi83_reset_pipe() failure, which should help protect against irq storms\n\n[원문 확인](https://lore.kernel.org/stable/8046cf0a251bf18176207eb28a0137ac4f849d3c.1789584440.git.esben@geanix.com/)\n\n**RDMA/cxgb4: Fix skb reference leak in rx_pkt()**\n\nrx_pkt()가 firmware completion 경로용으로 skb ref를 추가한 뒤 send_fw_pass_open_req()에서 WR skb 할당이 실패하면 ref를 놓지 않고 return하던 leak를, 실패 경로에서 패킷 skb를 free하도록 stable 백포트합니다.\n\n영향: Chelsio cxgb4 RDMA/ofld 스택을 쓰는 스토리지·클러스터 환경은 passive open 실패 경로에서 skb 누수로 메모리 압박이 쌓일 수 있어 stable 큐 반영을 봐야 합니다. stable 머지된 브랜치·시리즈 내 다른 패치 의존성은 미확인입니다.\n\n> When the work request skb allocation in send_fw_pass_open_req() fails the function returns without releasing that extra reference, leaking one skb reference.\n\n[원문 확인](https://lore.kernel.org/stable/20260916183715.2092663-1-vulab@iscas.ac.cn/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/amdgpu: get rid of amdgpu_ttm_clear_buffer**\n\nupstream 23bd7e67961ee531386246e98021273bb45b0a84의 stable 백포트로, amdgpu_ttm_clear_buffer()를 제거하고 amdgpu_fill_buffer(src_data=0)와 동일한 경로만 사용합니다. amdgpu_res_cleared() 반환값은 할당 직후에만 유효하다는 주석이 유지됩니다.\n\n영향: AMdgpu TTM 버퍼 클리어 경로를 단순화하는 유지보수 백포트로, 장기 stable/amdgpu 사용자는 중복 helper 제거가 회귀 없이 머지되는지 배포 백포트 정책과 맞춰 봐야 합니다. 대상 stable 브랜치별 머지 상태는 미확인입니다.\n\n> It's doing the same thing as amdgpu_fill_buffer(src_data=0), so drop it.\n\n[원문 확인](https://lore.kernel.org/stable/20260916183641.1771014-1-sashal@kernel.org/)\n\n**tracing/hist: Call hist functions directly via a switch statement**\n\nretpoline 환경에서 histogram indirect call 비용을 줄이기 위해 hist_fn_call() switch로 직접 호출하도록 stable 백포트합니다. upstream 벤치마크 기준 histogram 로직 약 13% 속도 향상이 보고됩니다.\n\n영향: 고부하 trace histogram 트리거를 쓰는 성능 분석·관측 파이프라인은 stable 백포트로 hot path가 빨라질 수 있으나, 5.15.y 등 구 트리는 자동 적용이 실패해 수동 백포트가 필요할 수 있습니다. 벤치마크 워크로드가 배포 환경과 동일한지는 미검증입니다.\n\n> This gives a 13% speedup to the histogram logic.\n\n[원문 확인](https://lore.kernel.org/stable/20260916183655.1773427-1-sashal@kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "**stable bot 자동 적용 실패(6.18·6.6·5.15-stable)**\n\nti-sn65dsi83·amdgpu TTM 패치는 6.18-stable 트리에, tracing trace_array 패치는 6.6-stable에, tracing/hist 패치는 5.15-stable에 자동 적용되지 않았다는 Greg Kroah-Hartman 공지가 lore에 올라왔습니다.\n\n영향: 배포판이 해당 longterm/stable 라인을 고정하면 수동 cherry-pick·충돌 해소가 필요할 수 있습니다.\n\n> The patch below does not apply to the 6.18-stable tree.\n\n[원문 확인](https://lore.kernel.org/stable/2026091625-encircle-trifocals-d070@gregkh/)\n\n> The patch below does not apply to the 6.6-stable tree.\n\n[원문 확인](https://lore.kernel.org/stable/2026091635-eccentric-upriver-aa4d@gregkh/)\n\n> The patch below does not apply to the 5.15-stable tree.\n\n[원문 확인](https://lore.kernel.org/stable/2026091621-debtor-hazelnut-dfc6@gregkh/)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "tracing trace_array UAF stable 백포트",
+      "url": "https://lore.kernel.org/stable/20260916184035.1790428-1-sashal@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "RDMA/siw new_cep UAF 수정",
+      "url": "https://lore.kernel.org/stable/20260916184109.2092928-1-vulab@iscas.ac.cn/",
+      "note": "thread"
+    },
+    {
+      "title": "ti-sn65dsi83 reset IRQ storm 회귀",
+      "url": "https://lore.kernel.org/stable/8046cf0a251bf18176207eb28a0137ac4f849d3c.1789584440.git.esben@geanix.com/",
+      "note": "thread"
+    },
+    {
+      "title": "RDMA/cxgb4 skb reference leak",
+      "url": "https://lore.kernel.org/stable/20260916183715.2092663-1-vulab@iscas.ac.cn/",
+      "note": "thread"
+    },
+    {
+      "title": "amdgpu_ttm_clear_buffer 제거 백포트",
+      "url": "https://lore.kernel.org/stable/20260916183641.1771014-1-sashal@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "tracing/hist switch direct call 13% speedup",
+      "url": "https://lore.kernel.org/stable/20260916183655.1773427-1-sashal@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "6.18-stable 자동 적용 실패(ti-sn65dsi83)",
+      "url": "https://lore.kernel.org/stable/2026091625-encircle-trifocals-d070@gregkh/",
+      "note": "thread"
+    },
+    {
+      "title": "6.18-stable 자동 적용 실패(amdgpu)",
+      "url": "https://lore.kernel.org/stable/2026091636-creole-glorified-e7b6@gregkh/",
+      "note": "thread"
+    },
+    {
+      "title": "6.6-stable 자동 적용 실패(tracing)",
+      "url": "https://lore.kernel.org/stable/2026091635-eccentric-upriver-aa4d@gregkh/",
+      "note": "thread"
+    },
+    {
+      "title": "5.15-stable 자동 적용 실패(tracing/hist)",
+      "url": "https://lore.kernel.org/stable/2026091621-debtor-hazelnut-dfc6@gregkh/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-16T18:51:36.944Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
