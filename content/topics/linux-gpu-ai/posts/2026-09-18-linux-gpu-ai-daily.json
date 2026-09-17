@@ -1,0 +1,141 @@
+{
+  "id": "2026-09-18-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-09-18 GEM resv 동적화 — GPU·AI",
+  "headline": "drm/gem의 dma_resv 동적 할당과 mmap·NPU·rocket 보안 수정이 dri-devel에서 동시에 논의됩니다.",
+  "date": "2026-09-18",
+  "summary": "Christian König 시리즈가 GEM 객체의 embedded _resv를 제거하고 dma_resv_alloc() 기반으로 전환해 TTM·드라이버 포트 영향이 큽니다. mmap 훅 검증, amdxdna·rocket의 BO 수명 버그, nouveau GSP 런타임 PM 준비 조회도 함께 추적할 가치가 있습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "drm",
+    "GPU",
+    "보안"
+  ],
+  "highlights": [
+    {
+      "title": "drm/gem: dma_resv 동적 할당",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "drm/ttm·GEM·dma-buf 예약 객체를 다루는 GPU 스택 유지보수자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/05684d1e-1785-4166-aa26-e11b17c3c9e0@amd.com/",
+      "if": "amdgpu·i915·Xe·nouveau·TTM에서 GEM BO 크기·공유 예약·삭제 경로를 담당한다면,",
+      "do": "drm_gem_private_object_init()의 -ENOMEM 분기와 TTM individual_resv 해제 경로를 맞추고 kmemleak·delayed delete 회귀를 검토합니다.",
+      "verify": "패치 스레드와 LWN·openwall 스레드에서 refcounted dma_resv v3 맥락과 merge 순서(리뷰어 ACK 등)를 확인합니다."
+    },
+    {
+      "title": "accel/rocket: create_bo 이중 해제 UAF",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "accel/rocket·GEM handle refcount·NPU/가속 ioctl 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260917180013.2166025-1-vulab@iscas.ac.cn/",
+      "if": "/dev/accel rocket 노드 ioctl·GEM handle 생성 실패 경로를 다룬다면,",
+      "do": "drm_gem_handle_create() 실패 후 put으로 객체가 해제된 뒤 err 경로가 다시 free하지 않도록 분기를 점검하고 CVE-2026-64008 계열 백포트와의 관계를 maintainer에게 확인합니다.",
+      "verify": "dri-devel 원문과 linux-cve-announce 인용에서 handle_create 순서 수정과 본 패치 설명을 대조합니다."
+    },
+    {
+      "title": "mm: mmap 훅 이후 VMA 검증",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "GEM mmap·legacy f_op->mmap 유지 드라이버 및 mm/mmap_prepare 포팅 담당",
+      "verifyLink": "https://lkml.iu.edu/hypermail/linux/kernel/2609.1/16323.html",
+      "if": "drm/udriver 등 f_op->mmap으로 PTE를 깔는 레거시 GPU 경로를 유지한다면,",
+      "do": "mmap_hook_validate() 실패 시 vma_close()와 unmap_region() 정리 순서가 동시성·GUP_fast 노출에 안전한지 리뷰 코멘트를 따라갑니다.",
+      "verify": "Lorenzo Stoakes 시리즈 원문과 dri-devel의 vma_close() use-after-free 가능성 질의 스레드를 확인합니다."
+    },
+    {
+      "title": "accel/amdxdna: unmap·free 레이스",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "accel/amdxdna·HMM notifier·GEM BO 수명 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/599748e0-e3e8-4dd4-9d04-000aed2d2cdb@amd.com/",
+      "if": "Ryzen AI NPU에서 HMM unmap과 GEM free가 겹칠 수 있다면,",
+      "do": "hmm_unreg_work를 gem 객체 단으로 옮긴 Fixes 체인을 stable 백포트 후보로 보고 free 경로 cancel_work_sync() 지연을 평가합니다.",
+      "verify": "AMD 패치 스레드에서 워커가 해제 중 BO를 들 수 있는 윈도 설명과 Fixes: 445d20910429 merge 일정을 확인합니다."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**mm: consistently validate VMA state after mmap[_prepare] hooks**\n\nmmap_file()·mmap_prepare 경로에 mmap_hook_validate()/mmap_prepare_validate()를 넣어 훅 이후 VMA 주소·flags 불변을 일관 검증합니다.\n\n영향: legacy f_op->mmap을 쓰는 GPU 드라이버는 검증 실패 시 vma_close()와 unmap_region() 사이 타이밍이 보안·동시성 리뷰 포인트입니다.\n\n> When the f_op->mmap_prepare or deprecated f_op->mmap hooks are invoked, the driver might have done something crazy that is not permitted by the kernel.\n\n[원문 확인](https://lkml.iu.edu/hypermail/linux/kernel/2609.1/16323.html)\n\n**accel/amdxdna: Fix race between unmap and free BO**\n\nhmm_unreg_work를 per-umap에서 struct amdxdna_gem_obj로 옮겨 list_del과 amdxdna_umap_put() 사이 선점으로 cancel_work_sync()가 빠지며 BO 해제가 진행되는 레이스를 막습니다.\n\n영향: HMM unmap과 GEM free가 겹치면 워커가 해제 중 BO를 참조해 UAF가 날 수 있어 NPU·dma-buf/HMM 사용자는 Fixes 체인을 stable 후보로 봐야 합니다.\n\n> This allows object destruction to proceed while the worker still holds a pointer to the BO in the umap structure.\n\n[원문 확인](https://lore.kernel.org/dri-devel/599748e0-e3e8-4dd4-9d04-000aed2d2cdb@amd.com/)\n\n**accel/rocket: Fix use-after-free in rocket_ioctl_create_bo()**\n\ndrm_gem_handle_create() 실패 시 put으로 객체가 이미 해제된 뒤 err 경로의 drm_gem_shmem_object_free()가 다시 도는 이중 해제를 막습니다.\n\n영향: CVE-2026-64008 계열 수정 이후에도 handle_create 실패 분기 버그가 남으면 /dev/accel rocket에서 slab UAF가 재현될 수 있습니다.\n\n> The drm_gem_object_put() then drops that last reference, freeing the object via rocket_gem_bo_free(), and the subsequent goto err makes drm_gem_shmem_object_free() run on the already freed object.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260917180013.2166025-1-vulab@iscas.ac.cn/)\n\n검증 실패 시 mmap_hook_validate() 오류 경로의 vma_close()·stale PTE 가능성, rocket 패치가 CVE fix 위 추가 분기인지는 maintainer 답변 확인이 필요합니다.\n\n> Could calling vma_close() here create a use-after-free window?\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260917173822.CB85A1F00899@smtp.kernel.org/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/gem: Use dynamic allocation for GEM object dma_resv**\n\nstruct drm_gem_object의 embedded _resv를 제거하고 dma_resv_alloc()으로 동적 예약을 쓰며, drm_gem_private_object_init()이 -ENOMEM을 반환할 수 있습니다. TTM은 individual_resv로 개별·공유 예약 해제를 구분합니다.\n\n영향: Refcounting dma_resv v3 계열 다음 단계로 amdgpu·i915·Xe·nouveau·TTM의 BO 크기·공유 예약·삭제 경로가 바뀌어 포트와 kmemleak 회귀 검토가 필요합니다.\n\n> Remove the embedded dma_resv (_resv) from struct drm_gem_object and use dynamically allocated reservations instead.\n\n[원문 확인](https://lore.kernel.org/dri-devel/05684d1e-1785-4166-aa26-e11b17c3c9e0@amd.com/)\n\n**drm/nouveau/gsp/r570: Add support for INTERNAL_GCX_ENTRY_PREREQUISITE**\n\nNV2080_CTRL_CMD_INTERNAL_GCX_ENTRY_PREREQUISITE로 GSP-RM에 GC6/GCOFF 준비를 묻고, GCOFF 미준비·쿼리 실패 시 runtime suspend를 -EBUSY로 지연합니다.\n\n영향: OpenRM 런타임 PM에서 조기 GcOff 진입을 막아 노트북·GSP nouveau의 suspend·GPU 꺼짐 회귀를 줄이지만, PM autosuspend 재시도는 에러 경로마다 달라질 수 있습니다.\n\n> Implement the command used for querying GSP about this, NV2080_CTRL_CMD_INTERNAL_GCX_ENTRY_PREREQUISITE\n\n[원문 확인](https://lkml.iu.edu/2609.1/20584.html)\n\n> Not only resolves it a bunch of issues with dma_resv instances shared by multiple GEM objects\n\n[원문 확인](https://lwn.net/Articles/1092494/)\n\nnvif_device_gcx_ready() 실패(-EBUSY) 경로에서 pm_runtime_mark_last_busy() 없이 autosuspend 타이머가 멈추는지는 확인이 필요합니다.\n\n> If the GPU can't be runtime suspended, update the last busy counter of the device and then return -EBUSY\n\n[원문 확인](https://patchew.org/linux/20260916223358.507351-1-lyude@redhat.com/20260916223358.507351-2-lyude@redhat.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "mm: consistently validate VMA state after mmap[_prepare] hooks",
+      "url": "https://lkml.iu.edu/hypermail/linux/kernel/2609.1/16323.html",
+      "note": "thread"
+    },
+    {
+      "title": "mmap_hook_validate() failure path — vma_close discussion",
+      "url": "https://lore.kernel.org/dri-devel/20260917173822.CB85A1F00899@smtp.kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "Refcounting dma_resv (LWN)",
+      "url": "https://lwn.net/Articles/1092494/",
+      "note": "article"
+    },
+    {
+      "title": "drm/gem: Use dynamic allocation for GEM object dma_resv",
+      "url": "https://lore.kernel.org/dri-devel/05684d1e-1785-4166-aa26-e11b17c3c9e0@amd.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Introduce reference counting for dma_resv objects",
+      "url": "https://lists.openwall.net/linux-kernel/2026/07/10/2012",
+      "note": "thread"
+    },
+    {
+      "title": "nouveau GSP runtime suspend — GCOFF prerequisite",
+      "url": "https://patchew.org/linux/20260916223358.507351-1-lyude@redhat.com/20260916223358.507351-2-lyude@redhat.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/nouveau/gsp/r570: INTERNAL_GCX_ENTRY_PREREQUISITE",
+      "url": "https://lkml.iu.edu/2609.1/20584.html",
+      "note": "thread"
+    },
+    {
+      "title": "accel/amdxdna: Fix race between unmap and free BO",
+      "url": "https://lore.kernel.org/dri-devel/599748e0-e3e8-4dd4-9d04-000aed2d2cdb@amd.com/",
+      "note": "thread"
+    },
+    {
+      "title": "amdxdna notifier workqueue flush (prior context)",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/12/2448",
+      "note": "thread"
+    },
+    {
+      "title": "accel/rocket: Fix use-after-free in rocket_ioctl_create_bo()",
+      "url": "https://lore.kernel.org/dri-devel/20260917180013.2166025-1-vulab@iscas.ac.cn/",
+      "note": "thread"
+    },
+    {
+      "title": "CVE-related create_bo handle ordering",
+      "url": "https://lists.openwall.net/linux-cve-announce/2026/07/19/232",
+      "note": "cve"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-17T18:48:01.950Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

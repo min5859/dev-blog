@@ -1,0 +1,123 @@
+{
+  "id": "2026-09-18-linux-daily-briefing",
+  "topic": "linux",
+  "title": "2026-09-18 linux-next·lpfc — 리눅스 개발",
+  "headline": "대규모 linux-next 통합 스냅샷과 lpfc 오류 경로 참조 누수 수정, conservative 거버너·티어 메모리 성능 패치가 주목됩니다.",
+  "date": "2026-09-18",
+  "summary": "Mark Brown이 공개한 linux-next next-20260916은 메인라인 대비 수천 건의 비머지 커밋과 다수 서브시스템 병합을 담았습니다. lpfc CT 응답 오류 경로의 ndlp 참조 누수 수정과 공유 cpufreq 정책에서 conservative 거버너 지연 다운스케일링 보완이 실운영 영향을 줄 수 있습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "lpfc CT 응답 경로 ndlp 참조 누수",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Fibre Channel·lpfc 드라이버 사용자 및 스토리지 플랫폼 엔지니어",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/17/1917",
+      "if": "Emulex·Broadcom HBA와 lpfc BSG CT 경로를 쓰는 경우",
+      "do": "해당 패치가 포함된 커널로 업그레이드 계획을 세우세요.",
+      "verify": "LKML 스레드에서 Fixes 커밋과 stable Cc를 확인하세요."
+    },
+    {
+      "title": "conservative 거버너 지연 다운스케일 제한",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "공유 cpufreq 정책·conservative 거버너·SCHED_EXT 성능 튜닝 담당자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/16/502",
+      "if": "공유 정책에서 conservative 거버너를 쓰는 워크로드인 경우",
+      "do": "v2 패치 반영 후 부하 시 클럭 고정 여부를 재측정하세요.",
+      "verify": "스레드의 max_sample_load 조건과 Fixes 00bfe05889e9를 확인하세요."
+    },
+    {
+      "title": "공유 folio 고속 tier 승격",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "NUMA tiering·메모리 tiering 모드 운영자 및 mm/scheduler 개발자",
+      "verifyLink": "https://lkml.iu.edu/2609.1/09165.html",
+      "if": "느린 tier와 빠른 tier를 함께 쓰는 NUMA 호스트인 경우",
+      "do": "승격 전용 경로 동작을 워크로드로 검증할 계획을 두세요.",
+      "verify": "v2 시리즈 원문 인용과 promotion-only 제한 문구를 읽어보세요."
+    },
+    {
+      "title": "linux-next next-20260916",
+      "priority": "중",
+      "impactType": "release",
+      "affectedAudience": "linux-next를 추적하는 서브시스템 메인테이너와 통합 테스트 담당자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/16/2059",
+      "if": "다음 머지 윈도 전 통합 트리를 추적하는 경우",
+      "do": "drm-intel·kvm 등 충돌 병합 영역 CI를 우선 돌려보세요.",
+      "verify": "공지 메일의 비머지 커밋·파일 변경 통계를 원문에서 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**linux-next next-20260916**\n\n2026-09-16 Mark Brown이 next-20260914 이후 변경을 담은 일일 linux-next 통합 트리를 공개했고, Linus 트리 대비 6,193개의 비머지 커밋과 6,613개 파일 변경을 보고했습니다.\n\n영향: 다음 커널 윈도 전 서브시스템 스택업과 CI 깨짐이 먼저 드러날 수 있는 지점입니다.\n\n> Changes since 20260914:\n\nNon-merge commits (relative to Linus' tree): 6193\n 6613 files changed, 365808 insertions(+), 104394 deletions(-)\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/16/2059)\n\n**linux-next next-20260916**\n\n이번 사이클에서 427개 트리 병합 중이며 drm-intel, kvm-x86/kvm-arm 등에서 충돌 해결 작업이 있었습니다.\n\n영향: 통합 테스트 담당자는 충돌이 난 서브시스템을 우선 검증하는 것이 좋습니다.\n\n> I am currently merging 427 trees (counting Linus' and 132 trees of bug fix patches pending for the current release).\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/16/2059)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**scsi: lpfc: Fix ndlp reference leak in lpfc_issue_ct_rsp()**\n\nlpfc_issue_ct_rsp()가 DISABLE_FCP_RING_INT 폴링 경로에서 lpfc_readl() 실패 시 ndlp 참조를 해제하지 않고 종료해 누수가 난다는 보고와 한 줄 수정이 제안되었습니다.\n\n영향: 오류 경로에서 nodelist 참조가 쌓이면 Fibre Channel 디스커버리 안정성에 영향을 줄 수 있습니다.\n\n> when lpfc_readl() fails the function bails out to issue_ct_rsp_exit and frees dd_data without dropping that reference, leaking the node.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/17/1917)\n\n**scsi: lpfc: Fix ndlp reference leak in lpfc_issue_ct_rsp()**\n\n수정은 해당 오류 경로에 lpfc_nlp_put을 추가하고 Fixes 4430f7fd09ec 및 stable Cc를 명시합니다.\n\n영향: 백포트 대상 안정 브랜치 사용자는 동일 경로 패치 포함 여부를 추적할 가치가 있습니다.\n\n> Fixes: 4430f7fd09ec (\"scsi: lpfc: Rework locations of ndlp reference taking\")\nCc: stable@...r.kernel.org\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/17/1917)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**net: stmmac: add Allwinner H616 EMAC1 support**\n\nJames Hilliard가 net-next v3로 Allwinner H616 EMAC1(RMII 10/100, compatible allwinner,sun50i-h616-emac1) 지원과 sun8i MAC 소프트 리셋을 probe에서 PHY 초기화 이후 DMA 리셋 콜백으로 옮기는 선행 변경을 올렸습니다.\n\n영향: 웜 리부트 후 RX 클럭이 없을 때 probe 시점 리셋 실패를 줄여 다른 sun8i 보드에도 관련됩니다.\n\n> First move the MAC software reset from probe to the DMA reset callback, after PHY initialization.\n\n[원문 확인](https://patchew.org/linux/20260917-submit-h616-emac1-v1-v3-0-62cb8316e19b@gmail.com/)\n\n**cpufreq: conservative: Restrict deferred downscaling to low load**\n\nShengming Hu v2는 정책별 max_sample_load를 분리하고, 지연 주파수 하향은 max_sample_load가 down_threshold 미만일 때만 적용합니다.\n\n영향: 공유 정책에서 idle 형제 CPU의 지연 다운이 busy CPU의 업스텝을 압도해 최저 근처에 고정되는 문제를 줄입니다.\n\n> Repeated updates therefore keep the policy near 530 MHz even though CPU 2 is fully utilized.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/16/502)\n\n**mm: allow shared folios to be promoted to a fast tier**\n\nGregory Price v2(2/4)는 공유 COW folio와 다중 매핑 실행 파일 folio가 느린 tier에서 빠른 tier로 승격만 할 수 있도록 NUMA 밸런싱·이동 가드를 완화합니다.\n\n영향: tiered 메모리에서 뜨거운 공유 라이브러리·COW 페이지가 느린 노드에 남는 상황을 줄일 수 있습니다.\n\n> Allow such folios to participate when moving from a slow tier to a fast tier. Keep the existing restrictions for ordinary placement.\n\n[원문 확인](https://lkml.iu.edu/2609.1/09165.html)"
+    },
+    {
+      "heading": "기타",
+      "body": "7.1.13 최종 안정 릴리스·7.1.y 종료, 7.3-rc3 메인라인 후보, 7.2.6 안정 업데이트는 이전 브리핑과 동일하며 이번 수집에서 추가 진척은 없습니다. linux-next 공개 태그가 kernel.org 메인 페이지에 어떻게 반영되는지는 원문 외 경로로는 확인되지 않았습니다. 이 브리핑은 팀 공통 관심 항목만 다루며, 개별 드라이버·플랫폼 국부 패치는 생략했습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "linux-next next-20260916 announcement",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/16/2059",
+      "note": "thread"
+    },
+    {
+      "title": "lpfc_issue_ct_rsp ndlp reference leak",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/17/1917",
+      "note": "thread"
+    },
+    {
+      "title": "cpufreq conservative deferred downscaling v2",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/16/502",
+      "note": "thread"
+    },
+    {
+      "title": "mm: allow shared folios promoted to fast tier",
+      "url": "https://lkml.iu.edu/2609.1/09165.html",
+      "note": "thread"
+    },
+    {
+      "title": "stmmac H616 EMAC1 v3 series",
+      "url": "https://patchew.org/linux/20260917-submit-h616-emac1-v1-v3-0-62cb8316e19b@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Linux 7.2.6 ChangeLog",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.6",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 7.3-rc3 release thread",
+      "url": "https://lkml.iu.edu/2609.1/13946.html",
+      "note": "thread"
+    },
+    {
+      "title": "Linux 7.1.13 EOL announcement",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/02/1497",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-17T18:04:25.318Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-newsletter-from-dossier-ko.md"
+  }
+}
