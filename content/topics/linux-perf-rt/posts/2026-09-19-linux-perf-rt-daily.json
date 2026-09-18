@@ -1,0 +1,151 @@
+{
+  "id": "2026-09-19-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-09-19 bpf_call_rcu kfunc — 성능·RT",
+  "headline": "BPF RCU kfunc·RISC-V CBQRI resctrl·cgroup preorder 노출·arena memcg fault 경로가 이번 주 스레드의 중심입니다.",
+  "date": "2026-09-19",
+  "summary": "Puranjay Mohan의 bpf_call_rcu() v4와 RISC-V CBQRI resctrl v8이 자체 관리 BPF 수명과 캐시 격리 DT 경로를 앞당깁니다. cgroup BPF_F_PREORDER 노출, verifier 메모리 인자 추적, arena fault-in 할당 변경과 bpf_snprintf 검증 회귀 가능성도 함께 따라가야 합니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "BPF",
+    "성능",
+    "RT"
+  ],
+  "highlights": [
+    {
+      "title": "bpf_call_rcu() kfunc v4",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "sched_ext·BPF map lifetime·RCU kfunc 시리즈 추적 담당",
+      "verifyLink": "https://lwn.net/Articles/1094512/",
+      "if": "sched_ext 스타일 객체 수명을 userspace membarrier 우회 없이 커널 RCU grace period 후 콜백으로 맞추려 한다면",
+      "do": "bpf_call_rcu()·bpf_call_rcu_tasks_trace() v4와 bpf_rcu_head 인라인·heap·union 논의를 스레드에서 추적하세요.",
+      "verify": "LWN 패치 요약과 Paul McKenney union 제안, syzbot 시리즈 CI 결과 링크를 확인하세요."
+    },
+    {
+      "title": "RISC-V CBQRI resctrl DT 바인딩 v8",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "RISC-V resctrl·CBQRI·캐시 QoS 플랫폼 담당",
+      "verifyLink": "https://ratatoskr.run/linux-rt-devel/2026/09/17596819",
+      "if": "RISC-V에서 x86 MPAM과 같은 L2/L3 격리를 resctrl로 노출하려 한다면",
+      "do": "riscv,cbqri.yaml와 v8의 BUSY 대기 후 cc_block_mask 프로그래밍 동작을 QEMU resctrl schemata와 대조하세요.",
+      "verify": "linux-rt-devel v8 커버레터와 LKML 바인딩 패치 원문을 확인하세요."
+    },
+    {
+      "title": "cgroup BPF_F_PREORDER userspace 노출",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "cgroup BPF·bpftool·멀티프로그램 attach 운영 담당",
+      "verifyLink": "https://ratatoskr.run/bpf/2026/09/17605922",
+      "if": "조상 우선 cgroup BPF attach 순서를 스크립트나 bpftool로 점검한다면",
+      "do": "__cgroup_bpf_query() 수정·selftest(기대 66)·bpftool 표시 패치가 한 세트로 머지되는지 보세요.",
+      "verify": "미패치 커널에서 selftest 실패(2 vs 66) 재현 설명이 있는 스레드를 확인하세요."
+    },
+    {
+      "title": "BPF arena fault-in 페이지 락 밖 할당",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "BPF arena map·memcg·fault path 담당",
+      "verifyLink": "https://ratatoskr.run/bpf/2026/09/17602782",
+      "if": "memory.max 아래 arena map으로 관측 워크로드를 돌린다면",
+      "do": "v8에서 sleepable 할당 후 spinlock을 잡는 경로와 VM_FAULT_SIGBUS 반환을 memcg reclaim 시나리오에 맞춰 검증하세요.",
+      "verify": "SIGSEGV on valid arena address 인용이 있는 커버레터와 Alexei Starovoitov 코멘트 트림 요청을 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**bpf: Check read access for initialized writable memory arguments**\n\nEduard Zingerman verifier 패치(Kumar Kartikeya Dwivedi v4 3/8)가 func_arg_access_type()로 MEM_UNINIT 없는 초기화된 writable helper 버퍼에 BPF_READ|BPF_WRITE를 요구하도록 바꿉니다; Sashiko는 bpf_snprintf()(MEM_WRITE만, MEM_UNINIT 없음) 회귀 가능성을, Amery Hung은 우려가 타당하다고 답했고 Eduard는 MEM_UNINIT 의미 완화나 snprintf에 MEM_UNINIT 표시를 제안했습니다.\n\n영향: writable helper 인자에 대한 read 검사 강화는 BPF_F_WRONLY map이나 bpf_snprintf() 같은 부분 출력 helper를 쓰는 프로그램이 검증에 실패할 수 있어, proto 플래그와 MEM_UNINIT 규칙 조정 전 머지 타이밍을 확인해야 합니다(신뢰도 medium).\n\n> Will this inadvertently force check_helper_mem_access() to reject valid\nwrite-only maps (BPF_F_WRONLY_PROG) when passed to such output helpers\n\n[원문 확인](https://ratatoskr.run/bpf/2026/09/17601966/t)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**bpf: Add bpf_call_rcu() kfunc**\n\nPuranjay Mohan bpf-next v4가 map에 embed된 bpf_rcu_head 콜백을 RCU(또는 tasks-trace) grace period 후에 걸 수 있는 bpf_call_rcu()·bpf_call_rcu_tasks_trace() kfunc를 추가했고, v4 논의는 struct rcu_head 인라인·heap·union 배치로 이어졌습니다; 2026-09-15 게시 v4는 syzbot에서 전 테스트 통과했습니다. 다음 리비전이 Paul McKenney union·heap·인라인 중 무엇을 택하는지, call_rcu-from-any-context 선행 시리즈 대비 머지 시점은 확인이 필요합니다.\n\n영향: sched_ext 스타일 수명은 userspace membarrier 우회가 필요했으나 커널 RCU 콜백 경로가 이를 줄이고, bpf_rcu_head 레이아웃은 map value 크기와 ABI 안정성에 직결됩니다.\n\n> Add:\n\n\tint bpf_call_rcu(struct bpf_rcu_head *rh, void *map,\n\t\t\t int (*callback)(struct bpf_map *map, void *key,\n\t\t\t\t\t void *value));\n\n[원문 확인](https://lwn.net/Articles/1094512/)\n\n**dt-bindings: riscv: Add binding for CBQRI controllers**\n\nDrew Fustini linux-rt-devel 2026-09-17 v8 CBQRI resctrl 시리즈가 riscv,cbqri.yaml로 capacity·bandwidth CBQRI 컨트롤러와 riscv,cbqri-rcid, riscv,cbqri-mcid, optional riscv,cbqri-cache를 기술합니다; patch 4/5는 바인딩만 v7에서 이어집니다. v8 커버레터는 QEMU에서 resctrl schemata(L2:0=ffff)를 보여 주고, cc_alloc_ctl BUSY가 0일 때만 cc_block_mask를 씁니다. linux-riscv maintainer의 patch 4 리뷰 상태와 bandwidth·모니터링의 generic resctrl schema 이관은 확인이 필요합니다.\n\n영향: RISC-V가 DT로 캐시 capacity 분할을 resctrl에 노출하는 경로를 갖추면 RT·tail-latency 팀이 x86 MPAM과 유사한 L2/L3 격리를 쓸 수 있고, 드라이버 시리즈 랜딩 후 펌웨어가 스키마와 맞아야 합니다.\n\n> # cat /sys/fs/resctrl/schemata\n  L2:0=ffff\n\n[원문 확인](https://lkml.iu.edu/2609.0/02760.html)\n\n**bpf: expose cgroup preorder attachment state to userspace**\n\nHui Su 3패치 시리즈가 __cgroup_bpf_query()가 direct cgroup 조회 시 prog_attach_flags[]에 BPF_F_PREORDER(커밋 4b82b181a26c)를 넣도록 고치고, selftest는 플래그 0x42를 기대하며 bpftool이 preorder 플래그를 표시·attach하도록 합니다.\n\n영향: 조상 우선 순서에 의존하는 cgroup BPF 운영자가 커널이 플래그를 숨기면 introspect·스크립트가 어긋나므로, 커널 상태·libbpf selftest·bpftool UX를 맞춥니다. bpf/master만 대상인지 장기 cgroup 도구용 stable backport가 필요한지는 확인이 필요합니다.\n\n> __cgroup_bpf_query() currently fails to report it to user space in\nprog_attach_flags[] during direct cgroup program queries.\n\n[원문 확인](https://ratatoskr.run/bpf/2026/09/17605922)\n\n**bpf: Record raw memory arguments during argument checking**\n\nKumar Kartikeya Dwivedi bpf-next v4 verifier 시리즈(Eduard Zingerman 2/8)가 helper 인자 검사에서 MEM_UNINIT 출력을 meta->arg_raw_mem에 기록하고, check_mem_size_reg()는 변수 크기 인자가 추적된 출력일 때만 raw mode를 해제합니다; bpf-ci는 주로 bpf_strtol, bpf_strtoul, bpf_kallsyms_lookup_name에 영향을 짚었습니다.\n\n영향: verifier raw-mode 추적은 비권한 프로그램이 초기화되지 않은 스택 버퍼를 helper에 넘길 수 있는지를 가르며, 출력 레지스터 기록 오류는 bpf_map_pop_elem류와 tracing-heavy 워크로드 초기화 요건을 왜곡할 수 있습니다. bpf-ci가 제안한 arg_type_is_raw_mem()을 기록 위치에 넣는지는 확인이 필요합니다.\n\n> In the check_mem_size_reg() only clear raw mode for a variable size\nwhen it belongs to the recorded output.\n\n[원문 확인](https://ratatoskr.run/bpf/2026/09/17601966/t)\n\n**bpf: arena: allocate the fault-in page outside the lock**\n\nJiayuan Chen bpf-next v8 arena 시리즈가 fault-in 페이지를 arena->spinlock 전에 sleepable 할당으로 미리 잡아 memory.max 압박 시 reclaim 대신 SIGSEGV가 나던 경로를 바꾸고, 실패 시 VM_FAULT_SIGBUS로 돌립니다; Alexei Starovoitov는 2026-09-18에 커밋 로그를 반복하는 인라인 코멘트를 줄이길 요청했습니다. Lorenzo Stoakes arena VM_MIXEDMAP mmap 시리즈와의 머지 순서는 확인이 필요합니다.\n\n영향: memcg 한도에 걸리는 BPF arena 사용자는 유효 주소에서 fake segfault를 맞을 수 있어, creator memcg에 과금되는 shared arena·cgroup memory cap 관측 워크로드에 중요합니다.\n\n> the process then gets SIGSEGV on a perfectly valid arena\naddress.\n\n[원문 확인](https://ratatoskr.run/bpf/2026/09/17602782)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "bpf_call_rcu() kfunc (LWN)",
+      "url": "https://lwn.net/Articles/1094512/",
+      "note": "article"
+    },
+    {
+      "title": "bpf_call_rcu v4 syzbot series CI",
+      "url": "https://ci.syzbot.org/series/d60d9513-fd82-4c5c-9f20-c8a10c455128",
+      "note": "article"
+    },
+    {
+      "title": "Paul McKenney rcu_head union suggestion",
+      "url": "https://lore.kernel.org/bpf/ede9d515-a103-461e-8244-656af641c6c9@paulmck-laptop/",
+      "note": "thread"
+    },
+    {
+      "title": "RISC-V CBQRI resctrl v8 (linux-rt-devel)",
+      "url": "https://ratatoskr.run/linux-rt-devel/2026/09/17596819",
+      "note": "thread"
+    },
+    {
+      "title": "riscv,cbqri DT binding patch",
+      "url": "https://lkml.iu.edu/2609.0/02760.html",
+      "note": "thread"
+    },
+    {
+      "title": "cgroup BPF_F_PREORDER userspace exposure",
+      "url": "https://ratatoskr.run/bpf/2026/09/17605922",
+      "note": "thread"
+    },
+    {
+      "title": "BPF_F_PREORDER introduction (4b82b181a26c)",
+      "url": "https://github.com/superna9999/linux/commit/4b82b181a26cff8bf7adc3a85a88d121d92edeaf",
+      "note": "commit"
+    },
+    {
+      "title": "verifier raw memory argument recording",
+      "url": "https://ratatoskr.run/bpf/2026/09/17601966/t",
+      "note": "thread"
+    },
+    {
+      "title": "bpf-ci raw mode ordering note",
+      "url": "https://lore.kernel.org/bpf/f4f90cfb55d6275f552fc3ad619f35ef64901cbe.camel@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "BPF arena v8 cover letter",
+      "url": "https://ratatoskr.run/bpf/2026/09/17602782",
+      "note": "thread"
+    },
+    {
+      "title": "arena preallocate page outside lock",
+      "url": "https://lkml.iu.edu/2608.3/02773.html",
+      "note": "thread"
+    },
+    {
+      "title": "arena fault-path comment trim request",
+      "url": "https://ratatoskr.run/bpf/2026/09/17602782/t",
+      "note": "thread"
+    },
+    {
+      "title": "bpf_snprintf write-only map concern (Amery Hung)",
+      "url": "https://lore.kernel.org/bpf/CAMB2axOVeCSWogRJn6z31J+4to6R2T7U97MEP-sAO6Zv1jeTQQ@mail.gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-18T18:46:40.322Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

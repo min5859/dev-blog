@@ -1,0 +1,153 @@
+{
+  "id": "2026-09-19-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-09-19 FORTIFY·seq_buf — 커널 보안",
+  "headline": "7.2.6 안정 라인과 9월 longterm 묶음 배포 이후, linux-hardening에서 __counted_by·GCC FORTIFY·seq_buf API 진행이 이어집니다.",
+  "date": "2026-09-19",
+  "summary": "Greg Kroah-Hartman이 정리한 9월 14일 안정 커널 묶음(7.2.6·5.15.221·5.10.270 등)이 배포 라인의 기준점으로 남아 있고, 7.1.y는 EOL 이후 7.2.y로의 이전이 전제됩니다. 동시에 x86 부트 PCI ROM에 대한 __counted_by() 주석, GCC strict flex-array 하의 FORTIFY type-1 크기 수정, seq_buf_strlen() v2 준비, kbuild modinfo 추출 변경이 하드닝 스레드에서 논의됩니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "x86 setup PCI ROM에 __counted_by(pcilen) 주석",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "x86 부트·PCI early-setup 및 KSPP __counted_by() 시리즈 추적 담당",
+      "verifyLink": "https://lists.openwall.net/linux-hardening/2026/09/18/36",
+      "if": "펌웨어에서 넘어오는 PCI ROM 설정 데이터가 pcibios_device_add()까지 유지되는 경로를 검토한다면",
+      "do": "Thorsten Blum의 pci_setup_rom::romdata[] __counted_by(pcilen) 패치와 UBSAN·FORTIFY 경로를 대조해 본다",
+      "verify": "[원문 확인](https://lists.openwall.net/linux-hardening/2026/09/18/36)에서 커밋 메시지와 diff를 읽어 본다"
+    },
+    {
+      "title": "GCC: FAM 하위 객체 type-1 object size (PR126975)",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "CONFIG_FORTIFY_SOURCE·GCC 툴체인으로 커널을 빌드하는 하드닝·배포 CI 담당",
+      "verifyLink": "https://lists.openwall.net/linux-hardening/2026/09/18/46",
+      "if": "-fstrict-flex-arrays=3와 FORTIFY_SOURCE로 빌드하는 CI나 배포 트리를 운영한다면",
+      "do": "Gustavo A. R. Silva의 type-1/__builtin_object_size() 수정안과 리뷰어의 declared size 논쟁을 추적한다",
+      "verify": "[원문 확인](https://lists.openwall.net/linux-hardening/2026/09/18/46)에서 스레드의 미해결 논점을 확인한다"
+    },
+    {
+      "title": "seq_buf_strlen() — v2·리뷰 일정",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "linux-hardening·KSPP strlcat/seq_buf 교체 시리즈 추적 담당",
+      "verifyLink": "https://lists.openwall.net/linux-hardening/2026/09/18/31",
+      "if": "KSPP strlcat() 대체와 seq_buf 헬퍼 도입을 기다리고 있다면",
+      "do": "Kees Cook의 v2(seq_buf_init_append/seq_buf_init_existing() 명명) 게시와 Steven Rostedt의 Kernel Recipes 이후 리뷰 시점을 본다",
+      "verify": "[원문 확인](https://lists.openwall.net/linux-hardening/2026/09/18/31)에서 공개 미러에 v2가 올라왔는지 확인한다"
+    },
+    {
+      "title": "kbuild: vmlinux에 .modinfo 할당 제거",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "kbuild·모듈 modinfo·Secure Boot 이미지 레이아웃을 다루는 개발자",
+      "verifyLink": "https://lists.openwall.net/linux-hardening/2026/09/18/53",
+      "if": "Secure Boot Authenticode·modules.builtin.modinfo 추출 경로를 다룬다면",
+      "do": "Nathan Chancellor의 정렬 revert와 objcopy --dump-section 변경, Nicolas Schier의 $(OBJCOPYFLAGS) 질문에 답이 나오는지 본다",
+      "verify": "[원문 확인](https://lists.openwall.net/linux-hardening/2026/09/18/53)에서 Makefile diff와 리뷰 답글을 확인한다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.2.6 stable**\n\n2026-09-14에 Linux 7.2.6이 현재 7.2.x 안정 업데이트로 출시되었고, 7.2.6-rc1 큐만 1,815개의 백포트를 포함합니다.\n\n영향: 7.1.y EOL 이후 단기 안정 라인의 주 축이며, ksmbd 공유 설정 bounds, dm-integrity, perf hists 등 메모리 안전 관련 백포트가 대량 포함되어 신속 배포 가치가 큽니다.\n\n> There are more than 1,800 patches in 7.2.6 alone. Users of these kernels are, of course, advised to upgrade.\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.6)\n\n**Linux 5.10.270 / 5.15.221 longterm**\n\n2026-09-14 Greg Kroah-Hartman 조율 안정 묶음에 5.10.270(798 패치 rc1)과 5.15.221(935 패치 rc1)이 함께 나왔습니다.\n\n영향: 7.1.y가 더 이상 upstream 안정 보안 수정을 받지 않는 팀은 5.10/5.15 longterm 드롭이 crypto self-test·네트워킹·NVMe-oF RDMA 누수 수정 등의 실질 통로입니다.\n\n> Greg Kroah-Hartman has announced the 7.2.6, 6.18.52, 6.12.110, 6.6.157, 6.1.188, 5.15.221, 5.10.270 stable kernels.\n\n[원문 확인](https://lwn.net/Articles/1093985/)\n\n**Linux 7.1.13 stable · EOL (참고)**\n\n7.1.y는 2026-09-02 Linux 7.1.13 태그로 종료되었으며, 이후 upstream 안정 보안 수정은 기대할 수 없습니다.\n\n영향: 아직 7.1.x에 머무는 배포·임베디드는 7.2.y 등 지원 시리즈로 이전 계획이 필요합니다.\n\n> Note, the 7.1.y kernel series is now end-of-life.  Please move to the 7.2.y kernel series at this point in time.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/02/1497)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**x86/setup: Annotate pci_setup_rom::romdata with __counted_by()**\n\nThorsten Blum이 부트 파라미터 PCI ROM 설정의 romdata[] 유연 배열에 __counted_by(pcilen)을 붙여 초기 x86 설정에서 UBSAN bounds와 FORTIFY_SOURCE가 ROM blob 크기를 추론할 수 있게 했습니다.\n\n영향: 펌웨어가 공급한 setup blob이 pcibios_device_add()까지 남는 경로에 __counted_by() 패턴을 확장해, 수동 리뷰에서 놓치기 쉬운 컴파일 타임 bounds 검사를 강화합니다.\n\n> Add __counted_by() to pci_setup_rom::romdata to enable access bounds checking via CONFIG_UBSAN_BOUNDS and CONFIG_FORTIFY_SOURCE.\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/09/18/36)\n\n**tree-object-size: Fix type-1 size for FAM subobjects under -fstrict-flex-arrays=3 [PR126975]**\n\nGustavo A. R. Silva의 GCC v2 수정은 -fstrict-flex-arrays=3에서 FAM으로 끝나는 하위 객체 포인터의 __builtin_object_size() type-1이 type-0으로 무너지는 문제를 고치려 합니다; 후속 답글은 flex-array payload를 내부 객체 최대치에 포함해야 하는지 declared size만이 맞는지 묻습니다.\n\n영향: FORTIFY가 기대하는 type-0/type-1 구분이 약해지면 중첩 FAM 구조의 컴파일 타임 bounds 검사가 약화될 수 있어, GCC 쪽 수용 범위는 확인이 필요합니다.\n\n> FORTIFY_SOURCE relies on the type-1 distinction, so this weakens its bounds checks.\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/09/18/46)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**seq_buf: Add seq_buf_strlen()**\n\nseq_buf_strlen() 커버 스레드에서 Kees Cook은 Bill Wendling의 seq_buf_init_append() 헬퍼(이름은 seq_buf_init_existing() 등 검토)를 넣은 v2를 올릴 예정이고, maintainer Steven Rostedt는 Kernel Recipes 슬라이드 후 주말쯤 리뷰할 계획입니다.\n\n영향: seq_buf 헬퍼는 KSPP strlcat() 교체 작업의 기반이라 API 명명·리뷰 타이밍이 서브시스템 트리 도입 속도에 영향을 줍니다. v2가 2026-09-19 수집 창 이전에 공개 미러에 올라왔는지는 확인 필요합니다.\n\n> Thanks! I'm going to spin a v2 with Bill's seq_buf_init_append()[1] (though I think I want to call it seq_buf_init_existing()? I'm open to ideas here...)\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/09/18/31)\n\n**kbuild: do not allocate .modinfo in vmlinux**\n\nkbuild speedup v3 스레드에서 Nathan Chancellor 후속 패치는 .modinfo가 ELF_DETAILS 밖으로 분리된 뒤 Secure Boot Authenticode EDK2 호환용 레거시 .modinfo 정렬을 제거합니다; Nicolas Schier는 Reviewed-by를 달면서 modules.builtin.modinfo를 objcopy --dump-section으로 뽑을 때 $(OBJCOPYFLAGS) 생략이 의도인지 물었습니다.\n\n영향: kbuild 성능과 secure-boot 이미지 레이아웃이 맞닿은 경로라, objcopy 플래그 처리가 아키텍처 간 builtin modinfo 생성 호환에 영향을 줄 수 있으며 $(OBJCOPYFLAGS) 생략 의도는 아직 답이 없습니다.\n\n> Commit d50f21091358 (\"kbuild: align modinfo section for Secureboot Authenticode EDK2 compat\") aligned .modinfo because it appeared in the x86_64 compressed kernel image\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/09/18/53)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "7.1.y EOL 안내 (Greg Kroah-Hartman)",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/02/1497",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-7.1.13",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.13",
+      "note": "changelog"
+    },
+    {
+      "title": "7.1.13 stable review (76 patches)",
+      "url": "https://lkml.iu.edu/2608.3/14412.html",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-7.2.6",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.6",
+      "note": "changelog"
+    },
+    {
+      "title": "7.2.6-rc1 review (1815 patches)",
+      "url": "https://lkml.iu.edu/2609.1/13399.html",
+      "note": "thread"
+    },
+    {
+      "title": "LWN: September 2026 stable kernel updates",
+      "url": "https://lwn.net/Articles/1093985/",
+      "note": "article"
+    },
+    {
+      "title": "seq_buf_strlen() cover thread",
+      "url": "https://lists.openwall.net/linux-hardening/2026/09/18/31",
+      "note": "thread"
+    },
+    {
+      "title": "x86 pci_setup_rom __counted_by()",
+      "url": "https://lists.openwall.net/linux-hardening/2026/09/18/36",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-5.10.270",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.270",
+      "note": "changelog"
+    },
+    {
+      "title": "5.10.270-rc1 review (798 patches)",
+      "url": "https://lkml.iu.edu/2609.1/12800.html",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-5.15.221",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.221",
+      "note": "changelog"
+    },
+    {
+      "title": "5.15.221-rc1 review (935 patches)",
+      "url": "https://lkml.iu.edu/2609.1/12715.html",
+      "note": "thread"
+    },
+    {
+      "title": "GCC tree-object-size / FORTIFY type-1",
+      "url": "https://lists.openwall.net/linux-hardening/2026/09/18/46",
+      "note": "thread"
+    },
+    {
+      "title": "kbuild modinfo in vmlinux",
+      "url": "https://lists.openwall.net/linux-hardening/2026/09/18/53",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-18T18:24:39.749Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
