@@ -1,0 +1,138 @@
+{
+  "id": "2026-09-20-linux-distro-stable-daily",
+  "topic": "linux-distro-stable",
+  "title": "2026-09-20 stable 큐 보안·누수 — 디스트로 스테이블",
+  "headline": "stable 큐에 모듈 ELF 검증과 Rockchip clk notifier UAF 수정이 제출됐고, efct·libfc·i915·amdgpu 메모리 누수 백포트가 올라왔습니다.",
+  "date": "2026-09-20",
+  "summary": "이번 수집의 신규 포인트는 모듈 로더·Rockchip 클럭 보안 백포트와 스토리지·GPU 드라이버 누수 수정입니다. 7.2.6·5.10.270·5.15.221·7.1.13 EOL 릴리스는 전일과 동일하여 생략했습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "module: Validate the __version_ext_names section type",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "커널 모듈 로더·배포 보안 및 stable 백포트 담당자",
+      "verifyLink": "https://lore.kernel.org/stable/20260919154139.52904-1-fangxy@xiaopeng.com/",
+      "if": "서드파티 모듈·secure boot 환경에서 stable 커널을 운영한다면,",
+      "do": "Fang Xieyan v3 stable 패치가 담당 브랜치에 머지·태그되는지 큐를 추적하세요.",
+      "verify": "SHT_PROGBITS 요구와 KASAN vmalloc-out-of-bounds 재현 스레드를 원문에서 확인하세요."
+    },
+    {
+      "title": "clk: rockchip: Unregister notifier on multi-PLL registration failure",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "Rockchip clk 드라이버 및 ARM 보드 longterm/stable 유지 담당자",
+      "verifyLink": "https://lore.kernel.org/stable/20260919163106.1833104-1-lhfff@tju.edu.cn/",
+      "if": "Rockchip SoC longterm·stable 트리를 빌드·배포한다면,",
+      "do": "rate table 복제 실패 시 notifier 해제 백포트를 우선 검토·반영 일정을 잡으세요.",
+      "verify": "__clk_notify() KASAN use-after-free 인용과 할당 실패 주입 재현 설명을 확인하세요."
+    },
+    {
+      "title": "scsi: elx: efct: fix Scsi_Host memory leaks on add failure",
+      "priority": "중",
+      "impactType": "backport",
+      "affectedAudience": "scsi/elx efct 드라이버 및 stable 백포트 담당자",
+      "verifyLink": "https://lore.kernel.org/stable/20260919174835.3729156-1-lgs201920130244@gmail.com/",
+      "if": "Emulex efct FC HBA 드라이버를 stable로 백포트하는 배포라면,",
+      "do": "scsi_add_host_with_dma() 실패 경로의 scsi_host_put() 수정이 포함된 커널로 갱신 시점을 맞추세요.",
+      "verify": "stable 제출 스레드와 Fixes 커밋 4df84e846624 원문을 대조하세요."
+    },
+    {
+      "title": "scsi: libfc: fix directory server rport memory leak",
+      "priority": "중",
+      "impactType": "backport",
+      "affectedAudience": "libfc/FCoE 스토리지 및 stable 백포트 담당자",
+      "verifyLink": "https://lore.kernel.org/stable/20260919173405.3718408-1-lgs201920130244@gmail.com/",
+      "if": "libfc·FCoE 스택을 쓰는 스토리지 노드를 운영한다면,",
+      "do": "디렉터리 서버 PLOGI에서 fc_frame_alloc() 실패 시 rport 참조 해제 백포트 반영을 추적하세요.",
+      "verify": "discovery 목록 밖 rport teardown 경로 인용과 Fixes 3ac6f98f4113를 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**clk: rockchip: Unregister notifier on multi-PLL registration failure**\n\nrockchip_clk_register_cpuclk_multi_pll()에서 rate table 복제가 실패할 때 clk_notifier_unregister()를 호출해 CCF 전역 notifier 상태에 남는 해제된 블록·clk 포인터를 제거하는 stable 패치가 제출되었습니다.\n\n영향: Rockchip ARM 보드에서 PLL 등록 실패 후 클럭 rate 변경이 발생하면 __clk_notify()에서 KASAN use-after-free가 재현될 수 있어, RK SoC longterm/stable 트리 운영자는 이 백포트를 우선 검토해야 합니다.\n\n> A later rate change walks that state in __clk_notify() and reads the freed watched struct clk before it can compare the clock core.\n\n[원문 확인](https://lore.kernel.org/stable/20260919163106.1833104-1-lhfff@tju.edu.cn/)\n\n**module: Validate the __version_ext_names section type**\n\nFang Xieyan v3 stable 패치는 elf_validity_cache_index_versions()가 __version_ext_names 섹션을 SHT_PROGBITS로만 허용하도록 검증해 SHT_NOBITS일 때 strnlen()이 모듈 이미지 밖을 읽는 경로를 닫습니다.\n\n영향: 서명 검사 이후 insmod 경로에서 악의적·손상된 모듈 ELF가 vmalloc OOB를 유발할 수 있어, 서드파티 모듈·secure boot 환경을 운영하는 배포는 stable 백포트 반영을 추적해야 합니다.\n\n> BUG: KASAN: vmalloc-out-of-bounds in strnlen+0x73/0x80\n\n[원문 확인](https://lore.kernel.org/stable/20260919154139.52904-1-fangxy@xiaopeng.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**scsi: elx: efct: fix Scsi_Host memory leaks on add failure**\n\nstable 큐에 올라온 패치는 efct_scsi_new_device()와 efct_scsi_new_vport()에서 scsi_add_host_with_dma() 실패 시 scsi_host_alloc()이 반환한 초기 Scsi_Host 참조를 scsi_host_put()으로 해제하고 물리 호스트 경로에서는 efct->shost를 NULL로 정리합니다.\n\n영향: Emulex efct FC HBA 초기화 실패·재시도가 반복되면 Scsi_Host가 누적되어 메모리가 고갈될 수 있어, 해당 드라이버를 백포트하는 엔터프라이즈 스토리지 배포는 stable 반영 시점을 추적해야 합니다.\n\n> If scsi_add_host_with_dma() fails, both functions return without dropping the initial host reference returned by scsi_host_alloc().\n\n[원문 확인](https://lore.kernel.org/stable/20260919174835.3729156-1-lgs201920130244@gmail.com/)\n\n**drm/i915: fix mock ring memory leak on context allocation failure**\n\nmock_context_alloc()에서 intel_timeline_create() 또는 mock_timeline_pin() 실패 시 mock_ring()이 반환한 ring 초기 참조를 kref_put()으로 해제하고 ce->ring을 NULL로 비웁니다.\n\n영향: mock 엔진 경로는 CI·selftest에서 자주 쓰이며, 타임라인 할당 실패 시 ring VMA가 누수되면 반복 테스트에서 메모리 사용량이 증가할 수 있어 distro CI가 i915 selftest를 돌리면 백포트 반영을 확인하는 것이 좋습니다.\n\n> If intel_timeline_create() fails, mock_context_alloc() returns without dropping the ring reference.\n\n[원문 확인](https://lore.kernel.org/stable/20260919171710.3699710-1-lgs201920130244@gmail.com/)\n\n**scsi: libfc: fix directory server rport memory leak**\n\nfc_rport_recv_plogi_req()에서 디렉터리 서버 PLOGI 처리 중 fc_frame_alloc()이 실패하면 discovery 목록에 없는 rport의 초기 참조를 해제하도록 stable 백포트가 제출되었습니다.\n\n영향: FC 디렉터리 서버와의 PLOGI에서 프레임 할당이 실패하면 fc_rport_priv가 영구 누수될 수 있어, libfc·FCoE 스택을 쓰는 스토리지 노드는 해당 stable 수정이 포함된 커널로 갱신해야 합니다.\n\n> Since the directory server rport is not present in the discovery list, there is no later teardown path that can find the object and release that reference.\n\n[원문 확인](https://lore.kernel.org/stable/20260919173405.3718408-1-lgs201920130244@gmail.com/)\n\n**drm/amdgpu: fix IP instance memory leak on kobject add failure**\n\namdgpu_discovery_sysfs_ips()에서 kobject_add()가 실패할 때 무시되던 오류를 처리해 kobject_put()으로 ip_hw_instance 할당을 해제하는 stable 패치가 제출되었습니다.\n\n영향: sysfs IP discovery 노출 경로에서 kobject 등록 실패가 반복되면 ip_hw_instance가 누적될 수 있어, AMDGPU discovery sysfs를 활성화한 배포·워크스테이션 이미지는 stable 백포트 포함 여부를 확인해야 합니다.\n\n> If kobject_add() fails, the return value is ignored and execution continues without dropping the initial kobject reference.\n\n[원문 확인](https://lore.kernel.org/stable/20260919165511.3687822-1-lgs201920130244@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "efct Scsi_Host 누수 백포트는 어느 stable/longterm 브랜치에 cherry-pick될지 및 upstream 메인라인 머지 여부가 확인 필요합니다.\n\nmodule __version_ext_names 검증 패치의 upstream mainline 머지 및 각 longterm 브랜치별 태그 포함 시점도 확인이 필요합니다.\n\n5.15.y를 추적하는 팀은 일부 배포에서 보고된 v5.15.221 bpftool 빌드 회귀와의 관련성 및 follow-up fix 포함 여부를 [ChangeLog-5.15.221](https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.221) 맥락에서 확인하는 것이 좋습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "module __version_ext_names stable 제출",
+      "url": "https://lore.kernel.org/stable/20260919154139.52904-1-fangxy@xiaopeng.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Rockchip clk notifier stable 제출",
+      "url": "https://lore.kernel.org/stable/20260919163106.1833104-1-lhfff@tju.edu.cn/",
+      "note": "thread"
+    },
+    {
+      "title": "amdgpu kobject stable 제출",
+      "url": "https://lore.kernel.org/stable/20260919165511.3687822-1-lgs201920130244@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "i915 mock ring stable 제출",
+      "url": "https://lore.kernel.org/stable/20260919171710.3699710-1-lgs201920130244@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "libfc directory server rport stable 제출",
+      "url": "https://lore.kernel.org/stable/20260919173405.3718408-1-lgs201920130244@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "efct Scsi_Host stable 제출",
+      "url": "https://lore.kernel.org/stable/20260919174835.3729156-1-lgs201920130244@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "efct 드라이버 초기화 (Fixes)",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=4df84e846624",
+      "note": "commit"
+    },
+    {
+      "title": "i915 timeline (Fixes)",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=75d0a7f31eec",
+      "note": "commit"
+    },
+    {
+      "title": "libfc PLOGI (Fixes)",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=3ac6f98f4113",
+      "note": "commit"
+    },
+    {
+      "title": "amdgpu IP discovery sysfs (Fixes)",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=a6c40b178092",
+      "note": "commit"
+    },
+    {
+      "title": "Linux 5.15.221 ChangeLog",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.221",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-19T18:25:16.253Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

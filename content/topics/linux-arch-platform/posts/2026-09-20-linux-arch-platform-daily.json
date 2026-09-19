@@ -1,0 +1,123 @@
+{
+  "id": "2026-09-20-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-09-20 USB PM·ftrace 정렬 — 아키텍처·플랫폼",
+  "headline": "RISC-V function graph retp 정렬, dwc3 호스트 런타임 resume에서 xHCI 자식 깨우기, LAN969x SDMMC DT 리뷰, NXP SerDes XPCS regmap RFC가 동시에 움직였습니다.",
+  "date": "2026-09-20",
+  "summary": "회귀 신호는 RISC-V ftrace function graph의 retp identity를 frame CFA로 맞추는 2패치 시리즈입니다. 플랫폼 측면에서는 ACPI hardware-reduced 경로의 dwc3 런타임 PM, Microchip LAN969x SDMMC 노드, NXP SerDes 공유 PCS 코어 RFC가 리뷰·설계 논의를 이어갑니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "riscv: ftrace: use frame CFA as the function graph retp identity",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "RISC-V 아키텍처·ftrace/function graph 유지보수 담당",
+      "verifyLink": "https://ratatoskr.run/linux-riscv/2026/09/17607769",
+      "if": "RISC-V rv64에서 function graph tracer와 stacktrace·unwind를 함께 쓰는 경우",
+      "do": "retp를 frame CFA로 통일하는 패치 시리즈와 fgraph.c 문서 변경을 리뷰하고 function_get_true_parent_ip() 동작을 확인하세요",
+      "verify": "스레드와 Patchwork 시리즈 원문에서 unwinder CFA 조회와 저장 retp 불일치 설명을 대조하세요"
+    },
+    {
+      "title": "usb: dwc3: core: resume xHCI child on runtime resume in host mode",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "USB dwc3/xHCI glue·ACPI 플랫폼 드라이버 담당",
+      "verifyLink": "https://ratatoskr.run/linux-riscv/2026/09/17531564",
+      "if": "hardware-reduced ACPI에서 dwc3만 깨우는 런타임 suspend·resume 경로를 다루는 보드라면",
+      "do": "호스트 모드 dwc3_runtime_resume()에서 xHCI에 async runtime resume을 요청하는 v2 변경을 적용·검증 계획에 넣으세요",
+      "verify": "Runtime PM이 자식 resume을 전파하지 않아 root hub polling이 멈춘다는 스레드 설명과 Synopsys maintainer Acked-by를 확인하세요"
+    },
+    {
+      "title": "net: pcs: add NXP SerDes XPCS shared core",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "NXP S32/i.MX SerDes·phylink·PCS 드라이버 담당",
+      "verifyLink": "https://ratatoskr.run/linux-arm-kernel/2026/09/17607971",
+      "if": "S32G·i.MX 이더넷·PCIe 공유 SerDes와 기존 pcs-xpcs 아키텍처를 맞춰야 한다면",
+      "do": "regmap 기반 transport-agnostic PCS 코어 RFC와 virtual mii_bus·pcs-xpcs-regmap 재사용 논의를 netdev·PCS 메인테이너 관점에서 추적하세요",
+      "verify": "RFC v3 인용문과 Maxime Chevallier·Coia Prant 스레드에서 중복 vs regmap 래퍼 trade-off를 읽어보세요"
+    },
+    {
+      "title": "arm64: dts: microchip: lan969x: add SDMMC nodes",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Microchip LAN969x·arm64 DTS·sdhci-of-at91 담당",
+      "verifyLink": "https://ratatoskr.run/linux-arm-kernel/2026/09/17608558",
+      "if": "LAN969x EV 보드 eMMC·SD bring-up DT 시리즈를 따르는 중이라면",
+      "do": "SDMMC0/1 노드의 fabric hclock·100 MHz/50 MHz core clock 구성과 reg 표기 nit을 반영해 리베이스하세요",
+      "verify": "Claudiu Beznea Reviewed-by와 reg 길이 0x300 제안 인용을 스레드에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**riscv: ftrace: use frame CFA as the function graph retp identity**\n\nRISC-V 동적 function graph tracing이 일시적인 ftrace_caller fregs 프레임의 &fregs->ra를 retp로 저장해, 스택 unwinder가 frame CFA로 조회할 때 shadow stack 항목과 맞지 않던 문제를 고칩니다. fgraph.c 문서를 retp 비교 의미로 정리하고, RISC-V는 frame CFA를 retp identity로 통일합니다.\n\n영향: function graph tracer와 stacktrace/unwind가 RISC-V rv64에서 엇갈리면 그래프 복원과 function_get_true_parent_ip()가 깨지므로, ftrace/perf 추적·디버깅 담당자는 이 identity 정렬 패치를 봐야 합니다.\n\n> Later stack unwinding finds return_to_handler in the traced function's own frame and looks it up with the frame CFA, so the saved entry can never match.\n\n[원문 확인](https://ratatoskr.run/linux-riscv/2026/09/17607769)\n\n2패치 시리즈는 fgraph 문서화와 RISC-V CFA retp 전환을 제출했습니다. linux-trace-kernel 리뷰어의 Tested-by 및 mainline merge 일정은 확인이 필요합니다.\n\n> Patch 2 makes RISC-V use the frame CFA for that identity: the static _mcount path derives it from &frame->ra, the dynamic ftrace path uses the saved entry SP\n\n[원문 확인](https://patchwork.kernel.org/series/1169122/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**usb: dwc3: core: resume xHCI child on runtime resume in host mode**\n\n호스트 모드 dwc3_runtime_resume()이 ACPI가 dwc3 부모만 깨우는 경로(케이스 b)에서 xHCI 자식을 suspend 상태로 두던 빈 분기를 채워, xHCI에 async runtime resume을 요청합니다. Synopsys maintainer Thinh Nguyen의 Acked-by가 v2 스레드에 붙었습니다.\n\n영향: hardware-reduced ACPI 플랫폼에서 런타임 suspend 중 USB 삽입이 조용히 무시되는 문제를 코어 dwc3에서 막아, SpacemiT·ACPI GED 기반 보드 등 glue 없는 열거 환경에 직접 영향을 줍니다. Qualcomm/i.MX8MP 등 DT glue 하드웨어 추가 검증 여부는 확인이 필요합니다.\n\n> Runtime PM does not propagate resume downward, so the xHCI child stays suspended. Root hub polling is never re-armed, and a device plugged in while suspended is silently dropped.\n\n[원문 확인](https://ratatoskr.run/linux-riscv/2026/09/17531564)\n\n> Acked-by: Thinh Nguyen <Thinh.Nguyen@synopsys.com>\n\n[원문 확인](https://ratatoskr.run/linux-riscv/2026/09/17607674)\n\n**arm64: dts: microchip: lan969x: add SDMMC nodes**\n\nLAN969x v2 시리즈 4/6 패치에 Claudiu Beznea가 reg 크기 표기(0x00000300→0x300) nit을 제안하고 Reviewed-by를 달았습니다. SDMMC0/1 노드는 fabric hclock·100 MHz/50 MHz generated core clock 구성을 유지합니다.\n\n영향: Microchip LAN969x EV 보드 eMMC/SD bring-up 시리즈가 DT 리뷰를 받으며 upstream 적용에 가까워져, arm64 DTS·sdhci-of-at91 LAN969x 통합 작업의 ABI·클럭 설정 근거가 됩니다. Aubin Constans의 keep_clks_on 대안 패치와 시리즈 통합 방향은 확인이 필요합니다.\n\n> reg = <0xe0830000 0x00000300>; s/0x00000300/0x300\n\n[원문 확인](https://ratatoskr.run/linux-arm-kernel/2026/09/17608558)\n\n> Reviewed-by: Claudiu Beznea <claudiu.beznea@tuxon.dev>\n\n[원문 확인](https://ratatoskr.run/linux-arm-kernel/2026/09/17608558)\n\n**net: pcs: add NXP SerDes XPCS shared core**\n\nNXP S32G/i.MX SerDes RFC v3 04/12가 regmap 기반 transport-agnostic phylink PCS 코어(~965 LOC)를 추가하고, Maxime Chevallier는 pcs-xpcs 중복을 virtual mii_bus로 줄일 수 있는지, Coia Prant는 Rockchip·Alex Elder pcs-xpcs-regmap 재사용 가능성을 논의했습니다.\n\n영향: NXP SerDes·stmmac glue upstream 경로와 기존 Synopsys pcs-xpcs 아키텍처 정렬 여부가 S32G/i.MX 이더넷·PCIe 공유 SerDes 보드 설계에 영향을 주므로, netdev/PCS 메인테이너는 중복 vs regmap 래퍼 trade-off를 추적해야 합니다. maintainer 선호와 Rockchip XPCS 시리즈 API 공유 범위는 확인이 필요합니다.\n\n> Add a transport agnostic phylink PCS core which operates on regmaps provided by the platform glue.\n\n[원문 확인](https://ratatoskr.run/linux-arm-kernel/2026/09/17607971)\n\n> Is there a way to avoid code duplication by wrapping the accesses into a mii_bus ?\n\n[원문 확인](https://ratatoskr.run/linux-arm-kernel/2026/09/17608681)\n\n> Alex Elder's pcs-xpcs-regmap does exactly that for the TC956x: it registers the XPCS through a regmap and creates the virtual MDIO bus internally\n\n[원문 확인](https://ratatoskr.run/linux-arm-kernel/2026/09/17608839)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "RISC-V ftrace retp와 unwinder frame CFA 불일치",
+      "url": "https://ratatoskr.run/linux-riscv/2026/09/17607769",
+      "note": "thread"
+    },
+    {
+      "title": "RISC-V fgraph CFA retp 패치 시리즈",
+      "url": "https://patchwork.kernel.org/series/1169122/",
+      "note": "thread"
+    },
+    {
+      "title": "dwc3 런타임 PM과 xHCI 자식 suspend",
+      "url": "https://ratatoskr.run/linux-riscv/2026/09/17531564",
+      "note": "thread"
+    },
+    {
+      "title": "dwc3 xHCI resume v2 Acked-by",
+      "url": "https://ratatoskr.run/linux-riscv/2026/09/17607674",
+      "note": "thread"
+    },
+    {
+      "title": "LAN969x SDMMC DT reg nit 및 Reviewed-by",
+      "url": "https://ratatoskr.run/linux-arm-kernel/2026/09/17608558",
+      "note": "thread"
+    },
+    {
+      "title": "NXP SerDes regmap PCS 코어 RFC v3",
+      "url": "https://ratatoskr.run/linux-arm-kernel/2026/09/17607971",
+      "note": "thread"
+    },
+    {
+      "title": "pcs-xpcs virtual mii_bus 재사용 질문",
+      "url": "https://ratatoskr.run/linux-arm-kernel/2026/09/17608681",
+      "note": "thread"
+    },
+    {
+      "title": "pcs-xpcs-regmap indirect 모드 논의",
+      "url": "https://ratatoskr.run/linux-arm-kernel/2026/09/17608839",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-19T18:30:23.413Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

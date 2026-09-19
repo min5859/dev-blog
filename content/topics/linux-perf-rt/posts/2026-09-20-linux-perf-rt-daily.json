@@ -1,0 +1,123 @@
+{
+  "id": "2026-09-20-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-09-20 BPF TS2.0·efivarfs — 성능·RT",
+  "headline": "BPF TCP 타임스탬핑 2.0과 PREEMPT_RT efivarfs nostatfs 기본값이 관측·tail 지연 양쪽을 건드립니다.",
+  "date": "2026-09-20",
+  "summary": "Jason Xing이 net-next에 TCP용 BPF Timestamping 2.0 시리즈를 올렸고, skb 시작 시각은 hwtstamp 슬롯 재사용으로 구현됩니다. Pratyush Singh는 PREEMPT_RT에서 efivarfs nostatfs를 기본으로 제안해 statfs 시 QueryVariableInfo()로 인한 66–129 ms 지연을 피합니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "efivarfs nostatfs PREEMPT_RT 기본",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "PREEMPT_RT 배포·efivarfs 마운트 정책·EFI runtime 지연 추적 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260919044124.8268-1-singhpra@juniper.net/",
+      "if": "공유 CPU에서 /sys/firmware/efi/efivars에 statfs·df가 걸리는 RT 워크로드를 운영한다면",
+      "do": "nostatfs가 PREEMPT_RT 기본인 제안 패치와 기존 rate limit(commit b2326338dc68)을 함께 검토하세요",
+      "verify": "패치 스레드에서 Intel Xeon E5-2628L v4 측정치와 마운트 기본값 논의를 확인하세요"
+    },
+    {
+      "title": "BPF Timestamping 2.0 for TCP",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "네트워크 BPF timestamping·TCP latency 관측 도구 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260919143732.11772-1-kerneljasonxing@gmail.com/",
+      "if": "컨테이너 fleet에서 TCP 패킷 단위 지연을 상시 추적한다면",
+      "do": "1.0 대비 맵 트래픽·핫패스 부담을 줄이는 2.0 커버 레터와 Netdev 0x1A BoF 안건을 따라가세요",
+      "verify": "시리즈가 TCP에만 한정된다는 점과 머지·리뷰 진행은 커버 레터 밖에서는 확인이 필요합니다"
+    },
+    {
+      "title": "libbpf btf__align_of() 미지 ID 처리",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "libbpf·동적 BTF 생성·bpftool/자체 툴체인 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260919174532.25407-1-abhinavmadake@gmail.com/",
+      "if": "btf__add_*()로 만든 BTF에서 forward reference에 btf__align_of()를 호출한다면",
+      "do": "NULL 역참조 대신 errno EINVAL로 0을 반환하는 패치를 적용·업스트림 반영 여부를 추적하세요",
+      "verify": "GitHub issue #983과 lore 커버 레터의 EINVAL 처리 문구를 대조해 확인하세요"
+    },
+    {
+      "title": "stmmac XDP multi-buffer rx 재작업",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "stmmac·XDP multi-buffer·ARM/Qualcomm NIC 드라이버 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260919150838.4B09A1F000FF@smtp.kernel.org/",
+      "if": "stmmac에서 XDP_REDIRECT·multi-descriptor 프레임을 쓴다면",
+      "do": "xdp_frags_truesize 미초기화 등 리뷰에서 지적된 항목이 다음 리비전에 반영됐는지 머지 전에 확인하세요",
+      "verify": "패치 스레드에서 전체 프레임 xdp_buff 구성과 리뷰 코멘트를 읽어 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**libbpf: Check for unknown type ID in btf__align_of()**\n\nAbhinav Madake가 libbpf 수정을 올려, btf__add_*()로 구성한 BTF에서 알 수 없는 type ID에 btf__align_of()가 호출될 때 btf__type_by_id()가 NULL이면 btf_kind()에서 NULL을 역참조해 SIGSEGV가 날 수 있는 경로를 막고 errno EINVAL로 0을 반환합니다.\n\n영향: 동적 BTF 생성·CI fuzzing·커널 BPF 개발용 유저스페이스 툴이 다른 btf__ 조회와 맞는 오류 처리를 기대할 수 있습니다.\n\n> Return 0 with errno set to EINVAL, like the unsupported-kind case.\n\n[원문 확인](https://lore.kernel.org/bpf/20260919174532.25407-1-abhinavmadake@gmail.com/)\n\n**net: stmmac: rework stmmac_rx to support XDP rx multi-buff**\n\nLorenzo Bianconi 패치가 descriptor를 누적해 전체(분할 가능) 프레임에 XDP를 돌리고, 통과 시 napi_build_skb()로 skb를 재구성합니다. 자동 리뷰는 xdp_frags_truesize 미초기화·실패 경로 누수를 높은 심각도로 표시했습니다.\n\n영향: multi-buffer XDP에서 frag 메타데이터 오류는 skb truesize·체크섬 검출을 흔들 수 있어 redirect 워크로드에서 데이터 손상처럼 보일 수 있습니다.\n\n> Does this code fail to initialize sinfo->xdp_frags_truesize, leaving it with uninitialized memory?\n\n[원문 확인](https://lore.kernel.org/bpf/20260919150838.4B09A1F000FF@smtp.kernel.org/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**net: BPF Timestamping 2.0 for TCP**\n\nJason Xing이 net-next 시리즈로 TCP용 BPF Timestamping 2.0을 제안합니다. 패킷별 시작 시각(tcp_sendmsg_locked 진입·RX 드라이버 시각), 단순한 BPF 프로그램, 1.0보다 낮은 핫패스 부담, 대규모 운영 경험을 반영한 컨테이너 친화적 패킷 단위 지연 추적을 목표로 합니다.\n\n영향: 상시 TCP 지연 귀속을 맵 트래픽을 줄이고 고정 qdisc/driver/ack 단계보다 유연한 phase로 맞추려는 관측 스택 변경입니다.\n\n> BPF timestamping 2.0: a finer-grained, extremely low-overhead framework applicable to a broader range of scenarios\n\n[원문 확인](https://netdevconf.info/0x1A/sessions/bof/network-observability-bof.html)\n\n**net: reuse skb_shared_hwtstamps for BPF Timestamping v2**\n\n새 skb 필드 대신 skb_shared hwtstamp 저장소를 패킷 시작 시각에 재사용합니다. HW 타임스탬프가 있으면 우선하고, 슬롯이 비었을 때만 소프트웨어 시작 시각을 넣으며 netns traversal에서 scrub되는 skb->tstamp 대신 이 필드를 씁니다.\n\n영향: 2.0은 모든 skb에 시작 시각 슬롯이 필요하므로, HW 타임스탬프를 이미 채우는 드라이버와 혼합 환경에서 의미를 이해해야 합니다. RX에서 HW·SW 시작 시각이 동시에 필요한 경우와 SO_TIMESTAMPING·BPF RX sock_ops 경로 상호작용은 확인이 필요합니다.\n\n> a real hardware time stamp always wins. The start time is only generated when the hwtstamp slot is still empty.\n\n[원문 확인](https://lore.kernel.org/bpf/20260919143732.11772-5-kerneljasonxing@gmail.com/)\n\n**efivarfs: add nostatfs mount option to skip QueryVariableInfo()**\n\nPratyush Singh가 nostatfs 마운트 옵션을 제안해 statfs()가 EFI QueryVariableInfo()를 건너뛰고 용량 0을 보고합니다. CONFIG_PREEMPT_RT에서는 preemption disabled 상태의 66–129 ms 펌웨어 정지를 피하기 위해 기본값으로 켜집니다.\n\n영향: 권한 없는 statfs도 서빙 CPU에서 느린 EFI runtime을 일으킬 수 있어, rate limit 이후에도 RT tail 지연을 줄이는 조치입니다.\n\n> Default mount: statfs() calls QueryVariableInfo() and returns the real store capacity, ~66-129 ms per call\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260919044124.8268-1-singhpra@juniper.net/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Netdev 0x1A Network Observability BoF",
+      "url": "https://netdevconf.info/0x1A/sessions/bof/network-observability-bof.html",
+      "note": "article"
+    },
+    {
+      "title": "BPF Timestamping 2.0 TCP cover letter",
+      "url": "https://lore.kernel.org/bpf/20260919143732.11772-1-kerneljasonxing@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "BPF Timestamping v2 skb hwtstamp reuse",
+      "url": "https://lore.kernel.org/bpf/20260919143732.11772-5-kerneljasonxing@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "libbpf issue #983 btf__align_of SIGSEGV",
+      "url": "https://github.com/libbpf/libbpf/issues/983",
+      "note": "article"
+    },
+    {
+      "title": "libbpf btf__align_of EINVAL fix",
+      "url": "https://lore.kernel.org/bpf/20260919174532.25407-1-abhinavmadake@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "efivarfs nostatfs for PREEMPT_RT",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260919044124.8268-1-singhpra@juniper.net/",
+      "note": "thread"
+    },
+    {
+      "title": "efivarfs statfs QueryVariableInfo rate limit",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=b2326338dc68",
+      "note": "commit"
+    },
+    {
+      "title": "stmmac_rx XDP multi-buff rework",
+      "url": "https://lore.kernel.org/bpf/20260919150838.4B09A1F000FF@smtp.kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-19T18:27:45.508Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

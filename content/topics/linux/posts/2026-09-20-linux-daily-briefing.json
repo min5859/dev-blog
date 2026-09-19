@@ -1,0 +1,153 @@
+{
+  "id": "2026-09-20-linux-daily-briefing",
+  "topic": "linux",
+  "title": "2026-09-20 DSA·xPCS 회귀 — 리눅스 개발",
+  "headline": "Airoha DSA·Synopsys xPCS·libfc에서 누수와 제어 프레임 회귀 수정이 제출되고, RTL8821CE 전력 절전 패치 논의가 이어집니다.",
+  "date": "2026-09-20",
+  "summary": "오늘은 EN7581·AN7583 DSA, xPCS 클럭, libfc rport 등 실패 경로 회귀·누수 수정이 메일링 리스트에 올라온 것이 핵심입니다. RTL8821CE PCIe deep sleep 비활성화 제안은 증상 공유와 메인테이너 피드백이 병행 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "Airoha DSA trapped frame 회귀",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "MediaTek/Airoha DSA·라우터 플랫폼 네트워크 개발자",
+      "verifyLink": "https://lore.kernel.org/lkml/20260919065214.31604-3-gongtao0607@gmail.com/",
+      "if": "EN7581·AN7583 라우터/브리지 네트워크 담당자",
+      "do": "STP BPDU 등 trapped frame이 CPU conduit로 나가는지 재현·검증하세요",
+      "verify": "lore 패치에서 MFC CPU 포트 설정과 Acked-by를 확인하세요"
+    },
+    {
+      "title": "xPCS clk 참조 누수",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Synopsys xPCS·stmmac/DSA 네트워크 드라이버 개발자",
+      "verifyLink": "https://lore.kernel.org/lkml/20260919172021.2336748-1-coiaprant@gmail.com/",
+      "if": "xPCS platform 드라이버·clock 경로를 다루는 개발자",
+      "do": "probe 실패 시 clk 누수 패치 리뷰 및 적용 여부를 판단하세요",
+      "verify": "enable 실패 경로 clk_bulk_put 추가 내용을 lore 원문에서 확인하세요"
+    },
+    {
+      "title": "libfc 디렉터리 서버 rport 누수",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "Fibre Channel·libfc 스택을 쓰는 스토리지/가상화 플랫폼 개발자",
+      "verifyLink": "https://lore.kernel.org/lkml/20260919173405.3718408-1-lgs201920130244@gmail.com/",
+      "if": "FC SAN·libfc 스택 유지보수 담당자",
+      "do": "PLOGI 실패 경로 rport drop 패치를 stable 백포트 후보로 검토하세요",
+      "verify": "Cc stable 및 Fixes 태그를 lore 스레드에서 확인하세요"
+    },
+    {
+      "title": "RTL8821CE deep LPS 제한",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "rtw88·Realtek Wi-Fi 드라이버 개발자, RTL8821CE PCIe 사용자·배포 담당자",
+      "verifyLink": "https://lore.kernel.org/lkml/20260918232801.119348-1-eexto@aol.com/",
+      "if": "8821CE PCIe 노트북·미니PC 동결 이슈를 보는 팀",
+      "do": "deep LCLK 비활성화 패치로 freeze·timeout 재현 테스트를 진행하세요",
+      "verify": "패치 lore와 메인테이너 반응 스레드를 원문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**net: dsa: mt7530: trap frames to conduit in MFC on EN7581 and AN7583**\n\nAiroha EN7581·AN7583 DSA에서 trapped control frame이 CPU로 나가려면 MT7531_CFC뿐 아니라 MT753X_MFC의 CPU 포트 설정이 필요하며, 패치가 EN7581/AN7583에서도 MFC CPU 비트를 설정한다.\n\n영향: 설정 누락 시 STP BPDU 등이 drop되어 L2 제어 plane이 CPU에 도달하지 못할 수 있다.\n\n> However, on Airoha EN7581 and AN7583 switch IP, setting MT7531_CFC alone\nis not sufficient for trapped control frames (such as STP BPDUs) to exit\ntowards the CPU port.\n\n[원문 확인](https://lore.kernel.org/lkml/20260919065214.31604-3-gongtao0607@gmail.com/)\n\n**net: pcs: xpcs: fix clock reference leak on xpcs_init_clks failure**\n\nxpcs_init_clks()가 clk_bulk_prepare_enable() 실패 시 clk_bulk_put() 없이 반환해 clk 참조가 누수되며, 패치는 해당 실패 경로에 clk_bulk_put()을 추가한다.\n\n영향: probe·clock enable 오류가 반복되면 모듈 재로드 없이 clk 참조가 복구되지 않을 수 있다.\n\n> xpcs_init_clks() takes references with clk_bulk_get_optional() and then\nenables them with clk_bulk_prepare_enable(). If the enable step fails,\nthe function returns without dropping the references.\n\n[원문 확인](https://lore.kernel.org/lkml/20260919172021.2336748-1-coiaprant@gmail.com/)\n\n**scsi: libfc: fix directory server rport memory leak**\n\nfc_rport_recv_plogi_req()가 디렉터리 서버 PLOGI 처리 중 fc_frame_alloc() 실패 시 discovery 리스트에 없는 FC_FID_DIR_SERV rport 참조를 내리지 않아 누수가 발생하며, 패치는 실패 경로에서 rport 참조를 drop한다.\n\n영향: 반복 누수는 FC SAN에서 메모리 고갈·연결 복구 문제로 이어질 수 있어 stable 백포트 검토 대상으로 제출됐다.\n\n> fc_rport_create() does not add FC_FID_DIR_SERV rports to the discovery\nrport list. If fc_frame_alloc() fails while handling a PLOGI from the\ndirectory server, the function returns without starting the\n\n[원문 확인](https://lore.kernel.org/lkml/20260919173405.3718408-1-lgs201920130244@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**wifi: rtw88: 8821c: disable deep LPS on PCIe devices**\n\nRTL8821C PCIe에서 LPS_DEEP_MODE_LCLK(32kHz deep sleep) 사용을 막고 LPS_DEEP_MODE_NONE을 반환하도록 rtw_update_lps_deep_mode()를 조정하는 패치가 제출됐다.\n\n영향: 8821CE에서 deep LCLK과 ASPM 조합 시 PCIe completion timeout·펌웨어 hang·시스템 freeze가 보고됐고, 메인테이너는 deep PS 비활성화 자체를 반대하지 않으나 일부 근거에 이의를 냈다. linux-next 머지 여부는 원문 확인이 필요하다.\n\n> On RTL8821CE PCIe adapters, entering 32kHz low-power clock deep sleep\n(LPS_DEEP_MODE_LCLK) causes recurrent PCIe completion timeouts,\n\"firmware failed to leave lps state\", \"failed to send h2c command\"\n\n[원문 확인](https://lore.kernel.org/lkml/20260918232801.119348-1-eexto@aol.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "7.1.13 EOL·7.2.6 stable·7.3-rc3·linux-next next-20260918은 전일 브리핑과 동일한 추적선입니다. Rockchip dwmac-rk 전용 clk 누수, Emulex efct HBA Scsi_Host 누수 수정은 범용 영향이 제한적이라 이번 본문에서 제외했습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "mt7530 EN7581/AN7583 MFC CPU trapped frame",
+      "url": "https://lore.kernel.org/lkml/20260919065214.31604-3-gongtao0607@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "mt7530 패치 Acked-by Lorenzo Bianconi",
+      "url": "https://lore.kernel.org/lkml/aq7HOswpuqqboFj5@lore-desk/",
+      "note": "thread"
+    },
+    {
+      "title": "xPCS clk reference leak on init failure",
+      "url": "https://lore.kernel.org/lkml/20260919172021.2336748-1-coiaprant@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "libfc directory server rport memory leak",
+      "url": "https://lore.kernel.org/lkml/20260919173405.3718408-1-lgs201920130244@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "rtw88 8821c disable deep LPS on PCIe",
+      "url": "https://lore.kernel.org/lkml/20260918232801.119348-1-eexto@aol.com/",
+      "note": "thread"
+    },
+    {
+      "title": "rtw88 maintainer response on deep PS",
+      "url": "https://lore.kernel.org/lkml/2f2f2366-bf64-45d1-911d-6a769be9d7aa@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "7.1.y EOL announcement",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/02/1497",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog Linux 7.1.13",
+      "url": "https://www.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.13",
+      "note": "changelog"
+    },
+    {
+      "title": "7.3-rc3 release announcement",
+      "url": "https://lkml.iu.edu/2609.1/13946.html",
+      "note": "thread"
+    },
+    {
+      "title": "kernel.org releases.json",
+      "url": "https://www.kernel.org/releases.json",
+      "note": "changelog"
+    },
+    {
+      "title": "7.2.6 stable release",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/14/1568",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog Linux 7.2.6",
+      "url": "https://www.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.6",
+      "note": "changelog"
+    },
+    {
+      "title": "7.2.6 stable review 1815 patches",
+      "url": "https://lists.linaro.org/archives/list/lkft-triage@lists.linaro.org/message/OTVDUVYQ5MZNQJEIKALLNQE74YSQQOY2/",
+      "note": "thread"
+    },
+    {
+      "title": "linux-next next-20260918 changes",
+      "url": "https://lkml.iu.edu/2609.2/08235.html",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-19T18:02:35.042Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-newsletter-from-dossier-ko.md"
+  }
+}
