@@ -1,0 +1,116 @@
+{
+  "id": "2026-09-21-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-09-21 cpumap UAF 수정 — Perf·RT",
+  "headline": "XDP cpumap·LWT encap·dev-bound attach 보안 패치와 BPF 타임스탬핑 v2 RFC가 net·BPF 리스트에서 동시에 논의됩니다.",
+  "date": "2026-09-21",
+  "summary": "netdev unregister와 cpumap redirect가 겹칠 때 reproducible한 KASAN UAF가 drain 핸드셰이크로 막히는 한편, LWT encap 후 stale IPv4 옵션과 잘못된 dev-bound attach도 수정·강화됩니다. RFC 단계의 SK_BPF_CB_TIMESTAMPING_V2는 관측성 경로를 열지만 동시 setsockopt의 static key TOCTOU는 확인이 필요합니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "BPF",
+    "XDP",
+    "PREEMPT_RT"
+  ],
+  "highlights": [
+    {
+      "title": "cpumap dev_rx use-after-free",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "XDP redirect·cpumap·AF_XDP를 쓰는 네트워크/BPF 스택 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/20/838",
+      "if": "veth 삭제와 XDP cpumap redirect가 겹치는 운영·테스트 환경을 다루면",
+      "do": "NETDEV_UNREGISTER 시 cpumap drain·GRO flush 완료와 unregister 중 XDP_REDIRECT 드롭 동작이 포함된 패치를 추적하고 teardown 순서를 점검하세요",
+      "verify": "KASAN slab UAF 스택과 netdev notifier·drain_left 핸드셰이크 설명이 스레드 원문과 일치하는지 확인하세요"
+    },
+    {
+      "title": "LWT encap 후 IPv4 options OOB",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "LWT-BPF·SEG6/encap 라우팅·IPv4 옵션 처리 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/16/2508",
+      "if": "LWT IP encapsulation과 ICMP·IPv4 옵션 echo 경로를 백포트·selftest 대상으로 두면",
+      "do": "v3 시리즈의 post-run CB reset·freplace cb_access·VRF selftest 반영 여부를 net 머지 전까지 따라가세요",
+      "verify": "KASAN stack-out-of-bounds in __ip_options_echo 인용과 수정 접근이 최신 스레드에 남아 있는지 확인하세요"
+    },
+    {
+      "title": "타 netdev dev-bound 프로그램 거부",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "device-bound XDP·BPF_LINK·드라이버 메타 kfunc 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/20/831",
+      "if": "BPF_LINK_CREATE로 ifindex를 바꿔 device-bound XDP를 붙이는 배포를 검토하면",
+      "do": "비오프로드 dev-bound 프로그램은 exact netdev 일치만 허용하는 가드가 머지되면 attach 정책을 재검토하세요",
+      "verify": "tun에서 veth-bound 프로그램 실행 시 panic 시나리오와 __bpf_offload_dev_match 가드가 원문 스레드와 맞는지 확인하세요"
+    },
+    {
+      "title": "SK_BPF_CB_TIMESTAMPING_V2 RFC",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "BPF sock_ops·네트워크 타임스탬핑·TCP 관측 도구 담당",
+      "verifyLink": "https://lists.openwall.net/netdev/2026/09/19/187",
+      "if": "소켓 TX/RX skb start time 관측과 bpf_setsockopt 플래그 경로를 설계 중이면",
+      "do": "RFC 1/9의 static key·SK_BPF_CB_FLAGS 토글과 Sashiko가 제기한 bpfts_v2 enable/disable TOCTOU 피드백 반영을 추적하세요",
+      "verify": "무잠금 compare-and-branch 동시성 경고 스레드와 netdev RFC 인용이 아직 유효한지 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**bpf: cpumap: fix use-after-free of dev_rx on netdev unregister**\n\ncpumap 링·GRO에 남은 ingress netdev 포인터를 NETDEV_UNREGISTER 시점에 kthread가 모두 소비·전체 GRO flush할 때까지 기다리도록 netdev notifier와 drain_left 핸드셰이크를 추가하고, unregister 중 cpumap 간 XDP_REDIRECT는 드롭합니다.\n\n영향: veth 삭제와 XDP cpumap redirect가 겹치면 cpumap kthread의 eth_type_trans()에서 KASAN slab UAF가 reproducible하며, GRO 도입 이후 dev_hold()만으로는 해결되지 않아 XDP/cpumap 운영 시 teardown 순서를 반드시 알아야 합니다.\n\n> BUG: KASAN: slab-use-after-free in eth_type_trans ... cpu_map_kthread_run\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/20/838)\n\n**bpf: clear stale IPv4 options after LWT encapsulation**\n\nv3 시리즈는 LWT IP encapsulation 성공 시 BPF_RI_F_LWT_IP_ENCAP을 표시하고 bpf_prog_run_save_cb() 복원 직후 프로토콜 CB를 재설정해, freplace cb_access 전파와 selftest(VRF·already-encapsulated)를 포함합니다.\n\n영향: 외부 헤더 push 후 IPCB(skb)->opt가 inner IPv4를 가리키면 ICMP/__ip_options_echo()에서 최대 255바이트 스택 OOB가 날 수 있어 LWT-BPF encap 경로와 stable 백포트 후보를 추적할 가치가 있습니다.\n\n> BUG: KASAN: stack-out-of-bounds in __ip_options_echo Write of size 255\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/16/2508)\n\nnet 메인라인 머지 전 nested LWT와 failed SEG6 경계가 더 조정되는지는 확인이 필요합니다.\n\n추가 접근 설명: [원문 확인](https://lists.openwall.net/linux-kernel/2026/09/20/1026)\n\n**bpf: reject dev-bound-only programs on other devices**\n\n__bpf_offload_dev_match()에서 비오프로드 dev-bound 프로그램은 exact netdev 일치만 허용하고, 공유 offdev fallback은 진짜 멀티포트 오프로드 프로그램에만 남깁니다.\n\n영향: BPF_LINK_CREATE로 다른 ifindex에 veth-bound 프로그램을 붙이면 tun xdp_buff를 veth_xdp_buff로 잘못 읽어 GPF/panic이 나며, device-bound XDP 메타데이터 kfunc 사용자에게 attach 정책 변경이 직접 영향을 줍니다.\n\n> Running a veth-bound program on tun reads beyond tun's bare stack xdp_buff as a veth_xdp_buff.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/20/831)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**net: add bpf_setsockopt for SK_BPF_CB_TIMESTAMPING_V2**\n\nRFC net-next 시리즈 1/9가 SK_BPF_CB_TIMESTAMPING_V2 비트와 bpfts_v2_needed_key static key를 도입해 소켓이 TX/RX skb에 start time을 기록하도록 bpf_setsockopt(SK_BPF_CB_FLAGS)로 토글합니다.\n\n영향: 관측성·BPF timestamping 추적자에게 v2 API와 성능 토글 경로가 핵심이며, Sashiko가 sk_bpf_set_get_cb_flags()의 무잠금 bpfts_v2_enable/disable에서 전역 static key refcount TOCTOU를 제기했습니다.\n\n> Introduce a per-socket bit SK_BPF_CB_TIMESTAMPING_V2 ... Add a static key to avoid normal traffic suffered from the performance affect.\n\n[원문 확인](https://lists.openwall.net/netdev/2026/09/19/187)\n\n동시 setsockopt 경고:\n\n> Does this unprotected compare-and-branch allow concurrent threads to trigger unmatched global enable/disable calls\n\n[원문 확인](https://lore.kernel.org/bpf/20260920143930.262241F0089B@smtp.kernel.org/)\n\nSK_BPF_CB_TIMESTAMPING_V2 토글에 sock lock 또는 refcounted enable이 RFC에 반영되는지, v2 start time이 기존 SK_BPF_CB_TX_TIMESTAMPING·RX 시리즈와 ABI/플래그 비트를 어떻게 공유할지는 확인이 필요합니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "cpumap dev_rx UAF 수정 스레드",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/20/838",
+      "note": "thread"
+    },
+    {
+      "title": "LWT encap IPv4 options OOB 스레드",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/16/2508",
+      "note": "thread"
+    },
+    {
+      "title": "LWT encap CB reset v3 스레드",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/20/1026",
+      "note": "thread"
+    },
+    {
+      "title": "dev-bound 프로그램 netdev 일치 가드",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/20/831",
+      "note": "thread"
+    },
+    {
+      "title": "SK_BPF_CB_TIMESTAMPING_V2 RFC",
+      "url": "https://lists.openwall.net/netdev/2026/09/19/187",
+      "note": "thread"
+    },
+    {
+      "title": "bpfts_v2 static key TOCTOU 리뷰",
+      "url": "https://lore.kernel.org/bpf/20260920143930.262241F0089B@smtp.kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-20T18:27:54.453Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,147 @@
+{
+  "id": "2026-09-21-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-09-21 KVM G-stage 해제 — 아키·플랫폼",
+  "headline": "RISC-V KVM이 G-stage teardown 동시성을 정리하고, PLIC·IMSIC·RK3568·JHB100 등 플랫폼 패치가 mailing list에 올라왔습니다.",
+  "date": "2026-09-21",
+  "summary": "RISC-V 가상화·인터럽트와 Rockchip·Marvell·StarFive 플랫폼 쪽 패치가 9월 20일 전후로 집중 제출·리뷰되었습니다. 대형 VM 종료 시 mmu_lock 점유와 MSI·PLIC 비트 처리 같은 운영 리스크가 함께 다뤄집니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "RISC-V",
+    "Rockchip",
+    "Marvell",
+    "StarFive"
+  ],
+  "highlights": [
+    {
+      "title": "KVM: riscv: Free detached G-stage page tables outside mmu_lock",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "RISC-V KVM 및 G-stage MMU 유지보수 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/20/787",
+      "if": "대형 VM 종료 시 다른 vCPU의 G-stage 작업이 mmu_lock 때문에 막히는 증상이 있다면",
+      "do": "detached-tree 해제·quiesce·VMID 무효화·active root 재검증 패턴이 포함된 스레드를 읽고 리뷰 코멘트를 남기세요",
+      "verify": "패치 스레드와 lore.linux-riscv 동일 게시물에서 teardown 설계를 대조하세요"
+    },
+    {
+      "title": "irqchip/sifive-plic: Avoid signed shift in interrupt enable mask",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "RISC-V PLIC·irqchip 드라이버 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/20/809",
+      "if": "PLIC에서 hwirq 31번 비트를 쓰는 인터럽트 enable/disable 경로를 다룬다면",
+      "do": "BIT(hwirq % 32) 전환 v2 패치를 검토하고 Fixes 커밋 맥락을 확인하세요",
+      "verify": "스레드 인용문과 Fixes 커밋 8237f8bc4f6e를 함께 열어보세요"
+    },
+    {
+      "title": "irqchip/riscv-imsic: Reject overlapping group index fields",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "RISC-V IMSIC·APLIC 및 SoC DT 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/20/811",
+      "if": "firmware DT에서 IMSIC group index와 guest·HART index 필드 배치를 검증한다면",
+      "do": "group index shift 하한 검사가 들어간 v2를 DT 레이아웃과 대조해 리뷰하세요",
+      "verify": "Fixes 21a8f8a0eb35 커밋과 패치 스레드를 확인하세요"
+    },
+    {
+      "title": "net: pcs: add basic support for RK3568 XPCS",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "Rockchip RK3568 보드·stmmac/dwmac 플랫폼 드라이버 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/20/1047",
+      "if": "RK3568 SGMII·Photonicat 등 upstream 이더넷 bring-up을 추적한다면",
+      "do": "net-next v9 시리즈의 device_link supplier 검사와 보드 enablement 변경을 follow 하세요",
+      "verify": "cover letter와 lore.linux-arm-kernel v9 00/11 스레드를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**irqchip/sifive-plic: Avoid signed shift in interrupt enable mask**\n\n__plic_toggle()의 enable 마스크 생성을 1 << (hwirq % 32)에서 BIT(hwirq % 32)로 바꿔 IRQ 비트 31에서 signed shift UB를 제거합니다(Fixes: 8237f8bc4f6e).\n\n영향: hwirq가 31번 비트를 쓰는 정상 인터럽트에서도 enable/disable 경로가 안전해야 하므로 SiFive PLIC를 쓰는 RISC-V 보드의 irqchip 유지보수에 직접 해당됩니다.\n\n> A valid interrupt selecting bit 31 evaluates 1 << 31, which shifts a signed int into its sign bit.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/20/809)\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=8237f8bc4f6e)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**KVM: riscv: Free detached G-stage page tables outside mmu_lock**\n\nRISC-V KVM이 G-stage 루트를 mmu_lock 아래에서 분리한 뒤 락을 놓고 detached 페이지 테이블을 해제하도록 바꾸며, HLV/HLVX 사용자 quiesce·VMID 무효화·워커의 active root 재검증과 per-operation split cache로 teardown 동시성을 정리합니다.\n\n영향: 대형 VM 종료 시 mmu_lock 장시간 점유로 다른 vCPU의 G-stage 작업이 막히는 문제를 줄이면서, 기존 mmu_lock 기반 teardown과의 레이스를 피하는 패턴이므로 RISC-V KVM·가상화 스택 담당자가 리뷰해야 합니다. KVM-RISC-V maintainer 리뷰·selftest 계획 및 mainline 머지 시점은 아직 공개 스레드에서 확인되지 않았습니다.\n\n> Detach the active G-stage root under mmu_lock and free the detached tree after dropping the lock.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/20/787)\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260920140831.75097-1-qican5708@163.com/)\n\n**irqchip/riscv-imsic: Reject overlapping group index fields**\n\nimsic_parse_fwnode()에 group index shift 하한 검사를 추가해 guest·HART index 및 페이지 오프셋 필드와 비트가 겹치는 firmware 레이아웃을 거부합니다(Fixes: 21a8f8a0eb35).\n\n영향: 겹치는 DT/firmware IMSIC 주소 배치는 MSI target 주소 구성 시 한 비트가 서로 다른 인덱스에 매핑될 수 있어, RISC-V 플랫폼·인터럽트 스택에서 잘못된 MSI 라우팅을 막는 선제 검증입니다. standalone v2가 zero-width group 변경 없이 언제 머지되는지는 스레드 후속이 필요합니다.\n\n> Reject a nonzero group field whose shift overlaps the lower fields.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/20/811)\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=21a8f8a0eb35)\n\n**net: pcs: add basic support for RK3568 XPCS**\n\nnet-next v9 시리즈가 RK3568 통합 DW XPCS용 Rockchip glue·stmmac PCS 수명 주기 위임·SGMII 링크 복구(ANRESTART)·dwmac-rk 배선 및 Photonicat 보드 enablement를 제출했고, v9에서 xpcs_rk_create()는 device link supplier 상태로 probe defer를 판단합니다.\n\n영향: RK3568 SGMII 보드(Photonicat 등)의 upstream 이더넷 경로가 플랫폼 DT·SerDes·고정 125MHz MAC 클럭 제약까지 한 묶음으로 정리되므로 Rockchip arm64 플랫폼 담당자가 netdev 시리즈 진행을 추적해야 합니다. net-next 머지 윈도와 Photonicat 외 보드 검증 범위는 cover letter에 명시되지 않았습니다.\n\n> Replace the device_lock()/device_is_bound() check in xpcs_rk_create() with a check on link->supplier->links.status.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/20/1047)\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260920170116.3624104-1-coiaprant@gmail.com/)\n\n**R: R: [PATCH 3/3] arm64: dts: marvell: Add Sophos XGS 107w NPU board**\n\nSophos XGS 107w CN9130 NPU DT 리뷰에서 작성자는 kexec 부팅 시 88E6193X가 driver reset 대기보다 긴 복구 시간을 요구한다고 설명하고, v2에서 reset-gpios를 DT에 넣고 LED·SFP 주석·미검증 expander 노드를 제거할 계획을 밝혔습니다.\n\n영향: Andrew Lunn은 mv88e6xxx가 88E6193X의 느린 reset을 받아들이도록 드라이버를 고칠 것을 요구해, 보드 지원과 DSA 스위치 드라이버 정책이 함께 움직이므로 Marvell arm64 플랫폼·DSA 담당자가 v2를 봐야 합니다. 드라이버 단독 reset 후 실제 대기 시간 측정값과 v2 스레드 게시 일정은 작성자가 아직 보고하지 않았습니다.\n\n> I saw the probe time out when I started the kernel with kexec from the vendor Linux, so nothing had reset the switch before the driver did.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/20/467)\n\n**dt-bindings: clock: Add StarFive JHB100 System-0 clock and reset generator**\n\nJHB100 SoC SYS0CRG용 starfive,jhb100-sys0crg DT binding과 clock·reset ID 헤더를 v4 시리즈 05/22 패치로 추가했으며 Rob Herring의 Reviewed-by가 붙었습니다.\n\n영향: StarFive JHB100 bring-up의 시스템 클럭·리셋 노드 스키마가 고정되면 이후 clk/reset 드라이버·jhb100.dtsi 패치의 DT 리뷰 기준점이 되므로 RISC-V StarFive 플랫폼 담당자가 시리즈 전체를 함께 봐야 합니다. v4 22패치 시리즈의 linux-clk 머지 일정과 jhb100.dtsi 클럭 노드 land 순서는 이 binding 패치만으로는 확인되지 않았습니다.\n\n> Add bindings for the System-0 clocks and reset generator (SYS0CRG) on JHB100 SoC.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/20/768)\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260920120044.194901-6-changhuang.liang@starfivetech.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "KVM riscv G-stage teardown (openwall)",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/20/787",
+      "note": "thread"
+    },
+    {
+      "title": "KVM riscv G-stage teardown (lore)",
+      "url": "https://lore.kernel.org/linux-riscv/20260920140831.75097-1-qican5708@163.com/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv-imsic group index overlap fix",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/20/811",
+      "note": "thread"
+    },
+    {
+      "title": "RISC-V IMSIC early driver",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=21a8f8a0eb35",
+      "note": "commit"
+    },
+    {
+      "title": "RK3568 XPCS v9 cover",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/20/1047",
+      "note": "thread"
+    },
+    {
+      "title": "RK3568 XPCS series (lore)",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260920170116.3624104-1-coiaprant@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Sophos XGS 107w DT review reply",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/20/467",
+      "note": "thread"
+    },
+    {
+      "title": "mv88e6xxx 88E6193X slow reset review",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/19/1083",
+      "note": "thread"
+    },
+    {
+      "title": "sifive-plic BIT() shift fix",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/20/809",
+      "note": "thread"
+    },
+    {
+      "title": "SiFive PLIC driver initial commit",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=8237f8bc4f6e",
+      "note": "commit"
+    },
+    {
+      "title": "StarFive JHB100 SYS0CRG bindings",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/20/768",
+      "note": "thread"
+    },
+    {
+      "title": "StarFive JHB100 SYS0CRG bindings (lore)",
+      "url": "https://lore.kernel.org/linux-riscv/20260920120044.194901-6-changhuang.liang@starfivetech.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-20T18:30:51.591Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,165 @@
+{
+  "id": "2026-09-21-linux-daily-briefing",
+  "topic": "linux",
+  "title": "2026-09-21 AMD CCP 해제 경로 — 리눅스 개발",
+  "headline": "AMD CCP 드라이버 teardown에서 대기 중인 IRQ tasklet이 해제된 장치에 접근할 수 있는 문제가 제안 수정으로 드러났습니다.",
+  "date": "2026-09-21",
+  "summary": "AMD CCP v3·v5에서 IRQ만 끊고 queued tasklet을 drain하지 않아 use-after-free 위험이 제기되었습니다. DSA mv88e6xxx PTP 설정 실패와 IdeaPad s2idle wake quirk도 메인라인 논의에 올라왔습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "보안",
+    "드라이버"
+  ],
+  "highlights": [
+    {
+      "title": "AMD CCP v3 IRQ tasklet teardown",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "AMD CCP/crypto 드라이버 개발자, AMD 서버·데스크톱 플랫폼 커널 유지보수 담당자",
+      "verifyLink": "https://lore.kernel.org/lkml/20260920173407.2126086-1-yaojiale02@163.com/",
+      "if": "AMD 플랫폼에서 CCP 모듈 재로드·remove를 다루면",
+      "do": "제안 패치와 Fixes 커밋 경로를 검토하고 테스트 빌드에 반영하세요",
+      "verify": "LKML 스레드와 관련 git 커밋 원문을 열어 teardown 순서를 확인하세요"
+    },
+    {
+      "title": "AMD CCP v5 IRQ tasklet teardown",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "AMD CCP/crypto 드라이버 개발자, AMD 플랫폼 커널 유지보수 담당자",
+      "verifyLink": "https://lore.kernel.org/lkml/20260920173417.2126346-1-yaojiale02@163.com/",
+      "if": "최신 AMD 장비에서 crypto 가속 드라이버를 유지하면",
+      "do": "v5 destroy·초기화 오류 경로에 tasklet_kill 필요성을 점검하세요",
+      "verify": "동일 날짜 lore 스레드와 v5 ISR 변경 커밋을 대조해 확인하세요"
+    },
+    {
+      "title": "mv88e6xxx PTP period로 probe 실패",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "DSA·mv88e6xxx·PTP 네트워크 드라이버 개발자, Marvell 스위치 기반 라우터·AP 플랫폼 담당자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/20/935",
+      "if": "Marvell DSA 스위치 보드에서 링크가 안 올라오면",
+      "do": "PTP 레지스터 읽기 실패가 probe 전체를 막는지 로그를 확인하세요",
+      "verify": "openwall 스레드와 7e3c180 커밋 설명을 원문에서 확인하세요"
+    },
+    {
+      "title": "IdeaPad Slim 3 s2idle wake quirk",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "ACPI·gpiolib·노트북 전원관리 개발자, Lenovo AMD IdeaPad 사용자·배포 담당자",
+      "verifyLink": "https://lore.kernel.org/lkml/20260920173904.6221-1-mateob226@gmail.com/",
+      "if": "해당 노트북에서 suspend 직후 바로 깨어나면",
+      "do": "제출된 DMI quirk와 임시 ignore_wake 옵션을 비교해 보세요",
+      "verify": "LKML 패치 설명과 재현 로그 인용을 원문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**crypto: ccp: kill v3 IRQ tasklet during teardown**\n\nAMD CCP v3(MSI-X)에서 IRQ 해제만 하고 대기 중인 irq tasklet을 drain하지 않아 해제된 ccp에 접근할 수 있는 teardown 결함이 제안 수정으로 올라왔습니다.\n\n영향: 모듈 재로드·PCI remove 경로에서 use-after-free가 crypto·RNG·DMA 가속 사용 환경의 안정성·보안 리스크가 됩니다.\n\n> The teardown paths release the IRQ but do not drain a tasklet that was already queued, so it can access ccp after the device-managed allocation has been released.\n\n[원문 확인](https://lore.kernel.org/lkml/20260920173407.2126086-1-yaojiale02@163.com/)\n\n**crypto: ccp: kill v5 IRQ tasklet during teardown**\n\nAMD CCP v5에서도 동일하게 ccp5_irq_handler()가 예약한 tasklet이 ccp5_destroy()와 오류 경로에서 kill되지 않는 문제가 별도 패치로 제안되었습니다.\n\n영향: 최신 AMD 플랫폼의 CCP v5 가속 경로에서 remove·오류 처리 시 같은 클래스의 메모리 안전 문제가 생길 수 있습니다.\n\n> Kill the tasklet after releasing the IRQ in both the initialization error path and ccp5_destroy().\n\n[원문 확인](https://lore.kernel.org/lkml/20260920173417.2126346-1-yaojiale02@163.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**mv88e6xxx: continue without PTP if TAI period invalid**\n\ncommit 7e3c180 이후 TAI_CLOCK_PERIOD가 지원되지 않으면 PTP 설정이 -ENODEV로 실패하고 Sophos XGS 107w 등에서 스위치 probe 전체가 막히는 사례가 보고되었고, 메인테이너는 우회보다 가정 재검증을 요구했습니다.\n\n영향: PTP 미지원·레지스터 미초기화만으로 DSA 스위치 네트워킹이 통째로 실패할 수 있어 보드·펌웨어와 드라이버 정책을 함께 봐야 합니다.\n\n> Since commit 7e3c18097a70 (\"net: dsa: mv88e6xxx: read cycle counter period from hardware\"), mv88e6xxx_ptp_setup() reads the TAI clock period register and fails with -ENODEV\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/20/935)\n\n**gpiolib: acpi quirk for IdeaPad Slim 3 15ABR8**\n\nLenovo IdeaPad Slim 3 15ABR8에서 GTCH7503:00 터치스크린 GPIO wake가 s2idle 직후 spurious resume를 일으켜 suspend가 불가능하다는 제보에 DMI quirk 패치가 제출되었습니다.\n\n영향: 배포판 기본 s2idle 경로에서 단일 플랫폼 quirk로 즉시 깨어남을 막는 일반적인 ACPI GPIO wake 수정 패턴입니다.\n\n> As soon as the system enters s2idle suspend the interrupt fires, causing an immediate spurious resume, so suspend is unusable.\n\n[원문 확인](https://lore.kernel.org/lkml/20260920173904.6221-1-mateob226@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "7.1.13(EOL)·7.2.6·7.3-rc3·linux-next next-20260918 릴리스 기준선은 전일과 동일합니다. stable·mainline·next 추적은 kernel.org ChangeLog와 공지 스레드를 참고하세요."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "7.1.y EOL 안내 (Greg K-H)",
+      "url": "https://lkml.iu.edu/2609.0/04382.html",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-7.1.13",
+      "url": "https://www.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.13",
+      "note": "changelog"
+    },
+    {
+      "title": "7.1.13 stable review (76 patches)",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/31/2163",
+      "note": "thread"
+    },
+    {
+      "title": "7.3-rc3 release announcement",
+      "url": "https://lkml.iu.edu/2609.1/13946.html",
+      "note": "thread"
+    },
+    {
+      "title": "kernel.org releases.json",
+      "url": "https://www.kernel.org/releases.json",
+      "note": "changelog"
+    },
+    {
+      "title": "7.2.6 release announcement",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/14/1568",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-7.2.6",
+      "url": "https://www.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.6",
+      "note": "changelog"
+    },
+    {
+      "title": "7.2.6 stable review (1815 patches)",
+      "url": "https://lists.linaro.org/archives/list/lkft-triage@lists.linaro.org/message/OTVDUVYQ5MZNQJEIKALLNQE74YSQQOY2/",
+      "note": "thread"
+    },
+    {
+      "title": "linux-next next-20260918 stats",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/18/2129",
+      "note": "thread"
+    },
+    {
+      "title": "mv88e6xxx PTP probe discussion",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/20/935",
+      "note": "thread"
+    },
+    {
+      "title": "mv88e6xxx TAI period commit",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=7e3c18097a709e9b958e721066e5fe76e563739b",
+      "note": "commit"
+    },
+    {
+      "title": "crypto ccp v3 tasklet teardown",
+      "url": "https://lore.kernel.org/lkml/20260920173407.2126086-1-yaojiale02@163.com/",
+      "note": "thread"
+    },
+    {
+      "title": "ccp v3 tasklet ISR commit",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=7b537b24e76a1e8e6d7ea91483a45d5b1426809b",
+      "note": "commit"
+    },
+    {
+      "title": "IdeaPad Slim 3 gpiolib quirk",
+      "url": "https://lore.kernel.org/lkml/20260920173904.6221-1-mateob226@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "crypto ccp v5 tasklet teardown",
+      "url": "https://lore.kernel.org/lkml/20260920173417.2126346-1-yaojiale02@163.com/",
+      "note": "thread"
+    },
+    {
+      "title": "ccp v5 ISR change commit",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=6263b51eb3190d30351360fd168959af7e3a49a9",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-20T18:03:36.237Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-newsletter-from-dossier-ko.md"
+  }
+}

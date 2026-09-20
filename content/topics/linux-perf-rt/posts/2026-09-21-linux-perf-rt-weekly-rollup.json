@@ -1,0 +1,127 @@
+{
+  "id": "2026-09-21-linux-perf-rt-weekly-rollup",
+  "topic": "linux-perf-rt",
+  "title": "2026-09-21 주간 요약",
+  "headline": "XDP redirect·cpumap·AF_XDP를 쓰는 네트워크/BPF 스택 담당 주목: bpf: cpumap: fix use-after-fre",
+  "date": "2026-09-21",
+  "summary": "오늘의 핵심: 릴리스/로드맵 0건, 회귀·보안 신호 8건, 핵심 변경 0건. 리서치 dossier 의 출처를 근거로 정리했습니다.",
+  "tags": [
+    "주간"
+  ],
+  "highlights": [
+    {
+      "title": "bpf: cpumap: fix use-after-free of dev_rx on netdev unregister",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "XDP redirect·cpumap·AF_XDP를 쓰는 네트워크/BPF 스택 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/20/838",
+      "if": "XDP redirect·cpumap·AF_XDP를 쓰는 네트워크/BPF 스택 담당라면",
+      "do": "cpumap 링·GRO에 남은 ingress netdev 포인터를 NETDEV_UNREGISTER 시점에 kthread가 모두 소비·전체 GRO",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lists.openwall.net/linux-kernel/2026/09/20/838"
+    },
+    {
+      "title": "bpf: clear stale IPv4 options after LWT encapsulation",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "LWT-BPF·SEG6/encap 라우팅·IPv4 옵션 처리 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/16/2508",
+      "if": "LWT-BPF·SEG6/encap 라우팅·IPv4 옵션 처리 담당라면",
+      "do": "v3 시리즈는 LWT IP encapsulation 성공 시 BPF_RI_F_LWT_IP_ENCAP을 표시하고 bpf_prog_run_save_",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lists.openwall.net/linux-kernel/2026/09/16/2508"
+    },
+    {
+      "title": "bpf: reject dev-bound-only programs on other devices",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "device-bound XDP·BPF_LINK·드라이버 메타 kfunc 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/20/831",
+      "if": "device-bound XDP·BPF_LINK·드라이버 메타 kfunc 담당라면",
+      "do": "__bpf_offload_dev_match()에서 비오프로드 dev-bound 프로그램은 exact netdev 일치만 허용하고, 공유 offd",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lists.openwall.net/linux-kernel/2026/09/20/831"
+    },
+    {
+      "title": "libbpf: Check for unknown type ID in btf__align_of()",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "libbpf·동적 BTF 생성·bpftool/자체 툴체인 유지보수 담당",
+      "verifyLink": "https://github.com/libbpf/libbpf/issues/983",
+      "if": "libbpf·동적 BTF 생성·bpftool/자체 툴체인 유지보수 담당라면",
+      "do": "Abhinav Madake posted a libbpf fix so btf__align_of() checks btf__type_by_id() f",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://github.com/libbpf/libbpf/issues/983"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**bpf: cpumap: fix use-after-free of dev_rx on netdev unregister**\n\ncpumap 링·GRO에 남은 ingress netdev 포인터를 NETDEV_UNREGISTER 시점에 kthread가 모두 소비·전체 GRO flush할 때까지 기다리도록 netdev notifier와 drain_left 핸드셰이크를 추가하고, unregister 중 cpumap 간\n\n영향: veth 삭제와 XDP cpumap redirect가 겹치면 cpumap kthread의 eth_type_trans()에서 KASAN slab UAF가 reproducible하며, GRO 도입 이후 dev_hold()만으로는 해결되지 않아 XDP/cpumap 운영 시 teardown 순\n\n> BUG: KASAN: slab-use-after-free in eth_type_trans ... cpu_map_kthread_run\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/20/838)\n\n**bpf: clear stale IPv4 options after LWT encapsulation**\n\nv3 시리즈는 LWT IP encapsulation 성공 시 BPF_RI_F_LWT_IP_ENCAP을 표시하고 bpf_prog_run_save_cb() 복원 직후 프로토콜 CB를 재설정해, freplace cb_access 전파와 selftest(VRF·already-encapsulat\n\n영향: 외부 헤더 push 후 IPCB(skb)->opt가 inner IPv4를 가리키면 ICMP/__ip_options_echo()에서 최대 255바이트 스택 OOB가 날 수 있어 LWT-BPF encap 경로와 stable 백포트 후보를 추적할 가치가 있습니다.\n\n> BUG: KASAN: stack-out-of-bounds in __ip_options_echo Write of size 255\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/16/2508)\n\n**bpf: reject dev-bound-only programs on other devices**\n\n__bpf_offload_dev_match()에서 비오프로드 dev-bound 프로그램은 exact netdev 일치만 허용하고, 공유 offdev fallback은 진짜 멀티포트 오프로드 프로그램에만 남깁니다.\n\n영향: BPF_LINK_CREATE로 다른 ifindex에 veth-bound 프로그램을 붙이면 tun xdp_buff를 veth_xdp_buff로 잘못 읽어 GPF/panic이 나며, device-bound XDP 메타데이터 kfunc 사용자에게 attach 정책 변경이 직접 영향을 줍니다.\n\n> Running a veth-bound program on tun reads beyond tun's bare stack xdp_buff as a veth_xdp_buff.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/20/831)\n\n**libbpf: Check for unknown type ID in btf__align_of()**\n\nAbhinav Madake posted a libbpf fix so btf__align_of() checks btf__type_by_id() for NULL on unknown IDs when BTF is built via btf__add_*(), returning 0 with errn\n\n영향: User-space BTF builders and tooling that call btf__align_of() on forward references can SIGSEGV today; fixing the API aligns error handling with other btf__ loo\n\n> btf__type_by_id() returns NULL -> btf_kind(NULL) at btf.c:989 -> SIGSEGV\n\n[원문 확인](https://github.com/libbpf/libbpf/issues/983)\n\n**Re: [PATCH v2] bpf: clear stale IPv4 options after LWT encapsulation**\n\nDaniel Borkmann이 Weiming Shi v2(ingress LWT IP encap 후 stale IPCB 메타데이터로 ICMP 경로에서 stack OOB가 나는 수정)에 답해, bpf_redirect_info에 LWT encap 상태를 싣는 대신 skb->cb를 프로그램 실\n\n영향: LWT BPF encap은 데이터 플레인에서 흔한 패턴인데, v2는 안전성을 위해 per-CPU redirect 상태가 커집니다. netdev/BPF co-maintainer가 단순화를 요구하면 머지 전 설계가 바뀔 수 있어, LWT·stable 백포트(Cc: stable) 추적 시 리\n\n> BUG: KASAN: stack-out-of-bounds in __ip_options_echo Write of size 255\n\n[원문 확인](https://patchew.org/linux/20260916170406.1280954-2-bestswngs@gmail.com/)\n\n**sched: Allow sleeping spinlocks on PREEMPT_RT within non_block_start()/end block.**\n\nSebastian Siewior v2 패치는 __might_resched()에 rt_sleeping_lock 인자를 추가하고 PREEMPT_RT에서 spinlock_t·rwlock_t가 쓰는 rtlock_might_resched()에는 true를 넘겨, non_block_start()/\n\n영향: non_block_start()는 mm·pwm 등 전진 보장이 필요한 경로를 감싸는데, RT에서는 spinlock이 슬리핑 락으로 바뀌어 syzbot이 보고한 WARN/splat이 납니다. PREEMPT_RT·lockdep·hrtimer/pwm 사용자는 이 수정이 RT 트리에 들어가기 \n\n> On PREEMPT_RT this leads to a splat because spinlock_t and rwlock_t are turned into a sleeping spinlock which have a might_sleep() as they could schedule() on lock contention.\n\n[원문 확인](https://lkml.iu.edu/hypermail/linux/kernel/2609.2/01946.html)\n\n**bpf: clear stale IPv4 options after LWT encapsulation**\n\nWeiming Shi v2는 bpf_lwt_push_ip_encap()이 헤더를 앞에 붙인 뒤 IPCB(skb)->opt가 내부 IPv4 헤더를 가리키는 문제를 고치고, LWT BPF 실행 중 control-block family를 추적·리셋해 ICMP 오류 경로의 stack OOB를 \n\n영향: ingress LWT BPF encap은 데이터 플레인에서 흔한 패턴인데, stale IPCB 메타데이터는 __ip_options_echo에서 255바이트 스택 쓰기로 이어질 수 있습니다. LWT·BPF 네트워킹·KASAN CI를 돌리는 팀은 v2 머지 전까지 encap+ICMP 조합을\n\n> BUG: KASAN: stack-out-of-bounds in __ip_options_echo\n\n[원문 확인](https://lkml.iu.edu/hypermail/linux/kernel/2609.2/02124.html)\n\n**libbpf: Reject local struct_ops bitfields before data access**\n\nMingpei Cao v2 1/3은 bpf_map__init_kern_struct_ops()가 local/kernel bitfield를 데이터 포인터 계산 전에 -ENOTSUP로 거부하고, 모든 member offset·alignment을 byte 범위로 검증한 뒤 포인터를 만든다.\n\n영향: bitfield member->offset의 bit 위치·width를 byte offset으로 쓰면 libbpf_is_mem_zeroed()가 st_ops->data 밖을 읽어 libbpf가 크래시할 수 있다. struct_ops·sched_ext 등 BTF 기반 로더는 패치 적용 전까\n\n> libbpf_is_mem_zeroed() could then read outside the local struct_ops data.\n\n[원문 확인](https://ci.syzbot.org/series/6df34dc1-8c77-4b82-ab96-38cfb3e5fc54/all_patches)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "국부 드라이버/플랫폼 패치는 본문에서 제외했습니다. 자기 영역 키워드로 lore.kernel.org에서 직접 검색하세요."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "bpf: cpumap: fix use-after-free of dev_rx on netdev unregister",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/20/838",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: clear stale IPv4 options after LWT encapsulation",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/16/2508",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: reject dev-bound-only programs on other devices",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/20/831",
+      "note": "thread"
+    },
+    {
+      "title": "libbpf: Check for unknown type ID in btf__align_of()",
+      "url": "https://github.com/libbpf/libbpf/issues/983",
+      "note": "article"
+    },
+    {
+      "title": "Re: [PATCH v2] bpf: clear stale IPv4 options after LWT encapsulation",
+      "url": "https://patchew.org/linux/20260916170406.1280954-2-bestswngs@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "sched: Allow sleeping spinlocks on PREEMPT_RT within non_block_start()/end block.",
+      "url": "https://lkml.iu.edu/hypermail/linux/kernel/2609.2/01946.html",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: clear stale IPv4 options after LWT encapsulation",
+      "url": "https://lkml.iu.edu/hypermail/linux/kernel/2609.2/02124.html",
+      "note": "thread"
+    },
+    {
+      "title": "libbpf: Reject local struct_ops bitfields before data access",
+      "url": "https://ci.syzbot.org/series/6df34dc1-8c77-4b82-ab96-38cfb3e5fc54/all_patches",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "source": "research-dossier",
+    "bucketCounts": {
+      "릴리스/로드맵": 0,
+      "회귀·보안 신호": 8,
+      "핵심 변경": 0,
+      "기타": 0
+    },
+    "entryCount": 8
+  }
+}

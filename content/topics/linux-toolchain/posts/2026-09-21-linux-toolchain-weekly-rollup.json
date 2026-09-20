@@ -1,0 +1,127 @@
+{
+  "id": "2026-09-21-linux-toolchain-weekly-rollup",
+  "topic": "linux-toolchain",
+  "title": "2026-09-21 주간 요약",
+  "headline": "block/loop 드라이버 및 Rust-for-Linux 블록 스택 개발자 주목: block: Add run_todo() operation",
+  "date": "2026-09-21",
+  "summary": "오늘의 핵심: 릴리스/로드맵 0건, 회귀·보안 신호 5건, 핵심 변경 3건. 리서치 dossier 의 출처를 근거로 정리했습니다.",
+  "tags": [
+    "주간"
+  ],
+  "highlights": [
+    {
+      "title": "block: Add run_todo() operation",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "block/loop 드라이버 및 Rust-for-Linux 블록 스택 개발자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/03/2906",
+      "if": "block/loop 드라이버 및 Rust-for-Linux 블록 스택 개발자라면",
+      "do": "Tetsuo Handa가 block_device_operations에 disk->open_mutex 해제 이후 동기 정리를 할 수 있는 훅을 추",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lists.openwall.net/linux-kernel/2026/09/03/2906"
+    },
+    {
+      "title": "rust: net: netlink: validate attribute length before casting to `c_int`",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "Rust-for-Linux netlink API 및 genetlink 사용자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260918100016.100988-1-sagartaunk@proton.me/",
+      "if": "Rust-for-Linux netlink API 및 genetlink 사용자라면",
+      "do": "Sagar Taunk [PATCH net v3](2026-09-18)는 GenlMsg::put()에서 nlattr 총 길이(u16)를 넘는 pa",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/rust-for-linux/20260918100016.100988-1-sagartaunk@proton.me/"
+    },
+    {
+      "title": "rust: net: netlink: validate attribute length before casting to `c_int`",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "Rust-for-Linux netlink API·netdev 서브시스템 사용자",
+      "verifyLink": "https://patchew.org/linux/20260915164000.124340-1-sagartaunk@proton.me/",
+      "if": "Rust-for-Linux netlink API·netdev 서브시스템 사용자라면",
+      "do": "Sagar Taunk v2는 GenlMsg::put()에서 payload+nlattr 헤더가 u16 nlattr 길이 필드에 맞지 않으면 EMS",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://patchew.org/linux/20260915164000.124340-1-sagartaunk@proton.me/"
+    },
+    {
+      "title": "rust: net: netlink: validate attribute length before casting to `c_int`",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "Rust-for-Linux·rust/kernel/net/netlink·genetlink Rust 사용자",
+      "verifyLink": "https://patchew.org/linux/20260915164000.124340-1-sagartaunk@proton.me/",
+      "if": "Rust-for-Linux·rust/kernel/net/netlink·genetlink Rust 사용자라면",
+      "do": "Sagar Taunk v2 패치가 GenlMsg::put()에서 payload+nlattr 헤더가 u16 한도에 맞는지 검사해 EMSGSIZE를",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://patchew.org/linux/20260915164000.124340-1-sagartaunk@proton.me/"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**block: Add run_todo() operation**\n\nTetsuo Handa가 block_device_operations에 disk->open_mutex 해제 이후 동기 정리를 할 수 있는 훅을 추가하는 패치를 rust-for-linux 리스트에 올렸다. loop 드라이버는 outstanding I/O를 먼저 flush한 뒤 __loop_\n\n영향: 컨테이너·테스트·유틸이 loop autoclear 후 즉시 umount/open을 기대하는 동작과 v7.1 머지 윈도 이후 lo_rw_aio() NULL dereference 회귀가 맞물려 있어, block/loop 스택을 다루는 팀은 새 훅 설계와 기존 post_release 계열 l\n\n> But changes which went to the v7.1 merge window broke an assumption that there is no outstanding I/O when __loop_clr_fd() is called, causing NULL pointer dereference problem in lo_rw_aio().\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/03/2906)\n\n**rust: net: netlink: validate attribute length before casting to `c_int`**\n\nSagar Taunk [PATCH net v3](2026-09-18)는 GenlMsg::put()에서 nlattr 총 길이(u16)를 넘는 payload를 EMSGSIZE로 거부해 usize→c_int `as` 캐스트 래핑이 skb_over_panic으로 이어지던 경로를 막는다. Fix\n\n영향: Rust-for-Linux netlink 바인딩·zerocopy 경로를 쓰는 netdev/RFL 개발자는 attribute 길이 검증 누락이 커널 패닉으로 직결되므로 v3 머지·netdev 제출·백포트 여부를 함께 봐야 한다.\n\n> When the length exceeds `i32::MAX` that cast wraps around to a negative value. This ultimately resulted in a kernel panic when the reinterpreted value via `__nla_reserve()` and `skb_put()` became enor\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260918100016.100988-1-sagartaunk@proton.me/)\n\n**rust: net: netlink: validate attribute length before casting to `c_int`**\n\nSagar Taunk v2는 GenlMsg::put()에서 payload+nlattr 헤더가 u16 nlattr 길이 필드에 맞지 않으면 EMSGSIZE로 거부해 usize→c_int as 캐스트 래핑으로 skb_over_panic까지 이어지던 경로를 막는다. Alice Ryhl은 Re\n\n영향: Rust netlink 바인딩을 쓰는 네트워킹·RFL 드라이버는 netlink attribute 길이 검증 누락이 커널 패닉으로 이어질 수 있어, zerocopy IntoBytes 경로와 함께 backport·netdev 제출 규칙을 확인해야 한다.\n\n> When the length exceeds `i32::MAX` that cast wraps around to a negative value. This ultimately resulted in a kernel panic\n\n[원문 확인](https://patchew.org/linux/20260915164000.124340-1-sagartaunk@proton.me/)\n\n**rust: net: netlink: validate attribute length before casting to `c_int`**\n\nSagar Taunk v2 패치가 GenlMsg::put()에서 payload+nlattr 헤더가 u16 한도에 맞는지 검사해 EMSGSIZE를 반환한다. v1 대비 diff를 줄였고 nlattr 16-bit 필드 제약을 반영해 Alexandre Courbot·Sashiko 리뷰를 수용\n\n영향: usize→c_int unchecked cast가 i32::MAX 초과 시 음수로 wrap되어 __nla_reserve()/skb_put()에서 거대 길이로 재해석·kernel panic으로 이어질 수 있어, Rust netlink 바인딩 soundness·안전 검증 패턴을 추적하는 독\n\n> When the length exceeds `i32::MAX` that cast wraps around to a negative value. This ultimately resulted in a kernel panic when the reinterpreted value via `__nla_reserve()` and `skb_put()` became enor\n\n[원문 확인](https://patchew.org/linux/20260915164000.124340-1-sagartaunk@proton.me/)\n\n**kbuild: significantly speed up kernel builds**\n\nLinus Torvalds가 Kees Cook의 kallsyms 1-pass 제안에 답해, 현행 3-pass kallsyms도 과거 일부 환경에서 비결정적으로 실패했다는 보고가 있었고 여전히 fragile할 수 있다고 밝혔다.\n\n영향: kbuild 속도개선 시리즈가 kallsyms 경로를 대폭 손대는 맥락에서, 기존 다중 패스 kallsyms의 결정론·회귀 이력은 merge 전 selftest·CI 검증 범위를 넓혀야 하는 신호다.\n\n> Even the three-pass one hasn't apparently always been entirely deterministic. We've had random reports over the years of it failing in some circumstances. Regardless, it has definitely been fragile.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/14/2588)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**rust: io: convert ResourceSize into a transparent newtype**\n\nv3 패치는 `kernel::io::ResourceSize`를 `resource_size_t` 타입 별칭에서 `#[repr(transparent)]` newtype으로 바꾸고 `from_raw`/`into_raw`, 양방향 `From`, `TryFrom<ResourceSize> for \n\n영향: Rust-for-Linux에서 MMIO·리소스 크기를 다루는 드라이버는 무분별한 정수 연산·`as` 캐스트를 막고 FFI 경계를 명시적으로 검토할 수 있게 되며, 표현은 그대로라 C ABI 호환을 유지한다.\n\n> Wrap it in a `#[repr(transparent)]` newtype so each conversion at a boundary is explicit. The representation is unchanged, so this is ABI-identical\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/20/760)\n\n**nvmem: migrate to const void * in reg_write**\n\nLink Mauve v6 4패치는 `reg_write_const`(const 버퍼) 콜백을 추가하고 기존 mutable `reg_write`를 deprecate하며, nvmem 서브시스템 드라이버 전부를 새 API로 옮긴다. deprecated 콜백 등록 시 `dev_warn()`을 내\n\n영향: Rust nvmem provider 추상화가 쓰기 버퍼를 `&[u8]`로 모델링하려면 C 쪽도 val이 불변이라는 계약이 필요해, NVMEM·firmware 드라이버와 RfL 바인딩 작성자는 마이그레이션 일정을 맞춰야 한다.\n\n> This was found while drafting the nvmem-provider Rust abstraction.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/20/671)\n\n**alpha: Remove alpha_ prefix from custom syscall entries**\n\nAndré Almeida(Igalia)의 공유 syscall 테이블 v8 시리즈 11/12 패치는 Alpha의 fork/vfork/clone/clone3 엔트리 이름을 alpha_*에서 다른 아키텍처와 같은 __sys_* 형태로 바꾼다. alpha_syscall_zero는 Alpha 전\n\n영향: 전 아키 공통 syscall 테이블 통합 작업의 일부로, syscall 생성·리뷰 도구를 쓰는 개발자와 Alpha 유지보수 담당은 엔트리 이름 규칙 변화가 빌드·디버깅 스크립트에 미치는지 확인해야 한다.\n\n> Change alpha special syscall entries to do the same. This makes easier to join the syscall tables. Leave alpha_syscall_zero because this syscall only exists in alpha anyway.\n\n[원문 확인](https://lkml.iu.edu/2608.3/10685.html)"
+    },
+    {
+      "heading": "기타",
+      "body": "국부 드라이버/플랫폼 패치는 본문에서 제외했습니다. 자기 영역 키워드로 lore.kernel.org에서 직접 검색하세요."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "block: Add run_todo() operation",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/03/2906",
+      "note": "thread"
+    },
+    {
+      "title": "rust: net: netlink: validate attribute length before casting to `c_int`",
+      "url": "https://lore.kernel.org/rust-for-linux/20260918100016.100988-1-sagartaunk@proton.me/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: net: netlink: validate attribute length before casting to `c_int`",
+      "url": "https://patchew.org/linux/20260915164000.124340-1-sagartaunk@proton.me/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: net: netlink: validate attribute length before casting to `c_int`",
+      "url": "https://patchew.org/linux/20260915164000.124340-1-sagartaunk@proton.me/",
+      "note": "thread"
+    },
+    {
+      "title": "kbuild: significantly speed up kernel builds",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/14/2588",
+      "note": "thread"
+    },
+    {
+      "title": "rust: io: convert ResourceSize into a transparent newtype",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/20/760",
+      "note": "thread"
+    },
+    {
+      "title": "nvmem: migrate to const void * in reg_write",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/20/671",
+      "note": "thread"
+    },
+    {
+      "title": "alpha: Remove alpha_ prefix from custom syscall entries",
+      "url": "https://lkml.iu.edu/2608.3/10685.html",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "source": "research-dossier",
+    "bucketCounts": {
+      "릴리스/로드맵": 0,
+      "회귀·보안 신호": 5,
+      "핵심 변경": 3,
+      "기타": 0
+    },
+    "entryCount": 8
+  }
+}
