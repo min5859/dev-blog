@@ -1,0 +1,115 @@
+{
+  "id": "2026-09-22-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-09-22 Xe TLB·ubuf — GPU·AI",
+  "headline": "amdxdna는 ubuf를 HMM 기반 비공개 GEM으로 바꾸고, drm/xe는 ARL TLB 타임아웃 진단·무스톨 패치 시리즈가 리뷰 단계에 있다.",
+  "date": "2026-09-22",
+  "summary": "AMD XDNA는 userspace BO의 dma-buf 래핑을 제거하고 PASID·HMM으로 VA를 추적하는 방향으로 움직인다. Intel drm/xe는 GuC TLB invalidation 타임아웃(ARL에서 ack 약 2.3s 지연)에 대한 로깅·워크어라운드·devcoredump 경로가 병합 전 PM·리뷰 이슈와 맞물려 있다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "GPU",
+    "AI"
+  ],
+  "highlights": [
+    {
+      "title": "accel/amdxdna: ubuf dma-buf 래핑 제거",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "accel/amdxdna·AMD AI 가속 드라이버 및 userspace BO(PASID) 통합 담당",
+      "verifyLink": "https://patchwork.kernel.org/series/1170611/mbox/",
+      "if": "CREATE_BO로 userspace 메모리 범위(ubuf)를 쓰는 XRT/런타임 통합을 담당한다면",
+      "do": "장기 pin 제거·export 불가 정책이 워크로드·공유 모델에 미치는 영향을 Patchew V1 커버레터와 패치로 검토하세요",
+      "verify": "PASID 모드 제한과 HMM·interval notifier 경로가 현재 요구사항과 맞는지 원문 스레드를 확인하세요"
+    },
+    {
+      "title": "drm/xe: TLB 타임아웃 devcoredump와 PM 순서",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "drm/xe·GuC TLB invalidation 및 devcoredump 유지보수 담당",
+      "verifyLink": "https://ratatoskr.run/dri-devel/2026/09/17617113",
+      "if": "Xe·ARL에서 GuC TLB invalidation 타임아웃이나 devcoredump 경로를 다룬다면",
+      "do": "타임아웃 워크에서 xe_tlb_inval_fence_signal() 이후 PM runtime put과 forcewake/MMIO 접근 순서를 v5 리뷰 지적에 맞춰 점검하세요",
+      "verify": "v5에서 devcoredump 전 xe_pm_runtime_get 보장 여부는 아직 확인이 필요하며, GitLab #8678과 리뷰 스레드를 대조하세요"
+    },
+    {
+      "title": "drm/xe: 늦은 TLB ack 로깅·v5 시리즈",
+      "priority": "중",
+      "impactType": "release",
+      "affectedAudience": "drm/xe·Intel Arc/ARL 미디어 GT 및 GuC firmware 상호작용 담당",
+      "verifyLink": "https://ratatoskr.run/dri-devel/2026/09/17617064",
+      "if": "ARL에서 TLB invalidation 스톤을 로그만으로 구분해야 한다면",
+      "do": "patch 2(타임아웃 후 늦은 ack 로깅)는 Reviewed-by가 있으니 시리즈 흐름을 추적하고, 실제 스톨을 막는 patch 3(Wa_22016122933) 리뷰 병목을 우선 확인하세요",
+      "verify": "Tales가 v5를 이번 주 보낼 예정이라고 한 스레드와 mail-archive RFC patch 2 설명을 확인하세요"
+    },
+    {
+      "title": "SIGID 로그 컴포넌트 후속",
+      "priority": "하",
+      "impactType": "release",
+      "affectedAudience": "drm/xe·Intel Arc/ARL 미디어 GT 및 GuC firmware 상호작용 담당",
+      "verifyLink": "https://ratatoskr.run/dri-devel/2026/09/17617064",
+      "if": "TLB 관련 로그 컴포넌트 ABI를 계획한다면",
+      "do": "DEFINE_XE_LOG_COMPONENTS() ABI 변경은 Matthew Brost가 후속으로 미룬 SIGID TLB 로그 이슈를 별도 패치 일정으로 따라가세요",
+      "verify": "후속 패치 일정은 dossier에 명시되지 않아 확인이 필요합니다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**drm/xe: Log when a timed out TLB invalidation ack finally arrives**\n\n2026-09-21 스레드에서 Matthew Brost가 patch 2(타임아웃된 TLB invalidation의 늦은 ack 로깅)에 Reviewed-by를 남기고, SIGID 로그 컴포넌트 추가는 DEFINE_XE_LOG_COMPONENTS() ABI 변경이라 후속으로 미루기로 했다. Tales는 v5를 이번 주 보낼 예정이며 patch 3(Wa_22016122933, GuC-shared UC 매핑)만 리뷰가 없다고 Daniele/Stuart에 리뷰를 요청했다.\n\n영향: 로그만으로는 ack가 영구 손실인지 수 초 늦은 도착인지 구분하기 어려웠는데 patch 2는 ARL 스톨 분석에 필요하고, 실제 ~2.3s 스톨을 막는 patch 3 리뷰가 시리즈 병합의 병목이다.\n\n> Reviewed-by: Matthew Brost <matthew.brost@intel.com>\n\n[원문 확인](https://ratatoskr.run/dri-devel/2026/09/17617064)\n\n> patch 3 is the one that actually stops the stalls, and it is still the only one without review.\n\n[원문 확인](https://ratatoskr.run/dri-devel/2026/09/17617064)\n\n> When a TLB invalidation fence times out we log the timeout, but if the ack for that seqno later shows up there is no record of it\n\n[원문 확인](https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg625723.html)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm/xe: Capture devcoredump on TLB invalidation timeout**\n\nSashiko AI가 Tales Mendonça의 drm/xe v5 1/3 패치(타임아웃 시 xe_devcoredump_gt로 GuC log·CT 스냅샷)에 대해, TLB fence 타임아웃 워크에서 xe_tlb_inval_fence_signal()이 PM runtime put을 한 뒤 forcewake/MMIO를 건드릴 수 있다고 High 이슈를 제기했다.\n\n영향: Intel Xe·ARL에서 GuC TLB invalidation ack 지연을 진단하려는 devcoredump 경로가 런타임 suspend와 겹치면 오히려 PCIe MMIO 오류나 크래시를 유발할 수 있어, 병합 전 PM 참조 순서를 정리해야 한다.\n\n> This commit adds xe_devcoredump_gt() to capture the GuC log and CT state for GT-level hangs that are not tied to a specific queue or job.\n\n[원문 확인](https://ratatoskr.run/dri-devel/2026/09/17617113)\n\n> Can this sequence drop the last PM runtime reference before the devcoredump is captured?\n\n[원문 확인](https://ratatoskr.run/dri-devel/2026/09/17617113)\n\n> TLB invalidation fence timeout on ARL: GuC 70.53.0 consumes H2G but delays ack ~2.3s\n\n[원문 확인](https://gitlab.freedesktop.org/drm/xe/kernel/-/work_items/8678)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**accel/amdxdna: Drop dma-buf wrapping for ubuf**\n\nLizhi Hou가 CREATE_BO로 들어오는 ubuf(userspace 메모리 범위)를 dma-buf로 감싼 뒤 다시 GEM으로 import하는 경로를 제거하고, 비공개 DRM GEM 객체로 직접 만들며 HMM과 MMU interval notifier로 사용자 VA를 추적한다. pin_user_pages(FOLL_LONGTERM) 대신 submit 시 fault-in하며 PASID 모드에서만 동작한다.\n\n영향: AMD XDNA/NPU 스택에서 userspace-backed BO의 수명·공유 모델이 바뀌어 XRT/런타임과 GEM·IOMMU(HMM) 통합 담당자는 장기 pin 제거와 export 불가 정책이 워크로드에 미치는 영향을 검토해야 한다.\n\n> Make ubuf a DRM GEM private object and tracks the user VA with HMM instead of a long-term pin.\n\n[원문 확인](https://patchwork.kernel.org/series/1170611/mbox/)\n\n> [V1] accel/amdxdna: Drop dma-buf wrapping for ubuf\n\n[원문 확인](https://patchwork.kernel.org/series/1170611/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "medium",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요. drm/xe devcoredump PM 이슈는 confidence가 medium이며, merge·PASID 외 ubuf 생성 차단·v5 PM get 보장·patch 3 리뷰·SIGID 후속 일정은 확인이 필요합니다."
+  },
+  "sources": [
+    {
+      "title": "Patchew series 1170611 mbox",
+      "url": "https://patchwork.kernel.org/series/1170611/mbox/",
+      "note": "thread"
+    },
+    {
+      "title": "Patchew series 1170611",
+      "url": "https://patchwork.kernel.org/series/1170611/",
+      "note": "thread"
+    },
+    {
+      "title": "Ratatoskr dri-devel 17617113",
+      "url": "https://ratatoskr.run/dri-devel/2026/09/17617113",
+      "note": "thread"
+    },
+    {
+      "title": "GitLab drm/xe work item 8678",
+      "url": "https://gitlab.freedesktop.org/drm/xe/kernel/-/work_items/8678",
+      "note": "article"
+    },
+    {
+      "title": "Ratatoskr dri-devel 17617064",
+      "url": "https://ratatoskr.run/dri-devel/2026/09/17617064",
+      "note": "thread"
+    },
+    {
+      "title": "dri-devel mail-archive msg625723",
+      "url": "https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg625723.html",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-21T18:50:30.336Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

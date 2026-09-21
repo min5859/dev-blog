@@ -1,0 +1,128 @@
+{
+  "id": "2026-09-22-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-09-22 RT·KVM·BPF — Linux Perf-RT",
+  "headline": "PREEMPT_RT에서 SCHED_PROXY_EXEC 빌드 정리, ARM cacheinfo 부트 경고 수정, KVM GPC atomic SRCU, LWT-BPF IPv4 옵션·TCP tskey 순서 이슈가 동시에 올라왔습니다.",
+  "date": "2026-09-22",
+  "summary": "RT 스케줄러 proxy와 ARM secondary 부트, KVM GPC 락 전환이 linux-rt-devel·메인라인 쪽에서 맞물립니다. 네트워킹 스택의 LWT encap IPv4 옵션 정리와 TCP TX timestamp 레이스 수정도 RT·저지연 관측 경로와 함께 볼 만합니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "sched/proxy: allow SCHED_PROXY_EXEC with PREEMPT_RT",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "PREEMPT_RT·스케줄러 proxy execution·mutex blocked_on 추적 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/21/776",
+      "if": "PREEMPT_RT와 SCHED_PROXY_EXEC를 같이 빌드·부팅하는지 확인하세요.",
+      "do": "mutex_wait_lock()·PREEMPT_RT __mutex_owner() 정리 패치와 mutex PI·proxy 시리즈 후속 계획을 함께 추적하세요.",
+      "verify": "Kconfig !PREEMPT_RT 제거 후 빌드가 통과하는지, RT에서 proxy 실행이 실질 동작하지 않는다는 스레드 주석을 원문에서 확인하세요."
+    },
+    {
+      "title": "ARM: allocate the cacheinfo early to fix the PREEMPT_RT boot warning",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "ARM32 PREEMPT_RT·cacheinfo/topology·저지연 ARM 보드 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/21/402",
+      "if": "ARM에서 PREEMPT_RT 부팅 시 DEBUG_ATOMIC_SLEEP splat이 보이면 조사하세요.",
+      "do": "v7.3-rc1 리베이스 4패치 시리즈를 6.18.y·ARM32 RT 배포에 세트로 적용·추적하세요.",
+      "verify": "init_cpu_topology()의 선행 fetch_cache_info()와 Linus 요청 리베이스 메시지를 스레드에서 확인하세요."
+    },
+    {
+      "title": "KVM: Use atomic SRCU for gfn-to-pfn cache, reinstate guest mode for x86 nesting",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "PREEMPT_RT KVM/Xen 호스트·nested virtualization·GPC/pfncache 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/20/1310",
+      "if": "PREEMPT_RT 호스트에서 KVM Xen 타이머·kvm_sched_out() 등 GPC 경로 지연·데드락이 있으면 점검하세요.",
+      "do": "GPC atomic SRCU 전환 17패치 시리즈와 memslot -EAGAIN 재검증 동작을 리뷰 큐에서 따라가세요.",
+      "verify": "srcu_read_lock_atomic() 기반 리더 경로와 rwlock 제거 설명을 원문 스레드에서 확인하세요."
+    },
+    {
+      "title": "bpf: clear stale IPv4 options after LWT encapsulation",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "LWT-BPF·IPv4 옵션·ICMP 오류 경로 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/21/2512",
+      "if": "ingress LWT-BPF IP encap 뒤 ICMP·VRF 경로를 운영 중이면 영향 범위를 좁히세요.",
+      "do": "v4의 IPCB 옵션·프로토콜 CB 정리와 stable 백포트 후보를 RT·네트워킹 스택 리뷰와 병행하세요.",
+      "verify": "encap 후 inner IPv4 opt가 ICMP에 남는다는 인용과 BPF_LWT_ENCAP_IP 도입 커밋을 링크에서 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ARM: allocate the cacheinfo early to fix the PREEMPT_RT boot warning**\n\nv2는 7.3-rc1으로 리베이스한 4패치 시리즈로, 부트 CPU의 init_cpu_topology()에서 fetch_cache_info()를 미리 호출해 secondary CPU의 인터럽트 비활성 cacheinfo 할당(슬리핑 락)을 피합니다.\n\n영향: ARM에서 PREEMPT_RT가 7.1 이후 선택 가능해지면서 secondary_start_kernel() 경로의 DEBUG_ATOMIC_SLEEP splat이 흔해졌고, 6.18.y·ARM32 RT 배포는 네 패치를 세트로 추적해야 합니다.\n\n> BUG: sleeping function called from invalid context at kernel/locking/spinlock_rt.c:48\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/12/800)\n\n**bpf: clear stale IPv4 options after LWT encapsulation**\n\nv4는 LWT IP encap 완료 시 BPF_RI_F_LWT_IP_ENCAP을 표시하고 bpf_prog_run_save_cb() 복원 후 IPCB 옵션·프로토콜 CB를 정리해 inner IPv4 opt가 ICMP 경로에 남지 않게 합니다.\n\n영향: ingress LWT-BPF encap 뒤 stale IPCB(skb)->opt는 __ip_options_echo()에서 스택 OOB로 이어질 수 있어 LWT·VRF·stable 백포트 후보를 RT/네트워킹 스택이 같이 봐야 합니다.\n\n> bpf_lwt_push_ip_encap() rebases the network header after prepending an IP header, but leaves IPCB(skb)->opt describing the inner IPv4 header.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/21/2512)\n\n**tcp: prevent stale tx timestamp keys on rtx fallback**\n\ntcp_tx_timestamp()와 bpf_sock_ops_enable_tx_tstamp()에서 tskey를 먼저 쓰고 tx_flags를 smp_store_release()로 공개하며, rtx 큐 fallback·클론 skb에 대한 조기 return과 tcp_has_tx_tstamp() 인라인을 추가합니다.\n\n영향: sendmsg가 rtx 큐 skb를 고를 때 tx_flags와 tskey 순서 레이스로 BPF SOCK_OPS 타임스탬프 상관관계가 깨지거나 tskey underflow가 날 수 있어 cgroup-BPF 타임스탬핑·RT 관측 경로에 직접 영향이 있습니다.\n\n> tcp_tx_timestamp() sets tx_flags before setting skb tskey, racing with any reader of both.\n\n[원문 확인](https://ci.syzbot.org/patches/4af0e536-28df-46ad-99fe-02f7e9fe6f7d)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**sched/proxy: allow SCHED_PROXY_EXEC with PREEMPT_RT**\n\nPREEMPT_RT에서 rt_mutex 래퍼와 blocked_on 헬퍼 시그니처 불일치로 깨지던 find_proxy_task() 빌드를 mutex_wait_lock()·PREEMPT_RT __mutex_owner()로 정리하고 Kconfig의 depends on !PREEMPT_RT를 제거합니다.\n\n영향: RT 커널을 쓰는 팀도 SCHED_PROXY_EXEC를 빌드·부팅할 수 있게 되지만, 패치는 RT에서 proxy 실행이 실질적으로 동작하지 않는다고 명시하므로 mutex PI와 proxy 시리즈의 장기 계획을 함께 봐야 합니다.\n\n> Note that this makes the combination build and boot; it does not make proxy execution actually do anything useful on PREEMPT_RT.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/21/776)\n\n**KVM: Use atomic SRCU for gfn-to-pfn cache, reinstate guest mode for x86 nesting**\n\n17패치 시리즈는 GPC 읽기를 per-VM atomic SRCU로 바꿔 hardirq·스케줄러·PREEMPT_RT에서 슬리핑 rwlock 문제를 제거하고, nested guest mode pinning·Xen steal-time GPC·nVMX/nSVM 페이지 캐시를 확장합니다.\n\n영향: PREEMPT_RT 호스트에서 KVM Xen 타이머·kvm_sched_out() 등이 GPC rwlock을 잡으면 데드락·지연 폭발이 나므로 RT KVM·Xen 운영자는 atomic SRCU 전환과 memslot -EAGAIN 재검증 동작을 추적해야 합니다.\n\n> Converts the GPC to use atomic SRCU, ditching the rwlock which was a scaling and latency problem, and which PREEMPT_RT hated.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/20/1312)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "sched/proxy PREEMPT_RT 빌드 수정 스레드",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/21/776",
+      "note": "thread"
+    },
+    {
+      "title": "SCHED_PROXY_EXEC Kconfig PREEMPT_RT 배타",
+      "url": "https://lists.openwall.net/linux-kernel/2025/07/28/689",
+      "note": "thread"
+    },
+    {
+      "title": "ARM cacheinfo early alloc v2 리베이스",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/21/402",
+      "note": "thread"
+    },
+    {
+      "title": "ARM PREEMPT_RT 부트 invalid context",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/12/800",
+      "note": "thread"
+    },
+    {
+      "title": "bpf LWT encap stale IPv4 options v4",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/21/2512",
+      "note": "thread"
+    },
+    {
+      "title": "BPF_LWT_ENCAP_IP 도입 커밋",
+      "url": "https://github.com/torvalds/linux/commit/52f278774e79",
+      "note": "commit"
+    },
+    {
+      "title": "tcp tx timestamp tskey 순서 syzbot 패치",
+      "url": "https://ci.syzbot.org/patches/4af0e536-28df-46ad-99fe-02f7e9fe6f7d",
+      "note": "article"
+    },
+    {
+      "title": "KVM GPC atomic SRCU 리더 경로",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/20/1310",
+      "note": "thread"
+    },
+    {
+      "title": "KVM GPC atomic SRCU 시리즈 개요",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/20/1312",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-21T18:43:06.208Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
