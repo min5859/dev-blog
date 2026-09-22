@@ -1,0 +1,109 @@
+{
+  "id": "2026-09-23-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-09-23 proxy·RT 머지보류 — Perf/RT",
+  "headline": "Peter Zijlstra는 RT에서 proxy가 무력화된 상태로 Kconfig만 열 두기보다 rt_mutex 제거 준비까지 기다리자고 했고, ARM32는 cacheinfo 조기 할당 v2로 RT secondary 부팅 경고를 줄이는 중입니다.",
+  "date": "2026-09-23",
+  "summary": "SCHED_PROXY_EXEC와 PREEMPT_RT 동시 활성화를 위한 v2 빌드 수정은 리뷰가 이어지지만 메인테이너는 머지 시점에 보수적입니다. ARM32 PREEMPT_RT secondary 기동 시 sleeping-lock 경고를 없애는 4패치 v2는 v7.3-rc1 리베이스 후 QEMU에서 경고가 사라졌다고 보고됩니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "PREEMPT_RT"
+  ],
+  "highlights": [
+    {
+      "title": "sched/proxy: RT+proxy Kconfig — Peter Zijlstra 머지 정책",
+      "priority": "상",
+      "impactType": "project",
+      "affectedAudience": "sched/core·PREEMPT_RT mutex·proxy execution 시리즈 리뷰어",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/22/700",
+      "if": "PREEMPT_RT와 SCHED_PROXY_EXEC 빌드 옵션 정리 일정을 추적한다면",
+      "do": "v2가 빌드만 통과하고 RT에서 proxy가 실질적으로 동작하지 않는다는 전제와 함께, rt_mutex를 완전히 걷어낼 준비 전까지는 Kconfig 배타만 없애는 방향에 회의적이라는 스레드를 읽고 blocked_on·mutex PI 후속 작업 범위를 메모하세요.",
+      "verify": "리뷰어 답장 원문에서 rt_mutex 제거 준비와의 선행 관계를 확인하세요."
+    },
+    {
+      "title": "sched/proxy: allow SCHED_PROXY_EXEC with PREEMPT_RT (v2)",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "PREEMPT_RT·SCHED_PROXY_EXEC·mutex blocked_on·find_proxy_task() 유지보수 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/21/1220",
+      "if": "동일 커널 이미지에서 두 옵션을 함께 켜는 빌드를 준비한다면",
+      "do": "mutex_wait_lock()·PREEMPT_RT용 __mutex_owner()와 blocked_on 헬퍼 시그니처 정리로 find_proxy_task() 빌드를 고치고 depends on !PREEMPT_RT 제거가 목표인 v2를 따라가며, 패치가 RT에서 proxy execution을 유용하게 만들지는 않는다는 주석을 전제로 장기 mutex PI·proxy 시리즈 방향을 함께 보세요.",
+      "verify": "커버레터와 v2 설명에서 빌드·부팅만 가능하다는 문구와 Kconfig 변경을 확인하세요."
+    },
+    {
+      "title": "find_proxy_task() — mutex_wait_lock() 통일",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "PREEMPT_RT·SCHED_PROXY_EXEC·mutex blocked_on·find_proxy_task() 유지보수 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/21/776",
+      "if": "proxy 시리즈의 mutex wait_lock 접근 방식을 리뷰한다면",
+      "do": "find_proxy_task()가 mutex_wait_lock()으로 wait_lock 접근을 통일하는 diff를 RT 빌드 수정 맥락에서 교차 확인하세요.",
+      "verify": "스레드 인용과 패치 diff가 일치하는지 원문에서 확인하세요."
+    },
+    {
+      "title": "ARM: cacheinfo 조기 할당으로 PREEMPT_RT 부팅 경고",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "ARM32 PREEMPT_RT·cacheinfo/topology·저지연 ARM 보드 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/21/402",
+      "if": "ARM32에서 PREEMPT_RT secondary CPU 기동 시 DEBUG_ATOMIC_SLEEP splat을 다룬다면",
+      "do": "v2 4패치 시리즈가 boot CPU의 init_cpu_topology()에서 cacheinfo를 미리 할당해 secondary_start_kernel()의 인터럽트 비활성·슬리핑 락 kmalloc 경로를 피하는지, CLIDR·외부 L2(PL310) early 크기 산정 수정과 함께 6.18.y·ARM32 RT stable 백포트 후보로 묶어 추적하세요.",
+      "verify": "v7.3-rc1 리베이스 후 QEMU·DEBUG_ATOMIC_SLEEP 재현 결과와 CPU offline/online·cache sysfs 출력 주장을 원문에서 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**sched/proxy: allow SCHED_PROXY_EXEC with PREEMPT_RT**\n\nv2 패치는 PREEMPT_RT에서 깨지던 find_proxy_task() 빌드를 mutex_wait_lock()·PREEMPT_RT용 __mutex_owner() 추가와 blocked_on 헬퍼 시그니처 정리로 고치고, Kconfig의 depends on !PREEMPT_RT 제한을 제거합니다.\n\n영향: PREEMPT_RT 배포에서도 SCHED_PROXY_EXEC를 같은 커널 이미지에 켤 수 있게 되지만, 패치는 RT에서 proxy 실행이 실질적으로 동작하지 않는다고 명시하므로 mutex PI·proxy 시리즈의 장기 방향을 함께 봐야 합니다.\n\n> CONFIG_SCHED_PROXY_EXEC could not be enabled together with CONFIG_PREEMPT_RT. The Kconfig entry carried a \"depends on !PREEMPT_RT\" with the comment \"Avoid some build failures w/ PREEMPT_RT until it ca\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/21/1220)\n\n> Note that this makes the combination build and boot; it does not make proxy execution actually do anything useful on PREEMPT_RT.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/21/1220)\n\n> guard(raw_spinlock)(mutex_wait_lock(mutex));\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/21/776)\n\n**sched/proxy: allow SCHED_PROXY_EXEC with PREEMPT_RT — maintainer 응답**\n\nPeter Zijlstra가 v2 패치에 답해, 빌드만 통과하고 RT에서 proxy가 사실상 무력화된 상태로 Kconfig 배타를 없애는 것은 rt_mutex를 완전히 걷어낼 준비가 될 때까지 기다리는 편이 낫다고 밝혔습니다.\n\n영향: 스케줄러 메인테이너의 머지 정책 신호라, RT+proxy 빌드 수정이 곧바로 트리에 들어가지 않을 수 있고 blocked_on·rt_mutex 정리 작업이 선행 조건으로 보입니다.\n\n> I would like to wait with this until such time that we're are indeed ready to drop rt_mutex entirely. Having the build option but it being effectively 'broken' just doesn't make much sense to me.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/22/700)\n\nPeter Zijlstra가 v2 머지 전에 RT mutex에 blocked_on을 넣는 등 기능적 proxy 지원을 요구할지는 스레드 후속을 확인해야 합니다.\n\n**ARM: allocate the cacheinfo early to fix the PREEMPT_RT boot warning**\n\nv2 4패치 시리즈는 ARM32에서 cacheinfo를 부트 CPU의 init_cpu_topology()에서 미리 할당해 secondary_start_kernel()의 인터럽트 비활성·슬리핑 락 kmalloc 경로를 피하고, CLIDR·외부 L2(PL310) 등 early 크기 산정 버그도 함께 고칩니다.\n\n영향: ARM에서 PREEMPT_RT가 선택 가능해진 뒤 secondary 부팅 시 DEBUG_ATOMIC_SLEEP splat이 흔해졌고, 6.18.y·ARM32 RT 배포는 네 패치를 한 세트로 stable 백포트 후보까지 추적해야 합니다.\n\n> This series moves ARM cacheinfo allocation to the boot CPU to avoid sleeping-lock warnings during PREEMPT_RT secondary-CPU startup.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/21/402)\n\n> With PREEMPT_RT, the allocation takes a sleeping lock and triggers \"BUG: sleeping function called from invalid context\".\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/21/406)\n\n> With DEBUG_ATOMIC_SLEEP enabled, the RT boot warning was absent. CPU1 offline/online succeeded in every run, with identical cache sysfs output before and after.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/21/402)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 dossier에서는 BPF htab 조회 최적화, bpf_sock rx_queue_mapping JIT/verifier 수정, TCP ROCCET congestion control 제안은 PREEMPT_RT·스케줄러/실시간 렌즈 범위 밖으로 제외되었습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "sched/proxy: SCHED_PROXY_EXEC + PREEMPT_RT v2 (커버/설명)",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/21/1220",
+      "note": "thread"
+    },
+    {
+      "title": "sched/proxy: find_proxy_task mutex_wait_lock",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/21/776",
+      "note": "thread"
+    },
+    {
+      "title": "sched/proxy: Peter Zijlstra 리뷰 응답",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/22/700",
+      "note": "thread"
+    },
+    {
+      "title": "ARM cacheinfo early allocation v2 커버레터",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/21/402",
+      "note": "thread"
+    },
+    {
+      "title": "ARM cacheinfo: secondary detect_cache_attributes kmalloc",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/21/406",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-22T18:37:12.423Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

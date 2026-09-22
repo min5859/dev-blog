@@ -1,0 +1,118 @@
+{
+  "id": "2026-09-23-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-09-23 kallsyms 19배 가속 — Linux 툴체인",
+  "headline": "kallsyms 이름 조회 가속 패치와 objtool·Kconfig 정리가 이어지고, CSKY ICE·Rust netlink 길이 검증 이슈가 kbuild 렌즈에 남았습니다.",
+  "date": "2026-09-23",
+  "summary": "Jim Cromie의 kallsyms v2는 동적 인덱스로 hit/miss 지연을 나노초대로 줄이고 test_kallsyms_perf로 검증합니다. 동시에 slab 토큰 변경의 CSKY GCC ICE, Rust netlink u16 검증·netdev repost, objtool noreturn·Kconfig prop_err() 패치가 kbuild·RFL 기여 경로를 건드립니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "kallsyms: 이름 검색 ~19배 가속",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "kallsyms·BPF attach·모듈 로딩 경로를 다루는 kbuild·성능 엔지니어",
+      "verifyLink": "https://patchew.org/linux/20260922-ksyms-tune-v2-0-a333ee31eac7@gmail.com/",
+      "if": "BPF 대량 attach나 모듈 로딩에서 kallsyms_lookup_names() 지연을 튜닝·회귀 검증한다면",
+      "do": "v2 3패치 시리즈와 test_kallsyms_perf 측정값을 patchew 스레드에서 확인하세요.",
+      "verify": "cover letter의 hit/miss ns 수치와 transient 인덱스 동작을 patchwork 시리즈 1171068에서 대조하세요."
+    },
+    {
+      "title": "csky:allmodconfig GCC ICE (KMALLOC_PARTITION_RANDOM 후속)",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "kbuild CI·CSKY GCC 빌드·slab/KMALLOC_PARTITION_RANDOM 추적 담당",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/6106aefa-47c7-4bda-a51f-8a2fba3bf715@roeck-us.net/",
+      "if": "allmodconfig·randconfig CI나 CSKY 툴체인에서 slab.h _CODE_LOCATION_ 변경을 추적한다면",
+      "do": "Guenter Roeck 보고의 random_kmalloc_seed final pass ICE 로그를 재현 조건과 함께 읽으세요.",
+      "verify": "maintainer 후속 패치·_CODE_LOCATION_ 대안 논의는 lore 스레드 전문에서 추가로 확인이 필요합니다."
+    },
+    {
+      "title": "rust netlink: nlattr 길이 검증 및 netdev repost",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "Rust-for-Linux·netdev netlink 바인딩 기여자",
+      "verifyLink": "https://patchew.org/linux/20260918100016.100988-1-sagartaunk@proton.me/",
+      "if": "GenlMsg::put() 경로나 netdev 제출 형식을 다룬다면",
+      "do": "u16 한도 검증 v3와 Fixes 태그 영역 빈 줄 금지 안내를 반영해 repost를 준비하세요.",
+      "verify": "netdev 답장 인용은 lore rust-for-linux 스레드에서 교차 확인하고, repost 후 머지 일정은 확인이 필요합니다."
+    },
+    {
+      "title": "objtool: SYM_CODE non-sibling noreturn 수정",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "objtool·x86 rethunk/ORC 검증을 담당하는 kbuild·아키텍처 도구 maintainer",
+      "verifyLink": "https://patchwork.kernel.org/project/linux-kbuild/patch/43ad45ea8097343900cec43cd796c65e091db776.1790028654.git.jpoimboe@kernel.org/mbox/",
+      "if": "rethunk·ORC·exported noreturn 목록 작업을 objtool과 연계한다면",
+      "do": "Josh Poimboeuf v3 21/28에서 srso_alias 점프 처리와 .altinstr_aux 예외를 diff로 따라가세요.",
+      "verify": "패치 설명의 오분류 인용과 robustness 목적을 patchwork mbox에서 원문으로 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**csky ICe (KMALLOC_PARTITION_RANDOM 관련)**\n\nGuenter Roeck는 KMALLOC_PARTITION_RANDOM 개선 패치(___kmalloc_token이 _CODE_LOCATION_ 사용) 이후 csky:allmodconfig 빌드에서 GCC final pass RTL ICE(could not split insn, random_kmalloc_seed 관련)를 보고했다.\n\n영향: slab.h의 _CODE_LOCATION_ 정적 마커와 아키별 컴파일러 조합은 allmodconfig·randconfig CI에서 ICE/regression을 일으킬 수 있어, kbuild·메모리·CSKY 툴체인 담당자가 slab 토큰 변경 영향을 봐야 한다.\n\n> With this patch in the tree, I get ICE erors when trying to build\ncsky:allmodconfig.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/6106aefa-47c7-4bda-a51f-8a2fba3bf715@roeck-us.net/)\n\n**rust: net: netlink: validate attribute length before casting to `c_int`**\n\nSagar Taunk [PATCH net v3]는 GenlMsg::put()에서 nlattr 길이(u16) 한도를 검증해 usize→c_int as 캐스트 래핑이 skb_over_panic으로 이어지던 경로를 막는다. 9/22 netdev 측 답장은 net 트리에 cleanly apply되지 않아 repost·태그 영역(Fixes: 뒤 빈 줄) 정리와 sashiko 이슈 처리 우선순위를 안내한다.\n\n영향: Rust-for-Linux netlink 바인딩의 길이 검증·netdev 제출 규칙은 RFL 네트워킹 기여자와 kbuild/Rust CI가 패닉·리뷰 지연 없이 패치를 land하는 데 필요하다.\n\n> When the length exceeds `i32::MAX` that cast wraps around to a\nnegative value.\n\nThis ultimately resulted in a kernel panic\n\n[원문 확인](https://patchew.org/linux/20260918100016.100988-1-sagartaunk@proton.me/)\n\n> Does not apply cleanly to net. Since a repost is needed, you must\nalso avoid empty lines in the tag area (i.e. after the fixes tag).\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/164304b3-3324-45f1-8766-536767e7b9d7@redhat.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**kallsyms: Accelerate symbol name lookups by ~19x**\n\nJim Cromie v2 3패치 시리즈는 kallsyms_lookup_names()의 마커 스캔·전체 심볼 확장 병목을 동적 u32 배치 인덱스와 kallsyms_strcmp_symbol() 증분 비교로 줄이고, test_kallsyms_perf 모듈로 측정한다.\n\n영향: BPF 대량 attach·모듈 로딩처럼 이름→주소 조회가 반복되는 경로에서 마이크로초 단위 지연이 누적되므로, kallsyms·kbuild 성능 튜닝과 회귀 검증을 추적하는 독자에게 직접 해당한다.\n\n> Name Search Hit           3,811 ns      246 ns        15.5x\nName Search Miss          3,625 ns      196 ns        18.5x\n\n[원문 확인](https://patchew.org/linux/20260922-ksyms-tune-v2-0-a333ee31eac7@gmail.com/)\n\n> It allocates ~736 KiB in transient RAM via kvmalloc_array() only\nwhile bulk workloads (BPF attach, module loading) run, resolves\neach probe in O(1) with 0 hops\n\n[원문 확인](https://patchwork.kernel.org/series/1171068/mbox/)\n\nlinux-kbuild 리스트에서 v2에 대한 maintainer ACK·머지 창 논의는 아직 공개 스레드에서 확인되지 않았습니다.\n\n**objtool: Fix noreturn detection for non-sibling jumps to SYM_CODE**\n\nJosh Poimboeuf v3 21/28 패치는 SYM_CODE로의 non-sibling 점프(예: srso_alias_untrain_ret()→srso_alias_return_thunk())를 sibling call과 동등하게 취급해 잘못된 noreturn 분류를 고친다(.altinstr_aux 점프는 예외).\n\n영향: objtool noreturn 추론은 x86 rethunk·ORC·대체 코드 검증의 기반이므로, 이후 exported noreturn 목록 생성을 준비하는 kbuild·objtool 유지보수자가 오분류 여파를 알아야 한다.\n\n> srso_alias_untrain_ret()'s jump to\nsrso_alias_return_thunk() is ignored by objtool and the former is\nfalsely classified as noreturn.\n\n[원문 확인](https://patchwork.kernel.org/project/linux-kbuild/patch/43ad45ea8097343900cec43cd796c65e091db776.1790028654.git.jpoimboe@kernel.org/mbox/)\n\n**kconfig: add prop_err function to simplify property error handling**\n\nJulian Braha 1/2 패치는 scripts/kconfig/menu.c에 prop_err()를 추가해 Kconfig 속성 오류 출력·추적을 prop_warn()과 대칭으로 모으고, 오류 메시지 포맷(콜론 뒤 공백 제거)에 맞춰 기존 selftest expected_stderr를 갱신한다.\n\n영향: Kconfig 해석기 오류 메시지 형식·헬퍼 일관성은 kconfig selftest와 CI 실패 분석에 직결되므로 kbuild·Kconfig 테스트 담당자가 diff를 따라가야 한다.\n\n> we can add a prop_err() function to simplify the tracking and display of\nKconfig property errors.\n\n[원문 확인](https://patchwork.kernel.org/series/1171490/mbox/)\n\nNicolas Schier가 제안한 다른 Kconfig 속성 오류 패치와 prop_err() 채택 순서는 확인이 필요합니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "kallsyms tune v2 cover letter (patchew)",
+      "url": "https://patchew.org/linux/20260922-ksyms-tune-v2-0-a333ee31eac7@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "kallsyms tune v2 series 1171068",
+      "url": "https://patchwork.kernel.org/series/1171068/mbox/",
+      "note": "thread"
+    },
+    {
+      "title": "objtool noreturn SYM_CODE fix",
+      "url": "https://patchwork.kernel.org/project/linux-kbuild/patch/43ad45ea8097343900cec43cd796c65e091db776.1790028654.git.jpoimboe@kernel.org/mbox/",
+      "note": "thread"
+    },
+    {
+      "title": "kconfig prop_err series 1171490",
+      "url": "https://patchwork.kernel.org/series/1171490/mbox/",
+      "note": "thread"
+    },
+    {
+      "title": "csky allmodconfig ICE report",
+      "url": "https://lore.kernel.org/linux-kbuild/6106aefa-47c7-4bda-a51f-8a2fba3bf715@roeck-us.net/",
+      "note": "thread"
+    },
+    {
+      "title": "rust netlink attribute length v3",
+      "url": "https://patchew.org/linux/20260918100016.100988-1-sagartaunk@proton.me/",
+      "note": "thread"
+    },
+    {
+      "title": "netdev repost guidance (rust-for-linux)",
+      "url": "https://lore.kernel.org/rust-for-linux/164304b3-3324-45f1-8766-536767e7b9d7@redhat.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-22T18:28:45.688Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

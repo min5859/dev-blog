@@ -1,0 +1,133 @@
+{
+  "id": "2026-09-23-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-09-23 fence·MST·NPU — GPU·AI 렌즈",
+  "headline": "dma-fence deadline 콜백, Rockchip blend·Panthor unmap, AMD MST NULL, RK3588 NPU binding이 dri-devel에서 이어졌습니다.",
+  "date": "2026-09-23",
+  "summary": "Jeffrey Boody v2는 signaled fence에서도 set_deadline을 호출해 triple-buffering 전력 힌트 누락을 막고, Igor Paunovic v2는 RK3588 NPU에 DVFS·thermal binding을 정리합니다. Arthur Liberman MST NULL 수정은 리뷰에서 루프 가드 필요성이 열려 있습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "dma-fence: signal 이후 set_deadline 콜백",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "dma-fence·display deadline 힌트·Qualcomm/MSM GPU 전력 관리 통합 담당",
+      "verifyLink": "https://patchwork.kernel.org/project/dri-devel/patch/20260922-dma-fence-set-deadline-v2-1-2338d6fac9aa@oss.qualcomm.com/mbox/",
+      "if": "triple-buffering에서 vblank deadline 힌트가 fence 완료 이후에 도착하는 Adreno/MSM set_deadline 경로를 다루면",
+      "do": "v2 병합 후 signal 시각과 deadline 사이 headroom 기반 클럭 하향이 다시 동작하는지 전력·성능을 재검증하세요",
+      "verify": "patchwork v2 스레드와 upstream dma-fence.c의 signaled 가드 동작을 대조해 확인하세요"
+    },
+    {
+      "title": "drm/amd/display: MST DPMS-off NULL stream",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "drm/amd/display·DC MST·DPMS 경로 유지보수자",
+      "verifyLink": "https://patchwork.kernel.org/project/dri-devel/patch/DB9PR03MB7388900446938D7712613C9A8A832@DB9PR03MB7388.eurprd03.prod.outlook.com/mbox/",
+      "if": "MST daisy-chain에서 DPMS-off나 HPD 경로로 dc_stream_get_status()를 호출하면",
+      "do": "NULL helper 수정과 DPMS-off 루프 continue가 실제로 필요한지 Sashiko AI의 dead code 지적을 함께 검토하세요",
+      "verify": "패치 스레드와 lore 리뷰에서 NULL 가드만으로 충분한지 원문을 확인하세요"
+    },
+    {
+      "title": "drm/rockchip: VOP1 blend_mode property",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "drm/rockchip VOP1·RK3328/RK3399 등 임베디드 보드 유지보수자",
+      "verifyLink": "https://patchwork.kernel.org/project/dri-devel/patch/20260909-blend-v2-1-37e27af4faee@gmail.com/mbox/",
+      "if": "Rock64·RockPro64 등 VOP1 보드에서 부팅마다 PLANE blend 경고를 보고 있으면",
+      "do": "v2 merge와 VOP2 blend capability 설명 분리·stable 백포트 여부를 추적하세요",
+      "verify": "7.3-rc1 대비 7.3-rc4 실기 확인 스레드로 경고 해소를 검증하세요"
+    },
+    {
+      "title": "dt-bindings: RK3588 NPU DVFS·thermal",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "RK3588 NPU dt-binding·accel/rocket devfreq·thermal 통합 담당",
+      "verifyLink": "https://patchwork.kernel.org/project/dri-devel/patch/20260922080114.44662-7-royalnet026@gmail.com/mbox/",
+      "if": "RK3588 NPU에 devfreq·thermal cooling을 묶는 DTS·rocket 드라이버를 준비 중이면",
+      "do": "v2 11패치 merge 순서와 CHECK_DTBS 의존성, cooling node 위치를 보드별로 추적하세요",
+      "verify": "binding 패치 스레드에서 operating-points-v2·#cooling-cells 규칙을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm/amd/display: fix NULL stream deref on MST DPMS-off**\n\nArthur Liberman [PATCH 1/3]이 dc_stream_get_status() 계열에 stream NULL 가드를 넣고 MST DPMS-off 루프에서 NULL cached stream을 건너뜁니다. Sashiko AI는 streams[]가 로컬 복사라 루프 중 NULL이 될 수 없다며 해당 continue가 dead code일 수 있다고 지적했습니다.\n\n영향: MST daisy-chain HPD·DPMS-off 경로에서 NULL stream으로 dc_stream_get_status()가 page fault를 낸 사례가 있어 amdgpu-display·MST 다중 디스플레이 사용자는 NULL helper 수정과 루프 가드 논의를 함께 봐야 합니다.\n\n> dc_stream_get_status() and dc_stream_get_status_const() load stream->ctx with no NULL check.\n\n[원문 확인](https://patchwork.kernel.org/project/dri-devel/patch/DB9PR03MB7388900446938D7712613C9A8A832@DB9PR03MB7388.eurprd03.prod.outlook.com/mbox/)\n\n> Since streams[] is a local array and its elements are not updated inside this loop, is it possible for streams[i] to become NULL during iteration?\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260922160940.497841F000FF@smtp.kernel.org/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**dma-fence: deliver set_deadline callback even if fence is already signaled**\n\nJeffrey Boody v2 패치가 dma_fence_set_deadline()에서 dma_fence_is_signaled() 가드를 제거하고, fence가 이미 signal된 뒤에도 ops->set_deadline을 호출하도록 doc·구현을 바꿉니다.\n\n영향: triple-buffering에서 vblank deadline 힌트가 fence 완료 이후에 도착하면 GPU 드라이버가 signal 시각과 deadline 사이 headroom을 보고 클럭을 낮출 수 없어, display deadline 힌트와 Adreno/MSM 등 set_deadline 구현 담당자는 병합 후 전력·성능 동작을 재검증해야 합니다. drm-misc-next 반영 시각과 각 드라이버의 post-signal 처리는 확인이 필요합니다.\n\n> Remove the dma_fence_is_signaled() guard from dma_fence_set_deadline() so that the callback is invoked unconditionally when ops->set_deadline is present.\n\n[원문 확인](https://patchwork.kernel.org/project/dri-devel/patch/20260922-dma-fence-set-deadline-v2-1-2338d6fac9aa@oss.qualcomm.com/mbox/)\n\n> if (ops && ops->set_deadline && !dma_fence_is_signaled(fence))\n\n[원문 확인](https://raw.githubusercontent.com/torvalds/linux/master/drivers/dma-buf/dma-fence.c)\n\n**drm: rockchip: add drm_plane_create_blend_mode_property**\n\nJohan Jonker v2가 VOP1 plane에 drm_plane_create_blend_mode_property()를 추가해 DRM_MODE_BLEND_PIXEL_NONE만 노출하고, Diederik de Haas가 Rock64·RockPro64에서 7.3-rc1 대비 7.3-rc4에서 PLANE blend 경고가 사라졌다고 실기 확인했습니다.\n\n영향: validate_blend_mode_for_alpha_formats() 이후 VOP1 보드는 부팅마다 dmesg PLANE 경고가 쌓여 Rockchip DRM·보드 CI·배포 커널 담당자는 v2 merge와 VOP2와의 blend capability 설명 분리를 추적해야 합니다. VOP2에 동일 property 설계와 upstream merge 트리·stable 백포트는 maintainer 합의·확인이 필요합니다.\n\n> Advertise blending capability with DRM_MODE_BLEND_PIXEL_NONE.\n\n[원문 확인](https://patchwork.kernel.org/project/dri-devel/patch/20260909-blend-v2-1-37e27af4faee@gmail.com/mbox/)\n\n> And on a (7.3-rc4) kernel *with* this patch, those warnings were gone.\n\n[원문 확인](https://lore.kernel.org/dri-devel/DLM1Q8SJMXVA.5DQFQM21KJ82@cknow-tech.com/)\n\n**drm/panthor: Avoid false positives in iova_mapped_as_huge_page()**\n\nBoris Brezillon [PATCH 1/4]가 iova_mapped_as_huge_page()에 2MiB VA·BO offset 정렬 검사를 넣고, huge 판별 입력을 remap의 prev/next 대신 unmap 중인 drm_gpuva로 바꿉니다(Fixes: 8e7460eac786).\n\n영향: Panthor VM_BIND partial unmap은 huge page를 풀어 remap하는데 false positive huge 판별은 불필요한 unmap+map을 유발해 Mali Panthor·Arm IOMMU 경로 성능과 디버깅 비용을 키웁니다. 4패치 시리즈 v4 merge 순서와 추가 리뷰 반영 여부는 확인이 필요합니다.\n\n> The check on the folio size is actually moot if the BO offset matching the VA we're checking huge-mapping for is not 2M aligned as well.\n\n[원문 확인](https://patchwork.kernel.org/project/dri-devel/patch/20260917-panthor-fix-partial-unmap-v1-1-c7008f15fea3@collabora.com/mbox/)\n\n> drm/panthor: Support partial unmaps of huge pages\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=8e7460eac786)\n\n**dt-bindings: npu: rockchip: allow DVFS and thermal properties**\n\nIgor Paunovic v2 06/11이 RK3588 NPU core binding에 operating-points-v2와 #cooling-cells를 허용하고 opp-shared·대표 core에 cooling node를 두는 규칙을 문서화합니다. Rob Herring는 커밋 메시지의 Assisted-by: LLM checkpatch dt_binding_check 줄을 삭제하라고 답했습니다.\n\n영향: RK3588 NPU는 공유 클럭·단일 OPP 테이블로 devfreq·thermal cooling을 묶는 accel/rocket 시리즈의 전제이므로, binding·DTS·rocket 드라이버 담당자는 v2 11패치 merge 순서와 CHECK_DTBS 의존성을 추적해야 합니다. v2 시리즈 전체 재제출·merge 트리와 #cooling-cells 노드 위치는 확인이 필요합니다.\n\n> Describing those rates as an operating-points-v2 table is what lets a driver scale the NPU instead of leaving it at whatever rate the bootloader set.\n\n[원문 확인](https://patchwork.kernel.org/project/dri-devel/patch/20260922080114.44662-7-royalnet026@gmail.com/mbox/)\n\n> Drop 'dt_binding_check'. That's expected/assumed.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260922160602.GA3529337-robh@kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "dma-fence set_deadline v2 (patchwork)",
+      "url": "https://patchwork.kernel.org/project/dri-devel/patch/20260922-dma-fence-set-deadline-v2-1-2338d6fac9aa@oss.qualcomm.com/mbox/",
+      "note": "thread"
+    },
+    {
+      "title": "upstream dma-fence.c",
+      "url": "https://raw.githubusercontent.com/torvalds/linux/master/drivers/dma-buf/dma-fence.c",
+      "note": "commit"
+    },
+    {
+      "title": "rockchip VOP1 blend_mode v2",
+      "url": "https://patchwork.kernel.org/project/dri-devel/patch/20260909-blend-v2-1-37e27af4faee@gmail.com/mbox/",
+      "note": "thread"
+    },
+    {
+      "title": "Rock64 blend warning 실기 확인",
+      "url": "https://lore.kernel.org/dri-devel/DLM1Q8SJMXVA.5DQFQM21KJ82@cknow-tech.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/panthor partial unmap fix",
+      "url": "https://patchwork.kernel.org/project/dri-devel/patch/20260917-panthor-fix-partial-unmap-v1-1-c7008f15fea3@collabora.com/mbox/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/panthor partial unmaps of huge pages",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=8e7460eac786",
+      "note": "commit"
+    },
+    {
+      "title": "amd display MST NULL stream fix",
+      "url": "https://patchwork.kernel.org/project/dri-devel/patch/DB9PR03MB7388900446938D7712613C9A8A832@DB9PR03MB7388.eurprd03.prod.outlook.com/mbox/",
+      "note": "thread"
+    },
+    {
+      "title": "amd display MST 리뷰 (streams[] NULL)",
+      "url": "https://lore.kernel.org/dri-devel/20260922160940.497841F000FF@smtp.kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "RK3588 NPU DVFS·thermal binding v2",
+      "url": "https://patchwork.kernel.org/project/dri-devel/patch/20260922080114.44662-7-royalnet026@gmail.com/mbox/",
+      "note": "thread"
+    },
+    {
+      "title": "Rob Herring dt_binding_check 메시지 정리",
+      "url": "https://lore.kernel.org/dri-devel/20260922160602.GA3529337-robh@kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-22T18:42:32.373Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,123 @@
+{
+  "id": "2026-09-23-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-09-23 PMZR 회귀 패치 — 아키·플랫폼",
+  "headline": "arm64 FEAT_PMUv3p9 EL2 초기화 회귀로 PMZR_EL0 쓰기가 nVHE KVM에서 BUG()를 유발할 수 있어 perf_user_access 조합을 쓰는 플랫폼은 패치·백포트를 추적해야 합니다.",
+  "date": "2026-09-23",
+  "summary": "arm64 PMZR_EL0 트랩 설정 누락 수정과 pKVM SMMUv3 trap-and-emulate v8, generic entry v19 등 아키·플랫폼 쪽 패치 시리즈가 메일링 리스트에 올라왔습니다. RISC-V RPMI voltage 서비스 지원 초안도 함께 제출되었습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "arm64/boot: Disable trapping of PMZR_EL0 writes to EL2",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "arm64 KVM(nVHE)·PMU/perf_user_access를 켜는 플랫폼·하이퍼바이저 유지보수자",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260922181430.3532371-1-fuad.tabba@linux.dev/",
+      "if": "kernel.perf_user_access=1과 사용자 PMU 읽기 이벤트를 arm64 nVHE KVM 호스트에서 쓰신다면",
+      "do": "v1 패치와 Fixes 858c7bfcb35e1 반영·stable 백포트 여부를 추적하세요",
+      "verify": "스레드와 Fixes 커밋 원문에서 EL2 초기화 마스크 변경을 확인하세요"
+    },
+    {
+      "title": "arm64: entry: Convert to Generic Entry",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "arm64 entry/ptrace/seccomp 유지보수자와 배포 CI",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260922035510.1090299-1-ruanjinjie@huawei.com/",
+      "if": "arm64에서 syscall·ptrace·seccomp·PREEMPT_RT·AArch32 compat 경로를 유지보수하신다면",
+      "do": "v19(14패치) 머지 전 QEMU virt 등에서 before/after 검증 범위를 넓히세요",
+      "verify": "커버레터와 Kees Cook 테스트 요약 메일에서 reported behavioral difference를 확인하세요"
+    },
+    {
+      "title": "KVM: arm64: SMMUv3 driver for pKVM (trap and emulate)",
+      "priority": "중",
+      "impactType": "project",
+      "affectedAudience": "KVM arm64·SMMUv3·pKVM 개발자",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260922131259.2975334-1-smostafa@google.com/",
+      "if": "보호된 KVM(pKVM)과 IOMMU를 함께 쓰는 arm64 플랫폼을 다루신다면",
+      "do": "v8(25패치) 리뷰 시 Linux가 쓰는 SMMUv3 부분만 emulate한다는 설계와 Sashiko false positive 구분을 검토하세요",
+      "verify": "커버레터와 NVIDIA 리뷰 스레드에서 시리즈 변경 요약을 확인하세요"
+    },
+    {
+      "title": "arm64: use hw_pte_t for HW PTE pointers",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "arm64 메모리 관리·pgtable 유지보수者",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260922-pte0_arm-v2-1-a3f1ddff0a8a@arm.com/",
+      "if": "arm64 pgtable·generic MM 연동 코드를 수정하신다면",
+      "do": "v2 6패치 시리즈 1/6 병합 일정과 ARCH_HAS_HW_PTE_T 준비 단계를 따라가세요",
+      "verify": "패치 메시지에서 hw_pte_t * 전환 범위를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**arm64/boot: Disable trapping of PMZR_EL0 writes to EL2**\n\nFEAT_PMUv3p9 EL2 초기화에서 __init_el2_fgt2()가 HDFGRTR2_EL2·HDFGWTR2_EL2에 동일 마스크를 써 nPMZR_EL0가 설정되지 않아, EL0의 PMZR_EL0 쓰기가 EL2로 트랩되고 nVHE 하이퍼바이저가 BUG()로 호스트를 죽인다. 패치는 HDFGWTR2_EL2 비트를 따로 누적해 nPMZR_EL0를 설정하고 Fixes 858c7bfcb35e1을 가리킨다.\n\n영향: kernel.perf_user_access=1과 사용자 PMU 읽기 이벤트 조합에서 EL0 쓰기가 조용히 호스트를 내릴 수 있어, KVM/perf를 쓰는 arm64 플랫폼은 백포트·stable 반영 여부를 추적해야 한다.\n\n> a PMZR_EL0 write from the host traps to EL2, where the nVHE hypervisor has no handler and BUG()s.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260922181430.3532371-1-fuad.tabba@linux.dev/)\n\n858c7bfcb35e1이 이미 포함된 stable 브랜치 목록은 이번 조사에서 확인하지 못했습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**arm64: use hw_pte_t for HW PTE pointers**\n\narm64가 하드웨어 PTE 포인터를 pte_t * 대신 generic MM과 맞춘 hw_pte_t *로 바꾸고, 소프트웨어 PTE 값은 pte_t로 유지한다. v2 6패치 시리즈 1/6이며 ARCH_HAS_HW_PTE_T로 타입을 분리하기 전 준비 단계다.\n\n영향: HW/SW PTE 포인터 구분이 컴파일러·KASAN·향후 pgtable 리팩터에 필요해, arm64 MM과 mm 서브시스템을 다루는 쪽은 시리즈 병합 일정을 봐야 한다.\n\n> Convert HW PTE pointers to hw_pte_t *, retaining pte_t for SW PTE values.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260922-pte0_arm-v2-1-a3f1ddff0a8a@arm.com/)\n\n**KVM: arm64: SMMUv3 driver for pKVM (trap and emulate)**\n\nv8(25패치)는 pKVM 하이퍼바이저에서 Linux가 쓰는 SMMUv3 부분만 trap-and-emulate한다. v7 대비 MMIO에 pfn/nr_pages 사용, hypervisor TLB 알고리즘·STE hitless 갱신, 작은 command queue 처리 등이 바뀌었고 ARM_SMMU_V3_PKVM은 ARM_SMMU_V3=y에 의존한다.\n\n영향: 보호된 KVM(pKVM)과 IOMMU를 함께 쓰는 arm64 플랫폼은 호스트 SMMU 드라이버 변경이 하이퍼바이저 WARN/panic으로 이어질 수 있어, 시리즈 리뷰·Sashiko 등 정적 분석 false positive 구분이 중요하다.\n\n> One of the important points, is that this doesn't emulate the full SMMUv3 architecture, but only the parts used by Linux kernel.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260922131259.2975334-1-smostafa@google.com/)\n\nv8 시리즈의 upstream 머지 타깃 브랜치(kvm/next 등)는 커버레터에서 확인하지 못했습니다.\n\n**Add RISC-V RPMI voltage service support**\n\nRPMI voltage service group(0x7)용 DT 바인딩(riscv,rpmi-voltage·riscv,rpmi-mpxy-voltage)과 drivers/regulator/riscv-rpmi-regulator.c를 추가한다. PuC와 SBI MPXY로 도메인을 열거·레벨 설정하고 devm_rpmi_voltage_supply_alias()로 voltage-domains 소비를 regulator API에 연결한다.\n\n영향: StarFive 등 PuC 기반 RISC-V 보드는 OPP·regulator 경로가 RPMI로 옮겨가므로, 전원·클럭 통합을 하는 RISC-V 플랫폼 엔지니어는 바인딩과 probe 동작을 검토해야 한다.\n\n> This series adds supervisor-side support for that service group:\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260922161156.1088153-1-joshua.yeong@starfivetech.com/)\n\n**arm64: entry: Convert to Generic Entry**\n\nv19(14패치)는 arm64 syscall/entry를 x86·RISC-V 등과 같은 generic entry 인프라로 옮기며 v7.3-rc4 기준이다. Kees Cook이 QEMU virt에서 plain/lockdep/hooks/PREEMPT_RT·AArch32 compat까지 before/after 테스트를 돌려 patch 1이 고친 동작 차이 1건만 발견했다고 보고했다.\n\n영향: 대규모 entry 리팩터는 ptrace·seccomp·audit·RT 경로 회귀 위험이 커서, arm64 사용자 공간·tracing·보안 필터를 다루는 팀은 머지 전 검증 범위를 넓혀야 한다.\n\n> This series converts arm64 to the generic entry infrastructure.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260922035510.1090299-1-ruanjinjie@huawei.com/)\n\n> tl;dr: the only behavioral difference I could find anywhere is what patch 1 fixed, and I found no meaningful regressions.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/202609221129.B5E13A7@keescook/)\n\npatch 1에서 고친 구체적 동작 차이는 Kees 메일 본문에서 인용하지 않았습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "**ZynqMP dwc3-xilinx (수집 제외)**\n\nZynqMP dwc3-xilinx 프로브·suspend/resume teardown 수정은 Xilinx USB3 보드 한정이며, 일반 커널 독자 대비 시스템 전반 영향이 작아 이번 본문에서는 다루지 않았습니다(stable 태그는 있으나 범위가 국소적)."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "arm64 PMZR_EL0 EL2 trap 회귀 v1 패치",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260922181430.3532371-1-fuad.tabba@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "Fixes: arm64/boot FEAT_PMUv3p9 EL2 requirements",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=858c7bfcb35e1100b58bb63c9f562d86e09418d9",
+      "note": "commit"
+    },
+    {
+      "title": "arm64 hw_pte_t v2 1/6",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260922-pte0_arm-v2-1-a3f1ddff0a8a@arm.com/",
+      "note": "commit"
+    },
+    {
+      "title": "KVM arm64 pKVM SMMUv3 v8 커버레터",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260922131259.2975334-1-smostafa@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "pKVM SMMUv3 시리즈 리뷰",
+      "url": "https://lore.kernel.org/linux-arm-kernel/arLD1qj8E+tE2MYw@nvidia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "RISC-V RPMI voltage service 0/3",
+      "url": "https://lore.kernel.org/linux-riscv/20260922161156.1088153-1-joshua.yeong@starfivetech.com/",
+      "note": "thread"
+    },
+    {
+      "title": "arm64 generic entry v19 커버레터",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260922035510.1090299-1-ruanjinjie@huawei.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Kees Cook generic entry QEMU 테스트",
+      "url": "https://lore.kernel.org/linux-arm-kernel/202609221129.B5E13A7@keescook/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-22T18:39:12.734Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
