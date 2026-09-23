@@ -1,0 +1,133 @@
+{
+  "id": "2026-09-24-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-09-24 gen_estimator 거절 — 성능·RT 렌즈",
+  "headline": "tc gen_estimator의 IRQ-off 제안은 pw-bot 거절로 막혔고, BPF arena fetch atomic·kprobes optprobe 비동기 RFC가 RT·tracing 교차점을 다시 짚었다.",
+  "date": "2026-09-24",
+  "summary": "Runyu Xiao의 gen_estimator seqcount 보호 패치는 hardirq reader 부재와 PREEMPT_RT의 preempt_disable_nested() 의도로 거절됐다. x86 BPF arena fetch AND/OR/XOR 지원 시리즈와 kprobes optprobe 다세대 비동기 RFC도 함께 올라왔다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "gen_estimator: local_irq_save() 제안 pw-bot 거절",
+      "priority": "상",
+      "impactType": "project",
+      "affectedAudience": "PREEMPT_RT·net_sched/gen_estimator·tc policing/rateest 유지보수 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/23/751",
+      "if": "tc rate estimator와 PREEMPT_RT 선점 모델이 겹치는 논의를 추적 중이라면",
+      "do": "openwall 리뷰 스레드에서 hardirq reader·stable 백포트 거절 논거를 읽고 net_sched·RT 통합 테스트 계획에 반영하세요",
+      "verify": "원문 스레드와 mainline 9f74c0ea9b26의 preempt_disable_nested() 커밋을 대조해 확인하세요"
+    },
+    {
+      "title": "x86 BPF arena fetch AND/OR/XOR atomic 지원 시리즈",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "BPF verifier/JIT(x86)·arena selftests·PTR_TO_ARENA 프로그램 작성자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260923165301.3463007-1-puranjay@kernel.org/",
+      "if": "arena RMW atomic 프로그램이 verifier/JIT에서 막히거나 selftest가 non-fetch만 타는 경우라면",
+      "do": "CMPXCHG 루프·exception table 한도 설명이 담긴 cover letter를 따라 패치 시리즈 리뷰를 따라가세요",
+      "verify": "현재 bpf_jit_comp.c의 fetch opcode 거부 분기와 selftests LLVM 관련 커밋 2897b1e2a2f4를 확인하세요"
+    },
+    {
+      "title": "kprobes optprobe 최적화 다세대·비동기 RFC",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "kprobes/optprobe·RCU Tasks·모듈 로드·ftrace/BPF trampoline 유지보수 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/23/1963",
+      "if": "optprobe 최적화 중 모듈 로드·CPU hotplug·tracing 지연이 RCU Tasks와 겹친다면",
+      "do": "synchronize_rcu_tasks() 동기 경로와 call_rcu_tasks()·generation 링 설계를 RFC 본문에서 비교해 추적하세요",
+      "verify": "lists.openwall.net 2026/09/23/1963 스레드의 mutex·lock 보유 구간 인용을 원문에서 확인하세요"
+    },
+    {
+      "title": "ARM32 cacheinfo 조기 할당 v2(v7.3-rc1 리베이스)",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "ARM32 PREEMPT_RT·cacheinfo/topology·저지연 ARM 보드 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/21/402",
+      "if": "ARM32 PREEMPT_RT 부팅·hotplug에서 DEBUG_ATOMIC_SLEEP splat을 줄이는 stable 후보를 본다면",
+      "do": "v2가 QEMU에서 경고 소거를 보고한 4패치 묶음 stable 요청 문맥을 maintainer 응답과 함께 확인하세요",
+      "verify": "v7.3-rc1 리베이스 후 CPU1 offline/online 성공 보고가 담긴 동일 스레드를 원문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**net: gen_estimator: protect seqcount updates from hardirq readers**\n\nRunyu Xiao가 est_timer()의 seqcount 갱신에 local_irq_save()를 제안했으나, 리뷰에서는 트리에 gen_estimator_read()의 hardirq 호출자가 없고 QEMU hardirq 주입 재현은 실제 사용 패턴이 아니며 PREEMPT_RT에서 preempt_disable_nested()가 의도된 동작(9f74c0ea9b26)이라는 이유로 pw-bot이 거절했다.\n\n영향: tc rate estimator와 PREEMPT_RT 선점 모델이 겹치는 지점에서 IRQ-off 확대·stable 백포트 논의가 나올 수 있어, net_sched·RT 통합 테스트를 함께 보는 엔지니어는 리뷰 논거를 추적할 필요가 있다.\n\n> There is no hardirq reader of gen_estimator_read() in the tree. ... Finally, the Fixes: tag and Cc: stable are not warranted ... pw-bot: rejected\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/23/751)\n\n**bpf, x86: Support fetching AND/OR/XOR atomics in arena**\n\nPuranjay Mohan 시리즈는 x86-64 arena에서 BPF_AND|BPF_FETCH·BPF_OR|BPF_FETCH·BPF_XOR|BPF_FETCH를 CMPXCHG 루프로 낮추며 메모리 접근마다 exception table 엔트리를 두고, selftests는 __sync_fetch_and_*()로 fetch 경로를 다시 검증한다.\n\n영향: arena RMW atomics는 verifier·JIT·fault 처리가 한 세트로 맞물려 있어 x86에서 fetch 변형이 막혀 있으면 clang/LLVM이 내는 arena atomic 프로그램이 거부되거나 selftest가 비-fetch 경로만 타게 된다.\n\n> x86-64 has no single instruction for these, so the JIT lowers them to a CMPXCHG loop. ... bpf_jit_supports_insn() refused the three opcodes instead.\n\n[원문 확인](https://lore.kernel.org/bpf/20260923165301.3463007-1-puranjay@kernel.org/)\n\n**sched/proxy: allow SCHED_PROXY_EXEC with PREEMPT_RT**\n\nv2는 PREEMPT_RT에서 rt_mutex 기반 mutex와 blocked_on 헬퍼 시그니처 불일치로 깨지는 find_proxy_task()를 mutex_wait_lock()·PREEMPT_RT __mutex_owner() 등으로 고쳐 Kconfig의 depends on !PREEMPT_RT를 제거한다.\n\n영향: PREEMPT_RT 이미지에 SCHED_PROXY_EXEC를 같이 켤 수 있는 빌드 경로가 열리지만, 커버레터는 RT에서 proxy execution이 실질적으로 유용하지 않다고 명시해 스케줄러·mutex 장기 정리와 함께 봐야 한다.\n\n> Note that this makes the combination build and boot; it does not make proxy execution actually do anything useful on PREEMPT_RT.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/21/1220)\n\n**ARM: allocate the cacheinfo early to fix the PREEMPT_RT boot warning**\n\nKarl Mehltretter v2 4패치는 ARM32 cacheinfo를 부트 CPU에서 미리 할당해 PREEMPT_RT secondary CPU 기동 중 sleeping-lock kmalloc 경로를 피하고, CLIDR·외부 L2 크기 산정 버그 수정을 포함한다(v7.3-rc1 리베이스).\n\n영향: ARM32 PREEMPT_RT 부팅·CPU hotplug에서 DEBUG_ATOMIC_SLEEP splat과 cache sysfs 일관성이 배포 검증·stable 백포트 후보로 직결된다.\n\n> With DEBUG_ATOMIC_SLEEP enabled, the RT boot warning was absent. CPU1 offline/online succeeded in every run\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/21/402)\n\n**kprobes: Make optprobe optimizer multi-generational and asynchronous**\n\nMasami Hiramatsu RFC는 kprobe_optimizer()가 synchronize_rcu_tasks() 동안 text_mutex·cpus_read_lock()을 잡아 모듈 로드·CPU hotplug·tracing이 수분간 막히는 문제를, call_rcu_tasks()와 고정 크기 optprobe generation 링으로 비동기화한다. 스레드에서는 Paul McKenney가 RCU Tasks grace period 지연 이슈와 Josef Bacik의 RCU Tasks 개선을 병행하자고 답했다.\n\n영향: optprobe 최적화는 tracing·kprobes·동적 패치 경로와 RCU Tasks가 맞물려 PREEMPT_LAZY·서버 워크로드에서 hung-task까지 이어질 수 있어, eBPF/tracing 스택과 RCU Tasks 변경을 같이 추적하는 팀에 직접 영향이 있다.\n\n> Currently, kprobe_optimizer() holds kprobe_mutex, text_mutex, and cpus_read_lock() simultaneously while executing synchronize_rcu_tasks().\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/23/1963)"
+    },
+    {
+      "heading": "기타",
+      "body": "gen_estimator 논의에서 Sebastian은 hardirq reader 주입 방법과 softirq 전용 설계 의도를 질문했으며, 패치 제안자의 추가 재현·maintainer 합의 여부는 아직 확인이 필요합니다.\n\n> How do you inject a reader from hardirq? Isn't this meant for softirq context only?\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/23/633)\n\nBPF arena 시리즈의 bpf-next 머지 시점·다른 아키텍처 parity, kprobes RFC의 머지 타깃·CONFIG_TASKS_RCU=n에서 generation 링 한도 등은 dossier openQuestions 수준이며 단정하지 않습니다. Paul McKenney의 RCU Tasks grace period(수분) 관련 답변은 evidence verified=false이므로 원문(2026/09/23/2273)에서 직접 확인하세요."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "gen_estimator hardirq 패치 pw-bot 거절 리뷰",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/23/751",
+      "note": "thread"
+    },
+    {
+      "title": "gen_estimator hardirq reader 설계 질문",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/23/633",
+      "note": "thread"
+    },
+    {
+      "title": "PREEMPT_RT est_timer preempt_disable_nested",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=9f74c0ea9b26",
+      "note": "commit"
+    },
+    {
+      "title": "BPF x86 arena fetch AND/OR/XOR cover letter",
+      "url": "https://lore.kernel.org/bpf/20260923165301.3463007-1-puranjay@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "x86 bpf_jit arena fetch opcode 거부",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/plain/arch/x86/net/bpf_jit_comp.c?h=master",
+      "note": "changelog"
+    },
+    {
+      "title": "arena_atomics selftests LLVM 변경 대응",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=2897b1e2a2f4",
+      "note": "commit"
+    },
+    {
+      "title": "SCHED_PROXY_EXEC + PREEMPT_RT v2",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/21/1220",
+      "note": "thread"
+    },
+    {
+      "title": "ARM cacheinfo early alloc PREEMPT_RT v2",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/21/402",
+      "note": "thread"
+    },
+    {
+      "title": "kprobes optprobe async RFC",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/23/1963",
+      "note": "thread"
+    },
+    {
+      "title": "RCU Tasks grace period 논의 답글",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/23/2273",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-23T18:42:56.879Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,122 @@
+{
+  "id": "2026-09-24-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-09-24 cmh·SMMU·kbuild — 아키텍처·플랫폼",
+  "headline": "Rambus cmh v6가 Sashiko 피드백을 반영하고, arm-smmu-v3 shutdown UAF가 수정되며 kbuild .modinfo 비할당이 arm64·riscv CI 링크를 줄입니다.",
+  "date": "2026-09-24",
+  "summary": "crypto cmh와 Tegra241 CMDQV IOMMU teardown, kbuild .modinfo 추출 방식이 플랫폼 신뢰·빌드 경로를 동시에 건드립니다. Rockchip R5S DT와 Spacemit K3 USB DTS는 bring-up 리뷰 이슈가 이어집니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "arm64",
+    "riscv",
+    "Rockchip",
+    "IOMMU"
+  ],
+  "highlights": [
+    {
+      "title": "crypto: cmh — Sashiko 리뷰 대응 v6 reroll",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "crypto/cmh·RISC-V/ARM64 HW offload 추적 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/23/2571",
+      "if": "RISC-V·ARM64 SoC에서 Rambus CryptoManager Hub 오프로드를 검증하거나 AF_ALG 노출을 추적한다면",
+      "do": "v6 reroll의 MAC/hash .import() 대칭·DMA-unmap 가드·wedged-mailbox 처리 changelog를 읽고 async-cancel DMA teardown 미해결 항목을 확인하세요.",
+      "verify": "Herbert Xu Sashiko 지적 스레드와 Alex Ousherovitch 답장 원문을 대조하세요."
+    },
+    {
+      "title": "iommu/arm-smmu-v3 shutdown에서 impl disable 보장",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "arm-smmu-v3·Tegra241 IOMMU·pKVM/IOMMU 통합 담당",
+      "verifyLink": "https://lkml.iu.edu/2609.1/19904.html",
+      "if": "Tegra241 CMDQV에서 reboot·kexec·shutdown IOMMU teardown을 다룬다면",
+      "do": "Nicolin Chen v5 01/15가 arm_smmu_device_shutdown()에서 arm_smmu_disable_action()을 호출하는지와 Fixes 9ff145a25c5c 맥락을 추적하세요.",
+      "verify": "LKML 스레드에서 CMD_SYNC UAF 수정 설명과 Reviewed-by를 확인하세요."
+    },
+    {
+      "title": "kbuild: vmlinux .modinfo (INFO) 비할당",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "kbuild·arm64/riscv defconfig/allmodconfig CI 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/23/2494",
+      "if": "arm64·arm·riscv allmodconfig 링크 tail이 CI 병목이라면",
+      "do": "Lorenzo Stoakes v4 01/22의 objcopy --dump-section modules.builtin.modinfo 경로와 Kees Cook Reviewed-by를 기준으로 자체 빌드 회귀를 돌려보세요.",
+      "verify": "스레드에서 PT_LOAD로 잡히던 .modinfo 복사 문제 설명과 Image/bzImage 유지 주장을 확인하세요."
+    },
+    {
+      "title": "NanoPi R5S RTL8125 DT와 U-Boot MAC 불일치",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "Rockchip rk3568·NanoPi R5S·U-Boot/DT bring-up 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/23/2624",
+      "if": "Rockchip SBC 이미지에서 고정 PCIe NIC MAC이 필요하다면",
+      "do": "Diederik de Haas가 보고한 r8169 랜덤 MAC 경고와 Ricardo의 U-Boot eth2addr·v6 분리 계획을 따라 부팅 체인을 점검하세요.",
+      "verify": "재현 스레드의 커널 로그와 U-Boot fdt_fixup_ethernet() 동작을 원문에서 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**crypto: cmh - add Rambus CryptoManager Hub driver**\n\n2026-09-23 Herbert Xu가 Sashiko 자동 리뷰를 지적한 뒤, Alex Ousherovitch가 linux-riscv에서 v6 reroll에서 MAC/hash .import() 대칭(poly1305 카운터 언더플로 포함), PQC/KIC 오류 경로 DMA-unmap-of-0 가드, 링 IRQ 순서, wedged-mailbox -EIO, MAC finup 멱등성 등을 수정한다고 답했습니다. async-cancel DMA teardown은 미해결로 changelog에 명시할 예정입니다.\n\n영향: RISC-V·ARM64 SoC에 붙는 HW crypto 가속기 드라이버의 Sashiko·crypto maintainer 피드백은 키드 MAC·AF_ALG 노출·DMA teardown과 직결되어 플랫폼 bring-up 전 신뢰 경로 검증에 필요합니다.\n\n> Please check the Sashiko review, it is not happy with your patches:\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/23/546)\n\n> The substantive ones we did address for the next reroll: the MAC/hash .import() accounting symmetry (incl. a poly1305 counter underflow)\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/23/2571)\n\n**iommu/arm-smmu-v3: Disable the impl before disabling the SMMU on shutdown**\n\nNicolin Chen v5 01/15는 arm_smmu_device_shutdown()이 arm_smmu_device_disable()만 호출해 tegra241-cmdqv의 impl_ops->device_disable()가 reboot/kexec 경로에서 빠지는 문제를 고칩니다. shutdown에서 arm_smmu_disable_action()을 호출해 CMDQ가 살아 있을 때 VINTF quiesce·CMD_SYNC를 수행합니다. Fixes: 9ff145a25c5c, Jonathan Cameron Reviewed-by.\n\n영향: Tegra241 CMDQV에서 shutdown 시 CMD_SYNC UAF는 IOMMU teardown 순서 버그로, arm64 플랫폼·가상화 스택은 stable 백포트와 v5 시리즈 반영을 함께 봐야 합니다.\n\n> Have arm_smmu_device_shutdown() call it directly, instead of reimplementing part of what it already does.\n\n[원문 확인](https://lkml.iu.edu/2609.1/19904.html)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**kbuild: do not allocate .modinfo in vmlinux**\n\n2026-09-23 Lorenzo Stoakes v4 01/22가 vmlinux.unstripped의 .modinfo를 (INFO) 비할당 섹션으로 두고 objcopy --dump-section으로 modules.builtin.modinfo를 추출합니다. arm64·arm·riscv에서 PT_LOAD로 잡히던 불필요한 대용량 복사를 줄이며 Image/bzImage 출력은 유지한다고 합니다. Kees Cook Reviewed-by가 붙었습니다.\n\n영향: arm64/riscv allmodconfig CI의 링크 tail 지연을 줄이지만 링커·objcopy 경로 변경은 플랫폼 트리 전체 빌드 회귀를 낳을 수 있어 아키텍처 유지보수자는 v4 시리즈 머지를 추적해야 합니다.\n\n> Nothing requires .modinfo to exist at an address, so mark the output section (INFO) so that it's not allocated\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/23/2494)\n\n**arm64: dts: rockchip: describe PCIe RTL8125 Ethernet on NanoPi R5S**\n\nRicardo Pardini v5는 rk3568 NanoPi R5S의 PCIe RTL8125 두 포트를 DT fixed node·ethernet1/2 alias로 묘사해 U-Boot fdt_fixup_ethernet()과 MAC 주소를 맞추려 합니다. 2026-09-23 Diederik de Haas가 패치 적용 후 r8169가 PCIe MAC을 읽지 못해 랜덤 MAC 경고가 남는다고 보고했고, Ricardo는 U-Boot가 eth2addr를 채우지 않는 쪽 이슈로 보고 v6·binding 분리 계획을 밝혔습니다.\n\n영향: 보드별 고정 PCIe NIC MAC은 부팅 체인(U-Boot+kernel DT) 일관성 문제로, Rockchip SBC 사용자·배포판 이미지는 DT alias만으로는 RTL8125 MAC이 안정화되지 않을 수 있습니다.\n\n> r8169 0001:11:00.0: can't read MAC address, setting random one\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/23/2624)\n\n**riscv: dts: spacemit: k3-deepcomputing-fml13v05: add USB controller and USB phy support**\n\nSandie Cao 2/3 패치는 DeepComputing FML13V05 보드에 USB3 b/c/d 컨트롤러·PHY를 k3.dtsi·보드 DTS에 추가합니다(4×USB-C, OTG 미설정). Yao Zi는 SoC(k3.dtsi)와 보드 DTS 변경을 패치로 분리할 것을 요청했고, Troy Mitchell이 USB2 PHY 클럭 선택을 질문해 Sandie가 CLK_APMU_USB2_BUS 사용을 설명했습니다.\n\n영향: Spacemit K3 RISC-V 보드의 USB3 bring-up은 SoC DTS와 보드 DTS 리뷰 규칙·클럭 바인딩이 맞지 않으면 upstream 합류가 지연되어 플랫폼 포팅 일정에 영향을 줍니다.\n\n> Add USB device node (b, c, d) to DeepComputing FML13V05 board.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/22/1505)\n\n> I think the SoC and board-level changes should be split into separate patches.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/arQNUQ92Dx3TOKCR@pie/)"
+    },
+    {
+      "heading": "기타",
+      "body": "수집 단계에서 i.MX93 FRDM 다중 virtio vdev PoC 후보는 작성자가 통합 목적이 아니라고 명시했고 Mathieu Poirier가 rsc-table 제거 회피 접근을 받아들이지 않아 제외되었습니다.\n\nv6 changelog의 async-cancel DMA teardown 문서화·수정 방식, AF_ALG KERN_DRIVER_ONLY 외 Sashiko 재검증 범위, kbuild v4 22패치 머지 일정·modules.builtin.modinfo kmod 파싱 회귀, arm-smmu v5 머지·stable 백포트, Rockchip v6 Sashiko DT 범위·nvmem MAC 시리즈 호환, K3 USB PHY PORTB/PORTC 전용 클럭·OTG 패치 일정은 원문에서 추가 확인이 필요합니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Herbert Xu — Sashiko cmh patchset 리뷰 요청",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/23/546",
+      "note": "thread"
+    },
+    {
+      "title": "Alex Ousherovitch — cmh v6 reroll 수정 항목",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/23/2571",
+      "note": "thread"
+    },
+    {
+      "title": "Lorenzo Stoakes — kbuild .modinfo (INFO) v4 01/22",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/23/2494",
+      "note": "thread"
+    },
+    {
+      "title": "Nicolin Chen — arm-smmu-v3 shutdown disable v5 01/15",
+      "url": "https://lkml.iu.edu/2609.1/19904.html",
+      "note": "thread"
+    },
+    {
+      "title": "NanoPi R5S RTL8125 DT — MAC 읽기 실패 스레드",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/23/2624",
+      "note": "thread"
+    },
+    {
+      "title": "Sandie Cao — FML13V05 USB3 DTS",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/22/1505",
+      "note": "thread"
+    },
+    {
+      "title": "Yao Zi — SoC/보드 DTS 패치 분리 요청",
+      "url": "https://lore.kernel.org/linux-riscv/arQNUQ92Dx3TOKCR@pie/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-23T18:46:49.282Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

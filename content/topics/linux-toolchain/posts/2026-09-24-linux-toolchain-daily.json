@@ -1,0 +1,113 @@
+{
+  "id": "2026-09-24-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-09-24 kbuild 빌드 가속 — Linux 툴체인",
+  "headline": "Lorenzo Stoakes의 kbuild v4가 allmodconfig 최대 36% 단축을 제시하고, Rust pin-init·clang 도구 회귀 수정이 제안됐습니다.",
+  "date": "2026-09-24",
+  "summary": "kbuild 22패치 시리즈가 Makefile·kallsyms·modpost·objtool 경로를 병렬화·최적화해 전체·증분·noop 빌드 시간을 크게 줄인다고 보고합니다. Gary Guo의 pin-init 디버그 개선과 clang-tools의 compile_commands 경로·달러 이스케이프 수정도 툴체인 신뢰성에 직접 닿습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "kbuild v4 빌드 속도 개선",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "kbuild·objtool·modpost 유지보수 및 allmodconfig CI 담당",
+      "verifyLink": "https://patchew.org/linux/20260923-build-speedup-v4-0-73128809a4a4@kernel.org/",
+      "if": "allmodconfig 전체 빌드나 CI 회전 시간이 병목이라면",
+      "do": "v4 적용 전후로 objtool·modpost 출력과 스택 검증 결과를 같은 설정으로 비교하세요",
+      "verify": "커버레터의 allmodconfig·증분·noop 속도 수치와 EPYC gcc 벤치를 patchew 원문에서 확인하세요"
+    },
+    {
+      "title": "Rust pin-init `#[pin_data]`·`#[pin]` 오류 메시지",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "Rust for Linux·pin-init API 사용자",
+      "verifyLink": "https://patchew.org/linux/20260923-dev-pin-data-diag-v1-0-e4d7193569e5@garyguo.net/",
+      "if": "pin_init! 사용 중 HasPinData·PinInit 관련 컴파일 실패가 잦다면",
+      "do": "제안된 5패치 시리즈로 동일 코드를 빌드해 에러·help 문구가 더 직접적인지 확인하세요",
+      "verify": "missing `#[pin_data]`·`#[pin]` 시 출력되는 help·note 문구를 스레드 인용과 대조하세요"
+    },
+    {
+      "title": "run-clang-tools 상대 DB 경로",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "clang-tidy·compile_commands.json 기반 커널 분석 담당",
+      "verifyLink": "https://patchew.org/linux/179017719332.59156.6125068848526895246@gmail.com/",
+      "if": "빌드 디렉터리로 chdir한 뒤 상대 경로 compile_commands.json으로 clang-tidy를 돌린다면",
+      "do": "path 인자를 abspath로 고정하는 패치와 회귀 테스트를 로컬 워크플로에 맞게 재현하세요",
+      "verify": "플래그 없이 동작하거나 다른 DB를 읽는 증상 설명을 원문 스레드에서 확인하세요"
+    },
+    {
+      "title": "gen_compile_commands 달러 이스케이프",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "gen_compile_commands·clangd 사용자",
+      "verifyLink": "https://patchew.org/linux/179017625539.54044.4066773916071097354@gmail.com/",
+      "if": "clangd·IDE에서 매크로·전처리가 어긋나 compile_commands 인자를 의심한다면",
+      "do": "process_line() 단일 패스 디코드 패치 후 생성 JSON의 `$$`·`$#` 잔존 여부를 샘플링하세요",
+      "verify": "이전 $(pound)만 복원할 때 이중 달러가 남는다는 설명을 patchew 원문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**clang-tools: Resolve compilation database paths before changing directory**\n\nrun-clang-tools.py가 compile_commands.json 상대 경로를 워커가 빌드 디렉터리로 chdir한 뒤에도 동일하게 쓰도록, 파싱 시 os.path.abspath로 DB 경로를 고정하고 회귀 테스트를 추가합니다.\n\n영향: 상대 경로로 clang-tidy·static analyzer를 돌릴 때 잘못된 DB를 읽으면 매크로·플래그가 빠져 분석이 무력화되므로, 커널 정적 분석 워크플로 신뢰성에 직접 영향을 줍니다.\n\n> clang-tidy then falls back to running without flags, or can pick up a different database.\n\n[원문 확인](https://patchew.org/linux/179017719332.59156.6125068848526895246@gmail.com/)\n\n**clang-tools: Decode dollar escaping in compile commands**\n\ngen_compile_commands.py의 process_line()이 .cmd 파일의 `$`와 `$(pound)` 이스케이프를 Make와 동일한 단일 패스로 복원해, compile_commands.json에 이중 달러·잘못된 `$#`가 남지 않게 합니다.\n\n영향: clangd·IDE가 잘못된 컴파일 인자를 받으면 매크로·전처리 결과가 어긋나 분석·리팩터가 실패하므로, compile_commands 생성 정확도는 툴체인 UX의 기반입니다.\n\n> process_line() only decodes $(pound). Consequently, the compilation database retains doubled dollar signs in compiler arguments.\n\n[원문 확인](https://patchew.org/linux/179017625539.54044.4066773916071097354@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**kbuild: significantly speed up kernel builds**\n\nLorenzo Stoakes가 linux-kbuild에 v4 22패치 시리즈를 올려 Makefile·kallsyms·modpost·depcheck·objtool 등 빌드 경로를 병렬화·최적화했고, 벤치마크에서 allmodconfig 전체 빌드 최대 36%·증분 ~70%·noop ~90% 단축을 보고합니다.\n\n영향: kbuild·objtool·modpost를 쓰는 CI와 로컬 allmodconfig 회전 시간이 줄어들지만, objtool/check.c 등 대규모 변경은 스택 검증·모듈 메타데이터 생성 결과에 회귀가 날 수 있어 머지 전후 빌드 도구 동작을 추적해야 합니다.\n\n> This series makes allmodconfig builds up to 36% faster, incremental builds up to ~70% faster, and noop builds up to ~90% faster.\n\n[원문 확인](https://patchew.org/linux/20260923-build-speedup-v4-0-73128809a4a4@kernel.org/)\n\n**rust: pin-init: improve diagnostics of missing `#[pin_data]` and `#[pin]`**\n\nGary Guo가 pin-init 매크로에서 `#[pin_data]`·`#[pin]` 누락 시 컴파일러 메시지를 개선하는 5패치 시리즈를 제안했고, HasPinData 미구현·필드 `#[pin]` 누락 시 rustc가 더 직접적인 help/note를 출력합니다.\n\n영향: 커널 Rust 드라이버 작성자가 pin_init!·핀 필드 규약을 어길 때 디버그 시간이 줄어들어, 툴체인 업데이트 시 기존 코드의 컴파일 실패 원인 파악이 빨라집니다.\n\n> help: the trait `pin_init::__internal::HasPinData` is not implemented for `Foo`\n\n[원문 확인](https://patchew.org/linux/20260923-dev-pin-data-diag-v1-0-e4d7193569e5@garyguo.net/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "[PATCH v4 00/22] kbuild: significantly speed up kernel builds",
+      "url": "https://patchew.org/linux/20260923-build-speedup-v4-0-73128809a4a4@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "[PATCH 0/5] rust: pin-init: improve diagnostics of missing `#[pin_data]` and `#[pin]`",
+      "url": "https://patchew.org/linux/20260923-dev-pin-data-diag-v1-0-e4d7193569e5@garyguo.net/",
+      "note": "thread"
+    },
+    {
+      "title": "clang-tools: Resolve compilation database paths before changing directory",
+      "url": "https://patchew.org/linux/179017719332.59156.6125068848526895246@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Makefile: Add clang-tidy and static analyzer support to makefile",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=6ad7cbc01527",
+      "note": "commit"
+    },
+    {
+      "title": "clang-tools: Decode dollar escaping in compile commands",
+      "url": "https://patchew.org/linux/179017625539.54044.4066773916071097354@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "scripts: add a tool to produce a compile_commands.json file",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=b30204640192",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-23T18:30:06.056Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
