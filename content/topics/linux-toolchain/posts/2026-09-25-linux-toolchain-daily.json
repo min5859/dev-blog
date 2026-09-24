@@ -1,0 +1,133 @@
+{
+  "id": "2026-09-25-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-09-25 netlink·백포트 — 리눅스 툴체인",
+  "headline": "Rust netlink 길이 검증과 Tyr GPU UAPI zerocopy, 6.1.y 스택 프로텍터 백포트, rnull configfs·dyndbg selftest가 툴체인·Rust 경로를 동시에 건드립니다.",
+  "date": "2026-09-25",
+  "summary": "net-next 대 rust-next 리베이스 논의와 함께 netlink `put()`의 `c_int` 캐스트 전 길이 검증이 논의 중입니다. stable 백포트·GPU UAPI·configfs 회귀·kselftest 보강까지 빌드·부트·바인딩 안전 패턴을 한꺼번에 점검할 날입니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "Rust netlink `put()` 길이 검증",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "Rust in kernel 네트워크(netlink) 바인딩·드라이버 작성자",
+      "verifyLink": "https://lkml.iu.edu/hypermail/linux/kernel/2609.1/19746.html",
+      "if": "netlink 속성 길이를 검증 없이 `usize`에서 `c_int`로 캐스트하는 경로를 유지한다면",
+      "do": "net-next 기준 리베이스와 `u16`/`NLA_HDRLEN` 범위 검증·`EMSGSIZE` 거부 패턴을 패치 스레드에서 따라 적용하세요",
+      "verify": "원문 스레드에서 net maintainer의 트리 태그 요구와 v4 diff 반영 여부를 확인하세요"
+    },
+    {
+      "title": "Tyr DRM GpuInfo userspace 기록",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "Rust GPU/DRM(Tyr·Panthor) 및 kernel uapi/zerocopy 빌드 담당",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260924-b4-gpu_info_intobytes-v2-1-1b05e33df8a4@collabora.com/",
+      "if": "UAPI 구조체에 수동 `AsBytes` unsafe impl을 쓰고 있다면",
+      "do": "`IntoBytes`/`Immutable` derive와 `write_slice(...as_bytes())`로 패딩·초기화 문제를 컴파일 타임에 잡는 방식을 검토하세요",
+      "verify": "Collabora 스레드 diff에서 `unsafe impl AsBytes` 제거 여부를 원문으로 확인하세요"
+    },
+    {
+      "title": "6.1.y `__no_stack_protector` 백포트",
+      "priority": "상",
+      "impactType": "backport",
+      "affectedAudience": "stable/backport 담당, GCC/Clang 빌드·부트 경로 유지보수者",
+      "verifyLink": "https://lore.kernel.org/llvm/20260924173100.87358-1-artem@trailofbits.com/",
+      "if": "6.1.y에서 `start_kernel`/`start_secondary` 부트 경로를 유지한다면",
+      "do": "upstream 514ca14e와 동일한 per-function 스택 프로텍터 제외 속성 적용 필요성을 CVE-2023-53491 맥락으로 stable 큐를 추적하세요",
+      "verify": "llvm 리스트 백포트 요청과 upstream 커밋 설명을 링크에서 대조하세요"
+    },
+    {
+      "title": "rnull configfs `power` feature 표시",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "Rust block(rnull)·configfs 사용자 및 rust-for-linux 리뷰어",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260924-upstream-v7-3-rc3-v2-1-ca56ae7a73e9@gmail.com/",
+      "if": "configfs feature 문자열로 rnull 동작을 판단한다면",
+      "do": "C `null_blk`와 맞춘 `power` 항목 추가 패치가 머지·배포 트리에 들어갔는지 확인하세요",
+      "verify": "커밋 메시지의 Fixes 태그와 feature 목록 diff를 원문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**start_kernel: Add __no_stack_protector function attribute**\n\nupstream 514ca14e의 `__no_stack_protector` 정의와 `start_kernel`/`start_secondary` 적용을 6.1.y에 백포트하는 패치가 llvm 리스트에 올라왔으며, GCC 11 이상과 Clang에서 per-function 스택 프로텍터 제외를 사용합니다.\n\n영향: `boot_init_stack_canary` 호출부와 스택 카나리 불일치 시 `__stack_chk_fail()`로 부팅이 멈출 수 있어 stable·컴파일러 속성·CVE 백포트를 함께 봐야 합니다.\n\n> CVE: CVE-2023-53491\n\n[원문 확인](https://lore.kernel.org/llvm/20260924173100.87358-1-artem@trailofbits.com/)\n\n**start_kernel: Add __no_stack_protector function attribute** (upstream)\n\n> Callers of boot_init_stack_canary need to use this function attribute unless they're compiled with -fno-stack-protector\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=514ca14ed5444b911de59ed3381dfd195d99fe4b)\n\n6.1.y maintainer가 이 백포트를 실제로 큐에 넣었는지는 본 메일 이후 응답에서 확인하지 못했습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**rust: net: netlink: validate attribute length before casting to `c_int`**\n\nRust netlink `put()`에 netlink 속성 길이를 `c_int`로 캐스트하기 전에 `u16`/`NLA_HDRLEN` 범위를 검증하는 수정이 net-next v4로 논의 중이며, netdev/net-next가 아닌 rust-next에 리베이스된 제출은 net 측에서 적용 불가로 거절된 뒤 net-next 트리로 다시 맞추는 절차가 진행되고 있습니다.\n\n영향: 검증 없는 `usize`→`c_int` 캐스트는 길이가 커질 때 음수로 뒤집혀 `nla_put`/`skb_put` 경로에서 커널 패닉을 일으킬 수 있습니다.\n\n> `put()` trusted an unchecked `as` cast from `usize` to `c_int`. When the length exceeds `i32::MAX` that cast wraps around to a negative value.\n\n[원문 확인](https://lkml.iu.edu/hypermail/linux/kernel/2609.1/19746.html)\n\n> I'm confused, you're tagging this for net-next but rebasing on rust-next. This patch does not apply for us.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260924104645.4764dbba@kernel.org/)\n\n> Yes, afaiu, and please don't top post\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260924113156.02bc8900@kernel.org/)\n\nv4 diff가 v2/v3 대비 추가로 바뀐 부분이 net-next에 반영됐는지는 이번 스레드 메일만으로는 확인되지 않습니다.\n\n**drm/tyr: safely write GpuInfo to userspace**\n\nTyr DRM 드라이버가 Panthor UAPI `drm_panthor_gpu_info`를 userspace에 보낼 때 수동 `AsBytes` unsafe impl 대신 `zerocopy_derive::most_traits`로 `IntoBytes`/`Immutable`을 derive하고 `write_slice(...as_bytes())`로 복사하도록 바꿉니다.\n\n영향: UAPI 레이아웃에 암묵적 패딩이 생기면 초기화되지 않은 커널 메모리가 userspace로 노출될 수 있으며, derive 실패 시 컴파일이 깨져 ABI 변경을 빌드 타임에 잡습니다.\n\n> if implicit padding were added in the future Rust does not guarantee that it would be initialized. Then when Tyr writes the struct back to userspace it could expose uninitialized kernel memory.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260924-b4-gpu_info_intobytes-v2-1-1b05e33df8a4@collabora.com/)\n\n> writer.write_slice(reg_data.gpu_info.as_bytes())?;\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260924-b4-gpu_info_intobytes-v2-1-1b05e33df8a4@collabora.com/)\n\n**rnull: configfs: add power to configfs features**\n\nRust null block(rnull) configfs `features` 표시 문자열에 `power`를 추가해 실제 지원 기능 및 C `null_blk`와 목록을 맞춥니다.\n\n영향: configfs로 rnull을 다루는 사용자·테스트는 표시된 feature 목록을 신뢰하므로 Rust 샘플/드라이버와 C 동작 정합성 회귀를 고칩니다.\n\n> features displayed by configfs for rnull was inconsistent with the actual features available.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260924-upstream-v7-3-rc3-v2-1-ca56ae7a73e9@gmail.com/)\n\n> blocksize,size,rotational,irqmode,power\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260924-upstream-v7-3-rc3-v2-1-ca56ae7a73e9@gmail.com/)\n\n> rnull: enable configuration via `configfs`\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=d969d504bc13)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**selftests: enable comma-terminator tests**\n\ndyndbg v11 시리즈 일부로 `dyndbg_selftest.sh`에 `FT_comma_terminators`를 builtin 테스트에 넣고, modprobe `dyndbg=` 인자를 공백 대신 쉼표 구분 형식으로 바꿉니다.\n\n영향: dyndbg 쿼리 파서의 쉼표 종료·빈 토큰 동작을 selftest로 고정해 kbuild/selftests와 모듈 파라미터 quoting 이슈가 커널 빌드 검증을 통과하는지 보장합니다.\n\n> Enable the FT_comma_terminators test block in dyndbg_selftest.sh to verify control query parsing when queries are terminated by commas.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20260923-dd-cmap-part2-clean-v11-30-9b6c217fdf2f@gmail.com/)\n\n> FT_comma_terminators\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20260923-dd-cmap-part2-clean-v11-30-9b6c217fdf2f@gmail.com/)\n\nv11 dyndbg 시리즈 전체가 mainline에 머지됐는지는 이 패치 단독으로는 확인하지 못했습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Rust netlink net-next vs rust-next 리베이스 논의",
+      "url": "https://lore.kernel.org/rust-for-linux/20260924104645.4764dbba@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "netdev/net-next.git 기준 리베이스 답변",
+      "url": "https://lore.kernel.org/rust-for-linux/20260924113156.02bc8900@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "netlink `put()` unchecked cast 설명",
+      "url": "https://lkml.iu.edu/hypermail/linux/kernel/2609.1/19746.html",
+      "note": "thread"
+    },
+    {
+      "title": "Tyr GpuInfo IntoBytes 패치",
+      "url": "https://lore.kernel.org/rust-for-linux/20260924-b4-gpu_info_intobytes-v2-1-1b05e33df8a4@collabora.com/",
+      "note": "thread"
+    },
+    {
+      "title": "6.1.y __no_stack_protector 백포트 요청",
+      "url": "https://lore.kernel.org/llvm/20260924173100.87358-1-artem@trailofbits.com/",
+      "note": "thread"
+    },
+    {
+      "title": "upstream __no_stack_protector on start_kernel",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=514ca14ed5444b911de59ed3381dfd195d99fe4b",
+      "note": "commit"
+    },
+    {
+      "title": "GCC no_stack_protector 속성 (gcc-11)",
+      "url": "https://gcc.gnu.org/bugzilla/show_bug.cgi?id=94722",
+      "note": "article"
+    },
+    {
+      "title": "rnull configfs power feature",
+      "url": "https://lore.kernel.org/rust-for-linux/20260924-upstream-v7-3-rc3-v2-1-ca56ae7a73e9@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "rnull configfs enablement",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=d969d504bc13",
+      "note": "commit"
+    },
+    {
+      "title": "dyndbg comma-terminator selftest",
+      "url": "https://lore.kernel.org/linux-kbuild/20260923-dd-cmap-part2-clean-v11-30-9b6c217fdf2f@gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-24T18:34:30.315Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,146 @@
+{
+  "id": "2026-09-25-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-09-25 arm64 DRTM 부트 — 아키·플랫폼",
+  "headline": "arm64 EFI DRTM 부트 구현이 처음 제안되고, RISC-V는 TLB 경로 추적·BPF kCFI·generic MMIO 정리가 이어졌습니다.",
+  "date": "2026-09-25",
+  "summary": "Jason Gunthorpe가 ARM DEN 0113 v1.4b DRTM의 arm64 부트 단 16패치 시리즈를 게시했습니다. RISC-V·arm64 KVM 쪽에서는 성능 추적, 보안 수정, MMIO·include 리팩터 리뷰가 진행 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "arm64",
+    "riscv",
+    "플랫폼"
+  ],
+  "highlights": [
+    {
+      "title": "arm64: DRTM, boot portion",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "arm64 EFI 부트·보안 부트 담당, 플랫폼 펌웨어·TPM 통합 엔지니어",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/0-v1-27d06b313981+8b-arm64_drtm_jgg@nvidia.com/",
+      "if": "arm64 UEFI 부트 경로에서 TPM 기반 신뢰 루트를 다룬다면",
+      "do": "EFI zboot·스텁·링커·head.S 부트 단 시리즈와 CONFIG_EFI_DRTM·drtm= 공통 훅을 검토하세요",
+      "verify": "스레드 원문에서 DLME 겹침 런치와 x86 Trenchboot/TXT 대비 ARM SMC 모델을 확인하세요"
+    },
+    {
+      "title": "riscv, bpf: Adjust bpf_func to account for CFI offset in bpf_jit_free",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "RISC-V BPF JIT·kCFI 활성화 빌드 담당",
+      "verifyLink": "https://lkml.iu.edu/hypermail/linux/kernel/2607.3/02748.html",
+      "if": "RISC-V에서 kCFI와 BPF JIT를 함께 켠 배포를 유지한다면",
+      "do": "bpf_jit_free()의 cfi_get_offset() 복원 한 줄 수정과 Björn Töpel Acked-by 상태를 따라가세요",
+      "verify": "스레드에서 잘못된 ro_header 해제 가능성과 Fixes e63985ecd226 계열 백포트 필요 여부를 확인하세요"
+    },
+    {
+      "title": "riscv: mm: Trace TLB flush path selection",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "RISC-V MM·SBI RFENCE·트레이싱 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260924-tlb_tracepoint-v2-1-4e3e78ef5cdb@gmail.com/",
+      "if": "RISC-V에서 TLB shootdown 지연을 RFENCE와 IPI 중 어디서 보는지 구분해야 한다면",
+      "do": "9월 24일 RESEND v2의 riscv_tlb_flush_path 트레이스포인트와 ftrace enabled 체크 패턴을 시험하세요",
+      "verify": "패치 설명과 Steven Rostedt 리뷰 스레드에서 local·SBI RFENCE·cross-CPU 경로 기록 방식을 확인하세요"
+    },
+    {
+      "title": "riscv: use generic relaxed MMIO accessors",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "RISC-V asm/io·early timer(M-mode) 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/23/157",
+      "if": "RISC-V SoC·nommu early timer와 MMIO 헬퍼 의존성을 맞춘다면",
+      "do": "v3에서 asm-generic/io.h 전환과 M-mode timex의 readl_cpu/readq_cpu 변경을 리뷰하세요",
+      "verify": "Arnd Bergmann의 timex portable accessor 질문 스레드를 읽고 장기 방향이 맞는지 판단하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**arm64: DRTM, boot portion**\n\nJason Gunthorpe가 ARM DEN 0113 v1.4b DRTM 동적 런치의 부트 단(EFI zboot·스텁·링커·head.S) 16패치 시리즈를 게시했다. vmlinux에 DLME를 직접 겹쳐 측정·런치하고 CONFIG_EFI_DRTM·drtm= 등 크로스 아키 공통 훅을 추가한다.\n\n영향: arm64 UEFI 부트 경로에서 TPM 기반 동적 신뢰 루트가 처음으로 커널 트리 안에 구체화되며, 플랫폼·보안·EFI 스텁 유지보수자는 x86 Trenchboot/TXT와 다른 ARM SMC 모델의 선례를 봐야 한다.\n\n> This is the first series for an implementation of ARM's DEN 0113 v1.4b Dynamic Root of Trust for Measurement (DRTM) launch protocol.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/0-v1-27d06b313981+8b-arm64_drtm_jgg@nvidia.com/)\n\n**riscv, bpf: Adjust bpf_func to account for CFI offset in bpf_jit_free**\n\nPu Lehui 패치에 대해 Björn Töpel이 9월 24일 Reviewed-by·Acked-by를 달았다. kCFI가 bpf_func를 preamble만큼 밀 때 bpf_jit_free()가 잘못된 ro_header로 해제할 수 있는 한 줄 수정이다.\n\n영향: RISC-V에서 kCFI+ BPF JIT를 쓰는 배포는 프로그램 해제 시 잘못된 메모리 free·크래시 위험이 있어, arch/BPF 스택 담당자는 Fixes e63985ecd226 계열 백포트를 추적해야 한다.\n\n> During bpf_jit_free(), this shifted pointer causes the wrong ro_header to be fetched, leading to a potential invalid memory free.\n\n[원문 확인](https://lkml.iu.edu/hypermail/linux/kernel/2607.3/02748.html)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**riscv: mm: Trace TLB flush path selection**\n\nRoman Storozhenko가 v2를 9월 24일 RESEND했다. flush_tlb_all()·__flush_tlb_range()에 riscv_tlb:riscv_tlb_flush_path 트레이스포인트를 넣어 local·SBI RFENCE·cross-CPU 경로와 CPU 마스크·scope를 디스패치 전에 기록한다.\n\n영향: RISC-V에서 느린 TLB shootdown이 펌웨어 RFENCE vs Linux IPI 문제인지 구분하려면 아키별 경로 관측이 필요하며, SBI·플랫폼·MM 담당자가 ftrace로 상관 분석할 수 있다.\n\n> Record whether Linux handles an invalidation locally, delegates it to SBI RFENCE, or executes it through a cross-CPU call\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260924-tlb_tracepoint-v2-1-4e3e78ef5cdb@gmail.com/)\n\n**riscv: use generic relaxed MMIO accessors**\n\nQingfang Deng v3는 RISC-V 전용 relaxed MMIO 매크로·빈 barrier 훅을 제거하고 asm-generic/io.h 경로를 쓰며, M-mode timex는 readl_cpu/readq_cpu로 바꾼다. Arnd Bergmann은 9월 24일 전체 방향은 동의했으나 timex 변경에 질문을 남겼다.\n\n영향: 아키 간 MMIO 헬퍼 통일은 드라이버·early boot 코드의 동작·빌드 의존성을 바꿀 수 있어, RISC-V SoC·nommu 타이머 경로를 다루는 플랫폼 엔지니어는 리뷰 논점을 따라가야 한다.\n\n> Remove those definitions and their empty barrier hooks so asm-generic/io.h supplies them\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/23/157)\n\n**KVM: arm64: Reorganize PMU includes**\n\nColton Lewis가 ARM64 PMU Partitioning v9의 02/22로 Marc Zyngier 패치를 재게시했다. asm/arm_pmuv3.h에서 kvm_host.h 포함을 제거하고 KVM/PMU 인터페이스를 include/kvm/arm_pmu.h로 옮긴 뒤 drivers/perf/arm_pmuv3.c가 arm_pmu.h를 직접 포함한다.\n\n영향: arm_pmuv3.h↔kvm_host.h 순환 include는 PMU·KVM 대규모 리팩터 중 컴파일 깨짐을 유발하므로, arm64 KVM·perf 이벤트 드라이버를 수정하는 엔지니어는 v9 시리즈 전체와 함께 봐야 한다.\n\n> Including *all* of asm/kvm_host.h in asm/arm_pmuv3.h is a bad idea\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260924172928.2110956-3-coltonlewis@google.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "arm64 DRTM boot portion (Jason Gunthorpe)",
+      "url": "https://lore.kernel.org/linux-riscv/0-v1-27d06b313981+8b-arm64_drtm_jgg@nvidia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "arm64 ACPI object usage (kernel docs)",
+      "url": "https://docs.kernel.org/next/arch/arm64/acpi_object_usage.html",
+      "note": "article"
+    },
+    {
+      "title": "riscv: mm: Trace TLB flush path selection v2 RESEND",
+      "url": "https://lore.kernel.org/linux-riscv/20260924-tlb_tracepoint-v2-1-4e3e78ef5cdb@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv TLB tracepoint (lkml mirror)",
+      "url": "https://lkml.iu.edu/2608.3/11975.html",
+      "note": "thread"
+    },
+    {
+      "title": "riscv TLB tracepoint review (Steven Rostedt)",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/13/378",
+      "note": "thread"
+    },
+    {
+      "title": "riscv bpf bpf_jit_free CFI offset",
+      "url": "https://lkml.iu.edu/hypermail/linux/kernel/2607.3/02748.html",
+      "note": "thread"
+    },
+    {
+      "title": "riscv bpf CFI Acked-by thread",
+      "url": "https://lore.kernel.org/linux-riscv/87fqyyps4r.fsf@all.your.base.are.belong.to.us/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: use generic relaxed MMIO accessors v3",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/23/157",
+      "note": "thread"
+    },
+    {
+      "title": "riscv MMIO timex review (Arnd Bergmann)",
+      "url": "https://lore-kernel.gnuweeb.org/linux-riscv/c0ab08f9-2258-41da-8fc5-0b95ae62ed1b@app.fastmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM: arm64: Reorganize PMU includes v9 02/22",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260924172928.2110956-3-coltonlewis@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM arm64 PMU include cycle (earlier v9 context)",
+      "url": "https://lore-kernel.gnuweeb.org/linux-arm-kernel/20250714225917.1396543-3-coltonlewis@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM: arm64: Reorganize PMU includes (marc.info)",
+      "url": "https://marc.info/?i=20260924172928.2110956-3-coltonlewis@google.com",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-24T18:45:14.501Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

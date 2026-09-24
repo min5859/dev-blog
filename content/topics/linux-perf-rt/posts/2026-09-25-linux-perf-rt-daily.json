@@ -1,0 +1,126 @@
+{
+  "id": "2026-09-25-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-09-25 BPF 블라인딩 수정 — Perf·RT",
+  "headline": "bpf_jit_harden=2 상수 블라인딩 jump offset 오버플로우 수정과 stmmac DMA 실패 unwind·ETM sysfs 분리 제안이 메일링 리스트에 올라왔습니다.",
+  "date": "2026-09-25",
+  "summary": "BPF JIT 상수 블라인딩에서 s16 offset wrap으로 커널 크래시가 날 수 있는 수정안과 stmmac 초기화 실패 경로 unwind 회귀 수정이 제안되었습니다. ARM CoreSight ETM은 perf 세션과 sysfs 설정 분리 v12 시리즈가 linux-rt-devel에 올라왔고, callx selftest는 GCC 빌드·중복 실행 정리 패치가 follow-up 되었습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "BPF",
+    "perf",
+    "CoreSight"
+  ],
+  "highlights": [
+    {
+      "title": "BPF constant blinding jump offset overflow",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF JIT·hardening 옵션을 쓰는 배포·보안·BPF 런타임 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260924182353.277516-1-alexei.starovoitov@gmail.com/",
+      "if": "배포 커널에서 bpf_jit_harden=2로 hardened BPF·tracing prog를 로드한다면",
+      "do": "해당 스레드의 -ERANGE 반환 패치가 머지되었는지 확인하고, 크래시 재현 가능 prog가 있다면 패치 전 커널에서는 로드를 피하세요",
+      "verify": "원문 스레드와 회귀 커밋 4f3446bb809f를 대조해 영향 범위를 확인하세요"
+    },
+    {
+      "title": "stmmac DMA partial allocation unwind",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "stmmac·AF_XDP/XDP zero-copy 경로를 운영·디버그하는 네트워크·BPF 엔지니어",
+      "verifyLink": "https://lore.kernel.org/bpf/20260924-submit-stmmac-reset-fixes-v1-v3-5-c031e3f3a282@gmail.com/",
+      "if": "stmmac에서 AF_XDP zero-copy나 XDP 재구성 실패 후 드라이버 상태가 불안정하다면",
+      "do": "RX/TX 초기화 실패 시 buf_pool 없는 큐까지 해제하던 경로가 수정안에 포함됐는지 패치를 검토하세요",
+      "verify": "Fixes 대상 71fedb0198cb와 v3 시리즈 머지 순서는 net maintainers 쪽 계획을 확인하세요"
+    },
+    {
+      "title": "ETMv3/v4 perf·sysfs config separation (v12)",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "ARM CoreSight ETM/perf 통합을 다루는 커널·플랫폼 엔지니어",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260924-separate_etm_cfg_v2-v12-0-a2b41d2f7c2b@arm.com/",
+      "if": "perf로 ETM을 켠 뒤 sysfs로 trace 설정을 바꾸는 워크로드를 쓴다면",
+      "do": "v12에서 curr_config와 sysfs_config 분리·모드 획득 후 sysfs 적용 흐름이 요구사항에 맞는지 커버레터를 읽으세요",
+      "verify": "Sashiko 자동 리뷰의 sysfs/perf 경합·TOCTOU 지적에 대한 maintainer 응답이 충분한지 확인하세요"
+    },
+    {
+      "title": "callx BPF selftests (GCC·중복 실행)",
+      "priority": "하",
+      "impactType": "build",
+      "affectedAudience": "BPF selftests·CI를 돌리는 커널/BPF 개발자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260924182104.261823-1-alexei.starovoitov@gmail.com/",
+      "if": "GCC 기본 toolchain으로 selftests/bpf를 빌드·실행한다면",
+      "do": "callx 관련 progs는 clang 전용 빌드와 GCC 시 lskel skip, 단일 test entry로 중복 prog_test 실행을 막는 패치를 로컬 CI에 반영할지 검토하세요",
+      "verify": "verifier_callx·callx_rodata_lskel 관련 두 스레드의 Makefile·test 등록 변경을 원문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**bpf: Fix overflow of jump offset in constant blinding**\n\nbpf_jit_blind_insn()이 상수 블라인딩 시 backward jump의 s16 offset을 조정할 때 -32767/-32768에서 wrap되어 프로그램 밖으로 점프할 수 있어, 범위 밖이면 -ERANGE를 반환하도록 kernel/bpf/core.c를 수정합니다.\n\n영향: bpf_jit_harden=2(상수 블라인딩) 환경에서 특정 BPF 프로그램이 로드·실행될 때 커널이 크래시할 수 있어, hardened BPF·tracing/관측용 prog 배포와 보안 감사 관점에서 중요합니다.\n\n> The kernel crashes when such prog runs with bpf_jit_harden=2.\n\n[원문 확인](https://lore.kernel.org/bpf/20260924182353.277516-1-alexei.starovoitov@gmail.com/)\n\n**net: stmmac: unwind partially allocated DMA configurations**\n\nstmmac DMA RX/TX 초기화 실패 경로에서 아직 buf_pool이 없는 큐까지 해제하려던 문제를 고치고, XSK RXQ 바인딩·부분 패킷·xdp_rxq_info_reg_mem_model 오류를 올바르게 정리·전파합니다.\n\n영향: AF_XDP zero-copy·XDP 재구성 실패 시 드라이버가 불완전한 링/풀 상태로 남을 수 있어, 고속 패킷 관측·XDP 기반 perf 실험의 안정성과 MTU 트랜잭션 준비 실패 unwind 전제에 영향을 줍니다.\n\n> Only walk buffer arrays and free coherent memory when those allocations exist.\n\n[원문 확인](https://lore.kernel.org/bpf/20260924-submit-stmmac-reset-fixes-v1-v3-5-c031e3f3a282@gmail.com/)\n\n동일 시리즈의 XSK pool 변경·datapath restart 패치들과 net 트리 머지 순서는 net maintainers 쪽 계획 확인이 필요합니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**fix several inconsistencies with sysfs configuration in etmX**\n\nETMv3/v4에서 perf 세션용 curr_config와 sysfs에 쌓아 두는 sysfs_config를 분리하고, 모드 획득 후에만 sysfs 설정을 적용하도록 v12 14패치 시리즈가 제안됩니다. v12에서는 active_config→curr_config, config→sysfs_config 명명 정리와 seq_state 등 read-back이 추가됩니다.\n\n영향: perf로 ETM을 켠 상태에서 sysfs를 건드리면 sched-out/in 사이 설정이 어긋나거나 perf·sysfs 동시 enable 시 configfs/drvdata가 깨질 수 있어, ARM 코어사이트·perf 혼용 워크로드의 추적 신뢰성과 RT 분석 재현성에 직접 영향을 줍니다.\n\n> If a configuration is modified via sysfs while a perf session is active, the running configuration may differ between before a sched-out and after a subsequent sched-in.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260924-separate_etm_cfg_v2-v12-0-a2b41d2f7c2b@arm.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "**selftests/bpf: Fix build of callx tests with GCC**\n\ncallx selftest BPF 오브젝트는 GCC가 eBPF indirect call을 거부하므로 verifier_callx·verifier_callx_rodata·callx_rodata만 clang으로 빌드하고, GCC 빌드 시 callx_rodata_lskel 테스트는 건너뜁니다.\n\n영향: callx verifier 회귀 테스트가 GCC 기본 selftest 빌드에서 깨지면 BPF CI·로컬 검증이 막혀 새 tracing/verifier 기능의 품질 게이트가 약해집니다.\n\n> Build verifier_callx, verifier_callx_rodata and callx_rodata progs with clang only.\n\n[원문 확인](https://lore.kernel.org/bpf/20260924182104.261823-1-alexei.starovoitov@gmail.com/)\n\n**selftests/bpf: Run callx prog_tests once**\n\ncallx_func_ptr_map·callx_rodata_lskel이 #if/#else 양쪽에 DEFINE_TEST를 두어 동일 테스트가 두 번 등록·실행되던 문제를, static 내부 함수 하나로 묶고 단일 test_* entry만 노출하도록 수정합니다.\n\n영향: 중복 실행은 callx 관련 prog_test 결과·CI 시간을 왜곡해 verifier callx 동작을 추적하는 데 노이즈를 만듭니다.\n\n> Make both definitions static and call them from a single test function.\n\n[원문 확인](https://lore.kernel.org/bpf/20260924182533.281399-1-alexei.starovoitov@gmail.com/)"
+    }
+  ],
+  "confidence": {
+    "level": "high",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "separate_etm_cfg v12 cover (linux-rt-devel)",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260924-separate_etm_cfg_v2-v12-0-a2b41d2f7c2b@arm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "separate_etm_cfg v12-14 (linux-rt-devel)",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260924-separate_etm_cfg_v2-v12-14-a2b41d2f7c2b@arm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Fix overflow of jump offset in constant blinding",
+      "url": "https://lore.kernel.org/bpf/20260924182353.277516-1-alexei.starovoitov@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: add generic constant blinding for use in jits",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=4f3446bb809f",
+      "note": "commit"
+    },
+    {
+      "title": "stmmac reset fixes v3 (bpf list)",
+      "url": "https://lore.kernel.org/bpf/20260924-submit-stmmac-reset-fixes-v1-v3-5-c031e3f3a282@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "net: stmmac: break some functions into RX and TX scopes",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=71fedb0198cb",
+      "note": "commit"
+    },
+    {
+      "title": "selftests/bpf: Fix build of callx tests with GCC",
+      "url": "https://lore.kernel.org/bpf/20260924182104.261823-1-alexei.starovoitov@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "selftests/bpf: Run callx prog_tests once",
+      "url": "https://lore.kernel.org/bpf/20260924182533.281399-1-alexei.starovoitov@gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-24T18:41:16.751Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
