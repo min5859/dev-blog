@@ -1,0 +1,146 @@
+{
+  "id": "2026-09-26-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-09-26 BPF gotox·efivarfs RT — Linux perf/RT",
+  "headline": "BPF gotox 일괄 수정·arm64 jited line info 회귀, RT 기본 nostatfs efivarfs, bpftool 배치 덤프가 겹칩니다.",
+  "date": "2026-09-26",
+  "summary": "Daniel Borkmann의 bpf-next gotox v3 시리즈가 검증·안정성·CFG 비용 이슈를 묶어 고치고, efivarfs는 PREEMPT_RT에서 statfs 지연을 막기 위해 nostatfs를 기본으로 제안합니다. bpftool·CoreSight·arm64 CFI 쪽은 perf 추적·맵 덤프 신뢰성에 직접 닿는 변경이 이어집니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "BPF",
+    "PREEMPT_RT",
+    "perf"
+  ],
+  "highlights": [
+    {
+      "title": "Misc BPF gotox fixes",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF verifier·insn_array·간접 점프를 다루는 런타임·도구 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260925175244.1136329-1-daniel@iogearbox.net/",
+      "if": "gotox를 쓰는 대형·다중 서브프로그램 BPF를 검증하거나 tracing·XDP 워크로드를 배포한다면",
+      "do": "bpf-next v3 16패치 시리즈와 추가된 selftest로 stale JIT 포인터·nop 타깃·verifier 거부 시간 이슈가 자신의 프로그램 형태에 해당하는지 점검하세요.",
+      "verify": "커버레터와 개별 커밋 메일에서 수정 항목을 원문으로 대조해 확인하세요."
+    },
+    {
+      "title": "efivarfs: add nostatfs mount option to skip QueryVariableInfo()",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "PREEMPT_RT·EFI efivarfs를 쓰는 플랫폼·배포 엔지니어",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260925113145.7396-1-singhpra@juniper.net/",
+      "if": "PREEMPT_RT 플랫폼에서 /sys/firmware/efi/efivars에 df·statfs를 자주 호출한다면",
+      "do": "CONFIG_PREEMPT_RT 기본 nostatfs와 remount로 statfs를 켤 때의 RT 스톨 트레이드오프를 운영 정책에 명시하세요.",
+      "verify": "v3 패치 스레드에서 QueryVariableInfo() 선점 비활성 지연 설명을 읽고 펌웨어 동작을 확인하세요."
+    },
+    {
+      "title": "bpf, arm64: Fix jited line info off by kCFI hash",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "arm64 BPF JIT·perf/BPF 디버깅 도구 사용자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260925-b4-arm64-bpf-linfo-cfi-v1-1-e930ab335170@linux.dev/",
+      "if": "CONFIG_CFI=y arm64에서 perf·bpftool로 JIT BPF 소스 라인을 본다면",
+      "do": "jited line info가 한 instruction 어긋난 회귀 가능성을 두고 패치 적용 전·후 프로파일 결과를 교차 검증하세요.",
+      "verify": "패치 스레드와 kCFI+BPF 지원 커밋 메시지를 원문으로 확인하세요."
+    },
+    {
+      "title": "bpftool: Batch hash map dumps with bounded buffers",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "bpftool·BPF map 인트로스펙션을 하는 SRE·BPF 개발자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260925174412.2028749-1-hi@tychen.cc/",
+      "if": "프로덕션·perf 실험 중 대형 HASH 맵 스냅샷에 bpftool을 쓴다면",
+      "do": "BPF_MAP_LOOKUP_BATCH 기반 v6 변경과 4 MiB 버퍼 상한·ENOSPC 후 lookup 재개 동작이 스크립트 출력 완전성 요구와 맞는지 시험하세요.",
+      "verify": "커버레터의 VM median 시간·syscall 수치를 자신의 맵 크기로 재현해 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**Misc BPF gotox fixes**\n\nDaniel Borkmann의 bpf-next v3 16패치 시리즈가 gotox(간접 점프) 검증·점프 테이블·insn_array 재사용·nop 제거·dead subprog 제거 후 exception callback 인덱스 등 열린 버그를 고치고, 간접 점프 edge 상한·CFG 탐색 비용(공유 jump table) 개선과 selftest를 추가합니다.\n\n영향: gotox는 대형/다중 서브프로그램 BPF에서 verifier 시간과 로드 안정성에 직결되며, stale JIT 포인터·nop 타깃 제거·서브프로그램 밖 점프는 런타임 크래시나 잘못된 CFG 분석을 낳아 tracing·XDP 등 gotox를 쓰는 워크로드의 perf/안정성 검증에 필수입니다.\n\n> Address various open issues around gotox instruction, see individual commits for details. Also BPF selftests are added to assert that these are addressed.\n\n[원문 확인](https://lore.kernel.org/bpf/20260925175244.1136329-1-daniel@iogearbox.net/)\n\n**bpf, arm64: Fix jited line info off by kCFI hash**\n\nCONFIG_CFI=y arm64에서 kCFI 4바이트 해시 때문에 bpf_prog_fill_jited_linfo()가 prog->bpf_func 기준으로 offset을 더해 jited line info가 한 instruction씩 어긋나는 회귀를, cfi_get_offset() 보정과 fill 순서 조정으로 수정합니다.\n\n영향: perf, bpftool, JIT 기반 프로파일링이 jited_linfo로 소스 라인을 매핑할 때 잘못된 라인이 나오면 arm64+CFI 배포에서 BPF 추적·성능 분석 결과를 신뢰할 수 없습니다.\n\n> With CONFIG_CFI=y, the jited line info of every arm64 BPF program is off by one instruction, so tools that use it show the wrong source line.\n\n[원문 확인](https://lore.kernel.org/bpf/20260925-b4-arm64-bpf-linfo-cfi-v1-1-e930ab335170@linux.dev/)\n\n> arm64/cfi,bpf: Support kCFI + BPF on arm64\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=710618c760c0)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**efivarfs: add nostatfs mount option to skip QueryVariableInfo()**\n\nefivarfs statfs()가 호출하는 EFI QueryVariableInfo()를 건너뛰는 negatable nostatfs 마운트 옵션을 추가하고, CONFIG_PREEMPT_RT에서는 기본 nostatfs로 두며 remount로 statfs/nostatfs를 전환할 수 있게 합니다.\n\n영향: 일부 펌웨어에서 QueryVariableInfo()가 수십 ms 동안 선점 비활성 상태로 CPU를 막아 df 등 statfs 호출이 같은 CPU의 RT·저지연 워크로드에 스톨을 주므로, RT 기본 동작과 fwupd 등 용량 조회 필요 시의 트레이드오프를 명시적으로 제어할 수 있습니다.\n\n> QueryVariableInfo() is an EFI runtime service that, on some firmware, takes tens of milliseconds and runs with preemption disabled, stalling the CPU that services it.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260925113145.7396-1-singhpra@juniper.net/)\n\n**bpftool: Batch hash map dumps with bounded buffers**\n\nbpftool이 일반 HASH 맵 덤프에 BPF_MAP_LOOKUP_BATCH를 쓰도록 바꾸고, 키·값 배치 버퍼 합을 4 MiB로 제한하며 ENOSPC 시 마지막 키부터 단일 lookup으로 이어가 출력 완전성을 유지합니다.\n\n영향: 대형 BPF hash 맵을 덤프하는 관측·디버깅 루틴에서 syscall 수가 크게 줄어 프로덕션 트래픽·perf 실험 중 map 스냅샷 시간이 단축됩니다.\n\n> Use lookup batches for ordinary hash maps while preserving output and bounding the combined key/value batch buffers to 4 MiB.\n\n[원문 확인](https://lore.kernel.org/bpf/20260925174412.2028749-1-hi@tychen.cc/)\n\n**coresight: etm3x: fix inconsistencies with sysfs configuration**\n\nETM3x에서 perf 세션용 curr_config와 sysfs에 쓰는 config를 분리하고, sysfs enable/disable·레지스터 읽기 경로의 락 범위를 줄이며 일부 sysfs 읽기는 IPI로 해당 CPU에서 수행합니다(v12 시리즈 05/14).\n\n영향: perf ETM 세션 중 sysfs 설정 변경 시 sched-out/in 사이 추적 설정이 달라지면 ARM 코어사이트 기반 perf 분석·RT 워크로드 트레이스 재현성이 깨집니다.\n\n> If a configuration is modified via sysfs while a perf session is active, the running configuration may differ between before a sched-out and after a subsequent sched-in.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260924-separate_etm_cfg_v2-v12-5-a2b41d2f7c2b@arm.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "**selftests/bpf: Cover recursive bpftool map dumps**\n\nbpftool 재귀 map 덤프(array-of-maps, hash-of-maps, BTF, perf event array, RLIMIT_NOFILE=32에서 64 inner map 등)의 JSON·plain 출력, dedup, fd 누수 방지를 selftest로 추가합니다.\n\n영향: 재귀 덤프는 중첩 map 구조 분석에 쓰이며 fd·출력 회귀는 대형 관측 스크립트를 조용히 깨뜨려 perf/BPF 운영 도구 신뢰성과 직결됩니다.\n\n> Exercise array-of-maps and hash-of-maps dumps with shared inner maps, empty maps, BTF values and multiple selected roots.\n\n[원문 확인](https://lore.kernel.org/bpf/20260925174402.2028649-3-hi@tychen.cc/)\n\n> Dump 64 distinct inner maps under RLIMIT_NOFILE=32 to detect retaining a descriptor for every inner map.\n\n[원문 확인](https://lore.kernel.org/bpf/20260925174402.2028649-3-hi@tychen.cc/)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Misc BPF gotox fixes (v3 cover)",
+      "url": "https://lore.kernel.org/bpf/20260925175244.1136329-1-daniel@iogearbox.net/",
+      "note": "thread"
+    },
+    {
+      "title": "gotox: shared jump table / verifier cost",
+      "url": "https://lore.kernel.org/bpf/20260925175244.1136329-6-daniel@iogearbox.net/",
+      "note": "thread"
+    },
+    {
+      "title": "gotox: insn_array stale JIT pointer",
+      "url": "https://lore.kernel.org/bpf/20260925175244.1136329-9-daniel@iogearbox.net/",
+      "note": "thread"
+    },
+    {
+      "title": "gotox: nop indirect jump target",
+      "url": "https://lore.kernel.org/bpf/20260925175244.1136329-8-daniel@iogearbox.net/",
+      "note": "thread"
+    },
+    {
+      "title": "arm64 BPF jited line info CFI fix",
+      "url": "https://lore.kernel.org/bpf/20260925-b4-arm64-bpf-linfo-cfi-v1-1-e930ab335170@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "arm64/cfi,bpf: Support kCFI + BPF on arm64",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=710618c760c0",
+      "note": "commit"
+    },
+    {
+      "title": "efivarfs nostatfs v3",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260925113145.7396-1-singhpra@juniper.net/",
+      "note": "thread"
+    },
+    {
+      "title": "efivarfs nostatfs review",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260925113145.7396-2-ardb@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "bpftool batch hash map dumps v6",
+      "url": "https://lore.kernel.org/bpf/20260925174412.2028749-1-hi@tychen.cc/",
+      "note": "thread"
+    },
+    {
+      "title": "selftests recursive bpftool map dumps",
+      "url": "https://lore.kernel.org/bpf/20260925174402.2028649-3-hi@tychen.cc/",
+      "note": "thread"
+    },
+    {
+      "title": "ETM3x separate curr_config and sysfs config",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260924-separate_etm_cfg_v2-v12-5-a2b41d2f7c2b@arm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "ETM3x sysfs/perf series v12 cover",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260924-separate_etm_cfg_v2-v12-0-a2b41d2f7c2b@arm.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-25T18:33:17.396Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

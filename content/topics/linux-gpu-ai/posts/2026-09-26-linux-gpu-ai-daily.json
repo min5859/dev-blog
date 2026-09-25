@@ -1,0 +1,122 @@
+{
+  "id": "2026-09-26-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-09-26 nouveau·tyr 보안 — GPU·AI",
+  "headline": "nouveau connector teardown UAF 대응과 Panthor Tyr GpuInfo zerocopy 검증이 dri-devel 보안 논의를 이끕니다.",
+  "date": "2026-09-26",
+  "summary": "drm/nouveau는 DisplayPort IRQ workqueue 경로 use-after-free를 cancel_work_sync()로 막는 패치를 올렸고 stable 백포트 후보로 표시했습니다. drm/tyr는 Panthor UAPI 복사 시 padding으로 초기화되지 않은 커널 메모리가 userspace로 새 나갈 위험을 컴파일 타임 derive로 줄이는 방향으로 v3 재게시가 예정된 것으로 보입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "drm",
+    "nouveau",
+    "panthor",
+    "xe"
+  ],
+  "highlights": [
+    {
+      "title": "drm/nouveau: cancel irq_work before freeing connector",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "drm/nouveau 및 NVIDIA OSS GPU 스택 유지보수자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260925175819.3699225-1-qwe.aldo@gmail.com/",
+      "if": "DisplayPort hotplug·IRQ teardown 중 nouveau 관련 크래시나 이상 dereference 의심이 있으면",
+      "do": "nvif_event_dtor() 이후 cancel_work_sync() 추가 패치와 stable@vger.kernel.org Cc 범위를 로컬 트리와 대조해 백포트 필요성을 판단하세요",
+      "verify": "dri-devel 스레드에서 queued irq_work와 kfree(connector) 순서 설명을 원문으로 확인하세요"
+    },
+    {
+      "title": "drm/tyr: safely write GpuInfo to userspace",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "drm/panthor·drm/tyr 및 Panthor UAPI bindings 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/DLOBS2HQYSWS.2W0JMY91EZ48V@garyguo.net/",
+      "if": "Panthor ioctl 응답 버퍼나 drm_panthor_gpu_info UAPI 레이아웃 변경을 추적 중이면",
+      "do": "zerocopy derive(most_traits)로 IntoBytes/Immutable 검증이 깨지는지 빌드하고 Makefile 분리가 반영된 v3 시리즈 게시 시점을 확인하세요",
+      "verify": "dri-devel 스레드에서 implicit padding과 초기화되지 않은 메모리 노출 설명을 원문으로 확인하세요"
+    },
+    {
+      "title": "drm, drm/xe: Protect against premature module unloads",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "drm/xe·drm_gpuvm 및 DRM core device refcount 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260925133335.149679-1-thomas.hellstrom@linux.intel.com/",
+      "if": "xe·drm_gpuvm 사용 스택에서 rmmod 직후 GPU teardown 관련 크래시가 보이면",
+      "do": "Thomas Hellström v3의 drm release callback 대기·xe module exit 동기화와 Danilo Krummrich의 GPUVM 수명 반론을 함께 읽고 합의 방향을 추적하세요",
+      "verify": "커버 레터의 bare drm_device reference와 module unload gap 정의를 원문으로 확인하세요"
+    },
+    {
+      "title": "drm/property: add a per-connector luminance flag",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "DRM property·AMD display 밝기 UAPI 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/8a650274-008a-4515-95a6-9cd200eb12f4@amd.com/",
+      "if": "per-connector LUMINANCE UAPI나 compositor·DPMS 상호작용을 맞추는 중이면",
+      "do": "is_luminance 플래그 유지 여부와 LUMINANCE·DPMS 완전 분리 합의가 v8 14패치 시리즈에 어떻게 반영되는지 스레드를 따라가세요",
+      "verify": "AMD 스레드에서 min>0일 때 value 0 예외와 DPMS_OFF 시 LUMINANCE 미변경 제안을 원문으로 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm/nouveau: cancel irq_work before freeing connector**\n\nnouveau_connector_destroy()는 irq 소스는 끊지만 큐에 올라간 system workqueue irq_work는 drain하지 않아, kfree(connector) 이후 nouveau_dp_irq()가 해제된 connector를 dereference할 수 있다. nvif_event_dtor() 뒤에 cancel_work_sync()를 넣어 connector 해제 전 pending·in-flight work를 끝낸다.\n\n영향: DisplayPort hotplug/IRQ teardown 경로 use-after-free는 커널 크래시나 정보 유출로 이어질 수 있고, stable@vger.kernel.org Cc로 백포트 후보임을 명시했다. dri-devel 리뷰·머지 및 stable 트리 백포트 범위는 아직 확인이 필요합니다.\n\n> If a work item was already queued, nouveau_dp_irq() can run after kfree(connector) and dereference freed memory. Add cancel_work_sync() after nvif_event_dtor()\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260925175819.3699225-1-qwe.aldo@gmail.com/)\n\n**drm/tyr: safely write GpuInfo to userspace**\n\nPanthor UAPI struct drm_panthor_gpu_info를 userspace에 복사할 때 수동 AsBytes unsafe 보장 대신 zerocopy derive(most_traits)로 IntoBytes/Immutable 구현 가능 여부를 컴파일 타임에 강제한다. UAPI에 implicit padding이 생기면 빌드가 깨져 초기화되지 않은 커널 메모리 노출 위험을 줄인다.\n\n영향: Rust drm/tyr(Panthor) ioctl 응답 버퍼는 보안 경계이며, Alice Ryhl Reviewed-by 후 Makefile 분리·v3 재게시가 합의된 것으로 보인다. Miguel의 Makefile 변경 승인 및 v3 시리즈 게시 시점은 확인이 필요합니다.\n\n> if implicit padding were added in the future Rust does not guarantee that it would be initialized. Then when Tyr writes the struct back to userspace it could expose uninitialized kernel memory.\n\n[원문 확인](https://lore.kernel.org/dri-devel/DLOBS2HQYSWS.2W0JMY91EZ48V@garyguo.net/)\n\n> I'll split the commit and send a v3.\n\n[원문 확인](https://lore.kernel.org/dri-devel/arahJjCnXfqBVEu-@um790/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm, drm/xe: Protect against premature module unloads**\n\nThomas Hellström v3(3패치)는 drm_dev_get/put만으로 모듈 refcount 없이 xe·drm_gpuvm 등이 drm_device를 잡을 때 rmmod 후 freed text에서 코드가 실행될 수 있는 gap을 닫으려 drm release callback 대기 인프라와 xe module exit 동기화를 추가한다. Danilo Krummrich는 GPUVM 수명·release() 역할을 중심으로 모듈 unload 제약이 올바른 해법인지 반론했다.\n\n영향: Intel xe와 공유 DRM helper(drm_gpuvm 등) 스택에서 모듈 수명과 drm_device refcount 모델이 어긋나면 teardown UAF가 날 수 있어, 코어 DRM 설계 합의가 helper 작성자·xe 팀 모두에 영향을 준다. drm_gpuvm·xe_device 수명이 module unload까지 drm_dev refcount를 끌어올리는 경로와 v3 머지 형태는 추가 확인이 필요합니다.\n\n> None of these references currently prevent the owning module from being unloaded while they, or the teardown work they can still trigger, are outstanding\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260925133335.149679-1-thomas.hellstrom@linux.intel.com/)\n\n> I don't think the correct solution is to constrain module unload. The release() callback shouldn't really do anything other than free the memory of the drm_device allocation.\n\n[원문 확인](https://lore.kernel.org/dri-devel/DLOJ7S2IZW0R.2BNLLO5M3YL7M@kernel.org/)\n\n**arm64: dts: qcom: sm6125-xiaomi-ginkgo: enable display, backlight and touchscreen**\n\nRedmi Note 8(ginkgo) RFC 10/10이 MDSS/MDP/DSI0·KTD3136 백라이트·NT36672A 터치스크린 Devicetree를 추가했으나, 리뷰에서 board-id·LCDB/LAB/IBB regulator 모델 등 하드웨어 설명 오류와 패치 분리 요청이 이어지고 있다.\n\n영향: Qualcomm MDSS 기반 모바일 디스플레이 mainline은 패널·터치·전원 트리 정확도가 DRM/DSI bring-up 성공을 가르며, dri-devel에서 디스플레이 서브트리 리뷰가 진행 중이다. LCDB 전용 regulator·board-id 분리 후 RFC 재송부 일정은 확인이 필요합니다.\n\n> Enable the display subsystem (MDSS/MDP/DSI0), Kinetic KTD3136 backlight, and Novatek NT36672A SPI touchscreen on the Xiaomi Redmi Note 8 (ginkgo).\n\n[원문 확인](https://lore.kernel.org/dri-devel/37bb460f800995ee97b4867e09c04ebb@mainlining.org/)\n\n> LAB/IBB and LCDB are separate hardware blocks, only LCDB is present on PMI632.\n\n[원문 확인](https://lore.kernel.org/dri-devel/37bb460f800995ee97b4867e09c04ebb@mainlining.org/)\n\n**drm/property: add a per-connector luminance flag**\n\nMario Limonciello 시리즈 03/14는 connector별 LUMINANCE range property가 min>0일 때 value 0(DPMS off 의미)을 허용하려 drm_property에 kernel-internal is_luminance 플래그를 추가한다. Thomas Zimmermann·Leo Li는 luminance와 DPMS를 분리하고 DPMS_OFF에서 LUMINANCE를 건드리지 않는 쪽으로 설계를 조정하자고 합의했다.\n\n영향: per-connector luminance UAPI는 AMD 등 백라이트/패널 brightness 경로의 userspace 계약이며, DPMS와 엮인 특수 case는 compositor·sysfs 동작과 충돌할 수 있다. is_luminance 플래그 패치 유지 여부와 v8 14패치 시리즈 머지 일정은 확인이 필요합니다.\n\n> The upcoming per-connector LUMINANCE range property needs to accept the value 0 even when its advertised minimum is 1.\n\n[원문 확인](https://lore.kernel.org/dri-devel/8a650274-008a-4515-95a6-9cd200eb12f4@amd.com/)\n\n> I agree that we should detangle LUMINANCE from DPMS completely: Leave LUMINANCE alone when DPMS_OFF.\n\n[원문 확인](https://lore.kernel.org/dri-devel/8a650274-008a-4515-95a6-9cd200eb12f4@amd.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "nouveau connector irq_work cancel",
+      "url": "https://lore.kernel.org/dri-devel/20260925175819.3699225-1-qwe.aldo@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/tyr Panthor GpuInfo zerocopy",
+      "url": "https://lore.kernel.org/dri-devel/DLOBS2HQYSWS.2W0JMY91EZ48V@garyguo.net/",
+      "note": "thread"
+    },
+    {
+      "title": "tyr Makefile 분리 v3 예고",
+      "url": "https://lore.kernel.org/dri-devel/arahJjCnXfqBVEu-@um790/",
+      "note": "thread"
+    },
+    {
+      "title": "xe·drm premature module unload v3",
+      "url": "https://lore.kernel.org/dri-devel/20260925133335.149679-1-thomas.hellstrom@linux.intel.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm_gpuvm module unload 설계 반론",
+      "url": "https://lore.kernel.org/dri-devel/DLOJ7S2IZW0R.2BNLLO5M3YL7M@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "Xiaomi ginkgo display RFC",
+      "url": "https://lore.kernel.org/dri-devel/37bb460f800995ee97b4867e09c04ebb@mainlining.org/",
+      "note": "thread"
+    },
+    {
+      "title": "per-connector LUMINANCE property",
+      "url": "https://lore.kernel.org/dri-devel/8a650274-008a-4515-95a6-9cd200eb12f4@amd.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-25T18:37:15.204Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

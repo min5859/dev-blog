@@ -1,0 +1,134 @@
+{
+  "id": "2026-09-26-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-09-26 LZ4·netlink 검증 — Linux 툴체인",
+  "headline": "Rust netlink 길이 검증·lib/lz4 upstream 벤더링 RFC·arm64 ftrace 스킵 수정·samples/bpf Clang 플래그 정렬이 9월 25일 전후로 이어졌습니다.",
+  "date": "2026-09-26",
+  "summary": "Rust netlink과 drm/tyr UAPI 경로에서 검증·zerocopy 패턴이 강화되었고, lib/lz4는 포크 대신 upstream 벤더링 RFC가 제출되었습니다. arm64 ftrace 조정 주소 거부와 samples/bpf의 -fms-extensions 정렬은 빌드·부팅 안정성 쪽 신호입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "툴체인"
+  ],
+  "highlights": [
+    {
+      "title": "Rust netlink GenlMsg 길이 상한 검증",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "Rust in kernel netlink·genetlink 작성자 및 net-next 리베이스 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/18/1293",
+      "if": "netlink 속성 페이로드를 nla_put()에 넘기기 전 길이가 u16 상한을 넘을 수 있으면",
+      "do": "EMSGSIZE 거부 패턴을 따르고 net v6 리베이스 스레드를 추적하세요",
+      "verify": "openwall 스레드에서 Fixes 5eaa5fbb6e6c와 u16 범위 검사 설명을 확인하세요"
+    },
+    {
+      "title": "lib/lz4 upstream 벤더링 RFC",
+      "priority": "상",
+      "impactType": "project",
+      "affectedAudience": "lib/lz4·zram·early decompress 및 LZ4 in-kernel API 호출자",
+      "verifyLink": "https://lore.kernel.org/llvm/20260925-lz4-vendor-upstream-v1-0-1c7ffbe21c4b@samsung.com/",
+      "if": "zram·initramfs·EROFS 등 커널 LZ4 API에 의존하면",
+      "do": "공개 API 변경과 보안·동기화 갭을 기준으로 마이그레이션 비용을 함께 검토하세요",
+      "verify": "cover letter의 LZ4_decompress_fast() bounds check 부재 주장과 Phoronix EROFS 기사를 대조하세요"
+    },
+    {
+      "title": "ftrace_call_adjust() 0 반환 시 스킵",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "ftrace·arm64 kbuild 및 CALL_OPS/kCFI 시리즈 추적자",
+      "verifyLink": "https://lkml.iu.edu/2609.0/09053.html",
+      "if": "arm64 CALL_OPS+kCFI 빌드에서 ftrace 사이트 조정을 추적하면",
+      "do": "ftrace_process_locs()가 조정 주소 0을 skipped로 처리하는 패치 포함 여부를 확인하세요",
+      "verify": "lkml 스레드와 linux-kbuild v2 2/9에서 skipped 처리 문구를 읽어보세요"
+    },
+    {
+      "title": "samples/bpf에 -fms-extensions 정렬",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "samples/bpf·libbpf 예제 및 Clang BPF 빌드 담당",
+      "verifyLink": "https://lore.kernel.org/llvm/20260925154937.3677406-1-eva.kurchatova@virtuozzo.com/",
+      "if": "samples/bpf BPF 객체를 Clang으로 vmlinux.h와 함께 빌드하면",
+      "do": "selftests/bpf와 동일하게 -fms-extensions와 -Wno-microsoft-anon-tag를 맞추세요",
+      "verify": "bpf-next 제출 스레드와 torvalds 835a50753579 커밋을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**rust: net: netlink: validate attribute length before casting to `c_int`**\n\nRust netlink `GenlMsg::put()`가 netlink 속성 페이로드 길이를 `nla_put()`에 넘기기 전에 `u16::MAX`와 `NLA_HDRLEN`을 고려한 상한을 검사하도록 바뀌었고, 2026-09-25 제출은 net v6로 net/main에 리베이스되었습니다. net v6가 netdev/net-next.git에 머지되었는지는 이번 조사에서 changelog 확인하지 못했습니다.\n\n영향: 검증 없는 `usize`→`c_int` 캐스트는 비정상 길이에서 음수로 뒤집혀 `__nla_reserve()`/`skb_put()` 경로로 커널 패닉을 낼 수 있어, Rust netlink 바인딩을 쓰는 코드는 `EMSGSIZE` 거부 패턴을 따라야 합니다.\n\n> `put()` trusted an unchecked `as` cast from `usize` to `c_int`. When the length exceeds `i32::MAX` that cast wraps around to a negative value.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/18/1293)\n\n**ftrace: Let ftrace_call_adjust() reject a patch site**\n\narm64 CALL_OPS+kCFI v2 시리즈 2/9는 `ftrace_process_locs()`가 `ftrace_call_adjust()`가 0을 반환한 패치 사이트를 skipped로 처리하도록 `kernel/trace/ftrace.c`를 수정합니다. v2 시리즈 전체의 linux-kbuild·arm64 maintainer ack 및 머지 창은 이번 조사에서 확인하지 못했습니다.\n\n영향: arm64가 정렬되지 않은 ftrace 사이트를 0으로 거부할 때 조정 주소를 검사하지 않으면 ip=0이 기록되어 `ftrace_init_nop()`→`patch_map()` BUG_ON() 부팅 크래시가 날 수 있어, kCFI·ftrace 상호작용을 추적하는 빌드·트레이싱 담당자에게 선행 수정입니다.\n\n> When ftrace_call_adjust() returns 0 for a patch site, ftrace_process_locs() does not skip the site.\n\n[원문 확인](https://lkml.iu.edu/2609.0/09053.html)\n\n**drm/tyr: safely write GpuInfo to userspace**\n\nDeborah Brouwer v2는 Tyr가 `drm_panthor_gpu_info`를 userspace에 쓸 때 수동 `AsBytes` 대신 `zerocopy_derive::most_traits` derive를 쓰도록 바꾸며, Alice Ryhl Reviewed-by 후 Gary Guo가 Makefile/uapi 변경과 Tyr 코드를 두 커밋으로 나누자고 제안했습니다. v2를 Makefile/uapi와 Tyr 전용 변경으로 나눈 재제출 여부와 drm-rust-next 머지 일정은 확인하지 못했습니다.\n\n영향: Panthor UAPI에 암묵적 패딩이 생기면 초기화되지 않은 커널 메모리가 userspace로 노출될 수 있는데, zerocopy derive 실패는 컴파일로 잡혀 Rust DRM·UAPI 동기화 패턴의 참고 사례입니다.\n\n> if implicit padding were added in the future Rust does not guarantee that it would be initialized.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/DLOBS2HQYSWS.2W0JMY91EZ48V@garyguo.net/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**samples/bpf: build the BPF programs with -fms-extensions**\n\n`samples/bpf` BPF 객체 빌드에 selftests/bpf와 동일하게 `-fms-extensions`와 `-Wno-microsoft-anon-tag`를 추가하는 bpf-next 패치가 2026-09-25에 제출되었습니다.\n\n영향: 커널이 `-fms-extensions`로 빌드되며 `vmlinux.h`의 Microsoft anonymous struct member를 clang이 무시하면 BTF 레이아웃이 실제 커널과 어긋나 샘플 BPF 프로그램이 깨지므로, Clang/BPF 샘플·CI 유지보수자는 selftests와 동일 플래그 정렬이 필요합니다.\n\n> samples/bpf did not get it. clang without the flag reads such a line as a declaration that declares nothing\n\n[원문 확인](https://lore.kernel.org/llvm/20260925154937.3677406-1-eva.kurchatova@virtuozzo.com/)\n\n**lib/lz4: stop forking upstream LZ4, vendor it instead**\n\nMichal Wilczynski RFC 9패치 시리즈는 lib/lz4 포크를 제거하고 upstream LZ4 소스를 verbatim으로 넣은 뒤 빌드 시 적응하도록 재구성하며, stream 타입 불완전화·16개 매크로 제거 등 `<linux/lz4.h>` 공개 API를 바꿉니다. RFC 시리즈의 llvm 리스트 리뷰·머지 타임라인과 zram/backport 영향 평가는 확인되지 않았습니다.\n\n영향: 포크된 `LZ4_decompress_fast()` 등에 bounds check가 없고 2017–2018년 동기화 이후 갭이 커서, zram·initramfs·EROFS 등 LZ4 사용자는 upstream 정합성·보안 수정 반영 속도와 API 마이그레이션 비용을 함께 봐야 합니다.\n\n> That has left real bugs in place for example the forked LZ4_decompress_fast() has no bounds checks, so corrupted input runs off the output buffer in both directions.\n\n[원문 확인](https://lore.kernel.org/llvm/20260925-lz4-vendor-upstream-v1-0-1c7ffbe21c4b@samsung.com/)\n\n**powerpc/bug: Add ARCH_WARN_ASM and refactor _EMIT_BUG_ENTRY for Rust support**\n\nMukesh Kumar Chaurasiya V6 스레드에서 powerpc에 `ARCH_WARN_ASM`·`ARCH_WARN_REACHABLE` 추가와 `_EMIT_BUG_ENTRY` 리팩터가 논의되며, Christophe Leroy의 매크로 명명·WARN_ON 지원 질문에 작성자가 Rust `warn_flags!`와 x86 `_BUG_FLAGS_ASM` 관례를 설명합니다. WARN_ON()용 ARCH_WARN_ASM 지원 가능 여부와 V6 패치의 powerpc maintainer 최종 ack는 스레드만으로 확정되지 않았습니다.\n\n영향: powerpc에 `ARCH_WARN_ASM`이 없으면 Rust 빌드가 `generated_arch_warn_asm.rs` macro expansion에서 실패하므로, powerpc Rust CI·크로스 아키 WARN 인프라를 맞추는 툴체인 패치입니다.\n\n> ARCH_WARN_ASM is a raw asm template used by the Rust warn infrastructure (rust/kernel/bug.rs). It does not bake in BUGFLAG_WARNING\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/arYcMdA3Zn10Xbr1@li-1a3e774c-28e4-11b2-a85c-acc9f2883e29.ibm.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "**lib/lz4와 EROFS**\n\nEROFS는 커널 LZ4 구현의 backward copy 문제로 rolling decompression을 비활성화했다고 별도 기사에서 설명합니다. lib/lz4 벤더링 RFC와의 연계는 dossier에서 단정하지 않았습니다.\n\n영향: LZ4 in-kernel 코드베이스 정합성이 파일시스템 기능 선택에도 영향을 줄 수 있어, LZ4 사용자는 커널 쪽 재구성 논의를 함께 볼 필요가 있습니다.\n\n> since the kernel LZ4 codebase is out of our control and it needs more time to plan how to do next, so disable LZ4 rolling decompression for now\n\n[원문 확인](https://www.phoronix.com/news/EROFS-Disabled-LZ4-Rolling)\n\n**rust netlink v6 리베이스**\n\n2026-09-25 net v6 cover letter는 net/main 리베이스와 다중 Reviewed-by를 포함합니다.\n\n영향: net-next 추적자는 리베이스 이후 리뷰 상태를 lore에서 확인하는 것이 좋습니다.\n\n> changes since v5: Rebased on net/main\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260925085449.22553-1-sagartaunk@proton.me/)\n\n**arm64 ftrace 패치 묶음**\n\nv2 2/9는 ftrace 조정 주소 검사 수정을 arm64 CALL_OPS+kCFI 묶음에 포함합니다.\n\n영향: 시리즈 단위로 cherry-pick할 때 ftrace 항목이 함께 따라가는지 확인하세요.\n\n> Test the adjusted address too and count the site as skipped.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20260924-b4-arm64-callops-kcfi-v2-2-587865b6d991@linux.dev/)\n\n**selftests/bpf 선행 플래그 커밋**\n\n선행 커밋 835a50753579가 selftests/bpf Makefile에 동일 `-fms-extensions` 플래그를 추가했습니다.\n\n영향: samples/bpf 패치는 selftests와 커널 빌드 정책을 맞추는 후속 정렬로 볼 수 있습니다.\n\n> The kernel is now built with -fms-extensions, therefore Use -fms-extensions and -Wno-microsoft-anon-tag flags\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=835a50753579)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "rust netlink length validation (openwall)",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/18/1293",
+      "note": "thread"
+    },
+    {
+      "title": "rust netlink v6 rebase on net/main",
+      "url": "https://lore.kernel.org/rust-for-linux/20260925085449.22553-1-sagartaunk@proton.me/",
+      "note": "thread"
+    },
+    {
+      "title": "samples/bpf -fms-extensions (bpf-next)",
+      "url": "https://lore.kernel.org/llvm/20260925154937.3677406-1-eva.kurchatova@virtuozzo.com/",
+      "note": "thread"
+    },
+    {
+      "title": "selftests/bpf -fms-extensions (torvalds)",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=835a50753579",
+      "note": "commit"
+    },
+    {
+      "title": "lib/lz4 vendor upstream RFC",
+      "url": "https://lore.kernel.org/llvm/20260925-lz4-vendor-upstream-v1-0-1c7ffbe21c4b@samsung.com/",
+      "note": "thread"
+    },
+    {
+      "title": "EROFS disabled LZ4 rolling decompression",
+      "url": "https://www.phoronix.com/news/EROFS-Disabled-LZ4-Rolling",
+      "note": "article"
+    },
+    {
+      "title": "ftrace_call_adjust skipped site (lkml)",
+      "url": "https://lkml.iu.edu/2609.0/09053.html",
+      "note": "thread"
+    },
+    {
+      "title": "arm64 CALL_OPS+kCFI v2 ftrace 2/9",
+      "url": "https://lore.kernel.org/linux-kbuild/20260924-b4-arm64-callops-kcfi-v2-2-587865b6d991@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "powerpc ARCH_WARN_ASM for Rust",
+      "url": "https://lore.kernel.org/rust-for-linux/arYcMdA3Zn10Xbr1@li-1a3e774c-28e4-11b2-a85c-acc9f2883e29.ibm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/tyr GpuInfo zerocopy v2",
+      "url": "https://lore.kernel.org/rust-for-linux/DLOBS2HQYSWS.2W0JMY91EZ48V@garyguo.net/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-25T18:26:46.489Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

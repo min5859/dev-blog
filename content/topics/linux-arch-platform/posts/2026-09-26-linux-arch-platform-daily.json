@@ -1,0 +1,118 @@
+{
+  "id": "2026-09-26-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-09-26 arm64 GPF·RISC-V IOMMU — 아키·플랫폼",
+  "headline": "arm64 GPF v18·CFI BPF jited line info 회귀 수정과 RISC-V IOMMU remapping용 iommufd·IMSIC 패치가 mailing list에 올라왔습니다.",
+  "date": "2026-09-26",
+  "summary": "arm64 쪽은 RME Granule Protection Fault 처리와 CONFIG_CFI 환경 BPF jited line info 한 instruction 어긋남 회귀가 논의·수정 중입니다. RISC-V는 Andrew Jones v6 시리즈에 맞춰 iommufd MSI 비트맵 확장과 IMSIC MSI address list가 Reviewed-by·Acked-by와 함께 제출되었습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "arm64: mm: Handle Granule Protection Faults (GPFs)",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "arm64 메모리 관리·RME/KVM confidential VM 담당",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/araqPCdcSnqZqPWz@arm.com/",
+      "if": "Confidential Compute·guest_memfd·RMM 위임 환경에서 GPF가 oops·SIGBUS·fixup 중 어디로 가는지 추적 중이면",
+      "do": "v18의 페이지 워크 GPF oops·비 워크 SIGBUS·linear map 제거 전 spurious 커널 GPF fixup 정책을 벤치마크와 크래시 덤프 시나리오에 맞춰 검토하세요",
+      "verify": "Catalin Marinas가 언급한 RMM 메타데이터·kdump GPF와 guest_memfd linear unmap 머지 후 fixup 필요 여부는 스레드 원문에서 확인하세요"
+    },
+    {
+      "title": "bpf, arm64: Fix jited line info off by kCFI hash",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "arm64 BPF JIT·CONFIG_CFI 빌드·BPF 추적 도구 사용자",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260925-b4-arm64-bpf-linfo-cfi-v1-1-e930ab335170@linux.dev/",
+      "if": "CONFIG_CFI=y arm64에서 bpf/perf/bpftool jited line info로 소스 라인을 보면",
+      "do": "cfi_get_offset() 보정과 fill 순서 변경 패치 적용 후 동일 프로그램에서 instruction·소스 라인 매핑을 다시 비교하세요",
+      "verify": "회귀 원인 커밋 710618c760c0과 Fixes 스레드에서 머지 윈도는 아직 확인이 필요합니다"
+    },
+    {
+      "title": "iommufd: Convert struct iommufd_sw_msi_maps to a growable bitmap",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "iommufd·RISC-V IOMMU·VFIO MSI 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260925151659.419512-3-andrew.jones@oss.qualcomm.com/",
+      "if": "대 CPU 수 RISC-V에서 VFIO/iommufd 소프트웨어 MSI 설치가 64개 한도에 걸리면",
+      "do": "성장 가능 비트맵과 16K 상한 변경이 interrupt remapping v6 전제와 맞는지 플랫폼 MSI 매핑 수로 검증하세요",
+      "verify": "v6 시리즈 전체 머지 일정은 수집 dossier만으로는 확인이 필요합니다"
+    },
+    {
+      "title": "irqchip/riscv-imsic: Add MSI address list",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "RISC-V IMSIC·IOMMU interrupt remapping·플랫폼 IRQ 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260925151659.419512-11-andrew.jones@oss.qualcomm.com/",
+      "if": "IOMMU가 per-CPU IMSIC 타깃을 하나의 연속 MSI IOVA 범위로 매핑해야 하면",
+      "do": "num_possible_cpus() 엔트리가 갖춰지기 전 게시하지 않는 msi_pa_list 부팅 구성을 irqchip·iommufd 연동 테스트에 반영하세요",
+      "verify": "Anup Patel Reviewed-by·Acked-by 스레드와 v6 irqchip 패치 설명을 lore 원문에서 대조하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**bpf, arm64: Fix jited line info off by kCFI hash**\n\nCONFIG_CFI=y arm64에서 prog->bpf_func가 4바이트 kCFI 해시 뒤를 가리키는데 bpf_prog_fill_jited_linfo()가 ro_image 기준 offset을 bpf_func에 더해 jited line info가 instruction 하나씩 어긋나는 회귀를, cfi_get_offset() 보정과 fill을 bpf_prog_update_insn_ptrs() 이후로 옮겨 수정합니다.\n\n영향: arm64+CFI 배포에서 bpf/perf/bpftool이 jited line info로 소스 라인을 매핑할 때 한 instruction 오차가 나면 프로파일링·JIT 디버깅 결과를 신뢰할 수 없고 Fixes 대상 커밋은 이미 메인라인에 들어간 kCFI+BPF 지원입니다.\n\n> With CONFIG_CFI=y, the jited line info of every arm64 BPF program is off by one instruction, so tools that use it show the wrong source line.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260925-b4-arm64-bpf-linfo-cfi-v1-1-e930ab335170@linux.dev/)\n\n> arm64/cfi,bpf: Support kCFI + BPF on arm64\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=710618c760c0)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**arm64: mm: Handle Granule Protection Faults (GPFs)**\n\nv18 패치는 RME에서 위임된 granule에 대한 Granule Protection Fault를 arch/arm64/mm/fault.c에서 처리하며, 페이지 워크 중 GPF는 커널 버그로 oops하고 비 워크 GPF는 사용자 공간에 SIGBUS(BUS_OBJERR)를 보냅니다. guest_memfd linear map 제거 전까지 커널의 load_unaligned_zeropad() 등에서 나는 spurious GPF는 !user_mode()에서 fixup합니다.\n\n영향: Confidential Compute·guest_memfd·RMM 위임 환경에서 GPF 정책은 호스트 안정성과 디버깅 가능성을 결정하며, 9월 말 스레드에서는 linear unmap만으로는 메타데이터 위임·kdump/vmcore까지 커버되지 않아 maintainer들이 접근을 재검토하고 있습니다.\n\n> A fault during a page walk signals a bug in the kernel and is handled by oopsing the kernel. A non-page walk fault could be caused by user space having access to a page which has been delegated\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/araqPCdcSnqZqPWz@arm.com/)\n\n> I just realised that this only solves part of the problem. Normal kernel allocations are delegated RMM metadata and they'll also trigger GPF faults.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/araqPCdcSnqZqPWz@arm.com/)\n\n**KVM: arm64: Pass kvm_s2_fault_desc to fault_supports_stage2_huge_mapping()**\n\nVincent Donnefort v1 2/6은 fault_supports_stage2_huge_mapping()과 transparent_hugepage_adjust()가 memslot·hva 대신 kvm_s2_fault_desc(s2fd)를 받도록 리팩터하고, s2fd에 vcpu·fault_ipa·nested 등을 묶습니다. 커밋 메시지는 기능 변화 없음을 명시합니다.\n\n영향: arm64 KVM stage-2 fault 경로에서 THP·huge mapping 판단이 vcpu·IPA 등 더 많은 fault 컨텍스트를 쓰게 되는 후속 패치의 구조적 준비이며, Wei-Lin Chang이 Reviewed-by를 달았습니다.\n\n> Pass the fault descriptor to fault_supports_stage2_huge_mapping() instead of passing memslot and hva separately so it can access other s2fd members such as vcpu. No functional change intended.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/g4zngh2pzvbesjwnus5kjgpmmot42qdjgef4n3ivf437xkfsdb@752uath6hkeu/)\n\n**iommufd: Convert struct iommufd_sw_msi_maps to a growable bitmap**\n\niommufd_sw_msi_maps의 고정 64비트 비트맵을 요청 시 성장하는 비트맵으로 바꾸고(미할당 ID는 absent), 소프트웨어 MSI 매핑 상한을 16K로 제한합니다. RISC-V interrupt remapping은 CPU마다 MSI 매핑이 필요해 64개 한도를 넘습니다.\n\n영향: Andrew Jones의 RISC-V IOMMU interrupt remapping 시리즈(v6)에서 iommufd가 per-CPU IMSIC 타깃을 안정 IOVA로 추적하는 전제이며, 비트맵 한도가 그대로면 대 CPU 수 플랫폼에서 VFIO/iommufd MSI 설치가 실패합니다.\n\n> struct iommufd_sw_msi_maps uses a fixed 64-bit bitmap, limiting each group and hardware page table to 64 software MSI mappings. RISC-V interrupt remapping needs a mapping for every possible CPU\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260925151659.419512-3-andrew.jones@oss.qualcomm.com/)\n\n**irqchip/riscv-imsic: Add MSI address list**\n\nRISC-V IOMMU interrupt remapping을 위해 logical CPU 인덱스별 IMSIC 물리 주소 배열(msi_pa_list)을 부팅 시 구성하고, num_possible_cpus()개 엔트리가 갖춰지기 전에는 게시하지 않습니다. Anup Patel이 Reviewed-by·Acked-by를 달았습니다.\n\n영향: MSI 메시지가 연속 IOVA 범위 안에서 타깃 CPU 위치로 합성되려면 IMSIC 페이지 물리 주소 목록이 DMA-IOMMU/iommufd에 노출되어야 하며, 이 패치는 해당 v6 시리즈의 irqchip 쪽 기반입니다.\n\n> Upcoming RISC-V IOMMU interrupt remapping needs to map every possible host IMSIC target into one contiguous MSI IOVA range.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260925151659.419512-11-andrew.jones@oss.qualcomm.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "arm64 GPF handling v18 discussion",
+      "url": "https://lore.kernel.org/linux-arm-kernel/araqPCdcSnqZqPWz@arm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "arm64 BPF jited line info CFI fix",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260925-b4-arm64-bpf-linfo-cfi-v1-1-e930ab335170@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "arm64/cfi,bpf: Support kCFI + BPF on arm64",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=710618c760c0",
+      "note": "commit"
+    },
+    {
+      "title": "iommufd growable MSI bitmap",
+      "url": "https://lore.kernel.org/linux-riscv/20260925151659.419512-3-andrew.jones@oss.qualcomm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM arm64 s2 fault descriptor refactor",
+      "url": "https://lore.kernel.org/linux-arm-kernel/g4zngh2pzvbesjwnus5kjgpmmot42qdjgef4n3ivf437xkfsdb@752uath6hkeu/",
+      "note": "thread"
+    },
+    {
+      "title": "RISC-V IMSIC MSI address list",
+      "url": "https://lore.kernel.org/linux-riscv/20260925151659.419512-11-andrew.jones@oss.qualcomm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Anup Patel review on IMSIC MSI list",
+      "url": "https://lore.kernel.org/linux-riscv/CAAhSdy37AUsq0ixwiaGz5HwSJw+jTAonoCHG5Oi8h5=Hw+bXrw@mail.gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-25T18:35:14.633Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
