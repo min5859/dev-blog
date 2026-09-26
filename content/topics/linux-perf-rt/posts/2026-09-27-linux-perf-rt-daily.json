@@ -1,0 +1,146 @@
+{
+  "id": "2026-09-27-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-09-27 IRQ exit 컨텍스트 — Perf·RT",
+  "headline": "softirq IRQ exit 창의 preempt_count 오류를 고치는 v4와 mlx5e AF_XDP teardown 회귀 수정이 RT·perf 신뢰성을 좌우합니다.",
+  "date": "2026-09-27",
+  "summary": "linux-rt-devel에서 __irq_exit_rcu()가 HARDIRQ_OFFSET를 유지하도록 하는 softirq v4와 efivarfs nostatfs 리뷰가 이어집니다. bpf 쪽에서는 mlx5e XSK TX timestamp NULL dereference 회귀 수정, stmmac XSK pool 변경 시 tracked XDP restart, bpftool SK_STORAGE 덤프 selftest, BTF inline followup이 올라왔습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "PREEMPT_RT",
+    "perf",
+    "BPF"
+  ],
+  "highlights": [
+    {
+      "title": "softirq: IRQ exit에서 인터럽트 컨텍스트 유지",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "PREEMPT_RT·perf/ftrace·IRQ exit 경로를 다루는 커널 개발자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260926143505.66024-1-kmehltretter@gmail.com/",
+      "if": "ftrace·perf·ring buffer가 IRQ exit 창에서 태스크 컨텍스트로 기록되거나 PREEMPT_RT에서 BPF sched 경로가 잘못된 spinlock 검사를 보는 경우라면,",
+      "do": "v4 패치 스레드를 읽고 preempt_count 전환(HARDIRQ_OFFSET→SOFTIRQ_OFFSET) 설계가 자신의 추적·sanitizer 시나리오에 맞는지 비교하세요.",
+      "verify": "머지 시점과 v3 리뷰 미해결 지적 반영 여부는 maintainer 응답을 확인하세요."
+    },
+    {
+      "title": "mlx5e: AF_XDP TX timestamp teardown NULL dereference",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Mellanox mlx5 AF_XDP·XSK zero-copy를 운영하는 네트워크·BPF 엔지니어",
+      "verifyLink": "https://lore.kernel.org/bpf/20260926165402.5902-1-prathameshdeshpande7@gmail.com/",
+      "if": "AF_XDP TX timestamp·체크섬 오프로드로 XSK를 쓰며 인터페이스 teardown 중 패닉이 나거나 perf/XDP 실험을 중단해야 한다면,",
+      "do": "수정 패치가 적용된 커널 또는 동일 스레드의 백포트 여부를 배포 전에 확인하세요.",
+      "verify": "회귀 원인 커밋(ec706a860eba)과 teardown 완료 경로 설명을 원문에서 대조하세요."
+    },
+    {
+      "title": "stmmac: XSK pool 변경 시 tracked datapath restart",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "stmmac·AF_XDP zero-copy를 다루는 네트워크 드라이버 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260926-submit-stmmac-reset-fixes-v1-v4-10-ec1c0250b3c9@gmail.com/",
+      "if": "embedded stmmac에서 AF_XDP pool·MTU 변경 후 datapath가 어긋나거나 NAPI가 버퍼 없는 상태로 남는다면,",
+      "do": "v4 10/15 패치의 큐 정지·실패 unwind 동작을 하드웨어 resume 실패 시나리오에 맞게 검토하세요.",
+      "verify": "v4 시리즈 net 트리 머지 순서와 Maxime Chevallier 리뷰 반영은 스레드 후속을 확인하세요."
+    },
+    {
+      "title": "BTF inline functionality followups",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "BTF·bpftool·CO-RE/디버깅 도구를 다루는 BPF 개발자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260926175113.2368566-1-alan.maguire@oracle.com/",
+      "if": "bpftool BTF 덤프나 LOC_PARAM 메타데이터 검증이 BPF/perf 디버깅 워크플로에 영향을 준다면,",
+      "do": "v3 시리즈의 verifier 강화와 LOCSEC 함수 시그니처 출력 변경이 기존 selftest·도구 스크립트를 깨지 않는지 미리 점검하세요.",
+      "verify": "bpf-next 머지 일정과 Alexei·Quentin 리뷰 최종 반영 범위는 스레드를 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**net/mlx5e: Fix AF_XDP TX timestamp teardown NULL dereference**\n\nXSK TX 큐 해제 시 CQE 없이 완료되는 descriptor가 TX timestamp를 요청하면 mlx5e_xsk_fill_timestamp()가 NULL CQE를 dereference하는 경로를, CQE가 없을 때 0을 반환하도록 고칩니다.\n\n영향: AF_XDP TX timestamp·체크섬 오프로드를 쓰는 고성능 패킷 경로에서 인터페이스 teardown 시 커널 패닉이 날 수 있어, XDP/perf 실험 중 안전한 큐 정리가 필요합니다.\n\n> the completion path passes that NULL CQE to mlx5e_xsk_fill_timestamp(), which dereferences it.\n\n[원문 확인](https://lore.kernel.org/bpf/20260926165402.5902-1-prathameshdeshpande7@gmail.com/)\n\n회귀 원인은 AF_XDP TX timestamp 오프로드 추가 커밋으로 기술됩니다.\n\n> net/mlx5e: Implement AF_XDP TX timestamp and checksum offload\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=ec706a860eba)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**softirq: Preserve interrupt context during IRQ exit**\n\nv4 패치는 __irq_exit_rcu()가 tick_irq_exit() 직전까지 HARDIRQ_OFFSET를 유지하고, softirq 처리 구간만 SOFTIRQ_OFFSET로 바꿔 preempt_count 기반 컨텍스트 판별이 IRQ exit 창에서 task로 잘못 보이지 않게 합니다.\n\n영향: ftrace·perf·ring buffer가 하드IRQ 창에서 태스크 컨텍스트로 기록되고 PREEMPT_RT에서 can_spin_trylock()·sched_waking/sched_wakeup BPF 경로가 잘못된 컨텍스트를 보게 되어, RT·perf 추적·sanitizer 결과의 신뢰성과 PI 락 동작 검증에 직결됩니다.\n\n> Everything else which derives the context from preempt_count gets it wrong in that window: - ftrace, perf and the ring buffer record task context\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260926143505.66024-1-kmehltretter@gmail.com/)\n\n> BPF programs attached to sched_waking or sched_wakeup can reach it through kmalloc_nolock().\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260926143505.66024-1-kmehltretter@gmail.com/)\n\nv4의 mainline·PREEMPT_RT 머지 시점과 v3 리뷰 미해결 지적 반영은 maintainer 응답 확인이 필요합니다.\n\n**net: stmmac: use the tracked datapath restart for XSK pool changes**\n\nstmmac v4 시리즈 10/15 패치는 per-queue enable helper 대신 추적형 XDP restart를 쓰고, XSK pool·링 변경 시 큐와 MAC link resolution을 일시 정지한 뒤 실패 시 NAPI가 버퍼 없는 상태로 남지 않게 unwind합니다.\n\n영향: James Hilliard의 15패치 시리즈는 AF_XDP pool 변경·MTU·resume 실패 후에도 datapath를 일관되게 유지하려는 전제이며, embedded stmmac에서 AF_XDP zero-copy RX 안정성은 XDP/perf 워크로드 가용성에 직결됩니다.\n\n> Replace the void per-queue enable helpers with the tracked XDP restart. Pause all queues and MAC link resolution while the pool bitmap and rings change\n\n[원문 확인](https://lore.kernel.org/bpf/20260926-submit-stmmac-reset-fixes-v1-v4-10-ec1c0250b3c9@gmail.com/)\n\n> Keep the stmmac datapath coherent after failed MTU changes or hardware resume without changing the interface's administrative state.\n\n[원문 확인](https://lore.kernel.org/bpf/20260926-submit-stmmac-reset-fixes-v1-v4-0-ec1c0250b3c9@gmail.com/)\n\n> This patch adds the support for receiving packet via AF_XDP zero-copy mechanism.\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=bba2556efad6)\n\n**efivarfs: add nostatfs mount option to skip QueryVariableInfo()**\n\n(이전 수집에서 다룬 항목) 리뷰 측면에서는 Ard Biesheuvel이 show_options 관련 else 분기 제거 피드백을 남겼고, efivarfs_show_options()의 nostatfs 필드 data race 지적이 최종 패치에서 어떻게 해소되는지는 확인이 필요합니다.\n\n> Please drop this else branch - it should be sufficient for the 'nostatfs'\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260925113145.7396-2-ardb@kernel.org/)\n\n**selftests/bpf: Check that bpftool map dump fails for socket storage**\n\nbpf-next v3 시리즈 2/2는 SK_STORAGE 맵에 소켓 storage를 붙인 뒤 bpftool map dump가 빈 출력 대신 명시적 오류(JSON·stderr)만 내도록 검증하는 selftest를 추가합니다(동작 수정은 시리즈 1/2).\n\n영향: 반복 불가 map 타입에서 bpftool이 조용히 빈 덤프를 내면 프로덕션·perf 실험 중 BPF map 스냅샷 스크립트가 잘못된 결과를 신뢰할 수 있어, 관측 도구 회귀를 막는 CI가 중요합니다(원문 인용 일부는 dossier에서 검증 전 상태로, 세부 동작은 스레드에서 직접 확인하는 것이 좋습니다).\n\n[원문 확인](https://lore.kernel.org/bpf/20260926170149.541352-1-skokovmaksimevg@gmail.com/)\n\n[원문 확인](https://lore.kernel.org/bpf/20260926170149.541352-3-skokovmaksimevg@gmail.com/)\n\n**BTF inline functionality followups**\n\nAlan Maguire v3 bpf-next 3패치 시리즈는 BTF_KIND_LOC_PARAM vlen·flags 검증을 강화하고, bpftool이 LOCSEC에 함수 시그니처를 포함하도록 바꾸며 selftest를 맞춥니다.\n\n영향: BTF·bpftool 덤프 정확도는 BPF/perf 디버깅·심볼 해석 워크플로에 쓰이며, verifier 검증 강화는 잘못된 inline loc 메타데이터로 인한 로드 실패를 줄입니다.\n\n> Include additional vlen/flags verification for BTF_KIND_LOC_PARAM (patch 1), and add function signatures to LOCSEC entries (patch 2)\n\n[원문 확인](https://lore.kernel.org/bpf/20260926175113.2368566-1-alan.maguire@oracle.com/)\n\n> Now we show a function signature, fix up the test to expect it.\n\n[원문 확인](https://lore.kernel.org/bpf/20260926175113.2368566-4-alan.maguire@oracle.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "**efivarfs: add nostatfs mount option to skip QueryVariableInfo()**\n\nefivarfs에 negatable nostatfs 마운트 옵션을 추가해 statfs()가 EFI QueryVariableInfo()를 건너뛸 수 있게 하고, CONFIG_PREEMPT_RT에서는 기본 nostatfs이며 remount로 statfs/nostatfs를 전환합니다.\n\n영향: 일부 펌웨어에서 QueryVariableInfo()가 수십 ms 동안 선점 비활성 상태로 CPU를 막아 df 등 statfs 호출이 동일 CPU의 RT·저지연 워크로드에 스톨을 주므로, RT 기본 동작과 fwupd 등 용량 조회가 필요할 때의 트레이드오프를 명시적으로 제어할 수 있습니다.\n\n> QueryVariableInfo() is an EFI runtime service that, on some firmware, takes tens of milliseconds and runs with preemption disabled, stalling the CPU that services it.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260925113145.7396-1-singhpra@juniper.net/)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "softirq: Preserve interrupt context during IRQ exit",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260926143505.66024-1-kmehltretter@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "efivarfs: add nostatfs mount option",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260925113145.7396-1-singhpra@juniper.net/",
+      "note": "thread"
+    },
+    {
+      "title": "efivarfs show_options review",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260925113145.7396-2-ardb@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "net/mlx5e: Fix AF_XDP TX timestamp teardown NULL dereference",
+      "url": "https://lore.kernel.org/bpf/20260926165402.5902-1-prathameshdeshpande7@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "net/mlx5e: Implement AF_XDP TX timestamp and checksum offload",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=ec706a860eba",
+      "note": "commit"
+    },
+    {
+      "title": "stmmac tracked XDP restart for XSK pool changes (10/15)",
+      "url": "https://lore.kernel.org/bpf/20260926-submit-stmmac-reset-fixes-v1-v4-10-ec1c0250b3c9@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "stmmac reset fixes v4 cover letter",
+      "url": "https://lore.kernel.org/bpf/20260926-submit-stmmac-reset-fixes-v1-v4-0-ec1c0250b3c9@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "stmmac AF_XDP zero-copy RX support",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=bba2556efad6",
+      "note": "commit"
+    },
+    {
+      "title": "bpftool map dump for non-iterable maps (cover)",
+      "url": "https://lore.kernel.org/bpf/20260926170149.541352-1-skokovmaksimevg@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "selftests/bpf: socket storage map dump failure",
+      "url": "https://lore.kernel.org/bpf/20260926170149.541352-3-skokovmaksimevg@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "BTF inline functionality followups v3",
+      "url": "https://lore.kernel.org/bpf/20260926175113.2368566-1-alan.maguire@oracle.com/",
+      "note": "thread"
+    },
+    {
+      "title": "selftest: bpftool BTF dump function signature",
+      "url": "https://lore.kernel.org/bpf/20260926175113.2368566-4-alan.maguire@oracle.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-26T18:30:50.442Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

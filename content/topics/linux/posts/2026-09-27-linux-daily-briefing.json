@@ -1,0 +1,150 @@
+{
+  "id": "2026-09-27-linux-daily-briefing",
+  "topic": "linux",
+  "title": "2026-09-27 프록시 이웃 큐 회귀 — 리눅스 개발",
+  "headline": "동시 프록시 이웃 요청이 큐 한도를 넘을 수 있는 네트워크 패치와 안정판·드라이버 쪽 수정 신호가 겹친 하루입니다.",
+  "date": "2026-09-27",
+  "summary": "이웃 테이블 프록시 큐가 잠금 전에 길이를 검사해 한도를 우회할 수 있다는 회귀 수정안이 올라왔습니다. 같은 시기 안정판 태그와 ethtool·암호·혼잡 제어 쪽 후보 패치도 함께 따라가면 됩니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "stable",
+    "네트워킹"
+  ],
+  "highlights": [
+    {
+      "title": "프록시 이웃 큐 입장 한도 직렬화",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "네트워크 스택 maintainer, proxy ARP/NDP 사용 배포 담당자",
+      "verifyLink": "https://patchew.org/linux/20260926173737.2491492-1-nicoyip.dev@gmail.com/",
+      "if": "프록시 ARP·NDP를 쓰는 라우터·가상화망을 다루신다면",
+      "do": "해당 패치 반영 여부와 stable 백포트 필요성을 검토하세요",
+      "verify": "Patchew 스레드에서 재현 조건과 lock 이동 내용을 확인하세요"
+    },
+    {
+      "title": "PHY 전용 타임스탬프 ethtool TSCONFIG",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "PTP/ethtool 사용자, netdev·PHY 드라이버 maintainer",
+      "verifyLink": "https://lists.openwall.net/netdev/2026/09/22/164",
+      "if": "PHY만 하드웨어 타임스탬핑을 제공하는 보드를 운영하신다면",
+      "do": "ethtool-netlink와 ioctl 경로 불일치 증상을 v3 패치와 대조하세요",
+      "verify": "netdev 스레드에서 TSCONFIG 거부 조건과 v3 변경을 확인하세요"
+    },
+    {
+      "title": "x86 AES-GCM AAD 처리 비용 회귀",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "crypto/x86 maintainer, IPsec·고성능 암호화 경로 운영자",
+      "verifyLink": "https://patchew.org/linux/20260926040614.8683-1-raizudeen.kerneldev@gmail.com/",
+      "if": "x86 AES-GCM 경로의 IPsec·TLS 처리량을 보신다면",
+      "do": "assoclen 검사 회귀 수정안과 libcrypto-fixes 반영을 추적하세요",
+      "verify": "Patchew 원문에서 self-test 통과와 효율 이슈 설명을 확인하세요"
+    },
+    {
+      "title": "TCP ROCCET 혼잡 제어 net-next 후보",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "TCP/congestion control maintainer, 모바일·WAN 성능 엔지니어",
+      "verifyLink": "https://lists.openwall.net/netdev/2026/09/22/583",
+      "if": "셀룰러·WAN TCP 튜닝을 담당하신다면",
+      "do": "v8 설계 리뷰·Sashiko High 지적에 대한 답변을 기다리세요",
+      "verify": "netdev 제출문과 Sashiko 리뷰 통계 스레드를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.1.13 stable · EOL**\n\n7.1.y 최종 릴리스와 EOL 안내는 그대로이며, 7.1.x 고정 환경은 활성 stable 계열 이전 계획이 필요합니다.\n\n영향: 이후 upstream stable 보안·회귀 수정을 더 받지 않습니다.\n\n> Note, the 7.1.y kernel series is now end-of-life.  Please move to the\n7.2.y kernel series at this point in time.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/02/1497)\n\n**Linux 7.3-rc4 mainline**\n\n9월 20일 공개된 7.3-rc4 prepatch가 현재 mainline 안정화·테스트 기준점으로 유지됩니다.\n\n영향: RC 회귀 테스트와 백포트 후보 선별이 이 태그를 따릅니다.\n\n> The patch overall seems to be\nabout a third drivers, a third filesystems and networking, and a third\n\"misc\" (architecture fixes and tooling).\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/20/1296)\n\n**Linux next-20260925 linux-next**\n\n9월 25일 일일 스냅샷 next-20260925가 게시되었고 Linus 트리 대비 non-merge 커밋 9541건 규모입니다.\n\n영향: 다음 머지 윈도우 전 통합·빌드 회귀를 조기에 드러내는 기준 트리입니다.\n\n> Non-merge commits (relative to Linus' tree): 9541\n 10060 files changed, 529974 insertions(+), 170918 deletions(-)\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/25/1698)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**net: neighbour: Serialize proxy queue admission**\n\npneigh_enqueue()가 proxy_queue.lock 전에 p->qlen을 읽어 PROXY_QLEN 입장 검사가 직렬화되지 않았고, 동시 proxy ARP/NDP 요청이 한도를 넘길 수 있었습니다.\n\n영향: 큐 길이 초과로 메모리 증가나 WARN 가능성이 있어 네트워크 스택·stable 백포트 검토 대상입니다. 메인라인·stable 반영 일정은 확인이 필요합니다.\n\n> pneigh_enqueue() checks p->qlen before taking proxy_queue.lock, although\nboth enqueueing and the timer and purge paths update it under that lock.\n\n> With a temporary 20 ms delay before locking and a queue-length assertion,\nthe kernel reported qlen=6 with PROXY_QLEN=4:\n\n[원문 확인](https://patchew.org/linux/20260926173737.2491492-1-nicoyip.dev@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Linux 7.2.8 stable**\n\nGreg Kroah-Hartman이 2026-09-25 Linux 7.2.8 stable을 태그했고 ChangeLog-7.2.8에는 v7.2.7 대비 437건의 upstream 백포트가 포함됩니다.\n\n영향: 7.2.y 추적 배포·엔터프라이즈 커널의 최신 누적 보안·회귀 기준 태그입니다.\n\n> I'm announcing the release of the 7.2.8 kernel.\n\nAll users of the 7.2 kernel series must upgrade.\n\n>  smb: client: fix next_buffer UAF and NextCommand bounds in compound PDUs\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/25/1357)\n\n**crypto: x86/aes-gcm - fix always true check for last AAD segment**\n\ngcm_process_assoc()에서 non-last AAD 판별이 항상 참이 되어 마지막 세그먼트까지 불필요한 처리·memcpy·assembly 호출이 발생했습니다.\n\n영향: 인증 태그는 변하지 않지만 x86 AES-GCM AAD 비용이 커져 고처리량 IPsec/TLS 경로에 영향을 줄 수 있습니다. libcrypto-fixes·stable 포함 여부는 확인이 필요합니다.\n\n> The GCM\nauthentication tag is unaffected either way, so the self-tests pass and\nthis went unnoticed. It is purely an efficiency issue rather than a correctness one.\n\n[원문 확인](https://patchew.org/linux/20260926040614.8683-1-raizudeen.kerneldev@gmail.com/)\n\n**net: ethtool: let tsconfig reach a PHY-only timestamp provider**\n\nethtool TSCONFIG_GET/SET가 hwtstamp NDO 없이 PHY·hwprov만 있는 netdev에서도 설정을 전달하도록 v3 시리즈가 ioctl 경로와 맞추려 합니다.\n\n영향: PHY-only 보드에서 PTP 설정 실패·인터페이스 불일치가 줄어들 수 있으나 maintainer 응답·머지 일정은 확인이 필요합니다.\n\n> TSCONFIG_GET and TSCONFIG_SET reject a device that implements neither\nhwtstamp NDO, even when its PHY can serve the request. The ioctls they\nmeant to replace handle it, so the two interfaces disagree \n\n[원문 확인](https://lists.openwall.net/netdev/2026/09/22/164)\n\n**tcp: Add TCP ROCCET congestion control module**\n\nTim Fuechsel이 net-next용 TCP ROCCET v8을 제출했고 Sashiko 자동 리뷰는 High 6건을 보고했습니다.\n\n영향: 셀룰러·대용량 버퍼용 새 혼잡 제어 후보이나 RTO·PRR·cwnd 상호작용 등 설계 리뷰가 병합 전에 필요합니다.\n\n> TCP ROCCET is a new congestion control algorithm based on TCP CUBIC\nthat improves its overall performance in cellular networks.\n\n> Critical: 0 · High: 6 · Medium: 6 · Low: 4\n\n[원문 확인](https://lists.openwall.net/netdev/2026/09/22/583)"
+    },
+    {
+      "heading": "기타",
+      "body": "linux-next Rust 문서 사이트에 next-20260925 태그가 반영된 것 외에, dossier에 국부 패치만 있는 항목은 없습니다.\n\n[원문 확인](https://rust.docs.kernel.org/next/index.html)"
+    }
+  ],
+  "confidence": {
+    "level": "high",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Linux 7.2.8 stable 릴리스 공지",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/25/1357",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-7.2.8",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.8",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 7.1.y EOL 선언",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/02/1497",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-7.1.13",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.13",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 7.3-rc4 발표",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/20/1296",
+      "note": "changelog"
+    },
+    {
+      "title": "linux-next next-20260925 공지",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/25/1698",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux Kernel next-20260925 Rust docs",
+      "url": "https://rust.docs.kernel.org/next/index.html",
+      "note": "article"
+    },
+    {
+      "title": "net neighbour proxy queue 직렬화",
+      "url": "https://patchew.org/linux/20260926173737.2491492-1-nicoyip.dev@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "crypto x86 AES-GCM AAD 효율 수정",
+      "url": "https://patchew.org/linux/20260926040614.8683-1-raizudeen.kerneldev@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "ethtool TSCONFIG PHY-only",
+      "url": "https://lists.openwall.net/netdev/2026/09/22/164",
+      "note": "thread"
+    },
+    {
+      "title": "ethtool tsconfig v3 논의",
+      "url": "https://lists.openwall.net/netdev/2026/09/26/118",
+      "note": "thread"
+    },
+    {
+      "title": "TCP ROCCET v8 제출",
+      "url": "https://lists.openwall.net/netdev/2026/09/22/583",
+      "note": "thread"
+    },
+    {
+      "title": "Sashiko ROCCET v8 리뷰",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/26/955",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-26T18:05:04.094Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-newsletter-from-dossier-ko.md"
+  }
+}

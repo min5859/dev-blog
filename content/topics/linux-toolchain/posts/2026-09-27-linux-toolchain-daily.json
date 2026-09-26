@@ -1,0 +1,124 @@
+{
+  "id": "2026-09-27-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-09-27 DropGuard·BTF — Linux 툴체인",
+  "headline": "Rust DropGuard·UAPI zerocopy, Tyr GpuInfo 안전 복사, btf_vmlinux 온디맨드 BTF, clang-tools BrokenPipe 회귀 수정이 lore에 올라왔습니다.",
+  "date": "2026-09-27",
+  "summary": "Rust for Linux에서 scope-exit 정리용 DropGuard와 UAPI zerocopy derive 선례가 v3로 이어지고, Tyr는 userspace 복사 경로를 컴파일 타임으로 묶었습니다. kbuild 쪽은 CONFIG_DEBUG_INFO_BTF=m일 때 vmlinux BTF를 btf_vmlinux 모듈로 미루는 bpf-next 시리즈와 clang-tools 파이프 회귀 한 줄 수정이 함께 보입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "툴체인"
+  ],
+  "highlights": [
+    {
+      "title": "rust: add DropGuard",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust for Linux 서브시스템·드라이버 작성자 및 rust/kernel API 유지보수자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260926173315.56772-1-mohamed.osama189110@gmail.com/",
+      "if": "block·serdev·locking에서 ScopeGuard 패턴을 쓰거나 rust/kernel API 변경을 추적하면",
+      "do": "v3 5커밋 시리즈의 DropGuard·dismiss() 마이그레이션과 KUnit 설정을 lore에서 따라가세요",
+      "verify": "cover letter에서 DropGuard 동작 설명과 기존 ScopeGuard 이전 범위를 확인하세요"
+    },
+    {
+      "title": "bpf: take the vmlinux BTF from the btf_vmlinux module",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "BPF/BTF·kbuild(DEBUG_INFO_BTF) 및 initramfs를 다루는 배포·tracing 엔지니어",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20260925224229.1850-5-wanjay@amazon.com/",
+      "if": "DEBUG_INFO_BTF=tristate·initramfs·early BPF 사용 시나리오를 설계하면",
+      "do": "request_module·btf_vmlinux_data()·.BTF.meta SHA-256 검증 경로와 IS_MODULE 가드 조건을 스레드에서 짚어보세요",
+      "verify": "bpf-next v3 4/9와 Alexei Starovoitov의 호출 컨텍스트 코멘트를 원문에서 대조하세요"
+    },
+    {
+      "title": "drm/tyr: safely write GpuInfo to userspace",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "Rust DRM Tyr/Panthor 드라이버 및 UAPI–userspace 복사 경로를 다루는 개발자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260925-b4-gpu_info_intobytes-v3-2-e19bcb71980d@collabora.com/",
+      "if": "Panthor UAPI 레이아웃과 Tyr userspace 복사 코드를 리베이스하면",
+      "do": "수동 unsafe AsBytes 제거와 bindgen derive·write_slice(as_bytes()) 전환을 v3 2/2 기준으로 맞추세요",
+      "verify": "암묵적 패딩·derive 실패 시 컴파일 중단 주장과 Daniel Almeida Reviewed-by 스레드를 확인하세요"
+    },
+    {
+      "title": "clang-tools: Import os for broken pipe handling",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "scripts/clang-tools·compile_commands를 쓰는 커널 빌드/CI·툴체인 유지보수자",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/CA+NtrhRdnuZOOFpBXvnfOXFs-HA8q+2sLvR0BxH=BjzVAEZBzw@mail.gmail.com/",
+      "if": "run-clang-tools.py로 LLVM 정적 분석 CI를 돌리면",
+      "do": "BrokenPipeError 핸들러 경로에서 os import 누락 회귀 패치 포함 여부를 확인하세요",
+      "verify": "lore 스레드와 87c7ee67deb7 BrokenPipeError 공통 처리 커밋을 함께 보세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm/tyr: safely write GpuInfo to userspace**\n\nTyr v3 2/2는 수동 unsafe impl AsBytes를 제거하고 bindgen이 derive한 IntoBytes를 써 file.rs에서 write_slice(gpu_info.as_bytes())로 userspace에 복사합니다.\n\n영향: Panthor UAPI 레이아웃이 바뀌면 derive가 깨져 컴파일이 실패하므로, 패딩·초기화 누락으로 커널 스택/힙이 userspace에 노출될 위험을 빌드 단계에서 줄입니다. Danilo Krummrich 등 추가 리뷰와 v3 머지 타임라인은 아직 불명확합니다.\n\n> if implicit padding were added in the future Rust does not guarantee that it would be initialized. Then when Tyr writes the struct back to userspace it could expose uninitialized kernel memory.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260925-b4-gpu_info_intobytes-v3-2-e19bcb71980d@collabora.com/)\n\n**clang-tools: Import os for broken pipe handling**\n\nTing-Han Hou 패치가 scripts/clang-tools/run-clang-tools.py에 `import os` 한 줄을 추가해 BrokenPipeError 핸들러의 os.open/os.dup2 호출이 NameError 없이 동작하게 합니다.\n\n영향: 87c7ee67deb7에서 추가한 파이프 끊김 처리가 깨져 있으면 clang-tools 파이프라인이 조용히 실패하거나 잘못된 예외로 중단되어 LLVM/clang 기반 커널 정적 분석 워크플로가 불안정해집니다.\n\n> The BrokenPipeError handler in run-clang-tools.py calls os.open() and os.dup2() without importing os. If this handler is reached, it raises NameError instead of redirecting stdout and exiting with sta\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/CA+NtrhRdnuZOOFpBXvnfOXFs-HA8q+2sLvR0BxH=BjzVAEZBzw@mail.gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**rust: add DropGuard**\n\nMohamed Osama가 rust/kernel/mem.rs에 DropGuard API(v3, 5패치)를 추가하고 block·serdev·locking의 ScopeGuard 사용처를 DropGuard와 dismiss()로 옮깁니다.\n\n영향: 커널 Rust에서 scope-exit 정리와 소유권 이전 패턴이 표준화되면 이후 드라이버·서브시스템 코드가 upstream core::mem::DropGuard와 같은 모델을 따르게 됩니다. ScopeGuard와 DropGuard 병행 유지 정책·upstream Rust std 정렬 일정은 스레드에서 아직 확정되지 않았습니다.\n\n> Add the Rust kernel DropGuard API and migrate the existing ScopeGuard users in the block, serdev, and locking code.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260926173315.56772-1-mohamed.osama189110@gmail.com/)\n\n**rust: uapi: add zerocopy/zerocopy_derive**\n\nDeborah Brouwer v3 1/2 패치가 UAPI 크레이트·테스트 빌드에 zerocopy/zerocopy_derive를 연결하고 bindgen이 drm_panthor_gpu_info에 zerocopy_derive::most_traits를 붙이도록 rust/Makefile과 bindgen_parameters를 확장합니다.\n\n영향: UAPI bindgen 출력에 zerocopy derive를 끼워 넣는 선례가 생기면 userspace로 구조체를 바이트 복사하는 Rust 드라이버가 수동 unsafe impl 대신 컴파일 타임으로 레이아웃 안전성을 검증할 수 있습니다. 다른 UAPI struct로 일반화할지와 bindgen 규칙 유지 비용은 후속 논의가 필요합니다.\n\n> Make the zerocopy and zerocopy_derive crates available for use when building the UAPI crate and its tests.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260925-b4-gpu_info_intobytes-v3-1-e19bcb71980d@collabora.com/)\n\n**bpf: take the vmlinux BTF from the btf_vmlinux module**\n\nJay Wang bpf-next v3 4/9가 CONFIG_DEBUG_INFO_BTF=m일 때 vmlinux BTF를 btf_vmlinux 모듈로 분리해 request_module과 SHA-256·.BTF.meta 검증 notifier로 on-demand 로드·btf_vmlinux_data() 경로를 구현합니다.\n\n영향: BTF를 모듈로 옮기면 부팅 시 ~5.4MiB(x86_64 distro config 기준) resident 비용을 BPF/BTF 실사용 시점으로 미룰 수 있어 kbuild·배포·initramfs 설계가 바뀝니다. bpf_get_btf_vmlinux()·request_module()이 IRQ-off·비선점 컨텍스트와 맞지 않을 수 있다는 지적과 Kconfig bool→tristate·gen-btf.sh 후속 머지 전 IS_MODULE 가드는 확인이 필요합니다.\n\n> With CONFIG_DEBUG_INFO_BTF=m the BTF is carried by a module named btf_vmlinux and installed by the BTF module notifier when it loads.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20260925224229.1850-5-wanjay@amazon.com/)\n\n**drm/tyr: add CSF firmware interface support**\n\nDaniel Almeida가 Laura의 CSF firmware interface 패치(6/9)에 리뷰를 달아 MAX_CSG/MAX_CS 한도·단일 global_iface Mutex 설계·pin-init/self-referential struct 제약을 지적하고 패치 분리·Panthor 상수 정렬을 요청합니다.\n\n영향: Tyr CSF FW 인터페이스는 Rust pin-init·Mutex 분할·nova-core식 lifetime 우회 패턴의 시험대가 되어, Rust for Linux에서 대형 firmware 객체를 안전하게 모델링하는 관행에 영향을 줍니다. versioning 논의는 다음 주에 답하겠다고 했고 패치 분리 반영 여부는 미정입니다.\n\n> Panthor allows up to 31 CSGs and 32 CSs per CSG (see MAX_CSGS and MAX_CS_PER_CSG in panthor_fw.h). With 16/16 here, we fail to probe on firmware that panthor accepts.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/B97A2808-7C25-4098-A88E-54FD5BB305A1@collabora.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "**drm/tyr GpuInfo v3 리뷰**\n\nDaniel Almeida가 v3 2/2에 Reviewed-by를 달았습니다.\n\n영향: zerocopy·Tyr userspace 복사 시리즈의 리뷰 신호를 lore에서 추적할 때 참고하세요.\n\n> Reviewed-by: Daniel Almeida <daniel.almeida@collabora.com>\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/08520F3C-9FFC-4EB3-9DFE-4FFEBF14B041@collabora.com/)\n\n**BTF notifier 무결성**\n\nbtf_vmlinux 로드 notifier는 carrier payload 크기·SHA-256이 커널에 링크된 .BTF.meta와 일치할 때만 수락합니다.\n\n영향: 모듈형 BTF 배포 시 빌드 메타와 런타임 carrier 정합성을 검증하는 설계 요건으로 볼 수 있습니다.\n\n> the notifier only accepts a payload whose size and SHA-256 match the values linked into the kernel as .BTF.meta\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20260925224229.1850-5-wanjay@amazon.com/)\n\n**DropGuard dismiss()**\n\nDropGuard는 drop 시 FnOnce 콜백을 실행하고 dismiss()로 cleanup 없이 값을 꺼낼 수 있습니다.\n\n영향: ScopeGuard에서 이전하는 API 사용처는 dismiss()와 drop 경계를 코드 리뷰에서 짚으세요.\n\n> DropGuard runs a FnOnce callback when dropped and provides dismiss() to take ownership of the wrapped value without running the cleanup callback.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260926173315.56772-1-mohamed.osama189110@gmail.com/)\n\n**BrokenPipeError 선행 커밋**\n\n87c7ee67deb7이 python 스크립트 공통 BrokenPipeError 처리를 추가했습니다.\n\n영향: clang-tools 회귀 수정은 해당 커밋 이후 경로를 전제합니다.\n\n> scripts: handle BrokenPipeError for python scripts\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=87c7ee67deb7)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "rust: add DropGuard (v3 cover)",
+      "url": "https://lore.kernel.org/rust-for-linux/20260926173315.56772-1-mohamed.osama189110@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: uapi zerocopy v3 1/2",
+      "url": "https://lore.kernel.org/rust-for-linux/20260925-b4-gpu_info_intobytes-v3-1-e19bcb71980d@collabora.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf btf_vmlinux module v3 4/9",
+      "url": "https://lore.kernel.org/linux-kbuild/20260925224229.1850-5-wanjay@amazon.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/tyr GpuInfo userspace v3 2/2",
+      "url": "https://lore.kernel.org/rust-for-linux/20260925-b4-gpu_info_intobytes-v3-2-e19bcb71980d@collabora.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Reviewed-by Daniel Almeida (Tyr v3)",
+      "url": "https://lore.kernel.org/rust-for-linux/08520F3C-9FFC-4EB3-9DFE-4FFEBF14B041@collabora.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/tyr CSF firmware interface review",
+      "url": "https://lore.kernel.org/rust-for-linux/B97A2808-7C25-4098-A88E-54FD5BB305A1@collabora.com/",
+      "note": "thread"
+    },
+    {
+      "title": "clang-tools import os fix",
+      "url": "https://lore.kernel.org/linux-kbuild/CA+NtrhRdnuZOOFpBXvnfOXFs-HA8q+2sLvR0BxH=BjzVAEZBzw@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "87c7ee67deb7 BrokenPipeError handling",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=87c7ee67deb7",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-26T18:24:03.122Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

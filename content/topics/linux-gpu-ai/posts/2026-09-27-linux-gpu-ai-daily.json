@@ -1,0 +1,120 @@
+{
+  "id": "2026-09-27-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-09-27 amdgpu NPA-REVOKE — GPU·AI",
+  "headline": "amdgpu UALink NPA-REVOKE 레이스 수정 v2와 msm·virtio·qxl drm 패치가 dri-devel에서 논의 중입니다.",
+  "date": "2026-09-27",
+  "summary": "amdgpu는 in-flight UALink import와 겹치는 NPA-REVOKE에서 UAF·NULL 역참조를 막는 v2를 제출했습니다. msm imported dma-buf page 경로 축소, qxl prepare_fb 실패 시 unpin, virtio-gpu 공용 vbuf cache가 함께 올라왔습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "GPU",
+    "drm"
+  ],
+  "highlights": [
+    {
+      "title": "amdgpu UALink NPA-REVOKE v2",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "amdgpu UALink/NPA import·export 및 multi-GPU fabric 스택 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260926174406.346253-1-devnexen@gmail.com/",
+      "if": "multi-GPU vPod에서 UALink/NPA 공유 메모리와 dma-buf revoke를 다룬다면",
+      "do": "v2의 READY 전용 즉시 해제·TEARDOWN·NOT_READY 시 npa_done complete 동작을 머지 전에 검토하세요",
+      "verify": "lore 스레드와 UALink 문서에서 revoke handler 가정과 v1 대비 변경을 확인하세요"
+    },
+    {
+      "title": "drm/msm imported dma-buf page 축소",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "drm/msm GEM·prime 및 Adreno dma-buf import 경로 개발자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260926183051.25754-1-robin.clark@oss.qualcomm.com/",
+      "if": "Adreno에서 외부 exporter dma-buf를 import·mmap한다면",
+      "do": "fault/mmap은 dma_buf_mmap() 위임·GPU 매핑은 sgt 유지인 6패치 시리즈의 제한을 반영해 테스트 범위를 정하세요",
+      "verify": "cover letter에서 DMABUF_DEBUG·IOMMU page 의존과 non-msm export import 미검증 주장을 확인하세요"
+    },
+    {
+      "title": "drm/qxl prepare_fb 실패 시 unpin",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "drm/qxl 및 KVM/virtio-gpu 대체 콘솔 스택 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260926163123.39217-2-dillona@gmail.com/",
+      "if": "QXL/KVM 가상 콘솔·SPICE atomic commit 준비 실패를 추적한다면",
+      "do": "v3 1/5 패치와 shadow BO·DirtyFB·head zero(2–5) 머지 순서를 함께 보세요",
+      "verify": "스레드에서 prepare_fb 실패 시 framebuffer pin 잔류 설명과 Fixes 6071c4c2a319를 확인하세요"
+    },
+    {
+      "title": "drm/virtio 공용 vbuf kmem_cache",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "drm/virtio-gpu 및 QEMU/KVM virtio GPU 스택·syzkaller CI 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260926162452.136863-1-ngocthang2710.1999@gmail.com/",
+      "if": "PCI rescan 후 virtio-gpu probe 실패나 syzbot WARNING을 본다면",
+      "do": "모듈 init/exit에서 virtio-gpu-vbufs cache를 한 번만 생성·해제하는 패치 적용 여부를 추적하세요",
+      "verify": "lore 패치와 syzkaller upstream reported 버그에서 동일 cache 이름 충돌 메시지를 대조하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm/qxl: unpin the framebuffer when plane preparation fails**\n\nqxl_plane_prepare_fb()가 GEM fence 준비 전 framebuffer를 pin한 뒤 준비가 실패하면 atomic helper가 이전 plane만 정리해 해당 framebuffer가 pin 상태로 남는 문제를, 에러 반환 전 이 plane의 framebuffer를 unpin하도록 고칩니다.\n\n영향: QXL/KVM 가상 콘솔·SPICE 경로에서 atomic commit 준비 실패가 누적되면 framebuffer pin leak로 메모리·다음 commit 실패가 이어질 수 있습니다.\n\n> If GEM preparation fails, the atomic helper cleans up only the previously prepared planes, leaving this framebuffer pinned.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260926163123.39217-2-dillona@gmail.com/)\n\n**drm/virtio: share one vbuf cache across all devices**\n\nvirtio_gpu_alloc_vbufs()가 디바이스마다 고정 이름 virtio-gpu-vbufs kmem_cache를 만들고 release가 마지막 drm_device 참조까지 지연되면 PCI 제거 후 rescan 시 동일 이름 cache가 남아 kmem_cache_create가 실패·probe가 막히는 문제를, 모듈 init/exit에서 cache를 한 번만 생성·해제하도록 바꿉니다.\n\n영향: QEMU/KVM virtio-gpu 및 syzkaller가 재현한 경로에서 /dev/fbN 등이 probe보다 오래 살아 있으면 PCI rescan 후 GPU 노드가 올라오지 않을 수 있습니다.\n\n> create the cache once at module init and destroy it at module exit instead of per device.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260926162452.136863-1-ngocthang2710.1999@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/amdgpu: Fix NPA-REVOKE racing an in-flight UALink import**\n\nv2는 NPA-REVOKE가 dma-buf 생성이 끝나기 전에 도착할 때 READY가 아닌 importer 노드에서 imp_xa_node->dmabuf를 dereference하거나 xarray 참조를 조기에 놓아 UAF·NULL deref가 나는 경로를 막습니다. READY 노드만 즉시 해제하고, 진행 중 import는 TEARDOWN으로 표시한 뒤 NPA-RELEASE를 보내고 NOT_READY이면 npa_done을 complete해 importer가 대기·타임아웃 없이 실패하도록 하며, import 완료 직전에 TEARDOWN을 검사해 unwinds합니다.\n\n영향: UALink/NPA 공유 메모리는 dma-buf dynamic attachment로 revoke가 핵심인데, exporter가 BO 해제 직후 REVOKE를 보내는 타이밍과 import 완료가 겹치면 멀티 GPU vPod에서 커널 패닉·잘못된 리스트 상태가 날 수 있어 amdgpu UALink·NPA 경로를 다루는 엔지니어는 v2의 상태 기계 변경을 머지 전에 검토해야 합니다.\n\n> The revoke handler assumes a fully imported node: it dereferences imp_xa_node->dmabuf, which is still NULL until the import completes\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260926174406.346253-1-devnexen@gmail.com/)\n\nUALink 문서상 GEM 객체는 dma-buf로 export되며 dynamic attachment로 필요 시 access revoke가 가능합니다.\n\n> The GEM object is then exported to the caller as a dma-buf. The dma-buf is leveraged for dynamic attachment which provides the ability to revoke access when necessary.\n\n[원문 확인](https://dri.freedesktop.org/docs/drm/gpu/amdgpu/ualink.html)\n\nFixes 7cc82cd90d35가 아직 mainline git.kernel.org torvalds 트리에서 확인되지 않았고, 패치는 UALink vPod 하드웨어 없이 compile-test(W=1)만 된 것으로 보고되어 있습니다.\n\n**drm/msm/gem: Drop use of pages for imported dma-bufs**\n\n6패치 시리즈는 imported dma-buf에 drm_prime_sg_to_page_array()로 page array를 유지하던 방식을 줄이고, fault/mmap 경로는 dma_buf_mmap()으로 exporter에 위임하며 resident 판별 helper를 추가합니다. GPU 매핑은 기존처럼 sgt 기반으로 두고 imported 버퍼에 대한 get_pages()·page array 노출을 제거합니다.\n\n영향: Qualcomm Adreno(drm/msm)에서 외부 exporter dma-buf를 import할 때 불필요한 page pin·배열 변환을 줄여 prime/dma-buf 경로와 정렬되지만, DMABUF_DEBUG·IOMMU/userspace pagetable 매핑은 여전히 page가 필요해 후속 작업이 남아 msm GEM·display/GPU 공유 버퍼 담당자는 제한 사항을 알아야 합니다.\n\n> Resolve this by using dma_buf_mmap() for mmap'ing imported buffers, like we are supposed to.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260926183051.25754-1-robin.clark@oss.qualcomm.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "amdgpu NPA-REVOKE v2 (dri-devel)",
+      "url": "https://lore.kernel.org/dri-devel/20260926174406.346253-1-devnexen@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "amdgpu UALink documentation",
+      "url": "https://dri.freedesktop.org/docs/drm/gpu/amdgpu/ualink.html",
+      "note": "article"
+    },
+    {
+      "title": "drm/msm imported dma-buf pages (dri-devel)",
+      "url": "https://lore.kernel.org/dri-devel/20260926183051.25754-1-robin.clark@oss.qualcomm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/qxl prepare_fb unpin (dri-devel)",
+      "url": "https://lore.kernel.org/dri-devel/20260926163123.39217-2-dillona@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/qxl follow-up (dri-devel)",
+      "url": "https://lore.kernel.org/dri-devel/20260926163834.B1AF71F000FF@smtp.kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/virtio vbuf cache (dri-devel)",
+      "url": "https://lore.kernel.org/dri-devel/20260926162452.136863-1-ngocthang2710.1999@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "syzkaller virtio-gpu-vbufs kmem_cache",
+      "url": "https://syzkaller.appspot.com/bug?extid=1b129b44597a126d2d79",
+      "note": "article"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-26T18:34:31.790Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
