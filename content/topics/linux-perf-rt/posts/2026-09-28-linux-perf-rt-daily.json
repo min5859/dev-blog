@@ -1,0 +1,93 @@
+{
+  "id": "2026-09-28-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-09-28 BPF iterator 수명 — Perf·RT",
+  "headline": "BPF iterator 반환 수명 기본값이 v6에서 뒤집히고, softirq·efivarfs RT 패치는 v4·v3로 재제출됐습니다.",
+  "date": "2026-09-28",
+  "summary": "bpf-next v6은 비-RCU iterator 결과를 기본 borrowed 수명으로 묶고 KF_ITER_RET_INDEPENDENT로만 예외를 둡니다. PREEMPT_RT 쪽은 IRQ 종료 시 preempt_count 컨텍스트 오류 수정(v4)과 efivarfs 기본 nostatfs(v3)가 계속 논의됩니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "bpf: Track borrowed iterator result lifetimes",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "BPF verifier·iterator·kfunc를 다루는 커널/BPF 개발자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260927120406.1041915-1-xyx2021@mail.ustc.edu.cn/",
+      "if": "트레이싱·스케줄 훅 등 RT 워크로드에서 BPF iterator/kfunc verifier 수명 가정에 의존한다면",
+      "do": "v5 opt-in(KF_ITER_LIFETIME) 대비 v6 기본 borrowed·KF_ITER_RET_INDEPENDENT opt-out 정책에 맞춰 테스트·헬퍼를 재검토하세요",
+      "verify": "rebased bpf-next에서 W=1 verifier·iters/dynptr selftest 결과와 cover letter의 수명 규칙 설명을 원문에서 확인하세요"
+    },
+    {
+      "title": "softirq: Preserve interrupt context during IRQ exit",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "PREEMPT_RT·IRQ/softirq·tracing·sanitizer·BPF 스케줄 훅 담당자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260926143505.66024-1-kmehltretter@gmail.com/",
+      "if": "ftrace·perf·KCSAN/KMSAN/KCOV 또는 PREEMPT_RT lock·BPF sched 훅의 컨텍스트 판별 정확도가 중요하다면",
+      "do": "v4의 __irq_exit_rcu() 초반 HARDIRQ_OFFSET 제거·softirq 구간 SOFTIRQ_OFFSET 전환 변경이 기존 분석 도구와 맞는지 점검하세요",
+      "verify": "패치 스레드의 misclassified 경로 설명과, 머지 후 perf/ftrace에서 IRQ vs task 회귀 여부는 selftest·벤치 범위를 추가로 확인할 가치가 있습니다"
+    },
+    {
+      "title": "efivarfs: add nostatfs mount option to skip QueryVariableInfo()",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "PREEMPT_RT 배포·EFI/firmware 업데이트·모니터링(d statfs) 운영자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260925113145.7396-1-singhpra@juniper.net/",
+      "if": "df 등 statfs가 RT에서 선점 불가 수십 ms 스톨을 유발했던 환경을 운영한다면",
+      "do": "v3의 PREEMPT_RT 기본 nostatfs와 remount로 일시 statfs를 켜는 방식이 배포 정책에 맞는지 검토하세요",
+      "verify": "패치의 QueryVariableInfo() 지연·~11 us vs ~66–129 ms 측정 예시를 원문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**bpf: Track borrowed iterator result lifetimes**\n\nbpf-next v6 시리즈는 비-RCU·비-acquired 구조체 iterator 반환값을 기본적으로 현재 원소 수명에 묶고, 수명이 독립적인 경우만 KF_ITER_RET_INDEPENDENT로 opt-out하도록 v5의 opt-in(KF_ITER_LIFETIME) 정책을 뒤집습니다.\n\n영향: 트레이싱·스케줄 훅 등 RT 워크로드에서 쓰는 BPF iterator/kfunc 프로그램의 verifier 수명 규칙이 바뀌므로, 기존 플래그나 가정에 의존한 테스트·헬퍼를 재검토해야 합니다.\n\n> Make non-RCU, non-acquired struct iterator results borrow the current element lifetime by default. KF_ITER_RET_INDEPENDENT marks the explicit exception for results whose lifetime is independent of the\n\n[원문 확인](https://lore.kernel.org/bpf/20260927120406.1041915-1-xyx2021@mail.ustc.edu.cn/)\n\n**softirq: Preserve interrupt context during IRQ exit**\n\nv4 패치는 __irq_exit_rcu() 초반에 HARDIRQ_OFFSET를 제거해 softirq 처리 구간이 task 컨텍스트로 오인되던 동작을 고치고, softirq 구간에서는 SOFTIRQ_OFFSET로 전환하는 raw preempt_count 갱신을 도입합니다.\n\n영향: ftrace·perf·링버퍼·KCSAN/KMSAN/KCOV가 잘못된 컨텍스트를 기록하고, PREEMPT_RT에서 can_spin_trylock()/kmalloc_nolock() 경로의 IRQ 판별과 BPF sched_waking/wakeup 훅 상호작용이 왜곡될 수 있어 RT·성능 분석 정확도에 직접 영향을 줍니다. 알려진 실제 장애 사례는 없다고 하지만, 머지 후 perf/ftrace 샘플에서 IRQ vs task 컨텍스트 회귀가 없는지 벤치·selftest 범위를 확인할 가치가 있습니다.\n\n> On the return from interrupt path, __irq_exit_rcu() removes HARDIRQ_OFFSET from the preemption counter at the very top of the function. Everything after that reports the current context as task instea\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260926143505.66024-1-kmehltretter@gmail.com/)\n\n**efivarfs: add nostatfs mount option to skip QueryVariableInfo()**\n\nv3는 nostatfs/statfs 마운트 옵션으로 statfs(2)가 QueryVariableInfo() EFI 런타임 호출을 건너뛰게 하고, CONFIG_PREEMPT_RT에서는 기본 nostatfs·remount로 일시적 statfs 보고를 켤 수 있게 합니다.\n\n영향: df 등 statfs가 같은 CPU의 선점 불가 수십 ms 스톨을 주입하던 RT 지연 스파이크를 기본 설정에서 제거하며, fwupd 등 용량 확인이 필요할 때만 remount로 비용을 감수할 수 있습니다.\n\n> QueryVariableInfo() is an EFI runtime service that, on some firmware, takes tens of milliseconds and runs with preemption disabled, stalling the CPU that services it.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260925113145.7396-1-singhpra@juniper.net/)"
+    },
+    {
+      "heading": "기타",
+      "body": "일반 kfunc borrowed-return 주석 및 bpf_real_data_inode() 수명 공백과의 코드 공유가 아직 정리되었는지는 후속 스레드 반응을 확인할 필요가 있습니다. efivarfs statfs 핸들러 rate limit은 커밋 b2326338dc68에서 도입되었습니다.\n\n> efivarfs: Rate limit statfs() handler\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=b2326338dc68)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "bpf: Track borrowed iterator result lifetimes",
+      "url": "https://lore.kernel.org/bpf/20260927120406.1041915-1-xyx2021@mail.ustc.edu.cn/",
+      "note": "thread"
+    },
+    {
+      "title": "softirq: Preserve interrupt context during IRQ exit",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260926143505.66024-1-kmehltretter@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "efivarfs: add nostatfs mount option to skip QueryVariableInfo()",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260925113145.7396-1-singhpra@juniper.net/",
+      "note": "thread"
+    },
+    {
+      "title": "efivarfs: Rate limit statfs() handler",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=b2326338dc68",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-27T18:31:04.483Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

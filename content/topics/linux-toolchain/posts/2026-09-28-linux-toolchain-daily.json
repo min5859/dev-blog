@@ -1,0 +1,105 @@
+{
+  "id": "2026-09-28-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-09-28 ptr_eq·KBUILD_OUTPUT — Linux 도구체인",
+  "headline": "RCU 주소 비교용 ptr_eq() 제안, out-of-tree용 scripts/config 수정, RfL ResourceSize·nova-core cmdq 리팩터가 동시에 올라왔습니다.",
+  "date": "2026-09-28",
+  "summary": "LLVM 최적화와 RCU 주소 의존성을 맞추는 compiler.h ptr_eq()와 KBUILD_OUTPUT을 따르는 scripts/config v3가 kbuild·컴파일러 쪽 논의를 이끕니다. Rust for Linux에서는 ResourceSize newtype와 nova-core GSP cmdq/RPC 분리가 FFI·GPU 큐 구조의 다음 land 패턴을 가늠하게 합니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "도구체인",
+    "Rust"
+  ],
+  "highlights": [
+    {
+      "title": "compiler.h: ptr_eq()로 rcu_dereference 주소 의존성 보존",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "RCU·LKMM·컴파일러 바리어를 다루는 서브시스템 유지보수자 및 Clang/LLVM 커널 빌드 추적자",
+      "verifyLink": "https://lore.kernel.org/llvm/20260927155134.4740-3-mathieu.desnoyers@efficios.com/",
+      "if": "Clang/LLVM으로 RCU 포인터를 비교·최적화 경로를 리뷰한다면",
+      "do": "hazptr 시리즈 2/4의 ptr_eq() 사용 지점과 기존 상수·이전 로드 포인터 비교 패턴을 대조해 보세요",
+      "verify": "Paul McKenney·Alan Stern 등 Acked-by가 달린 llvm@ 스레드 원문과 패치 diff를 확인하세요"
+    },
+    {
+      "title": "scripts/config: 기본적으로 $KBUILD_OUTPUT 반영",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "KBUILD_OUTPUT·scripts/config를 쓰는 커널 빌드·CI·distro 패키징 담당",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20260927154101.122633-1-voytikd@gmail.com/",
+      "if": "O= out-of-tree 빌드에서 scripts/config나 diffconfig로 .config를 다룬다면",
+      "do": "v3가 루트 stale .config 대신 ${KBUILD_OUTPUT}/.config를 갱신하는 동작과 --refresh basename 처리를 재현해 보세요",
+      "verify": "linux-kbuild 스레드의 재현 절차와 sashiko 리뷰 반영 diff를 확인하세요"
+    },
+    {
+      "title": "rust: ResourceSize를 transparent newtype로 전환",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust for Linux kernel crate·io/resource API 사용자 및 bindgen/FFI 경계를 다루는 개발자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260927-resource-size-newtype-v4-0-447a08af23fb@proton.me/",
+      "if": "resource_size_t 래핑이나 SGEntry::dma_len() 반환형을 쓰는 드라이버·바인딩을 유지한다면",
+      "do": "v4(2패치)의 explicit FFI 변환과 nova_num 시리즈와의 dma_len() 라인 정렬 요구를 로컬 rebase 계획에 넣어 보세요",
+      "verify": "rust-for-linux 스레드에서 newtype 변경과 usize::from_safe_cast() 전환 설명을 확인하세요"
+    },
+    {
+      "title": "gpu nova-core: cmdq를 RPC 하위 모듈로 분리",
+      "priority": "중",
+      "impactType": "project",
+      "affectedAudience": "in-kernel Rust GPU(nova-core) 및 drm-rust-next 브랜치를 추적하는 Rust for Linux 기여자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260927-cmdq-rpc-v2-0-c3f66ae73be4@nvidia.com/",
+      "if": "nova-core GSP 명령 큐나 r000 dual-message 준비 코드를 추적한다면",
+      "do": "v2(9패치)에서 cmdq.rs를 transport 계층으로 두고 RPC를 rpc 서브모듈로 옮긴 구조를 land 순서 가늠에 활용해 보세요",
+      "verify": "v2 변경 로그의 수신 checksum 길이 버그 수정과 기능 변경 없음 문구를 스레드에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**compiler.h: Introduce ptr_eq() to preserve address dependency**\n\nMathieu Desnoyers hazptr 시리즈 2/4가 include/linux/compiler.h에 ptr_eq()를 추가해 rcu_dereference()로 얻은 주소를 비교할 때 컴파일러 CSE·SSA GVN이 주소 의존성을 깨뜨리지 않도록 합니다.\n\n영향: LLVM/Clang 최적화와 RCU·메모리 순서 보장이 충돌하는 대표 사례라, 커널 Rust/RCU 코드와 컴파일러 쪽 리뷰어가 동일한 비교 primitive를 써야 합니다.\n\n> Compiler CSE and SSA GVN optimizations can cause the address dependency of addresses returned by rcu_dereference to be lost when comparing those pointers with either constants or previously loaded poi\n\n[원문 확인](https://lore.kernel.org/llvm/20260927155134.4740-3-mathieu.desnoyers@efficios.com/)\n\n> Introduce ptr_eq() to compare two addresses while preserving the address dependencies for later use of the address. It should be used when comparing an address returned by rcu_dereference().\n\n[원문 확인](https://lore.kernel.org/llvm/20260927155134.4740-3-mathieu.desnoyers@efficios.com/)\n\n확인 필요: 특정 Clang/GCC 버전에서 ptr_eq()만으로 충분한지, hazptr 시리즈 나머지 패치와의 머지 순서는 스레드에서 아직 확정되지 않았습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**scripts/config: honor $KBUILD_OUTPUT by default**\n\nDmitry Voytik v3가 scripts/config가 --file 없을 때 KBUILD_OUTPUT이 설정되어 있으면 기본 .config 경로를 ${KBUILD_OUTPUT}/.config로 잡고, --refresh 시 basename 처리 등 sashiko 리뷰를 반영합니다.\n\n영향: out-of-tree(O=) 빌드에서 scripts/config만 소스 트리 루트 .config를 건드리면 Kconfig 튜닝이 조용히 어긋나므로 kbuild 워크플로와 diffconfig 등과의 일관성이 중요합니다.\n\n> Fix the issue when the script silently updates a stale .config in the root directory, while the user expects ${KBUILD_OUTPUT}/.config to be updated.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20260927154101.122633-1-voytikd@gmail.com/)\n\n확인 필요: v3 머지 여부와 kbuild-maintainer 쪽 추가 코멘트는 아직 공개 스레드에서 확인되지 않았습니다.\n\n**rust: io: convert ResourceSize into a transparent newtype**\n\nLorenzo Delgado v4(2패치)가 ResourceSize를 #[repr(transparent)] newtype로 바꿔 FFI 경계 변환을 명시화하고, 선행 패치로 SGEntry::dma_len() 반환형을 u32로 정리해 tyr·nova-core 충돌을 줄입니다.\n\n영향: 커널 Rust의 resource_size_t 래핑이 암시적 정수 연산을 막으면 드라이버·바인딩 작성자가 크기/주소 변환 실수를 컴파일 단계에서 잡을 수 있습니다.\n\n> This turns ResourceSize from a type alias into a #[repr(transparent)] newtype, so that every conversion at the FFI boundary is explicit.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260927-resource-size-newtype-v4-0-447a08af23fb@proton.me/)\n\n> With patch 1 applied, that line needs usize::from_safe_cast() instead, and the FromSafeCastArch import goes away.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260927-resource-size-newtype-v4-0-447a08af23fb@proton.me/)\n\n확인 필요: nova_num 시리즈가 먼저 land되면 rebase 필요 여부, 32-bit ARM LPAE 외 아키텍처 회귀는 CI 응답이 아직 없습니다.\n\n**gpu: nova-core: gsp: prepare the command queue for r000 dual-message types**\n\nAlexandre Courbot v2(9패치)가 nova-core GSP cmdq에서 RPC 전송/수신·명령 코드를 rpc 하위 모듈로 분리해 cmdq.rs를 메시지 타입에 무관한 transport 계층으로 만들고, v2에서 수신 checksum·레이어 분리 버그를 수정합니다.\n\n영향: Rust for Linux에서 대형 GPU firmware 큐를 모듈 경계로 쪼개는 선례라, 이후 GMC/r000 dual-message 시리즈 리뷰·land 패턴에 영향을 줍니다.\n\n> making the `cmdq` module completely agnostic of the type of message it transports. By the end of the series, the only mention of RPC in `cmdq.rs` is for the `rpc` sub-module.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260927-cmdq-rpc-v2-0-c3f66ae73be4@nvidia.com/)\n\n> Fix checksum on receive incorrectly using the whole slots allocated to the message instead of its actual length.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260927-cmdq-rpc-v2-0-c3f66ae73be4@nvidia.com/)\n\n확인 필요: r000/GMC 본 시리즈와의 land 순서, drm-rust-next 대비 추가 리뷰 라운드 필요 여부는 아직 불명확합니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "compiler.h: Introduce ptr_eq() to preserve address dependency",
+      "url": "https://lore.kernel.org/llvm/20260927155134.4740-3-mathieu.desnoyers@efficios.com/",
+      "note": "thread"
+    },
+    {
+      "title": "scripts/config: honor $KBUILD_OUTPUT by default",
+      "url": "https://lore.kernel.org/linux-kbuild/20260927154101.122633-1-voytikd@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: io: convert ResourceSize into a transparent newtype",
+      "url": "https://lore.kernel.org/rust-for-linux/20260927-resource-size-newtype-v4-0-447a08af23fb@proton.me/",
+      "note": "thread"
+    },
+    {
+      "title": "gpu: nova-core: gsp: prepare the command queue for r000 dual-message types",
+      "url": "https://lore.kernel.org/rust-for-linux/20260927-cmdq-rpc-v2-0-c3f66ae73be4@nvidia.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-27T18:24:41.702Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

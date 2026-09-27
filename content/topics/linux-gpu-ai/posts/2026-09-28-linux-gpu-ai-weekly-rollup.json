@@ -1,0 +1,127 @@
+{
+  "id": "2026-09-28-linux-gpu-ai-weekly-rollup",
+  "topic": "linux-gpu-ai",
+  "title": "2026-09-28 주간 요약",
+  "headline": "drm/nouveau 및 NVIDIA OSS GPU 스택 유지보수자 주목: drm/nouveau: cancel irq_work before fr",
+  "date": "2026-09-28",
+  "summary": "오늘의 핵심: 릴리스/로드맵 1건, 회귀·보안 신호 3건, 핵심 변경 3건. 리서치 dossier 의 출처를 근거로 정리했습니다.",
+  "tags": [
+    "주간"
+  ],
+  "highlights": [
+    {
+      "title": "drm/nouveau: cancel irq_work before freeing connector",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "drm/nouveau 및 NVIDIA OSS GPU 스택 유지보수자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260925175819.3699225-1-qwe.aldo@gmail.com/",
+      "if": "drm/nouveau 및 NVIDIA OSS GPU 스택 유지보수자라면",
+      "do": "nouveau_connector_destroy()가 irq 소스는 끊지만 이미 큐에 올라간 system workqueue irq_work는 dr",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/dri-devel/20260925175819.3699225-1-qwe.aldo@gmail.com/"
+    },
+    {
+      "title": "drm/panfrost: Fix PM refcnt and autosuspend issues at device probe/remove",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "drm/panfrost 드라이버 및 ARM SoC GPU runtime PM 담당",
+      "verifyLink": "https://ratatoskr.run/dri-devel/2026/09/17638378",
+      "if": "drm/panfrost 드라이버 및 ARM SoC GPU runtime PM 담당라면",
+      "do": "Adrián Larumbe의 Panfrost v10(9월 24일) 시리즈 06/15 패치가 probe/remove에서 runtime PM usa",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://ratatoskr.run/dri-devel/2026/09/17638378"
+    },
+    {
+      "title": "drm/amdgpu: fix ATOM parameter space index bounds check",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "drm/amdgpu·ATOM/VBIOS 경로 담당",
+      "verifyLink": "https://patchwork.kernel.org/project/dri-devel/patch/20260923162839.1379927-1-qwe.aldo@gmail.com/mbox/",
+      "if": "drm/amdgpu·ATOM/VBIOS 경로 담당라면",
+      "do": "atom_get_src_int()와 atom_put_dst()가 PS 인덱스를 dword 단위로 쓰는데 바이트 크기 ctx->ps_size와 직",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://patchwork.kernel.org/project/dri-devel/patch/20260923162839.1379927-1-qwe.aldo@gmail.com/mbox/"
+    },
+    {
+      "title": "drm/xe: Log when a timed out TLB invalidation ack finally arrives",
+      "priority": "중",
+      "impactType": "release",
+      "affectedAudience": "drm/xe·Intel Arc/ARL 미디어 GT 및 GuC firmware 상호작용 담당",
+      "verifyLink": "https://ratatoskr.run/dri-devel/2026/09/17617064",
+      "if": "drm/xe·Intel Arc/ARL 미디어 GT 및 GuC firmware 상호작용 담당라면",
+      "do": "2026-09-21 스레드에서 Matthew Brost가 patch 2(타임아웃된 TLB invalidation의 늦은 ack 로깅)에 Revi",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://ratatoskr.run/dri-devel/2026/09/17617064"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**drm/xe: Log when a timed out TLB invalidation ack finally arrives**\n\n2026-09-21 스레드에서 Matthew Brost가 patch 2(타임아웃된 TLB invalidation의 늦은 ack 로깅)에 Reviewed-by를 남기고, SIGID 로그 컴포넌트 추가는 DEFINE_XE_LOG_COMPONENTS() ABI 변경이라 후속으로 미루기로 했다\n\n영향: 로그만으로는 ack가 영구 손실인지 수 초 늦은 도착인지 구분하기 어려웠는데 patch 2는 ARL 스톨 분석에 필요하고, 실제 ~2.3s 스톨을 막는 patch 3 리뷰가 시리즈 병합의 병목이다.\n\n> Reviewed-by: Matthew Brost <matthew.brost@intel.com>\n\n[원문 확인](https://ratatoskr.run/dri-devel/2026/09/17617064)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm/nouveau: cancel irq_work before freeing connector**\n\nnouveau_connector_destroy()가 irq 소스는 끊지만 이미 큐에 올라간 system workqueue irq_work는 drain하지 않아, kfree(connector) 이후 nouveau_dp_irq()가 해제된 connector를 dereference할 수 있다\n\n영향: DisplayPort hotplug/IRQ teardown 경로의 use-after-free는 커널 크래시나 정보 유출로 이어질 수 있고 stable@vger.kernel.org Cc로 백포트 후보임을 명시했다.\n\n> If a work item was already queued, nouveau_dp_irq() can run after kfree(connector) and dereference freed memory. Add cancel_work_sync() after nvif_event_dtor()\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260925175819.3699225-1-qwe.aldo@gmail.com/)\n\n**drm/panfrost: Fix PM refcnt and autosuspend issues at device probe/remove**\n\nAdrián Larumbe의 Panfrost v10(9월 24일) 시리즈 06/15 패치가 probe/remove에서 runtime PM usage_count·autosuspend를 수동으로 맞춘다. probe 성공 시 pm_runtime_put_autosuspend(), 실패·remo\n\n영향: usage_count가 0으로 남으면 GPU가 영구 활성 상태로 devfreq OPP 로그가 쏟아지고, MMU IRQ가 resume 전에 켜지지 않아 probe 직후 첫 tiler heap 작업이 타임아웃할 수 있다. ARM Mali Panfrost·Chromebook/Android G\n\n> During device probe(), failure to do a PM get() will leave the usage_count set to 0, which is the value assigned at device creation time.\n\n[원문 확인](https://ratatoskr.run/dri-devel/2026/09/17638378)\n\n**drm/amdgpu: fix ATOM parameter space index bounds check**\n\natom_get_src_int()와 atom_put_dst()가 PS 인덱스를 dword 단위로 쓰는데 바이트 크기 ctx->ps_size와 직접 비교해, 일부 잘못된 ATOM operand가 통과한 뒤 스택 parameter 버퍼 밖 최대 12바이트를 읽고 쓸 수 있었습니다. v2 패\n\n영향: 악성·손상된 VBIOS/ATOM 테이블 경로에서 amdgpu ATOM 인터프리터 OOB 접근을 막는 보안·안정성 수정으로, display/PM 테이블을 다루는 amdgpu 유지보수자는 백포트·stable 큐 여부를 봐야 합니다.\n\n> idx between ps_size/4 and ps_size-1 passes the bounds check but accesses up to 3 dwords (12 bytes) beyond the stack-allocated parameter buffer.\n\n[원문 확인](https://patchwork.kernel.org/project/dri-devel/patch/20260923162839.1379927-1-qwe.aldo@gmail.com/mbox/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/nouveau: HDMI output colour format and quantization range**\n\n6패치 시리즈가 Turing–Ada HDMI head에 Broadcast RGB·color format connector property를 추가하고, NVKMS/NVC57D PROCAMP·OCSC1·clamp로 RGB limited/full·YCbCr 4:4:4/4:2:2/4:2:0 및\n\n영향: nouveau HDMI가 amdgpu/i915·drm HDMI helper와 같은 색공간·양자화 UAPI로 맞춰지며, 잘못된 range/format 선언으로 인한 디스플레이 색 왜곡 회귀를 피하려면 compositor·QA가 새 property와 AVI InfoFrame 동작을 검증해야\n\n> Nouveau only ever outputs full-range RGB on HDMI. This series adds the standard \"Broadcast RGB\" and \"color format\" connector properties on Turing to Ada heads.\n\n[원문 확인](https://lists.freedesktop.org/archives/dri-devel/2026-September/599325.html)\n\n**drm/amdgpu: Fix NPA-REVOKE racing an in-flight UALink import**\n\nv2는 NPA-REVOKE가 dma-buf 생성이 끝나기 전에 도착할 때 READY가 아닌 importer 노드에서 imp_xa_node->dmabuf를 dereference하거나 xarray 참조를 조기에 놓아 UAF·NULL deref가 나는 경로를 막습니다. READY 노드만 즉시\n\n영향: UALink/NPA 공유 메모리는 dma-buf dynamic attachment로 revoke가 핵심인데, exporter가 BO 해제 직후 REVOKE를 보내는 타이밍과 import 완료가 겹치면 멀티 GPU vPod에서 커널 패닉·잘못된 리스트 상태가 날 수 있어 amdgpu UA\n\n> The revoke handler assumes a fully imported node: it dereferences imp_xa_node->dmabuf, which is still NULL until the import completes\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260926174406.346253-1-devnexen@gmail.com/)\n\n**drm/msm/gem: Drop use of pages for imported dma-bufs**\n\n6패치 시리즈는 imported dma-buf에 drm_prime_sg_to_page_array()로 page array를 유지하던 방식을 줄이고, fault/mmap 경로는 dma_buf_mmap()으로 exporter에 위임하며 resident 판별 helper를 추가합니다. GPU\n\n영향: Qualcomm Adreno(drm/msm)에서 외부 exporter dma-buf를 import할 때 불필요한 page pin·배열 변환을 줄여 prime/dma-buf 경로와 정렬되지만, DMABUF_DEBUG·IOMMU/userspace pagetable 매핑은 여전히 page가 \n\n> Resolve this by using dma_buf_mmap() for mmap'ing imported buffers, like we are supposed to.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260926183051.25754-1-robin.clark@oss.qualcomm.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "**Add DRM driver for Solomon SSD16xx e-paper display controllers**\n\nDevarsh Thakkar가 v2로 14패치 시리즈를 dri-devel에 재제출했으며, Solomon SSD16xx e-paper 컨트롤러용 드라이버를 drm/tiny가 아닌 drm/solomon 브리지 드라이버로 옮기고 GEM_SHMEM·DT 바인딩·SSD1677·AM62L3 EVM\n\n영향: v1 리뷰에서 지적된 모듈 파라미터·과도한 tiny 드라이버 구조를 정리한 상위 재설계로, e-paper/저전력 디스플레이를 DRM atomic KMS로 통합하려는 팀은 머지 전 API·패널 지원 범위를 여기서 추적해야 한다.\n\n> Changes from v1[0]: - Restructured into 14 modular patches covering bindings, driver core, features, and platform integration (was 6 patches in v1)\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260927182329.4193961-1-devarsht@ti.com/)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/nouveau: cancel irq_work before freeing connector",
+      "url": "https://lore.kernel.org/dri-devel/20260925175819.3699225-1-qwe.aldo@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/panfrost: Fix PM refcnt and autosuspend issues at device probe/remove",
+      "url": "https://ratatoskr.run/dri-devel/2026/09/17638378",
+      "note": "thread"
+    },
+    {
+      "title": "drm/amdgpu: fix ATOM parameter space index bounds check",
+      "url": "https://patchwork.kernel.org/project/dri-devel/patch/20260923162839.1379927-1-qwe.aldo@gmail.com/mbox/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/xe: Log when a timed out TLB invalidation ack finally arrives",
+      "url": "https://ratatoskr.run/dri-devel/2026/09/17617064",
+      "note": "thread"
+    },
+    {
+      "title": "drm/nouveau: HDMI output colour format and quantization range",
+      "url": "https://lists.freedesktop.org/archives/dri-devel/2026-September/599325.html",
+      "note": "thread"
+    },
+    {
+      "title": "Add DRM driver for Solomon SSD16xx e-paper display controllers",
+      "url": "https://lore.kernel.org/dri-devel/20260927182329.4193961-1-devarsht@ti.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/amdgpu: Fix NPA-REVOKE racing an in-flight UALink import",
+      "url": "https://lore.kernel.org/dri-devel/20260926174406.346253-1-devnexen@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/msm/gem: Drop use of pages for imported dma-bufs",
+      "url": "https://lore.kernel.org/dri-devel/20260926183051.25754-1-robin.clark@oss.qualcomm.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "source": "research-dossier",
+    "bucketCounts": {
+      "릴리스/로드맵": 1,
+      "회귀·보안 신호": 3,
+      "핵심 변경": 3,
+      "기타": 1
+    },
+    "entryCount": 8
+  }
+}

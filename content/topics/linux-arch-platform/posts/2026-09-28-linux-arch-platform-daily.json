@@ -1,0 +1,123 @@
+{
+  "id": "2026-09-28-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-09-28 RISC-V hotplug·stmmac — Arch/Platform",
+  "headline": "실패한 RISC-V CPU hotplug 재시도와 stmmac RX SG 회귀 수정이 제안·검증되고, Bao VirtIO 백엔드와 arm64 KVM SMCCC·pKVM ptdump 변경이 진행됩니다.",
+  "date": "2026-09-28",
+  "summary": "RISC-V bringup 실패 후 CPU가 offline에 고착되는 문제와 IOMMU 환경 stmmac 수신 fault 회귀에 대한 수정 패치가 리스트에 올라왔습니다. SpacemiT K1 USB2 DT binding, Bao 하이퍼바이저 IPC·I/O dispatcher, arm64 KVM SMCCC 응답 및 pKVM stage-2 ptdump 비활성화도 함께 추적할 만합니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "RISC-V hotplug 실패 후 CPU stuck offline",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "RISC-V SMP bringup·cpu hotplug·OpenSBI 연동 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20260927164418.3090433-1-artemiispatov@gmail.com/",
+      "if": "OpenSBI IPI·디버그 모드 등 타이밍 이슈로 secondary bringup이 중단된 RISC-V SoC를 운영한다면",
+      "do": "generic cpu.c의 SYNC_STATE_ALIVE kick 생략과 SBI_ERR_ALREADY_AVAILABLE 처리 패치를 리뷰하고 테스트 환경에서 재시도 시나리오를 재현해 보세요",
+      "verify": "커버 레터의 sync loop·재시도 실패 원인 설명과 패치 1/2 diff를 lore 스레드에서 직접 확인하세요"
+    },
+    {
+      "title": "stmmac RX Scatter-Gather 및 buffer2 매핑",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "stmmac/DWMAC4·XGMAC 탑재 ARM 보드·네트워크 스택 담당",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260923-stmmac-rx-sg-fix-v3-1-ed26fea7180d@oss.qualcomm.com/",
+      "if": "SMMU 기반 ARM SoC에서 jumbo·큰 프레임 수신 시 stmmac translation fault가 보이면",
+      "do": "v3 패치의 buffer2 할당·매핑 및 FCS trim·page pool sync 수정을 net 스택에 맞게 검토하고 DWMAC4 보드에서 oversized 프레임을 재검증하세요",
+      "verify": "Qualcomm 스레드의 SMMU fault 설명과 Bootlin 재검증 메일을 원문에서 확인하세요"
+    },
+    {
+      "title": "Bao 하이퍼바이저 IPC·I/O dispatcher",
+      "priority": "중",
+      "impactType": "project",
+      "affectedAudience": "Bao·static partitioning 가상화·VirtIO 백엔드 개발자",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/cover.1790357735.git.jpeixoto@osyx.tech/",
+      "if": "static partitioning 하이퍼바이저에서 Linux 게스트와 VMM·다른 파티션 간 표준 커널 인터페이스가 필요하면",
+      "do": "v4 시리즈의 `/dev/bao`·ioctl 구성과 DT 제거 방향을 읽고 QEMU+Bao 데모 조건과 맞는지 평가하세요",
+      "verify": "커버 레터의 Remote I/O·device tree 제거 논의와 experimental RISC-V ABI 주석을 lore에서 확인하세요"
+    },
+    {
+      "title": "KVM arm64 SMCCC mandatory 기능 응답",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "arm64 KVM·게스트 firmware·SMCCC 소비자",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/179052685156.3528802.11780401181301860028.b4-ty@b4/",
+      "if": "SMCCC v1.1을 광고하는 KVM 게스트 firmware가 mandatory 기능 탐지에 실패하면",
+      "do": "linux-next에 들어간 SMCCC_VERSION·SMCCC_ARCH_FEATURES SUCCESS 반환과 selftest 추가를 게스트 부트 경로에 맞춰 확인하세요",
+      "verify": "Marc Zyngier의 Applied to next 메일과 커밋 해시를 lore 스레드에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**cpu/hotplug, riscv: Fix CPU stuck offline after failed hotplug attempt**\n\n실패한 hotplug 후 AP가 `cpuhp_ap_sync_alive()`에서 멈출 때 재시도가 가능하도록 generic `kernel/cpu.c`에서 SYNC_STATE_ALIVE일 때 kick을 건너뛰고, RISC-V `sbi_hsm_hart_start()`가 `SBI_ERR_ALREADY_AVAILABLE`를 성공으로 처리합니다.\n\n영향: OpenSBI IPI·디버그 모드 등 타이밍 이슈로 bringup이 중단된 RISC-V SoC에서 CPU가 영구 offline/stuck 상태로 남는 운영 장애를 완화합니다.\n\n> A retry of the bringup fails due to both the current sync-state switching in kernel/cpu.c and the incomplete SBI error handling in arch/riscv/kernel/cpu_ops_sbi.c.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260927164418.3090433-1-artemiispatov@gmail.com/)\n\n**net: stmmac: fix rx Scatter-Gather support**\n\nSPH 비활성 프레임에서도 GMAC4/XGMAC RX buffer2를 할당·매핑해 multi-descriptor scatter 수신을 처리하고, FCS trim·page pool sync 범위를 수정합니다(Fixes: 88ebe2cf7f3f).\n\n영향: IOMMU(SMMU) 기반 ARM SoC에서 jumbo/큰 프레임 수신 시 buffer2 미매핑으로 translation fault가 나던 회귀를 줄이며, XDP·AF_XDP ZC 일부 케이스는 follow-up으로 남습니다.\n\n> As soon as an incoming frame overflowed buffer1, the DMA wrote the overflow into the unmapped secondary-buffer address, triggering an SMMU translation fault on IOMMU-based platforms.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260923-stmmac-rx-sg-fix-v3-1-ed26fea7180d@oss.qualcomm.com/)\n\n> I was able to test that on DWMAC4 (stm32mp157) sending oversized frames, and they correctly spill over the next descriptor, no crashes no stall.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/9f7d6b86-3ccb-4ccf-8758-c4b8c6ad2ef1@bootlin.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**dt-bindings: usb: ci-hdrc-usb2: add spacemit,k1-usb2 compatible**\n\nSpacemiT K1용 ChipIdea USB2.0 컨트롤러를 위한 `spacemit,k1-usb2` compatible와 clock 1개·reset 1개 이상 제약을 ci-hdrc-usb2 DT binding에 추가했습니다.\n\n영향: K1 보드(RV2·BananaPi F3 등)에서 USB2 host/DRD bring-up의 binding 검증 기준이 되며, OTG 레지스터가 없어 platform data 플래그가 필요한 SoC 특성을 문서화합니다.\n\n> The USB2.0 controller on the SpacemiT K1 SoC is dual-role capable but has no internal OTG registers, this requires flags which disable related features set in platform data.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260927-b4-spacemit-k1-usb2-v3-1-ce7095896039@linux.spacemit.com/)\n\n8패치 v3 시리즈의 linux-usb 또는 arm-soc 쪽 merge 큐 진행 여부는 확인이 필요합니다.\n\n**virt: bao: add Bao hypervisor IPC and I/O dispatcher drivers**\n\nBao static-partitioning 하이퍼바이저용 IPC shared-memory 드라이버·I/O dispatcher(VirtIO 백엔드)·UAPI(`include/uapi/linux/bao.h`)·MAINTAINERS 항목을 v4 3패치 시리즈로 제출했습니다. DT/bindings 대신 커널 커맨드라인과 `/dev/bao`+ioctl로 구성합니다.\n\n영향: 임베디드·안전 필수 RISC-V/arm64 분할 가상화 스택에서 Linux 게스트↔VMM↔다른 파티션 간 표준 커널 인터페이스가 생기며, arm64·riscv에서 QEMU+Bao 데모로 런타임 검증까지 보고됩니다.\n\n> No device tree (Krzysztof Kozlowski): both bindings and the \"bao\" vendor prefix are dropped. The IPC channels are a software contract between the hypervisor and the guest.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/cover.1790357735.git.jpeixoto@osyx.tech/)\n\nRISC-V Bao SBI extension(0x08000ba0)과 Remote I/O 반환 레지스터 관례, SMCCC vendor UID 부재로 인한 자동 탐지 문제는 upstream 포함 범위와 해결 시점이 아직 확인이 필요합니다.\n\n**KVM: arm64: Disable stage-2 ptdump of pKVM**\n\nprotected KVM(pKVM) 사용 시 guest stage-2 페이지 테이블이 하이퍼바이저 소유라 host 쪽 pgt가 초기화되지 않으므로, stage-2 ptdump debugfs 등록을 건너뜁니다.\n\n영향: pKVM 호스트에서 잘못된 stage-2 ptdump 접근을 막아 디버그 경로가 깨지거나 오해를 유발하는 문제를 피합니다.\n\n> With pKVM enabled, guest stage-2 page tables are owned and managed by the hypervisor. The host's pgt is uninitialised.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/179052685158.3528802.17360317443596680597.b4-ty@b4/)\n\n**KVM: arm64: Report SMCCC_VERSION and SMCCC_ARCH_FEATURES as implemented**\n\nKVM arm64 게스트 SMCCC 핸들러가 SMCCC_VERSION·SMCCC_ARCH_FEATURES 쿼리에 SUCCESS를 반환하도록 수정하고, mandatory SMCCC_ARCH_FEATURES selftest를 추가합니다.\n\n영향: SMCCC v1.1을 광고하는 KVM 게스트·firmware가 DEN0028H 필수 기능 탐지에 실패하지 않도록 arm64 가상화 ABI 준수를 맞춥니다.\n\n> Applied to next, thanks!\n\n[1/2] KVM: arm64: Report SMCCC_VERSION and SMCCC_ARCH_FEATURES as implemented\n      commit: 7ef1b9e11dd7b3832124e26a6fee703b342d6f7f\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/179052685156.3528802.11780401181301860028.b4-ty@b4/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "중",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "spacemit,k1-usb2 ci-hdrc-usb2 DT binding v3",
+      "url": "https://lore.kernel.org/linux-riscv/20260927-b4-spacemit-k1-usb2-v3-1-ce7095896039@linux.spacemit.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Bao hypervisor IPC and I/O dispatcher v4 cover",
+      "url": "https://lore.kernel.org/linux-riscv/cover.1790357735.git.jpeixoto@osyx.tech/",
+      "note": "thread"
+    },
+    {
+      "title": "RISC-V CPU stuck offline after failed hotplug (cover)",
+      "url": "https://lore.kernel.org/linux-riscv/20260927164418.3090433-1-artemiispatov@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "RISC-V hotplug SYNC_STATE_ALIVE fix (patch 1/2)",
+      "url": "https://lore.kernel.org/linux-riscv/20260927164418.3090433-2-artemiispatov@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM arm64: Disable stage-2 ptdump of pKVM",
+      "url": "https://lore.kernel.org/linux-arm-kernel/179052685158.3528802.17360317443596680597.b4-ty@b4/",
+      "note": "thread"
+    },
+    {
+      "title": "stmmac fix rx Scatter-Gather support v3",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260923-stmmac-rx-sg-fix-v3-1-ed26fea7180d@oss.qualcomm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "stmmac RX SG fix tested on DWMAC4 stm32mp157",
+      "url": "https://lore.kernel.org/linux-arm-kernel/9f7d6b86-3ccb-4ccf-8758-c4b8c6ad2ef1@bootlin.com/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM arm64: SMCCC_VERSION and SMCCC_ARCH_FEATURES",
+      "url": "https://lore.kernel.org/linux-arm-kernel/179052685156.3528802.11780401181301860028.b4-ty@b4/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-27T18:33:10.092Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

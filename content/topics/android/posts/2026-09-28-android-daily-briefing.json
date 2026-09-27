@@ -1,0 +1,140 @@
+{
+  "id": "2026-09-28-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-09-28 drm-next·SELinux — Android 커널",
+  "headline": "android-mainline에 drm-next 머지가 반영되었고, SELinux·FUSE·wrapfd 등 런타임·보안 관련 ACK 패치가 이어집니다.",
+  "date": "2026-09-28",
+  "summary": "drm-next-2026-06-17 태그 머지와 중복 mem_accounting export 정리가 android-mainline 동기화의 축입니다. SELinux+BPF 회귀 방지, FUSE suspend 데드락, wrapfd underflow 등 벤더·메인라인 양쪽 수정도 함께 확인할 만합니다.",
+  "tags": [
+    "안드로이드",
+    "커널",
+    "ACK",
+    "GKI"
+  ],
+  "highlights": [
+    {
+      "title": "SELinux BPF: SBLABEL_MNT 검사 순서",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "SELinux·BPF 사용 ACK, android-mainline 보안 머지",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/8f0a5b31aee19510e75741c9687cf0d9321fa7ed",
+      "if": "bpffs 등 xattr 없는 genfscon 마운트에서 SELinux inode 초기화 경로를 쓰는 경우",
+      "do": "android-mainline에 해당 FROMGIT cherry-pick 반영 여부를 머지 계획에 넣고, 관련 마운트 시나리오를 재현 테스트하세요.",
+      "verify": "커밋과 lore 스레드에서 SBLABEL_MNT 검사 순서 변경 및 upstream stable cherry-pick 맥락을 원문으로 확인하세요."
+    },
+    {
+      "title": "wrapfd: 파일 로드 경로 underflow",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "android16-6.12 ACK·wrapfd/dmabuf 사용자",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/1b1a96c608d8f0b105513268d0dcdd1f2198f6c7",
+      "if": "android16-6.12에서 wrapfd로 파일을 dmabuf에 로드하는 HAL·그래픽 버퍼 경로를 운영한다면",
+      "do": "해당 커밋이 포함된 트리로 백포트·빌드하고, unaligned offset에서 direct read fast path가 선택되지 않는지 검증하세요.",
+      "verify": "원문에서 빼기 전 underflow 검사 문구를 확인하세요."
+    },
+    {
+      "title": "FUSE: suspend 시 freezer 대기",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "android16-6.12·FUSE(예: sdcardfs/virtiofs) 사용 기기 전원 팀",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/aff1917ea969915365f9595cdffba56f1c7ee9c3",
+      "if": "FUSE 클라이언트가 suspend 경로에서 D state로 멈추거나 1s 타임아웃이 보인다면",
+      "do": "android16-6.12에 freezable wait 패치를 포함한 빌드로 suspend·resume 회귀 테스트를 돌리세요.",
+      "verify": "request_wait_answer()의 wait_event_freezable·TASK_FREEZABLE 변경을 커밋 원문에서 확인하세요."
+    },
+    {
+      "title": "PM wakeup: lockdep 순환 락",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "전원 관리·suspend/resume 디버그 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/c439eb78736dc606256bac910652f186c4933d08",
+      "if": "wakeup reason 디버그를 켠 상태에서 suspend/resume 또는 IRQ 경로를 추적한다면",
+      "do": "버퍼 복사 후 unlock 뒤 출력·IRQ 핸들러 지연 동작이 들어간 빌드로 lockdep 경고 재현 여부를 확인하세요.",
+      "verify": "wakeup_reason_lock 해제 후 pr_info 호출 등 데드락 수정 설명을 원문에서 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Merge drm-next-2026-06-17 into android-mainline**\n\ndrm-next-2026-06-17 태그 머지를 android-mainline에 반영했으며 cma_heap.c·system_heap.c trivial conflict를 해결했습니다.\n\n영향: android-mainline이 v7.2-rc1 방향 drm/dma-buf upstream 변화를 따라가며 GKI·그래픽 스택 동기화의 큰 마일스톤입니다. 머지에 포함된 개별 drm-next 변경의 android-only follow-up 목록은 별도 changelog가 필요할 수 있습니다.\n\n> Steps on the way to v7.2-rc1\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/01ee4ea37e86aacce089f0ccb2e3e0e02bfc7fae)\n\n**Revert ANDROID dma-buf heaps mem_accounting export**\n\nANDROID 측 mem_accounting 심볼 export 패치를 revert했습니다. upstream f78a0607c8bf가 동일 export를 추가해 중복을 피합니다.\n\n영향: drm-next 머지 후 GKI/모듈 빌드에서 duplicate symbol export로 깨질 수 있는 ACK 전용 패치를 정리합니다.\n\n> This is no longer needed as the export has now been added by upstream commit f78a0607c8bf\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/9fb882e31c318d88c36b9b0b173ce7f7d6d801e5)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**FROMGIT: selinux bpf SBLABEL_MNT before isec init**\n\nselinux_inode_init_security()에서 isec initialized 설정 전에 SBLABEL_MNT(마운트 xattr 라벨 지원)를 검사하도록 순서를 바꿨습니다.\n\n영향: bpffs 등 xattr 없는 genfscon 마운트에서 isec가 잘못 initialized로 남아 inode_doinit_with_dentry()가 깨지는 SELinux+BPF 회귀를 막는 것이 목적입니다. 원문 인용 검증은 dossier에서 실패했으므로, 상세 동작은 원문 확인이 필요합니다.\n\n> Do the SBLABEL_MNT check before the inode security is initialized.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/8f0a5b31aee19510e75741c9687cf0d9321fa7ed)\n\n[스레드](https://lore.kernel.org/all/akWdcp6P0FkNDzBk@google.com/)\n\n**FUSE request_wait_answer freezable wait**\n\nFUSE request_wait_answer()의 wait_event를 wait_event_freezable(+ TASK_FREEZABLE)로 바꿔 suspend 중 freezer가 대기 태스크를 TASK_FROZEN으로 전환할 수 있게 했습니다.\n\n영향: FUSE 데몬이 먼저 freeze되면 클라이언트가 D state로 멈춰 try_to_freeze_tasks()가 실패하고 suspend가 1s 타임아웃하던 데드락을 해소합니다.\n\n> Use wait_event_freezable() and TASK_FREEZABLE modifier in request_wait_answer()\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/aff1917ea969915365f9595cdffba56f1c7ee9c3)\n\n**PM wakeup reasons circular locking**\n\nsuspend 디버그의 wakeup reason 출력에서 wakeup_reason_lock·console_sem, irq_desc_lock·console_owner 역전을 끊기 위해 버퍼 복사 후 unlock 뒤 pr_info, IRQ 핸들러 내 출력은 early resume까지 지연합니다.\n\n영향: lockdep가 보고하던 suspend/resume 경로 데드락 가능성을 줄여 전원·웨이크업 디버깅을 프로덕션에 가깝게 켤 수 있습니다.\n\n> Fix Deadlock #1 by releasing wakeup_reason_lock before printing to the console.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/c439eb78736dc606256bac910652f186c4933d08)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**mm: dump_tasks() safe in NMI context**\n\nNMI 컨텍스트에서 dump_tasks() 호출 시 spin_trylock과 memcg OOM 덤프 조기 반환으로 alloc_lock·memcg 락 데드락을 피하도록 수정했습니다.\n\n영향: LMKD·메모리 압박 시 NMI에서 태스크 덤프를 쓰는 ACK 경로에서 lockdep/데드락 없이 OOM 진단 정보를 얻을 수 있습니다. 원문 인용 검증은 실패했으므로 구현 세부는 원문에서 확인하세요.\n\n> Using spin_trylock(&t->alloc_lock) in find_lock_task_mm() when in_nmi(). Returning early if a memcg oom dump is requested in NMI context.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/db2acc01b75f9a30bfef0f4d2a6f413542cc32ac)\n\n**drivers/wrapfd: subtraction underflow in file load**\n\nbuf_offs+len이 페이지보다 작을 때 dmabuf 직접 읽기 경로로 잘못 들어가던 unsigned underflow 조건을, 빼기 전 underflow 여부를 검사하도록 고쳤습니다.\n\n영향: wrapfd 기반 파일→dmabuf 로드에서 잘못된 fast path가 트리거되면 데이터 손상·크래시로 이어질 수 있어 android16-6.12 반영 가치가 큽니다.\n\n> only take that code path if the subtraction wouldn't result in an underflow.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/1b1a96c608d8f0b105513268d0dcdd1f2198f6c7)\n\n**selftest/mm: MAP_DROPPABLE workaround**\n\nbionic 헤더에 MAP_DROPPABLE이 없어 selftests/mm/mlock2-tests.c가 깨지므로, 헤더 갱신 전까지 로컬 workaround 정의를 추가했습니다.\n\n영향: ACK CI·로컬에서 mm selftest를 돌리는 팀은 droppable mapping 회귀 테스트를 다시 빌드할 수 있습니다. bionic에 MAP_DROPPABLE이 들어오면 workaround 제거 시점은 확인이 필요합니다.\n\n> error: use of undeclared identifier 'MAP_DROPPABLE'\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/6b38b459a2223ba6486317bd9ae4ee399582d8cd)\n\n**gki_defconfig: disable new tegra pimux drivers**\n\nupstream Tegra238/Tegra264 pinmux 드라이버가 CONFIG_ARCH_TEGRA로 기본 빌드되므로 GKI defconfig에서 해당 Kconfig를 명시적으로 끕니다.\n\n영향: GKI 이미지에 불필요한 Tegra pinmux가 포함되지 않아 빌드 시간·모듈/내장 범위를 GKI 정책에 맞출 수 있습니다.\n\n> These get built by default via CONFIG_ARCH_TEGRA but are not needed in GKI, so explicitly disable them.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/bef97a3ba93cb17037265de3ccabc844b378dd5a)\n\n**dma-heap: restore struct dma_heap kernel-doc**\n\ndrm-next 머지로 빠진 struct dma_heap kernel-doc를 upstream 문구와 ANDROID @heap_dev에 맞게 복구했습니다.\n\n영향: 기능 변경은 없으나 dma-heap/dmabuf 문서·kernel-doc CI 경고를 없애 ACK 유지보수 시 혼선을 줄입니다.\n\n> scripts/kernel-doc -none drivers/dma-buf/dma-heap.c reports five warnings before this change and none after it.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/d6549754be00560c3cd7afb7f1cd3e91c14e78b0)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ANDROID: mm: Make dump_tasks() safe in NMI context",
+      "url": "https://android.googlesource.com/kernel/common/+/db2acc01b75f9a30bfef0f4d2a6f413542cc32ac",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: drivers/wrapfd: Prevent subtraction underflow in file load path",
+      "url": "https://android.googlesource.com/kernel/common/+/1b1a96c608d8f0b105513268d0dcdd1f2198f6c7",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: selftest/mm: fix missing MAP_DROPPABLE definition",
+      "url": "https://android.googlesource.com/kernel/common/+/6b38b459a2223ba6486317bd9ae4ee399582d8cd",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: gki_defconfig: disable new tegra pimux drivers",
+      "url": "https://android.googlesource.com/kernel/common/+/bef97a3ba93cb17037265de3ccabc844b378dd5a",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: PM: wakeup: Fix circular locking dependencies in wakeup reasons",
+      "url": "https://android.googlesource.com/kernel/common/+/c439eb78736dc606256bac910652f186c4933d08",
+      "note": "commit"
+    },
+    {
+      "title": "FROMGIT: selinux: bpf: check SBLABEL_MNT before isec init",
+      "url": "https://android.googlesource.com/kernel/common/+/8f0a5b31aee19510e75741c9687cf0d9321fa7ed",
+      "note": "commit"
+    },
+    {
+      "title": "selinux bpf SBLABEL_MNT lore thread",
+      "url": "https://lore.kernel.org/all/akWdcp6P0FkNDzBk@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "ANDROID: dma-heap: restore struct dma_heap kernel-doc lost in a merge",
+      "url": "https://android.googlesource.com/kernel/common/+/d6549754be00560c3cd7afb7f1cd3e91c14e78b0",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: fuse: Use freezable wait in request_wait_answer to avoid suspend deadlock",
+      "url": "https://android.googlesource.com/kernel/common/+/aff1917ea969915365f9595cdffba56f1c7ee9c3",
+      "note": "commit"
+    },
+    {
+      "title": "Merge drm-next-2026-06-17 into android-mainline",
+      "url": "https://android.googlesource.com/kernel/common/+/01ee4ea37e86aacce089f0ccb2e3e0e02bfc7fae",
+      "note": "commit"
+    },
+    {
+      "title": "Revert ANDROID dma-buf heaps mem_accounting symbol export",
+      "url": "https://android.googlesource.com/kernel/common/+/9fb882e31c318d88c36b9b0b173ce7f7d6d801e5",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-27T18:07:40.292Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/android-newsletter-from-dossier-ko.md"
+  }
+}
