@@ -198,4 +198,17 @@ sudo systemd-analyze verify \
 
 ## 10. 실행 기록
 
-실제 변경, 검증 결과, 일시적 실패와 복구를 시간순으로 추가합니다.
+### 2026-09-28 사전 준비
+
+- 운영 서버와 별개인 원격 최신 `main` 기반 임시 worktree에서 계획 작성
+- `wiki-publisher`용 systemd 템플릿을 저장소에 반영
+- 운영 서버 `/srv/dev-blog`를 latest `main`으로 fast-forward
+- Node 테스트 131개 통과
+- 새 systemd 템플릿과 기존 timer의 `systemd-analyze verify` 통과
+- `/srv/dev-blog` 파일 10,927개가 모두 `devblog` 소유임을 확인
+- 기존 설치 unit은 계속 `User=devblog`, timer는 enabled/active 상태 유지
+- deploy key, SSH config, 디렉터리 소유권과 인증은 변경하지 않음
+- 로컬 기존 checkout은 사용자 commit과 임시 파일이 있어 수정하지 않음
+
+실제 통합은 Research Wiki의 9월 29일·30일 정기 실행과 같은 날 OSS Radar 실행을
+확인한 뒤 진행합니다.
