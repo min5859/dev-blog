@@ -1,0 +1,131 @@
+{
+  "id": "2026-09-29-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-09-29 BPF rhtab 선점경고 — 성능·RT",
+  "headline": "resizable rhtab 삭제 경로의 선점 가능 컨텍스트 per-CPU 해제 회귀와 bpftool·mvneta XDP 플래그 누수, picolcd RT 잠금 수정이 동시에 올라왔습니다.",
+  "date": "2026-09-29",
+  "summary": "BPF rhtab·bpftool·mvneta에서 회귀 수정과 verifier subprog 인자 통합, picolcd HID 잠금 정리가 메일링 리스트에 제출되었습니다. bpf-next 머지·stable backport와 일부 하드웨어·장기 stress는 maintainer·추가 테스트 확인이 필요합니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "BPF",
+    "PREEMPT_RT",
+    "XDP"
+  ],
+  "highlights": [
+    {
+      "title": "rhtab_delete_elem() smp_processor_id() 경고",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "BPF hashtab/rhtab 맵 유지보수 및 bpf-next 안정성을 추적하는 런타임 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260928173703.504474-1-omermetekaya0@gmail.com/",
+      "if": "고부하 resizable rhtab 삭제·배치 또는 syzkaller bpf_mem_cache_free_rcu BUG 재현이 보이면",
+      "do": "bpf_disable_instrumentation() 구간으로 정리를 옮긴 패치 스레드와 원인 커밋 6905f8601298을 대조해 backport 필요성을 검토하세요",
+      "verify": "스레드 원문과 syzkaller extid fd7e415d891073b83e1f 기록에서 선점 가능 this_cpu_ptr() 경로를 확인하세요"
+    },
+    {
+      "title": "서브프로그램 인자 검증 통합 v2",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "BPF verifier·BTF·global subprog를 다루는 컴파일·런타임 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260928181414.644158-1-ameryhung@gmail.com/",
+      "if": "dynptr·arena·global subprog 또는 tracing/XDP 대형 프로그램에서 로드 실패·오진단이 helper/kfunc와 subprog 간에 어긋나면",
+      "do": "check_func_args()로 모은 v2 11패치 시리즈 리뷰 상태를 추적하고 wide argument 이후 BTF lookup 수정을 반영 여부를 보세요",
+      "verify": "커버레터에서 btf_check_func_arg_match() 중복 검증과 Alexei 피드백 반영 문구를 원문으로 확인하세요"
+    },
+    {
+      "title": "bpftool map show/dump BTF 메타 누수",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "bpftool·BPF selftest·맵 introspection을 쓰는 성능·관측 엔지니어",
+      "verifyLink": "https://lore.kernel.org/bpf/cover.1790615923.git.hi@tychen.cc/",
+      "if": "mixed-BTF 환경에서 map dump·자동화 스크립트가 BTF 없는 맵에 잘못된 BTF ID를 보이면",
+      "do": "루프마다 bpf_map_info를 memset하는 Tianyi Chen 2패치와 regression subtest를 로컬 selftest로 돌려보세요",
+      "verify": "커버레터의 BTF metadata leak 설명과 show/dump 루프 초기화 변경을 링크된 스레드에서 확인하세요"
+    },
+    {
+      "title": "picolcd spinlock·framebuffer 데드락",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "PREEMPT_RT·HID·fbdev 드라이버 잠금을 검토하는 커널·RT 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/CANOyQmGfmBdTRaEamVdGuMBToVLeXGi6qLrnX=xkA9acsL9TSQ@mail.gmail.com/",
+      "if": "PREEMPT_RT에서 picolcd sysfs·UHID destroy 동시성 또는 syzkaller repro 클래스를 다루면",
+      "do": "출력 경로 mutex·fb 전용 mutex로 분리한 Aveline Noir v2 2패치와 PREEMPT_RT bounded 테스트 결과를 검토하세요",
+      "verify": "v2 커버레터의 syzkaller repro·동시성 테스트 기술과 패치 1의 spinlock_t 아래 hid_hw_request() 설명을 원문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**bpf: Fix smp_processor_id() warning in rhtab_delete_elem()**\n\nresizable hashtab의 rhtab_delete_elem()에서 bpf_enable_instrumentation() 이후 bpf_mem_cache_free_rcu()가 this_cpu_ptr()를 호출해 선점 가능 컨텍스트에서 smp_processor_id() 경고가 나던 경로를, 삭제 후 정리를 bpf_disable_instrumentation() 구간 안으로 옮겨 수정합니다.\n\n영향: resizable rhtab 삭제·배치 경로는 고부하 BPF 맵 워크로드에서 자주 쓰이며, 선점 가능 컨텍스트에서 per-CPU 캐시 해제는 RT·tracing 환경에서도 동일한 잘못된 CPU 접근 패턴을 드러내 backport·fuzz 재현 시 우선 확인할 회귀입니다.\n\n> bpf_mem_cache_free_rcu() uses this_cpu_ptr() which requires preemption to be disabled. In rhtab_delete_elem(), this call happens after bpf_enable_instrumentation()\n\n[원문 확인](https://lore.kernel.org/bpf/20260928173703.504474-1-omermetekaya0@gmail.com/)\n\nbpf-next 메인라인 머지 시점과 stable backport 필요 여부는 maintainer 응답 확인이 필요합니다.\n\n**bpftool: Reset map info between queries**\n\nTianyi Chen 2패치 시리즈가 bpftool map show/dump 루프마다 bpf_map_info를 memset으로 초기화해, BTF가 있는 맵 다음에 조회한 비-BTF 맵에 이전 BTF 메타데이터가 섞이는 버그를 고치고 selftest를 추가합니다.\n\n영향: bpftool map dump는 perf/BPF 디버깅·자동화에서 기본 도구인데, 잘못된 BTF ID 표시는 맵 분석·스크립트 판단을 틀리게 하여 mixed-BTF 배포 환경에서 신뢰성 문제가 됩니다.\n\n> Reset map info before each query in the existing show and dump loops to prevent BTF metadata from a preceding map leaking into a map without BTF.\n\n[원문 확인](https://lore.kernel.org/bpf/cover.1790615923.git.hi@tychen.cc/)\n\n**net: mvneta: clear XDP pfmemalloc flag between frames**\n\nLorenzo Bianconi v3 패치(리뷰 스레드에 인용)는 mvneta_swbm_rx_frame()에서 xdp_buff의 HAS_FRAGS만 지우던 것을 xdp_reinit_buf()로 모든 플래그를 초기화해 XDP_FLAGS_FRAGS_PF_MEMALLOC가 다음 프레임 skb에 잘못 전파되는 버그를 수정합니다.\n\n영향: 잘못된 skb->pfmemalloc 표시는 메모리 압박·네트워크 스택의 할당 정책을 왜곡해 fragmented XDP RX 경로의 처리량·지연 측정과 운영 판단을 흐릴 수 있습니다.\n\n> only the XDP_FLAGS_HAS_FRAGS bit was cleared at frame start, so the pfmemalloc bit leaked from one frame into the following ones.\n\n[원문 확인](https://lore.kernel.org/r/20260923-mvneta-xdp-clear-frag-fix-v2-1-298693a7ea6b@oss.qualcomm.com)\n\nToke가 지적한 xdp_reinit_buf() 함수명 철자(buff) 수정이 v4에 반영되는지 확인이 필요합니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Unify subprog argument checks**\n\nAmery Hung v2 11패치 시리즈가 서브프로그램 호출 인자 검증을 helper/kfunc와 동일한 check_func_args() 경로로 통합하고, wide argument 이후 kfunc BTF 파라미터 조회 버그 수정과 selftest 갱신을 포함합니다.\n\n영향: verifier 인자 규칙이 호출 종류마다 갈라지면 dynptr·arena·global subprog 등 복잡한 프로그램에서 로드 실패·오진단이 어긋나고, 대형 BPF(특히 tracing/XDP)의 검증 시간·안정성에 직결됩니다.\n\n> Helper and kfunc calls now validate arguments through check_func_args(), while subprog calls still duplicate much of the same validation in btf_check_func_arg_match().\n\n[원문 확인](https://lore.kernel.org/bpf/20260928181414.644158-1-ameryhung@gmail.com/)\n\nv2 리뷰에서 pkt_changed 메타데이터 처리 변경이 다음 리비전에 반영되는지 확인이 필요합니다.\n\n**HID: picolcd: Fix output-request and framebuffer locking**\n\nAveline Noir v2 2패치가 picolcd에서 spinlock 보유 중 hid_hw_request() 호출을 출력용 mutex 기반 sleepable 경로로 옮기고, framebuffer last-close와 deferred worker 간 데드락을 전용 mutex로 끊습니다.\n\n영향: spinlock 아래 sleeping HID 전송은 PREEMPT_RT에서 대표적인 잘못된 잠금 패턴이며, v2는 RT 전용이 아닌 일반 spinlock_t misuse로 명시해 upstream·RT 트리 모두에서 동일 클래스의 잠금·데드락 리스크를 줄입니다.\n\n> The first patch was tested separately with the original syzkaller C reproducer and bounded concurrent sysfs/UHID-destroy workloads on PREEMPT_RT.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/CANOyQmGfmBdTRaEamVdGuMBToVLeXGi6qLrnX=xkA9acsL9TSQ@mail.gmail.com/)\n\n물리 하드웨어·장기 stress·suspend/resume는 아직 테스트되지 않았습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "high",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "bpf: Fix smp_processor_id() warning in rhtab_delete_elem()",
+      "url": "https://lore.kernel.org/bpf/20260928173703.504474-1-omermetekaya0@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Allow special fields in resizable hashtab",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/bpf/bpf-next.git/commit/?id=6905f8601298",
+      "note": "commit"
+    },
+    {
+      "title": "syzkaller bpf_mem_cache_free_rcu BUG",
+      "url": "https://syzkaller.appspot.com/bug?extid=fd7e415d891073b83e1f",
+      "note": "article"
+    },
+    {
+      "title": "Unify subprog argument checks v2",
+      "url": "https://lore.kernel.org/bpf/20260928181414.644158-1-ameryhung@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpftool: Reset map info between queries",
+      "url": "https://lore.kernel.org/bpf/cover.1790615923.git.hi@tychen.cc/",
+      "note": "thread"
+    },
+    {
+      "title": "HID: picolcd locking v2 cover",
+      "url": "https://lore.kernel.org/linux-rt-devel/CANOyQmGfmBdTRaEamVdGuMBToVLeXGi6qLrnX=xkA9acsL9TSQ@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "HID: picolcd spinlock and hid_hw_request",
+      "url": "https://lore.kernel.org/linux-rt-devel/CANOyQmELtcxZJRsmBF_tWkMvNYKS3y26DafWeS9102pqdZa+4A@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "net: mvneta clear XDP pfmemalloc flag",
+      "url": "https://lore.kernel.org/r/20260923-mvneta-xdp-clear-frag-fix-v2-1-298693a7ea6b@oss.qualcomm.com",
+      "note": "thread"
+    },
+    {
+      "title": "net: marvell rely on xdp_update_skb_shared_info",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=ed7a58cb40bd",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-28T18:30:05.913Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

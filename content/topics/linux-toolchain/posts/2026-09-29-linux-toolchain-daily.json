@@ -1,0 +1,133 @@
+{
+  "id": "2026-09-29-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-09-29 initramfs·kallsyms — 툴체인",
+  "headline": "gen_init_cpio가 scripts/로 옮겨지고 kallsyms 조회가 약 7배 빨라지는 등 kbuild·Rust·Clang 교차 패치가 linux-kbuild와 llvm 리스트에 올라왔습니다.",
+  "date": "2026-09-29",
+  "summary": "initramfs 생성 도구 경로와 no-dot-config 타깃, 분리 빌드용 scripts/config 동작, kallsyms 성능 트레이드오ff가 논의 중입니다. pin-init 7.4 동기화와 DAMON·보안 RFC의 Clang/Rust CI 빌드 신호도 함께 추적할 가치가 있습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "gen_init_cpio·gen_initramfs.sh를 scripts/로 이동",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "kbuild·initramfs·selftest 스크립트를 유지하는 커널 빌드 담당",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20260928-move-gen_init_cpio-to-scripts-v4-2-f437a33c40ac@kernel.org/",
+      "if": "CI나 배포 스크립트가 usr/gen_init_cpio 경로나 예전 top-level 타깃에 의존한다면",
+      "do": "빌드·패키징 경로와 SBOM·selftest 참조를 scripts/ 및 새 타깃 이름에 맞게 점검하세요",
+      "verify": "v4 cover letter와 2/2 패치에서 경로·kbuild 통합 설명을 원문으로 확인하세요"
+    },
+    {
+      "title": "kallsyms_lookup_names 조회 약 7배 가속",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "kbuild kallsyms 생성·CONFIG_KALLSYMS_SELFTEST 및 BPF/트레이싱 등 대량 심볼 조회 경로 담당",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20260926-ksyms-tune-v6-0-236620c65e98@gmail.com/",
+      "if": "대량 심볼 이름 조회 지연이나 .rodata 증가가 빌드·런타임에 영향을 줄 수 있다면",
+      "do": "v6 벤치(약 184k 심볼, +42.2 KiB .rodata)와 마커 밀도 16:1 변경을 리뷰 기준으로 삼으세요",
+      "verify": "Andrew Morton이 요구한 실사용 시나리오 응답이 스레드에 충분한지는 추가 확인이 필요합니다"
+    },
+    {
+      "title": "pin-init upstream 7.4 동기화 시리즈",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust for Linux·pin-init proc-macro를 쓰는 in-tree Rust 드라이버 작성자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260928-dev-pin-init-sync-v1-0-e591c8e9cf0e@garyguo.net/",
+      "if": "in-tree Rust 드라이버가 pin-init 매크로와 진단 메시지에 의존한다면",
+      "do": "PR #179·#180 반영 내용과 커널 트리 3패치 diff를 다음 릴리스 전에 맞춰 보세요",
+      "verify": "mailing list와 GitHub 중 리뷰가 어디서 마무리되는지는 아직 열려 있으니 양쪽 스레드를 함께 보세요"
+    },
+    {
+      "title": "DAMON kdamond_fn Clang 스택 한도 초과",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "Clang/W=1 randconfig CI 추적자 및 mm/damon 유지보수자",
+      "verifyLink": "https://lore.kernel.org/llvm/20260928083959.4030-3-sj@kernel.org/",
+      "if": "linux-next randconfig에서 Clang -Wframe-larger-than이 -Werror로 켜져 있다면",
+      "do": "Arnd Bergmann 쪽 noinline_for_stack 확대와 SJ Park 3패치 묶음을 mm/damon과 빌드 설정 관점에서 같이 추적하세요",
+      "verify": "cover letter의 enum 정리·kunit 추가 축이 본인 CI 매트릭스와 겹치는지 원문을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Move tool for generating initramfs cpio to scripts/**\n\nNicolas Schier v4는 gen_init_cpio를 .config 없이 빌드하는 top-level 타깃을 정리하고, usr/의 gen_init_cpio·gen_initramfs.sh를 scripts/로 옮기며 문서·selftest·SBOM 참조를 갱신합니다.\n\n영향: out-of-tree 빌드·CI·배포가 예전 usr/ 경로를 가정하면 조용히 깨질 수 있어 kbuild·initramfs 워크플로 정합이 필요합니다.\n\n> gen_init_cpio and gen_initramfs.sh are part of kbuild and required for generating the built-in initramfs.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20260928-move-gen_init_cpio-to-scripts-v4-2-f437a33c40ac@kernel.org/)\n\n**scripts/config: honor $KBUILD_OUTPUT by default**\n\nDmitry Voytik v3는 --file 없을 때 기본 .config를 소스 루트가 아니라 $KBUILD_OUTPUT/.config로 쓰도록 수정합니다(어제도 다룬 항목, v3 리뷰 지속).\n\n영향: O= 분리 빌드에서 scripts/config가 루트의 오래된 .config를 건드리면 UBSAN 등 옵션 토글이 의도한 빌드에 반영되지 않습니다.\n\n> If $KBUILD_OUTPUT is set, use it by default if --file is not passed.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20260927154101.122633-1-voytikd@gmail.com/)\n\n**kallsyms: Accelerate symbol name lookups by ~7x**\n\nJim Cromie v6는 압축 심볼명 조기 종료 비교, 마커 밀도 256:1→16:1, get_symbol_seq() 인라인·언롤로 kallsyms_lookup_names()를 가속합니다.\n\n영향: scripts/kallsyms.c 빌드 타임 테이블과 런타임 조회가 함께 바뀌며 BPF multi-kprobe 등 대량 조회 지연과 .rodata 트레이드오ff를 추적할 이유가 있습니다.\n\n> Results (kernel/kallsyms_selftest across ~184k symbols):\n- Baseline (256:1):  6,102 ns\n- Patch 2 (16:1):      866 ns (7.0x faster)\n- Memory: +42.2 KiB .rodata, 0 bytes dynamic RAM\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20260926-ksyms-tune-v6-0-236620c65e98@gmail.com/)\n\n**rust: pin-init: upstream synchronization for 7.4**\n\nGary Guo가 upstream PR #179(진단 개선)과 PR #180(Pin<&mut T> 재차용)을 rust/pin-init에 7.4 동기화용 3패치로 올렸습니다.\n\n영향: proc-macro·pin-init 동작 변경은 in-tree Rust 드라이버 컴파일과 에러 메시지에 직접 닿습니다.\n\n> This sync series contain two upstream PRs:\n\n- Several additional diagnostics improvements\n  https://github.com/Rust-for-Linux/pin-init/pull/179\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260928-dev-pin-init-sync-v1-0-e591c8e9cf0e@garyguo.net/)\n\n**mm/damon/core: cleanup code, reduce stack usage, and add kunit**\n\nSJ Park 3패치는 DAMOS enum 정리, kdamond_fn 스택 프레임 초과(clang-21) 대응 noinline_for_stack 확대, PSI quota kunit을 포함합니다.\n\n영향: Clang -Wframe-larger-than이 -Werror인 randconfig에서 mm/damon과 LLVM 툴체인 교차 이슈로 보입니다.\n\n> mm/damon/core.c:3953:12: error: stack frame size (1288) exceeds limit (1280) in 'kdamond_fn' [-Werror,-Wframe-larger-than]\n\n[원문 확인](https://lore.kernel.org/llvm/20260928083959.4030-3-sj@kernel.org/)\n\n**security: Allow dropping bounding set process-wide (LKP 빌드 보고)**\n\nkernel test robot이 Jinjie Ruan RFC를 clang 22.1.3·rustc 1.96.0 W=1 설정에서 빌드했을 때 security/commoncap.c에서 mk_kernel_cap 미선언 호출로 실패했다고 보고합니다.\n\n영향: 보안 RFC와 별개로 Clang+Rust CI에서 흔한 implicit declaration 패턴이므로 헤더·베이스 트리 정합을 점검해야 합니다.\n\n> security/commoncap.c:1399:22: error: call to undeclared function 'mk_kernel_cap'; ISO C99 and later do not support implicit function declarations\n\n[원문 확인](https://lore.kernel.org/llvm/202609281347.3heKlnv9-lkp@intel.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Move gen_init_cpio to scripts v4 cover",
+      "url": "https://lore.kernel.org/linux-kbuild/20260928-move-gen_init_cpio-to-scripts-v4-0-f437a33c40ac@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "Move gen_init_cpio to scripts v4 2/2",
+      "url": "https://lore.kernel.org/linux-kbuild/20260928-move-gen_init_cpio-to-scripts-v4-2-f437a33c40ac@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "scripts/config honor KBUILD_OUTPUT v3",
+      "url": "https://lore.kernel.org/linux-kbuild/20260927154101.122633-1-voytikd@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "kallsyms tune v6 cover",
+      "url": "https://lore.kernel.org/linux-kbuild/20260926-ksyms-tune-v6-0-236620c65e98@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "kallsyms marker shift v6 2/3",
+      "url": "https://lore.kernel.org/linux-kbuild/20260926-ksyms-tune-v6-2-236620c65e98@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "pin-init sync for 7.4 v1",
+      "url": "https://lore.kernel.org/rust-for-linux/20260928-dev-pin-init-sync-v1-0-e591c8e9cf0e@garyguo.net/",
+      "note": "thread"
+    },
+    {
+      "title": "pin-init PR #180",
+      "url": "https://github.com/Rust-for-Linux/pin-init/pull/180",
+      "note": "article"
+    },
+    {
+      "title": "mm/damon core cleanup patch 3",
+      "url": "https://lore.kernel.org/llvm/20260928083959.4030-3-sj@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "mm/damon core cleanup cover",
+      "url": "https://lore.kernel.org/llvm/20260928083959.4030-1-sj@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "LKP build report commoncap RFC",
+      "url": "https://lore.kernel.org/llvm/202609281347.3heKlnv9-lkp@intel.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-28T18:25:52.220Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

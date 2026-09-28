@@ -1,0 +1,108 @@
+{
+  "id": "2026-09-29-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-09-29 KVM memslot UAF — 커널 보안",
+  "headline": "Power KVM Book3S HV의 memslot 레이스 수정 재전송과 cs_dsp 하드닝 적용이 하드닝·격리 신뢰성 쪽에서 눈에 띕니다.",
+  "date": "2026-09-29",
+  "summary": "가상 모드 HPT hcall 경로에 SRCU 보호를 더하는 KVM 패치 시리즈가 재전송되며 Reviewed-by가 붙었습니다. cs_dsp 계수 제어 구조체에는 __counted_by_ptr 어노테이션이 for-7.4 사운드 트리에 들어갔습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "KVM PPC Book3S HV virtual-mode HPT hcall SRCU 보호",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "Power KVM Book3S HV 및 stable 백포트(v5.14+) 추적 담당",
+      "verifyLink": "https://lore.kernel.org/all/20260928122837.8782-1-amachhiw@linux.ibm.com/",
+      "if": "Power KVM Book3S HV에서 guest 메모리 슬롯을 동적으로 조정한다면",
+      "do": "재전송된 SRCU 보호 시리즈 커버와 리뷰 상태를 확인하고, stable 백포트 포함 여부는 공식 스레드를 따라가세요",
+      "verify": "virtual-mode HPT hcall이 guest exit 후 SRCU 없이 memslot에 닿을 때 concurrent KVM_SET_USER_MEMORY_REGION으로 UAF·메모리 corruption이 날 수 있다는 설명과 패치 제목을 원문에서 대조하세요"
+    },
+    {
+      "title": "firmware cs_dsp __counted_by_ptr 어노테이션",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "firmware/cs_dsp 및 ALSA Cirrus DSP 드라이버 유지보수 담당",
+      "verifyLink": "https://git.kernel.org/pub/scm/linux/kernel/git/broonie/sound.git/commit/?id=3e71ea6dca1d",
+      "if": "Cirrus DSP(cs_dsp) 경로를 장기 지원 커널이나 for-7.4 계열에서 추적한다면",
+      "do": "broonie/sound for-7.4에 적용된 커밋과 로컬 백포트·하드닝 정책을 맞춰 보세요",
+      "verify": "Applied to for-7.4 통보와 커밋 제목이 cs_dsp_coeff_ctl에 __counted_by_ptr를 단다는 내용과 일치하는지 확인하세요"
+    },
+    {
+      "title": "scsi bfa Fabric 심볼명 snprintf 전환",
+      "priority": "중",
+      "impactType": "project",
+      "affectedAudience": "scsi/bfa 드라이버 및 KSPP API 정리 추적자",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20260928090031.712418-2-nikitash.mariiaw@gmail.com/",
+      "if": "전역 strlcat() 제거 로드맵이나 bfa Fabric 드라이버를 유지한다면",
+      "do": "v2 패치의 snprintf 단일 호출 전환과 scsi maintainer Reviewed-by를 기준으로 머지·백포트 일정을 점검하세요",
+      "verify": "In preparation for removing the deprecated strlcat() API 문구와 Reviewed-by: Bart Van Assche 라인을 스레드에서 확인하세요"
+    },
+    {
+      "title": "string_escape_mem ESCAPE_BACKSLASH 제안 NAK",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "lib/string_helpers·printk 이스케이프 경로 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/a2687bd9-8cf7-1d08-41fc-9d6e69b5ca17@linux.intel.com/",
+      "if": "커널 로그 이스케이프 API를 확장하거나 printk 출력 경계를 다룬다면",
+      "do": "신규 플래그 대신 기존 @only 인자 활용 가능성과 테스트·문서 부재 지적을 반영해 재제출 방향을 보라",
+      "verify": "No test cases --> automatically NAK. 인용과 ESCAPE_BACKSLASH 설명, SPACE-class 이스케이프 동작 변경 가능성 지적 스레드를 함께 읽으세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**KVM: PPC: Book3S HV: Add SRCU protection for virtual-mode HPT hcalls**\n\n가상 모드 HPT hcall이 guest exit 후 SRCU 없이 memslot에 접근해 concurrent KVM_SET_USER_MEMORY_REGION 시 memslot UAF·메모리 corruption이 가능한 문제를 SRCU read lock으로 막는 패치 시리즈가 재전송되었고 Reviewed-by가 달렸습니다.\n\n영향: kvm_memslots_raw()가 lockdep 검사를 우회해 레이스가 조용히 남을 수 있는 호스트 커널 메모리 corruption 클래스로, Power KVM Book3S HV 운영 환경의 VM 격리 신뢰성에 직결됩니다.\n\n> lock_rmap() then writes to freed vmalloc memory, leading to use-after-free and memory corruption.\n\n[원문 확인](https://lore.kernel.org/linux-hardening/v77pjykr.ritesh.list@gmail.com/)\n\n잘못 게시된 스레드는 폐기하고 재전송 시리즈를 따르라는 안내가 있습니다. stable 백포트 포함 여부와 메인라인 머지 일정은 확인이 필요합니다.\n\n**firmware: cs_dsp: Annotate struct cs_dsp_coeff_ctl with __counted_by_ptr**\n\ncs_dsp_coeff_ctl 구조체에 __counted_by_ptr 어노테이션을 추가하는 하드닝 패치가 Mark Brown에 의해 broonie/sound for-7.4 브랜치에 적용되었습니다.\n\n영향: KASAN·__builtin_dynamic_object_size 기반 경계 검사를 DSP 계수 제어 구조체에 연결해 OOB 클래스를 조기에 잡는 KSPP/__counted_by_ptr 확산 사례입니다.\n\n> Applied to https://git.kernel.org/pub/scm/linux/kernel/git/broonie/sound.git for-7.4\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/broonie/sound.git/commit/?id=3e71ea6dca1d)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**scsi: bfa: Use snprintf() in bfa_fcs_fabric_nsymb_init()**\n\nscsi/bfa v2 패치에서 deprecated strlcat() 체인을 단일 snprintf()로 바꾸는 KSPP strlcat 제거 준비 작업에 Bart Van Assche의 Reviewed-by가 달렸습니다.\n\n영향: 전역 strlcat() 제거 로드맵의 일부로, 스토리지 Fabric 심볼 이름 구성 경계를 단순화해 버퍼 경계 실수 가능성을 줄이는 하드닝 정리에 해당합니다.\n\n> In preparation for removing the deprecated strlcat() API[1], replace the chained string copies with a single snprintf() call.\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20260928090031.712418-2-nikitash.mariiaw@gmail.com/)\n\n메인라인 머지 시점과 v2 시리즈 전체 상태는 확인이 필요합니다.\n\n**lib/string_helpers: add ESCAPE_BACKSLASH flag to string_escape_mem()**\n\nstring_escape_mem()에 백슬래시만 선택적으로 이스케이프하는 ESCAPE_BACKSLASH 플래그 추가 제안이 linux-hardening에서 논의되었고, Andy Shevchenko는 기존 @only 인자로 동일 동작이 가능하다며 테스트·printk·문서 없음을 이유로 NAK했습니다.\n\n영향: 커널 로그·이스케이프 API는 크로스 서브시스템 보안 출력 경계와 연결되며, 불필요한 플래그 확장 vs 기존 API 활용 및 동작 변경 가능성(ESCAPE_SPACE 처리)이 리뷰에서 짚혔습니다.\n\n> Add ESCAPE_BACKSLASH, which escapes only '\\\\'. It can be combined with ESCAPE_SPACE, or used on its own\n\n[원문 확인](https://lore.kernel.org/linux-hardening/a2687bd9-8cf7-1d08-41fc-9d6e69b5ca17@linux.intel.com/)\n\n> additional SPACE-class characters might have also been escaped which was not in the original implementation\n\n[원문 확인](https://lore.kernel.org/linux-hardening/CAHp75VffMOx6q1JKHFz6-_rByiC=1xTqn8Aw47i1KvWPBLCPkw@mail.gmail.com/)\n\n제출자가 @only 기반 재작성으로 회신할지는 확인이 필요합니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "KVM PPC Book3S HV SRCU protection (resent series)",
+      "url": "https://lore.kernel.org/all/20260928122837.8782-1-amachhiw@linux.ibm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM memslot UAF discussion",
+      "url": "https://lore.kernel.org/linux-hardening/v77pjykr.ritesh.list@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "cs_dsp __counted_by_ptr commit",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/broonie/sound.git/commit/?id=3e71ea6dca1d",
+      "note": "commit"
+    },
+    {
+      "title": "scsi bfa snprintf hardening",
+      "url": "https://lore.kernel.org/linux-hardening/20260928090031.712418-2-nikitash.mariiaw@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "string_escape_mem ESCAPE_BACKSLASH thread",
+      "url": "https://lore.kernel.org/linux-hardening/a2687bd9-8cf7-1d08-41fc-9d6e69b5ca17@linux.intel.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-28T18:23:01.223Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

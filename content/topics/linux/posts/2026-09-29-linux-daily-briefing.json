@@ -1,0 +1,143 @@
+{
+  "id": "2026-09-29-linux-daily-briefing",
+  "topic": "linux",
+  "title": "2026-09-29 7.3-rc5·TCP회귀 — 리눅스 개발",
+  "headline": "메인라인 7.3-rc5가 selftest 비중이 큰 형태로 나왔고, TCP old ACK 경로의 타임스탬프 echo 회귀 수정이 검토 중입니다.",
+  "date": "2026-09-29",
+  "summary": "Linus Torvalds가 Linux 7.3-rc5 prepatch를 태그했으며 diffstat에서 selftests 비중이 두드러진다고 설명했습니다. Jeff Jo의 TCP 패치는 old ACK 시 stale timestamp echo로 RTT가 부풀려질 수 있는 문제를 고치고 packetdrill 회귀 테스트를 추가합니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "TCP old ACK 타임스탬프 echo",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "네트워크 스택·성능·selftest를 다루는 커널·배포 담당자",
+      "verifyLink": "https://lists.openwall.net/netdev/2026/09/21/634",
+      "if": "TCP 타임스탬프 기반 RTT·전송을 다루는 경우",
+      "do": "idle·재정렬 시나리오에서 패치·백포트 적용 여부를 검토하세요",
+      "verify": "netdev 스레드와 patchew 리뷰 코멘트에서 수정·테스트를 확인하세요"
+    },
+    {
+      "title": "Linux 7.3-rc5 mainline",
+      "priority": "상",
+      "impactType": "release",
+      "affectedAudience": "mainline·distro-next 커널을 빌드·테스트하는 엔지니어",
+      "verifyLink": "https://lwn.net/Articles/1096958/",
+      "if": "다음 메이저 커널을 미리 빌드·검증하는 경우",
+      "do": "이 RC 기준으로 회귀 테스트와 백포트 후보를 점검하세요",
+      "verify": "kernel.org releases.json과 Torvalds RC 공지 원문을 확인하세요"
+    },
+    {
+      "title": "Linux 7.2.8 stable",
+      "priority": "중",
+      "impactType": "release",
+      "affectedAudience": "7.2.y stable 커널을 패키징·배포하는 담당자",
+      "verifyLink": "https://lwn.net/Articles/1096820/",
+      "if": "7.2.y stable을 패키징·운영하는 경우",
+      "do": "ChangeLog와 공지에 맞춰 포인트 업그레이드를 계획하세요",
+      "verify": "ChangeLog-7.2.8과 Greg Kroah-Hartman 공지에서 범위를 확인하세요"
+    },
+    {
+      "title": "VMware panic pre-kdump 훅",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "VMware 게스트에서 kdump·panic 분석을 담당하는 가상화·SRE 엔지니어",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/09/18/467",
+      "if": "VMware 게스트에서 kdump와 panic 로그를 함께 다루는 경우",
+      "do": "머지 전까지는 제안 스레드만 참고하고 배포에 단정하지 마세요",
+      "verify": "openwall LKML 스레드에서 panic_pre_kdump_list 방향을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.3-rc5 mainline**\n\nLinus Torvalds가 2026-09-27 Linux 7.3-rc5 prepatch를 태그했고, RC 공지에서는 diffstat이 평소와 달리 selftests 비중이 크고 드라이버 비중이 상대적으로 작다고 설명합니다.\n\n영향: 7.3 최종 릴리스 전 mainline 회귀 테스트와 백포트 후보 선별이 이 RC를 기준으로 진행되며, selftest·KVM·스케줄러·네트워킹 수정이 이번 주기의 주요 리스크 영역입니다.\n\n> The diffstat looks a bit unusual. Less than a third of the patch is\ndrivers, and a quarter is just selftests.\n\n[원문 확인](https://lwn.net/Articles/1096958/)\n\n**Linux 7.2.8 stable**\n\n이전 브리핑에서 다룬 7.2.8 stable 공지이며, 이번 수집에서 추가 릴리스 진척은 없습니다.\n\n영향: 7.2.y 사용자는 SMB/CIFS·AMD GPU·9p 등 다수 백포트를 이 포인트 릴리스로 받을 수 있습니다.\n\n> I'm announcing the release of the 7.2.8 kernel.\n\nAll users of the 7.2 kernel series must upgrade.\n\n[원문 확인](https://lwn.net/Articles/1096820/)\n\n**Linux 7.1.13 stable · EOL**\n\n이전 브리핑과 동일한 7.1.y EOL·7.1.13 태그 공지이며, 새 변화는 없습니다.\n\n영향: 7.1.y에 고정된 배포는 동일 브랜치의 추가 stable 수정을 더 이상 받지 않아 지원 중인 7.2.y 등으로 이전 계획이 필요합니다.\n\n> Note, the 7.1.y kernel series is now end-of-life.  Please move to the\n7.2.y kernel series at this point in time.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/02/1497)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**selftests: net: check timestamp echo after an old ACK**\n\nJeff Jo TCP 시리즈는 out-of-order gap-filling 세그먼트가 old ACK를 실어올 때 tcp_ack()의 old_ack 경로에서 TS.Recent를 갱신하지 않아 잘못된 timestamp echo가 나가는 문제를 수정하고, packetdrill 기반 tcp_old_ack_ts 회귀 테스트를 추가합니다. netdev-bot은 구형 packetdrill이 outbound TSecr를 검증하지 않아 수정 없는 커널에서도 테스트가 통과할 수 있다고 지적했습니다. 2026-09-28 netdev-bot 리플라이가 mainline/net에 이미 머지됐는지는 확인되지 않았습니다.\n\n영향: TCP timestamps를 RTT 추정에 쓰는 서비스는 idle·재정렬 시나리오에서 과대 RTT로 전송 속도가 떨어질 수 있으며, selftest의 false PASS 가능성은 수정의 지속적 검증에 영향을 줍니다.\n\n> Linux can acknowledge newly received data while echoing an outdated\nTCP timestamp.\n\n[원문 확인](https://lists.openwall.net/netdev/2026/09/21/634)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**panic, x86/vmware: Preserve crash logs before kdump**\n\nZack Rusin은 VMware 게스트 panic/kdump 경로에서 crash_kexec_post_notifiers 전역 기본값 대신 panic_pre_kdump_list를 도입하고 VMware 로그 전송기를 그 체인의 첫 클라이언트로 두는 v2 방향을 제시했습니다. panic_pre_kdump_postpone로 조기 실행을 조정하는 패치도 검토 중이며, v2 6패치 전체와 일부 테스트 주장은 공개 아카이브에서 독립 확인되지 않았습니다.\n\n영향: VMware·kdump 환경에서는 vmcore 수집 전 host vmware.log에 커널 로그를 남기는 것과 kdump 안정성이 충돌할 수 있어, 범용 pre-kdump 훅 설계가 가상화·크래시 덤프 담당자의 공통 관심사로 보입니다.\n\n> I'll drop VMware's\ncrash_kexec_post_notifiers default and start with one generic\npanic_pre_kdump_list, with only the VMware log sender on it.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/18/467)"
+    },
+    {
+      "heading": "기타",
+      "body": "linux-next 일일 통합 스냅샷(next-20260928)과 device DAX/HugeTLB vmemmap 리뷰 답장 후보는 별도 릴리스 노트·시스템 전반 이슈가 드러나지 않아 이번 핵심 브리핑에서는 제외했습니다."
+    }
+  ],
+  "confidence": {
+    "level": "high",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ChangeLog-7.1.13",
+      "url": "https://www.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.13",
+      "note": "changelog"
+    },
+    {
+      "title": "kernel.org releases.json",
+      "url": "https://www.kernel.org/releases.json",
+      "note": "changelog"
+    },
+    {
+      "title": "7.1.y EOL 공지",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/02/1497",
+      "note": "thread"
+    },
+    {
+      "title": "7.3-rc5 RC 공지",
+      "url": "https://lwn.net/Articles/1096958/",
+      "note": "thread"
+    },
+    {
+      "title": "VMware panic_pre_kdump_list v2",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/18/467",
+      "note": "thread"
+    },
+    {
+      "title": "panic_pre_kdump_postpone",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/18/3299",
+      "note": "thread"
+    },
+    {
+      "title": "VMware panic logger v1",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/08/2655",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-7.2.8",
+      "url": "https://www.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.8",
+      "note": "changelog"
+    },
+    {
+      "title": "7.2.8 stable 발표",
+      "url": "https://lwn.net/Articles/1096820/",
+      "note": "thread"
+    },
+    {
+      "title": "TCP old ACK timestamp",
+      "url": "https://lists.openwall.net/netdev/2026/09/21/634",
+      "note": "thread"
+    },
+    {
+      "title": "tcp_replace_ts_recent 패치",
+      "url": "https://ci.syzbot.org/patches/ffee1d6e-aacd-481f-920e-3ff8ca84c46f",
+      "note": "commit"
+    },
+    {
+      "title": "netdev-bot packetdrill 이슈",
+      "url": "https://patchew.org/linux/20260924224456.55690-4-jeffjo@openai.com/20260924224456.55690-6-jeffjo@openai.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-28T18:06:50.245Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-newsletter-from-dossier-ko.md"
+  }
+}

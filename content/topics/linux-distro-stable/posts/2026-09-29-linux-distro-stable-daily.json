@@ -1,0 +1,140 @@
+{
+  "id": "2026-09-29-linux-distro-stable-daily",
+  "topic": "linux-distro-stable",
+  "title": "2026-09-29 stable 큐 보안 6건 — 배포판 stable",
+  "headline": "lore stable 큐에 perf text poke KASLR 노출·SocketCAN·xfrm·rxe UAF 등이 올라왔고, AER·EDAC 런타임 수정도 추적 대상입니다.",
+  "date": "2026-09-29",
+  "summary": "ChangeLog-7.2.8·6.18.54 등 현행 태그에는 아직 없는 stable 제출이 perf·네트워크·CAN·RDMA·ACPI 경로를 중심으로 쌓였습니다. 배포판은 각 항목의 stable 브랜치 머지 범위와 CVE 등록 여부를 확인하며 백포트 일정에 반영하세요.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "stable",
+    "배포판"
+  ],
+  "highlights": [
+    {
+      "title": "perf/core: text poke 이벤트에 커널 접근 강제",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "stable 백포트·커널 hardening·perf 도구 담당",
+      "verifyLink": "https://lore.kernel.org/stable/99131354c41e23188f778b92f90363775b482395.1790573390.git.zcliangcn@gmail.com/",
+      "if": "exclude_kernel=1 perf 이벤트로 PERF_RECORD_TEXT_POKE가 열려 있다면",
+      "do": "attr.text_poke 설정 시 perf_allow_kernel() 강제 패치가 어느 LTS에 머지되는지 stable 큐를 추적하세요",
+      "verify": "스레드 원문에서 KASLR 우회 설명과 CVE 등록 여부를 확인하세요"
+    },
+    {
+      "title": "can: netns 변경 후 CAN 필터 미제거",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "SocketCAN·컨테이너 netns·automotive 배포 유지보수",
+      "verifyLink": "https://lore.kernel.org/stable/20260928173105.51765-2-socketcan@hartkopp.net/",
+      "if": "컨테이너·netns 분리 환경에서 CAN 디바이스를 쓰신다면",
+      "do": "BCM/ISOTP/RAW 경로 필터 제거 수정의 stable 합의 여부를 백포트 일정에 반영하세요",
+      "verify": "Doyensec 보고 기반 v2 스레드에서 3패치 시리즈 범위를 확인하세요"
+    },
+    {
+      "title": "xfrm: espintcp_init_sk 초기화 순서",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "xfrm/IPsec·네트워크 stable 백포트 담당",
+      "verifyLink": "https://lore.kernel.org/stable/dcb164e6a1064fcd32c2e72fd9ee918dd1427f15.1790617484.git.sd@queasysnail.net/",
+      "if": "IPsec ESP-in-TCP(RFC 8229) VPN 스택을 배포 커널에서 운영 중이라면",
+      "do": "공식 ChangeLog에 없는 순서 수정을 VPN/암호화 스택 백포트 후보로 올리세요",
+      "verify": "Reported-by 재현 경로별 stable 브랜치 매핑이 스레드에 정리됐는지 확인하세요"
+    },
+    {
+      "title": "RDMA/rxe: pool timeout 강제 정리 UAF",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "RDMA/rxe·InfiniBand sw stack stable 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20260928171756.3254016-5-cccccccccccc777777@gmail.com/",
+      "if": "soft-RDMA(rxe)를 패키징한 배포를 유지하신다면",
+      "do": "50초 timeout 후 강제 정리 대신 대기하도록 바꾼 v2를 stable 태그 대비 백포트 여부를 검토하세요",
+      "verify": "v2 시리즈 upstream 머지 후 stable 브랜치 범위를 lore에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "7.2.8·6.18.54·6.12.111·7.1.13(iseol=true) ChangeLog와 releases.json EOL 표시는 이전 브리핑과 동일한 기준점이며, 이번 lore stable 큐에는 위 태그에 아직 없는 제출만 신규로 쌓였습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**perf/core: Require kernel access for text poke events**\n\nstable 제출 패치는 exclude_kernel=1로 열린 perf 이벤트가 text_poke 사이드밴드(PERF_RECORD_TEXT_POKE)를 막지 않아, 비특권 프로세스가 커널 텍스트 패치 주소를 관찰할 수 있다고 설명하고 attr.text_poke 설정 시 perf_allow_kernel()을 강제합니다.\n\n영향: ChangeLog-7.2.8·6.18.54 등 현행 stable 태그에는 아직 없는 큐 항목으로, 배포판이 KASLR 우회면을 줄이려면 어느 LTS 브랜치에 머지되는지 추적해야 합니다. CVE 등록 여부는 확인 필요합니다.\n\n> For a known kernel image, any such address reveals the runtime kernel text base despite KASLR.\n\n[원문 확인](https://lore.kernel.org/stable/99131354c41e23188f778b92f90363775b482395.1790573390.git.zcliangcn@gmail.com/)\n\n**xfrm: espintcp: reorder operations within espintcp_init_sk**\n\nSabrina Dubroca 패치는 espintcp_init_sk()가 icsk_ulp_data를 rcu_assign_pointer로 게시하기 전에 소켓 콜백을 바꿔 NULL icsk_ulp_data 역참조가 날 수 있는 순서를 고칩니다.\n\n영향: IPsec ESP-in-TCP(RFC 8229)를 쓰는 배포 커널은 아직 공식 ChangeLog에 없는 수정이므로, VPN/암호화 스택 백포트 일정에 반영해야 합니다.\n\n> Any one of those callbacks that gets called before will dereference a NULL icsk_ulp_data.\n\n[원문 확인](https://lore.kernel.org/stable/dcb164e6a1064fcd32c2e72fd9ee918dd1427f15.1790617484.git.sd@queasysnail.net/)\n\n**can: remove CAN filters independent from namespace**\n\nOliver Hartkopp v2는 netns가 바뀐 CAN 디바이스에서 netdev notifier가 net_eq 검사 때문에 필터 제거를 건너뛰던 문제를 BCM/ISOTP/RAW 경로에서 고치고, bcm.c는 ifindex 대신 추적 net_device 포인터를 씁니다.\n\n영향: Doyensec 보고 기반 stable 큐 항목으로, 컨테이너·netns 분리 환경의 automotive/임베디드 배포는 stale CAN 필터 잔존 위험을 백포트로 닫아야 합니다.\n\n> The net_eq(dev_net(dev), sock_net(sk)) check in the CAN protocols netdev notifiers therefore led to skipping the required removal of the CAN filters\n\n[원문 확인](https://lore.kernel.org/stable/20260928173105.51765-2-socketcan@hartkopp.net/)\n\n**RDMA/rxe: Do not force cleanup on pool timeout**\n\nDongliang Qin v2는 sleepable rxe pool 정리가 50초 후에도 참조가 남으면 강제 진행해 UAF로 바꾸던 경로를, 완료될 때까지 기다리도록 바꿉니다.\n\n영향: soft-RDMA(rxe)를 패키징하는 배포는 아직 stable 태그에 없는 수명 버그 수정이므로, RDMA 사용자 공간 스택과 함께 백포트 여부를 봐야 합니다.\n\n> If a reference is still held, that turns a lifetime bug into a use-after-free.\n\n[원문 확인](https://lore.kernel.org/stable/20260928171756.3254016-5-cccccccccccc777777@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**PCI/AER: Fix ghes_estatus_pool memory leaks in error handling**\n\nv5 시리즈는 GHES→AER 경로에서 aer_recover_ring enqueue 실패·pci_dev 매핑 실패 시 ghes_estatus_pool 스냅샷이 해제되지 않던 두 누수를 고치고, aer_recover_queue()의 버퍼 소유권을 kernel-doc으로 명시합니다.\n\n영향: 지속적인 PCIe AER 폭주 시 풀 고갈로 GHES 하드웨어 오류 보고가 시스템 전역에서 깨질 수 있어, 서버·클라우드 LTS 백포트 우선순위가 높습니다.\n\n> Under a sustained error storm this exhausts ghes_estatus_pool, which then breaks GHES hardware error reporting system-wide.\n\n[원문 확인](https://lore.kernel.org/stable/20260928-b4-fix-aer-memleaks-v5-0-ba6b94c9c9a6@google.com/)\n\n**EDAC/amd64: Mask UMC chip select to the four implemented selects**\n\nAMD 패치는 umc_get_err_info()가 MCA_SYND chip select를 0x7로 마스크해 csrow 5처럼 범위 밖 값이 나오던 Zen2+ UMC 디코드를 0x3(4 selects)로 맞춥니다.\n\n영향: AMD 서버 LTS에서 EDAC INTERNAL ERROR로 RAS 로그가 깨지면 장애 분석·예측 유지보수가 어려워져 stable 백포트 후보입니다.\n\n> EDAC MC0: INTERNAL ERROR: csrow value is out of range (5 >= 4)\n\n[원문 확인](https://lore.kernel.org/stable/20260928180935.472319-2-Vishal.Badole@amd.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "high",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "perf/core text poke stable 제출",
+      "url": "https://lore.kernel.org/stable/99131354c41e23188f778b92f90363775b482395.1790573390.git.zcliangcn@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "PCI/AER ghes_estatus_pool 누수 수정 v5",
+      "url": "https://lore.kernel.org/stable/20260928-b4-fix-aer-memleaks-v5-0-ba6b94c9c9a6@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "xfrm espintcp_init_sk 순서 수정",
+      "url": "https://lore.kernel.org/stable/dcb164e6a1064fcd32c2e72fd9ee918dd1427f15.1790617484.git.sd@queasysnail.net/",
+      "note": "thread"
+    },
+    {
+      "title": "CAN 필터 netns 독립 제거",
+      "url": "https://lore.kernel.org/stable/20260928173105.51765-2-socketcan@hartkopp.net/",
+      "note": "thread"
+    },
+    {
+      "title": "RDMA/rxe pool timeout 정리",
+      "url": "https://lore.kernel.org/stable/20260928171756.3254016-5-cccccccccccc777777@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "EDAC/amd64 UMC chip select 마스크",
+      "url": "https://lore.kernel.org/stable/20260928180935.472319-2-Vishal.Badole@amd.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Linux 7.2.8 stable ChangeLog",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.8",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 6.18.54 longterm ChangeLog",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.18.54",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 6.12.111 longterm ChangeLog",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.12.111",
+      "note": "changelog"
+    },
+    {
+      "title": "kernel.org releases.json",
+      "url": "https://www.kernel.org/releases.json",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 7.1.13 stable ChangeLog",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.13",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-28T18:28:08.478Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
