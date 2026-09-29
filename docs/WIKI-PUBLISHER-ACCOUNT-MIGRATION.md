@@ -223,3 +223,42 @@ OSS Radar 실행을 확인할 때까지 보류했습니다.
 
 통합 작업은 이 문서의 7장 순서대로 수행하며, 다음 03:00 KST 전까지 검증과 timer
 복구를 완료합니다.
+
+### 2026-09-30 계정 통합 실행
+
+계획의 선행 조건을 확인한 뒤 실제 전환을 완료했습니다.
+
+- `dev-blog.timer`를 disable/stop하고 실행 중 `devblog` 프로세스가 없음을 확인
+- root 전용 백업 생성:
+  `/var/backups/wiki-publisher/dev-blog-20260930`
+- 기존 systemd service/timer/drop-in과 `/home/devblog/.ssh` 백업
+- deploy key를 이동하지 않고 `/home/wiki-publisher/.ssh`로 복사
+- SSH config의 `IdentityFile`만 새 HOME으로 변경
+- 기존/복사 공개키 fingerprint 일치 확인
+- `wiki-publisher`로 GitHub `ls-remote`와 push dry-run 성공
+- `/srv/dev-blog` 항목 11,804개 소유권을 모두
+  `wiki-publisher:wiki-publisher`로 변경
+- 설치된 systemd service의 `User`, `Group`, `HOME`, `PATH`, Agent 경로 변경
+- 기존 `oci.conf` drop-in 유지, `systemd-analyze verify` 통과
+- 공용 Cursor Agent `2026.09.28-64d2043` 로그인 정상
+- Node 테스트 131개와 정적 사이트 build 성공
+- build 결과: 12 topics, 1,627 posts, 537 tags
+- `npm run daily:linux` 비게시 검증 성공
+- 검증으로 변경된 `logs/daily/linux-latest-status.json` 한 파일만 확인 후 복구
+- 최종 worktree clean, 미푸시 commit 없음
+- `dev-blog.timer`를 enabled/active로 복구
+- 다음 실행: 2026-10-01 03:00 KST
+
+백업 생성 뒤 root 전용 디렉터리의 `*` glob을 일반 셸이 확장하지 못해 권한 정리
+명령이 한 번 중단됐습니다.
+
+```text
+chmod: cannot access '/var/backups/wiki-publisher/dev-blog-20260930/*'
+```
+
+service와 timer는 이미 중지됐지만 운영 파일 변경 전이었고, 백업 파일은 정상
+생성돼 있었습니다. `sudo find ... -exec chmod`로 디렉터리 0700, 파일 0600을
+적용하고 checksum을 확인한 뒤 계속 진행했습니다.
+
+기존 `/home/devblog`, SSH key와 `devblog` 계정은 롤백용으로 유지합니다. 10월 1일과
+2일 03:00 KST 실제 게시가 연속 성공한 뒤 계정 잠금과 중복 홈 정리를 검토합니다.
