@@ -21,19 +21,19 @@ After
 ## 2. 실행 시점
 
 Research Wiki가 `wiki-publisher` 계정으로 2026-09-29과 09-30 04:00 KST에
-2회 연속 실제 게시에 성공한 뒤 진행합니다. OSS Radar의 같은 날 05:00 KST 실행도
-확인합니다.
+2회 연속 실제 게시에 성공했고, OSS Radar의 같은 날 05:00 KST 실행도
+성공했습니다. 선행 조건은 충족됐습니다.
 
 권장 작업 창은 2026-09-30 05:30 KST 이후부터 다음 03:00 KST 이전입니다.
 
 ## 3. 현재 상태
 
-2026-09-28 기준:
+2026-09-30 기준:
 
 - `/srv/dev-blog`: `devblog:devblog`, 약 274MB
 - `/home/devblog`: 약 2.1GB
 - `dev-blog.timer`: enabled/active, 매일 03:00 KST
-- 최근 service: success, exit 0
+- 최근 service: success, exit 0, commit `9a1e835` 게시
 - Git remote: `git@github-dev-blog:min5859/dev-blog.git`
 - deploy key: `/home/devblog/.ssh/dev-blog_github`
 - Git 작성자: `Wooki Min <min5859@gmail.com>`
@@ -210,5 +210,16 @@ sudo systemd-analyze verify \
 - deploy key, SSH config, 디렉터리 소유권과 인증은 변경하지 않음
 - 로컬 기존 checkout은 사용자 commit과 임시 파일이 있어 수정하지 않음
 
-실제 통합은 Research Wiki의 9월 29일·30일 정기 실행과 같은 날 OSS Radar 실행을
-확인한 뒤 진행합니다.
+사전 준비 당시 실제 통합은 Research Wiki의 9월 29일·30일 정기 실행과 같은 날
+OSS Radar 실행을 확인할 때까지 보류했습니다.
+
+### 2026-09-30 실행 준비 완료
+
+- Dev Blog 03:00 KST: success/0, commit `9a1e835`
+- Research Wiki 04:00 KST: 두 번째 연속 성공, Wiki `a1e43e8`
+- OSS Radar 05:00 KST: 성공, Wiki `1e7f76d`
+- 세 timer 모두 enabled/active, 세 저장소 worktree clean
+- 실제 계정·소유권·deploy key·설치 unit 변경은 아직 수행하지 않음
+
+통합 작업은 이 문서의 7장 순서대로 수행하며, 다음 03:00 KST 전까지 검증과 timer
+복구를 완료합니다.
