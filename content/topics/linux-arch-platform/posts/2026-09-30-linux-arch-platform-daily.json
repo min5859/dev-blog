@@ -1,0 +1,155 @@
+{
+  "id": "2026-09-30-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-09-30 KVM MOVALL 회귀 — 아키·플랫폼",
+  "headline": "KVM arm64 ITS MOVALL에서 LPI가 전부 잘못 이전되던 회귀가 수정 제안됐고, x86 optprobe는 Tasks Trace 리더 처리가 이어집니다.",
+  "date": "2026-09-30",
+  "summary": "vgic-its MOVALL 소스 redistributor 필터 누락 회귀와 RISC-V BPF indirect 트램폴린 스택 인자 오프셋 버그가 각각 Fixes로 올라왔습니다. x86 jump-optimized kprobe 템플릿은 preempt 허용 콜백에서 Tasks Trace RCU 리더 동작을 맞추는 패치가 Tasks RCU 트램폴린 시리즈 맥락에서 논의됩니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "아키텍처",
+    "플랫폼"
+  ],
+  "highlights": [
+    {
+      "title": "KVM arm64 vgic-its MOVALL 소스 RD 필터 회귀",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "KVM/arm64 GICv3/ITS·LPI 및 virt IRQ 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260929093548.3598547-7-maz@kernel.org/",
+      "if": "GICv4 LPI affinity 마이그레이션에서 ITS MOVALL을 쓰는 게스트·호스트 조합을 운영한다면",
+      "do": "update_affinity()의 optional source vcpu 필터 복구 패치와 Fixes 11f4f8f3e6e06 회귀 범위를 추적하고 stable Cc 타임라인을 확인하세요",
+      "verify": "Marc Zyngier 스레드와 11f4f8f3e6e06 커밋에서 MOVALL xarray walk 변경과 스펙 대비 동작을 대조하세요"
+    },
+    {
+      "title": "x86 optprobe 템플릿 Tasks Trace 리더",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "x86 kprobes/optprobe, ftrace, Tasks RCU 트램폴린 통합을 추적하는 아키텍처·트레이싱 개발자",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260929-b4-rcu-tasks-preempt-qs-v6-7-c111ee02caca@toxicpanda.com/",
+      "if": "HAVE_RCU_TRAMPOLINE_READERS 빌드에서 jump-optimized kprobe와 ftrace 트램폴린 수명을 함께 본다면",
+      "do": "optprobe 템플릿에 rcu_read_lock_trace()/unlock을 ftrace_64.S처럼 open-code하는 v6-7 패치와 .rodata 슬롯 memcpy 시 절대 주소 처리를 리뷰하세요",
+      "verify": "Josef Bacik v6-7 스레드 인용과 optprobe·BPF trampolines가 Tasks RCU로 보호되는 전제를 원문에서 확인하세요"
+    },
+    {
+      "title": "RISC-V BPF indirect struct_ops 스택 인자",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "RISC-V BPF JIT·struct_ops·트램폴린 selftest 유지보수 담당",
+      "verifyLink": "https://ci.syzbot.org/patches/5059ca68-fd9f-4707-b713-0918f95ca33b",
+      "if": "RV64 BPF struct_ops 콜백이 9번째 이후 스택 인자를 쓰는 경로를 다룬다면",
+      "do": "store_args()의 stack_args_off(is_struct_ops ? 0 : 16) 수정과 Fixes 6801b0aef79d 연쇄를 selftest로 재확인하세요",
+      "verify": "syzbot 패치 인용과 6801b0aef79d 12-argument 트램폴린 지원 커밋을 대조하고 SOB·머지 상태는 lore 스레드에서 확인하세요"
+    },
+    {
+      "title": "RISC-V 확장 B hwcap/hwprobe 노출",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "RISC-V arch 확장 파싱·hwprobe/uapi 및 배포판 glibc/런타임 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/70a3451c-db31-41d0-af9d-8c9e123557f6@canonical.com/",
+      "if": "userspace가 AT_HWCAP·riscv_hwprobe로 RVA23U64 등 프로파일을 판별한다면",
+      "do": "Guodong Xu v8 SUPERSET 접근과 Heinrich·Radim의 Zba/Zbb/Zbs-only ISA 문자열 케이스 논의를 따라 BUNDLE 대안 여부를 확인하세요",
+      "verify": "Qualcomm·Canonical 스레드에서 B misa 비트와 hwprobe B 플래그 요구를 원문 인용과 함께 검토하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**KVM: arm64: vgic-its: Fix MOVALL handling of source redistributor**\n\nvgic-its MOVALL 처리에서 소스 redistributor 필터가 빠져 모든 LPI pending 상태가 대상 RD로 옮겨지던 문제를, update_affinity()에 optional source vcpu 필터를 넣어 복구합니다. vgic_its_cmd_handle_movall()의 xarray walk 리팩터(11f4f8f3e6e06)에서 vgic_copy_lpi_list()가 하던 필터링이 사라진 회귀를 Fixes로 표시했고 stable@vger.kernel.org에 Cc됩니다.\n\n영향: ITS MOVALL은 GICv4 LPI affinity 마이그레이션의 핵심 명령인데 스펙과 어긋나면 게스트 IRQ 라우팅이 전역적으로 잘못 바뀌어 vCPU·RD 재배치 워크로드에서 조용한 기능 오류가 납니다. stable 백포트 타임라인과 영향 받는 최소 커널 버전은 확인이 필요합니다.\n\n> we seem to have lost the filtering on the source RD, which means we move all LPIs to the target. Not quite what the spec mandates. Fixes: 11f4f8f3e6e06\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260929093548.3598547-7-maz@kernel.org/)\n\n**bpf, riscv: Fix stack-passed arguments for indirect trampolines**\n\nRV64 BPF JIT의 store_args()가 fentry 경로(FP+16)만 가정해 indirect struct_ops 트램폴린에서 9번째 이후 스택 인자를 두 슬롯 늦게 읽던 버그를, stack_args_off를 is_struct_ops ? 0 : 16으로 넘기도록 수정합니다. Fixes: 6801b0aef79d(12-argument 트램폴린 지원).\n\n영향: struct_ops 콜백이 레지스터를 넘는 인자를 쓰면 BPF 프로그램이 잘못된 스택 슬롯을 보게 되어 조용한 데이터 오염이 날 수 있어, RISC-V BPF 트램폴린·selftest 경로를 다루는 아키텍처 개발자가 우선 확인해야 합니다. dossier confidence가 medium이므로 SOB 정리 후 bpf-next 머지 여부는 추정 없이 lore에서 확인하세요.\n\n> Every stack-passed argument of a callback with more than eight argument slots is therefore read two slots late.\n\n[원문 확인](https://ci.syzbot.org/patches/5059ca68-fd9f-4707-b713-0918f95ca33b)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**x86/kprobes: Take a Tasks Trace reader in the optprobe template**\n\nHAVE_RCU_TRAMPOLINE_READERS 환경에서 jump-optimized kprobe(optprobe) 템플릿이 preemption 허용 상태로 optimized_callback()을 호출할 때, ftrace_64.S와 같이 rcu_read_lock_trace()/rcu_read_unlock_trace()를 템플릿에 직접 넣어 Tasks Trace RCU 리더로 동작하게 합니다. .rodata 템플릿은 슬롯에 memcpy되므로 current_task·rcu_tasks_trace_srcu_struct 참조는 %rip-relative가 아닌 절대 주소(R_X86_64_32S)로 처리합니다.\n\n영향: Josef Bacik의 Tasks RCU 트램폴린 시리즈(v6 07/14)에서 x86-64 optprobe가 Tasks Trace 리더가 아니면 preempt된 콜백 동안 동적 슬롯 수명이 보장되지 않아 UAF·teardown 지연 위험이 있으며, kprobe 최적화 경로를 쓰는 트레이싱·프로파일링 스택과 직결됩니다. mainline 머지 전 HAVE_RCU_TRAMPOLINE_READERS 기본 빌드 조합은 확인이 필요합니다.\n\n> For HAVE_RCU_TRAMPOLINE_READERS that means the template must be a Tasks Trace reader across the call, so open-code rcu_read_lock_trace() and rcu_read_unlock_trace() around it as ftrace_64.S does.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260929-b4-rcu-tasks-preempt-qs-v6-7-c111ee02caca@toxicpanda.com/)\n\n**riscv: spacemit: Add PCIe RC controller support for K3**\n\nInochi Amaoto v7(0/6) 시리즈가 SpacemiT K3의 DesignWare PCIe RC를 바인딩·드라이버로 추가합니다. K3는 표준 DWC IP에 추가 제어·외부 IMSIC MSI가 붙고, phy bulk data 선행 패치[2]가 필요하며 v6 대비 init 실패 시 PERST# 유지 등 K3 초기화 경로가 다듬어졌습니다.\n\n영향: RISC-V 보드(K3)에서 PCIe 호스트 브링업·resume·PERST 시퀀스는 플랫폼 DT·PCI 컨트롤러 계층이 맞물려 있어, 이 시리즈는 K1과 공유되는 spacemit PCIe 드라이버의 K3 분기 동작을 추적하는 핵심 신호입니다. linux-phy bulk data 패치 mainline 머지 여부는 확인이 필요합니다.\n\n> The PCIe controller on Spacemit K3 is almost a standard Synopsys Designware PCIe IP with extra control and external MSI controller (IMSIC).\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260929083755.458238-1-inochiama@gmail.com/)\n\n**riscv: dts: starfive: jh7110: Update DT for display subsystem**\n\nStarFive JH7110 DT가 dom_vout_top 버스 노드(0x29400000) 아래 dc8200·HDMI·VOUT CRG를 묶고, 공유 NoC display 클럭/리셋·PD_VOUT를 서브시스템이 소유하도록 모델링합니다. HDMI를 hdmi_phy·hdmi_controller로 분리해 voutcrg와의 순환 클럭 의존을 끊고, voutcrg가 &hdmi_phy에서 픽셀 클럭을 받으며 CMA를 디스플레이 주소 가능 영역으로 키웁니다.\n\n영향: JH7110 디스플레이는 클럭·리셋·DMA 일관성이 DT 구조에 묶여 있어, 이 변경은 드라이버 probe 순서·dma-noncoherent·HDMI bring-up 회귀를 막는 플랫폼 쪽 선행 조건입니다. v4 19/20 패치의 v5+ 재제출 여부는 확인이 필요합니다.\n\n> Activate the display subsystem by describing the video output subsystem, which the documentation calls dom_vout_top, as a bus node covering the whole 0x29400000 region\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260915-jh7110-clean-send-v4-19-f0e4fd6f2cc8@samsung.com/)\n\n**riscv: Add B to hwcap and hwprobe**\n\nGuodong Xu v8 시리즈 01/11이 RISC-V 확장 B를 hwcap/hwprobe에 노출하려 __RISCV_ISA_EXT_SUPERSET(b, RISCV_ISA_EXT_B, riscv_b_exts)를 추가합니다. 리뷰에서 Heinrich·Radim은 ISA 문자열에 B가 없고 Zba/Zbb/Zbs만 있을 때 B·RVA23U64 비트가 빠질 수 있다고, Heinrich는 Zba/Zbb/Zbs 존재 시 hwprobe에 B를 켜야 하므로 SUPERSET 대신 BUNDLE 계열 매크로가 맞을 수 있다고 제안합니다.\n\n영향: userspace가 AT_HWCAP·riscv_hwprobe로 비트 조합을 보며 RVA23U64 등 프로파일을 판별하므로, B 표기 방식이 틀리면 도구체인·런타임이 잘못된 ISA 가정을 합니다. BUNDLE 전환 시 추가 파싱 로직은 아직 열려 있습니다.\n\n> If Zba, Zbb, and Zbs are present the kernel should set the B flag in hwprobe. This is why RISCV_ISA_EXT_SUPERSET() cannot be used to describe the B extension.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/70a3451c-db31-41d0-af9d-8c9e123557f6@canonical.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "high",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "x86 optprobe Tasks Trace reader (v6-7)",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260929-b4-rcu-tasks-preempt-qs-v6-7-c111ee02caca@toxicpanda.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Tasks RCU trampoline series cover (v6-0)",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260929-b4-rcu-tasks-preempt-qs-v6-0-c111ee02caca@toxicpanda.com/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM vgic-its MOVALL source RD fix",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260929093548.3598547-7-maz@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "MOVALL LPI xarray walk (11f4f8f3e6e06)",
+      "url": "https://git.b0tt0m.xyz/mirror/linux/commit/11f4f8f3e6e0697fb640d5c6c79b27c2233bc3da",
+      "note": "commit"
+    },
+    {
+      "title": "SpacemiT K3 PCIe RC v7 cover",
+      "url": "https://lore.kernel.org/linux-riscv/20260929083755.458238-1-inochiama@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "spacemit K3 PCIe vendor tree history",
+      "url": "https://github.com/spacemit-com/linux-6.18/commits/k3-br-v1.0.y/drivers/pci/controller/dwc/pcie-spacemit-k1.c",
+      "note": "article"
+    },
+    {
+      "title": "JH7110 dom_vout_top DT v4",
+      "url": "https://lore.kernel.org/linux-riscv/20260915-jh7110-clean-send-v4-19-f0e4fd6f2cc8@samsung.com/",
+      "note": "thread"
+    },
+    {
+      "title": "JH7110 display DT discussion",
+      "url": "https://lore.kernel.org/linux-riscv/b5eb69f3f41a98b5a98694435df25a632babf05a.camel@iscas.ac.cn/",
+      "note": "thread"
+    },
+    {
+      "title": "RV64 BPF indirect trampoline stack args",
+      "url": "https://ci.syzbot.org/patches/5059ca68-fd9f-4707-b713-0918f95ca33b",
+      "note": "commit"
+    },
+    {
+      "title": "BPF patch submission SOB thread",
+      "url": "https://lore.kernel.org/linux-riscv/DLRXXC72E2CS.2MRXIPM0KME7Q@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "6801b0aef79d 12-argument trampoline",
+      "url": "https://git.b0tt0m.xyz/mirror/linux/commit/6801b0aef79d",
+      "note": "commit"
+    },
+    {
+      "title": "Radim on B vs Zba/Zbb/Zbs in ISA string",
+      "url": "https://lore.kernel.org/linux-riscv/DLRWB8R7P6SF.1XIL0OXLZ2F23@qti.qualcomm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Heinrich on SUPERSET vs BUNDLE for B",
+      "url": "https://lore.kernel.org/linux-riscv/70a3451c-db31-41d0-af9d-8c9e123557f6@canonical.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Guodong on B misa/hwcap rationale",
+      "url": "https://lore.kernel.org/linux-riscv/15151b8ab012ca7444d4117e393cf999.guodong.xu@oss.qualcomm.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-29T18:33:10.782Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

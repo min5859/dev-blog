@@ -1,0 +1,130 @@
+{
+  "id": "2026-09-30-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-09-30 DG2 WA·AIE2 rev9 — GPU·AI",
+  "headline": "Intel DG2 워크어라운드를 컨텍스트 uAPI로 넘기고, AMD NPU AIE2 rev9 인식과 vmwgfx drm_panic·xe MMIO 회귀 수정이 dri-devel에서 동시에 논의됩니다.",
+  "date": "2026-09-30",
+  "summary": "DG2 Wa_22013059131을 per-client latch와 I915_CONTEXT_PARAM uAPI로 userspace에 열었고, amdxdna는 AIE2 revision 9(Gorgon Halo) probe를 추가했습니다. vmwgfx drm_panic v3와 xe_mmio_wait32 지연 cap 수정은 리뷰에서 안전·수명 이슈가 함께 거론됩니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "GPU",
+    "NPU"
+  ],
+  "highlights": [
+    {
+      "title": "DG2 Wa_22013059131 per-client uAPI",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "i915 GT/LRC 및 Intel OpenCL/compute-runtime 연동 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260929172320.3481617-1-jia.yao@intel.com/",
+      "if": "DG2 compute에서 내장 WA가 hang을 유발하고 userspace가 SLM 제한 등으로 직접 대응한다면",
+      "do": "I915_CONTEXT_PARAM_WA_22013059131로 bit 15 프로그래밍 opt-out 여부를 컨텍스트 단위로 설정하고 compute-runtime 연동 PR과 정책을 맞추세요",
+      "verify": "v11 finalized/default context setparam·getparam 동작과 -EINVAL 정책을 lore 스레드 원문에서 확인하세요"
+    },
+    {
+      "title": "amdxdna AIE2 revision 9 지원",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "amdxdna 및 AMD NPU/AI 가속 스택 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260929181459.928468-1-lizhi.hou@amd.com/",
+      "if": "AIE2 rev9 실리콘이 probe 실패로 바인딩되지 않는다면",
+      "do": "AIE2_DEV_REVISION_GRGH 및 NPU Gorgon Halo vbnv 매핑이 포함된 V2 패치 흐름을 추적하세요",
+      "verify": "aie2_get_dev_revision() 변경과 sysfs revision 문자열 보완 필요 여부를 패치 시리즈에서 확인하세요"
+    },
+    {
+      "title": "xe_mmio_wait32 지연 상한 수정",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "drm/xe MMIO 및 power/reset 경로 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260929161125.1973918-2-alan.previn.teres.alexis@intel.com/",
+      "if": "xe bring-up·리셋 경로에서 MMIO 폴링이 비정상적으로 길게 멈춘다면",
+      "do": "min_t 기반 udelay 상한과 100ms backoff cap이 적용된 Fixes 패치를 로컬 트리에 반영해 재현 여부를 보세요",
+      "verify": "회귀 원인 커밋 5c09bd6ccd41과 Fixes 태그를 git.kernel.org 원문에서 대조하세요"
+    },
+    {
+      "title": "vmwgfx drm_panic v3",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "vmwgfx 및 DRM panic/표시 스택 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20260929165104.928415-1-ian.forbes@broadcom.com/",
+      "if": "VMware 게스트에서 패닉 시 scanout 관측이 필요하다면",
+      "do": "CONFIG_64BIT 전제의 VRAM pre-map·panic 콜백 경로를 테스트 빌드에 올리되 Sashiko 지적 항목 해결 여부를 먼저 확인하세요",
+      "verify": "SVGA legacy 전환과 drm-core drm_panic 머지 상태는 lore v3 스레드에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm/xe/mmio: xe_mmio_wait32() delay/sleep 상한**\n\n__xe_mmio_wait32 루프에 udelay 상한과 100ms backoff cap을 적용해 overflow와 과도한 sleep을 막습니다(Fixes 5c09bd6ccd41).\n\n영향: 잘못된 지연 계산은 GPU bring-up·리셋 경로를 hang처럼 보이게 할 수 있어 xe MMIO 폴링 안정성에 직접 관련됩니다.\n\n> Avoid growing delays becoming intollerably large by capping the in-loop wait time. Fixes: 5c09bd6ccd41 (\"drm/xe/mmio: Move xe_mmio_wait32() to xe_mmio.c\")\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260929161125.1973918-2-alan.previn.teres.alexis@intel.com/)\n\n**Re: vmwgfx drm_panic v3 (Sashiko review)**\n\nSashiko AI 리뷰가 devm_memremap ERR_PTR 미검사, SVGA2 panic spinlock 데드락, vram_size 경계 미검사 가능성을 High/Medium으로 표시했습니다.\n\n영향: 패닉 컨텍스트에서 drm_panic 경로 결함은 이중 fault·데드락 위험을 키울 수 있어 merge 전 검증이 필요합니다(지적이 v3에서 해결됐는지는 확인 필요).\n\n> Sashiko AI review found 3 potential issue(s) to consider: - [High] drm/vmwgfx: invalid pointer dereference of ERR_PTR from devm_memremap\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260929170350.5F39E1F000FF@smtp.kernel.org/)\n\n**Re: i915/dg2 Wa_22013059131 v11 (Sashiko review)**\n\nctx_needs_wa_22013059131()에서 RCU는 gem_ctx만 보호하고 gem_ctx->client는 context release 시 동기 해제되어 use-after-free가 될 수 있다는 High 지적이 있습니다.\n\n영향: 워크어라운드 latch가 teardown과 경쟁하면 간헐적 UAF로 GPU reset 등으로 이어질 수 있어 client 수명 규칙 정리가 merge 전제로 보입니다(반박·수정 패치 존재 여부는 확인 필요).\n\n> Does this introduce a use-after-free regression for gem_ctx->client? The RCU read lock protects gem_ctx from being freed via kfree_rcu(), but it does not protect gem_ctx->client.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260929174457.3FD8B1F000FF@smtp.kernel.org/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/vmwgfx: drm_panic support**\n\nv3에서 CONFIG_64BIT일 때 VRAM을 devm_memremap으로 미리 매핑하고 vmw_get_scanout_buffer·vmw_panic_flush를 추가하며 panic 시 SVGA3 호환을 위해 legacy 모드로 전환합니다.\n\n영향: VMware 가상 GPU에서 패닉 메시지 scanout을 다른 DRM 드라이버와 유사하게 쓸 수 있습니다.\n\n> Uses VRAM as the scanout buffer then switches the device to legacy mode. Restrict support to 64 Bit so we don't waste valuable VA space on the mostly unused VRAM mapping.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260929165104.928415-1-ian.forbes@broadcom.com/)\n\n**drm/i915/dg2: per-client control for Wa_22013059131**\n\nDG2용 Wa_22013059131을 DRM 클라이언트 단위로 latch하고 I915_CONTEXT_PARAM_WA_22013059131 uAPI로 userspace opt-out을 허용하며 v11에서 finalized/default context setparam·getparam을 연결합니다.\n\n영향: compute-runtime 등 userspace가 자체 SLM 제한 등으로 WA를 처리할 때 커널 레지스터 프로그래밍과 충돌을 줄일 수 있습니다.\n\n> Add I915_CONTEXT_PARAM_WA_22013059131 so userspace that handles the workaround itself (e.g. by limiting SLM size) can set it to 1 to let the kernel know bit 15 programming is not needed.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260929172320.3481617-1-jia.yao@intel.com/)\n\n**accel/amdxdna: AIE2 revision 9**\n\naie2_get_dev_revision()에 AIE2_DEV_REVISION_GRGH를 추가하고 V2 npu4_rev_vbnv_tbl에 \"NPU Gorgon Halo\" 매핑을 넣습니다.\n\n영향: 새 AMD NPU(AIE2 rev9) 보드가 revision 미인식으로 probe에 실패하던 경우를 줄입니다.\n\n> aie2_get_dev_revision() fails to recognize AIE2 revision 9 hardware. Add AIE2_DEV_REVISION_GRGH to the list of supported AIE2 revisions.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20260929181459.928468-1-lizhi.hou@amd.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "**Intel compute-runtime 연동 PR**\n\ni915 Wa 패치 설명에 userspace 연동 PR이 링크되어 있습니다.\n\n영향: uAPI 변경과 userspace opt-out 정책을 함께 검증할 때 참고할 수 있습니다.\n\n> Link: https://github.com/intel/compute-runtime/pull/919\n\n[원문 확인](https://github.com/intel/compute-runtime/pull/919)\n\n**Patchwork: amdxdna AIE2 rev9 V2**\n\n동일 제목 패치가 Patchwork에 등록되어 있습니다.\n\n영향: lore 외 패치 추적·리뷰 워크플로에 쓸 수 있습니다.\n\n> Subject: [PATCH V2] accel/amdxdna: Add support for AIE2 revision 9\n\n[원문 확인](https://patchwork.kernel.org/patch/14856331/)\n\n**회귀 원인: xe_mmio_wait32 이동 커밋**\n\nxe_mmio_wait32()를 xe_mmio.c로 옮긴 커밋이 Fixes 대상으로 인용됩니다.\n\n영향: delay 회귀 맥락을 git 히스토리에서 추적할 때 기준점이 됩니다.\n\n> drm/xe/mmio: Move xe_mmio_wait32() to xe_mmio.c\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=5c09bd6ccd418f9dc221fd2544d613e3180b928e)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/vmwgfx: Add drm_panic support (v3)",
+      "url": "https://lore.kernel.org/dri-devel/20260929165104.928415-1-ian.forbes@broadcom.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/i915/dg2: per-client Wa_22013059131 (v11)",
+      "url": "https://lore.kernel.org/dri-devel/20260929172320.3481617-1-jia.yao@intel.com/",
+      "note": "thread"
+    },
+    {
+      "title": "intel/compute-runtime PR 919",
+      "url": "https://github.com/intel/compute-runtime/pull/919",
+      "note": "article"
+    },
+    {
+      "title": "accel/amdxdna: AIE2 revision 9",
+      "url": "https://lore.kernel.org/dri-devel/20260929181459.928468-1-lizhi.hou@amd.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Patchwork 14856331",
+      "url": "https://patchwork.kernel.org/patch/14856331/",
+      "note": "thread"
+    },
+    {
+      "title": "Sashiko review: vmwgfx drm_panic v3",
+      "url": "https://lore.kernel.org/dri-devel/20260929170350.5F39E1F000FF@smtp.kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/xe/mmio: Fix xe_mmio_wait32() caps",
+      "url": "https://lore.kernel.org/dri-devel/20260929161125.1973918-2-alan.previn.teres.alexis@intel.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Commit 5c09bd6ccd41 xe_mmio_wait32 move",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=5c09bd6ccd418f9dc221fd2544d613e3180b928e",
+      "note": "commit"
+    },
+    {
+      "title": "Sashiko review: i915 Wa v11 UAF",
+      "url": "https://lore.kernel.org/dri-devel/20260929174457.3FD8B1F000FF@smtp.kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-29T18:34:49.650Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

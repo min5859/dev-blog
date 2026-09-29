@@ -1,0 +1,132 @@
+{
+  "id": "2026-09-30-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-09-30 sched_ext BTF — 성능·RT",
+  "headline": "clang·pahole 1.32에서 sched_ext kfunc BTF 누락 우회, PREEMPT_LAZY용 트램폴린 Tasks RCU, efivarfs nostatfs가 동시에 논의됩니다.",
+  "date": "2026-09-30",
+  "summary": "Tejun Heo의 barrier_data() 우회와 reader-marked 트램폴린 RCU 시리즈가 PREEMPT_LAZY·BPF 스케줄러 bring-up 병목을 겨냥합니다. kallsyms 조회 가속, efivarfs RT 기본 nostatfs, perf 사이드밴드 header 회귀 수정 논의도 이어집니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "BPF",
+    "PREEMPT_RT",
+    "sched_ext",
+    "perf"
+  ],
+  "highlights": [
+    {
+      "title": "pahole 1.32에서 scx_bpf_task_set_lazy_resched BTF 누락",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "sched_ext/BPF scheduler developers and distro kernels building sched_ext with recent clang and pahole 1.32",
+      "verifyLink": "https://lore.kernel.org/bpf/7c139810be5ffc9764ed4236efc28794@kernel.org/",
+      "if": "clang·pahole 1.32로 빌드한 x86-64에서 sched_ext 초기화가 kfunc sets -22로 실패하면",
+      "do": "barrier_data(&lazy) 우회 패치와 vmlinux BTF에 해당 kfunc 존재 여부를 대조해 툴체인·커널 쪽 어느 경로를 쓸지 결정하세요",
+      "verify": "스레드에서 pahole 1.32·clang 조합과 Failed to register kfunc sets (-22) 메시지를 원문으로 확인하세요"
+    },
+    {
+      "title": "트램폴린용 Tasks RCU reader-marked 구현",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "BPF trampoline, ftrace, kprobe optimizer, and PREEMPT_LAZY/RT integrators",
+      "verifyLink": "https://lore.kernel.org/bpf/20260929-b4-rcu-tasks-preempt-qs-v6-3-c111ee02caca@toxicpanda.com/",
+      "if": "PREEMPT_LAZY에서 CPU-bound kthread가 synchronize_rcu_tasks()를 막는 트램폴린 해제 지연을 보이면",
+      "do": "CONFIG_TASKS_RCU_TRAMPOLINE_READERS v6 시리즈의 grace period·holdout 설계를 추적하고 아키텍처 enable 계획을 확인하세요",
+      "verify": "커밋 메시지의 cond_resched() no-op·context switch 대기 인용을 링크된 스레드에서 읽어보세요"
+    },
+    {
+      "title": "efivarfs nostatfs와 PREEMPT_RT 기본값",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "PREEMPT_RT users, platform/firmware teams, and anyone monitoring efivarfs via statfs or df",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260928203445.72318-1-singhpra@juniper.net/",
+      "if": "df·statfs가 efivarfs에서 수십 ms 선점 불가 지연을 유발하면",
+      "do": "nostatfs 마운트·remount로 QueryVariableInfo() 경로를 건너뛰고 fwupd용 capacity 검사는 remount,statfs 필요 시만 쓰도록 검토하세요",
+      "verify": "패치의 ~129 ms 대비 ~11 us 측정과 RT 기본 nostatfs 문구를 원문에서 확인하세요"
+    },
+    {
+      "title": "perf 사이드밴드 callback header.size",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "perf/BPF tooling developers and teams relying on sideband perf records",
+      "verifyLink": "https://lore.kernel.org/bpf/20260929182108.794434-1-irogers@google.com/",
+      "if": "BPF·ksymbol 사이드밴드 perf record 크기가 perf record에서 어긋나면",
+      "do": "Ian Rogers 답장의 perf_event_switch_output() 포함 범위와 header 초기화 리팩터 제안을 Peter 스레드와 대조해 v2 일정을 추적하세요",
+      "verify": "Peter가 perf_event_switch_output()도 영향 받는다고 한 인용과 v1 스레드의 shared event 구조 설명을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**perf/core: Restore header fields in sideband output callbacks**\n\nIan Rogers가 Peter Zijlstra v1에 답해 perf_event_switch_output()도 header.size 복원이 필요하다고 확인하고, save/restore 대신 perf_event_header__init_header_and_id() 리팩터를 제안합니다.\n\n영향: perf_iterate_sb() 공유 헤더가 perf_event_bpf_output 등 사이드밴드 callback에서 깨지면 BPF·ksymbol 이벤트의 perf record 크기가 틀어져 RT 민감 워크로드의 저오버헤드 추적 신뢰도가 떨어질 수 있습니다.\n\n> I also found perf_event_switch_output(). Does something like so also work?\n\n[원문 확인](https://lore.kernel.org/bpf/20260929182108.794434-1-irogers@google.com/)\n\nmaintainer가 save/restore 수정을 먼저 받을지 broader 리팩터를 택할지, switch_output 포함 v2 게시 시점은 확인이 필요합니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**sched_ext: Work around pahole 1.32 dropping scx_bpf_task_set_lazy_resched() from BTF**\n\nTejun Heo가 scx_bpf_task_set_lazy_resched()에 barrier_data(&lazy)를 넣어 clang이 bool 인자를 callee-saved 레지스터에 두는 경우 pahole 1.32가 kfunc를 vmlinux BTF에 남기도록 합니다.\n\n영향: 우회가 없으면 clang+pahole 1.32 빌드에서 lazy-resched kfunc가 BTF에서 빠지고 sched_ext가 kfunc sets 등록 -22로 초기화에 실패해, 해당 툴체인의 PREEMPT_LAZY sched_ext bring-up이 막힙니다.\n\n> With clang and pahole 1.32, x86-64 vmlinux BTF lacks scx_bpf_task_set_lazy_resched() and sched_ext fails to initialize: sched_ext: Failed to register kfunc sets (-22)\n\n[원문 확인](https://lore.kernel.org/bpf/7c139810be5ffc9764ed4236efc28794@kernel.org/)\n\nupstream pahole/dwarf_loader 수정이 커널 우회를 일시적으로만 필요하게 할지는 bpf 리스트 논의 확인이 필요합니다.\n\n**rcu-tasks: Add a Tasks RCU implementation for reader-marked trampolines**\n\nv6 03/14가 CONFIG_TASKS_RCU_TRAMPOLINE_READERS를 도입해 트램폴린을 Tasks Trace RCU reader로 두고, grace period는 CPU context switch와 짧은 unmarked prologue holdout을 추적합니다.\n\n영향: 기존 Tasks RCU는 PREEMPT_LAZY에서 cond_resched()가 no-op인 CPU-bound kthread가 synchronize_rcu_tasks()를 붙잡아 BPF/ftrace 트램폴린 해제가 멈출 수 있고, 이 설계는 서버형 lazy-preempt 워크로드에서 해제 지연을 bound하려 합니다.\n\n> With PREEMPT_LAZY that is a poor fit for servers: cond_resched() is a no-op, so a CPU-bound kthread only ever leaves the CPU by preemption, and one such kthread holds every synchronize_rcu_tasks() cal\n\n[원문 확인](https://lore.kernel.org/bpf/20260929-b4-rcu-tasks-preempt-qs-v6-3-c111ee02caca@toxicpanda.com/)\n\nirq-exit 선점 경로에서 task oops 시 UAF 가능성이 제기되었는지, HAVE_RCU_TRAMPOLINE_READERS를 먼저 켤 아키텍처는 시리즈에 아직 선택이 없다고 하니 후속 패치·Kconfig를 확인하세요.\n\n**kallsyms: Accelerate symbol name lookups by ~7x**\n\nv7 시리즈가 압축 strcmp·16:1 마커(+42.2 KiB .rodata)·get_symbol_seq() 언롤로 kallsyms_lookup_names()를 selftest에서 약 6102 ns에서 약 866 ns로 줄입니다.\n\n영향: libbpf가 대량 kprobe attach 시 심볼 해석에 kallsyms_lookup_names()를 쓰며, ftrace가 단일 심볼 lookup을 kallsyms 이진 탐색으로 돌린 뒤 attach가 수백 ms까지 늘어난 회귀 맥락에서 체감 지연을 줄입니다.\n\n> This series accelerates kallsyms_lookup_names() by 7.0x (from 6,102 ns down to 866 ns per lookup), cutting 64k-symbol attach from ~390 ms to ~55 ms\n\n[원문 확인](https://lore.kernel.org/bpf/20260929-ksyms-tune-v7-0-be568ceef41e@gmail.com/)\n\n소형 embedded에서 +42.2 KiB .rodata 트레이드오프가 acceptable한지는 배포 이미지별로 판단이 필요합니다.\n\n**efivarfs: add nostatfs mount option to skip QueryVariableInfo()**\n\nv4가 부정 가능 마운트 옵션 nostatfs로 statfs(2)가 EFI QueryVariableInfo()를 건너뛰게 하고, CONFIG_PREEMPT_RT는 기본 nostatfs이며 remount로 fwupd식 capacity 검사를 다시 켤 수 있습니다.\n\n영향: QueryVariableInfo()는 일부 펌웨어에서 수십 ms 걸리며 선점이 꺼진 상태로 CPU를 막아, rate limit 이후에도 df/statfs가 RT 동작을 같은 CPU에서 지연시킬 수 있습니다.\n\n> QueryVariableInfo() is an EFI runtime service that, on some firmware, takes tens of milliseconds and runs with preemption disabled, stalling the CPU that services it.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260928203445.72318-1-singhpra@juniper.net/)\n\n> With -o nostatfs the firmware call is skipped, capacity reported as zero, ~11 us per call\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260928203445.72318-1-singhpra@juniper.net/)\n\n**Re: sched_ext pahole BTF workaround — Sashiko mis-apply review**\n\nSashiko-bot이 barrier_data(&lazy)가 guard(rcu)()/scx_prog_sched() 문맥이 다른 scx_bpf_task_set_dsq_vtime()에 잘못 붙었을 수 있다고 경고합니다.\n\n영향: 실제로 잘못 적용되면 빌드가 깨지므로, sched_ext/for-7.4 큐에 들어가기 전에 hunk가 scx_bpf_task_set_lazy_resched()에 맞는지 리뷰어가 확인해야 합니다.\n\n> Will this cause a build failure? It looks like the lazy variable is not declared in scx_bpf_task_set_dsq_vtime().\n\n[원문 확인](https://lore.kernel.org/bpf/20260929173821.125081F000FF@smtp.kernel.org/)\n\n게시된 Tejun 패치 diff는 scx_bpf_task_set_lazy_resched() 쪽을 보여 주며, 봇이 구 diff를 분석했는지 리스트에서 명시적으로 닫혔는지는 확인이 필요합니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "sched_ext pahole 1.32 BTF workaround",
+      "url": "https://lore.kernel.org/bpf/7c139810be5ffc9764ed4236efc28794@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "Tasks RCU for reader-marked trampolines v6",
+      "url": "https://lore.kernel.org/bpf/20260929-b4-rcu-tasks-preempt-qs-v6-3-c111ee02caca@toxicpanda.com/",
+      "note": "thread"
+    },
+    {
+      "title": "kallsyms_lookup_names acceleration v7",
+      "url": "https://lore.kernel.org/bpf/20260929-ksyms-tune-v7-0-be568ceef41e@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "ftrace: Use kallsyms binary search for single-symbol lookup",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=93e8fd1a565e",
+      "note": "commit"
+    },
+    {
+      "title": "efivarfs nostatfs mount option v4",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260928203445.72318-1-singhpra@juniper.net/",
+      "note": "thread"
+    },
+    {
+      "title": "efivarfs: Rate limit statfs() handler",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=b2326338dc68",
+      "note": "commit"
+    },
+    {
+      "title": "perf sideband header restore reply",
+      "url": "https://lore.kernel.org/bpf/20260929182108.794434-1-irogers@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "perf sideband header restore v1",
+      "url": "https://lore.kernel.org/bpf/20260929120417.GT4120091@noisy.programming.kicks-ass.net/",
+      "note": "thread"
+    },
+    {
+      "title": "Sashiko sched_ext pahole mis-apply review",
+      "url": "https://lore.kernel.org/bpf/20260929173821.125081F000FF@smtp.kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-29T18:29:55.292Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

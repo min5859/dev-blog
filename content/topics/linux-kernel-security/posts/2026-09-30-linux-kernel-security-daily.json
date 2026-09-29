@@ -1,0 +1,133 @@
+{
+  "id": "2026-09-30-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-09-30 refcount UAF 하드닝 — 커널 보안",
+  "headline": "refcount UAF 징후 BUG() 전환·tip/locking 수용과 7.1.x EOL, 다중 stable 백포트가 이번 보안 렌즈의 축입니다.",
+  "date": "2026-09-30",
+  "summary": "linux-hardening에서 refcount UAF 오류 처리와 fortify counted-by KUnit, gpu_buddy 어노테이션 논의가 이어졌고, 7.1.13 EOL과 7.2.8·6.18.54·6.12.111 stable·longterm 점검 릴리스가 kernel.org에 반영되었습니다. CVE 대응·백포트 범위는 ChangeLog 전체와의 매핑이 아직 확인 필요합니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "refcount UAF 징후에서 CONFIG_BUG_ON_DATA_CORRUPTION·BUG() 전환",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "lib/refcount 및 CONFIG_BUG_ON_DATA_CORRUPTION 빌드 옵션을 쓰는 배포·디버그 담당",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20260812-refcount-bug-on-data-corruption-v1-1-c6da63566101@google.com/",
+      "if": "REFCOUNT_ADD/SUB_UAF 경로를 WARN_ONCE만으로 두고 배포·디버그 커널을 운영한다면,",
+      "do": "Will Deacon이 제안한 CHECK_DATA_CORRUPTION() 매크로 사용 여부와 Jann Horn 패치의 최종 BUG() 형태를 lore 스레드에서 추적하세요.",
+      "verify": "원문에서 REFCOUNT_ADD_UAF가 UAF 직전·직후 신호로 설명되는지와 Acked-by 논의를 직접 확인하세요."
+    },
+    {
+      "title": "Linux 7.1.13 stable · 7.1.x EOL",
+      "priority": "상",
+      "impactType": "release",
+      "affectedAudience": "7.1.y stable 커널을 운영·백포트하는 배포 및 USB/usbfs 스택 유지보수 담당",
+      "verifyLink": "https://www.kernel.org/releases.json",
+      "if": "7.1.y 브랜치에 고정된 배포를 유지한다면,",
+      "do": "7.1.13을 마지막 백포트 기준점으로 잡고 상위 stable·longterm 이전 계획과 usbfs usbdev_release() UAF 수정 반영 여부를 점검하세요.",
+      "verify": "releases.json에서 iseol=true 표시와 ChangeLog-7.1.13의 /dev/bus/usb 노드 관련 수정 문구를 확인하세요."
+    },
+    {
+      "title": "Linux 7.2.8 stable · SMB 복합 암호화 PDU UAF",
+      "priority": "상",
+      "impactType": "backport",
+      "affectedAudience": "7.2.y stable·엔터프라이즈 배포 및 CIFS/SMB 클라이언트 유지보수 담당",
+      "verifyLink": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.8",
+      "if": "7.2.y에서 CIFS/SMB 클라이언트를 쓴다면,",
+      "do": "437건 백포트 묶음 중 next_buffer·NextCommand 경계 수정을 이번 점 릴리스 보안 유지보수 기준으로 반영하세요.",
+      "verify": "ChangeLog-7.2.8에서 stale next_buffer UAF 설명과 Linux 7.2.8 헤더를 확인하세요."
+    },
+    {
+      "title": "gpu/buddy roots에 __counted_by_ptr(n_roots)",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "drm/ttm·gpu_buddy 및 Intel GPU 메모리 관리 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/8093ecff-842a-4063-bb29-4eb4903f7f73@intel.com/",
+      "if": "drm/ttm·gpu_buddy 경계 검사와 counted-by 확산을 추적한다면,",
+      "do": "Matthew Auld Reviewed-by가 달린 roots 어노테이션과 free_scoreboard/free_tree n_orders 확장 논의를 스레드에서 이어가세요.",
+      "verify": "스레드의 Reviewed-by 줄과 roots 어노테이션 목적 설명을 원문에서 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.1.13 stable · EOL**\n\n2026-09-02 공개 마지막 7.1.x stable(ChangeLog 기준 76건 upstream 백포트)이며 kernel.org releases.json에서 iseol=true로 표시됩니다.\n\n영향: 7.1.y 고정 배포는 동일 브랜치 신규 보안 백포트를 더 받기 어렵고, EOL 직전 릴리스에도 usbfs usbdev_release() 경로 usb_device use-after-free 등 수정이 포함되어 최종 반영·이전 계획을 함께 점검해야 합니다.\n\n> \"version\": \"7.1.13\", \"iseol\": true\n\n[원문 확인](https://www.kernel.org/releases.json)\n\n**usbfs usb_device UAF (7.1.13 ChangeLog)**\n\nChangeLog에 비권한 프로세스가 /dev/bus/usb 노드에 읽기·쓰기 접근 시 도달 가능한 usb_device UAF 수정이 포함됩니다.\n\n영향: 로컬 권한 경계(usbfs) 수정이 최종 7.1.x 릴리스에 실려 있어 배포 반영 시점을 맞춰야 합니다.\n\n> This is reachable by an unprivileged process that has read/write access to a /dev/bus/usb node\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.13)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**refcount: CONFIG_BUG_ON_DATA_CORRUPTION for UAF-related errors**\n\nJann Horn 패치에 Will Deacon이 REFCOUNT_ADD/SUB_UAF 시 CONFIG_BUG_ON_DATA_CORRUPTION에서 BUG() 전환 방향을 Acked-by로 승인했고, CHECK_DATA_CORRUPTION() 매크로 사용을 제안했습니다.\n\n영향: refcount 0 이후 inc 같은 UAF 직전 신호를 WARN_ONCE 대신 즉시 중단시키면 exploitability를 줄이는 하드닝이며, 매크로 선택은 saturated refcount 스팸과 __must_check 제약과의 trade-off입니다. Jann Horn이 CHECK_DATA_CORRUPTION() 대신 open-coded BUG()를 유지할지는 확인 필요합니다.\n\n> REFCOUNT_ADD_UAF suggests that a UAF either just happened or is about to happen.\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20260812-refcount-bug-on-data-corruption-v1-1-c6da63566101@google.com/)\n\n**Will Deacon: CHECK_DATA_CORRUPTION() 제안**\n\n동일 논의에서 open-coded BUG() 대신 CHECK_DATA_CORRUPTION() 사용을 제안했습니다.\n\n영향: 배포별 데이터 손상 처리 정책과 맞물리는 구현 선택입니다.\n\n> Can you use CHECK_DATA_CORRUPTION() here instead of open-coding the BUG()?\n\n[원문 확인](https://lore.kernel.org/linux-hardening/aru5lCCF50puV8GM@willie-the-truck/)\n\n**gpu/buddy: __counted_by_ptr on roots**\n\nstruct gpu_buddy의 roots 포인터 배열에 __counted_by_ptr(n_roots) 어노테이션이 제안되었고 Matthew Auld의 Reviewed-by가 달렸으며, free_scoreboard/free_tree에도 n_orders 필드로 확장할지 논의가 이어졌습니다.\n\n영향: GPU 메모리 buddy allocator는 drm/ttm 경로 핵심 자료구조라 roots 경계 어노테이션은 KASAN·BDOS 기반 OOB 조기 탐지를 넓히는 하드닝 사례입니다.\n\n> Reviewed-by: Matthew Auld <matthew.auld@intel.com>\n\n[원문 확인](https://lore.kernel.org/linux-hardening/8093ecff-842a-4063-bb29-4eb4903f7f73@intel.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Linux 7.2.8 stable**\n\n2026-09-25 공개 7.2.8 stable에는 ChangeLog 기준 437건 upstream 백포트가 있으며, SMB/cifs 클라이언트 복합 암호화 PDU의 next_buffer UAF·NextCommand 경계 검사 등이 포함됩니다.\n\n영향: 네트워크 파일 클라이언트 OOB·UAF 클래스는 인증된 원격 공격면으로 자주 쓰이므로 7.2.y 사용자는 이번 점 릴리스를 보안 유지보수 기준점으로 잡아야 합니다. 437건 중 배포별 cherry-pick·공개 CVE 매핑은 확인 필요합니다.\n\n> A stale next_buffer pointer can lead to a use-after-free on subsequent error paths.\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.8)\n\n**Linux 6.18.54 longterm**\n\n2026-09-25 공개 6.18.54 longterm에는 ChangeLog 기준 396건 백포트가 있으며, SMB 클라이언트·Wi-Fi(TKIP MIC 검증)·drm/amdgpu 등 다수 서브시스템 수정이 포함됩니다.\n\n영향: 6.18 longterm 트랙은 장기 지원 배포의 보안 수신 경로입니다. 396건 전체 보안 영향도 분류는 확인 필요합니다.\n\n> A short TKIP frame makes the unsigned payload length wrap, causing michael_mic() to read past the skb.\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.18.54)\n\n**Linux 6.12.111 longterm**\n\n2026-09-21 공개 6.12.111 longterm에는 ChangeLog 기준 1084건 백포트가 있으며, SUNRPC pipefs 경로에서 rpc_clnt use-after-free가 남는 문제 수정이 포함됩니다.\n\n영향: 6.12는 널리 쓰이는 longterm이므로 NFS/RPC pipefs UAF 수정은 다수 엔터프라이즈 커널 공격면을 줄입니다. 1084건 규모에 따른 배포별 regression 테스트 범위는 확인 필요합니다.\n\n> sunrpc: fix use-after-free in __rpc_clnt_handle_event and __rpc_clnt_remove_pipedir\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.12.111)\n\n**fortify: KUnit tests for __counted_by and __counted_by_ptr (v3)**\n\nlinux-hardening에 __counted_by/__counted_by_ptr 동작을 검증하는 fortify KUnit 테스트 v3가 올라왔으며, CONFIG_CC_HAS_COUNTED_BY(_PTR) 가드·IS_ENABLED 스킵·KUNIT_EXPECT_BDOS로 BDOS 미지원 시 건너뜁니다.\n\n영향: FORTIFY_SOURCE와 __builtin_dynamic_object_size() 기반 경계 검사가 counted-by 어노테이션과 맞물리는지 CI에서 회귀 검출할 수 있어 KSPP counted-by 확산의 품질 기준이 될 수 있습니다. linux-hardening 외 maintainer 트리 머지 일정은 확인 필요합니다.\n\n> v3: - Use \"IS_ENABLED(CONFIG...)\" instead of \"#ifdefs\".\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20260929072016.2360806-1-morbo@google.com/)\n\n**refcount UAF 하드닝 · tip/locking/core 수용 예정**\n\nPeter Zijlstra가 동일 refcount UAF 하드닝 패치를 tip/locking/core 트리에 넣겠다고 답했습니다.\n\n영향: lib/refcount.c에 MAINTAINERS가 없어 라우팅이 불명확했던 패치가 atomic/refcount 계열 표준 경로로 들어가면 머지 지연 리스크가 줄어듭니다. tip 트리 적용 후 linux-next·stable 백포트 포함 여부는 확인 필요합니다.\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20260929142914.GD88198@noisy.programming.kicks-ass.net/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "kernel.org releases.json",
+      "url": "https://www.kernel.org/releases.json",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-7.1.13",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.13",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-7.2.8",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.8",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-6.18.54",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.18.54",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-6.12.111",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.12.111",
+      "note": "changelog"
+    },
+    {
+      "title": "refcount CONFIG_BUG_ON_DATA_CORRUPTION (Jann Horn)",
+      "url": "https://lore.kernel.org/linux-hardening/20260812-refcount-bug-on-data-corruption-v1-1-c6da63566101@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "refcount CHECK_DATA_CORRUPTION 제안 (Will Deacon)",
+      "url": "https://lore.kernel.org/linux-hardening/aru5lCCF50puV8GM@willie-the-truck/",
+      "note": "thread"
+    },
+    {
+      "title": "fortify counted-by KUnit v3",
+      "url": "https://lore.kernel.org/linux-hardening/20260929072016.2360806-1-morbo@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "refcount 패치 tip/locking/core (Peter Zijlstra)",
+      "url": "https://lore.kernel.org/linux-hardening/20260929142914.GD88198@noisy.programming.kicks-ass.net/",
+      "note": "thread"
+    },
+    {
+      "title": "gpu/buddy __counted_by_ptr",
+      "url": "https://lore.kernel.org/linux-hardening/8093ecff-842a-4063-bb29-4eb4903f7f73@intel.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-29T18:20:50.049Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

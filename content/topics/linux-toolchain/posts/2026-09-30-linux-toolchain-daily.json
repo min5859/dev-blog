@@ -1,0 +1,131 @@
+{
+  "id": "2026-09-30-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-09-30 objtool·kallsyms — 툴체인",
+  "headline": "PowerPC objtool feature fixup 시리즈가 리뷰 게이트를 맞고, kallsyms 조회 최적화와 Rust·compiler.h API 논의가 병행됩니다.",
+  "date": "2026-09-30",
+  "summary": "IBM 측 objtool v2가 PowerPC alternate feature 상대 주소를 kbuild/objtool 경로로 빌드 타임에 고치려 하며 Peter Zijlstra의 pre-link 검증 모델 지적이 남아 있습니다. Jim Cromie kallsyms v6는 약 7배 조회 가속을 제안하고 Petr Mladek는 tracing·BPF 등 관심을 표했으며, Rust alloc/sync와 ptr_eq() 방향도 스레드에서 이어집니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "툴체인",
+    "kbuild",
+    "objtool"
+  ],
+  "highlights": [
+    {
+      "title": "objtool PowerPC alternate feature fixup v2",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "PowerPC 커널·objtool·kbuild 통합을 유지하는 툴체인 담당",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20260929055138.43489-1-shivangu@linux.ibm.com/",
+      "if": "ppc64le·ppc64be·ppc32be 빌드에서 feature fixup을 objtool/kbuild로 통합한다면,",
+      "do": "v2 6패치의 vmlinux 레이아웃·--ftr-fixup 검증·powerpc 기본 활성화 변경을 리뷰 큐에서 함께 추적하세요.",
+      "verify": "cover letter의 빌드·부팅 테스트 주장과 kbuild 통합 diff를 lore 스레드에서 직접 확인하세요."
+    },
+    {
+      "title": "objtool 4/6 검증 완화와 pre-link 모델",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "objtool 검증 로직과 PowerPC feature fixup 패치를 리뷰하는 kbuild·아키텍처 담당",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20260929142559.GC88198@noisy.programming.kicks-ass.net/",
+      "if": "동일 시리즈의 --ftr-fixup 경고 완화가 머지 전 게이트라면,",
+      "do": "Peter Zijlstra 리뷰와 vmlinux --ftr-fixup 단계 설명이 정렬되는지 스레드 답글을 모니터하세요.",
+      "verify": "패치 4/6 본문과 Peter 답장에서 objtool 실행 시점(pre-link vs vmlinux) 논의를 원문으로 대조하세요."
+    },
+    {
+      "title": "kallsyms 심볼 이름 조회 ~7x",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "kbuild kallsyms 생성·BPF/트레이싱 등 대량 심볼 이름 조회 경로 담당",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20260926-ksyms-tune-v6-0-236620c65e98@gmail.com/",
+      "if": "tracing·livepatching·BPF·모듈 로더에서 kallsyms_lookup_names() 비용이 중요하다면,",
+      "do": "v6 측정(.rodata +42.2 KiB 대비 866 ns)과 Petr Mladek의 maintainer 일정·cc 제안을 함께 보세요.",
+      "verify": "v6 cover의 selftest 수치와 Petr 답장의 관심 분야 언급을 lore에서 확인하세요."
+    },
+    {
+      "title": "Rust for Linux alloc·sync API 확장",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust for Linux in-tree 드라이버·alloc 래퍼 작성자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20260929-numa-node-id-v2-1-fdd2c0a49412@kernel.org/",
+      "if": "in-tree Rust가 NUMA node id나 spinlock 하 제한 연산을 다룬다면,",
+      "do": "NumaNode::id() v2와 lock::do_unlocked v3 문서·사용 예를 리뷰에 반영할지 검토하세요.",
+      "verify": "각 패치 cover letter와 doc comment를 rust-for-linux 스레드에서 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**objtool: Fixup alternate feature relative addresses**\n\nSathvika Vasireddy v2 6패치는 PowerPC alternate feature 분기 상대 주소를 objtool ELF 파싱으로 빌드 타임에 고치고, vmlinux 레이아웃 보존·objtool 경고 수정·--ftr-fixup 전용 검증 완화·kbuild/objtool 통합·powerpc 기본 활성화까지 한 시리즈로 올렸습니다.\n\n영향: 커스텀 PowerPC 전용 도구 대신 objtool/kbuild 경로로 feature fixup을 넣으면 ppc64le/BE/ppc32 BE 빌드·부팅 검증과 kbuild 파이프라인 변경을 함께 따라가야 합니다.\n\n> This patch series implements build-time fixup of alternate feature relative addresses for powerpc. ... Testing: Build and Boot tested on ppc64le, ppc64be, and ppc32be configs.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20260929055138.43489-1-shivangu@linux.ibm.com/)\n\n**objtool/powerpc: Skip jump destination analysis and unnanotated intra-function call warnings for --ftr-fixup**\n\nPeter Zijlstra는 [PATCH v2 4/6] 설명(절대 오프셋·vmlinux --ftr-fixup에서의 unannotated call 경고)에 대해, objtool은 링크 전 오브젝트에만 돌아가므로 절대 오프셋이 없다며 근거를 요구하는 리뷰를 달았습니다.\n\n영향: 동일 시리즈의 검증 완화 패치가 objtool 실행 모델과 맞는지가 리뷰 게이트이므로, Peter의 지적이 해소되기 전에는 kbuild 통합 리스크가 남습니다.\n\n> Again, confused. We run objtool on objects, this is pre-linking, there are no absolute offsets.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20260929142559.GC88198@noisy.programming.kicks-ass.net/)\n\n> Objtool is throwing unannotated intra-function call warnings when run on vmlinux with --ftr-fixup option.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20260929055138.43489-5-shivangu@linux.ibm.com/)\n\n**kallsyms: Accelerate symbol name lookups by ~7x**\n\nPetr Mladek는 Jim Cromie v6 [0/3] 스레드에 답해 깊은 리뷰는 TODO에 넣었으나 시기 미정이라고 하면서, kallsyms 조회 속도가 tracing·livepatching·BPF·모듈 로더에 의미 있을 수 있다고 cc 확장을 제안했습니다.\n\n영향: kallsyms_lookup_names() 최적화는 scripts/kallsyms.c 빌드 타임 테이블과 런타임 조회·.rodata 크기 트레이드오프를 동시에 건드리며, maintainer 후보의 관심과 대안 설계 논의가 머지 전 핵심입니다.\n\n> I am not sure if I could find time to look at the code deeper anytime soon. ... Anyway, the kallsyms search speed might be interesting for tracing, livepatching, bpf, and maybe module loader.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/aruMIFRPBEVX_j0N@pathway.suse.cz/)\n\n> Results (kernel/kallsyms_selftest across ~184k symbols): ... Patch 2 (16:1): 866 ns (7.0x faster) ... Memory: +42.2 KiB .rodata\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20260926-ksyms-tune-v6-0-236620c65e98@gmail.com/)\n\n**compiler.h: Introduce ptr_eq() to preserve address dependency**\n\n스레드에서는 hazptr 시리즈의 ptr_eq() 구현 순서를 두고, 컴파일러가 address dependency를 이미 지키면 plain (a)==(b)를 우선하고 그다음 아키텍처 asm, 마지막에 OPTIMIZER_HIDE_VAR() 폴백을 쓰는 방향이 논의된 것으로 보입니다(원문 인용 검증은 dossier에서 완료되지 않았습니다).\n\n영향: compiler.h의 포인터 비교 헬퍼는 GCC/Clang 최적화와 RCU·hazptr 메모리 순서에 영향을 줄 수 있어, 툴체인별 조건부 구현 방향이 in-tree 커널 빌드 정책과 맞닿을 수 있습니다.\n\nClang 몇 버전부터 plain 비교가 안전한지와 GCC 쪽 동등 조건은 스레드에서 아직 수치로 고정되지 않았습니다.\n\n[원문 확인](https://lore.kernel.org/llvm/CAHk-=wi7BkCuzMe_zWi6KHUs09UQWJpCVNvuFg5wh_CAu5dgow@mail.gmail.com/)\n\n[원문 확인](https://lore.kernel.org/llvm/133ca8de-cf30-4bf5-9539-d0b73e347b22@efficios.com/)\n\n**rust: alloc: add `NumaNode::id()` accessor**\n\nAndreas Hindborg v2는 `NumaNode`에 `#[inline] pub fn id()`를 추가해 private 필드 없이 NUMA node id를 C 바인딩용 `i32`로 돌려줍니다.\n\n영향: Rust alloc API surface가 바뀌면 in-tree Rust 드라이버가 node id를 C API에 넘길 때 공식 accessor를 쓰게 되며, 후속 block layer `TagSet::new()` home node 매개변수 작업의 전제입니다.\n\n> Add a trivial `id()` getter so callers that need to pass the node id to a C binding can recover the underlying `c_int` without reaching into the private field.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260929-numa-node-id-v2-1-fdd2c0a49412@kernel.org/)\n\n**rust: sync: export lock::do_unlocked**\n\nAndreas Hindborg v3는 `lock::Guard::do_unlocked`를 pub으로 내고 spinlock 보유 중 금지된 작업(예: GFP_KERNEL 할당)을 잠깐 풀고 실행하는 사용법 문서를 추가합니다.\n\n영향: 동기화 래퍼의 공개 API가 넓어지면 in-tree Rust 코드가 spinlock 아래 안전하지 않은 연산 패턴을 표준 helper로 쓰게 되어, Rust for Linux 빌드·리뷰 가이드에 반영됩니다.\n\n> Export lock::do_unlocked publicly. Add documentation for the method.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20260929-export-do-unlocked-v3-1-f7000684178f@kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "powerpc/merge 브랜치 위 리베이스 상태에서 upstream master 머지 일정은 메일만으로는 불명확합니다. vmlinux에 --ftr-fixup을 적용하는 kbuild 단계와 Peter가 가정하는 pre-link objtool 검증이 어떻게 정렬되는지 스레드에서 아직 명확히 정리되지 않았습니다. David Laight가 스레드에 제안한 .rodata 증가 없는 대안과 Jim Cromie의 v7(2026-09-29) 시리즈 중 어느 쪽이 linux-kbuild에서 채택될지는 아직 열려 있습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "objtool PowerPC alternate feature fixup v2 [0/6]",
+      "url": "https://lore.kernel.org/linux-kbuild/20260929055138.43489-1-shivangu@linux.ibm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Peter Zijlstra review on objtool pre-linking",
+      "url": "https://lore.kernel.org/linux-kbuild/20260929142559.GC88198@noisy.programming.kicks-ass.net/",
+      "note": "thread"
+    },
+    {
+      "title": "objtool/powerpc [PATCH v2 4/6] --ftr-fixup",
+      "url": "https://lore.kernel.org/linux-kbuild/20260929055138.43489-5-shivangu@linux.ibm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Petr Mladek reply on kallsyms v6",
+      "url": "https://lore.kernel.org/linux-kbuild/aruMIFRPBEVX_j0N@pathway.suse.cz/",
+      "note": "thread"
+    },
+    {
+      "title": "kallsyms accelerate symbol lookups v6",
+      "url": "https://lore.kernel.org/linux-kbuild/20260926-ksyms-tune-v6-0-236620c65e98@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Linus Torvalds on ptr_eq() ordering",
+      "url": "https://lore.kernel.org/llvm/CAHk-=wi7BkCuzMe_zWi6KHUs09UQWJpCVNvuFg5wh_CAu5dgow@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Mathieu Desnoyers on ptr_eq preprocessor conditionals",
+      "url": "https://lore.kernel.org/llvm/133ca8de-cf30-4bf5-9539-d0b73e347b22@efficios.com/",
+      "note": "thread"
+    },
+    {
+      "title": "rust alloc NumaNode::id() v2",
+      "url": "https://lore.kernel.org/rust-for-linux/20260929-numa-node-id-v2-1-fdd2c0a49412@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "rust sync export lock::do_unlocked v3",
+      "url": "https://lore.kernel.org/rust-for-linux/20260929-export-do-unlocked-v3-1-f7000684178f@kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-29T18:23:17.875Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
