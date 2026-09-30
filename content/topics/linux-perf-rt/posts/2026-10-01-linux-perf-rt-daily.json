@@ -1,0 +1,131 @@
+{
+  "id": "2026-10-01-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-10-01 IPv4=n·UNIX GC — linux-perf-rt",
+  "headline": "CONFIG_IPV4=n INET 분리 16패치 시리즈와 AF_UNIX sendmsg GC 동기 대기 제거(v5)가 net-next·linux-rt-devel에서 추적 중입니다.",
+  "date": "2026-10-01",
+  "summary": "generic 네트워킹이 IPv4 심볼 없이 빌드되도록 TCP·UDP·ping·FIB 경계를 재배치하는 net-next v3 시리즈가 이어집니다. PREEMPT_RT 쪽에서는 sendmsg()가 GC 완료를 기다리지 않도록 바꾸며, netdev 측 OOM·soft lockup 우려 리뷰가 남아 있습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "PREEMPT_RT",
+    "네트워킹",
+    "CONFIG_IPV4"
+  ],
+  "highlights": [
+    {
+      "title": "net: core: IPv4 fallback stubs (CONFIG_IPV4=n)",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "네트워크 스택·Kconfig를 다루는 커널/배포판 빌드 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260930135334.4739-3-fmancera@suse.de/",
+      "if": "IPv6-only 또는 RT 커널에서 IPv4 없이 net/core를 링크하려면",
+      "do": "include/net/ip.h·route.h 스텁·가드 패치와 후속 TCP/UDP 분리 시리즈 리베이스 충돌을 함께 추적하세요",
+      "verify": "lore 스레드와 netdev 제출 원문에서 undefined reference 재현 여부를 확인하세요"
+    },
+    {
+      "title": "af_unix: sendmsg()에서 GC 완료 대기 제거 (v5)",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "PREEMPT_RT·AF_UNIX FD passing·데스크톱/서버 IPC 스택 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260930162457.4ajVJ-Qa@linutronix.de/",
+      "if": "고우선순위 RT 태스크가 AF_UNIX sendmsg() 경로에서 블록되는지 점검 중이라면",
+      "do": "flush_work 제거 v5와 v4 논리 차이, netdev 측 OOM·soft lockup 재현 논의를 병행해 읽으세요",
+      "verify": "linux-rt-devel v5 스레드와 lkml 리뷰 스레드에서 재현기 결과·합의 상태를 확인하세요"
+    },
+    {
+      "title": "tcp: protocol agnostic TCP를 tcp.c로 이동",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "TCP/INET 및 /proc/net 통계를 추적하는 네트워크 스택 개발자",
+      "verifyLink": "https://lore.kernel.org/bpf/20260930135334.4739-5-fmancera@suse.de/",
+      "if": "out-of-tree TCP 트레이싱·tcp_bpf 후킹이 tcp_ipv4.c 경로에 묶여 있다면",
+      "do": "tcp_destroy_sock() 통합과 약 1300줄 재배치 후 필요한 follow-up인지 메일링 리스트를 확인하세요",
+      "verify": "net-next v3 [04/16] lore 원문에서 파일 분리 diff 범위를 확인하세요"
+    },
+    {
+      "title": "ipv4: udp/ping/fib IPv4 전용 파일 분리",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "UDP/INET 및 BPF sockmap 경로 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20260930135334.4739-7-fmancera@suse.de/",
+      "if": "CONFIG_IPV4=n INET 빌드와 generic udp.c·ping.c 경계를 맞추는 중이라면",
+      "do": "udp_ipv4.c·ping_ipv4.c·fib_core.c 신설 패치를 시리즈 순서([06/16]~[09/16])대로 리뷰하세요",
+      "verify": "각 lore 패치 링크에서 Makefile CONFIG_IPV4 조건과 diff 규모를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**net: core: add IPv4 fallback stubs and guards for CONFIG_IPV4=n**\n\nCONFIG_IPV4=n 빌드에서 generic 네트워킹 코드가 IPv4 심볼을 참조하지 않도록 include/net/ip.h·route.h에 인라인 스텁과 가드를 추가하고 net/core 등 공용 경로를 정리합니다.\n\n영향: IPv6-only(또는 RT) 커널을 링크할 때 undefined reference를 막는 기반 패치로, 이후 TCP/UDP 분리 시리즈가 빌드되는 전제 조건입니다.\n\n> This patch provides static inline stubs in include/net/ip.h and include/net/route.h that return a proper error code when IPv4 is disabled.\n\n[원문 확인](https://lore.kernel.org/bpf/20260930135334.4739-3-fmancera@suse.de/)\n\n**tcp: move protocol agnostic TCP functions out of tcp_ipv4.c**\n\nCONFIG_IPV4=n에서 tcp_ipv4.c가 빌드되지 않으므로 공용 TCP 로직을 tcp.c로 옮기고 tcp_v4_destroy_sock()을 tcp_destroy_sock()으로 통합·IPv6 경로에 IPv4 가드를 넣으며 sockstat 표시를 조정합니다.\n\n영향: IPv4 없이도 TCP/INET 공용 코드가 링크되며, IPv4-mapped IPv6 소켓은 -EAFNOSUPPORT 등으로 명시 거부됩니다; 대규모 파일 이동으로 리베이스·충돌 가능성이 큽니다.\n\n> rename tcp_v4_destroy_sock() to tcp_destroy_sock() to reflect its shared usage by IPv4 and IPv6.\n\n[원문 확인](https://lore.kernel.org/bpf/20260930135334.4739-5-fmancera@suse.de/)\n\n**ipv4: udp: split IPv4 specific logic into udp_ipv4.c**\n\nUDP의 IPv4 전용 매칭·입출력·멀티캐스트·AF_INET udp_prot를 새 udp_ipv4.c로 분리하고 Makefile에서 CONFIG_IPV4일 때만 컴파일합니다.\n\n영향: TCP 분리와 같은 패턴으로 INET을 IPv4 없이 빌드할 수 있게 하며, generic udp.c와 IPv4 경로의 유지보수 경계가 바뀝니다.\n\n> This patch creates udp_ipv4.c and move all the functions for packet matching, input/output processing, multicast and the AF_INET udp_prot from udp.c to the new file.\n\n[원문 확인](https://lore.kernel.org/bpf/20260930135334.4739-7-fmancera@suse.de/)\n\n**ipv4: ping: split IPv4 specific logic into ping_ipv4.c**\n\nAF_INET ping_prot와 IPv4 전송 경로를 ping_ipv4.c로 옮기고 CONFIG_IPV4에만 빌드되도록 Makefile을 갱신합니다.\n\n영향: CONFIG_IPV4=n INET 빌드 시리즈의 일부로, generic ping 인프라와 IPv4 구현을 분리합니다.\n\n> This patch creates ping_ipv4.c and move all the functions for packet transmission and the AF_INET ping_prot definition from ping.c to the new file.\n\n[원문 확인](https://lore.kernel.org/bpf/20260930135334.4739-9-fmancera@suse.de/)\n\n**ipv4: fib: split common nexthop logic to fib_core.c**\n\nIPv4 라우팅 스택 없이도 IPv6가 공용 nexthop 초기화·해제를 쓸 수 있도록 fib_semantics.c의 공용 로직을 net/core/fib_core.c로 옮깁니다.\n\n영향: IPv4 FIB 코드와 IPv6가 공유하는 nexthop 경계가 net/core로 이동해, IPv6-only 빌드에서 라우팅 하위계층 의존성이 바뀝니다.\n\n> This patch creates fib_core.c and move all the functions for common nexthop initialization and release from fib_semantics.c to fib_core.c.\n\n[원문 확인](https://lore.kernel.org/bpf/20260930135334.4739-10-fmancera@suse.de/)\n\n**af_unix: Do not wait for garbage collector in sendmsg()**\n\nunix_schedule_gc()에서 unix_graph_cyclic_sccs가 설정된 뒤 flush_work(&unix_gc_work)로 sendmsg()가 GC 완료를 기다리던 경로와 관련 주석을 제거합니다(v5, Nam Cao·Sebastian Siewior).\n\n영향: 고우선순위 RT 태스크가 workqueue에서 도는 AF_UNIX GC에 블록되는 우선순위 역전을 줄이려는 변경이며, netdev 측에서는 과거 OOM/soft lockup 재발 가능성에 대한 리뷰 논의가 이어졌습니다.\n\n> Therefore, don't penalise the user by blocking on the GC. No problems were observed after running the reproducers from the mentioned bug reports.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260930162457.4ajVJ-Qa@linutronix.de/)\n\n> Therefore, remove that to prevent priority inversion. Running all the reproducers from the mentioned bug reports after this patch, no problem is observed.\n\n[원문 확인](https://lkml.iu.edu/hypermail/linux/kernel/2608.0/05087.html)\n\n> it will be easier to trigger OOM and soft lockup without the penalty.\n\n[원문 확인](https://lkml.iu.edu/2608.1/00008.html)\n\nnet-next v3 16패치 시리즈 전체의 netdev 머지·리뷰 타임라인은 아직 확인이 필요합니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "net: IPv4 fallback stubs [02/16] lore",
+      "url": "https://lore.kernel.org/bpf/20260930135334.4739-3-fmancera@suse.de/",
+      "note": "thread"
+    },
+    {
+      "title": "netdev IPv4=n core stack prior submission",
+      "url": "https://lists.openwall.net/netdev/2026/09/10/391",
+      "note": "thread"
+    },
+    {
+      "title": "tcp agnostic move [04/16] lore",
+      "url": "https://lore.kernel.org/bpf/20260930135334.4739-5-fmancera@suse.de/",
+      "note": "thread"
+    },
+    {
+      "title": "udp_ipv4 split [06/16] lore",
+      "url": "https://lore.kernel.org/bpf/20260930135334.4739-7-fmancera@suse.de/",
+      "note": "thread"
+    },
+    {
+      "title": "ping_ipv4 split [08/16] lore",
+      "url": "https://lore.kernel.org/bpf/20260930135334.4739-9-fmancera@suse.de/",
+      "note": "thread"
+    },
+    {
+      "title": "fib_core nexthop [09/16] lore",
+      "url": "https://lore.kernel.org/bpf/20260930135334.4739-10-fmancera@suse.de/",
+      "note": "thread"
+    },
+    {
+      "title": "af_unix GC sendmsg v5 linux-rt-devel",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260930162457.4ajVJ-Qa@linutronix.de/",
+      "note": "thread"
+    },
+    {
+      "title": "af_unix priority inversion v4 lkml",
+      "url": "https://lkml.iu.edu/hypermail/linux/kernel/2608.0/05087.html",
+      "note": "thread"
+    },
+    {
+      "title": "af_unix OOM soft lockup concern netdev review",
+      "url": "https://lkml.iu.edu/2608.1/00008.html",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-30T18:27:20.179Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

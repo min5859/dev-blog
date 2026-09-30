@@ -1,0 +1,134 @@
+{
+  "id": "2026-10-01-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-10-01 KVM HPT UAF·hang — 커널 보안",
+  "headline": "Power KVM Book3S HV HPT hcall UAF·선점 hang 수정 시리즈와 StarFive clk 프로브 실패 누수 패치가 linux-hardening에 올라왔습니다.",
+  "date": "2026-10-01",
+  "summary": "게스트 조작 가능한 HPT 경로와 HPTE bit-lock 선점 이슈가 하드닝 리뷰 중이며, JH7110 reset 등록 실패 경로 메모리 누수 수정이 제안되었습니다. 7.1.13은 kernel.org에서 EOL로 표시된 상태이고 7.2.8·6.18.54·6.12.111 stable/longterm은 대량 백포트에 SMB·SUNRPC·Wi-Fi 등 UAF/OOB 수정이 포함됩니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "보안"
+  ],
+  "highlights": [
+    {
+      "title": "KVM PPC Book3S HV HPT 동기화·선점",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "Power KVM Book3S HV(HPT)·Hash 모드 게스트 운영 및 arch/powerpc/kvm 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20260930173750.56759-2-amachhiw@linux.ibm.com/",
+      "if": "Power KVM Book3S HV HPT 모드에서 게스트 메모리 슬롯 변경과 hcall이 겹치거나 HPTE bit-lock을 잡은 스레드가 선점되는 환경이면,",
+      "do": "linux-hardening v2 3패치 시리즈 원문과 Cc: stable 범위를 확인하고 호스트 커널 적용·백포트 계획을 검토하세요.",
+      "verify": "memslot 삭제 레이스와 HPTE_V_HVLOCK 선점 시 hang 가능성 설명이 스레드 인용문과 일치하는지 lore 스레드를 대조하세요."
+    },
+    {
+      "title": "StarFive JH7110 clk reset 등록 실패 누수",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "StarFive JH7110/JHB100 clk·reset 드라이버 및 RISC-V 보드 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20260930124317.5648-2-changhuang.liang@starfivetech.com/",
+      "if": "JH7110 보드에서 auxiliary_device_init()이 실패하는 프로브 경로를 반복 테스트한다면,",
+      "do": "실패 경로에서 rdev를 해제하는 패치가 포함된 hardening 01/23 시리즈를 추적하고 머지 전 장기 부팅 시나리오에서 메모리 사용을 모니터하세요.",
+      "verify": "release 콜백이 호출되지 않아 rdev가 누수된다는 인용문이 패치 설명과 같은지 스레드를 확인하세요."
+    },
+    {
+      "title": "Linux 7.2.8 stable 백포트",
+      "priority": "중",
+      "impactType": "backport",
+      "affectedAudience": "7.2.y stable·엔터프라이즈 배포 및 CIFS/SMB·DRM gud 유지보수 담당",
+      "verifyLink": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.8",
+      "if": "7.2.y 계열에서 SMB/cifs·ioctl·gud 디스플레이 스택을 운영한다면,",
+      "do": "ChangeLog-7.2.8의 437건 백포트를 보안 유지보수 기준 릴리스로 잡고 배포 cherry-pick 목록을 갱신하세요.",
+      "verify": "복합 PDU next_buffer UAF 수정 인용문이 ChangeLog 항목과 일치하는지 원문을 대조하세요."
+    },
+    {
+      "title": "pinctrl-imx type-aware allocator 선행",
+      "priority": "하",
+      "impactType": "build",
+      "affectedAudience": "pinctrl-imx·Freescale 플랫폼 빌드 및 KSPP type-aware devm_kmalloc 도입 추적자",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/CAD++jL=TbxyEiZUhPYtqiXBJTekvE7g8uSqwLbuALj7Y1iso4A@mail.gmail.com/",
+      "if": "GCC 16 type-aware allocator 하드닝 빌드에서 imx pinctrl을 컴파일한다면,",
+      "do": "group_names const 할당 타입 정합성 패치가 maintainer 트리에 적용된 상태를 확인하고 treewide KSPP 시리즈를 함께 추적하세요.",
+      "verify": "devm_kmalloc 반환 타입과 대입 변수 타입 일치 요지가 스레드 인용문과 맞는지 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.1.13 stable · EOL**\n\nkernel.org releases.json에서 7.1.13이 iseol=true로 표시되어 7.1.x stable 수신이 종료된 상태입니다. 마지막 ChangeLog에는 76건 upstream 백포트가 있으며 usbfs usbdev_release() usb_device UAF 등이 포함됩니다.\n\n영향: 7.1.y 고정 배포는 신규 보안 백포트 수신이 끝나므로 EOL 이전·이후 마이그레이션과 로컬 권한 경계(usbfs) 수정 반영 여부를 함께 점검해야 합니다.\n\n> \"version\": \"7.1.13\", \"iseol\": true\n\n[원문 확인](https://www.kernel.org/releases.json)\n\n**usbfs 비권한 경로 UAF 백포트(7.1.13 ChangeLog)**\n\nChangeLog-7.1.13에 비권한 프로세스가 /dev/bus/usb 노드에 접근 가능한 usb_device use-after-free 수정이 실려 있습니다.\n\n영향: EOL 직전 릴리스에 로컬 권한 경계 수정이 포함되어 있어 최종 점 릴리스 적용 계획과 연계해 보세요.\n\n> This is reachable by an unprivileged process that has read/write access to a /dev/bus/usb node\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.13)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**KVM: PPC: Fixes for Book3S HV HPT locking and paired-single decoding**\n\nv2 3패치 시리즈가 virtual-mode HPT hcall에 SRCU 보호를 추가해 memslot 삭제와의 UAF 레이스를 막고, HPTE bit-lock 보유 구간에 preempt_disable()을 넣어 CPU 교착을 방지하며, paired-single D-form의 get_d_signext() 12비트 변위 추출 버그를 수정합니다.\n\n영향: 게스트 조작 가능한 HPT hcall 경로의 silent UAF와 선점 시 영구 CPU hang은 Power KVM 호스트 무결성·가용성에 직결되며 Cc: stable로 백포트 대상입니다. stable 백포트 최소 버전과 paired-single exploitability는 확인이 필요합니다.\n\n> A concurrent KVM_SET_USER_MEMORY_REGION deletion or move can therefore call synchronize_srcu_expedited() — which does not wait for this thread — and then kfree(slot) and vfree(slot->arch.rmap) while t\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20260930173750.56759-2-amachhiw@linux.ibm.com/)\n\n**HPTE bit-lock 선점 hang**\n\nHPTE_V_HVLOCK을 잡은 스레드가 선점되면 동일 CPU에서 같은 bit-lock을 기다리는 스레드가 진행하지 못할 수 있습니다.\n\n영향: 호스트 CPU 가용성에 직접적인 hang 신호이므로 패치 2의 preempt_disable() 변경을 우선 검토하세요.\n\n> If any of these threads is preempted while holding HPTE_V_HVLOCK, any other thread on the same CPU spinning on the same bit-lock can never make progress\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20260930173750.56759-3-amachhiw@linux.ibm.com/)\n\n**clk: starfive: jh7110-sys: Fix memory leak in reset controller register**\n\nJH7110 시스템 클럭 드라이버에서 auxiliary_device_init() 실패 시 device_initialize() 전이라 release가 호출되지 않아 jh7110_reset_controller_register()가 할당한 rdev가 누수됩니다. 실패 경로에서 rdev를 해제하는 패치가 linux-hardening v5 시리즈 01/23로 게시되었습니다.\n\n영향: 부팅·프로브 실패 경로의 누수는 장기 가동 IoT/보드에서 메모리 고갈로 이어질 수 있습니다. linux-clk 머지 일정과 실제 보드에서 누수 누적량은 확인이 필요합니다.\n\n> auxiliary_device_init() returns an error before device_initialize() is called, so the release callback never runs on this path and the rdev allocated in jh7110_reset_controller_register() is leaked.\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20260930124317.5648-2-changhuang.liang@starfivetech.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Linux 7.2.8 stable**\n\n2026-09-25 공개 7.2.8 stable에는 ChangeLog 기준 437건 upstream 백포트가 있으며, SMB/cifs 클라이언트 복합 PDU의 next_buffer UAF·NextCommand 경계, SYNC_IOC_FILE_INFO 경로 slab UAF, drm/gud OOB write 등이 포함됩니다.\n\n영향: 네트워크·ioctl·USB 디스플레이 스택의 OOB/UAF 클래스는 인증된 원격 또는 로컬 공격면으로 자주 쓰이므로 7.2.y는 이번 점 릴리스를 보안 유지보수 기준으로 잡아야 합니다. 437건 중 배포별 필수 항목과 CVE 매핑은 확인이 필요합니다.\n\n> A stale next_buffer pointer can lead to a use-after-free on subsequent error paths.\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.8)\n\n**Linux 6.18.54 longterm**\n\n2026-09-25 공개 6.18.54 longterm에는 ChangeLog 기준 396건 백포트가 있으며, SMB 클라이언트 다수 OOB/UAF 수정, Wi-Fi TKIP MIC 검증, xfrm async resumption의 dev UAF 등이 포함됩니다.\n\n영향: 6.18 longterm은 장기 지원 배포의 보안 수신 경로이므로 원격 파일·무선·IPsec 스택 수정을 한 번에 반영하는 시점입니다.\n\n> A short TKIP frame makes the unsigned payload length wrap, causing michael_mic() to read past the skb.\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.18.54)\n\n**Linux 6.12.111 longterm**\n\n2026-09-21 공개 6.12.111 longterm에는 ChangeLog 기준 1084건 백포트가 있으며, SUNRPC pipefs·RCU 해제 경로의 rpc_clnt use-after-free, svc_rqst kfree_rcu 타이밍, GSS decode 오류 경로 수정 등이 포함됩니다.\n\n영향: 6.12는 널리 쓰이는 longterm이라 NFS/RPC·GSS 스택 UAF 수정은 다수 엔터프라이즈 커널의 실질 공격면을 줄입니다. 1084건 규모에 따른 regression 테스트 범위는 확인이 필요합니다.\n\n> sunrpc: fix use-after-free in __rpc_clnt_handle_event and __rpc_clnt_remove_pipedir\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.12.111)"
+    },
+    {
+      "heading": "기타",
+      "body": "**pinctrl: imx: Remove const from group_names allocation type**\n\nKees Cook treewide 패치가 devm_kmalloc 계열 type-aware 전환을 위해 pinctrl-imx의 group_names 할당 크기 계산을 const 타입 불일치 없이 맞추고, Linus Walleij가 maintainer 트리에 적용했다고 답했습니다.\n\n영향: 하드닝 빌드(GCC 16 type-aware allocator)에서 const 정합성이 깨지면 fortify/counted-by 확산 전에 드라이버 빌드가 막히므로, KSPP allocator 변경 추적자에게 선행 신호입니다. type-aware devm_kmalloc 본패치의 linux-mm 머지 일정과 treewide 동일 패턴 드라이버 수는 확인이 필요합니다.\n\n> In preparation for making the devm_kmalloc family of allocators type aware, we need to make sure that the returned type from the allocation matches the type of the variable being assigned.\n\n[원문 확인](https://lore.kernel.org/linux-hardening/CAD++jL=TbxyEiZUhPYtqiXBJTekvE7g8uSqwLbuALj7Y1iso4A@mail.gmail.com/)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "kernel.org releases.json — 7.1.13 EOL",
+      "url": "https://www.kernel.org/releases.json",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-7.1.13",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.13",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-7.2.8",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.8",
+      "note": "changelog"
+    },
+    {
+      "title": "clk: starfive jh7110-sys memory leak fix",
+      "url": "https://lore.kernel.org/linux-hardening/20260930124317.5648-2-changhuang.liang@starfivetech.com/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM PPC HPT hcall UAF",
+      "url": "https://lore.kernel.org/linux-hardening/20260930173750.56759-2-amachhiw@linux.ibm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM PPC HPTE bit-lock preemption",
+      "url": "https://lore.kernel.org/linux-hardening/20260930173750.56759-3-amachhiw@linux.ibm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM PPC Book3S HV series overview",
+      "url": "https://lore.kernel.org/linux-hardening/20260930173750.56759-1-amachhiw@linux.ibm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-6.18.54",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.18.54",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-6.12.111",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.12.111",
+      "note": "changelog"
+    },
+    {
+      "title": "pinctrl-imx group_names const fix",
+      "url": "https://lore.kernel.org/linux-hardening/CAD++jL=TbxyEiZUhPYtqiXBJTekvE7g8uSqwLbuALj7Y1iso4A@mail.gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-09-30T18:21:25.113Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
