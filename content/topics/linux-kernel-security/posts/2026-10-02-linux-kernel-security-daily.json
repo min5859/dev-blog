@@ -1,0 +1,95 @@
+{
+  "id": "2026-10-02-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-10-02 seq_buf·DMA — 커널 보안",
+  "headline": "linux-hardening에서 seq_buf overflow API 정리와 Andes DMA·Tegra clk 할당 hardening 패치가 검토 중입니다.",
+  "date": "2026-10-02",
+  "summary": "Kees Cook seq_buf v3 시리즈는 overflow 시 sysfs 노출 위험을 줄이는 공통 API를 제안합니다. Andes ATCDMAC300 v8과 Tegra BPMP clk의 FAM·counted-by 변경은 머지 전 결함 클래스를 걸러내는 사례입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "보안",
+    "hardening"
+  ],
+  "highlights": [
+    {
+      "title": "seq_buf: seq_buf_strlen() v3",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "seq_buf/trace/sysfs 작성자, kernel-hardening·selftest 담당",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20260930235231.out.387-kees@kernel.org/",
+      "if": "overflow된 seq_buf를 sysfs read 경로에서 다룬다면",
+      "do": "linux-hardening v3 11패치 시리즈와 KUnit·papr_scm 호출부 변경을 우선 검토하세요",
+      "verify": "cover letter 인용과 동일 스레드의 papr_scm sysfs 패치를 열어 seq_buf_strlen() 적용을 확인하세요"
+    },
+    {
+      "title": "dmaengine: atcdmac300 v8",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "dmaengine·Andes/RISC-V 플랫폼 드라이버·hardening 리뷰어",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20261001014503.786490-1-cl634@andestech.com/",
+      "if": "신규 DMA 드라이버 hardening 리뷰 선례를 추적한다면",
+      "do": "v8 cover letter의 14건 수정과 cyclic 플래그·descriptor 수명 패치를 diff로 따라가세요",
+      "verify": "패치 본문에서 NULL callback dereference 설명과 suspend·unbind 수정 목록을 원문에서 대조하세요"
+    },
+    {
+      "title": "clk: tegra: bpmp: remove kcalloc",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "Tegra/BPMP clk 드라이버·kernel-hardening 패턴 추적",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20261001054701.39160-1-rosenp@gmail.com/",
+      "if": "이중 할당·bounds 표면을 줄이는 드라이버 패턴을 참고하려면",
+      "do": "flexible array member와 struct_size() 단일 할당 및 __counted_by 사용을 패치에서 확인하세요",
+      "verify": "스레드 인용문과 일치하는 FAM·counted-by 목적 설명을 lore 원문에서 읽어보세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**seq_buf: Add seq_buf_strlen()**\n\nKees Cook v3 11패치 시리즈가 seq_buf overflow 동작·seq_buf_strlen()/terminate API·KUnit 테스트·sysfs 호출부(papr_scm 등) 수정과 문서화를 묶습니다.\n\n영향: overflow된 seq_buf에서 seq_buf_used()가 NUL까지 길이에 포함되면 sysfs read가 버퍼 밖을 노출할 수 있어, 공통 문자열 버퍼 API 정리는 다수 서브시스템의 정보 노출·오동작을 함께 줄입니다.\n\n> seq_buf: Clear what a writer did not claim when a seq_buf overflows\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20260930235231.out.387-kees@kernel.org/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**dmaengine: atcdmac300: Add Andes ATCDMAC300 DMA driver**\n\nlinux-hardening에 v8 시리즈가 올라와 sashiko-bot v7 지적 대응과 드라이버 전반 14건의 정확성·수명·suspend·레지스터 인코딩 수정이 추가되었습니다.\n\n영향: 신규 DMA 드라이버가 hardening 리스트에서 검토되므로, 채널 UAF·NULL 콜백·unbind 후 devres 사용 같은 클래스의 결함을 머지 전에 걸러내는 선례입니다. v8의 linux-hardening 외 maintainer ACK·merge 타임라인은 확인이 필요합니다.\n\n> Fold in fourteen further correctness fixes; no interface or binding change.\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20261001014503.786490-1-cl634@andestech.com/)\n\n**clk: tegra: bpmp: remove kcalloc**\n\nTegra BPMP 클럭 드라이버가 별도 kcalloc 대신 flexible array member와 struct_size() 단일 할당, __counted_by로 크기 검증을 씁니다.\n\n영향: 이중 할당 제거와 counted-by는 bounds/수명 버그 표면을 줄이는 hardening 패턴으로, tegra clk 경로를 보는 보안·드라이버 리뷰어에게 참고할 만합니다.\n\n> Use a flexible array member to avoid allocating separately. Use __counted_by for extra runtime analysis.\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20261001054701.39160-1-rosenp@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "seq_buf v3 cover letter",
+      "url": "https://lore.kernel.org/linux-hardening/20260930235231.out.387-kees@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "ATCDMAC300 v8 cover letter",
+      "url": "https://lore.kernel.org/linux-hardening/20261001014503.786490-1-cl634@andestech.com/",
+      "note": "thread"
+    },
+    {
+      "title": "ATCDMAC300 cyclic·descriptor 패치",
+      "url": "https://lore.kernel.org/linux-hardening/20261001014503.786490-3-cl634@andestech.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Tegra BPMP clk FAM·counted-by",
+      "url": "https://lore.kernel.org/linux-hardening/20261001054701.39160-1-rosenp@gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-01T18:19:53.512Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

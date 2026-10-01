@@ -1,0 +1,146 @@
+{
+  "id": "2026-10-02-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-10-02 RT atomic 경로 — Perf·RT",
+  "headline": "PREEMPT_RT에서 HW BP·netpoll·memcg no-lock 경로의 atomic-sleep 이슈를 줄이는 패치와 RV64 BPF 회귀 수정이 메일링 리스트에 올라왔습니다.",
+  "date": "2026-10-02",
+  "summary": "linux-rt-devel·bpf 스레드에서 RT 런타임 잠금·할당 경로와 perf HW 브레이크포인트 지연 처리가 논의되었습니다. RV64 struct_ops 트램폴린 회귀 수정과 스케줄러 tracepoint 시리즈 리뷰도 함께 확인할 수 있습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "PREEMPT_RT",
+    "perf",
+    "BPF"
+  ],
+  "highlights": [
+    {
+      "title": "mm: memcg 정리 시 nolock 컨텍스트 유지",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "PREEMPT_RT·memcg/SLUB·no-lock allocator 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20261001044056.75079-1-kmehltretter@gmail.com/",
+      "if": "kmalloc_nolock·kfree_nolock·free_pages_nolock을 RT·저지연 경로에서 쓰고 있다면",
+      "do": "memcg charge 실패·objcg 최종 해제 시 irq_work 지연 해제 패치 시리즈를 추적하세요",
+      "verify": "cover 스레드에서 두 cleanup 경로 설명과 PREEMPT_RT irq_workd 완료 조건을 원문으로 확인하세요"
+    },
+    {
+      "title": "bpf, riscv: struct_ops 트램폴린 스택 인자",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "RISC-V BPF trampoline·struct_ops·selftest 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20261001154038.2265210-1-kafai.wan@linux.dev/",
+      "if": "RV64에서 9번째 이후 인자를 쓰는 BPF struct_ops·selftest를 돌리고 있다면",
+      "do": "FP+16 오프셋 대신 struct_ops에 base 0을 쓰는 수정 패치를 적용·리뷰 여부를 확인하세요",
+      "verify": "selftest 실패 로그와 Fixes가 가리키는 12-인자 trampoline 커밋을 링크에서 대조하세요"
+    },
+    {
+      "title": "netpoll: PREEMPT_RT 지연 전송 잠금",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "PREEMPT_RT·netpoll·임베디드 Wi-Fi/콘솔 네트워킹 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260930192103.62973-1-kmehltretter@gmail.com/",
+      "if": "RT 부팅·장애 복구에서 netpoll·brcmfmac 등 지연 전송 경로를 쓰고 있다면",
+      "do": "전용 raw queue lock과 xmit lock 재시도·재큐잉 v2 시리즈를 따라가며 lockdep 경고를 재현해 보세요",
+      "verify": "v2 cover의 atomic-sleep 리포트 요약과 Pi/QEMU 테스트 언급을 원문에서 확인하세요"
+    },
+    {
+      "title": "ARM64 등: HW BP 알림 task_work 지연",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "PREEMPT_RT·perf HW breakpoint·ARM/LoongArch/Xtensa 아키텍처 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20261001143516.Ew8C97WS@linutronix.de/",
+      "if": "PREEMPT_RT에서 perf HW 브레이크포인트·디버거 경로를 검증 중이라면",
+      "do": "atomic 컨텍스트 SIGTRAP 대신 perf_arch_hwbp_notify()·task_work_add()로 미루는 v3 패치 논의를 추적하세요",
+      "verify": "ARM64 \"sleeping while atomic\" 관련 스레드와 Red Hat 보고 스레드를 원문으로 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**bpf, riscv: Fix stack arguments of struct_ops trampolines**\n\nRV64 BPF trampoline의 store_args()가 fentry용 FP+16 스택 오프셋을 struct_ops 직접 호출에도 써 9번째 이후 인자가 깨지는 버그를, struct_ops에는 base 0을 쓰도록 고칩니다.\n\n영향: 12-인자 struct_ops 트램폴린·selftest가 RV64에서 실패하므로 BPF struct_ops·트레이싱 후킹을 쓰는 RISC-V 워크로드 회귀 수정입니다.\n\n> struct_ops_multi_args/test_trampoline_stack_args:FAIL\n\n[원문 확인](https://lore.kernel.org/bpf/20261001154038.2265210-1-kafai.wan@linux.dev/)\n\n> riscv, bpf: Add 12-argument support for RV64 bpf trampoline\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=6801b0aef79db475591c3146a701ea373e4663b7)\n\nbpf 트리 적용 여부와 stable/backport 필요성은 확인이 필요합니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**ARM, ARM64, LONGARCH, XTENSA: Delay HW BP notification to task_work()**\n\nARM64 등에서 하드웨어 브레이크포인트 overflow 처리 시 atomic 컨텍스트에서 SIGTRAP 전달(siglock)을 하지 않고 perf_arch_hwbp_notify()로 task_work_add()까지 지연하는 v3 패치입니다.\n\n영향: PREEMPT_RT에서 perf HW 브레이크포인트·디버거/프로파일링 경로의 \"sleeping while atomic\" 경고를 없애 관측·디버깅 도구가 RT 커널에서 동작 가능한 전제를 맞춥니다.\n\n> HW breakpoints on ARM64 trigger \"sleeping while atomic\" warnings on PREEMPT_RT.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20261001143516.Ew8C97WS@linutronix.de/)\n\n[원문 확인](https://lore.kernel.org/all/aho0eqjMESuHxECr@redhat.com/)\n\nmainline perf/core 머지 시점과 x86 등 미변환 아키텍처 follow-up 여부는 확인이 필요합니다.\n\n**netpoll: fix PREEMPT_RT deferred transmit locking**\n\nnetpoll 지연 전송 경로가 PREEMPT_RT에서 IRQ off 상태로 sleeping lock(sk_buff_head·dev_xmit)을 잡는 문제를, 전용 raw queue lock과 xmit lock 재시도/재큐잉으로 나누는 2패치 v2 시리즈입니다.\n\n영향: 콘솔/netpoll·Wi-Fi(brcmfmac) 등 RT 부팅/장애 복구 경로에서 atomic-sleep lockdep 경고와 잠재적 지연을 줄여 실시간 네트워킹 스택 신뢰도에 직접 영향을 줍니다.\n\n> netpoll's deferred transmit path can acquire two sleeping locks with hard interrupts disabled on PREEMPT_RT.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260930192103.62973-1-kmehltretter@gmail.com/)\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260928064239.32456-1-kmehltretter@gmail.com/)\n\nnetdev/net 트리 머지 대상과 brcmfmac pending fix 통합 일정은 확인이 필요합니다.\n\n**mm: preserve nolock context through memcg cleanup**\n\nkmalloc_nolock/kfree_nolock·free_pages_nolock 경로가 memcg charge 실패나 objcg 최종 해제에서 일반 SLUB/잠금 teardown으로 빠지지 않도록 kfree_nolock 사용과 irq_work 지연 해제 2패치를 제안합니다.\n\n영향: no-lock 할당 API는 RT·저지연 경로용인데 memcg 정리가 spin 불가 컨텍스트를 깨면 latency·lockdep 위반이 날 수 있어 PREEMPT_RT 메모리 경로 추적자에게 중요합니다.\n\n> The no-lock allocation and free APIs can still enter regular locking through two memcg cleanup paths.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20261001044056.75079-1-kmehltretter@gmail.com/)\n\n> These paths were found while discussing the following RFC\n\n[원문 확인](https://lore.kernel.org/r/20260919171443.90512-1-kmehltretter@gmail.com/)\n\n40288c9206c17 기반 시리즈의 mm 트리 리뷰·머지 범위는 확인이 필요합니다.\n\n**sched: Add task enqueue/dequeue trace points**\n\nGabriele Monaco v2 15패치 시리즈 01/15에서 Nam Cao 제안으로 enqueue_task()·dequeue_task()에 tracepoint를 추가하며, Peter Zijlstra는 changelog·나머지 패치 없이는 목적을 알 수 없다고 지적했습니다.\n\n영향: 스케줄러 큐잉 이벤트 tracepoint는 BPF/RV 모니터·런타임 검증 도구가 RT 스케줄링을 관측하는 핵심 훅이 될 수 있어 본 렌즈 독자가 시리즈 맥락을 봐야 합니다.\n\n> Add trace points into enqueue_task() and dequeue_task().\n\n[원문 확인](https://lore.kernel.org/bpf/20261001154934.GT88198@noisy.programming.kicks-ass.net/)\n\n> [PATCH v2 01/15] sched: Add task enqueue/dequeue trace points\n\n[원문 확인](https://lore.kernel.org/bpf/20261001152042.124445-2-gmonaco@redhat.com/)\n\ntracepoint가 rv BPF monitor에 어떻게 연결되는지와 maintainer 리뷰 해소 여부는 확인이 필요합니다."
+    },
+    {
+      "heading": "기타",
+      "body": "**perf build warnings fixes**\n\nstable 5.10용 2패치로 perf selftest bpf.c의 epoll_pwait nonnull -Werror와 parse_events_multi_pmu_add() ASAN/array-bounds 경고를 수정합니다.\n\n영향: perf 도구 빌드·selftest가 엄격한 toolchain(Buildroot ARM 등)에서 깨지면 BPF 관련 perf 검증 CI/배포판 패키징에 영향이 있으나 mainline RT 런타임과는 거리가 있습니다.\n\n> This patch series fixes the following build warnings\n\n[원문 확인](https://lore.kernel.org/bpf/20261001160114.801948-1-florian.fainelli@broadcom.com/)\n\n> perf test bpf: Address error about non-null argument for epoll_pwait 2nd arg\n\n[원문 확인](https://lore.kernel.org/bpf/20261001160114.801948-3-florian.fainelli@broadcom.com/)\n\n5.10 stable 큐 외 최신 mainline에 동일 수정이 이미 있는지는 확인이 필요합니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ARM64 HW BP PREEMPT_RT v3",
+      "url": "https://lore.kernel.org/linux-rt-devel/20261001143516.Ew8C97WS@linutronix.de/",
+      "note": "thread"
+    },
+    {
+      "title": "Red Hat HW BP 보고",
+      "url": "https://lore.kernel.org/all/aho0eqjMESuHxECr@redhat.com/",
+      "note": "thread"
+    },
+    {
+      "title": "netpoll PREEMPT_RT v2 cover",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260930192103.62973-1-kmehltretter@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "netpoll deferred transmit v1",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260928064239.32456-1-kmehltretter@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "mm memcg nolock cleanup cover",
+      "url": "https://lore.kernel.org/linux-rt-devel/20261001044056.75079-1-kmehltretter@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "no-lock allocator RFC 선행",
+      "url": "https://lore.kernel.org/r/20260919171443.90512-1-kmehltretter@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv bpf struct_ops trampoline fix",
+      "url": "https://lore.kernel.org/bpf/20261001154038.2265210-1-kafai.wan@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "RV64 12-argument bpf trampoline",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=6801b0aef79db475591c3146a701ea373e4663b7",
+      "note": "commit"
+    },
+    {
+      "title": "Peter Zijlstra sched tracepoint review",
+      "url": "https://lore.kernel.org/bpf/20261001154934.GT88198@noisy.programming.kicks-ass.net/",
+      "note": "thread"
+    },
+    {
+      "title": "sched enqueue/dequeue tracepoints 01/15",
+      "url": "https://lore.kernel.org/bpf/20261001152042.124445-2-gmonaco@redhat.com/",
+      "note": "thread"
+    },
+    {
+      "title": "perf build warnings stable 5.10 cover",
+      "url": "https://lore.kernel.org/bpf/20261001160114.801948-1-florian.fainelli@broadcom.com/",
+      "note": "thread"
+    },
+    {
+      "title": "perf test bpf epoll_pwait fix",
+      "url": "https://lore.kernel.org/bpf/20261001160114.801948-3-florian.fainelli@broadcom.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-01T18:27:25.667Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
