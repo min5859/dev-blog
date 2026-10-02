@@ -1,0 +1,131 @@
+{
+  "id": "2026-10-03-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-10-03 BPF rc6·RT 잠금 — Perf/RT",
+  "headline": "7.3-rc6 bpf-fixes에 PREEMPT_RCU migration 수정이 포함되고, RT 스택은 netpoll·no-lock memcg·HW BP 지연 알림 패치가 이어집니다.",
+  "date": "2026-10-03",
+  "summary": "Alexei Starovoitov가 7.3-rc6용 bpf-fixes pull을 올렸고 resizable hashtab batch delete의 migration 보호 누락이 PREEMPT_RCU에서 BUG를 낼 수 있다는 수정이 묶였습니다. linux-rt-devel에서는 memcg 정리·netpoll 지연 전송·ARM64 HW breakpoint 경로가 PREEMPT_RT 잠금 규칙에 맞추는 v2·v3 시리즈로 리뷰가 진행 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "PREEMPT_RT",
+    "BPF",
+    "perf"
+  ],
+  "highlights": [
+    {
+      "title": "BPF fixes for 7.3-rc6",
+      "priority": "상",
+      "impactType": "release",
+      "affectedAudience": "BPF 서브시스템·stable/backport·PREEMPT_RCU 배포 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20261002155400.661252-1-alexei.starovoitov@gmail.com/",
+      "if": "CONFIG_PREEMPT_RCU에서 resizable hashtab lookup_and_delete batch에 migration 보호가 빠진 커널을 쓰고 있다면",
+      "do": "bpf-fixes(de020dc8049b)까지 포함 여부와 torvalds 트리 머지 시점을 changelog·pull 스레드로 확인하세요",
+      "verify": "GIT PULL 스레드와 tip 커밋 설명에서 PREEMPT_RCU 동작과 수정 범위를 대조하세요"
+    },
+    {
+      "title": "bpf: htab: Reduce memory use of hash maps",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "BPF map·hashtab 유지보수·고밀도 hash map 워크로드 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20261002161738.621133-1-tjmercier@google.com/",
+      "if": "표준·PCPU BPF hash map으로 메모리 footprint가 병목이라면",
+      "do": "v8 cover의 per-element 절감 표와 htab 벤치 결과를 워크로드에 맞게 검토하고 bpf-next 리뷰 스레드를 팔로우하세요",
+      "verify": "cover 인용문과 벤치 수치는 lore 스레드 원문에서 직접 확인하세요"
+    },
+    {
+      "title": "netpoll: fix PREEMPT_RT deferred transmit locking",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "PREEMPT_RT·netpoll·임베디드 콘솔/Wi-Fi 네트워킹 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260930192103.62973-1-kmehltretter@gmail.com/",
+      "if": "PREEMPT_RT에서 netpoll·NBCON·brcmfmac 부팅·복구 경로에 atomic-sleep lockdep 경고가 보이면",
+      "do": "v2 cover의 raw queue lock·xmit lock 재시도·재큐잉 2패치와 QEMU/하드웨어 테스트 언급을 원문에서 확인하세요",
+      "verify": "netdev/net 머지 대상과 brcmfmac pending fix 통합 일정은 아직 확인이 필요합니다"
+    },
+    {
+      "title": "mm: preserve nolock context through memcg cleanup",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "PREEMPT_RT·memcg/SLUB·no-lock allocator 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20261001044056.75079-1-kmehltretter@gmail.com/",
+      "if": "kmalloc_nolock·free_pages_nolock 경로에서 memcg charge 실패 롤백이나 objcg 해제 시 lockdep·latency 이슈를 추적 중이라면",
+      "do": "kfree_nolock·irq_work 지연 objcg 해제 2패치와 0/2 cover 설명을 mm 트리 리뷰 스레드에서 따라가세요",
+      "verify": "40288c9206c17 기반 시리즈의 mm 트리 리뷰·머지 범위는 확인이 필요합니다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**BPF fixes for 7.3-rc6**\n\nAlexei Starovoitov가 Linus에게 bpf-fixes 태그(de020dc8049b)까지의 수정을 pull 요청하며 verifier·memalloc·trampoline UAF·resizable hashtab batch delete 등 7.3-rc6 전 수정을 묶습니다.\n\n영향: RC6 전 안정화 수정 중 resizable hashtab batch delete의 migration 보호 누락은 CONFIG_PREEMPT_RCU에서 smp_processor_id() BUG를 유발할 수 있어 RT·BPF 워크로드 백포트 판단에 중요합니다.\n\n> Fix missing migration protection in resizable hashtab lookup_and_delete batch operation\n\n[원문 확인](https://lore.kernel.org/bpf/20261002155400.661252-1-alexei.starovoitov@gmail.com/)\n\n> On CONFIG_PREEMPT_RCU, rcu_read_lock() does not disable preemption or migration\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/bpf/bpf.git/commit/?id=de020dc8049bfb2b22e3b6d99c031feb2e22d112)\n\ntorvalds/linux.git에 태그가 머지된 정확한 커밋과 7.3-rc6 릴리스 노트 반영 여부는 확인이 필요합니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**netpoll: fix PREEMPT_RT deferred transmit locking**\n\nnetpoll 지연 전송이 PREEMPT_RT에서 IRQ off 상태로 sk_buff_head·dev_xmit sleeping lock을 잡는 문제를 전용 raw queue lock과 xmit lock 재시도·재큐잉 2패치(v2)로 나눕니다.\n\n영향: netpoll·NBCON·Wi-Fi(brcmfmac) 등 RT 부팅·장애 복구 경로의 atomic-sleep lockdep 경고를 줄여 실시간 네트워킹 스택 신뢰도에 직접 영향을 줍니다.\n\n> netpoll's deferred transmit path can acquire two sleeping locks with hard interrupts disabled on PREEMPT_RT.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260930192103.62973-1-kmehltretter@gmail.com/)\n\n> netpoll_send_skb() calls __netpoll_send_skb() with hard interrupts disabled.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260930192103.62973-2-kmehltretter@gmail.com/)\n\nnetdev/net 트리 머지 대상과 brcmfmac pending fix 통합 일정, v2 cover의 v1 대비 xmit lock 재시도 타이밍이 mainline에 그대로 갈지는 확인이 필요합니다.\n\n**mm: preserve nolock context through memcg cleanup**\n\nkmalloc_nolock/kfree_nolock·free_pages_nolock 경로가 memcg charge 실패 롤백과 objcg 최종 해제에서 일반 SLUB·잠금 teardown으로 빠지지 않도록 kfree_nolock 사용과 irq_work 지연 objcg 해제 2패치를 제안합니다.\n\n영향: no-lock 할당은 RT·저지연 경로용인데 memcg 정리가 spin 불가 컨텍스트를 깨면 latency·lockdep 위반이 날 수 있어 PREEMPT_RT 메모리·SLUB 추적자에게 핵심입니다.\n\n> The no-lock allocation and free APIs can still enter regular locking through two memcg cleanup paths.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20261001044056.75079-1-kmehltretter@gmail.com/)\n\n**ARM, ARM64, LONGARCH, XTENSA: Delay HW BP notification to task_work()**\n\nARM64 등 HW breakpoint overflow 콜백이 atomic 컨텍스트에서 siglock을 잡아 SIGTRAP을 보내는 대신 perf_arch_hwbp_notify()로 task_work_add()까지 알림을 지연하는 v3 패치로 보입니다.\n\n영향: PREEMPT_RT에서 perf HW 브레이크포인트·디버거 경로의 \"sleeping while atomic\" 경고를 없애 perf/디버깅 도구가 RT 커널에서 쓰이는 전제를 맞춥니다.\n\n> HW breakpoints on ARM64 trigger \"sleeping while atomic\" warnings on PREEMPT_RT.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20261001143516.Ew8C97WS@linutronix.de/)\n\nmainline perf/core 머지 시점과 x86 등 미변환 아키텍처 follow-up 여부는 확인이 필요합니다.\n\n**bpf: htab: Reduce memory use of hash maps**\n\nBPF hash map의 htab_elem을 map 유형별 구조로 쪼개 LRU/PCPU 전용 필드 오버헤드를 제거하고, 작은 키에서는 불필요한 hash 캐시 8바이트를 없애 per-element 메모리를 최대 약 50% 줄이는 v8 2패치 시리즈입니다.\n\n영향: 대규모 BPF hash map을 쓰는 관측·네트워킹 워크로드의 메모리 footprint와 캐시 효율에 영향을 주며, cover의 htab 벤치에서 normal overwrite 등 lookup 처리량이 두 자릿수 % 개선을 보고합니다.\n\n> This saves up to 50% of per-element memory use for standard and PCPU hash maps.\n\n[원문 확인](https://lore.kernel.org/bpf/20261002161738.621133-1-tjmercier@google.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "mm: preserve nolock context through memcg cleanup (0/2)",
+      "url": "https://lore.kernel.org/linux-rt-devel/20261001044056.75079-1-kmehltretter@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "no-lock allocator RFC 선행 논의",
+      "url": "https://lore.kernel.org/r/20260919171443.90512-1-kmehltretter@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "netpoll: fix PREEMPT_RT deferred transmit locking (v2 cover)",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260930192103.62973-1-kmehltretter@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "netpoll deferred tx raw lock (patch 1)",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260930192103.62973-2-kmehltretter@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Delay HW BP notification to task_work() (v3)",
+      "url": "https://lore.kernel.org/linux-rt-devel/20261001143516.Ew8C97WS@linutronix.de/",
+      "note": "thread"
+    },
+    {
+      "title": "Red Hat HW breakpoint 보고 스레드",
+      "url": "https://lore.kernel.org/all/aho0eqjMESuHxECr@redhat.com/",
+      "note": "thread"
+    },
+    {
+      "title": "BPF fixes for 7.3-rc6 GIT PULL",
+      "url": "https://lore.kernel.org/bpf/20261002155400.661252-1-alexei.starovoitov@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "resizable hashtab migration protection (de020dc8049b)",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/bpf/bpf.git/commit/?id=de020dc8049bfb2b22e3b6d99c031feb2e22d112",
+      "note": "commit"
+    },
+    {
+      "title": "bpf: htab: Reduce memory use of hash maps (v8)",
+      "url": "https://lore.kernel.org/bpf/20261002161738.621133-1-tjmercier@google.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-02T18:46:59.892Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

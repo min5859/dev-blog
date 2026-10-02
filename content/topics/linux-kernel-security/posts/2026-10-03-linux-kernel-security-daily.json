@@ -1,0 +1,135 @@
+{
+  "id": "2026-10-03-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-10-03 sysfs 길이 수정 — 커널 보안",
+  "headline": "papr_scm sysfs show 경로의 seq_buf 길이 처리와 gpiolib counted-by v2, tegra BPMP Applied가 하드닝 스레드와 stable 백포트 흐름을 동시에 움직였습니다.",
+  "date": "2026-10-03",
+  "summary": "Kees Cook의 papr_scm sysfs 수정과 seq_buf printk 리뷰가 FORTIFY 계열 하드닝의 실사용면을 넓히는 가운데, Tegra BPMP counted-by 패치는 mainline Applied까지 확인됐습니다. 7.1 stable EOL 이후에는 활성 stable·LTS ChangeLog와의 대조가 보안 반응의 기준이 됩니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "보안",
+    "하드닝"
+  ],
+  "highlights": [
+    {
+      "title": "powerpc/papr_scm sysfs show 길이 반환",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "PowerPC pSeries/SCM 플랫폼 및 sysfs 하드닝 추적자",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/202610020052.9EAB79E@keescook/",
+      "if": "pSeries SCM sysfs를 노출하는 커널을 유지한다면",
+      "do": "seq_buf_used 대신 seq_buf_strlen 반환 변경과 flags_show respin 여부를 ChangeLog·스레드에서 추적하세요",
+      "verify": "원문 스레드에서 overflow 시 NUL 포함 가능성 설명과 respin 의사를 직접 확인하세요"
+    },
+    {
+      "title": "gpiolib: acpi_gpio_mapping __counted_by_ptr v2",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "gpiolib·ACPI 플랫폼 드라이버 및 하드닝/toolchain 추적자",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20261002124226.435265-1-morbo@google.com/",
+      "if": "ACPI GPIO 매핑 경로에 FORTIFY/UBSAN bounds를 확장 중이라면",
+      "do": "data 포인터 counted-by 주석과 EFI stub 전역 undef 패턴을 유사 드라이버 설계에 참고하세요",
+      "verify": "merge 타임라인과 v1 대비 EFI stub 리뷰 해소는 maintainer 스레드를 확인한 뒤 판단하세요"
+    },
+    {
+      "title": "seq_buf_do_printk 오버플로 빈 줄",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "seq_buf API 사용자, 하드닝 시리즈 리뷰어",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/ar9d9ChvEvBDX9j0@ashevche-desk.local/",
+      "if": "Kees Cook v3 seq_buf 시리즈를 리뷰하거나 sysfs 변환을 준비한다면",
+      "do": "오버플로 직후 빈 레코드 출력 수정과 KUnit/console 포맷 제안 반영 여부를 다음 respin에서 확인하세요",
+      "verify": "상위 v3 패치 스레드와 Shevchenko 리뷰 본문을 함께 읽으세요"
+    },
+    {
+      "title": "clk: tegra: bpmp kcalloc 제거 Applied",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "clk 서브시스템 maintainer 및 Tegra 플랫폼 개발자",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/179095597991.810253.6056329084530494982.b4-ty@b4/",
+      "if": "할당 축소와 __counted_by를 묶는 하드닝 패턴을 작성 중이라면",
+      "do": "Applied ack가 가리키는 mainline 커밋을 베이스로 리뷰→적용 경로를 대조하세요",
+      "verify": "해당 커밋이 어느 릴리스 태그에 처음 들어갔는지는 아직 확인이 필요합니다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.1.13 stable · EOL**\n\n7.1 stable 라인이 EOL로 표시되어 이후 보안 수정은 이 라인에 더 이상 쌓이지 않습니다.\n\n영향: 7.1.x에 고정된 배포·장비는 마지막 7.1.13 반영과 마이그레이션 계획을 함께 점검하고, 동일 수정이 7.2.x 등 활성 stable에 들어갔는지 대조해야 합니다.\n\n> Linux 7.1.13\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.13)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**powerpc/papr_scm: Return the string length from the sysfs show functions**\n\npapr_scm sysfs show 함수가 seq_buf_used() 대신 seq_buf_strlen()을 반환하도록 바뀌며, flags_show의 seq_buf_used() 조건을 seq_buf_strlen으로 맞추는 respin이 예고됐습니다.\n\n영향: seq_buf 오버플로 시 sysfs read 경로가 NUL 바이트까지 길이에 포함될 수 있는 클래스의 수정으로, 정보 노출·호환성 리스크를 줄입니다.\n\n> return seq_buf_used(), which may include the trailing NUL byte when the seq_buf has overflowed.\n\n[원문 확인](https://lore.kernel.org/linux-hardening/202610020052.9EAB79E@keescook/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**gpiolib: annotate struct acpi_gpio_mapping with __counted_by_ptr**\n\nBill Wendling v2 패치는 struct acpi_gpio_mapping의 data 포인터에 __counted_by_ptr를 붙이고, EFI stub 라이브러리 전역에서 해당 매크로를 undef해 Clang/부트 경로 충돌을 피합니다.\n\n영향: FORTIFY/UBSAN bounds 하드닝을 ACPI GPIO 매핑 경로까지 확장하는 사례로, 유사 counted-by 패턴과 EFI stub 예외 처리를 참고할 수 있습니다.\n\n> annotate 'data' with the __counted_by_ptr attribute.\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20261002124226.435265-1-morbo@google.com/)\n\n**clk: tegra: bpmp: remove kcalloc (Applied)**\n\nBrian Masney가 linux-hardening 스레드에서 동일 패치를 Applied로 표시했고 mainline 커밋 2fdfb2abce2fcc157de840949fa3e6af9e915363을 인용했습니다.\n\n영향: 하드닝 리스트를 통과한 counted-by/FAU 리팩터가 실제 트리에 들어갔음을 확인하는 신호입니다.\n\n> commit: 2fdfb2abce2fcc157de840949fa3e6af9e915363\n\n[원문 확인](https://lore.kernel.org/linux-hardening/179095597991.810253.6056329084530494982.b4-ty@b4/)\n\n**seq_buf: Do not print an empty line from an overflowed seq_buf_do_printk()**\n\nAndy Shevchenko가 Kees Cook v3 01/11 패치에 스타일 리뷰를 달았으며, seq_buf_do_printk()가 오버플로 직후 빈 줄을 출력하던 문제 수정과 KUnit/console 테스트 포맷 제안을 포함합니다.\n\n영향: seq_buf 하드닝 시리즈의 핵심 인프라 변경으로, 이후 papr_scm 등 sysfs/printk 변환 패치의 기반이 됩니다.\n\n> When a string has overflowed at exactly a newline, an empty line is printed\n\n[원문 확인](https://lore.kernel.org/linux-hardening/ar9d9ChvEvBDX9j0@ashevche-desk.local/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Linux 7.1.13 ChangeLog",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.13",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 7.2.8 ChangeLog",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.8",
+      "note": "changelog"
+    },
+    {
+      "title": "gpiolib __counted_by_ptr v2",
+      "url": "https://lore.kernel.org/linux-hardening/20261002124226.435265-1-morbo@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "clk tegra bpmp remove kcalloc",
+      "url": "https://lore.kernel.org/linux-hardening/20261001054701.39160-1-rosenp@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "papr_scm sysfs seq_buf_strlen",
+      "url": "https://lore.kernel.org/linux-hardening/202610020052.9EAB79E@keescook/",
+      "note": "thread"
+    },
+    {
+      "title": "Linux 6.18.54 ChangeLog",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.18.54",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 6.12.111 ChangeLog",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.12.111",
+      "note": "changelog"
+    },
+    {
+      "title": "tegra bpmp Applied ack",
+      "url": "https://lore.kernel.org/linux-hardening/179095597991.810253.6056329084530494982.b4-ty@b4/",
+      "note": "thread"
+    },
+    {
+      "title": "seq_buf_do_printk review",
+      "url": "https://lore.kernel.org/linux-hardening/ar9d9ChvEvBDX9j0@ashevche-desk.local/",
+      "note": "thread"
+    },
+    {
+      "title": "seq_buf v3 series",
+      "url": "https://lore.kernel.org/linux-hardening/20260930235247.157921-1-kees@kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-02T18:28:42.823Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

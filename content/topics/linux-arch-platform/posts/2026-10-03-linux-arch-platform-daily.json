@@ -1,0 +1,138 @@
+{
+  "id": "2026-10-03-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-10-03 HC4 NOR·Zalasr — 아키·플랫폼",
+  "headline": "ODROID-HC4 SPI NOR 수정과 RISC-V Zalasr acquire/release 재제출, DR1V90 dtbs_check·arm64 KVM VGIC 롤백이 포인트입니다.",
+  "date": "2026-10-03",
+  "summary": "Meson SM1 ODROID-HC4에서 SPI NOR 프로브·고속 읽기 오류를 고치는 DTS v2와, 업스트림된 기반을 제외한 Zalasr v5 원자 연산 경로가 메일링 리스트에 올라왔습니다. Anlogic DR1V90 dtbs_check 수정, arm64 KVM VGICv3 redistributor 롤백 v4, RISC-V TLB flush tracepoint 리뷰도 함께 추적할 만합니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "ODROID-HC4 SPI NOR HOLD#/WP#·40 MHz",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "arm64 Meson/Amlogic 플랫폼 및 ODROID-HC4 사용자·유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20261002-hc4-spi-nor-v2-0-8366a4f91049@iav.lv/",
+      "if": "SD 부트 후 SPI NOR가 보이지 않거나 고속 읽기·flashcp가 깨지면",
+      "do": "v2 DTS의 HOLD#/WP# mux와 40 MHz 클럭 변경을 부트 체인·DT 동기화 계획에 반영하세요",
+      "verify": "커버 레터와 패치 스레드에서 프로브·읽기 검증 수치를 원문으로 확인하세요"
+    },
+    {
+      "title": "RISC-V Zalasr acquire/release v5",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "RISC-V 커널 포팅·원자/배리어 코드 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20261002165910.3818940-1-qingwei.hu@bytedance.com/",
+      "if": "fence fallback과 Zalasr aq/rl 경로를 SMP·잠금 코드에서 다루면",
+      "do": "v5 시리즈의 fence 강화와 acquire/release·xchg·cmpxchg 변경을 리뷰 우선순위에 두세요",
+      "verify": "업스트림된 v4 기반 제외 범위와 RCsc 관련 설명을 스레드에서 확인하세요"
+    },
+    {
+      "title": "KVM arm64 VGICv3 redistributor 롤백 v4",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "KVM/arm64 VGIC 유지보수 및 selftest 담당",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/ar_tdaYQO-t1K2F_@gmail.com/",
+      "if": "동시 vCPU 생성 시 GIC redistributor 할당 실패를 다루면",
+      "do": "iodev 등록 실패 시 undo와 새 region 한정 롤백·selftest 포함 v4를 추적하세요",
+      "verify": "v4 ping 이후 maintainer 일정은 원문에서 확인이 필요합니다"
+    },
+    {
+      "title": "Anlogic DR1V90 dtbs_check 클록 수정",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "RISC-V Anlogic DR1V90 DTS 및 devicetree 바인딩 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20261003-dr1v90-cru-dt-fix-v2-0-6e7d96612ac0@pigmoral.tech/",
+      "if": "dr1v90 DT가 CI dtbs_check에서 막히면",
+      "do": "외부 CAN/WDT 클록 optional화와 잘못된 fixed-clock placeholder 제거 v2를 적용 경로로 보세요",
+      "verify": "Acked-by와 clk-next 리베이스 통합은 스레드에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**KVM: arm64: fix VGICv3 redistributor rollback**\n\nv4 시리즈는 VGICv3 redistributor iodev 등록 실패 시 할당을 롤백하고, 새 region에서만 롤백하도록 제한해 동시 vCPU 생성 시 누락을 막으며 selftest를 추가합니다. 10월 2일 메일은 v4 리뷰 재촉입니다.\n\n영향: redistributor 할당 롤백 오류는 arm64 KVM 게스트 GIC 초기화 실패나 리소스 누수로 이어질 수 있어 가상화 스택 담당자가 수정·테스트 범위를 추적해야 합니다.\n\n> Limited rollback to assignments from the new region so an older-region assignment cannot be missed during concurrent vCPU creation.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/ar_tdaYQO-t1K2F_@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**arm64: dts: amlogic: meson-sm1-odroid-hc4: fix the SPI NOR**\n\nODROID-HC4용 v2 DTS 시리즈가 SPI NOR HOLD#/WP# 핀 mux와 40 MHz 클럭으로 NOR 플래시 프로브·읽기 오류를 수정합니다.\n\n영향: SD 부트 후 SPI NOR가 보이지 않거나 고속에서 읽기가 깨지면 U-Boot/커널 플래시 갱신이 실패할 수 있어, Meson SM1 보드·부트 체인 담당자가 DT 동기화 시점을 알아야 합니다.\n\n> Two fixes for the SPI NOR flash on ODROID-HC4. Patch 1 lets the flash probe after a boot from SD that bypasses the SPI flash. Patch 2 lowers the clock to 40 MHz, where reads stop returning corrupted d\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20261002-hc4-spi-nor-v2-0-8366a4f91049@iav.lv/)\n\n**riscv: Use Zalasr for acquire and release operations**\n\nZalasr v5 시리즈는 이미 업스트림된 기반/KVM/hwprobe 패치를 제외하고, fence fallback 강화 후 acquire/release·xchg·cmpxchg·원자 연산 및 smp_cond_load_acquire()에 aq/rl 경로를 도입합니다.\n\n영향: RISC-V SMP에서 메모리 순서는 잠금·원자 API의 정확성과 성능에 직결되며, fence와 Zalasr 혼용 시 RCsc 보장을 깨지 않도록 하는 변경은 아키텍처 포트 담당자가 반드시 추적해야 합니다.\n\n> The base ISA parsing, hwprobe, instruction definitions, and KVM support from v4 are already upstream. This series resubmits only the acquire/release optimizations that were left out.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20261002165910.3818940-1-qingwei.hu@bytedance.com/)\n\n**riscv: dts: anlogic: dr1v90: fix clock dtbs_check errors**\n\nDR1V90 CRU 바인딩에서 외부 CAN/WDT 클록을 optional로 바꾸고 공통 dtsi의 잘못된 fixed-clock placeholder를 제거해 dtbs_check 오류를 없앱니다.\n\n영향: RISC-V Anlogic 보드 DT가 CI dtbs_check를 통과하지 못하면 clk/dts 트리 리베이스와 보드 추가가 막히므로, 바인딩·DTS 담당자는 이 수정 경로를 알아야 합니다.\n\n> Consequently, dtbs_check reports: arch/riscv/boot/dts/anlogic/dr1v90-mlkpai-fs01.dtb: clock-ext-can (fixed-clock): 'clock-frequency' is a required property\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20261003-dr1v90-cru-dt-fix-v2-0-6e7d96612ac0@pigmoral.tech/)"
+    },
+    {
+      "heading": "기타",
+      "body": "**riscv: mm: Trace TLB flush path selection**\n\nRoman Storozhenko의 TLB flush path tracepoint 제안에 Jisheng Zhang이 유용성·kprobe 대안·타 아키텍처 부재를 이유로 근거와 사용 예를 요구하는 리뷰를 달았습니다.\n\n영향: RISC-V TLB shootdown은 SBI RFENCE·크로스 CPU 경로 선택에 따라 성능·디버깅 난이도가 달라지므로, tracepoint 채택 여부는 MM/플랫폼 엔지니어의 관측 가능성 전략에 영향을 줍니다.\n\n> Make RISC-V TLB flush path selection observable. Record whether Linux handles an invalidation locally, delegates it to SBI RFENCE, or executes it through a cross-CPU call\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260830-tlb_tracepoint-v2-1-e3c88c24df5b@gmail.com/)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "arm64: meson-sm1-odroid-hc4 SPI NOR v2 커버",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20261002-hc4-spi-nor-v2-0-8366a4f91049@iav.lv/",
+      "note": "thread"
+    },
+    {
+      "title": "arm64: HC4 SPI NOR 40 MHz 검증",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20261002-hc4-spi-nor-v2-2-8366a4f91049@iav.lv/",
+      "note": "thread"
+    },
+    {
+      "title": "arm64: HC4 SPI NOR HOLD#/WP# 프로브",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20261002-hc4-spi-nor-v2-1-8366a4f91049@iav.lv/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: Zalasr acquire/release v5",
+      "url": "https://lore.kernel.org/linux-riscv/20261002165910.3818940-1-qingwei.hu@bytedance.com/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: dr1v90 cru dt fix v2",
+      "url": "https://lore.kernel.org/linux-riscv/20261003-dr1v90-cru-dt-fix-v2-0-6e7d96612ac0@pigmoral.tech/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: dr1v90 optional clock binding",
+      "url": "https://lore.kernel.org/linux-riscv/20261003-dr1v90-cru-dt-fix-v2-1-6e7d96612ac0@pigmoral.tech/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: dr1v90 binding Ack",
+      "url": "https://lore.kernel.org/linux-riscv/20261002-diminish-hemlock-53c312598e59@spud/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM arm64 VGICv3 rollback v4",
+      "url": "https://lore.kernel.org/linux-arm-kernel/ar_tdaYQO-t1K2F_@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM arm64 vgic-v3 iodev undo",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260831081005.41346-1-kmehltretter@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: TLB flush path trace 리뷰",
+      "url": "https://lore.kernel.org/linux-riscv/ar_Rathmoj2aP-H7@xhacker/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: TLB flush path tracepoint v2",
+      "url": "https://lore.kernel.org/linux-riscv/20260830-tlb_tracepoint-v2-1-e3c88c24df5b@gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-02T18:48:59.988Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

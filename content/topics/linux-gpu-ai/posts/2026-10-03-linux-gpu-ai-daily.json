@@ -1,0 +1,128 @@
+{
+  "id": "2026-10-03-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-10-03 msm CLX 회귀 신고 — GPU·AI 렌즈",
+  "headline": "Snapdragon 랩톱에서 Adreno X2-85 CLX 패치가 GMU 타임아웃·첫 합성 실패를 일으킨다는 회귀가 보고되었고, drm/sched·XDNA·nouveau 안정화 패치가 dri-devel에서 이어졌습니다.",
+  "date": "2026-10-03",
+  "summary": "drm/msm/a8xx CLX 활성화 패치에 대해 Yoga Slim 7x에서 GPU 초기화 실패와 첫 compositor 시작 실패가 리버트로 복구되는 사례가 제기되었습니다. FAIR drm/sched 우선순위 클램프 순서, DRM 벤더 이벤트 UAPI 매크로, amdxdna mailbox 고정 슬롯, nouveau NULL deref 수정·실기 검증이 함께 논의되었습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "drm/msm/a8xx: Adreno X2-85 CLX 회귀 신호",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "drm/msm·Qualcomm Adreno a8xx 플랫폼 및 Copilot+ PC 사용자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/CACSVV00GwWvMFDR5QC7h8gonC-9qYbaG958nZHSxtUdWXGG_sg@mail.gmail.com/",
+      "if": "Snapdragon X Elite/Plus 계열에서 next-20261001 근처 커널로 첫 Wayland 합성이 실패하거나 dmesg에 HFI 타임아웃·gpu hw init -110이 보이면 CLX 패치 영향을 의심하세요.",
+      "do": "해당 CLX 활성화 패치를 cherry-pick·리버트해 보드에서 GMU HFI 동작과 compositor 첫 기동을 비교하고, 머지 전 보드별 검증 결과를 스레드에 공유하세요.",
+      "verify": "Oleg Keri 회귀 스레드와 Rob Clark의 재현 여부 답장을 읽고 펌웨어·initrd 조건 차이가 재현에 미치는지는 추가 확인이 필요합니다."
+    },
+    {
+      "title": "drm/sched: entity priority 범위 검사 순서 수정",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "drm/sched 및 GPU 드라이버 스케줄링 경로 유지보수자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20261002154713.77591-2-tvrtko.ursulin@igalia.com/",
+      "if": "FAIR GPU 스케줄링(2fa4d8e2c109) 이후 distro 백포트나 자체 트리에서 malformed entity priority 경로를 다루면 rq_priority 설정 순서를 점검하세요.",
+      "do": "v7.2+ stable 제안이 포함된 패치를 추적하고 Xe·amdgpu 등 drm/sched 사용자 트리에 백포트 후보로 올려 두세요.",
+      "verify": "패치 스레드에서 드라이버가 실제로 클램프 경로를 타지 않았다는 설명과 Fixes 커밋 링크를 원문에서 확인하세요."
+    },
+    {
+      "title": "accel/amdxdna: mailbox 송신 경로 동적 할당 제거",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "accel/amdxdna 및 Ryzen AI NPU 스택 사용자·드라이버 개발자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20261002161122.1350075-1-max.zhen@amd.com/",
+      "if": "Ryzen AI NPU 관리·비동기 이벤트 경로에서 제출 지연이나 데드락 의심이 있으면 mailbox 송신 hot path 할당을 확인하세요.",
+      "do": "고정 슬롯 풀·smp_store_release/load_acquire·mailbox_msg_done() 설계가 들어간 V2 스레드를 리뷰하고 워크로드 제출 시 지연 변화를 측정하세요.",
+      "verify": "슬롯 수 AMDXDNA_MAX_ASYNC_EVENT_BUFS=4 충분 여부와 tx timeout 제거가 장시간 무응답 복구에 미치는 영향은 원문과 추가 검증이 필요합니다."
+    },
+    {
+      "title": "drm UAPI: 칩셋별 DRM 이벤트 ID 매크로",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "DRM UAPI 및 userspace 드라이버( Mesa, 커스텀 이벤트 핸들러) 개발자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20261002-drm-uapi-vnd-v6-1-3ac4087acf64@arm.com/",
+      "if": "userspace에서 DRM 이벤트 ID를 파싱하거나 exynos·nouveau·virtgpu·vmwgfx 벤더 이벤트를 다루면 0x80000000 비트 규칙을 코드와 맞추세요.",
+      "do": "DRM_EVENT_VENDOR_SPECIFIC(_v) 매크로 도입 v6 패치를 따라 드라이버 헤더와 Mesa 이벤트 핸들러의 하드코딩 값을 정리하세요.",
+      "verify": "매크로 도입 후 기존 하드코딩 이벤트 값과의 ABI 호환성 검토가 추가로 필요한지는 스레드와 리뷰 코멘트를 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm/msm/a8xx: Enable CLX feature on Adreno X2-85**\n\nAdreno X2-85용 CLX 기능 활성화 패치에 대해 Lenovo Yoga Slim 7x(Glymur)에서 GMU HFI/OOB 타임아웃·GPU -110 초기화 실패 회귀가 보고되었고, Rob Clark는 자신의 v7.3-rc3 cherry-pick 환경에서는 문제가 없었다고 답했습니다.\n\n영향: Snapdragon X Elite/Plus 랩톱의 msm DRM GPU 기동·첫 합성기 시작 실패와 직결되어, CLX 패치 머지 전 보드별 검증과 롤백 판단에 필요합니다.\n\n> Compositor fails on the first start and works on the second. Reverting this patch fixes it here as well.\n\n> Message HFI_H2F_MSG_GX_BW_PERF_VOTE id 11 timed out waiting for response\n\n[원문 확인](https://lore.kernel.org/dri-devel/CACSVV00GwWvMFDR5QC7h8gonC-9qYbaG958nZHSxtUdWXGG_sg@mail.gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/sched: Fix out of bounds entity priority check**\n\ndrm_sched_entity_init()에서 범위를 벗어난 entity priority를 클램프한 뒤에 entity->rq_priority를 설정하도록 순서를 바꿔, FAIR 정책 시 잘못된 run-queue 인덱스를 쓰지 않게 합니다.\n\n영향: FAIR GPU 스케줄러(2fa4d8e2c109) 이후 malformed priority 경로에서 rq_priority가 클램프 전에 고정되면 잠재적 OOB 접근이 생길 수 있어, Xe/amdgpu 등 drm/sched 사용자는 stable 백포트 후보를 추적할 가치가 있습니다.\n\n> There is no impact since none of the drivers hit the clamping path, but we still need to address it by moving the entity->rq_priority assignment to after the clamping is done.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20261002154713.77591-2-tvrtko.ursulin@igalia.com/)\n\n**drm: uapi: Add macro for chipset specific event ID region**\n\ndrm.h에 DRM_EVENT_VENDOR_SPECIFIC(_v) 매크로를 추가하고 exynos/nouveau/virtgpu/vmwgfx UAPI 헤더가 0x80000000 비트 규칙을 매크로로 쓰도록 정리합니다.\n\n영향: 벤더/칩셋별 DRM 이벤트 ID 할당을 주석이 아닌 코드로 고정해, userspace 이벤트 파서와 신규 드라이버가 동일한 UAPI 계약을 따르게 합니다.\n\n> However, this distinction was not put in the code. To elevate the contract between the generic DRM framework and the driver from the comment to code, put this in a macro for clarity and convenience.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20261002-drm-uapi-vnd-v6-1-3ac4087acf64@arm.com/)\n\n**accel/amdxdna: eliminate GFP_KERNEL allocation from mailbox send path**\n\nmailbox 송신 경로의 per-message kzalloc를 고정 슬롯 풀로 바꾸고, smp_store_release/load_acquire와 mailbox_msg_done()으로 슬롯 재사용과 fire-and-forget 메시지를 안전하게 추적합니다.\n\n영향: AMD XDNA(NPU) 관리/비동기 이벤트 경로에서 GFP_KERNEL 할당과 동시성 버그를 제거해 AI 워크로드 제출 시 지연·데드락 위험을 줄입니다.\n\n> Replace the per-message kzalloc() with a pre-allocated pool of N slots. No dynamic allocation is needed in the send hot path.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20261002161122.1350075-1-max.zhen@amd.com/)\n\n**nouveau: fix 3 null-ptr derefs**\n\nGETPARAM·GET_ZCULL_INFO ioctl과 nvkm_gsp_gcx_ready()에서 gr/GSP가 없을 때 NULL 포인터를 참조하지 않도록 가드하는 3패치 시리즈입니다.\n\n영향: firmware 없는 Turing+ nouveau 및 amdgpu+nouveau 혼합 랩톱에서 부팅·런타임 suspend·NVK/KWin 기동 시 커널 oops를 막는 실질적 안정화입니다.\n\n> These 3 patches fix NULL ptr derefs I hit while booting kernels with unrelated work (dynamic-debug) on a 2019 amdgpu+noueau laptop.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20261002-my-fixups-v1-0-a83d20f9d3fe@gmail.com/)\n\n**drm/nouveau: prevent NULL deref of gr in GETPARAM_GRAPH_UNITS**\n\nZhenhao Wan의 GETPARAM_GRAPH_UNITS NULL deref 수정에 대한 Daniel Campos Ramos의 Tested-by로, RTX 3060(GA106)·firmware-nvidia-gsp 없음·7.3-rc1 환경에서 검증했습니다.\n\n영향: Jim Cromie의 GET_ZCULL_INFO 수정과 함께 NVK 기동 시 nvkm_gr_units oops를 제거해 KWin Wayland가 합성 가능한 상태까지 올라가는지 실기 검증 신호입니다.\n\n> Together with Jim Cromie's GET_ZCULL_INFO fix, this removes the second oops (nvkm_gr_units+0x9) that kills kwin_wayland when NVK starts.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20261002171838.282505-1-Capitain_Jack@yahoo.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/sched: Fix out of bounds entity priority check",
+      "url": "https://lore.kernel.org/dri-devel/20261002154713.77591-2-tvrtko.ursulin@igalia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/sched: Add fair scheduling policy (Fixes 대상)",
+      "url": "https://repo.or.cz/drm/drm.git/commit/2fa4d8e2c109",
+      "note": "commit"
+    },
+    {
+      "title": "drm: uapi: Add macro for chipset specific event ID region v6",
+      "url": "https://lore.kernel.org/dri-devel/20261002-drm-uapi-vnd-v6-1-3ac4087acf64@arm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "accel/amdxdna: eliminate GFP_KERNEL allocation from mailbox send path V2",
+      "url": "https://lore.kernel.org/dri-devel/20261002161122.1350075-1-max.zhen@amd.com/",
+      "note": "thread"
+    },
+    {
+      "title": "nouveau: fix 3 null-ptr derefs (cover)",
+      "url": "https://lore.kernel.org/dri-devel/20261002-my-fixups-v1-0-a83d20f9d3fe@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "nouveau: GET_ZCULL_INFO NULL deref fix",
+      "url": "https://lore.kernel.org/dri-devel/20261002-my-fixups-v1-2-a83d20f9d3fe@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "nouveau GETPARAM_GRAPH_UNITS Tested-by (GA106, GSP 없음)",
+      "url": "https://lore.kernel.org/dri-devel/20261002171838.282505-1-Capitain_Jack@yahoo.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/nouveau: prevent NULL deref of gr in GETPARAM_GRAPH_UNITS (원 패치)",
+      "url": "https://lore.kernel.org/dri-devel/20260812-nouveau-nvkm-absent-subdev-null-deref-v1-2-7e057f6aeba0@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/msm/a8xx CLX 회귀 보고 (Yoga Slim 7x)",
+      "url": "https://lore.kernel.org/dri-devel/CACSVV00GwWvMFDR5QC7h8gonC-9qYbaG958nZHSxtUdWXGG_sg@mail.gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-02T18:51:26.322Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,123 @@
+{
+  "id": "2026-10-03-linux-distro-stable-daily",
+  "topic": "linux-distro-stable",
+  "title": "2026-10-03 stable 큐 UAF·회귀 — 배포판 stable",
+  "headline": "10월 2일 stable 큐에 conntrack 중첩 거부·inet proto pin·KVM·Bluetooth UAF와 secretmem 회귀가 올라왔고, lpfc CVE·GameSir USB quirk 백포트도 추적 대상입니다.",
+  "date": "2026-10-03",
+  "summary": "stable@vger.kernel.org 제출이 netfilter conntrack·네트워크 proto 수명·virt·Bluetooth 경로 UAF와 secretmem/perf locked_vm 회귀에 집중되었습니다. 7.1.13 EOL·7.2.8·6.12.111·6.18.54 태그는 어제와 동일한 kernel.org 기준점으로 남아 있습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "netfilter: conntrack nested master 거부",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "netfilter stable 백포트 담당, 방화벽·Kubernetes 노드 배포판",
+      "verifyLink": "https://lore.kernel.org/stable/20261002165601.1754467-1-4ncienth@gmail.com/",
+      "if": "ctnetlink·conntrack을 쓰는 서버·컨테이너 노드 이미지를 패키징한다면",
+      "do": "중첩 master 생성 거부 패치가 머지된 stable -y 태그를 보안 업데이트 일정에 반영하세요",
+      "verify": "스레드의 EOPNOTSUPP 재현 수치와 cleanup 후 nf_conntrack_count=0 로그를 원문으로 대조하세요"
+    },
+    {
+      "title": "secretmem: perf record 동시 memfd_secret SIGBUS",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "6.18/7.2 stable 패키지 maintainer, perf·memfd_secret 사용자",
+      "verifyLink": "https://lore.kernel.org/stable/20261002175651.811343-1-ameer.hamza@truenas.com/",
+      "if": "stable 이미지에서 perf record와 memfd_secret()을 같은 사용자로 돌린다면",
+      "do": "97d34aa65c29 백포트 포함 빌드에서 회귀 여부와 regzbot bisection 결과를 QA에 넣으세요",
+      "verify": "locked_vm 카운터 공유 설명과 #regzbot introduced 인용을 lore 스레드에서 확인하세요"
+    },
+    {
+      "title": "net: pin protocol module before inet socket allocation",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "stable net 백포트 담당, modular L2TP/SCTP 등 inet 프로토콜 사용자",
+      "verifyLink": "https://lore.kernel.org/stable/20261002173844.3537111-1-nicoyip.dev@gmail.com/",
+      "if": "loadable L2TP 등 inet 프로토콜 모듈과 동시 socket 생성·rmmod가 가능한 네트워크 이미지라면",
+      "do": "try_module_get()으로 proto slab 수명을 잡는 stable 백포트 머지 브랜치를 추적하세요",
+      "verify": "RCU 해제 후 sk_alloc 전 slab 파괴 시나리오와 L2TP 동시 재현 문구를 원문에서 확인하세요"
+    },
+    {
+      "title": "KVM: x86: virtualization-enable VM walks RCU",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "KVM/x86 호스트 커널 패키지 maintainer, 가상화 플랫폼 QA",
+      "verifyLink": "https://lore.kernel.org/stable/20261002172025.3402416-1-nicoyip.dev@gmail.com/",
+      "if": "KVM 호스트 커널에 CPU hotplug와 VM teardown이 겹치는 워크로드가 있다면",
+      "do": "vm_list RCU 순회 패치가 stable virt 백포트 큐에 들어오는지 일정을 모니터링하세요",
+      "verify": "KASAN wild-memory-access 스택과 usage-count mutex 미적용 설명을 lore 스레드로 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**netfilter: conntrack: reject nested ctnetlink master chains**\n\nctnetlink으로 master conntrack을 중첩해 unbounded chain과 재귀 destroy로 스택을 소진하는 경로를, 이미 master가 있는 conntrack을 master로 삼는 생성과 NFQUEUE expectation 중첩을 거부해 막습니다.\n\n영향: netfilter/conntrack·컨테이너 네트워킹을 쓰는 서버 배포는 userspace ctnetlink 악용으로 커널 panic 없이 stable 보안 업데이트를 받을 수 있는지 판단해야 합니다. 공개 CVE 부여 여부 및 최소 영향 stable 버전 범위는 확인이 필요합니다.\n\n> Userspace can repeat this to build an unbounded chain whose recursive destruction exhausts the kernel stack.\n\n[원문 확인](https://lore.kernel.org/stable/20261002165601.1754467-1-4ncienth@gmail.com/)\n\n**[REGRESSION] secretmem: SIGBUS on memfd_secret() pages while perf record runs**\n\n97d34aa65c29 secretmem locked_vm 회계 백포트(v7.3-rc2, 6.18.52, 7.2.5) 이후 perf record가 같은 user->locked_vm 한도를 소진하면 memfd_secret() 첫 touch가 SIGBUS·read는 EFAULT로 실패합니다.\n\n영향: perf와 secretmem을 함께 쓰는 스토리지·보안 워크로드 배포는 stable/backport 이미지에서 회귀 여부와 regzbot 추적 결과에 따라 패치·revert 일정을 봐야 합니다. perf allowance를 별도 카운터로 분리할지 stable 큐 fix 일정은 확인이 필요합니다.\n\n> touching a memfd_secret() page for the first time fails with SIGBUS while the same user is running perf record\n\n[원문 확인](https://lore.kernel.org/stable/20261002175651.811343-1-ameer.hamza@truenas.com/)\n\n**net: pin protocol module before inet socket allocation**\n\ninet_create()/inet6_create()가 RCU 아래 proto를 조회한 뒤 RCU를 풀고 sk_alloc() 전에 모듈 언로드가 proto slab을 파괴할 수 있는 레이스를, RCU 구간에 owner를 캐시하고 try_module_get()으로 임시 참조를 잡아 막습니다.\n\n영향: L2TP 등 loadable 프로토콜 모듈과 동시 socket 생성·rmmod가 겹치는 서버/네트워크 이미지는 stable 백포트 없이 kmem_cache_alloc 경로에서 크래시할 수 있습니다. 어느 stable -y 브랜치에 머지되는지 및 maintainer ACK 시점은 확인이 필요합니다.\n\n> A concurrent module unload can unregister the protosw, wait for the RCU readers, and destroy the proto's slab before sk_alloc() uses it.\n\n[원문 확인](https://lore.kernel.org/stable/20261002173844.3537111-1-nicoyip.dev@gmail.com/)\n\n**KVM: x86: Protect virtualization-enable VM walks with RCU**\n\nkvm_arch_enable_virtualization_cpu()의 vm_list 순회를 RCU로 보호하고, VM publish/remove를 RCU list로 바꿔 CPU hotplug와 마지막 VM close가 겹칠 때 stale VM/vCPU 접근을 막습니다.\n\n영향: KVM 호스트를 패키징하는 배포는 CPU online과 VM teardown 레이스로 KASAN wild-memory-access가 날 수 있어 stable virt 백포트 일정을 추적해야 합니다. tsc_offset_adjustment 등 별도 동기화 이슈는 후속 패치 필요 여부가 확인이 필요합니다.\n\n> Because vm_list mutators do not take the usage-count mutex, this left the x86 walks without lifetime protection.\n\n[원문 확인](https://lore.kernel.org/stable/20261002172025.3402416-1-nicoyip.dev@gmail.com/)\n\n**Bluetooth: L2CAP: Fix reject-list lookup UAF**\n\nl2cap_recv_frame()의 reject_list 순회와 hci_dev_lock 아래 list 갱신 레이스를 RCU list walk·deferred free로 고쳐 block/unblock_device() 중 entry kfree UAF를 제거합니다.\n\n영향: Bluetooth 스택을 켠 데스크톱·임베디드 배포는 L2CAP 수신과 reject-list 조작이 겹칠 때 hci_rx_work 경로 크래시를 stable 백포트로 막을 수 있습니다. 어느 stable -y 브랜치에 머지되는지는 확인이 필요합니다.\n\n> BUG: KASAN: slab-use-after-free in hci_bdaddr_list_lookup\n\n[원문 확인](https://lore.kernel.org/stable/20261002171603.3368121-1-nicoyip.dev@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**scsi: lpfc: Backport SFP mailbox timeout handling**\n\nArtem Dinaburg v2는 6.6.y용 2패치 시리즈로 ext_buf 선행 커밋 115d137aa918 뒤 CVE-2024-46842 수정(ede596b1434b)을 lpfc_get_sfp_info MBX_TIMEOUT 처리와 함께 백포트합니다.\n\n영향: Fibre Channel lpfc를 쓰는 엔터프라이즈·스토리지 이미지(특히 6.6 LTS 계열)는 SFP 정보 mailbox 지연 완료 시 UAF CVE를 stable 큐에서 받을 수 있는지 확인해야 합니다. 6.12.y 등 다른 longterm에도 동일 ext_buf+CVE 시리즈가 필요한지는 확인이 필요합니다.\n\n> Patch 2 then backports the original CVE-2024-46842 fix from ede596b1434b.\n\n[원문 확인](https://lore.kernel.org/stable/20261002182205.11550-1-artem@trailofbits.com/)\n\n**USB: quirks: add USB_QUIRK_WINDOWS_CONFIG_REQ_SIZE for GameSir G7 SE**\n\nGameSir G7 SE(3537:10a0)가 Linux식 9+80 byte config descriptor 요청 시 HID 모드(3537:1082)로 재열거되는 문제를 Windows식 255-byte 단일 요청 quirk로 Xbox GIP 모드(3537:1010)·xpad rumble을 유지합니다.\n\n영향: 데스크톱/게임용 배포에서 해당 컨트롤러 사용자는 stable USB quirk 백포트 여부가 force feedback 동작과 직결됩니다. 배포 기본 usbcore.quirks 모듈 파라미터로 노출할지는 확인이 필요합니다.\n\n> the configuration descriptor request size alone decides the mode.\n\n[원문 확인](https://lore.kernel.org/stable/20261002-master-v2-1-24b05d8792b5@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "netfilter conntrack nested master stable 제출",
+      "url": "https://lore.kernel.org/stable/20261002165601.1754467-1-4ncienth@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "secretmem perf locked_vm 회귀",
+      "url": "https://lore.kernel.org/stable/20261002175651.811343-1-ameer.hamza@truenas.com/",
+      "note": "thread"
+    },
+    {
+      "title": "inet proto module pin stable 제출",
+      "url": "https://lore.kernel.org/stable/20261002173844.3537111-1-nicoyip.dev@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM vm_list RCU stable 제출",
+      "url": "https://lore.kernel.org/stable/20261002172025.3402416-1-nicoyip.dev@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Bluetooth L2CAP reject-list UAF",
+      "url": "https://lore.kernel.org/stable/20261002171603.3368121-1-nicoyip.dev@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "lpfc CVE-2024-46842 6.6.y 백포트",
+      "url": "https://lore.kernel.org/stable/20261002182205.11550-1-artem@trailofbits.com/",
+      "note": "thread"
+    },
+    {
+      "title": "CVE-2024-46842 lpfc mailbox",
+      "url": "https://lists.openwall.net/linux-cve-announce/2024/09/27/32",
+      "note": "cve"
+    },
+    {
+      "title": "GameSir G7 SE USB quirk stable",
+      "url": "https://lore.kernel.org/stable/20261002-master-v2-1-24b05d8792b5@gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-02T18:43:35.381Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
