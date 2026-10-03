@@ -1,5 +1,9 @@
 # Dev Blog 공용 게시 계정 통합 계획
 
+현재 상태(2026-10-03): 통합 검증과 기존 홈 정리를 완료했습니다. 운영자 요청으로
+Dev Blog 관련 백업도 삭제했습니다. 아래 백업 기반 롤백·홈 복구 명령은 과거 기록이며
+현재 실행할 수 없습니다. `devblog` 계정은 비활성 상태로 남아 있고 `opc`는 유지합니다.
+
 ## 1. 목적
 
 OCI에서 정상 운영 중인 Dev Blog를 전용 `devblog` 계정에서 공용
@@ -286,7 +290,7 @@ service와 timer는 이미 중지됐지만 운영 파일 변경 전이었고, �
 백업에는 로그인 정보와 private key가 들어 있으므로 root 전용으로 보관합니다.
 백업은 자동 삭제하지 않습니다. 계정 항목을 남겨 UID 1002의 재사용도 방지합니다.
 
-### 정리 후 홈 복구 절차
+### 정리 후 홈 복구 절차 (백업 삭제로 현재 사용 불가)
 
 정리가 끝난 현재 8장의 service 롤백을 하려면 먼저 홈과 계정 실행 권한을 복구해야
 합니다. 실제 롤백 시 timer를 먼저 중지한 다음 아래 순서로 진행합니다.
@@ -303,3 +307,19 @@ sudo usermod -e '' -s /bin/bash devblog
 
 비밀번호는 원래도 잠겨 있었으므로 잠금 상태를 유지합니다. 이후 8장의 프로젝트
 소유권과 기존 service 복구, Git/Cursor 검증을 마친 뒤 timer를 재활성화합니다.
+
+### 2026-10-03 운영자 요청에 따른 Dev Blog 백업 삭제
+
+- 다음 두 디렉터리를 영구 삭제하고 부재 확인:
+  `/var/backups/wiki-publisher/dev-blog-20260930`,
+  `/var/backups/wiki-publisher/devblog-retired-20261003`
+- 삭제 대상: 기존 홈 압축 백업, SSH 키 백업, 이전 unit/drop-in과 계정 기록
+- 약 708MiB 추가 확보; 기존 홈과 인증 정보의 백업 복구 경로는 폐기됨
+- 기존 `devblog` 계정은 만료/nologin 상태로 유지
+- `opc` 계정·홈·OCI cloud-init 설정은 운영자 지시에 따라 유지
+- OSS Radar 계정 변경 백업과 Research Wiki 백업은 삭제하지 않음
+- 세 timer 모두 enabled/active, Dev Blog worktree clean 확인
+
+`opc`는 OCI 이미지의 `99-oracle-compute-user-redirect.cfg`에서
+`ssh_redirect_user: true`로 생성된 호환 계정입니다. 조사 당시 로그인 이력과 실행
+프로세스가 없었으며 홈은 기본 셸 설정과 SSH 설정만 있는 약 24KiB였습니다.
