@@ -176,7 +176,7 @@ sudo systemctl disable --now dev-blog.timer
 sudo systemctl stop dev-blog.service
 sudo chown -R devblog:devblog /srv/dev-blog
 sudo cp -a \
-  /var/backups/wiki-publisher/dev-blog-20260930/dev-blog.service \
+  /var/backups/wiki-publisher/dev-blog-20260930/dev-blog.service.before \
   /etc/systemd/system/dev-blog.service
 sudo systemctl daemon-reload
 sudo systemd-analyze verify \
@@ -262,3 +262,44 @@ service와 timer는 이미 중지됐지만 운영 파일 변경 전이었고, �
 
 기존 `/home/devblog`, SSH key와 `devblog` 계정은 롤백용으로 유지합니다. 10월 1일과
 2일 03:00 KST 실제 게시가 연속 성공한 뒤 계정 잠금과 중복 홈 정리를 검토합니다.
+
+### 2026-10-03 정기 실행 검증 완료와 기존 계정 정리
+
+- 통합 후 실제 게시 3회 성공: 10월 1일 `6c871a8`, 2일 `88d46b3`,
+  3일 `6fbc50d`
+- 10월 3일 Dev Blog status 11개 모두 오늘 날짜와 `ok=true` 확인
+- 기존 `devblog` 프로세스, 활성 unit/cron/SSH 설정 참조 없음 확인
+- `/home/devblog` 밖의 `/home`, `/srv`, `/opt`에 UID/GID 1002 소유 항목 없음 확인
+- 홈 전체를 root 전용 압축 백업으로 보존:
+  `/var/backups/wiki-publisher/devblog-retired-20261003/home.tar.gz`
+- backup mode 0600, 디렉터리 mode 0700, UID/GID와 ACL/xattr 보존
+- `gzip -t`, GNU tar의 원본 대조(`--compare`), SHA-256 검증 모두 통과
+- 사용되지 않는 Cursor `worker.sock`은 tar가 제외; 일반 파일과 설정은 모두 보존
+- `devblog` 계정은 UID/GID 1002를 유지하고 비밀번호 잠금, 계정 만료,
+  `/usr/sbin/nologin` 셸 적용
+- 검증된 백업 생성 후 `/home/devblog`의 중복 Cursor 설치·캐시·인증·SSH 키 제거
+- 원본 약 2.1GB 대신 약 708MiB 압축 백업 보존, 약 1.4GB 절약
+- `wiki-publisher`의 기존 SSH 키와 Cursor 로그인 유지 확인
+- Git push dry-run 성공, worktree clean, 세 timer 모두 active 유지
+- 다음 정기 실행: 2026-10-04 03:00/04:00/05:00 KST
+
+백업에는 로그인 정보와 private key가 들어 있으므로 root 전용으로 보관합니다.
+백업은 자동 삭제하지 않습니다. 계정 항목을 남겨 UID 1002의 재사용도 방지합니다.
+
+### 정리 후 홈 복구 절차
+
+정리가 끝난 현재 8장의 service 롤백을 하려면 먼저 홈과 계정 실행 권한을 복구해야
+합니다. 실제 롤백 시 timer를 먼저 중지한 다음 아래 순서로 진행합니다.
+
+```bash
+sudo systemctl disable --now dev-blog.timer
+sudo systemctl stop dev-blog.service
+sudo bash -c 'cd /var/backups/wiki-publisher/devblog-retired-20261003 && sha256sum -c home.tar.gz.sha256'
+sudo test ! -e /home/devblog
+sudo tar --acls --xattrs --numeric-owner -xzf \
+  /var/backups/wiki-publisher/devblog-retired-20261003/home.tar.gz -C /home
+sudo usermod -e '' -s /bin/bash devblog
+```
+
+비밀번호는 원래도 잠겨 있었으므로 잠금 상태를 유지합니다. 이후 8장의 프로젝트
+소유권과 기존 service 복구, Git/Cursor 검증을 마친 뒤 timer를 재활성화합니다.
