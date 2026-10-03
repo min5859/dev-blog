@@ -8,7 +8,8 @@ systemd unit 안에서 실행하거나 임시 파일을 직접 정리해야 합�
 
 현재 상태(2026-10-03): 통합 검증과 기존 홈 정리를 완료했습니다. 운영자 요청으로
 Dev Blog 관련 백업도 삭제했습니다. 아래 백업 기반 롤백·홈 복구 명령은 과거 기록이며
-현재 실행할 수 없습니다. `devblog` 계정은 비활성 상태로 남아 있고 `opc`는 유지합니다.
+현재 실행할 수 없습니다. 이후 미사용 임시 파일 정리를 마치고 `devblog` 사용자·그룹도
+삭제했습니다. `opc`는 유지합니다.
 
 ## 1. 목적
 
@@ -329,3 +330,20 @@ sudo usermod -e '' -s /bin/bash devblog
 `opc`는 OCI 이미지의 `99-oracle-compute-user-redirect.cfg`에서
 `ssh_redirect_user: true`로 생성된 호환 계정입니다. 조사 당시 로그인 이력과 실행
 프로세스가 없었으며 홈은 기본 셸 설정과 SSH 설정만 있는 약 24KiB였습니다.
+
+### 2026-10-03 잔여 임시 파일과 계정 최종 정리
+
+- 루트 파일시스템의 UID/GID 1002 파일 전수 조사
+- 미사용 `/tmp/ln-test`, `/tmp/ln-linus`, `/tmp/linux-next-20260909`,
+  `/tmp/linux-next-20260910` 네 clone 발견 (합계 약 11GB)
+- Git 작업 변경 없음, 다른 소유 파일 없음, 프로세스 cwd/FD 참조 없음 확인
+- 네 clone과 이전 계정의 Cursor 임시 로그·리서치 파일 삭제
+- 잔여 UID/GID 1002 파일 없음 확인 후 `devblog` 사용자·그룹 삭제
+- OSS Radar/Research Wiki의 미사용 이관 사본도 정리; 새 백업 생성 없음
+- `PrivateTmp=true`를 설치 unit에 적용하고 daemon-reload
+- transient unit으로 성공·실패 종료 시 private tmp 제거 확인
+- 실제 private tmp 환경에서 `npm run daily:linux` 비게시 검증 성공 (2분 13초)
+- collect/draft/research/rewrite/build 성공, publish 단계 없음
+- 검증으로 변경된 status 파일 한 개만 복구, 콘텐츠·원격 commit 불변
+- 디스크 여유 약 18GB → 28GB, 세 timer enabled/active 유지
+- 다음 Dev Blog 정기 실행(2026-10-04 03:00 KST) 후 최종 확인 예정
