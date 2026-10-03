@@ -1,0 +1,122 @@
+{
+  "id": "2026-10-04-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-10-04 mmap·ETM sysfs — Linux Perf/RT",
+  "headline": "mmap_prepare 이후 VMA 검증 일반화, AF_UNIX sendmsg GC 논쟁, CoreSight ETM sysfs v13 적용이 tracing·RT 관측 경로에 영향을 줍니다.",
+  "date": "2026-10-04",
+  "summary": "Lorenzo Stoakes의 mm mmap 시리즈는 bpf 리스트에서 uprobes·tracing 매핑과 맞물려 VMA 상태 검증을 통일합니다. Nam Cao의 af_unix 패치는 RT 지연 이슈와 맞닿은 GC 대기 논쟁이 이어지고, Yeoreum Yun의 ETM sysfs 정리는 coresight next에 적용된 상태입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "perf",
+    "PREEMPT_RT",
+    "eBPF",
+    "CoreSight"
+  ],
+  "highlights": [
+    {
+      "title": "mm: mmap_prepare·mmap 공통 VMA 검증",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "eBPF/uprobes·perf 도구 개발자 및 mmap_prepare를 쓰는 드라이버·mm 유지보수자",
+      "verifyLink": "https://lore.kernel.org/bpf/20261003-b4-mmap-prepare-vma-flag-sanify-v4-3-a1f052500fd7@kernel.org/",
+      "if": "드라이버 mmap 훅이나 uprobes XOL 매핑 이후 VMA 플래그·주소·쓰기 가능성에 의존한다면",
+      "do": "v4 38패치 시리즈 03/38에서 mmap_file() 전 경로 검증 변경을 추적하세요",
+      "verify": "lore bpf 스레드 원문에서 mmap_prepare·mmap 공통화 설명을 확인하세요"
+    },
+    {
+      "title": "af_unix: sendmsg()에서 GC 대기",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "PREEMPT_RT·네트워킹 스택 및 AF_UNIX 고밀도 FD 환경 운영자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/CAAVpQUCuV_MNMzWCUBOEGN3Tsvykxq8Ba5cukzR9GoOQjh5asA@mail.gmail.com/",
+      "if": "PREEMPT_RT나 고밀도 unix 소켓에서 sendmsg 지연·우선순위 역전을 본다면",
+      "do": "v5 토론과 Needs ACK 상태를 보며 maintainer ACK 전 재게시 여부를 지켜보세요",
+      "verify": "동일 스레드에서 flush_work() 논쟁과 Jakub Kicinski 코멘트를 읽어보세요"
+    },
+    {
+      "title": "ETM sysfs 설정 불일치 수정 v13",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "CoreSight·perf 하드웨어 트레이싱 사용자 및 drivers/hwtracing/coresight 유지보수자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/179101052919.1709951.18400347613609410532.b4-ty@arm.com/",
+      "if": "perf 세션 중 sysfs로 ETM3/4를 바꾸는 워크플로를 쓴다면",
+      "do": "coresight next에 적용된 RESEND v13 시리즈의 sysfs_config·curr_config 분리를 반영 계획을 세우세요",
+      "verify": "Suzuki Poulose 적용 공지와 커버 레터의 sched-out/in 설정 드리프트 설명을 확인하세요"
+    },
+    {
+      "title": "ETM4x TRCSEQSTR·seq_state sysfs",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "ARM CoreSight ETM4 사용자 및 sysfs 기반 트레이스 설정 자동화 작성자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20261003030811.B35331F000FF@smtp.kernel.org/",
+      "if": "세션 비활성 시퀀서 상태를 sysfs로 읽거나 활성 중 seq_state를 쓴다면",
+      "do": "v13에 포함된 read-back·-EBUSY 동작과 TOCTOU 관련 리뷰 답변을 스크립트 가정에 맞춰 점검하세요",
+      "verify": "패치 설명과 Yeoreum Yun의 seq_state_store 답글 원문을 대조해보세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**mm: consistently validate VMA state after mmap[_prepare] hooks**\n\nLorenzo Stoakes의 v4 38패치 시리즈 일부로, f_op->mmap_prepare와 레거시 mmap 호출 후 VMA 플래그·vm_start·쓰기 가능성 등을 mmap_file() 및 호환 레이어 전 경로에서 동일하게 검증하도록 mm 코어를 일반화합니다.\n\n영향: bpf 리스트에 올라온 시리즈는 uprobes XOL 매핑 등 tracing/uprobes 경로의 VMA 플래그 정리와 함께 가므로, eBPF·uprobes 사용자가 드라이버 mmap 훅 이후 깨진 VMA 상태에 의존하지 않게 됩니다.\n\n> Generalise these checks for both mmap_prepare and mmap and apply to all invocations of mmap_file(), the f_op->mmap and f_op->mmap_prepare handling in the core VMA code\n\n[원문 확인](https://lore.kernel.org/bpf/20261003-b4-mmap-prepare-vma-flag-sanify-v4-3-a1f052500fd7@kernel.org/)\n\n**af_unix: Do not wait for garbage collector in sendmsg()**\n\nNam Cao 패치(v5)에 대한 토론에서 Kuniyuki Iwashima가 unix GC flush_work()가 OOM·비순환 FD 대량 보유 문제를 해결하지 못한다는 Linutronix 측 주장에 반박하고, memcg·RLIMIT_NOFILE·systemd 정책 맥락을 제시했으며 pw-bot이 해당 응답을 rejected로 표시했다.\n\n영향: sendmsg() 경로에서 GC 대기는 RT 워크로드 지연·우선순위 역전과 직결될 수 있어, PREEMPT_RT 쪽에서 패치 채택 여부와 대안(한도·memcg) 논의를 계속 지켜볼 가치가 있습니다. net-next 반영·한도 쪽으로 논의가 옮겨지는지는 maintainer ACK 이후 확인이 필요합니다.\n\n> This looks effectively identical to v4. I'll put it into 'Needs ACK'. If Kuniyuki is unconvinced please do not repost this again.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/CAAVpQUCuV_MNMzWCUBOEGN3Tsvykxq8Ba5cukzR9GoOQjh5asA@mail.gmail.com/)\n\n**fix several inconsistencies with sysfs configuration in etmX**\n\nYeoreum Yun의 RESEND v13 14패치 시리즈가 Suzuki Poulose에 의해 coresight next에 적용되었으며, perf 세션 활성 중 sysfs로 ETM3/4 설정을 바꿀 때 sched-out/in 사이 설정 불일치 등을 막고 sysfs_config·curr_config 분리 등 구조 정리를 포함합니다.\n\n영향: CoreSight ETM은 perf 기반 하드웨어 트레이싱의 핵심이므로, 세션 중 설정 드리프트가 제거되면 관측성 도구가 보는 트레이스 품질·재현성이 개선됩니다. mainline 머지 일정은 이 공지만으로는 확인되지 않습니다.\n\n> If a configuration is modified via sysfs while a perf session is active, the running configuration may differ between before a sched-out and after a subsequent sched-in.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20261003-separate_etm_cfg_v2-v13-0-5d8a29aead95@arm.com/)\n\n**coresight: etm4x: read-back TRCSEQSTR at disabling and prohibit modifying seq_state while enabling.**\n\nETM4 sysfs에서 세션 비활성 시 TRCSEQSTR을 read-back하고, 활성 세션 중 seq_state sysfs 쓰기를 -EBUSY로 막는 패치가 v13 시리즈에 포함되었으며 Sashiko는 mode 검사의 TOCTOU 가능성을 제기했고 Yeoreum Yun은 seq_state_store가 STATUS/PENDING 비트만 건드린다고 반박했다.\n\n영향: 시퀀서 상태는 ETM 프로그래밍·분석 도구가 의존하는 관측 메타데이터라, 세션 경계에서의 보존·동시 쓰기 논쟁은 트레이싱 스크립트 작성자에게 직접적인 동작 가정을 바꿉니다. 다른 sysfs store 경로에 대한 TOCTOU 지적이 추가 수용되는지는 확인되지 않았습니다.\n\n> TRCSEQSTR can be changed by the ETM while a session is active. Its value therefore needs to be preserved when a sysfs session is disabled\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20261003030811.B35331F000FF@smtp.kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "mmap_prepare VMA flag sanify v4 3/38",
+      "url": "https://lore.kernel.org/bpf/20261003-b4-mmap-prepare-vma-flag-sanify-v4-3-a1f052500fd7@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "mmap_prepare v4 review thread",
+      "url": "https://lore.kernel.org/bpf/20261003175702.05A4E1F0089D@smtp.kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "af_unix sendmsg GC discussion",
+      "url": "https://lore.kernel.org/linux-rt-devel/CAAVpQUCuV_MNMzWCUBOEGN3Tsvykxq8Ba5cukzR9GoOQjh5asA@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "ETM sysfs v13 applied to coresight next",
+      "url": "https://lore.kernel.org/linux-rt-devel/179101052919.1709951.18400347613609410532.b4-ty@arm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "separate etm cfg v13 cover letter",
+      "url": "https://lore.kernel.org/linux-rt-devel/20261003-separate_etm_cfg_v2-v13-0-5d8a29aead95@arm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "ETM4x TRCSEQSTR read-back patch",
+      "url": "https://lore.kernel.org/linux-rt-devel/20261003030811.B35331F000FF@smtp.kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "seq_state_store TOCTOU reply",
+      "url": "https://lore.kernel.org/linux-rt-devel/asB6JgDE6S6JQr4r@e129823.arm.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-03T18:23:11.584Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

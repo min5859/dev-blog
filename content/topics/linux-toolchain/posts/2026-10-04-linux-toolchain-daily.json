@@ -1,0 +1,132 @@
+{
+  "id": "2026-10-04-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-10-04 ARM Rust·BTF — Linux 툴체인",
+  "headline": "pre-ARMv6용 2바이트 xchg와 warn_once!, KBUILD_OUTPUT 기본 .config, BTF 온디맨드 모듈(~5.4MB) 논의가 툴체인 쪽 핵심입니다.",
+  "date": "2026-10-04",
+  "summary": "ARMv5TE Rust 빌드의 __bad_xchg 링크 실패를 막는 cmpxchg/xchg 패치와 C WARN_ONCE()에 맞춘 warn_once! 시리즈가 올라왔습니다. kbuild는 scripts/config의 KBUILD_OUTPUT 정합과 vmlinux BTF를 모듈·압축으로 줄이는 방안을 다룹니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "툴체인",
+    "Rust",
+    "kbuild",
+    "BPF"
+  ],
+  "highlights": [
+    {
+      "title": "pre-ARMv6 2바이트 xchg",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "ARM 32비트·Rust for Linux 빌드/툴체인 담당",
+      "verifyLink": "https://lore.kernel.org/llvm/20261003093827.77857-2-kmehltretter@gmail.com/",
+      "if": "ARMv5TE 등 pre-ARMv6에서 CONFIG_RUST=y 빌드를 돌리고 있다면",
+      "do": "시리즈 1/2 xchg 패치와 ARMv5 Rust 시리즈(2/2) 선행 조건을 함께 추적하세요",
+      "verify": "ld.lld undefined symbol __bad_xchg 재현과 Arnd Bergmann Acked-by 스레드를 확인하세요"
+    },
+    {
+      "title": "Rust warn_once! 매크로",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust for Linux 드라이버·서브시스템 개발자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20261003123903.113572-1-tomo@flapping.org/",
+      "if": "Rust 커널 코드에서 C와 같은 일회성 경고 정책이 필요하다면",
+      "do": "warn_once! 시리즈와 arch별 warn_printf!/helper 경로 문서를 리뷰 기준에 반영하세요",
+      "verify": "커버 레터와 2/2 구현 스레드에서 WARN_ONCE() 대응 동작을 확인하세요"
+    },
+    {
+      "title": "scripts/config와 KBUILD_OUTPUT",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "kbuild·CI에서 KBUILD_OUTPUT을 쓰는 커널 빌드 담당",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20261002222119.393508-1-voytikd@gmail.com/",
+      "if": "out-of-tree 빌드에서 scripts/config로 .config를 바꾼다면",
+      "do": "v5 제안처럼 --file 미지정 시 ${KBUILD_OUTPUT}/.config를 쓰는 동작 머지 여부를 보세요",
+      "verify": "루트 .config가 조용히 갱신되는 재현 절차와 realpath·--file 우선 처리 설명을 확인하세요"
+    },
+    {
+      "title": "vmlinux BTF 온디맨드 모듈",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "BPF·kbuild·배포판 커널 패키징 담당",
+      "verifyLink": "https://lkml.iu.edu/2610.0/02615.html",
+      "if": "단일 커널 이미지에서 BTF RAM footprint를 줄이려면",
+      "do": "CONFIG_DEBUG_INFO_BTF=m과 btf_vmlinux 지연 로드 v4 시리즈, linux-kbuild의 zstd .BTF 논의를 함께 보세요",
+      "verify": "=m일 때 약 5.4MB 절약 주장과 Alexei·Alan의 압축·vmalloc tradeoff 스레드를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**ARM: cmpxchg: support 2-byte xchg() on pre-ARMv6 CPUs**\n\npre-ARMv6 ARM에서 Rust Atomic<i16>용 xchg()가 __bad_xchg로 링크되던 문제를, 인터럽트 비활성화 기반 2바이트 __arch_xchg() 구현으로 해소하는 패치(시리즈 1/2)입니다.\n\n영향: ARMv5TE에 Rust를 켜는 시리즈(2/2)의 선행 조건이며, ld.lld undefined symbol 없이 CONFIG_RUST=y 빌드가 가능해집니다.\n\n> ld.lld: error: undefined symbol: __bad_xchg\n>   >>> referenced by helpers.c\n>   >>>               rust/helpers/helpers.o:(rust_helper_atomic_i16_xchg)\n\n[원문 확인](https://lore.kernel.org/llvm/20261003093827.77857-2-kmehltretter@gmail.com/)\n\n**rust: bug: add warn_once macro**\n\nC WARN_ONCE()에 대응하는 warn_once! 매크로와 WARN 사용 가이드 문서, arch별 warn_printf!/helper 경로를 추가하는 2패치 시리즈입니다.\n\n영향: Rust 커널 코드에서 C와 동일한 일회성 경고 정책을 쓸 수 있어 디버깅·리뷰 기준이 맞춰집니다.\n\n> This series adds `warn_once!`, the Rust version of C `WARN_ONCE()`.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20261003123903.113572-1-tomo@flapping.org/)\n\n**scripts/config: honor $KBUILD_OUTPUT by default**\n\nscripts/config가 --file 미지정 시 $KBUILD_OUTPUT 아래 .config를 기본으로 쓰도록 v5 패치가 제안됩니다.\n\n영향: out-of-tree(KBUILD_OUTPUT) 빌드에서 make/defconfig와 scripts/config 동작이 어긋나 조용히 잘못된 .config를 건드리는 실수를 막습니다.\n\n> Fix the issue when the script silently updates a stale .config in the root directory, while the user expects ${KBUILD_OUTPUT}/.config to be updated.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20261002222119.393508-1-voytikd@gmail.com/)\n\n**bpf: make the vmlinux BTF an on-demand loadable module (CONFIG_DEBUG_INFO_BTF=m) to save ~5.4 MB memory**\n\nbpf-next v4 12패치 시리즈가 CONFIG_DEBUG_INFO_BTF를 tristate(=m)로 두고 btf_vmlinux 모듈로 vmlinux BTF를 지연 로드하며, linux-kbuild에서 zstd 압축 .BTF 유지안이 Alexei·Alan 사이에서 논의되었습니다.\n\n영향: 배포판 단일 커널 이미지에서 BTF 미사용 시 약 5.4MB RAM을 줄이면서 CO-RE·BPF 기능은 첫 사용 시 =y와 같게 유지하려는 kbuild/BPF 툴체인·이미지 크기 트레이드오프입니다.\n\n> With =m the vmlinux BTF is carried by a module, btf_vmlinux, that the kernel loads the first time user space asks for something that needs the BTF. On a system where nothing does, that saves ~5.4 MB o\n\n[원문 확인](https://lkml.iu.edu/2610.0/02615.html)\n\nAlexei Starovoitov는 zstd 압축 blob을 커널 이미지에 두고 첫 사용 시 동기 decompress하는 안을 세 안 중 유일하게 고려할 만하다고 했습니다. Alan Maguire는 압축 .BTF가 부팅 후 메모리 절약에 유리하나 사용 시 전체 BTF 할당 비용이 있다고 정리했고, Alexei는 압축본을 vmalloc에 복사한 뒤 decompress 후 해제하면 메모리 사용이 동일할 수 있다고 제안했습니다.\n\n> Keep zstd-compressed blob in the kernel image and decompress and parse it synchronously on first use.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/DLUZVHOLSN1B.115EUX4KJBEA3@gmail.com/)\n\n> when the kernel image is then uncompressed into memory we will save most of the space taken up by vmlinux BTF due to its still-compressed size.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/7fe71959-1c58-4b6f-9019-6f886683530e@oracle.com/)\n\n> I think it can be copied compressed into vmalloc area and freed after decompress, so memory usage should be exactly the same.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/DLV74KRI1SBL.MYZVQAB3N6QG@gmail.com/)\n\n구형 커널 백포트 시 Arnd가 언급한 d70242427110(ARM11 CPU selection) 선행 머지 필요 여부는 확인이 필요합니다. mainline 머지 전 Miguel이 언급한 UML warn_slowpath_fmt() 정리와 겹치는 별도 패치 처리 방식도 확인이 필요합니다. zstd 압축 .BTF 안이 v4 시리즈에 최종 반영되는지, CONFIG_BPF_PRELOAD·early-boot BTF 사용자에 대한 initramfs 요구사항(시리즈 Kconfig help)도 아직 열려 있습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ARM 2-byte xchg 패치 (llvm list)",
+      "url": "https://lore.kernel.org/llvm/20261003093827.77857-2-kmehltretter@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Arnd Bergmann Acked-by (llvm list)",
+      "url": "https://lore.kernel.org/llvm/1682542c-b5c7-4031-9d8b-7ba1d0a3ee19@app.fastmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "warn_once! 시리즈 커버 (rust-for-linux)",
+      "url": "https://lore.kernel.org/rust-for-linux/20261003123903.113572-1-tomo@flapping.org/",
+      "note": "thread"
+    },
+    {
+      "title": "warn_once! 구현 2/2 (rust-for-linux)",
+      "url": "https://lore.kernel.org/rust-for-linux/20261003123903.113572-3-tomo@flapping.org/",
+      "note": "thread"
+    },
+    {
+      "title": "scripts/config KBUILD_OUTPUT v5 (linux-kbuild)",
+      "url": "https://lore.kernel.org/linux-kbuild/20261002222119.393508-1-voytikd@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "BTF-on-demand v4 시리즈 커버",
+      "url": "https://lkml.iu.edu/2610.0/02615.html",
+      "note": "thread"
+    },
+    {
+      "title": "Alexei Starovoitov zstd BTF 제안 (linux-kbuild)",
+      "url": "https://lore.kernel.org/linux-kbuild/DLUZVHOLSN1B.115EUX4KJBEA3@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Alan Maguire 압축 BTF tradeoff (linux-kbuild)",
+      "url": "https://lore.kernel.org/linux-kbuild/7fe71959-1c58-4b6f-9019-6f886683530e@oracle.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Alexei vmalloc 압축 복사 제안 (linux-kbuild)",
+      "url": "https://lore.kernel.org/linux-kbuild/DLV74KRI1SBL.MYZVQAB3N6QG@gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-03T18:19:33.837Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
