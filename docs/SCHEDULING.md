@@ -17,6 +17,10 @@ HTTP/네트워크 실패, HTML 차단 응답, 불완전한 Atom feed, 잘못된 
 2026-10-04 검증: 빈 후보/정상 후보/수집 실패/입력 오류/빌드 실패/상태 표시 회귀
 테스트 포함 전체 148개 통과.
 
+OCI에서도 테스트 148개를 통과했고 `PUBLISH_DAILY=0`으로 GPU lens를 검증했습니다.
+새벽 실행에서는 후보 0개였지만 재수집 때 후보 2개가 생겨 기존 정상 경로도 성공했습니다.
+이 수동 검증은 게시하지 않았고, 추적 status 파일을 복구해 새벽 실행 기록을 보존했습니다.
+
 Dev Blog can run the Linux newsletter pipeline as one daily command.
 
 ## Daily pipeline command
