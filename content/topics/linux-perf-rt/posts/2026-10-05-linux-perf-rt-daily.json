@@ -1,0 +1,126 @@
+{
+  "id": "2026-10-05-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-10-05 efivarfs RT 지연 — 성능·RT",
+  "headline": "efivarfs nostatfs v4 리뷰가 SMM rendezvous 지연을 다루고, BPF verifier는 interval base/step·unwind kfunc 경로에서 보완이 이어집니다.",
+  "date": "2026-10-05",
+  "summary": "PREEMPT_RT에서 efivarfs statfs가 QueryVariableInfo()로 전 코어 정지를 유발할 수 있는 문제에 maintainer가 remount·문서 방향을 조율 중입니다. BPF 쪽에서는 explore_alu_limits와 regsafe() 비교 누락이 보안 리뷰를 받고, unwind kfunc는 check_kfunc_call() 통합이 제안되었습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "PREEMPT_RT",
+    "BPF",
+    "성능"
+  ],
+  "highlights": [
+    {
+      "title": "efivarfs: nostatfs로 QueryVariableInfo() 지연 회피",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "PREEMPT_RT 커널·efivarfs를 쓰는 플랫폼 엔지니어 및 실시간 워크로드 운영자",
+      "verifyLink": "https://lkml.iu.edu/2609.3/10544.html",
+      "if": "RT 배포에서 비권한 statfs·df가 efivarfs를 건드리는 경우",
+      "do": "v4의 기본 nostatfs와 remount,statfs로 용량 조회를 다시 켜는 흐름을 배포 정책에 맞게 검토하세요",
+      "verify": "LKML v4 설명과 maintainer 리뷰 스레드를 원문에서 확인하세요"
+    },
+    {
+      "title": "bpf: interval base/step과 explore_alu_limits",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF verifier·scalar bounds 추적을 다루는 커널 개발자 및 eBPF 프로그램 검증에 의존하는 도구 작성자",
+      "verifyLink": "https://lore.kernel.org/bpf/dc427e5f673f00ff830ebc761352c4dcabfe0065edfe36077921cafc89372665@mail.kernel.org/",
+      "if": "CAP_PERFMON 없이 ptr+=비상수 스칼라가 explore_alu_limits로 허용되는 프로그램을 검증·로드하는 경우",
+      "do": "regsafe()가 id 이전 필드만 memcmp하는 현재 동작과 리뷰의 prune 누락 지적을 패치 응답까지 추적하세요",
+      "verify": "bpf-ci 리뷰 TL;DR와 states.c의 regsafe() 구현을 대조해 보세요"
+    },
+    {
+      "title": "bpf: unwind landing pad를 verifier가 추적",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "BPF 예외·unwind kfunc 시리즈를 추적하는 verifier·libbpf 개발자",
+      "verifyLink": "https://lore.kernel.org/bpf/7cd2925b-6f3e-4cea-91e4-e0dc3abdf341@linux.dev/",
+      "if": "bpf_unwind()·bpf_unwind_resume() kfunc 시리즈를 따라가는 중이라면",
+      "do": "check_kfunc_call()로 bpf_throw()와 같이 통합하는 수정안과 fexit 이슈 수정 여부를 메일 갱신에서 확인하세요",
+      "verify": "Alexei 제안과 Yonghong Song 응답이 반영된 후속 패치를 원문에서 추적하세요"
+    },
+    {
+      "title": "mm/vma: mmap_prepare file refcount 정리",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "mmap_prepare 전환 중인 드라이버·mm 유지보수자 및 uprobes/eBPF 매핑 경로를 쓰는 개발자",
+      "verifyLink": "https://lore.kernel.org/bpf/20261003-b4-mmap-prepare-vma-flag-sanify-v4-1-a1f052500fd7@kernel.org/",
+      "if": "uprobes·tracing mmap과 연계된 mm/vma 시리즈를 리뷰하는 경우",
+      "do": "file_doesnt_need_get 제거와 map_put_vm_file()로 map->file·map->vm_file refcount를 나누는 v4 01/38 변경을 uprobes 매핑 경로와 함께 읽어보세요",
+      "verify": "패치 설명과 in-tree 드라이ver 영향 없음 주장을 LKML 스레드에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**bpf: representation for intervals with steps**\n\nbpf-ci 리뷰가 bpf_reg_state에 base/step 필드를 추가하는 패치에서 explore_alu_limits 경로의 regsafe() memcmp가 id까지만 비교해 base/step을 무시할 수 있고, step이 분기 dead-code 판별에 쓰일 수 있다고 지적했습니다.\n\n영향: explore_alu_limits는 CAP_PERFMON 없이 ptr+=비상수 스칼라를 한 프로그램에서 켜지므로, 상태가 잘못 prune되면 verifier가 경로를 건너뛰어 안전하지 않은 프로그램이 로드될 위험이 있습니다.\n\n> base/step not compared with explore_alu_limits or regs_exact(), so states may be wrongly pruned, skipping verification\n\n[원문 확인](https://lore.kernel.org/bpf/dc427e5f673f00ff830ebc761352c4dcabfe0065edfe36077921cafc89372665@mail.kernel.org/)\n\nbpf_get_prandom_u32 시퀀스가 실제로 잘못 prune되는 exploit 가능 시나리오인지는 패치 작성자 응답이 필요합니다. scalar_step_scale()의 32비트 링크 실패와 step 로깅 누락 수정 여부는 미확인입니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**efivarfs: add nostatfs mount option to skip QueryVariableInfo()**\n\nPrashant Singh v4 패치에 대한 maintainer 리뷰가 진행되며, Ard Biesheuvel은 remount 시 nostatfs에 data_race() 한 곳만 두는 방안을 수용하고, 문서는 efivarfs.rst에 유지한 뒤 머지 후 real-time hardware 문서로 확장하도록 안내했습니다.\n\n영향: 비권한 statfs/df가 QueryVariableInfo()를 통해 SMM rendezvous로 전 코어가 멈출 수 있어 PREEMPT_RT 지연에 직결되므로, 기본 nostatfs와 remount로 statfs를 켜는 흐름이 RT 배포·fwupd 같은 용량 조회 요구를 어떻게 나눌지 결정합니다.\n\n> QueryVariableInfo() is an EFI runtime service that, on some firmware, takes tens of milliseconds and runs with preemption disabled, stalling the CPU that services it.\n\n[원문 확인](https://lkml.iu.edu/2609.3/10544.html)\n\nv5에서 WRITE_ONCE 대신 data_race()만 쓰는 최종 diff와 maintainer ACK·머지 브랜치는 아직 확인되지 않았습니다. 권한 있는 변수 읽기 경로의 동일한 EFI 지연 문제는 별도 패치 논의가 필요합니다.\n\n**bpf: Follow an unwind to its landing pad in the verifier**\n\nAlexei Starovoitov는 bpf_throw()처럼 bpf_unwind()·bpf_unwind_resume()도 check_kfunc_call()에서 처리하고 unwind를 따라가도록 요청했고, Yonghong Song은 fexit 이슈 수정과 함께 그 경로로 옮기겠다고 답했습니다.\n\n영향: cleanup landing pad까지 CFG를 따라가는 verifier 모델이 kfunc 허용 검사와 일관되게 합쳐지면 예외·unwind 기반 BPF 프로그램의 정적 검증 규칙이 단순해지고 오픈코드 검사 버그 여지가 줄어듭니다.\n\n> can we let both kfuncs go through check_kfunc_call(), like bpf_throw() does, and follow the unwind after it?\n\n[원문 확인](https://lore.kernel.org/bpf/7cd2925b-6f3e-4cea-91e4-e0dc3abdf341@linux.dev/)\n\npw-bot이 요구한 cr(Change Request) 항목과 fexit 수정 내용은 이 메일만으로는 확인되지 않습니다. 리팩터 후 시리즈 v9 재게시·CI 결과는 추적이 필요합니다.\n\n**mm/vma: fix mmap_prepare file handling, remove file_doesnt_need_get**\n\nLorenzo Stoakes v4 시리즈 01/38은 file_doesnt_need_get 플래그를 제거하고 map_put_vm_file()로 mmap_prepare·레거시 mmap 경로의 struct file refcount를 map->file vs map->vm_file로 추적하도록 mm/vma를 정리합니다.\n\n영향: 동일 시리즈가 bpf 리스트에서 uprobes·tracing mmap 경로를 다루므로, mmap_prepare가 파일을 바꿀 때 refcount 누수·이중 put 없이 동작해야 perf/uprobes 매핑 안정성에 영향을 줍니다.\n\n> Make life easier by removing this flag, and instead drop the reference for both mmap_prepare and the deprecated mmap callback in a new function map_put_vm_file().\n\n[원문 확인](https://lore.kernel.org/bpf/20261003-b4-mmap-prepare-vma-flag-sanify-v4-1-a1f052500fd7@kernel.org/)\n\nv4 38패치 시리즈 전체의 목표 브랜치와 Suren Baghdasaryan 응답이 단순 인용인지 추가 리뷰인지는 스레드 전문 확인이 필요합니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "efivarfs v4: CONFIG_PREEMPT_RT에서 nostatfs·remount,statfs 설명",
+      "url": "https://lkml.iu.edu/2609.3/10544.html",
+      "note": "thread"
+    },
+    {
+      "title": "Ard Biesheuvel: remount nostatfs에 data_race() 수용",
+      "url": "https://lore.kernel.org/linux-rt-devel/4491d728-64f6-4ab1-aae2-22bce34a9b18@app.fastmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Ard Biesheuvel: SMM rendezvous와 preemption",
+      "url": "https://lkml.iu.edu/2609.3/14375.html",
+      "note": "thread"
+    },
+    {
+      "title": "bpf-ci: base/step과 explore_alu_limits·regs_exact() 비교 누락",
+      "url": "https://lore.kernel.org/bpf/dc427e5f673f00ff830ebc761352c4dcabfe0065edfe36077921cafc89372665@mail.kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "kernel/bpf/states.c regsafe() memcmp 범위",
+      "url": "https://github.com/torvalds/linux/blob/2b414a95/kernel/bpf/states.c",
+      "note": "article"
+    },
+    {
+      "title": "bpf unwind kfunc를 check_kfunc_call()로 통합 제안",
+      "url": "https://lore.kernel.org/bpf/7cd2925b-6f3e-4cea-91e4-e0dc3abdf341@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "mmap_prepare v4: map_put_vm_file() refcount 정리",
+      "url": "https://lore.kernel.org/bpf/20261003-b4-mmap-prepare-vma-flag-sanify-v4-1-a1f052500fd7@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "mmap_prepare: in-tree 드라이버 영향 없음",
+      "url": "https://lkml.iu.edu/2609.2/05637.html",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-04T18:24:59.982Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

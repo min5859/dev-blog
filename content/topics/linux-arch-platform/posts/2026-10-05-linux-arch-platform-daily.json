@@ -1,0 +1,132 @@
+{
+  "id": "2026-10-05-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-10-05 arm-smmu 트리 갱신 — 아키·플랫폼",
+  "headline": "Will Deacon이 arm/smmu/updates에 quarantine·PRI·invalidation 패치를 반영했고, RISC-V는 soft-dirty migration PMD 회귀 수정이 올라왔습니다.",
+  "date": "2026-10-05",
+  "summary": "arm-smmu-v3 maintainer 트리에 RAS 격리·PRI teardown·iommupt 선행 invalidation 재구성이 이어졌습니다. RISC-V MM은 CONFIG_MEM_SOFT_DIRTY에서 migration PMD가 present THP로 오인되는 문제를 bit 재배치로 고칩니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "arm64",
+    "RISC-V",
+    "IOMMU",
+    "devicetree"
+  ],
+  "highlights": [
+    {
+      "title": "iommu/arm-smmu-v3: Quarantine device upon ATC invalidation timeout",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "arm-smmu-v3·PCI ATS/IOMMU를 다루는 arm64 플랫폼·가상화/IOMMU 유지보수자",
+      "verifyLink": "https://lkml.rescloud.iu.edu/2607.0/05420.html",
+      "if": "ATS/ATC를 쓰는 PCIe+IOMMU 스택을 arm64에서 운영·디버깅한다면",
+      "do": "quarantine/RAS 시리즈의 maintainer 트리 적용 범위와 [06/17] rbtree 수정 반영을 추적하세요",
+      "verify": "v5 커버 레터와 Will Deacon 회신 원문에서 ATC timeout·data corruption 경로 설명을 확인하세요"
+    },
+    {
+      "title": "riscv/mm: fix soft-dirty migration PMDs being treated as present",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "RISC-V MM·THP·soft-dirty·live migration 경로를 다루는 아키텍처·메모리 관리 개발자",
+      "verifyLink": "https://lkml.iu.edu/2610.0/06444.html",
+      "if": "RISC-V에서 THP migration·soft-dirty·/proc/pagemap 추적을 함께 쓴다면",
+      "do": "Lance Yang 패치(Fixes: 2a3ebad4db63, stable@ Cc)의 리뷰·머지·백포트 일정을 따라가세요",
+      "verify": "패치 설명에서 migration PMD·pmd_migration_entry_wait() 건너뛰기 경로 인용을 원문으로 확인하세요"
+    },
+    {
+      "title": "Organize the SMMUv3 invalidation flow so iommupt can use it",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "arm-smmu-v3·iommupt·io-pgtable invalidation 경로를 추적하는 arm64 IOMMU 개발자",
+      "verifyLink": "https://ratatoskr.run/linux-arm-kernel/2026/07/17259139/t",
+      "if": "SMMUv3에서 generic page table(iommupt) 전환을 준비 중이라면",
+      "do": "invalidation 9패치 중 maintainer 트리에 적용된 7개와 남은 2패치·후속 iommupt 시리즈 리뷰 순서를 정리하세요",
+      "verify": "Jason Gunthorpe v3 커버와 Will Deacon ‘Applied first seven’ 회신을 대조해 확인하세요"
+    },
+    {
+      "title": "iommu/arm-smmu-v3: Add PRI support",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "arm-smmu-v3·iommufd·PCI PRI/ATS를 통합하는 IOMMU·플랫폼 개발자",
+      "verifyLink": "https://lkml.iu.edu/2609.1/09011.html",
+      "if": "arm64 서버·가속기에서 SMMUv3 PRI와 iommufd IOPF 경로를 통합한다면",
+      "do": "shutdown·attach_release·Q_POS() 등 선행 3패치가 올라간 상태에서 4번째 이후 PRI enable 패치 리뷰를 준비하세요",
+      "verify": "PRI v4 커버의 PRIQ drain·CMDQ_OP_PRI_RESP 요구와 Will Deacon 회신을 원문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**iommu/arm-smmu-v3: Quarantine device upon ATC invalidation timeout**\n\nWill Deacon이 Nicolin Chen v6 quarantine/RAS 시리즈 회신에서 [06/17] rbtree 수정(never-inserted stream node에 rb_erase() 호출 방지)을 iommu (arm/smmu/updates)에 적용했다고 알렸습니다. 커버 레터는 ATC 무응답 PCIe 장치가 silent corruption과 CMDQ 스팸을 유발한다고 설명하며, Jason Gunthorpe 지적대로 표준 regression fix가 아닌 RAS 격리 기능이라 대부분 Fixes 태그가 없다고 적습니다.\n\n영향: arm64 플랫폼에서 ATS/ATC를 쓰는 PCIe+IOMMU 스택은 stale ATC 엔트리가 재할당된 메모리를 가리킬 수 있어, maintainer 트리에 quarantine 준비 패치가 얼마나 올라갔는지가 보안·안정성 로드맵의 기준점입니다. [06/17] 외 나머지 quarantine 시리즈의 iommu/arm/smmu/updates 적용 범위·mainline 머지 시점과 CVE·stable 백포트 여부는 확인이 필요합니다.\n\n> the device cache may retain stale ATC entries for memory pages that the OS has already reclaimed and reassigned, creating a direct vector for data corruption.\n\n[원문 확인](https://lkml.rescloud.iu.edu/2607.0/05420.html)\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/179112990410.2366640.1873231809749459726.b4-ty@kernel.org/)\n\n**riscv/mm: fix soft-dirty migration PMDs being treated as present**\n\nLance Yang 패치는 CONFIG_MEM_SOFT_DIRTY에서 swap soft-dirty 비트가 _PAGE_EXEC를 빌려 migration PMD가 pmd_present() THP 판별과 충돌하는 문제를 고칩니다. soft-dirty 비트를 bit 12로 옮기고 soft-dirty 활성 시 swap offset을 bit 13부터 시작하도록 pgtable-bits.h·pgtable.h를 수정하며 Fixes: 2a3ebad4db63을 답습니다.\n\n영향: RISC-V THP migration·soft-dirty·/proc/pagemap 추적을 쓰는 워크로드에서 migration wait를 건너뛰면 write fault가 migration entry를 PFN으로 디코드해 메모리 corruption 클래스 버그가 날 수 있어, 아키·MM 담당자는 stable Cc를 포함한 수정을 추적해야 합니다. Usama Arif PMD-level swap entries 시리즈와의 상호작용·머지 순서와 stable 백포트 일정은 확인이 필요합니다.\n\n> we end up treating a migration PMD as a present THP! The fault handler skips\npmd_migration_entry_wait(), and a write fault can end up in\ndo_huge_pmd_wp_page()\n\n[원문 확인](https://lkml.iu.edu/2610.0/06444.html)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**iommu/arm-smmu-v3: Add PRI support**\n\nWill Deacon이 Nicolin Chen PRI 시리즈 회신에서 앞쪽 3패치(SMMU shutdown 전 impl 비활성화, arm_smmu_attach_release(), Q_POS() 매크로)를 iommu (arm/smmu/updates)에 적용했다고 알렸습니다. 시리즈 본문은 PRIQ 이벤트와 IOPF fault 응답(CMDQ_OP_PRI_RESP) 및 detach 시 PRIQ/EVTQ drain·synchronize_irq() 순서를 추가합니다.\n\n영향: arm64 서버·가속기 보드에서 SMMUv3 PRI는 PCI ATS 페이지 요청과 iommufd IOPF 경로의 전제이므로, maintainer 트리에 올라간 drain/teardown 기반 패치는 후속 PRI enable 패치 리뷰 순서에 직접 영향을 줍니다. v5 15패치 중 4번째 이후 적용 일정과 Pranjal RPM 시리즈·Q_POS()/drain helper 공유 시 충돌 해결 여부는 확인이 필요합니다.\n\n> convert PRI page requests into iopf_faults and issue CMDQ_OP_PRI_RESP.\n\nThe iopf_queue_flush_dev() contract requires the driver to first drain the hardware PRI queue\n\n[원문 확인](https://lkml.iu.edu/2609.1/09011.html)\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/179112969067.2365011.2400275632382171863.b4-ty@kernel.org/)\n\n**Organize the SMMUv3 invalidation flow so iommupt can use it**\n\nWill Deacon이 Jason Gunthorpe 회신에서 SMMUv3 invalidation 재구성 9패치 중 7개(arm_smmu_tlbi 도입·invalidation struct 전달·range invalidation latency 최적화·TLBI 사전 계산 등)를 iommu (arm/smmu/updates)에 적용했다고 알렸습니다. Jason 커버 레터는 precursor가 머지된 뒤 iommupt가 쓸 invalidation 데이터 형식으로 내부 TLBI 경로를 정리하는 단계라고 설명합니다.\n\n영향: arm64 IOMMU가 generic page table(iommupt)로 넘어가기 전 invalidation call chain을 고정하면, 이후 SMMUv3+iopt 통합과 VFIO/iommufd flush 동작 변경의 리뷰 기준선이 maintainer 트리에 형성됩니다. 남은 2패치와 후속 ‘Use the generic iommu page table for SMMUv3’ 시리즈의 -rc 타깃 여부, Nicolin FEAT_DS 시리즈 overlap respin 상태는 확인이 필요합니다.\n\n> Prior to switching SMMUv3 over to use iommupt prepare for this by\nreworking the internal invalidation to work on the same data format that\niommupt will produce.\n\n[원문 확인](https://ratatoskr.run/linux-arm-kernel/2026/07/17259139/t)\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/179112946237.2363163.15333874894190883676.b4-ty@kernel.org/)\n\n**arm64: dts: rockchip: Enable the NPU on ODROID-M2**\n\n패치는 ODROID-M2(RK3588S2) devicetree에서 NPU 코어·IOMMU 노드를 활성화하고 vdd_npu_s0 레귤레이터를 NPU power domain에 연결하며, regulator-always-on/boot-on 속성을 정리합니다. 커밋 메시지는 rocket 드라이버와 Mesa Teflon(MobileNet V1)으로 테스트했다고 적습니다.\n\n영향: upstream rk3588s-odroid-m2.dts는 NPU regulator는 있으나 RKNN 코어 노드가 없어 mainline DRM_ACCEL_ROCKET+Mesa Teflon 경로를 쓰려면 보드 DT 보강이 필요합니다. rockchip DT maintainer 트리 리뷰·머지 시점과 sram-supply(vdd_npu_mem_s0) 등 binding 필수 supply 누락 여부는 확인이 필요합니다.\n\n> Enable the NPU cores and their IOMMUs on the ODROID-M2 and wire up\nthe vdd_npu_s0 regulator.\n\nTested with the rocket driver and Mesa Teflon (MobileNet V1).\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20261004172115.5105-1-yoson5375@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "iommu/arm-smmu-v3 quarantine/RAS v5 커버 레터",
+      "url": "https://lkml.rescloud.iu.edu/2607.0/05420.html",
+      "note": "thread"
+    },
+    {
+      "title": "Will Deacon — SMMU rbtree fix applied to arm/smmu/updates",
+      "url": "https://lore.kernel.org/linux-arm-kernel/179112990410.2366640.1873231809749459726.b4-ty@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "iommu/arm-smmu-v3 Add PRI support v4 커버",
+      "url": "https://lkml.iu.edu/2609.1/09011.html",
+      "note": "thread"
+    },
+    {
+      "title": "Will Deacon — PRI 시리즈 선행 3패치 applied",
+      "url": "https://lore.kernel.org/linux-arm-kernel/179112969067.2365011.2400275632382171863.b4-ty@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv/mm soft-dirty migration PMD 수정",
+      "url": "https://lkml.iu.edu/2610.0/06444.html",
+      "note": "thread"
+    },
+    {
+      "title": "SMMUv3 invalidation flow for iommupt — Jason Gunthorpe v3",
+      "url": "https://ratatoskr.run/linux-arm-kernel/2026/07/17259139/t",
+      "note": "thread"
+    },
+    {
+      "title": "Will Deacon — invalidation 시리즈 7패치 applied",
+      "url": "https://lore.kernel.org/linux-arm-kernel/179112946237.2363163.15333874894190883676.b4-ty@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "arm64 dts rockchip ODROID-M2 NPU enable",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20261004172115.5105-1-yoson5375@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "upstream rk3588s-odroid-m2.dts (vdd_npu_s0)",
+      "url": "https://elixir.deinde.dev/concept/c2025.12/source/dts/upstream/src/arm64/rockchip/rk3588s-odroid-m2.dts",
+      "note": "article"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-04T18:27:42.569Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

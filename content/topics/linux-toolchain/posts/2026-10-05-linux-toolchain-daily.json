@@ -1,0 +1,111 @@
+{
+  "id": "2026-10-05-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-10-05 UML Rust 모듈 — Linux 툴체인",
+  "headline": "UML에서 Rust 모듈 insmod 재배치 오류를 고치고, Rust PCI SR-IOV API와 kbuild scripts/config·Nova 빌드 경고 정리가 Lore에 올라왔습니다.",
+  "date": "2026-10-05",
+  "summary": "arch/um의 PIE KBUILD_RUSTFLAGS 제거로 User-mode Linux Rust 모듈 검증 경로가 복구 방향이며, SR-IOV용 Rust PCI API v4 시리즈가 제출되었습니다. KBUILD_OUTPUT 기본 .config 대상 패치는 여전히 리뷰 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "툴체인",
+    "Rust",
+    "kbuild"
+  ],
+  "highlights": [
+    {
+      "title": "UML Rust 모듈 PIE 재배치 수정",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "UML·Rust for Linux 모듈 빌드·테스트 담당",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20261004121230.373216-1-tomo@flapping.org/",
+      "if": "UML에서 rnull_mod.ko 등 Rust out-of-tree 모듈을 insmod로 검증한다면",
+      "do": "arch/um Makefile의 -Crelocation-model=pie 제거 패치를 추적하고 CI에서 모듈 로드를 다시 확인하세요",
+      "verify": "스레드의 relocation 9 오류 로그와 KBUILD_RUSTFLAGS 변경 diff를 원문에서 대조하세요"
+    },
+    {
+      "title": "Rust PCI SR-IOV API v4",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust PCI·SR-IOV 드라이버(Nova 등) 개발자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20261004120732.1045629-1-zhiw@nvidia.com/",
+      "if": "Rust로 PF/VF SR-IOV 수명주기와 PF-owned 데이터 공유를 구현한다면",
+      "do": "enable/disable 콜백·VfRegistration·QEMU 82576 샘플 모듈이 포함된 v4 9패치 시리즈 리뷰를 따라가세요",
+      "verify": "커버 레터의 SR-IOV·registration 설명과 Danilo 리뷰 반영 변경 목록을 원문에서 확인하세요"
+    },
+    {
+      "title": "Nova core unused import 경고",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "Nova core·Rust GPU 드라이버 빌드 담당",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20261004-nova-int-fixup-v1-1-9e4bce097f94@nvidia.com/",
+      "if": "NOVA_CORE_SELFTESTS=n인 allmodconfig·robot 빌드에서 rustc 경고를 없애야 한다면",
+      "do": "self-test 경로에서만 crate::gpu::Spec을 fully qualify하는 fixup 패치 적용 여부를 확인하세요",
+      "verify": "kernel test robot 보고와 Fixes 태그가 원문 스레드에 연결되어 있는지 보세요"
+    },
+    {
+      "title": "Rust bug 모듈 MAINTAINERS",
+      "priority": "중",
+      "impactType": "project",
+      "affectedAudience": "Rust for Linux 서브시스템·MAINTAINERS 정리 담당",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20261004124211.381401-1-tomo@flapping.org/",
+      "if": "Rust WARN/bug 헬퍼와 관련 매크로 회귀 리뷰 담당을 정리한다면",
+      "do": "RUST [BUG] 항목과 rust/kernel/bug.rs 등 파일 패턴이 MAINTAINERS에 반영되는지 추적하세요",
+      "verify": "커밋 메시지의 warn_on! 명칭이 warn_once! 시리즈와 동일 모듈을 가리키는지는 원문 기준으로 확인이 필요합니다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**rust: arch/um: Fix loading Rust modules**\n\narch/um/Makefile에서 KBUILD_RUSTFLAGS의 -Crelocation-model=pie를 제거해 UML x86 모듈 로더가 처리하지 못하는 R_X86_64_GOTPCREL(9) 재배치를 Rust 모듈에서 없앱니다.\n\n영향: User-mode Linux에서 Rust out-of-tree/샘플 모듈을 insmod로 검증하는 툴체인·CI 경로가 PIE Rust 플래그 때문에 깨지므로, relocation model을 C와 같이 static으로 맞추는 변경입니다.\n\n> subarch: rnull_mod: Unknown rela relocation: 9\n>   insmod: can't insert 'rnull_mod.ko': invalid module format\n>\n> arch/um/Makefile adds -Crelocation-model=pie to KBUILD_RUSTFLAGS.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20261004121230.373216-1-tomo@flapping.org/)\n\nmem=512M 등 큰 mem=에서 Rust small code model과 C -mcmodel=large 불일치로 모듈 로드가 여전히 실패할 수 있다는 별도 이슈가 남아 있으며, 후속 패치 범위는 확인이 필요합니다.\n\n**Add Rust PCI SR-IOV support**\n\nRust PCI 드라이버용 SR-IOV enable/disable 콜백·토큰·typed PF registration(VfRegistration)과 is_virtfn()/num_vf()를 추가하고 QEMU 82576 기반 PF/VF 샘플 모듈을 v4 9패치로 제출합니다.\n\n영향: Rust PCI 드라이버가 VF와 PF-owned 데이터 공유·SR-IOV 수명주기를 C pci_sriov API와 같이 타입 안전하게 쓸 수 있는 툴체인·API 표면이 확장됩니다.\n\n> Rust PCI drivers need to configure SR-IOV and let VF drivers borrow\n> selected PF-owned data. This series provides those operations and a\n> registration that keeps the shared data available until VF remov\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20261004120732.1045629-1-zhiw@nvidia.com/)\n\nv4 시리즈의 리뷰·머지 일정과 drivers/gpu/nova-core/driver.rs 한 줄 변경과 별도 nova fixup 패치 통합 방식은 확인이 필요합니다.\n\n**scripts/config: honor $KBUILD_OUTPUT by default**\n\nscripts/config v5가 --file 미지정 시 $KBUILD_OUTPUT/.config를 기본 대상으로 쓰고 상대 경로·--file 우선 동작을 Makefile·diffconfig와 맞춥니다.\n\n영향: out-of-tree 빌드에서 make defconfig 후 scripts/config만 쓸 때 루트의 stale .config를 조용히 건드리는 kbuild 워크플로 함정을 줄입니다.\n\n> Fix the issue when the script silently updates a stale .config in\n> the root directory, while the user expects ${KBUILD_OUTPUT}/.config\n> to be updated.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20261002222119.393508-1-voytikd@gmail.com/)\n\nv5 패치의 upstream 머지 여부는 확인이 필요합니다.\n\n**gpu: nova-core: fix warning with NOVA_CORE_SELFTESTS disabled**\n\nNOVA_CORE_SELFTESTS=n일 때 driver.rs 모듈 스코프 Spec import가 unused가 되는 rustc 경고를, self-test 경로에서만 crate::gpu::Spec을 fully qualify하도록 고칩니다.\n\n영향: allmodconfig/allnoconfig Rust 빌드와 kernel test robot 경고 없이 Nova Rust 드라이버 툴체인 검증을 유지합니다.\n\n> A module-wide new import becomes unused if the `NOVA_CORE_SELFTESTS`\n> config option is disabled:\n>\n>     warning: unused import: `Spec`\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20261004-nova-int-fixup-v1-1-9e4bce097f94@nvidia.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "**MAINTAINERS: add entry for the Rust `bug` module**\n\nrust/kernel/bug.rs·bug.c 및 arch WARN asm 생성물을 담당하는 RUST [BUG] MAINTAINERS 항목을 FUJITA Tomonori 유지보수로 추가합니다.\n\n영향: Rust WARN/bug 헬퍼와 warn_once!/관련 매크로 계열의 리뷰·회귀 추적에 공식 담당자와 파일 경로가 생깁니다.\n\n> Add a MAINTAINERS entry for the Rust `bug` module, which currently\n> provides the `warn_on!` macro.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20261004124211.381401-1-tomo@flapping.org/)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "rust: arch/um: Fix loading Rust modules",
+      "url": "https://lore.kernel.org/rust-for-linux/20261004121230.373216-1-tomo@flapping.org/",
+      "note": "thread"
+    },
+    {
+      "title": "MAINTAINERS: add entry for the Rust bug module",
+      "url": "https://lore.kernel.org/rust-for-linux/20261004124211.381401-1-tomo@flapping.org/",
+      "note": "thread"
+    },
+    {
+      "title": "Add Rust PCI SR-IOV support",
+      "url": "https://lore.kernel.org/rust-for-linux/20261004120732.1045629-1-zhiw@nvidia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "scripts/config: honor $KBUILD_OUTPUT by default",
+      "url": "https://lore.kernel.org/linux-kbuild/20261002222119.393508-1-voytikd@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "gpu: nova-core: fix warning with NOVA_CORE_SELFTESTS disabled",
+      "url": "https://lore.kernel.org/rust-for-linux/20261004-nova-int-fixup-v1-1-9e4bce097f94@nvidia.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-04T18:20:17.001Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

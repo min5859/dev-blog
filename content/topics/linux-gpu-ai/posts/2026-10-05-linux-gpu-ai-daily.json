@@ -1,0 +1,155 @@
+{
+  "id": "2026-10-05-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-10-05 a6xx poweroff 회귀 — GPU·AI",
+  "headline": "Snapdragon X Elite 랩톱에서 a6xx rpmh 수정이 poweroff를 reboot로 바꾸는 회귀가 보고됐고, Loongson·lima 보안 수정과 Trigger5·MT8188 DT 논의가 이어졌습니다.",
+  "date": "2026-10-05",
+  "summary": "drm/msm/a6xx stale rpmh vote 수정이 Dell XPS 13 9345에서 종료 동작을 깨뜨리는 회귀가 제기됐습니다. 같은 수집 주기에는 Loongson double free·lima slab teardown UAF 수정, MCT Trigger5 신규 드라이버, MT8188 mali-bifrost 바인딩, drm panic QR URL 정책 논쟁, 6.1.y i915 HDCP guard 백포트가 dri-devel에 올라왔습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "GPU",
+    "DRM"
+  ],
+  "highlights": [
+    {
+      "title": "drm/msm/a6xx: poweroff가 reboot로 바뀌는 회귀",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "drm/msm/adreno a6xx·Qualcomm X1E 플랫폼 및 rpmh vote 경로 유지보수자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20261003193759.14228-1-me@michaelburch.net/",
+      "if": "X1E80100(Dell XPS 13 9345)에서 d9108bfdb746 적용 후 종료·재부팅 동작을 검증한다면",
+      "do": "poweroff가 reboot로 바뀌는지 확인하고, FW_START hunk revert 또는 RSC를 shutdown까지 깨어 두는 follow-up 패치 논의를 추적하세요",
+      "verify": "Qualcomm 원 시리즈에 회귀 회피가 통합될지는 스레드 후속을 확인하세요"
+    },
+    {
+      "title": "drm/loongson: BO 초기화 실패 시 double free 제거",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "drm/loongson·TTM GEM buffer 생성 경로 유지보수자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20261003093415.e64386de1e64-1-archwse@gmail.com/",
+      "if": "Loongson에서 dumb buffer 생성이 vma offset 고갈 등으로 실패할 수 있다면",
+      "do": "ttm_bo_init_validate() 실패 경로에서 lsdc_bo_destroy() 이후 추가 kfree가 없는지 패치와 LS7A2000 fault injection 결과를 대조하세요",
+      "verify": "stable 백포트 여부는 배포 정책과 함께 원문 스레드를 확인하세요"
+    },
+    {
+      "title": "drm/lima: slab 파괴 전 fence RCU drain",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "drm/lima·ARM Mali4xx 플랫폼 드라이버 유지보수자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20261003093837.545278-1-yaojiale02@163.com/",
+      "if": "lima 모듈 언로드·드라이버 teardown을 테스트한다면",
+      "do": "lima_sched_slab_fini()에 rcu_barrier()가 들어간 패치로 module removal UAF 가능성을 재현·검증하세요",
+      "verify": "Fixes가 가리키는 lima 최초 도입 커밋 맥락을 kernel.org 커밋 링크에서 확인하세요"
+    },
+    {
+      "title": "drm/trigger5: MCT Trigger 5 USB 디스플레이 v3",
+      "priority": "중",
+      "impactType": "project",
+      "affectedAudience": "USB 디스플레이·simpledrm/drm_usb_client 추적자 및 하드웨어 bring-up 엔지니어",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20261002073617.37137-1-hjf3108@gmail.com/",
+      "if": "MCT Trigger 5 dongle을 커널 KMS만으로 쓰는 경로를 평가한다면",
+      "do": "v3의 modesetting·USB framebuffer·EDID·vmalloc flush·panning 범위를 패치 설명과 대조하세요",
+      "verify": "VGA 추론·다른 device ID 동작은 스레드에서 미확인으로 남아 있으니 과도히 일반화하지 마세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm/msm/a6xx: stale rpmh vote 수정 후 poweroff 회귀**\n\nMichael Burch가 Dell XPS 13 9345(X1E80100)에서 drm/msm/a6xx stale rpmh vote 수정(d9108bfdb746) 적용 후 poweroff가 reboot로 바뀌는 회귀를 보고했고, FW_START hunk만 revert하면 회피된다고 했으며 follow-up으로 RSC를 shutdown까지 깨어 있게 두는 수정을 제안했습니다.\n\n영향: Snapdragon X Elite/Plus 랩톱에서 msm GPU 전원·rpmh vote 정리 패치가 시스템 poweroff 동작을 깨뜨릴 수 있어 Copilot+ PC 클래스 배포 전 검증이 필요합니다.\n\n> On X1E80100 (Dell XPS 13 9345) this patch seems to cause poweroff to reboot instead.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20261003193759.14228-1-me@michaelburch.net/)\n\n**drm/loongson: BO 초기화 실패 시 double free**\n\nEvanshenf가 ttm_bo_init_validate() 실패 시 lsdc_bo_create()가 destroy 콜백 이후 lsdc_bo를 다시 kfree해 double free가 나는 경로를 제거하는 패치를 LS7A2000에서 fault injection으로 검증했습니다.\n\n영향: Loongson drm/loongson dumb buffer 생성 실패(예: vma offset 고갈) 시 커널 메모리 corruption으로 이어질 수 있어 stable 백포트 후보입니다.\n\n> lsdc_bo_destroy() releases the GEM object and frees the enclosing lsdc_bo, so freeing it again in lsdc_bo_create() causes a double free\n\n[원문 확인](https://lore.kernel.org/dri-devel/20261003093415.e64386de1e64-1-archwse@gmail.com/)\n\n**drm/lima: fence callback drain 후 slab 파괴**\n\nJiale Yao가 lima_sched_slab_fini()에서 마지막 fence slab을 파괴하기 전 rcu_barrier()를 호출해 lima_fence_release()의 RCU deferred free와 slab teardown 경쟁을 막습니다.\n\n영향: lima 모듈 언로드 또는 드라이버 teardown 시 use-after-free 위험이 있어 Mali4xx lima 사용자·모듈 테스트에 중요합니다.\n\n> The last lima_sched_slab_fini() can destroy the slab and clear its pointer while a release callback is still queued.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20261003093837.545278-1-yaojiale02@163.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/panic: panic QR URL 부트 파라미터 논쟁(v2)**\n\nNahida Buer가 drm.panic_qr_url 부트/module 파라미터로 CONFIG_DRM_PANIC_SCREEN_QR_CODE_URL 기본값을 덮어쓰는 v2 패치에 대해 배포별로 URL QR 모드를 유지한 채 리포트 엔드포인트만 바꿀 수 있다고 재주장했고, Jocelyn Falempe는 부트 타임 변경을 허용하지 말아야 한다고 반대했습니다.\n\n영향: DRM panic QR 화면을 쓰는 배포·필드 디버깅 워크플로에서 커널 재빌드 없이 panic 수집 URL을 바꿀 수 있는지, 아니면 panic_screen=user/kmsg만으로 정책이 고정되는지가 갈립니다.\n\n> With an empty CONFIG_DRM_PANIC_SCREEN_QR_CODE_URL, the QR code contains the raw kmsg. Supplying drm.panic_qr_url= at boot instead switches it to the URL format\n\n[원문 확인](https://lore.kernel.org/dri-devel/CAEEzyciisJgZgx4PZQbEEkUUKRMpiAsmmsW9JfQzwCCDx4xZKA@mail.gmail.com/)\n\n패치가 유지보수자 반대로 withdraw될지, 정책 논의 후 재제출될지는 스레드 후속 확인이 필요합니다.\n\n**drm/trigger5: MCT Trigger 5 USB 디스플레이 드라이버 v3**\n\nHo Jie Feng가 MCT Trigger 5 USB 디스플레이 어댑터용 신규 drm/trigger5 드라이버 v3를 제출했으며, modesetting·USB framebuffer 갱신·커넥터/EDID·v3에서 vmalloc flush 및 panning 지원을 포함합니다.\n\n영향: 역공학 기반 USB 디스플레이 클래스에 upstream KMS 드라이버가 추가되면 Mesa/wayland 없이도 커널만으로 해당 dongle을 쓸 수 있는 경로가 생깁니다.\n\n> Add a DRM driver for MCT Trigger 5 USB display adapters. The driver implements modesetting and USB framebuffer updates, connector detection, and EDID retrieval.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20261002073617.37137-1-hjf3108@gmail.com/)\n\n**dt-bindings: mali-bifrost MT8188 MFGCFG phandle**\n\nMichał Kopeć 시리즈 1/3이 arm,mali-bifrost 바인딩에 optional mediatek,mfgcfg phandle을 추가해 MT8188(및 공유 노드 MT8370) GPU가 MFG 설정 블록을 참조할 수 있게 합니다.\n\n영향: MT8188 panfrost에서 GPU 타임스탬프 카운터가 power domain off 후 0으로 읽히는 문제를 고치려면 DT·바인딩 계약이 먼저 맞아야 합니다.\n\n> On MT8188 the GPU timestamp counter only counts once a register in the MFG configuration block routes the SoC system timer to it\n\n[원문 확인](https://lore.kernel.org/dri-devel/20261003200132.866240-2-michal@nozomi.space/)\n\n패치 3은 MediaTek 트리용이며 1·2는 drm-misc 경로 분리 머지 계획이 적용되는지 확인이 필요합니다.\n\n**drm/i915/hdcp: 6.1.y에서 capability guard 2종**\n\nArtem Dinaburg가 6.1.y용 2패치 시리즈를 제출했으며, intel_hdcp_info()가 intel_hdcp_capable()과 intel_hdcp2_capable()을 연속 호출할 때 debugfs NULL dereference를 막으려면 두 guard가 모두 필요하다고 설명합니다.\n\n영향: 6.1.y LTS에서 i915 HDCP debugfs 접근 시 hotplug/suspend-resume 중 encoder 미초기화 NULL deref가 남아 있으면 장기 지원 트리 사용자에게 직접 영향입니다.\n\n> Patch 1 alone is not enough on 6.1.y: intel_hdcp_info() calls intel_hdcp_capable() and then intel_hdcp2_capable(), so the debugfs NULL dereference moves to the second call.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20261002194030.20489-1-artem@trailofbits.com/)\n\nGreg/Sasha가 6.1.y에 두 패치를 모두 queue할지는 stable maintainer 응답을 기다려야 합니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Re: drm/panic QR URL override (Nahida Buer)",
+      "url": "https://lore.kernel.org/dri-devel/CAEEzyciisJgZgx4PZQbEEkUUKRMpiAsmmsW9JfQzwCCDx4xZKA@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/panic boot-time URL (Jocelyn Falempe)",
+      "url": "https://lore.kernel.org/dri-devel/c4da60aa-bbbb-4afa-bd86-6516d14f5809@redhat.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/trigger5 MCT Trigger 5 v3",
+      "url": "https://lore.kernel.org/dri-devel/20261002073617.37137-1-hjf3108@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "mct-usb-display-adapter-re (cyrozap)",
+      "url": "https://github.com/cyrozap/mct-usb-display-adapter-re",
+      "note": "article"
+    },
+    {
+      "title": "mali-bifrost MT8188 MFGCFG binding",
+      "url": "https://lore.kernel.org/dri-devel/20261003200132.866240-2-michal@nozomi.space/",
+      "note": "thread"
+    },
+    {
+      "title": "mali-bifrost series cover",
+      "url": "https://lore.kernel.org/dri-devel/20261003200132.866240-1-michal@nozomi.space/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/loongson double free fix",
+      "url": "https://lore.kernel.org/dri-devel/20261003093415.e64386de1e64-1-archwse@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm: Add kms driver for loongson",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=f39db26c5428",
+      "note": "commit"
+    },
+    {
+      "title": "drm/i915/hdcp 6.1.y guard series",
+      "url": "https://lore.kernel.org/dri-devel/20261002194030.20489-1-artem@trailofbits.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/i915/hdcp encoder check hdcp2",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=d34f4f058edf",
+      "note": "commit"
+    },
+    {
+      "title": "drm/lima rcu_barrier before slab fini",
+      "url": "https://lore.kernel.org/dri-devel/20261003093837.545278-1-yaojiale02@163.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/lima driver introduction",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=a1d2a6339961",
+      "note": "commit"
+    },
+    {
+      "title": "msm/a6xx poweroff regression report",
+      "url": "https://lore.kernel.org/dri-devel/20261003193759.14228-1-me@michaelburch.net/",
+      "note": "thread"
+    },
+    {
+      "title": "msm/a6xx RSC shutdown follow-up",
+      "url": "https://lore.kernel.org/dri-devel/20261003193518.13811-1-me@michaelburch.net/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-04T18:29:33.845Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
