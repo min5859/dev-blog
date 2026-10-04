@@ -1,5 +1,22 @@
 # Scheduling
 
+## 후보가 없는 Linux lens 토픽
+
+6개 Linux lens는 수집과 draft가 성공했지만 `candidates-latest.json`의 후보가
+0개이면 research/rewrite/publish를 실행하지 않습니다. 빈 게시물은 만들지 않고
+기존 콘텐츠를 유지하며, build는 계속 실행합니다.
+
+성공 상태에 `publicationSkipped: true`, `skipReason: "no_candidates"`를 기록하고
+해당 단계에도 `skipped: true`를 남깁니다. 정상 종료(exit 0)이므로 `daily-deploy.sh`의
+재시도 대상이 아닙니다. 홈페이지 상태 카드에는 게시 생략 토픽을 별도로 표시합니다.
+
+HTTP/네트워크 실패, HTML 차단 응답, 불완전한 Atom feed, 잘못된 후보 파일은 오류로
+유지합니다. 단순히 수집 건수가 0이라고 네트워크 오류를 성공으로 바꾸지 않습니다.
+다른 일반 토픽 파이프라인의 동작은 변경하지 않습니다.
+
+2026-10-04 검증: 빈 후보/정상 후보/수집 실패/입력 오류/빌드 실패/상태 표시 회귀
+테스트 포함 전체 148개 통과.
+
 Dev Blog can run the Linux newsletter pipeline as one daily command.
 
 ## Daily pipeline command

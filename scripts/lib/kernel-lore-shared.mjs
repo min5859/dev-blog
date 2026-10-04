@@ -191,9 +191,20 @@ export async function collectKernelOrgTopic({ config, topic, rawDir, collectedAt
 
 export async function collectLoreAtomTopic({ source, topic, rawDir, collectedAt, runId }) {
   const raw = await fetchText(source.url);
+  // HTTP 200 may contain an anti-bot HTML challenge. Never report that as a
+  // successful empty collection, which could suppress publication silently.
+  const opening = raw.match(/^\s*(?:<\?xml[\s\S]*?\?>\s*)?(?:<!--[\s\S]*?-->\s*)*<feed\b[^>]*>/i);
+  if (!opening || !/\bxmlns\s*=\s*["']http:\/\/www\.w3\.org\/2005\/Atom["']/.test(opening[0])
+      || (!/\/\s*>$/.test(opening[0]) && !/<\/feed>\s*$/.test(raw))) {
+    throw new Error(`Expected a complete Atom feed from ${source.url}`);
+  }
   const listKey = loreListKeyFromUrl(source.url);
   const limit = Number(source.limit || 50);
-  const entries = parseAtomEntries(raw).slice(0, limit);
+  const parsed = parseAtomEntries(raw);
+  if (/<entry\b/.test(raw) && parsed.length === 0) {
+    throw new Error(`Unable to parse entries in Atom feed from ${source.url}`);
+  }
+  const entries = parsed.slice(0, limit);
   const records = entries.map((entry) => normalizeLoreEntry({ topic, sourceId: source.id, listKey }, entry, collectedAt));
 
   const safeSlug = String(source.id).replaceAll(/[^\w-]+/g, '_');

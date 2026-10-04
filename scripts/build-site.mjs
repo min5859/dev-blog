@@ -1,5 +1,6 @@
 import { cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { marked } from 'marked';
 
 import { validateHighlight } from './lib/highlight-schema.mjs';
@@ -332,17 +333,19 @@ async function loadPipelineStatus() {
       failedStep: failedStep?.name || null,
       isToday: data.runDate === todayKst,
       isManual: Boolean(data.manualRepublishedAt),
+      publicationSkipped: data.publicationSkipped === true && data.skipReason === 'no_candidates',
     });
   }
   topics.sort((a, b) => a.topic.localeCompare(b.topic));
   return { topics, todayKst };
 }
 
-function renderPipelineStatus(status) {
+export function renderPipelineStatus(status) {
   if (!status || !status.topics.length) return '';
   const today = status.topics.filter((t) => t.isToday);
   const failedToday = today.filter((t) => !t.ok);
-  const okToday = today.filter((t) => t.ok);
+  const skippedToday = today.filter((t) => t.ok && t.publicationSkipped);
+  const okToday = today.filter((t) => t.ok && !t.publicationSkipped);
   const manualToday = today.filter((t) => t.isManual);
   const stale = status.topics.filter((t) => !t.isToday);
   const lastSeen = status.topics
@@ -360,13 +363,16 @@ function renderPipelineStatus(status) {
       : `${status.todayKst} 자동 파이프라인 실행 기록이 없습니다.`;
   } else if (failedToday.length === 0) {
     level = 'ok';
-    summary = `${status.todayKst} 모든 토픽이 정상 게시되었습니다 (${okToday.length}건).`;
-  } else if (okToday.length === 0) {
+    summary = skippedToday.length
+      ? `${status.todayKst} ${okToday.length}개 토픽 정상 처리 / ${skippedToday.length}개 게시 생략 (후보 없음).`
+      : `${status.todayKst} 모든 토픽이 정상 게시되었습니다 (${okToday.length}건).`;
+  } else if (okToday.length === 0 && skippedToday.length === 0) {
     level = 'fail';
     summary = `${status.todayKst} 모든 토픽이 실패했습니다 (${failedToday.length}건).`;
   } else {
     level = 'fail';
     summary = `${status.todayKst} ${failedToday.length}개 토픽 실패 / ${okToday.length}개 성공.`;
+    if (skippedToday.length) summary += ` ${skippedToday.length}개 게시 생략 (후보 없음).`;
   }
   if (manualToday.length) {
     summary += ` (수동 재실행 ${manualToday.length}건 포함)`;
@@ -374,8 +380,9 @@ function renderPipelineStatus(status) {
 
   const renderTopicLabel = (t) => `<code>${escapeHtml(t.topic)}</code>${t.isManual ? ' <span class="pipeline-status-manual" title="수동 재실행으로 갱신됨">🔁</span>' : ''}`;
   const failedRows = failedToday.map((t) => `<li>${renderTopicLabel(t)} — ${escapeHtml(t.failedStep || '미상')} 단계에서 실패</li>`).join('\n');
+  const skippedRows = skippedToday.map((t) => `<li>${renderTopicLabel(t)} — 후보 없음으로 게시 생략</li>`).join('\n');
   const staleRows = stale.length
-    ? `<details><summary class="muted">이전 실행 ${stale.length}건</summary><ul>${stale.map((t) => `<li>${renderTopicLabel(t)} · 마지막 ${escapeHtml(t.runDate || '미상')} · ${t.ok ? '성공' : '실패'}</li>`).join('\n')}</ul></details>`
+    ? `<details><summary class="muted">이전 실행 ${stale.length}건</summary><ul>${stale.map((t) => `<li>${renderTopicLabel(t)} · 마지막 ${escapeHtml(t.runDate || '미상')} · ${t.ok ? (t.publicationSkipped ? '게시 생략 (후보 없음)' : '성공') : '실패'}</li>`).join('\n')}</ul></details>`
     : '';
 
   return `<section class="pipeline-status pipeline-status-${level}">
@@ -384,6 +391,7 @@ function renderPipelineStatus(status) {
     <span class="pipeline-status-summary">${escapeHtml(summary)}</span>
   </header>
   ${failedRows ? `<ul class="pipeline-status-failed">${failedRows}</ul>` : ''}
+  ${skippedRows ? `<ul class="pipeline-status-skipped">${skippedRows}</ul>` : ''}
   ${staleRows}
 </section>`;
 }
@@ -981,7 +989,9 @@ ${feedItems}
   console.log(`Built ${topics.length} topic(s), ${posts.length} post(s), ${tagMap.size} tag(s) into public/`);
 }
 
-build().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  build().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+}

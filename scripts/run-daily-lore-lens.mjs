@@ -26,6 +26,7 @@ runPipeline({
   logTitle: `Lens daily pipeline ${topic}`,
   steps,
   runDate,
+  emptyCandidatesPath: `data/generated/${topic}/candidates-latest.json`,
   extraStatus: {
     publishEnabled: shouldPublish,
     outputs: { site: 'public/index.html' },
