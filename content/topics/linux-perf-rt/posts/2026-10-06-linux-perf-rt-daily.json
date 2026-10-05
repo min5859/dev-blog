@@ -1,0 +1,116 @@
+{
+  "id": "2026-10-06-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-10-06 xsk 절전 회귀 — Perf·RT",
+  "headline": "AF_XDP 풀 지연 해제가 system_wq에 묶여 suspend/resume 데드락을 일으킬 수 있어 freezable workqueue와 RTNL 추적 정리가 제안됐습니다.",
+  "date": "2026-10-06",
+  "summary": "xsk v2 패치는 절전 경로 회귀를 겨냥하고, seq_buf overflow pop 버그 수정과 netmem 설계 원칙 문서화, bpf_tcp_ops per-socket 플래그·kfunc 필터 논의가 bpf 리스트에서 이어졌습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "eBPF",
+    "XDP",
+    "tracing"
+  ],
+  "highlights": [
+    {
+      "title": "xsk: freeze deferred pool teardown without blocking unregister",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "AF_XDP·XDP 드라이버 및 zero-copy 네트워킹 스택 유지보수자",
+      "verifyLink": "https://lore.kernel.org/bpf/20261005-xsk-suspend-teardown-v2-1-2d87228f4329@gmail.com/",
+      "if": "AF_XDP zero-copy와 장치 suspend/resume을 함께 검증한다면",
+      "do": "v2에서 system_freezable_wq 전환과 NETDEV_UNREGISTER 시 xp_clear_dev_all() 정리를 패치 설명과 대조해 검토하세요",
+      "verify": "net 트리 머지 일정과 suspend/resume 스트레스 테스트 결과 공유 여부는 아직 확인이 필요합니다"
+    },
+    {
+      "title": "seq_buf: Do not pop from an overflowed seq_buf",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "tracing·BPF diagnostics·seq_buf 공용 API 사용자",
+      "verifyLink": "https://lore.kernel.org/bpf/20261005155708.1471260-2-kees@kernel.org/",
+      "if": "BPF diagnostics나 seq_buf_pop() 경로를 다룬다면",
+      "do": "overflow(len == size+1) 상태에서 pop이 -1을 반환하고 overflow를 유지하는지 KUnit 포함 패치를 따라 적용 가능성을 점검하세요",
+      "verify": "원문 스레드의 커밋 메시지와 인용 구절로 OOB 읽기 메커니즘을 확인하세요"
+    },
+    {
+      "title": "bpf_tcp_ops_set_flags kfunc 필터 강화",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "bpf_tcp_ops·cgroup BPF·TCP fast-path 프로그램 작성자",
+      "verifyLink": "https://lore.kernel.org/bpf/CAAVpQUAkMupUTZpL+-QAwYYG+awade04rNSA6jEWGQ3o5uafvg@mail.gmail.com/",
+      "if": "CGROUP_SOCKOPT 외 프로그램 타입에서 TCP kfunc를 쓸 계획이라면",
+      "do": "bpf-ci가 지적한 BTF_KFUNC_HOOK_CGROUP 공유 범위를 읽고 작성자의 STRUCT_OPS·CGROUP_SOCKOPT(및 CGROUP_SKB) allow-list 수정 의사를 추적하세요",
+      "verify": "v4에서 CGROUP_SKB 공식 허용 여부와 커밋 메시지의 프로그램 타입 목록 기술 방식은 확인이 필요합니다"
+    },
+    {
+      "title": "bpf_tcp_ops_flags per-socket fast-path",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "TCP 스택·BPF struct_ops 성능 튜닝 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20261005155514.C05E81F000FF@smtp.kernel.org/",
+      "if": "SOCK_OPS 대비 bpf_tcp_ops 데이터 패스 오버헤드를 줄이는 변경을 본다면",
+      "do": "struct tcp_sock의 bpf_tcp_ops_flags 배치와 tcp_sock_read_txrx cacheline 그룹 영향을 패치와 리뷰 코멘트에 맞춰 검토하세요",
+      "verify": "tcp_sock.rst 및 BPF_TCP_OPS_FLAG_* UAPI 주석 정리가 같은 시리즈에 들어갈지는 아직 확인이 필요합니다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**xsk: freeze deferred pool teardown without blocking unregister**\n\nAF_XDP 버퍼 풀의 지연 해제를 system_freezable_wq로 옮기고, netdev별로 할당된 풀을 RTNL 하에 추적해 NETDEV_UNREGISTER 시 소켓 목록 밖에 남은 풀도 xp_clear_dev_all()로 정리합니다.\n\n영향: system_wq는 절전 중 freeze되지 않아 ndo_bpf()가 클럭이 꺼진 장치에서 돌 수 있고, resume 직후 unregister가 thaw까지 막히는 데드락이 생길 수 있어 XDP/AF_XDP를 쓰는 고정밀·저전력 경로에서 suspend/resume 안정성에 직결됩니다.\n\n> Use system_freezable_wq so running destruction finishes before device suspend and new work waits until process thaw.\n\n[원문 확인](https://lore.kernel.org/bpf/20261005-xsk-suspend-teardown-v2-1-2d87228f4329@gmail.com/)\n\n**seq_buf: Do not pop from an overflowed seq_buf**\n\noverflow 상태(len == size+1)의 seq_buf에서 seq_buf_pop()이 버퍼 밖 한 바이트를 읽고 overflow 표시를 잃는 문제를 막기 위해 -1을 반환하고 overflow 상태를 유지합니다. KUnit 테스트를 추가합니다.\n\n영향: seq_buf는 BPF diagnostics와 tracing 경로에서 쓰이며, overflow 후 pop이 성공한 것처럼 보이면 잘못된 문자열 처리나 메모리 안전 이슈로 이어질 수 있어 관측·BPF 보조 API의 신뢰성에 영향을 줍니다.\n\n> When a seq_buf has overflowed, its len is size + 1, so seq_buf_pop() decrements len to size and reads buffer[size], one byte past the end of the buffer.\n\n[원문 확인](https://lore.kernel.org/bpf/20261005155708.1471260-2-kees@kernel.org/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**docs: netmem: document netmem and memory provider design principles**\n\nDocumentation/networking/netmem.rst에 Design Principles를 추가해 netmem_ref 추상화, 다운캐스트 금지, memory provider와 net_iov 분리, unreadable 가정 금지 등 netmem/page_pool 통합 규칙을 문서화합니다. Stanislav Fomichev의 리뷰에 Mina Almasry가 readable net_iov 시리즈 지원 의지를 답했습니다.\n\n영향: netmem은 page_pool·XDP·드라이버 메모리 모델의 공통 기반으로 BPF/XDP 스택이 netmem_ref로 통일되는 방향을 정리하므로, zero-copy·관측 경로 코드 리뷰 시 따라야 할 규약이 명확해집니다.\n\n> 1. **Operate on netmem_ref, do not downcast**: `page_pool`, drivers, and the core networking stack should deal with `netmem_ref` rather than `struct net_iov` or `struct page`.\n\n[원문 확인](https://lore.kernel.org/bpf/CAHS8izOvea3eas4i09pMds2zzqbCtf8VL0Zdvo3fBT_+AM1TBg@mail.gmail.com/)\n\n**bpf: tcp: Add a new per-socket flag and kfunc for bpf_tcp_ops. (kfunc 접근 범위)**\n\nbpf_tcp_ops_set_flags kfunc의 등록이 CGROUP_SOCKOPT용 BTF_KFUNC_HOOK_CGROUP 훅을 공유해 cgroup_skb·sock_ops 등에서도 필터가 통과할 수 있다는 bpf-ci 지적에, Kuniyuki Iwashima가 STRUCT_OPS·CGROUP_SOCKOPT(필요 시 CGROUP_SKB)만 허용하도록 필터를 강화할 계획을 밝혔습니다.\n\n영향: per-socket 플래그는 SOCK_OPS 대비 빠른 bpf_tcp_ops fast-path를 위한 것인데, 의도하지 않은 프로그램 타입에 kfunc가 열리면 UAPI 범위가 넓어져 나중에 축소 시 호환성 문제가 생길 수 있습니다.\n\n> register_btf_kfunc_id_set(BPF_PROG_TYPE_CGROUP_SOCKOPT, ...) puts the set into the shared BTF_KFUNC_HOOK_CGROUP hook.\n\n[원문 확인](https://lore.kernel.org/bpf/7557423d5efced7e3307ed14a4ad8f364246f3ea738395123f61296ac4cc2284@mail.kernel.org/)\n\n**bpf: tcp: Add a new per-socket flag and kfunc for bpf_tcp_ops. (플래그 필드)**\n\n동일 시리즈가 struct tcp_sock에 bpf_tcp_ops_flags(u32)와 bpf_tcp_ops_set_flags kfunc를 추가해 per-socket 플래그로 fast-path 콜백을 켜고 끄며, 필드는 tcp_sock_read_txrx cacheline 그룹에 배치됩니다.\n\n영향: 플래그 게이트는 데이터 패스에서 bpf_tcp_ops_call() 오버헤드를 줄이는 성능 최적화이므로, cacheline 배치·문서화가 RTT·헤더 옵션 등 hot path 레이아웃과 맞는지 추적할 가치가 있습니다.\n\n> This commit introduces a new per-socket flag field, bpf_tcp_ops_flags, to struct tcp_sock to avoid the overhead of the legacy SOCK_OPS approach and support fast-path callbacks.\n\n[원문 확인](https://lore.kernel.org/bpf/20261005155514.C05E81F000FF@smtp.kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "xsk suspend teardown v2",
+      "url": "https://lore.kernel.org/bpf/20261005-xsk-suspend-teardown-v2-1-2d87228f4329@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "seq_buf overflow pop fix",
+      "url": "https://lore.kernel.org/bpf/20261005155708.1471260-2-kees@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "netmem design principles docs",
+      "url": "https://lore.kernel.org/bpf/CAHS8izOvea3eas4i09pMds2zzqbCtf8VL0Zdvo3fBT_+AM1TBg@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf-ci CGROUP kfunc hook analysis",
+      "url": "https://lore.kernel.org/bpf/7557423d5efced7e3307ed14a4ad8f364246f3ea738395123f61296ac4cc2284@mail.kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf_tcp_ops kfunc filter update intent",
+      "url": "https://lore.kernel.org/bpf/CAAVpQUAkMupUTZpL+-QAwYYG+awade04rNSA6jEWGQ3o5uafvg@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf_tcp_ops_flags per-socket series",
+      "url": "https://lore.kernel.org/bpf/20261005155514.C05E81F000FF@smtp.kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-05T18:27:22.438Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,136 @@
+{
+  "id": "2026-10-06-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-10-06 RISC-V 크래시 핫플러그 — 아키·플랫폼",
+  "headline": "RISC-V for-next에 kdump용 크래시 핫플러그가 들어갔고, soft-dirty migration 회귀 수정과 Milk-V·C908 플랫폼 패치가 이어졌습니다.",
+  "date": "2026-10-06",
+  "summary": "RISC-V for-next에 CPU·메모리 핫플러그 후 elfcorehdr를 갱신하는 크래시 핫플러그가 적용되었습니다. SG2002 Milk-V Duo 256M 이더넷 overlay, soft-dirty migration PMD 버그, A733 clk 리뷰 실측, i.MX952 GPIO DT, T-Head C908 PMU JSON도 dossier에 포함되어 있습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "RISC-V",
+    "아키텍처",
+    "플랫폼"
+  ],
+  "highlights": [
+    {
+      "title": "RISC-V crash hotplug 및 kexec 덤프 훅",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "RISC-V kexec/kdump 및 CPU·메모리 핫플러그를 쓰는 플랫폼 담당",
+      "verifyLink": "https://git.kernel.org/pub/scm/linux/kernel/git/riscv/linux.git/commit/?h=for-next&id=dfc0c564b4b0",
+      "if": "핫플러그 이후 크래시가 나면 vmcore가 실제 토폴로지와 어긋날 수 있는 환경을 운영한다면",
+      "do": "for-next의 ARCH_SUPPORTS_CRASH_HOTPLUG 및 elfcorehdr 갱신 아키텍처 훅 경로를 kdump 설정·검증에 반영하세요",
+      "verify": "패치워크·커밋 원문에서 세 가지 아키텍처 훅 구현과 적용 브랜치를 확인하세요"
+    },
+    {
+      "title": "soft-dirty migration PMD present 오인",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "RISC-V MM/pgtable 및 mem_soft_dirty 담당",
+      "verifyLink": "https://patchwork.kernel.org/project/linux-riscv/patch/20261004030312.90163-1-lance.yang@linux.dev/",
+      "if": "RV64에서 CONFIG_MEM_SOFT_DIRTY와 THP·migration을 함께 쓰는 워크로드를 돌린다면",
+      "do": "swap soft-dirty 비트를 PTE bit 12로 옮기는 수정 패치와 Fixes·stable Cc 제출 내용을 추적하세요",
+      "verify": "리뷰 스레드에서 David Hildenbrand의 bit layout 질문에 대한 maintainer 최종 결론은 아직 확인이 필요합니다"
+    },
+    {
+      "title": "Milk-V Duo 256M 이더넷 DT overlay",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "Sophgo SG2002·Milk-V Duo 보드 및 RISC-V devicetree 유지보수",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20261005093749.645014-1-chenyou910331@gmail.com/",
+      "if": "기본 DTB에서 GMAC가 disabled이고 optional IO 보드로 이더넷을 켜는 배포·보드를 다룬다면",
+      "do": "sg2002-milkv-duo256m-eth.dtb overlay와 cv180x ethernet-phy@1 노드명 정리를 DT 패키징에 맞추세요",
+      "verify": "제출 스레드에 기록된 overlay에서 eth0 링크업·DHCP·트래픽 검증 결과를 원문에서 확인하세요"
+    },
+    {
+      "title": "T-Head C908 PMU vendor events JSON",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "RISC-V perf 도구·T-Head/XuanTie 플랫폼 담당",
+      "verifyLink": "https://patchwork.kernel.org/series/1179771/",
+      "if": "K230 등 C908 코어에서 perf vendor 이벤트 이름이 전혀 해석되지 않는다면",
+      "do": "thead/c908 PMU 이벤트 JSON(165개 raw event)과 mapfile 항목 추가 시리즈를 리뷰·도구 검증 요구에 맞게 따라가세요",
+      "verify": "perf/core maintainers 리뷰 및 tools/perf JSON 검증 충족 여부는 아직 확인이 필요합니다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**riscv/mm: fix soft-dirty migration PMDs being treated as present**\n\nCONFIG_MEM_SOFT_DIRTY에서 swap soft-dirty 비트를 PTE bit 12로 옮기고 swap offset을 bit 13부터 시작해 migration PMD가 pmd_present()로 THP로 오인되지 않게 합니다.\n\n영향: soft-dirty THP migration 시 fault 경로가 migration 대기를 건너뛰고 잘못된 PFN을 다룰 수 있어, RV64 soft-dirty·THP·migration을 쓰는 워크로드는 이 수정이 필수입니다.\n\n> the fault handler skips pmd_migration_entry_wait(), and a write fault can end up in do_huge_pmd_wp_page()\n\n[원문 확인](https://patchwork.kernel.org/project/linux-riscv/patch/20261004030312.90163-1-lance.yang@linux.dev/)\n\nFixes 및 stable Cc 제출은 [시리즈](https://patchwork.kernel.org/series/1179018/)에 따릅니다. David Hildenbrand의 bit layout 질문에 대한 maintainer 최종 결론은 확인이 필요합니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**riscv: crash: Add crash hotplug support**\n\nRISC-V for-next에 ARCH_SUPPORTS_CRASH_HOTPLUG과 kexec 크래시 덤프용 elfcorehdr를 CPU·메모리 핫플러그 후에도 갱신하는 아키텍처 훅이 들어갔습니다.\n\n영향: 핫플러그 이후 크래시가 나면 vmcore가 실제 토폴로지와 어긋날 수 있어, 서버·가상화 환경에서 kdump 신뢰성을 맞추려면 이 경로를 따라가야 합니다.\n\n> Enable crash hotplug for RISC-V by selecting ARCH_SUPPORTS_CRASH_HOTPLUG and providing the three architecture hooks\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/riscv/linux.git/commit/?h=for-next&id=dfc0c564b4b0)\n\n메인라인 릴리스 타이밍과 백포트 필요 여부는 아직 미확인입니다.\n\n**riscv: dts: sophgo: Milk-V Duo 256M ethernet support**\n\nv3 시리즈가 optional USB/Ethernet IO 보드용 DT overlay(sg2002-milkv-duo256m-eth.dtb)를 추가하고 cv180x 내부 PHY 노드명을 ethernet-phy@1로 정리합니다.\n\n영향: 보드 기본 DTB는 GMAC를 disabled로 두고 overlay로만 이더넷을 켜므로, SG2002/Milk-V Duo 256M 사용자와 배포판 DT 패키징이 이 분리 모델을 알아야 합니다.\n\n> sg2002-milkv-duo256m-eth.dtb: eth0 comes up at 100Mbps/Full, gets an address via DHCP and passes traffic\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20261005093749.645014-1-chenyou910331@gmail.com/)\n\n메인라인 머지 전 리뷰 코멘트 반영 여부는 확인이 필요합니다.\n\n**AW: Re: [PATCH v5 7/8] clk: sunxi-ng: a733: Add bus clock gates**\n\nA733 bus clock gate 패치 리뷰에 Norman Herms가 BSP의 flat gate 모델과 Cubie A7S에서 GPU bus gate를 닫았을 때 firmware boot만 실패하는 실측을 추가했습니다.\n\n영향: Allwinner A733 RISC-V 보드에서 clk_disable_unused와 bus gate 계층을 어떻게 모델할지 논의에 직접적인 하드웨어 데이터가 붙습니다.\n\n> register access worked with these two gates closed; what failed was the firmware running on the GPU.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/TEcOYCDcz77vYtgXxuHGwhVo6AFFgV2M5rIDAsLiG4T7fD6J41La8o19hf2iMQhaMXd1wHsvqeDardYv7hjy3TbV9oCkfzYKRMn0EGlh7Ww=@proton.me/)\n\nv5 clk 시리즈의 patchwork/linux-clk 정식 상태와 gate parent 계층 수정 계획은 확인이 필요합니다.\n\n**arm64: dts: freescale: imx952: Add GPIO5 lines 18 to 20**\n\ndossier에 따르면 i.MX952 DT에 GPIO5[18:20]에 고정된 GPIO-only 패드(GPIO_IO38–40)용 SW_MUX_CTL 노드를 추가하는 패치가 제출되었습니다.\n\n영향: IMX952 기반 Toradex 등 ARM64 보드에서 해당 패드를 Linux gpio 컨트롤러로 쓰려면 이 DT gap을 채워야 합니다.\n\n[원문 확인](https://patchwork.kernel.org/project/linux-arm-kernel/patch/20261005172622.135725-1-francesco@dolcini.it/)\n\n**perf vendor events riscv: Add PMU events JSON file for T-Head C908**\n\nC908의 marchid/mimpid 때문에 c900-legacy mapfile가 매칭되지 않는 문제를 해결하기 위해 thead/c908 PMU 이벤트 JSON(165개 raw event)과 mapfile 항목을 추가합니다.\n\n영향: K230 등 C908 코어에서 perf가 vendor 이벤트 이름을 전혀 해석하지 못하는 상태가 풀려, RISC-V 성능 분석 워크플로가 가능해집니다.\n\n[원문 확인](https://patchwork.kernel.org/series/1179771/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "riscv: crash hotplug — patchwork notify",
+      "url": "https://lore.kernel.org/linux-riscv/179121961677.1813719.4405826480158733209.git-patchwork-notify@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: crash hotplug — for-next commit",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/riscv/linux.git/commit/?h=for-next&id=dfc0c564b4b0",
+      "note": "commit"
+    },
+    {
+      "title": "Milk-V Duo 256M ethernet — cover",
+      "url": "https://patchwork.kernel.org/project/linux-riscv/cover/20261005093749.645014-1-chenyou910331@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Milk-V Duo 256M ethernet — v3 thread",
+      "url": "https://lore.kernel.org/linux-riscv/20261005093749.645014-1-chenyou910331@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv/mm soft-dirty migration fix",
+      "url": "https://patchwork.kernel.org/project/linux-riscv/patch/20261004030312.90163-1-lance.yang@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv/mm soft-dirty migration — series",
+      "url": "https://patchwork.kernel.org/series/1179018/",
+      "note": "thread"
+    },
+    {
+      "title": "clk: sunxi-ng a733 bus gates — review thread",
+      "url": "https://lore.kernel.org/linux-riscv/TEcOYCDcz77vYtgXxuHGwhVo6AFFgV2M5rIDAsLiG4T7fD6J41La8o19hf2iMQhaMXd1wHsvqeDardYv7hjy3TbV9oCkfzYKRMn0EGlh7Ww=@proton.me/",
+      "note": "thread"
+    },
+    {
+      "title": "arm64: imx952 GPIO5 lines",
+      "url": "https://patchwork.kernel.org/project/linux-arm-kernel/patch/20261005172622.135725-1-francesco@dolcini.it/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv perf C908 PMU — patch",
+      "url": "https://patchwork.kernel.org/project/linux-riscv/patch/20261005-c908-pmu-events-v1-1-cfab33201c59@justus-bergermann.de/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv perf C908 PMU — series",
+      "url": "https://patchwork.kernel.org/series/1179771/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-05T18:29:52.029Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
