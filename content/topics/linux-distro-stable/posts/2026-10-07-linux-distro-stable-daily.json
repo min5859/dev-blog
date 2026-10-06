@@ -1,0 +1,120 @@
+{
+  "id": "2026-10-07-linux-distro-stable-daily",
+  "topic": "linux-distro-stable",
+  "title": "2026-10-07 Stable 큐 mac80211 — 배포판 Stable",
+  "headline": "stable@에 mac80211·KVM arm64 백포트가 연달아 올라왔고, r8169+VLAN TX stall 회귀는 stable 수정 전까지 workaround가 필요합니다.",
+  "date": "2026-10-07",
+  "summary": "이번 수집은 lore stable 큐의 multi-link Wi-Fi·RX BA·arm64 KVM·NVMe ZNS 백포트가 중심입니다. 10월 3일 kernel.org 태그(7.2.9·5.10/5.15/6.1 longterm)는 전일과 동일 기준선으로, 신규 신호는 큐·회귀 스레드에 집중됩니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "stable",
+    "배포판"
+  ],
+  "highlights": [
+    {
+      "title": "mac80211 예약 카운트·chanctx 짝 유지 백포트",
+      "priority": "상",
+      "impactType": "backport",
+      "affectedAudience": "mac80211·무선 드라이버·배포 stable 백포트 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20261006175528.905419-1-sashal@kernel.org/",
+      "if": "6.18/6.12/6.6 등 LTS에서 multi-link·in-place channel 교체를 운영한다면",
+      "do": "다음 stable 마이너 전 MLO·다중 링크 AP/STA soak를 돌리고, 두 백포트가 함께 반영되는지 stable 큐를 추적하세요.",
+      "verify": "stable@ 스레드와 Fixes 5bcae31d9cb1 계열 설명을 원문에서 확인하세요."
+    },
+    {
+      "title": "RX BA 세션 teardown 타이머 레이스",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "mac80211·cfg80211 스택 사용자",
+      "verifyLink": "https://lore.kernel.org/stable/20261006175531.919188-1-sashal@kernel.org/",
+      "if": "Wi-Fi aggregation을 켠 데스크톱·AP 이미지를 유지한다면",
+      "do": "stable 백포트 반영 전 disconnect·roam soak로 메모리 corruption 클래스를 노려보세요.",
+      "verify": "timer_shutdown_sync() 수정 요지와 UAF 시나리오 인용을 lore 스레드에서 확인하세요."
+    },
+    {
+      "title": "r8169+VLAN TX stall 회귀",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "r8169·VLAN·Home Assistant/NetworkManager 기반 배포 운영자",
+      "verifyLink": "https://lore.kernel.org/stable/a6193df2-98f3-409f-b73f-5b91835a0107@kernel.org/",
+      "if": "6.18.5x·embedded에서 REORDER_HDR off·TX checksum offload·RTL8168h/8111h XID 541 조합을 쓴다면",
+      "do": "ethtool TX offload off·vlan reorder_hdr on 등 workaround와 netdev 수정 일정을 배포 QA에 넣으세요.",
+      "verify": "bisect·watchdog dmesg 인용과 stable 수정 미공개 상태를 회귀 스레드에서 확인하세요."
+    },
+    {
+      "title": "ZNS multipath BLK_FEAT_ZONED 타이밍",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "NVMe·ZNS multipath 운영·배포 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20261006161548.852163-1-sashal@kernel.org/",
+      "if": "ZNS multipath namespace head를 운영한다면",
+      "do": "stable 태그 포함 전 head/path zoned capability 불일치로 I/O 실패 가능성을 QA하세요.",
+      "verify": "ilog2(0) 시프트 경로 제거 설명을 stable 백포트 스레드에서 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**wifi: mac80211: shut down RX BA session timer on teardown**\n\nupstream e588e83e 백포트가 RX BA 세션 해제 시 RCU와 BAR 핸들러가 session_timer를 재-arm할 수 있는 레이스를 timer_shutdown_sync()로 막습니다.\n\n영향: Wi-Fi aggregation을 켠 데스크톱·AP 이미지에서 stable 백포트 전까지 disconnect/roam soak가 필요합니다.\n\n> Tearing down an RX BA session can leave the session timer queued on a freed tid_rx.\n\n[원문 확인](https://lore.kernel.org/stable/20261006175531.919188-1-sashal@kernel.org/)\n\n**[REGRESSION][BISECTED] r8169: TX stall with checksum offload on VLAN frames with inline tag (REORDER_HDR off) since 1517d1996b52**\n\nHome Assistant OS 6.18.52 업그레이드 후 r8169+VLAN에서 TX queue watchdog·rtl_rxtx_empty_cond 루프로 네트워크가 멈춘 보고가 있고, vlan 커밋 1517d1996b52(6.18.51) revert로 원인이 확인되었으며 아직 stable 수정은 없습니다.\n\n영향: 배포된 6.18.5x·embedded 이미지는 workaround와 netdev 수정 일정을 QA에 넣어야 합니다. mainline·stable 브랜치 머지 일정은 확인이 필요합니다.\n\n> NETDEV WATCHDOG: CPU: 7: transmit queue 0 timed out 6125 ms\n\n[원문 확인](https://lore.kernel.org/stable/a6193df2-98f3-409f-b73f-5b91835a0107@kernel.org/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**wifi: mac80211: count only matching reservations in reserved switch**\n\nstable 큐에 upstream 437f3727 백포트가 올라와, replacement 쌍과 일치하는 예약만 세도록 제한합니다.\n\n영향: 7.2.9·6.18.55 ChangeLog에는 아직 없어 다음 stable 마이너 전 MLO·다중 링크 soak가 필요합니다. 머지될 stable 브랜치·태그 일정은 확인이 필요합니다.\n\n> leading to a use-after-free in later beacon generation.\n\n[원문 확인](https://lore.kernel.org/stable/20261006175528.905419-1-sashal@kernel.org/)\n\n**wifi: mac80211: keep paired old chanctx alive**\n\nupstream 3412e9a8 백포트로 reciprocal replace_ctx가 남는 동안 구 chanctx를 조기 free하지 않도록 짝 검사를 넣습니다.\n\n영향: 예약 카운트 수정과 같은 5bcae31d9cb1 계열 결함 대응으로 multi-link Wi-Fi 전환 시 크래시·UAF를 막는 짝 패치입니다.\n\n> Keep a paired old chanctx alive until the replacement pair has been torn down.\n\n[원문 확인](https://lore.kernel.org/stable/20261006175525.914502-1-sashal@kernel.org/)\n\n**KVM: arm64: Use stage-1 leaf size for VM_PFNMAP**\n\nupstream 71cc2c67 백포트가 transparent_hugepage_adjust()가 stage-1 leaf에서 stage-2 매핑 크기를 derive하도록 KVM arm64 MMU 경로를 단순화합니다.\n\n영향: VFIO/디바이스 MMIO mmap을 쓰는 arm64 KVM 호스트는 stable 큐 반영 전 stage-2 block 매핑·PFNMAP regression 테스트가 필요합니다. 6.12.y 외 longterm 백포트 범위는 확인이 필요합니다.\n\n> let transparent_hugepage_adjust() derive the stage-2 mapping size directly from the populated stage-1 leaf\n\n[원문 확인](https://lore.kernel.org/stable/20261006175530.906113-1-sashal@kernel.org/)\n\n**KVM: arm64: Apply the fine-grained UNDEFs without FEAT_FGT**\n\nupstream 4bdd2b3a 백포트가 FGU trap 설정을 FEAT_FGT 하드웨어 지원에 묶지 않고, FEAT_FGT/TLBIOS 없는 하드웨어에서 vEL1 TLBI OS spurious WARN 경로를 UNDEF 주입으로 처리합니다.\n\n영향: nested KVM·구형 arm64 서버 stable 배포는 백포트 반영 전 dmesg WARN과 trap 동작 차이를 게스트 호환 테스트로 확인해야 합니다.\n\n> This also fixes a spurious WARN when a TLBI OS is run on a guest in vEL1 without FEAT_TLBIOS on non FEAT_FGT hardware.\n\n[원문 확인](https://lore.kernel.org/stable/20261006162351.882841-1-sashal@kernel.org/)\n\n**nvme-multipath: set BLK_FEAT_ZONED only after the zone info is known**\n\nupstream 4a5e49ba 백포트가 zone size 확인 전 BLK_FEAT_ZONED를 붙이지 않아 zone size 0일 때 ilog2(0) 시프트 경로를 제거합니다.\n\n영향: ZNS multipath 스토리지 배포는 stable 태그 포함 전 head/path zoned capability 불일치 I/O 실패 가능성을 QA해야 합니다.\n\n> reporting zones or writing to the head then shifts by ilog2(0).\n\n[원문 확인](https://lore.kernel.org/stable/20261006161548.852163-1-sashal@kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "stable@ mac80211 reserved switch 백포트",
+      "url": "https://lore.kernel.org/stable/20261006175528.905419-1-sashal@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "stable@ mac80211 paired old chanctx",
+      "url": "https://lore.kernel.org/stable/20261006175525.914502-1-sashal@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "stable@ mac80211 RX BA session timer",
+      "url": "https://lore.kernel.org/stable/20261006175531.919188-1-sashal@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "stable@ KVM arm64 VM_PFNMAP stage-1 leaf",
+      "url": "https://lore.kernel.org/stable/20261006175530.906113-1-sashal@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "stable@ KVM arm64 FGU without FEAT_FGT",
+      "url": "https://lore.kernel.org/stable/20261006162351.882841-1-sashal@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "stable@ nvme-multipath BLK_FEAT_ZONED",
+      "url": "https://lore.kernel.org/stable/20261006161548.852163-1-sashal@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "stable@ r8169 VLAN TX stall 회귀",
+      "url": "https://lore.kernel.org/stable/a6193df2-98f3-409f-b73f-5b91835a0107@kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-06T18:29:59.698Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

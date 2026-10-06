@@ -1,0 +1,152 @@
+{
+  "id": "2026-10-07-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-10-07 RISC-V futex 보안 — 아키·플랫폼",
+  "headline": "RISC-V futex 경로 untag 보안 패치 v2와 arm64 alternatives·Rockchip·CS75xx·HC4 DT 움직임이 메일링 리스트에 올라왔습니다.",
+  "date": "2026-10-07",
+  "summary": "RISC-V에서 tagged 주소 ABI 사용 시 FUTEX_WAKE_OP 원자 연산이 잘못된 주소로 갈 수 있는 v2 수정이 논의 중입니다. arm64 alternatives callback 전환, CS75xx RFC v2, RK3568 combphy SGMII 선택, ODROID-HC4 fan tach DT도 후속을 따라가면 됩니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "RISC-V",
+    "arm64",
+    "ARM",
+    "Rockchip"
+  ],
+  "highlights": [
+    {
+      "title": "riscv: futex: untag the user pointer before the atomic access",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "RISC-V 아키텍처·futex·보안 백포트 담당",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/100499.html",
+      "if": "CONFIG_RISCV_ISA_SUPM 또는 PR_SET_TAGGED_ADDR_CTRL을 쓰는 RISC-V 배포·백포트를 맡고 있다면",
+      "do": "v2 패치 적용 여부와 stable Cc 이후 백포트 타임라인을 확인 필요 상태로 추적하세요",
+      "verify": "infradead·lore 스레드와 Fixes 2e1743085887 커밋에서 access_ok()와 futex 원자 헬퍼의 태그 처리 차이를 대조하세요"
+    },
+    {
+      "title": "arm64: alternatives: switch most used alternatives to callbacks",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "arm64 alternatives·KVM·cpufeature 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/asUhsMhMumCwalZt@arm.com/",
+      "if": "arm64 alternatives·KVM·Spectre·I/O workaround 패치 경로를 리뷰한다면",
+      "do": "~86KiB 절감 대비 callback 전환 복잡도와 .altinstr_replacement 분리 대안을 maintainer 의견과 함께 검토하세요",
+      "verify": "Catalin 답글과 Ada Couprie Diaz [PATCH 0/6] cover에서 v7.3-rc4 defconfig 85848 bytes 수치를 원문으로 확인하세요"
+    },
+    {
+      "title": "dt-bindings: phy: rockchip: naneng-combphy: add rockchip,sgmii-mac-sel property",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "Rockchip RK3568 보드·DT·naneng-combphy 드라이버 담당",
+      "verifyLink": "https://patchew.org/linux/20261006162807.2843858-1-coiaprant@gmail.com/",
+      "if": "Photonicat 등 GMAC0+SGMII 배선 보드를 DT로 가져간다면",
+      "do": "binding·driver·net-next DTS 머지 순서를 맞추고 combphy2에 rockchip,sgmii-mac-sel 값을 검토하세요",
+      "verify": "Patchew v13 cover에서 속성 없을 때 라우팅을 건드리지 않는다는 설명을 읽으세요"
+    },
+    {
+      "title": "ARM: Add support for Cortina Systems CS75xx and Securifi Almond+",
+      "priority": "하",
+      "impactType": "project",
+      "affectedAudience": "ARM multiplatform·DT·Cortina/라우터 플랫폼 포터",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20261006-b4-cs75xx-v2-0-b7d6e1e24d44@gmail.com/",
+      "if": "CS75xx·Almond+ 메인라인 포팅이나 OpenWrt 타깃과 역할을 나눈다면",
+      "do": "RFC v2의 DT·SMP·UART 단계와 TWD WDT·MMU-on 부트 함정을 follow-up 범위와 함께 짚으세요",
+      "verify": "v1 cover의 ~5분 리셋 메모와 OpenWrt PR 25033 설명을 교차 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**riscv: futex: untag the user pointer before the atomic access**\n\nRISC-V futex 원자 연산 경로에서 access_ok()는 untagged 주소를 검증한 뒤에도 AMO/LR-SC가 태그가 남은 raw uaddr로 수행될 수 있어, v2 패치는 검증 직후 untagged_addr(uaddr)로 포인터를 정규화합니다.\n\n영향: CONFIG_RISCV_ISA_SUPM·PR_SET_TAGGED_ADDR_CTRL 사용 시 비권한 프로세스가 FUTEX_WAKE_OP으로 커널 주소에 원자 RMW를 유도하고 CMP 결과를 읽기 오라클로 쓸 수 있는 구멍이므로, 태그드 주소 ABI를 쓰는 배포·백포트 검토가 필요합니다.\n\n> An unprivileged process can thus make FUTEX_WAKE_OP perform an atomic read-modify-write on an arbitrary kernel address, with the matching FUTEX_OP_CMP_* result serving as a read oracle.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-October/100499.html)\n\n> get_user()/put_user()/raw_copy_{to,from}_user() already untag the pointer after the access_ok() check; do the same in the futex helpers\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20261006140200.877263-1-guoziyi114@gmail.com/)\n\n> Allow this by untagging the pointers in access_ok() and the uaccess routines.\n\n[원문 확인](https://github.com/torvalds/linux/commit/2e1743085887)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**arm64: alternatives: switch most used alternatives to callbacks**\n\nCatalin Marinas는 Ada Couprie Diaz의 6패치 시리즈(대량 alternative→callback 전환)에 대해 vmlinux/Image 크기 수치를 인용하며, ~86KiB 절감 대비 복잡도·대안(.altinstr_replacement 분리)을 제안합니다.\n\n영향: arm64 alternatives/callback 설계는 KVM·Spectre·I/O workaround 패치 경로와 직결되며, maintainer가 절감 대비 복잡도를 의문시하면 시리즈 방향·부분 채택 여부가 바뀔 수 있습니다.\n\n> 97% of the `ARM64_HAS_VIRT_HOST_EXTN` alternatives are converted to callbacks, saving 85848 bytes (20 pages).\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/asUhsMhMumCwalZt@arm.com/)\n\n> TBH, I don't think the saving is worth the additional complexity.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/asUhsMhMumCwalZt@arm.com/)\n\n> [PATCH 0/6] arm64: alternatives: switch most used alternatives to callbacks\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260928133034.243541-1-ada.coupriediaz@arm.com/)\n\n**ARM: Add support for Cortina Systems CS75xx and Securifi Almond+**\n\nRFC v2(10패치)는 CS7542/Almond+용 DT·SMP·DEBUG_LL·cs75xx UART·multi_v7_defconfig를 메인라인에 넣는 최소 단계이며, v1 대비 Cortina/Cortina Access compatible 명명 등 피드백을 반영합니다.\n\n영향: 문서 없는 CS75xx를 multi_v7에 올리는 첫 발이며, U-Boot TWD WDT·MMU-on 부트·에라타 등 플랫폼 함정이 RFC에서 명시되어 후속 드라이버·OpenWrt와의 분업 경계를 잡는 데 중요합니다.\n\n> this series on its own boots but resets after ~5 minutes.\n\n[원문 확인](https://lkml.iu.edu/2609.3/14504.html)\n\n> [PATCH RFC v2 00/10] ARM: Add support for Cortina Systems CS75xx and Securifi Almond+\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20261006-b4-cs75xx-v2-0-b7d6e1e24d44@gmail.com/)\n\n> The SoC has no mainline support. This adds a new target with the minimal set of drivers needed to run the board\n\n[원문 확인](https://github.com/openwrt/openwrt/pull/25033)\n\n**dt-bindings: phy: rockchip: naneng-combphy: add rockchip,sgmii-mac-sel property**\n\nv13 시리즈는 RK3568 combphy에 rockchip,sgmii-mac-sel DT 속성을 추가하고, 값 0/1로 SGMII를 GMAC0/GMAC1에 라우팅하며 속성이 없으면 기존 라우팅을 건드리지 않습니다.\n\n영향: Photonicat 등 GMAC0+SGMII 보드는 하드웨어 리셋 기본(GMAC1)과 배선이 달라 PHY/XPCS 없이는 이더넷이 죽을 수 있어, DT·phy 드라이버 담당자가 binding/driver 머지 순서를 맞출 필요가 있습니다.\n\n> If the property is absent, the driver leaves the routing unchanged\n\n[원문 확인](https://patchew.org/linux/20261006162807.2843858-1-coiaprant@gmail.com/)\n\n> Add the optional \"rockchip,sgmii-mac-sel\" property to allow the device tree to select which GMAC controller is used for SGMII.\n\n[원문 확인](https://lists.openwall.net/netdev/2026/09/22/676)\n\n**arm64: dts: amlogic: meson-sm1-odroid-hc4: add the fan tachometer**\n\nv2는 pwm-fan 노드에 GPIOX_7 tach 인터럽트·pinctrl(bias-disable GPIO 입력)를 추가해 fan1_input sysfs가 노출되도록 meson-sm1-odroid-hc4.dts를 수정합니다.\n\n영향: HC4는 pwm-fan만으로는 회전 속도를 읽을 수 없어 fancontrol/모니터링이 막혀 있었고, 메인라인 DT로 Armbian 등 out-of-tree 패치 의존을 줄입니다.\n\n> pwm-fan therefore registers no fan1_input, and the fan speed cannot be read.\n\n[원문 확인](https://patchew.org/linux/20261006-hc4-fan-tach-v2-1-e27ad96e92a2@iav.lv/)\n\n> Mux GPIOX_7 as a GPIO input without bias (Neil).\n\n[원문 확인](https://patchew.org/linux/20261006-hc4-fan-tach-v2-1-e27ad96e92a2@iav.lv/)\n\n> Tested on ODROID-HC4: fan1_input reads 0 with the fan stopped\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20261006-hc4-fan-tach-v2-1-e27ad96e92a2@iav.lv/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "linux-riscv: futex untag v2 (infradead)",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/100499.html",
+      "note": "thread"
+    },
+    {
+      "title": "Fixes: tagged address ABI (2e1743085887)",
+      "url": "https://github.com/torvalds/linux/commit/2e1743085887",
+      "note": "changelog"
+    },
+    {
+      "title": "riscv futex untag v2 (lore)",
+      "url": "https://lore.kernel.org/linux-riscv/20261006140200.877263-1-guoziyi114@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Catalin on arm64 alternatives callbacks",
+      "url": "https://lore.kernel.org/linux-arm-kernel/asUhsMhMumCwalZt@arm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "[PATCH 0/6] alternatives callbacks",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260928133034.243541-1-ada.coupriediaz@arm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "CS75xx v1 cover (LKML archive)",
+      "url": "https://lkml.iu.edu/2609.3/14504.html",
+      "note": "thread"
+    },
+    {
+      "title": "CS75xx RFC v2 cover",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20261006-b4-cs75xx-v2-0-b7d6e1e24d44@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "OpenWrt CS75xx target PR",
+      "url": "https://github.com/openwrt/openwrt/pull/25033",
+      "note": "article"
+    },
+    {
+      "title": "Rockchip combphy v13 (Patchew)",
+      "url": "https://patchew.org/linux/20261006162807.2843858-1-coiaprant@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "rockchip,sgmii-mac-sel binding (netdev)",
+      "url": "https://lists.openwall.net/netdev/2026/09/22/676",
+      "note": "thread"
+    },
+    {
+      "title": "Photonicat combphy DTS thread",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/20/1056",
+      "note": "thread"
+    },
+    {
+      "title": "ODROID-HC4 fan tach v2 (Patchew)",
+      "url": "https://patchew.org/linux/20261006-hc4-fan-tach-v2-1-e27ad96e92a2@iav.lv/",
+      "note": "thread"
+    },
+    {
+      "title": "ODROID-HC4 fan tach v2 (lore)",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20261006-hc4-fan-tach-v2-1-e27ad96e92a2@iav.lv/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-06T18:35:51.463Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

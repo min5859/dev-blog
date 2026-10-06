@@ -1,0 +1,121 @@
+{
+  "id": "2026-10-07-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-10-07 KBUILD_OUTPUT·Clang — Linux 툴체인",
+  "headline": "scripts/config가 KBUILD_OUTPUT을 따르고, Clang EFI stub·W=1 경고와 RISC-V 벡터 uaccess selftest가 툴체인 리뷰를 받고 있습니다.",
+  "date": "2026-10-07",
+  "summary": "별도 빌드 디렉터리에서 Kconfig 스크립트가 잘못된 .config를 건드리는 문제를 고치는 v7과, __counted_by를 끄는 __NO_COUNTED_BY 훅이 제안되었습니다. Rust pin-init 정리, PowerPC objtool ftr-fixup, RISC-V 벡터 copy selftest 큐잉, x86 APIC sscanf 패치의 pointer 비교 경고도 함께 추적할 만합니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "툴체인",
+    "kbuild",
+    "Clang"
+  ],
+  "highlights": [
+    {
+      "title": "scripts/config: honor $KBUILD_OUTPUT by default",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "KBUILD_OUTPUT·out-of-tree 빌드를 쓰는 kbuild·Kconfig 담당",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20261006161155.862736-1-voytikd@gmail.com/",
+      "if": "defconfig 후 ./scripts/config만 쓰는 out-of-tree·CI 자동화를 운영한다면",
+      "do": "--file 없을 때 ${KBUILD_OUTPUT}/.config가 갱신되는 v7 동작과 Makefile·diffconfig 정합을 스레드에서 확인하세요",
+      "verify": "루트의 낡은 .config를 조용히 수정하는 재현 절차와 Nathan Chancellor·sashiko 리뷰 반영 내용을 lore 스레드에서 대조하세요"
+    },
+    {
+      "title": "compiler_types: Allow opting out of __counted_by and __counted_by_ptr",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "Clang 빌드·compiler_types·EFI stub·FORTIFY/UBSAN bounds 정책 담당",
+      "verifyLink": "https://lore.kernel.org/llvm/20261006134519.3033941-1-morbo@google.com/",
+      "if": "Clang으로 x86 EFI stub나 counted_by가 퍼진 공통 헤더 빌드를 맡고 있다면",
+      "do": "__NO_FORTIFY와 같은 방식의 __NO_COUNTED_BY로 annotation을 no-op으로 두는 v5 설계를 검토하세요",
+      "verify": "late-parse 속성 없이 stub가 __counted_by_ptr를 만나 실패하는 설명과 compiler_types.h 한 파일 diff를 원문에서 확인하세요"
+    },
+    {
+      "title": "x86/apic: Replace deprecated simple_strtol() with sscanf()",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "Clang W=1 빌드·x86 APIC/IRQ·deprecated 문자열 파서 정리 담당",
+      "verifyLink": "https://lore.kernel.org/llvm/202610061356.8VHVO1CY-lkp@intel.com/",
+      "if": "clang-22 W=1 cross x86_64 빌드에서 -Werror=pointer-compare 정책을 쓴다면",
+      "do": "Habil Eren Türker v2의 sscanf 전환과 fwspec->param 비교 경고를 0-day CI 로그와 대조하세요",
+      "verify": "재현 스크립트와 shazam 링크로 경고 라인을 재현한 뒤, fwspec->param[0] 등 수정 v3가 올지 스레드를 follow 하세요"
+    },
+    {
+      "title": "selftest: riscv: test vectorized user copy",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "RISC-V 벡터 uaccess·kselftest·llvm integration 담당",
+      "verifyLink": "https://lore.kernel.org/llvm/a4044f84-5b45-f58d-caba-ef0223b9581e@kernel.org/",
+      "if": "RISC-V 벡터 copyto/copyfrom와 llvm merge queue를 함께 본다면",
+      "do": "파이프 read/write로 벡터화 uaccess를 정렬·부하 조건에서 검증하는 selftest와 v7.4 큐잉 상태를 확인하세요",
+      "verify": "Paul Walmsley의 queued for v7.4 답과 테스트 설명을 lore에서 읽고, v7.4 실제 머지 시점은 확인이 필요합니다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**selftest: riscv: test vectorized user copy**\n\nAndy Chiu의 RISC-V selftest가 파이프 read/write로 벡터화 uaccess 경로를 모든 정렬·CPU 부하 조건에서 검증하고, Paul Walmsley가 llvm 트리 v7.4 큐에 넣었습니다.\n\n영향: RISC-V 벡터 copyto/copyfrom 경로는 Clang/LLVM codegen·uaccess 최적화 회귀를 잡는 자동 검증으로, llvm merge queue를 보는 툴체인·아키 담당에게 신호입니다.\n\n> write() and read() copy it in and out of the kernel on the vectorized\n> uaccess path, and compares the result against the original.\n\n[원문 확인](https://lore.kernel.org/llvm/a4044f84-5b45-f58d-caba-ef0223b9581e@kernel.org/)\n\n**x86/apic: Replace deprecated simple_strtol() with sscanf() in x86_fwspec_is_hpet()**\n\nsimple_strtol 제거를 위해 sscanf로 바꾼 Habil Eren Türker v2 패치가 Clang 22.1.3 W=1 빌드에서 fwspec->param 포인터와 unsigned int 비교 경고를 새로 냅니다.\n\n영향: deprecated API 정리 패치가 irq_fwspec 필드 타입을 잘못 다루면 -Werror=pointer-compare Clang 정책에서 x86 APIC 빌드가 깨질 수 있어 llvm CI·x86 IRQ 담당이 함께 봐야 합니다.\n\n> warning: comparison between pointer and integer ('unsigned int' and 'u32 *') [-Wpointer-integer-compare]\n>      700 |             val == fwspec->param)\n\n[원문 확인](https://lore.kernel.org/llvm/202610061356.8VHVO1CY-lkp@intel.com/)\n\n[원문 확인](https://download.01.org/0day-ci/archive/20261006/202610061356.8VHVO1CY-lkp@intel.com/reproduce)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**scripts/config: honor $KBUILD_OUTPUT by default**\n\nscripts/config가 --file 없을 때 KBUILD_OUTPUT이 설정되면 기본으로 ${KBUILD_OUTPUT}/.config를 갱신하고, 상대 경로 --file 처리와 --refresh 동작을 Makefile·scripts/diffconfig와 맞춥니다(v7).\n\n영향: 별도 빌드 디렉터리에서 defconfig 후 ./scripts/config만 쓰면 소스 루트의 낡은 .config를 건드리거나 grep: .config 실패가 나는 함정을 없애 Kconfig 자동화·CI 스크립트 신뢰성이 올라갑니다.\n\n> Fix the issue when the script silently updates a stale .config in\n> the root directory, while the user expects ${KBUILD_OUTPUT}/.config\n> to be updated.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20261006161155.862736-1-voytikd@gmail.com/)\n\nlinux-kbuild 리뷰어 Ack 및 mainline 머지 시점은 아직 스레드에서 확인되지 않았습니다.\n\n**compiler_types: Allow opting out of __counted_by and __counted_by_ptr**\n\ncompiler_types.h에 __NO_FORTIFY와 같은 방식의 __NO_COUNTED_BY 훅을 추가해 EFI stub 등 커널 proper 밖 빌드에서 __counted_by/__counted_by_ptr를 no-op으로 만들 수 있게 합니다(v5).\n\n영향: x86 EFI stub은 -fexperimental-late-parse-attributes 없이 공통 헤더의 late __counted_by_ptr를 만나 Clang 빌드가 깨질 수 있어, counted_by 확산과 Clang 전용 KBUILD_CFLAGS 정책을 함께 추적하는 llvm·kbuild 담당에게 직접적입니다.\n\n> The x86 EFI stub builds its own cflags and does not get that flag, so it fails as soon as such a struct is pulled in through a common header.\n\n[원문 확인](https://lore.kernel.org/llvm/20261006134519.3033941-1-morbo@google.com/)\n\nEFI stub Makefile에 __NO_COUNTED_BY를 어디에 넣을지, 다른 out-of-tree 호스트/early 빌드에도 같은 패턴이 필요한지는 확인이 필요합니다.\n\n**rust: pin-init: various cleanups to prepare for self-reference**\n\npin-init self-reference 기능 전에 매크로 내부(init·pin_data·util)를 8패치로 정리합니다(가드 해제 순서, StructInfo 파싱, '__pin'→'__this' 등).\n\n영향: Rust for Linux의 pin-init/self-referential 타입 지원은 드라이버 초기화 API 표면을 바꿀 예정이라, 매크로 리팩터 없이 기능 패치를 얹기 위한 선행 툴체인 작업입니다.\n\n> Pin-init self reference is going to be a big feature, touching various\n> places in pin_data and init macros. Do some various cleanups to tidy up the\n> macro codebase\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20261006-dev-selfref-dep-v1-0-da716f740d6d@garyguo.net/)\n\nself-reference 기능 패치 제출·리뷰 일정과, 이 정리 시리즈가 mainline에 먼저 들어가는지 self-ref와 묶이는지는 확인이 필요합니다.\n\n**objtool/powerpc: Skip jump destination analysis and unnanotated intra-function call warnings for --ftr-fixup**\n\nShivang Upadhyay가 Peter Zijlstra 질문에 답하며 PowerPC MMU feature fixup이 링크 후 vmlinux에서 분기를 패치하는 이유와, objtool --ftr-fixup 경로에서 jump destination 분석을 건너뛰는 패치(4/6) 맥락을 설명합니다.\n\n영향: post-link objtool이 PowerPC ftr-fixup과 공존해야 하며, x86 alternatives와 유사한 ‘재배치 후 패치’ 모델을 kbuild/objtool 담당이 이해·검토해야 합니다.\n\n> I think we can make it work; but this wasn't immediately obvious.\n> Also I'm still struggling to understand what exactly you're doing\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/3297b07cf058b29251063e5e7dc61bf047c5148f.camel@linux.ibm.com/)\n\n> The assembly macros therefore generate code for both possible cases at\n> build time, and the feature-fixup mechanism later patches the code so\n> that only the appropriate path is executed.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/3297b07cf058b29251063e5e7dc61bf047c5148f.camel@linux.ibm.com/)\n\nv2 4/6 패치가 커버 레터 개선 후 리뷰·머지되는지, jump destination 분석 생략이 --ftr-fixup 외 post-link 경로에도 일반화될지는 확인이 필요합니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "scripts/config: honor $KBUILD_OUTPUT by default",
+      "url": "https://lore.kernel.org/linux-kbuild/20261006161155.862736-1-voytikd@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "compiler_types: Allow opting out of __counted_by and __counted_by_ptr",
+      "url": "https://lore.kernel.org/llvm/20261006134519.3033941-1-morbo@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: pin-init: various cleanups to prepare for self-reference",
+      "url": "https://lore.kernel.org/rust-for-linux/20261006-dev-selfref-dep-v1-0-da716f740d6d@garyguo.net/",
+      "note": "thread"
+    },
+    {
+      "title": "objtool/powerpc: --ftr-fixup jump destination analysis",
+      "url": "https://lore.kernel.org/linux-kbuild/3297b07cf058b29251063e5e7dc61bf047c5148f.camel@linux.ibm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "selftest: riscv: test vectorized user copy",
+      "url": "https://lore.kernel.org/llvm/a4044f84-5b45-f58d-caba-ef0223b9581e@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "x86/apic sscanf pointer-integer-compare (0-day CI)",
+      "url": "https://lore.kernel.org/llvm/202610061356.8VHVO1CY-lkp@intel.com/",
+      "note": "thread"
+    },
+    {
+      "title": "0-day CI reproduce script",
+      "url": "https://download.01.org/0day-ci/archive/20261006/202610061356.8VHVO1CY-lkp@intel.com/reproduce",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-06T18:27:23.886Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

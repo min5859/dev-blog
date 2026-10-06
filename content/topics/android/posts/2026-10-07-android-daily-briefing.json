@@ -1,0 +1,113 @@
+{
+  "id": "2026-10-07-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-10-07 BPF 7.3·wrapfd — Android 커널",
+  "headline": "android-mainline에 bpf-next-7.3이 머지되었고, wrapfd dmabuf 경로 언더플로 수정과 GKI Qualcomm SCM 비활성화가 ACK에 반영되었습니다.",
+  "date": "2026-10-07",
+  "summary": "bpf-next-7.3 머지로 ACK mainline BPF 스택이 v7.3-rc1 방향으로 갱신되었습니다. GKI defconfig는 QCOM_SCM·일부 Qualcomm 플랫폼 드라이버를 명시적으로 끄도록 정렬되었습니다.",
+  "tags": [
+    "안드로이드",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "wrapfd: dmabuf 직접 읽기 경로 언더플로 방지",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "android16-6.12 ACK·wrapfd/dmabuf 사용자",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/1b1a96c608d8f0b105513268d0dcdd1f2198f6c7",
+      "if": "페이지 미만 buf_offs+len에서 잘못된 direct-I/O fast path가 열리면 wrapfd 기반 dmabuf 로드에서 메모리 오동작 위험이 있으면",
+      "do": "android16-6.12 ACK 및 wrapfd/dmabuf를 쓰는 벤더 트리에 해당 커밋 반영 여부를 확인하세요",
+      "verify": "원문 커밋에서 wrap_io_prepare()의 check_sub_overflow 가드와 CVE·exploitability 공개 여부는 확인이 필요합니다"
+    },
+    {
+      "title": "bpf-next-7.3 → android-mainline 머지",
+      "priority": "상",
+      "impactType": "release",
+      "affectedAudience": "android-mainline ACK·eBPF/네트워킹·보안 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/ccf65af3006810ee4c11f686d10a6c7657cb3529",
+      "if": "eBPF verifier·런타임·서명 정책 변경이 Android BPF cgroup/네트워킹·LSM 프로그램 호환성에 영향을 줄 수 있으면",
+      "do": "ACK mainline 기준 BPF selftest와 내부 eBPF 프로그램을 재실행해 회귀를 트리아지하세요",
+      "verify": "머지 커밋과 Documentation/bpf/signing.rst를 열어 서명·검증기 변경 범위를 확인하세요"
+    },
+    {
+      "title": "GKI defconfig: CONFIG_QCOM_SCM 비활성화",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "Qualcomm GKI·펌웨어(PAS) 통합 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/677e84a1294c78cd229ab53577d2931231d01a17",
+      "if": "PAS/펌웨어 로드에 SCM이 필요한 Snapdragon 제품을 GKI 기본 커널만으로 빌드하면",
+      "do": "vendor module 또는 device config로 CONFIG_QCOM_SCM을 다시 활성화하세요",
+      "verify": "arm64 gki_defconfig diff에서 # CONFIG_QCOM_SCM is not set를 확인하세요"
+    },
+    {
+      "title": "char-misc-7.2-rc1 머지와 binder 충돌 해결",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "android-mainline ACK·Binder/프레임워크 성능 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/42f59cd65baef5d92419a9abda9be4b2962e0645",
+      "if": "Binder IPC 스케줄링·디버그 출력 형식이 바뀌면 프레임워크/네이티브 binder 스레드 동작 가정이 어긋날 수 있으면",
+      "do": "android-mainline에서 binder 트랜잭션·우선순위 관련 성능·회귀 테스트를 재검증하세요",
+      "verify": "머지 커밋의 binder.c·miscdevice.rs 충돌 해결 범위와 char-misc 전체 변경 목록은 추가 확인이 필요합니다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Merge bpf-next-7.3 into android-mainline**\n\nbpf-next-7.3 태그를 android-mainline에 머지해 v7.3-rc1 방향의 BPF 스택(verifier/diagnostics, signing 문서, 다수 kernel/bpf 변경)을 ACK mainline에 반영했습니다.\n\n영향: eBPF verifier·런타임·서명 정책이 바뀌면 Android의 BPF cgroup/네트워킹·보안 LSM 프로그램 호환성과 CI bpf selftest 결과에 영향을 줍니다.\n\n> Documentation/bpf/signing.rst\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/ccf65af3006810ee4c11f686d10a6c7657cb3529/Documentation/bpf/signing.rst)\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/ccf65af3006810ee4c11f686d10a6c7657cb3529)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ANDROID: drivers/wrapfd: Prevent subtraction underflow in file load path**\n\nwrap_io_prepare()에서 dmabuf 직접 읽기 분기 판별 시 buf_end-PAGE_SIZE 비교 전에 check_sub_overflow()로 언더플로를 막도록 drivers/android/wrapfd.c를 수정했습니다.\n\n영향: 페이지 미만 buf_offs+len에서 잘못된 direct-I/O fast path가 열리면 wrapfd 기반 dmabuf 로드(HAL·그래픽)에서 메모리 오동작 위험이 있어 android16-6.12 ACK 채택 벤더가 반영 여부를 확인해야 합니다.\n\n> only take that code path if the subtraction wouldn't result in an underflow.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/1b1a96c608d8f0b105513268d0dcdd1f2198f6c7)\n\n공개 자료에서 Bug 562601588에 대한 CVE 할당 또는 exploitability 평가는 확인되지 않았습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Merge char-misc-7.2-rc1 into android-mainline**\n\nchar-misc-7.2-rc1 태그를 android-mainline에 머지했으며 binder.c와 rust/kernel/miscdevice.rs 충돌을 해결했습니다. 머지 범위에 drivers/android/binder.c 우선순위 처리 단순화(task_nice 기반) 등 대규모 char/misc 변경이 포함됩니다.\n\n영향: Binder IPC 스케줄링·디버그 출력 형식이 바뀌면 프레임워크/네이티브 binder 스레드 우선순위 동작과 성능 튜닝 가정을 재검증해야 합니다.\n\n> Resolved merge conflicts:\n>\tdrivers/android/binder.c\n\trust/kernel/miscdevice.rs\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/42f59cd65baef5d92419a9abda9be4b2962e0645)\n\n**ANDROID: gki_defconfig: disable QCOM_SCM**\n\nupstream 5c1a2975d23c 이후 다시 노출된 CONFIG_QCOM_SCM을 arm64 gki_defconfig에서 # CONFIG_QCOM_SCM is not set로 명시 비활성화했습니다.\n\n영향: PAS/펌웨어 로드에 SCM이 필요한 Snapdragon 벤더는 GKI 기본 커널 대신 vendor module 또는 device config로 SCM을 다시 활성화해야 합니다.\n\n> we can now disable it from GKI and let users add it as a loadable module.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/677e84a1294c78cd229ab53577d2931231d01a17)\n\n**ANDROID: gki_defconfig: disable \"important\" qcom drivers**\n\nupstream 9b3daac1d0ee가 ARCH_QCOM에서 기본 켠 QCOM AOSS/SMEM/RPMH 등 13개 드라이버를 arm64 gki_defconfig에서 명시적으로 비활성화했습니다.\n\n영향: GKI 이미지에 불필요한 Qualcomm 플랫폼 드라이버가 기본 포함되면 모듈·이미지 크기와 심볼 노출이 늘어나므로, 벤더는 필요 시 loadable module로 다시 켜야 합니다.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/40a38b59c5bc75e6567c14beaa0c140c643e94e3)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ANDROID: drivers/wrapfd: Prevent subtraction underflow in file load path",
+      "url": "https://android.googlesource.com/kernel/common/+/1b1a96c608d8f0b105513268d0dcdd1f2198f6c7",
+      "note": "commit"
+    },
+    {
+      "title": "Merge bpf-next-7.3 into android-mainline",
+      "url": "https://android.googlesource.com/kernel/common/+/ccf65af3006810ee4c11f686d10a6c7657cb3529",
+      "note": "commit"
+    },
+    {
+      "title": "Documentation/bpf/signing.rst (bpf-next-7.3 머지 범위)",
+      "url": "https://android.googlesource.com/kernel/common/+/ccf65af3006810ee4c11f686d10a6c7657cb3529/Documentation/bpf/signing.rst",
+      "note": "changelog"
+    },
+    {
+      "title": "Merge char-misc-7.2-rc1 into android-mainline",
+      "url": "https://android.googlesource.com/kernel/common/+/42f59cd65baef5d92419a9abda9be4b2962e0645",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: gki_defconfig: disable QCOM_SCM",
+      "url": "https://android.googlesource.com/kernel/common/+/677e84a1294c78cd229ab53577d2931231d01a17",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: gki_defconfig: disable \"important\" qcom drivers",
+      "url": "https://android.googlesource.com/kernel/common/+/40a38b59c5bc75e6567c14beaa0c140c643e94e3",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-06T18:08:59.370Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/android-newsletter-from-dossier-ko.md"
+  }
+}
