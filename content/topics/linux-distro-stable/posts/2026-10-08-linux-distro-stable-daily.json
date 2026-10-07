@@ -1,0 +1,143 @@
+{
+  "id": "2026-10-08-linux-distro-stable-daily",
+  "topic": "linux-distro-stable",
+  "title": "2026-10-08 하이브리드 스케줄 회귀 — 배포·스테이블",
+  "headline": "stable@에 하이브리드 LLC 스케줄 회귀·Xen netfront 패닉·rtw89 WoW IE 수정 등 백포트 후보가 올라왔습니다.",
+  "date": "2026-10-08",
+  "summary": "이번 수집에서는 kernel.org 추가 stable 태그 없이 lore stable 쪽 백포트 제안이 중심입니다. 하이브리드 CPU 성능 회귀, Xen·AMD KFD·HID 오류 경로, Power KVM 동기화, rtw89 메모리 안전이 눈에 띕니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "sched/cache: 하이브리드에서 asym packing 우선",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "스케줄러·x86 하이브리드 플랫폼·배포 성능 회귀 추적",
+      "verifyLink": "https://lore.kernel.org/stable/b29badede27bb6bfb4a759e06754cb19657f0778.1791308631.git.tim.c.chen@linux.intel.com/",
+      "if": "AMD Ryzen AI 등 big/little에서 cache-aware 스케줄링 이후 Clang full-LTO 등이 급격히 느려졌다면",
+      "do": "stable@ 스레드의 asym packing 우선 수정 백포트 포함 여부를 추적하고 배포 트리 cherry-pick 목록에 넣을지 검토하세요",
+      "verify": "원문 스레드에서 Fixes·회귀 보고와 패치 버전을 직접 확인하세요"
+    },
+    {
+      "title": "xen/netfront: 짧은 Ethernet 헤드 RX 드롭",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "Xen·클라우드 가상화 네트워크 스택 유지보수",
+      "verifyLink": "https://lore.kernel.org/stable/20261007-b4-xen-netfront-short-head-v1-1-12d7113a7e4e@toxicpanda.com/",
+      "if": "Xen netfront 게스트에서 멀티슬롯 RX를 쓰는 클라우드 이미지를 유지한다면",
+      "do": "ETH_HLEN 미만 헤드에서 eth_type_trans() BUG()를 막는 stable 패치를 다음 마이너에 반영할지 계획하세요",
+      "verify": "QEMU Xen NIC 멀티슬롯 재현 설명과 패치 diff를 lore 원문에서 확인하세요"
+    },
+    {
+      "title": "wifi: rtw89 WoW AKM IE 길이",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "rtw89·무선 드라이버·배포 stable 백포트",
+      "verifyLink": "https://lore.kernel.org/stable/20261007161721.261452-3-tristmd@gmail.com/",
+      "if": "Realtek rtw89 노트북·이미지에서 Wake-on-Wireless 경로를 켠다면",
+      "do": "assoc request IE 길이를 skb 전체가 아닌 헤더 오프셋 기준으로 넘기는 수정을 stable 백포트 후보로 올리세요",
+      "verify": "cfg80211_find_ie() 버퍼 밖 읽기 설명과 Fixes 커밋 참조를 스레드에서 확인하세요"
+    },
+    {
+      "title": "drm/amdkfd: surprise removal 시 teardown 순서",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "AMD amdgpu/KFD·데스크톱/서버 하드웨어 운영",
+      "verifyLink": "https://lore.kernel.org/stable/20261007180909.34013-2-olivier.kaloudoff@gmail.com/",
+      "if": "Thunderbolt·hot-unplug로 AMD GPU(KFD)를 떼는 워크스테이션을 운영한다면",
+      "do": "disconnect 경로에서 process teardown을 fini_sw() 앞으로 옮기는 v4 패치 채택을 검토하세요",
+      "verify": "MI50 Thunderbolt unplug 시 pciehp 제거 스레드 NULL deref 보고를 원문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서는 2026-10-03에 공개된 Linux 7.2.9 stable 및 5.10.271·5.15.222·6.1.189 longterm 이후 추가 kernel.org stable·longterm 태그는 없었습니다. 각 라인은 ChangeLog에 기록된 백포트 묶음(7.2.9는 458 commits, 5.10.271은 589 commits, 5.15.222는 748 commits, 6.1.189는 968 commits)이 여전히 최신 기준선입니다.\n\n배포판별로 7.2.9의 457건 upstream 백포트 중 CVE·회귀·하드웨어 enablement 우선순위는 확인이 필요합니다. CIP·Ubuntu 등 longterm 채택 일정과 vendor 트리 cherry-pick 중복 정리도 배포별로 달라질 수 있습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**sched/cache: Honor asym packing over cache aware scheduling on hybrid systems**\n\n하이브리드 CPU에서 LLC 인지 로드밸런싱이 asym packing보다 먼저 적용되며 작은 코어 LLC에 캐시 집약 작업이 묶이는 회귀를 고칩니다. idle한 더 빠른 코어로의 asym migration이 있으면 LLC 제약을 풀고, active balance에서도 asym packing을 LLC보다 우선합니다.\n\n영향: AMD Ryzen AI 등 big/little 배포에서 Clang full-LTO 링크 같은 캐시·클럭 민감 워크로드가 7.2.x cache-aware 스케줄링 이후 급격히 느려졌다는 보고에 대한 stable 백포트 후보입니다. 7.2.10 등 다음 7.2.x 태그 포함 여부는 확인이 필요합니다.\n\n> Prioritize asym packing over LLC balancing for regular and active load balancing.\n\n[원문 확인](https://lore.kernel.org/stable/b29badede27bb6bfb4a759e06754cb19657f0778.1791308631.git.tim.c.chen@linux.intel.com/)\n\n**wifi: rtw89: fix IE length passed to cfg80211_find_ie() in WoW AKM**\n\nWoW AKM 파싱에서 assoc request IE 영역 길이를 skb->len 전체가 아니라 헤더 오프셋을 뺀 값으로 cfg80211_find_ie()에 전달하고 최소 프레임 길이를 검증합니다.\n\n영향: rtw89 WoW 경로에서 IE 버퍼 밖 읽기로 인한 메모리 안전 이슈를 막아 Realtek Wi-Fi를 쓰는 노트북·배포 이미지에 필요합니다. WoW 활성 환경에서 실제 크래시·KASAN 트리거 사례 공개 여부는 확인이 필요합니다.\n\n> cfg80211_find_ie() may read past the end of the actual IE data.\n\n[원문 확인](https://lore.kernel.org/stable/20261007161721.261452-3-tristmd@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**xen/netfront: drop RX packets with a short Ethernet header**\n\n백엔드가 제어하는 첫 RX 슬롯 길이(pull_to)만큼만 헤드를 채운 뒤 eth_type_trans()를 호출해 ETH_HLEN 미만 헤드에서 BUG() 또는 OOB 읽기가 나는 경로를 막습니다. 최소 ETH_HLEN을 pskb_may_pull()로 확보하고 실패 시 패킷을 드롭합니다.\n\n영향: Xen netfront를 쓰는 게스트·클라우드 이미지에서 멀티슬롯 RX 프레임 시 커널 패닉 클래스 버그를 피하려면 stable 백포트가 필요합니다. 프로덕션 Xen 백엔드에서 단축 첫 슬롯 발생 빈도는 확인이 필요합니다.\n\n> eth_type_trans() BUG()s in __skb_pull().\n\n[원문 확인](https://lore.kernel.org/stable/20261007-b4-xen-netfront-short-head-v1-1-12d7113a7e4e@toxicpanda.com/)\n\n**drm/amdkfd: teardown processes before freeing kfd.dev on surprise removal**\n\nPCI surprise disconnect 시 amdgpu_amdkfd_device_fini_sw()가 kfd.dev를 먼저 해제해 amdgpu_amdkfd_teardown_processes()의 kfd_processes_count 대기가 NULL 포인터를 dereference하는 순서 버그를 고칩니다. disconnect 경로에서 teardown을 fini_sw() 앞으로 옮깁니다.\n\n영향: Thunderbolt·hot-unplug로 AMD GPU(KFD)를 떼는 워크스테이션·서버에서 pciehp 제거 스레드 크래시를 막는 stable 수정입니다. 다른 amdgpu 세대 재현 여부와 백포트될 stable 브랜치 목록은 확인이 필요합니다.\n\n> crashes the pciehp removal thread (observed as a +0x1b4 NULL deref on MI50 Thunderbolt unplug).\n\n[원문 확인](https://lore.kernel.org/stable/20261007180909.34013-2-olivier.kaloudoff@gmail.com/)\n\n**HID: core: fix device cleanup on allocation failure**\n\nhid_allocate_device() 오류 경로에서 hid_bpf_device_init() 실패 후 hid_destroy_device()가 초기화되지 않은 SRCU를 cleanup하며 general protection fault가 나는 문제를 put_device() 직접 호출로 고칩니다.\n\n영향: HID-BPF가 켜진 배포에서 장치 할당 실패 시 커널 패닉을 피하는 stable 백포트입니다.\n\n> Dereferencing them causes a general protection fault.\n\n[원문 확인](https://lore.kernel.org/stable/20261007162808.373024-1-tristmd@gmail.com/)\n\n**KVM: PPC: Fixes for Book3S HV HPT locking and paired-single decoding**\n\nBook3S HV 가상 모드 HPT hcall에 SRCU read lock을 추가해 memslot UAF를 막고, HPTE bit-lock 경로에 preempt_disable()를 넣어 선점 시 stall/deadlock을 방지합니다. paired-single D-form의 12-bit displacement 부호 확장도 수정합니다.\n\n영향: Power KVM 호스트·LPAR에서 Hash/Radix 게스트와 nested 워크로드를 돌리는 엔터프라이즈 배포는 6165d5dd99db 이후 동기화 결함의 stable 수정이 필요합니다. v5.14+ 외 추가 longterm 브랜치 백포트 범위와 paired-single 수정 영향 워크로드는 확인이 필요합니다.\n\n> adds SRCU read lock protection when walking memslots during virtual-mode HPT hcalls\n\n[원문 확인](https://lore.kernel.org/stable/20261007182116.12479-1-amachhiw@linux.ibm.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "kernel.org releases.json",
+      "url": "https://www.kernel.org/releases.json",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-7.2.9",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.9",
+      "note": "changelog"
+    },
+    {
+      "title": "sched/cache asym packing stable@",
+      "url": "https://lore.kernel.org/stable/b29badede27bb6bfb4a759e06754cb19657f0778.1791308631.git.tim.c.chen@linux.intel.com/",
+      "note": "thread"
+    },
+    {
+      "title": "xen/netfront short Ethernet header",
+      "url": "https://lore.kernel.org/stable/20261007-b4-xen-netfront-short-head-v1-1-12d7113a7e4e@toxicpanda.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/amdkfd surprise removal teardown",
+      "url": "https://lore.kernel.org/stable/20261007180909.34013-2-olivier.kaloudoff@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "wifi rtw89 WoW AKM IE length",
+      "url": "https://lore.kernel.org/stable/20261007161721.261452-3-tristmd@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "HID core allocation failure cleanup",
+      "url": "https://lore.kernel.org/stable/20261007162808.373024-1-tristmd@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM PPC Book3S HV HPT series cover",
+      "url": "https://lore.kernel.org/stable/20261007182116.12479-1-amachhiw@linux.ibm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM PPC memslot UAF patch",
+      "url": "https://lore.kernel.org/stable/20261007182116.12479-2-amachhiw@linux.ibm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-5.10.271",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.271",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-5.15.222",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.222",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-6.1.189",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.1.189",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-07T18:28:23.584Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

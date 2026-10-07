@@ -1,0 +1,163 @@
+{
+  "id": "2026-10-08-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-10-08 EFI stub 하드닝 — 툴체인",
+  "headline": "x86 EFI libstub가 KBUILD_CFLAGS를 따르도록 바뀌는 한편, Clang Context Analysis와 scsi_debug 락 어노테이션 논의가 llvm 리스트에서 이어졌습니다.",
+  "date": "2026-10-08",
+  "summary": "Kees Cook 패치는 x86 EFI 스텁이 전역 컴파일러 플래그를 빠뜨리는 kbuild 패턴을 다른 아키텍처와 맞춥니다. Rust configfs·timekeeping v7.4-rc1 pull과 Kconfig.toolchain 정리도 툴체인·빌드 유지보수에 직접 닿습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "x86 EFI libstub KBUILD_CFLAGS 통일",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "x86 EFI 부트·kbuild·커널 하드닝 옵션을 다루는 빌드/보안 엔지니어",
+      "verifyLink": "https://lore.kernel.org/llvm/20261006204224.1536491-2-kees@kernel.org/",
+      "if": "x86 EFI 부트 경로에서 -ftrivial-auto-var-init 같은 전역 하드닝 옵션 누락을 막아야 한다면",
+      "do": "패치 스레드와 hardening.config·GCC·Clang 검증 계획을 따라 스텁 cflags-y := $(KBUILD_CFLAGS) 변경을 리뷰하세요",
+      "verify": "스레드 원문과 과거 dedicated CFLAGS 회귀 커밋을 대조해 예외가 남는지 확인하세요"
+    },
+    {
+      "title": "Rust configfs subsystem callback 오프셋 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Rust configfs 바인딩을 쓰는 서브시스템·드라이버 개발자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/87a4opeh10.fsf@kernel.org/",
+      "if": "Rust configfs에서 subsystem callback 데이터 오프셋을 쓰고 있다면",
+      "do": "v7.4-rc1용 pull과 get_group_data() 수정 커밋을 기준으로 rust-next 병합 타이밍을 추적하세요",
+      "verify": "태그 rust-configfs-for-v7.4-rc1와 패치 인용문으로 dead Subsystem 분기 여부를 원문에서 확인하세요"
+    },
+    {
+      "title": "scsi_debug 조건부 락과 Clang Context Analysis",
+      "priority": "중",
+      "impactType": "project",
+      "affectedAudience": "Clang/Kernel Context Analysis를 쓰는 드라이버·도구체인 개발자",
+      "verifyLink": "https://lore.kernel.org/llvm/20261007131411.GE30647@lst.de/",
+      "if": "조건부 rwlock 경로에 __context_unsafe 대신 더 안전한 어노테이션을 찾는 중이라면",
+      "do": "Christoph Hellwig 질문 스레드와 Marco Elver의 context_lock_struct() 설명을 읽고 scsi_debug v4 시리즈 갱신을 지켜보세요",
+      "verify": "scsi_debug가 __context_unsafe 없이 fake __acquire 경로로 다시 정리되는지는 아직 확인이 필요합니다"
+    },
+    {
+      "title": "Kconfig.toolchain cc-option ergonomics",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "kbuild/Kconfig.toolchain·컴파일러 경고 정책을 다루는 빌드 시스템 개발자",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20261007-scripts-kconfig-toolchain-improvements-v1-0-1e524178da11@kernel.org/",
+      "if": "Kconfig에서 cc-option으로 -Wno-* 프로브를 Kbuild와 맞추고 싶다면",
+      "do": "Nathan Chancellor 시리즈의 compiler 심볼 제거와 cc-probe sed 변경을 .config 결과와 함께 검토하세요",
+      "verify": "빈 CC_OPT_WNO_* 문자열을 unset으로 보이게 하는 follow-up이 있는지는 확인이 필요합니다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Rust timekeeping for v7.4-rc1**\n\nRust timekeeping v7.4-rc1 pull은 fsleep/udelay 범위 경고, ClockSource를 ClockId로 맞춤, bindings::HZ 노출, Delta::to_jiffies_timeout(), HrTimer 핸들 설계 문서 등을 묶어 제출합니다.\n\n영향: Rust 커널 시간·타이머 API가 C 명명·타임아웃 단위와 맞춰지며 잘못된 지연 값은 조기에 잡히고 downstream Rust 드라이버의 timeout 작성이 단순해집니다.\n\n> Warnings when passing out-of-range inputs to `fsleep` and `udelay`. Rename `ClockSource` to `ClockId`... Make `CONFIG_HZ` value available as `bindings::HZ`.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/87ece1eirv.fsf@kernel.org/)\n\nFUJITA Tomonori가 동일 pull에 Delta::ZERO generic 등 추가 패치 두 개 포함을 요청했으며, v7.4-rc1 pull에 합쳐지는지는 확인이 필요합니다.\n\n> Would it be possible to also include the following two patches in this pull request? rust: time: make Delta::ZERO generic over the time unit\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20261007.225501.2303547436453055941.tomo@flapping.org/)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**efi/libstub: Build the x86 stub from KBUILD_CFLAGS**\n\nKees Cook 패치는 x86 EFI libstub가 KBUILD_CFLAGS를 짧은 자체 목록으로 대체해 전역 하드닝·경고 옵션이 빠지는 문제를, 다른 아키텍처처럼 KBUILD_CFLAGS를 기본으로 쓰고 decompressor/stub에 맞지 않는 커널 전용 옵션만 제거하는 방식으로 바꿉니다.\n\n영향: 새 전역 compiler 플래그가 EFI 부트 스텁까지 자동 전파되지 않아 하드닝·빌드 회귀가 반복되는 kbuild 패턴을 줄이며, x86_64/i386 hardening.config와 GCC·Clang으로 검증됩니다.\n\n> The x86 stub replaces KBUILD_CFLAGS with a short list of its own, so new kernel-wide compiler options go missing... Flip the x86 option logic to match the other architectures.\n\n[원문 확인](https://lore.kernel.org/llvm/20261006204224.1536491-2-kees@kernel.org/)\n\n**Rust configfs changes for v7.4-rc1**\n\nAndreas Hindborg의 v7.4-rc1용 Rust configfs pull request는 subsystem callback의 data offset 계산 버그 수정, release safety 문서 수정, thread-safe callback data 요구 등 세 패치를 rust-next 병합용으로 제출합니다.\n\n영향: 잘못된 is_root 판별로 subsystem callback이 Group 오프셋으로 Parent 데이터를 읽을 수 있어 Rust configfs 드라이버 작성자에게 실질적 회귀·안전성 이슈입니다.\n\n> The check is therefore always false at runtime, and the Subsystem branch is dead. Subsystem-level callbacks reach the Group branch and may read data at the wrong offset.\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/a.hindborg/linux.git/patch/?id=e84c9b64df615e658e47561b835c1364dc48f0c0)\n\n> Three changes for the Rust configfs bindings. One typo fix for a safety comment and two bug fixes.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/87a4opeh10.fsf@kernel.org/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**scsi: scsi_debug: Improve lock context annotations**\n\nBart Van Assche의 scsi_debug v4 패치가 조건부 rwlock 경로에 __context_unsafe를 두는 방향으로 정리되었고, Christoph Hellwig가 Clang에서 sparse 스타일 __acquire/__release를 쓸 수 있는지 llvm 리스트에 질문했으며 Marco Elver가 이미 Context Analysis에서 동작한다고 답했습니다.\n\n영향: 조건부 락킹을 __context_unsafe로 덮는 대신 Clang Context Analysis와 맞는 어노테이션 패턴을 찾는 문제로, 커널 전역 락 검증·도구체인 추적자에게 직접 해당합니다.\n\n> Is there no way we can make the spare-style __acquire/__release work for clang? That would be this and similar patterns so much better and safer than the blanket __context_unsafe.\n\n[원문 확인](https://lore.kernel.org/llvm/20261007131411.GE30647@lst.de/)\n\n> __acquire/__release/etc. fake acquire/release functions do already work with Clang Context Analysis. See definition of context_lock_struct() in include/linux/compiler-context-analysis.h\n\n[원문 확인](https://lore.kernel.org/llvm/CANpmjNOUKf49YsujdfA-c553mx7G7+NWEPJjwNxCyTWafDZBOg@mail.gmail.com/)\n\n**Initial ergonomic improvements to scripts/Kconfig.toolchain**\n\nNathan Chancellor 시리즈는 scripts/Kconfig.toolchain 의존성에서 compiler 심볼을 걷어내고, Kconfig의 cc-option/cc-option-str가 Kbuild와 같이 -Wno-* 경고 비활성을 프로브하도록 scripts/Kconfig.include의 cc-probe를 조정합니다.\n\n영향: Kconfig.toolchain의 CC_OPT_WNO_* 심볼 정의가 Kbuild cc-option과 동일한 의미를 갖게 되어, 툴체인·Kconfig 유지보수와 .config 가독성 논의가 이어집니다.\n\n> improves the ergonomics of using cc-option and cc-option-str in Kconfig to disable warnings, making Kconfig and Kbuild more unified in their behavior\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20261007-scripts-kconfig-toolchain-improvements-v1-0-1e524178da11@kernel.org/)\n\n> Thanks, straight-forward! When I look into the resulting .config, I'd wish, these empty string kconfig symbols could be unset\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/179139172076.154975.7876331914722818497.b4-review@b4/)\n\n**rust_binder: consolidate transaction failure prints**\n\nAlice Ryhl 시리즈는 Rate limited printing 작업에서 분리되어, Error용 ZeroableOption, TransactionInfo의 Option<Error> 저장, transaction 실패 printk를 하나의 debug 출력으로 통합합니다.\n\n영향: Rust binder에서 errno를 타입 안전하게 다루고 실패 로그를 정리하는 선행 작업으로, char-misc-next 경로의 Rust/Android binder 개발에 영향을 줍니다.\n\n> Patch 1 implements ZeroableOption for Error... Patch 3 consolidates the transaction failure prints into a single debug print.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20261007-binder-consolidate-txn-prints-v1-0-c1032ed3221f@google.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Christoph Hellwig — Clang __acquire/__release 질문",
+      "url": "https://lore.kernel.org/llvm/20261007131411.GE30647@lst.de/",
+      "note": "thread"
+    },
+    {
+      "title": "Marco Elver — Clang Context Analysis 답변",
+      "url": "https://lore.kernel.org/llvm/CANpmjNOUKf49YsujdfA-c553mx7G7+NWEPJjwNxCyTWafDZBOg@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "scsi_debug lock annotations 패치",
+      "url": "https://lore.kernel.org/llvm/765bf3683555f3d7fbe8510cde1eb50d5f6d0c6f.1791349129.git.bvanassche@acm.org/",
+      "note": "thread"
+    },
+    {
+      "title": "Kees Cook — x86 EFI libstub KBUILD_CFLAGS",
+      "url": "https://lore.kernel.org/llvm/20261006204224.1536491-2-kees@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "kbuild dedicated CFLAGS 회귀 사례",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=5ff8ad3909524",
+      "note": "commit"
+    },
+    {
+      "title": "Rust configfs v7.4-rc1 pull",
+      "url": "https://lore.kernel.org/rust-for-linux/87a4opeh10.fsf@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "rust configfs offset fix",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/a.hindborg/linux.git/patch/?id=e84c9b64df615e658e47561b835c1364dc48f0c0",
+      "note": "commit"
+    },
+    {
+      "title": "rust-configfs-for-v7.4-rc1",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/a.hindborg/linux.git/?h=rust-configfs-for-v7.4-rc1",
+      "note": "changelog"
+    },
+    {
+      "title": "Rust timekeeping v7.4-rc1 pull",
+      "url": "https://lore.kernel.org/rust-for-linux/87ece1eirv.fsf@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "rust-for-linux GitHub 미러",
+      "url": "https://github.com/rust-for-linux/linux.git",
+      "note": "changelog"
+    },
+    {
+      "title": "FUJITA — Delta 패치 포함 요청",
+      "url": "https://lore.kernel.org/rust-for-linux/20261007.225501.2303547436453055941.tomo@flapping.org/",
+      "note": "thread"
+    },
+    {
+      "title": "Kconfig.toolchain improvements v1",
+      "url": "https://lore.kernel.org/linux-kbuild/20261007-scripts-kconfig-toolchain-improvements-v1-0-1e524178da11@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "Kconfig.toolchain cc-probe 패치 2/2",
+      "url": "https://lore.kernel.org/linux-kbuild/20261007-scripts-kconfig-toolchain-improvements-v1-2-1e524178da11@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "Nicolas Schier 리뷰",
+      "url": "https://lore.kernel.org/linux-kbuild/179139172076.154975.7876331914722818497.b4-review@b4/",
+      "note": "thread"
+    },
+    {
+      "title": "rust_binder transaction prints",
+      "url": "https://lore.kernel.org/rust-for-linux/20261007-binder-consolidate-txn-prints-v1-0-c1032ed3221f@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Rate limited printing 분리 출처",
+      "url": "https://lore.kernel.org/r/20261007-pr-ratelimited-v6-0-f14accd4ea3b@google.com",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-07T18:25:42.943Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

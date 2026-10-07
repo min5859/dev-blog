@@ -1,0 +1,123 @@
+{
+  "id": "2026-10-08-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-10-08 x86 EFI stub 하드닝 — 커널 보안",
+  "headline": "x86 EFI libstub가 KBUILD_CFLAGS를 따르도록 바뀌고, Landlock 도메인 스택에서 Clang 20 fortify panic 수정이 제안됩니다.",
+  "date": "2026-10-08",
+  "summary": "부팅 전 stub까지 전역 하드닝 옵션이 빠지던 Makefile 문제를 Kees van de Kogel이 뒤집는 패치가 linux-hardening에 올라왔습니다. Qualcomm 측 Landlock inherit_ruleset() fortify panic 수정과 pstore·nl80211 SMD uAPI 논의도 함께 추적할 만합니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "efi/libstub: x86 stub를 KBUILD_CFLAGS로 빌드",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "x86 EFI 부팅·하드닝 설정을 유지하는 배포판·보안 팀",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20261006204224.1536491-2-kees@kernel.org/",
+      "if": "hardening.config로 -ftrivial-auto-var-init 등 전역 옵션을 쓰는 x86 EFI 이미지를 빌드한다면",
+      "do": "libstub가 자체 CFLAGS로 KBUILD_CFLAGS를 대체하는 현재 동작과 패치 후 hardening 적용 목록을 스레드에서 대조하세요.",
+      "verify": "메인라인 머지 일정과 하위 커널 백포트 필요 여부는 아직 공개되지 않았으니 lore 원문을 따라가며 확인하세요."
+    },
+    {
+      "title": "landlock: domain counter를 anonymous union 밖으로",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Landlock·Android/서버 샌드박스를 쓰는 arm64 Clang 빌드 담당",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20261007-b4-landlock-fix-domain-fortify-panic-v1-1-042e9108f5f8@oss.qualcomm.com/",
+      "if": "Clang 20과 CONFIG_FORTIFY_SOURCE로 Landlock 도메인을 스택한다면",
+      "do": "inherit_ruleset()의 handled_masks 복사에서 fortify panic이 나는지 재현 로그와 패치 diff를 맞춰 보세요.",
+      "verify": "패치는 arm64 객체 빌드·Clang 생성 코드 검증만 되었고 부팅 테스트는 하지 않았다고 명시되어 있으니 배포 전 부팅 검증을 계획하세요."
+    },
+    {
+      "title": "pstore V2 UX·압축 경로 정리",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "pstore/ramoops로 패닉 로그를 수집하는 플랫폼·커널 디버그 담당",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20261006203412.175427-1-gpiccoli@igalia.com/",
+      "if": "크래시 덤프 수집 경로에서 pstore V2나 kmsg_bytes 런타임 조정을 쓴다면",
+      "do": "압축 초기화 통합과 레이스 수정이 포함된 take 2 시리즈를 리뷰 목록에서 읽어 보세요.",
+      "verify": "레이스 수정의 정확한 시나리오는 각 패치 diff를 추가로 읽어야 하므로 머지 전 diff를 직접 확인하세요."
+    },
+    {
+      "title": "nl80211: SMD BSS 전환 컨텍스트 속성",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "nl80211/wpa_supplicant·드라이버(ath12k 등) MLD 로밍 개발자",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/1b8d82ce-a63f-4158-a767-693d0596b449@oss.qualcomm.com/",
+      "if": "MLD 로밍에서 SN·PN 등 암호화 컨텍스트를 userspace와 주고받는 uAPI를 설계한다면",
+      "do": "SET/GET/EVENT 속성과 비동기 GET_SMD_CTX 동작을 Johannes Berg 리뷰 코멘트와 대조하세요.",
+      "verify": "최종 nl80211 uAPI 문서와 STA 상태 전제가 패치에 반영되는지는 미확인이므로 스레드 갱신을 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**efi/libstub: Build the x86 stub from KBUILD_CFLAGS**\n\nx86 EFI libstub가 자체 짧은 CFLAGS 목록으로 KBUILD_CFLAGS를 대체해 커널 전역 하드닝 옵션(-ftrivial-auto-var-init, -fstrict-flex-arrays=3 등)이 빠지던 문제를, 다른 아키텍처처럼 KBUILD_CFLAGS 기반으로 빌드하도록 Makefile을 뒤집습니다.\n\n영향: 부팅 전 단계(decompressor에 링크되는 stub)까지 hardening.config 수준의 컴파일러 보호가 따라가지 않으면, 커널 본체와 다른 취약한 코드 생성·경고 누락이 장기적으로 남습니다.\n\n> The x86 stub replaces KBUILD_CFLAGS with a short list of its own, so new kernel-wide compiler options go missing\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20261006204224.1536491-2-kees@kernel.org/)\n\n**landlock: Move the domain layer counter out of the anonymous union**\n\nClang 20 + CONFIG_FORTIFY_SOURCE에서 landlock_domain의 anonymous union 안 __counted_by 위치를 잘못 읽어 inherit_ruleset() 복사 시 fortify panic이 나는 문제를, num_layers·handled_masks를 구조체 최상위로 옮겨 수정합니다.\n\n영향: Landlock 도메인 스택이 정상 동작하지 않으면 샌드박스 정책 적용 자체가 실패하거나 커널이 panic하여 가용성·격리 보장이 깨집니다.\n\n> stacking Landlock domains can trigger a fortify panic in the handled_masks copy in inherit_ruleset()\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20261007-b4-landlock-fix-domain-fortify-panic-v1-1-042e9108f5f8@oss.qualcomm.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Improvements on pstore user experience, take 2**\n\npstore V2가 압축 초기화 경로를 fs/백엔드 등록 양쪽에서 통합하고, kmsg_bytes를 런타임에 쓸 수 있게 하며, V1에서 지적된 레이스를 수정합니다.\n\n영향: 크래시 덤프(pstore) 경로의 초기화·동시성 버그는 장애 분석 데이터 손실이나 레이스로 이어져 사후 보안 조사 신뢰도를 떨어뜨립니다.\n\n> The main changes of this version are related to potential races Sashiko caught, and are hereby addressed\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20261006203412.175427-1-gpiccoli@igalia.com/)\n\n**wifi: nl80211: Define attributes to pack SMD BSS Transition context**\n\nnl80211에 SMD BSS 전환 동적 컨텍스트(SN·PN 등)를 userspace와 주고받는 SET/GET/EVENT 명령·속성이 추가되며, 리뷰에서 문서·STA 상태 요구사항이 보강 중입니다.\n\n영향: 로밍 시 암호화 컨텍스트(PN 등) 전달 uAPI는 잘못 설계되면 키 재사용·세션 끊김 등 무선 보안 사고로 이어질 수 있어 초기 리뷰가 중요합니다.\n\n> this carries PN data which fundamentally maps to a key, so it seems the key must be there before it\n\n[원문 확인](https://lore.kernel.org/linux-hardening/1b8d82ce-a63f-4158-a767-693d0596b449@oss.qualcomm.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "efi/libstub: Build the x86 stub from KBUILD_CFLAGS",
+      "url": "https://lore.kernel.org/linux-hardening/20261006204224.1536491-2-kees@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "landlock: Move the domain layer counter out of the anonymous union",
+      "url": "https://lore.kernel.org/linux-hardening/20261007-b4-landlock-fix-domain-fortify-panic-v1-1-042e9108f5f8@oss.qualcomm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Linux 7.2.9 stable changelog",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.9",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 5.15.222 longterm changelog",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.222",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 6.1.189 longterm changelog",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.1.189",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 5.10.271 longterm changelog",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.271",
+      "note": "changelog"
+    },
+    {
+      "title": "Improvements on pstore user experience, take 2",
+      "url": "https://lore.kernel.org/linux-hardening/20261006203412.175427-1-gpiccoli@igalia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "wifi: nl80211: Define attributes to pack SMD BSS Transition context",
+      "url": "https://lore.kernel.org/linux-hardening/1b8d82ce-a63f-4158-a767-693d0596b449@oss.qualcomm.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-07T18:23:26.914Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,138 @@
+{
+  "id": "2026-10-08-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-10-08 SMMU 속성 정렬 — 아키·플랫폼",
+  "headline": "비일관 SMMUv3 속성 패치가 interconnect 논쟁으로 병합 전이고, Apple Silicon macaudio는 atomic context mutex 이슈가 열려 있습니다.",
+  "date": "2026-10-08",
+  "summary": "Daniel Mentz의 arm-smmu-v3 v2는 STE/CD·CR1을 coherency 기능에 맞추려 하지만 Robin Murphy가 시스템별 interconnect 없이는 단정하기 어렵다고 반박했습니다. arm64 insn 배리어 정리, mm VMA 헬퍼·export 캡슐화, RISC-V perf rdtsc, macaudio machine 드라이버 리뷰가 함께 움직입니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "arm-smmu-v3: 비일관 SMMU 메모리 속성 정렬",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "ARM 플랫폼 IOMMU·DMA 비일관성 담당자",
+      "verifyLink": "https://lkml.iu.edu/hypermail/linux/kernel/2610.0/07334.html",
+      "if": "비일관 SMMUv3와 dma_alloc_coherent() 버퍼를 함께 다룬다면",
+      "do": "v2 패치 방향과 10월 7일 Robin Murphy 답장 논점을 추적하세요",
+      "verify": "LKML·lore 스레드에서 STE/CD fetch·External Abort 관련 주장을 원문으로 확인하세요"
+    },
+    {
+      "title": "ASoC macaudio: PCM trigger 경로 mutex 회귀 신호",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Apple Silicon (asahi) ASoC·사운드 스택 개발자",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/a166844a-ba68-46b2-b37b-111ce54dbba3@oss.qualcomm.com/",
+      "if": "Apple Silicon 오디오 start/stop 경로를 검증한다면",
+      "do": "macaudio v2에서 macaudio_be_trigger()의 guard(mutex) 처리 수정안을 기다리며 리비전을 확인하세요",
+      "verify": "리뷰 스레드에서 IRQ 비활성 atomic context sleep 지적을 원문으로 확인하세요"
+    },
+    {
+      "title": "arm64 insn: deprecated DMB/DSB barrier 타입 제거",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "arm64 arch/arm64/lib/insn.c 유지보수자",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/a163f846-dbc3-4077-ab9c-a17d31656af2@arm.com/",
+      "if": "동적 코드 생성·kprobe/ftrace가 insn 헬퍼에 의존한다면",
+      "do": "시리즈 1/6 병합과 OSH 인코딩·후속 non-instrumentable 생성 계획을 따라가세요",
+      "verify": "lore 스레드에서 deprecated 타입 제거와 AARCH64_INSN_MB_OSH 추가 설명을 확인하세요"
+    },
+    {
+      "title": "perf riscv: rdtime 기반 rdtsc()",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "RISC-V perf·벤치마크 사용자",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20260929034133.2153-2-cp0613@linux.alibaba.com/",
+      "if": "RISC-V에서 userspace perf self-test·JIT를 쓴다면",
+      "do": "v2 병합 후 PERF_HAVE_RDTSC 등 2/2 변경이 함께 landing되는지 확인하세요",
+      "verify": "패치 스레드에서 상수 0 stub 문제와 rdtime 구현을 원문으로 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ASoC: apple: Add macaudio machine driver**\n\nmacaudio v2 09/21은 Apple Silicon MCA·다중 codec 조합용 ASoC machine 드라이버(약 1700줄)를 추가합니다. Ajay Kumar Nandam은 macaudio_be_trigger()에서 guard(mutex) 사용이 IRQ가 꺼진 PCM trigger 경로와 맞지 않을 수 있다고 지적해 .nonatomic 표시 또는 락 제거를 요구합니다.\n\n영향: Apple Silicon 데스크톱·노트북 오디오 스택의 핵심 플랫폼 드라이버로, atomic context에서 mutex sleep 가능성은 오디오 start/stop 시 WARN이나 데드락 리스크를 뜻해 asahi 관련 플랫폼 개발자가 v2 리비전을 봐야 합니다.\n\n> Apple Silicon Macs have a complex audio subsystem consisting of an I2S peripheral (MCA) and multiple codecs of various models and capabilities.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20261004-macaudio-v2-9-7b47ed6335a8@gmail.com/)\n\n> The default PCM trigger path can run with the stream lock held and IRQs disabled, so taking a normal mutex here can sleep in atomic context.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/a166844a-ba68-46b2-b37b-111ce54dbba3@oss.qualcomm.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**iommu/arm-smmu-v3: Align memory attributes for SMMU-originated accesses**\n\nDaniel Mentz의 v2 패치는 비일관(non-coherent) SMMUv3에서 스트림/CD 테이블·큐 접근에 하드코딩된 Inner Shareable Write-Back 대신 ARM_SMMU_FEAT_COHERENCY에 맞춰 CR1·STE CD 속성을 설정하도록 arm-smmu-v3를 바꿉니다. Robin Murphy는 10월 7일 답장에서 스펙 준수만으로는 interconnect별 속성 무시·abort 동작을 단정하기 어렵다며 병합 전 논쟁이 이어지고 있습니다. 메인라인 사례 제시와 v2 재제출 형태는 확인이 필요합니다.\n\n영향: ARM 서버·SoC에서 IOMMU와 dma_alloc_coherent() 버퍼 간 속성 불일치는 STE/CD fetch 실패나 External Abort로 이어질 수 있어, 비일관 SMMU를 다루는 플랫폼·IOMMU 유지보수자는 패치 방향과 리뷰 논점을 추적해야 합니다.\n\n> the attributes for stream tables, CD tables, and queues are currently hardcoded to Inner Shareable, Write-Back. On non-coherent systems... mismatched memory attributes between the CPU and the SMMU.\n\n[원문 확인](https://lkml.iu.edu/hypermail/linux/kernel/2610.0/07334.html)\n\n> without knowing the system-specific details of exactly what is being ignored from what we think we've programmed, how can we say what the actual attributes used to access memory really are\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/ae8db5bf-9f9e-4f0d-afa1-91718323568e@arm.com/)\n\n**arm64: insn: remove deprecated memory barrier types**\n\nAda Couprie Diaz 시리즈 1/6은 Arm ARM DDI 0487 M.c에서 deprecated된 DMB/DSB barrier enum(ISHST·NSHLD 등)을 insn.h·insn.c에서 제거하고 누락된 AARCH64_INSN_MB_OSH 인코딩을 추가합니다. Vladimir Murzin·Ada의 10월 7일 스레드에서는 OSH≈SY 동치와 DSB용 OSH 유지 여부, 후속으로 DMB/DSB 생성을 non-instrumentable하게 만드는 계획이 논의됩니다. 후속 인라인화 커밋이 같은 시리즈에 포함되는지는 확인이 필요합니다.\n\n영향: arm64 동적 코드 생성·kprobe/ftrace가 insn 헬퍼에 의존하므로 barrier API 축소와 follow-up은 잘못된 인코딩이나 도구 계측 회귀를 막기 위해 아키텍처 코드 작성자가 봐야 합니다.\n\n> The deprecated types are not used in the kernel, so remove them from our instruction generation framework and add the missing `AARCH64_INSN_MB_OSH` case\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/a163f846-dbc3-4077-ab9c-a17d31656af2@arm.com/)\n\n**mm/vma: introduce vma[_flags]_is_mm_backed()**\n\nLorenzo Stoakes의 mmap-prepare v4 30/38은 core mm fault 경로로 채워진 매핑을 식별하는 vma_is_mm_backed()/vma_flags_is_mm_backed()를 추가하고 MADV_DODUMP 검사를 VM_SPECIAL 오픈코딩 대신 이 헬퍼로 바꿉니다. hugetlb는 예외로 포함하고 droppable·고정 mmap은 제외하며, 의도적 기능 변화는 없다고 명시합니다. v4 시리즈 전체 릴리스 윈도는 확인이 필요합니다.\n\n영향: 모든 아키텍처의 mmap/madvise 경로에 영향을 주는 VMA 분류 정리의 일부로, 플랫폼 포트가 커스텀 fault나 DAX·hugetlb와 맞물리는지 추적하는 엔지니어에게 후속 38패치 시리즈 병합 타이밍이 중요합니다.\n\n> Introduce vma[_flags]_is_mm_backed() for the purposes of identifying mappings which are mm-managed and whose contents were placed there by core mm's own fault path\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20261003-b4-mmap-prepare-vma-flag-sanify-v4-30-a1f052500fd7@kernel.org/)\n\n**perf riscv: Implement rdtsc()**\n\nChen Pei v2 1/2는 tools/perf에서 RV64용 rdtsc()를 rdtime CSR로 구현해 약한 stub의 상수 0 반환을 없애고 arch_perf_update_userpage()와 동일 timebase를 씁니다. Paul Walmsley는 10월 7일 linux-arm-kernel 스레드에서 arch/riscv Acked-by를 달았습니다. v2 2/2의 PERF_HAVE_RDTSC 빌드 플래그 변경이 함께 landing되는지는 확인이 필요합니다.\n\n영향: RISC-V에서 perf self-test·JIT 관련 도구가 TSC 유사 카운터에 의존할 때까지 무의미한 0 타임스탬프가 나왔으므로, perf/benchmark를 쓰는 RISC-V 플랫폼 엔지니어는 병합 후 userspace perf 빌드를 확인해야 합니다.\n\n> every caller reads a constant 0 that cannot be told apart from a counter standing still. Implement rdtsc() over the time CSR with rdtime.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20260929034133.2153-2-cp0613@linux.alibaba.com/)\n\n**mm: make map_kernel_pages_[prepare,complete] internal and unexported**\n\nLorenzo Stoakes v3 06/40는 mm 내부에서만 쓰이는 map_kernel_pages_prepare/complete의 EXPORT와 mm.h 선언을 제거하고 mm/internal.h로 옮깁니다. David Hildenbrand은 10월 7일 Acked-by만 남겼습니다. 트리 밖에서 해당 심볼을 참조하는 알려진 사용자가 있는지는 확인이 필요합니다.\n\n영향: 아키텍처별 out-of-tree 모듈이 이 심볼에 의존했다면 빌드가 깨질 수 있으나, 의도는 순수 mm 캡슐화이므로 플랫폼 포트는 외부 사용 여부만 확인하면 됩니다.\n\n> removes the exports and moves the declarations to mm/internal.h. No functional change intended.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20260917-b4-mmap-prepare-vma-flag-sanify-v3-6-4583d8a23bca@kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "iommu/arm-smmu-v3: Align memory attributes (LKML)",
+      "url": "https://lkml.iu.edu/hypermail/linux/kernel/2610.0/07334.html",
+      "note": "thread"
+    },
+    {
+      "title": "Robin Murphy: SMMU interconnect 속성 반박",
+      "url": "https://lore.kernel.org/linux-arm-kernel/ae8db5bf-9f9e-4f0d-afa1-91718323568e@arm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "arm64: insn: remove deprecated memory barrier types",
+      "url": "https://lore.kernel.org/linux-arm-kernel/a163f846-dbc3-4077-ab9c-a17d31656af2@arm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Arm ARM DDI 0487 M.c",
+      "url": "https://support.arm.com/documentation/ddi0487/mc/",
+      "note": "article"
+    },
+    {
+      "title": "mm/vma: vma_is_mm_backed() (mmap-prepare v4 30/38)",
+      "url": "https://lore.kernel.org/linux-riscv/20261003-b4-mmap-prepare-vma-flag-sanify-v4-30-a1f052500fd7@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "perf riscv: Implement rdtsc() v2 1/2",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20260929034133.2153-2-cp0613@linux.alibaba.com/",
+      "note": "thread"
+    },
+    {
+      "title": "perf riscv: Paul Walmsley Acked-by",
+      "url": "https://lore.kernel.org/linux-arm-kernel/7a32beb7-27e9-1805-d23a-590ad7fa05b3@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "ASoC: apple: Add macaudio machine driver v2",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20261004-macaudio-v2-9-7b47ed6335a8@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "macaudio: PCM trigger mutex 리뷰",
+      "url": "https://lore.kernel.org/linux-arm-kernel/a166844a-ba68-46b2-b37b-111ce54dbba3@oss.qualcomm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "mm: map_kernel_pages internal (v3 06/40)",
+      "url": "https://lore.kernel.org/linux-riscv/20260917-b4-mmap-prepare-vma-flag-sanify-v3-6-4583d8a23bca@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "map_kernel_pages: David Hildenbrand Acked-by",
+      "url": "https://lore.kernel.org/linux-riscv/45af678d-6e13-4b9c-b953-41d1feb0d0de@kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-07T18:33:31.895Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
