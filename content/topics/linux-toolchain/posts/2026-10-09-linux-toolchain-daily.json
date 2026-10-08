@@ -1,0 +1,116 @@
+{
+  "id": "2026-10-09-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-10-09 kbuild·Kconfig 집중 — 툴체인",
+  "headline": "kbuild 호스트 도구 퍼징 수정과 Kconfig 회귀·ASan 이슈 v2 패치가 linux-kbuild에 올라왔고, scsi_debug는 Clang lock annotation 논의가 이어집니다.",
+  "date": "2026-10-09",
+  "summary": "Leizhen Zhang이 genksyms·modpost·Kconfig 등 kbuild 호스트·전처리 경로의 퍼징·회귀 버그를 고치는 v2 시리즈를 제출했습니다. Bart Van Assche의 scsi_debug lock 표기안에 대해 Christoph Hellwig가 인라인 헬퍼 형태를 제안했습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "kbuild",
+    "Kconfig",
+    "LLVM"
+  ],
+  "highlights": [
+    {
+      "title": "kbuild 호스트 도구 ASan/UBSan 퍼징 수정",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "kbuild·modpost·genksyms 담당, sanitizer로 호스트 도구를 검증하는 배포/CI 엔지니어",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20261008164035.3668885-1-lzsx618@gmail.com/",
+      "if": "MODULES/MODVERSIONS나 UBSan 호스트 빌드에서 genksyms·modpost·sorttable 경로를 쓰거나 v6.14 이후 선언 패턴으로 빌드가 멈춘다면",
+      "do": "8개 패치 v2 스레드를 읽고 genksyms 무한 루프·OOB·UB 수정 범위를 자신의 CI 호스트 도구 빌드에 맞춰 재현해 보세요",
+      "verify": "머지 일정과 Julian Braha choice default 관련 별도 수정과의 관계는 스레드에서 확인하세요"
+    },
+    {
+      "title": "conf_choice() 무한 루프(oldconfig hang)",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "s390 및 크로스 ARCH Kconfig 사용자, oldconfig/syncconfig 자동화 담당",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20261008164521.3684735-1-lzsx618@gmail.com/",
+      "if": "ARCH=s390 defconfig 후 NR_CPUS 줄을 지우고 비-s390 호스트에서 oldconfig를 돌리는 자동화가 있다면",
+      "do": "v2 패치의 조기 return 조건을 적용 전·후로 동일 시나리오에서 conf가 멈추는지 비교하세요",
+      "verify": "fde192511bdb 이후 다른 ARCH/choice에서 동일 hang이 더 보고되는지는 추가 사례를 모니터하세요"
+    },
+    {
+      "title": "recursive dependency 후 check_top dangling",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "Kconfig 유지보수, Kconfig lint/퍼징·CI 통합 담당",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20261008164528.3685545-1-lzsx618@gmail.com/",
+      "if": "잘못된 Kconfig를 CI나 퍼징으로 넣어 conf가 ASan으로 죽는 경로를 검증한다면",
+      "do": "unexpected recursive dependency 처리 후 cv_stack 정리와 goto cleanup 경로가 스택-use-after-return을 막는지 ASan 호스트 빌드로 재현하세요",
+      "verify": "패치 v2 스레드의 재현 Kconfig와 로그를 원문과 대조하세요"
+    },
+    {
+      "title": "sym_get_near_range_bound() value 인자 회귀",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "Kconfig/savedefconfig 사용자, distro·CI defconfig 관리자",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20261008164540.3686383-1-lzsx618@gmail.com/",
+      "if": "prompt가 있는 심볼의 범위 밖 default를 savedefconfig로 동기화하는 워크플로가 있다면",
+      "do": "9b8719973ee2 이후 out-of-range default가 clamp되지 않는 케이스에서 v2 적용 후 savedefconfig 출력이 effective default와 어긋나지 않는지 확인하세요",
+      "verify": "스레드에 나온 CONFIG_A=4 예시와 동일한 최소 repro를 돌려 보세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**kbuild: fix memory safety and UB bugs in host tools found by fuzzing**\n\nLeizhen Zhang이 genksyms·fixdep·kallsyms·modpost·sorttable·byteshift 헤더 등 kbuild 호스트 도구 8개 패치(v2)를 제출했으며, ASan/UBSan 퍼징으로 발견된 무한 루프·OOB·UB를 수정하고 genksyms symtypes/CRC 불변을 검증했다고 밝혔습니다.\n\n영향: genksyms 무한 루프는 sanitizer 없이도 v6.14 이후 실제 빌드에서 터질 수 있고, modpost·sorttable 경로는 MODULES/MODVERSIONS·UBSan 호스트 빌드 신뢰성에 직접 영향을 줍니다.\n\n> Patch 1 fixes a bug that also triggers without sanitizers: a declaration such as \"int a, f(int);\" makes genksyms loop forever while allocating memory (since v6.14\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20261008164035.3668885-1-lzsx618@gmail.com/)\n\n**kconfig: fix use-after-free when a variable refers to itself**\n\nKconfig 전처리에서 X := $(X) 같은 자기 참조 단순 확장 변수를 처리할 때 RHS 확장 전에 기존 값을 free해 UAF·잘못된 결과가 나는 버그를 고치는 v2 패치가 올라왔습니다.\n\n영향: Makefile과 동일한 := 재할당 관용구가 Kconfig 전처리에서 깨지면 defconfig·fragment 생성 결과가 조용히 틀어질 수 있습니다.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20261008164504.3683811-1-lzsx618@gmail.com/)\n\n**kconfig: use the value argument in sym_get_near_range_bound()**\n\nsym_get_near_range_bound()가 value 인자를 무시하던 회귀를 고쳐, prompt가 있는 심볼의 범위 밖 default가 savedefconfig에서 다시 올바르게 clamp되도록 v2 패치가 제출되었습니다.\n\n영향: savedefconfig 출력이 미묘하게 달라지면 CI·배포판 minimal config 동기화와 range 제약 옵션 디버깅이 어려워집니다.\n\n> savedefconfig writes out values that are equal to the effective default again, for example CONFIG_A=4 for:\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20261008164540.3686383-1-lzsx618@gmail.com/)\n\n**kconfig: fix dangling check_top after an unexpected recursive dependency**\n\n잘못된 Kconfig에서 recursive dependency 오류 처리 후 cv_stack을 정리하지 않아 check_top이 dangling 되는 경로를 goto cleanup으로 고치는 v2 패치입니다.\n\n영향: 잘못된 Kconfig를 넣는 CI나 자동 생성 설정에서 conf가 ASan stack-use-after-return으로 죽을 수 있습니다.\n\n> AddressSanitizer: stack-use-after-return ... in dep_stack_remove\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20261008164528.3685545-1-lzsx618@gmail.com/)\n\n**kconfig: fix infinite loop in conf_choice() when no choice value is visible**\n\nchoice는 보이지만 항목이 하나도 보이지 않을 때 conf_choice()가 oldconfig 등에서 무한 루프에 빠지는 문제를, visible 값이 없으면 조기 return 하도록 고치는 v2 패치입니다.\n\n영향: ARCH=s390를 비-s390 호스트 컴파일러로 oldconfig할 때 실제로 멈춘다고 설명되어, 크로스 ARCH 설정·CI에서 즉각적인 빌드 블로커 회귀입니다.\n\n> $ make ARCH=s390 oldconfig     # hangs\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20261008164521.3684735-1-lzsx618@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**scsi: scsi_debug: Improve lock context annotations**\n\nBart Van Assche의 scsi_debug v4 7/8 패치에서 rwlock 래퍼의 __acquires_shared/__releases_shared 표기안에 대해 Christoph Hellwig가 조건 분기 순서를 유지하는 인라인 헬퍼 형태를 제안했습니다.\n\n영향: Clang 스레드 안전성(lock context) 분석을 통과하도록 드라이버를 정리하는 패턴이므로, LLVM 경고·annotation 워크플로를 다루는 빌드·정적분석 담당자에게 후속 패치 형태의 참고가 됩니다. v4 7/8이 Hellwig 제안대로 갱신된 새 시리즈가 llvm 리스트에 게시되었는지는 확인이 필요합니다.\n\n[원문 확인](https://lore.kernel.org/llvm/20261008071045.GB30898@lst.de/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "scsi_debug lock context — llvm 리스트",
+      "url": "https://lore.kernel.org/llvm/20261008071045.GB30898@lst.de/",
+      "note": "thread"
+    },
+    {
+      "title": "kbuild host tools fuzzing fixes v2",
+      "url": "https://lore.kernel.org/linux-kbuild/20261008164035.3668885-1-lzsx618@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "kconfig UAF on self-referential :=",
+      "url": "https://lore.kernel.org/linux-kbuild/20261008164504.3683811-1-lzsx618@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "kconfig sym_get_near_range_bound regression",
+      "url": "https://lore.kernel.org/linux-kbuild/20261008164540.3686383-1-lzsx618@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "kconfig dangling check_top after recursive dep",
+      "url": "https://lore.kernel.org/linux-kbuild/20261008164528.3685545-1-lzsx618@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "kconfig conf_choice infinite loop",
+      "url": "https://lore.kernel.org/linux-kbuild/20261008164521.3684735-1-lzsx618@gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-08T18:34:13.386Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

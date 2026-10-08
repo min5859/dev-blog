@@ -1,0 +1,138 @@
+{
+  "id": "2026-10-09-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-10-09 EFI·Landlock — 커널 보안",
+  "headline": "EFI stub 하드닝 시리즈가 EFI 트리에 큐되었고, Landlock·Power KVM Book3S 경로에서 FORTIFY·memslot 관련 수정이 제출되었습니다.",
+  "date": "2026-10-09",
+  "summary": "x86 EFI libstub가 KBUILD_CFLAGS 기반 하드닝으로 맞춰지는 흐름이 큐·리뷰 단계에서 진척했습니다. Landlock 도메인 스택과 KVM HPT memslot 경로는 커널·컴파일러 양쪽 추적이 필요한 보안 신호로 남아 있습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "Landlock: 도메인 레이어 카운터와 FORTIFY 패닉",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "Landlock·FORTIFY·Clang 빌드 파이프라인 담당",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20261007-b4-landlock-fix-domain-fortify-panic-v1-1-042e9108f5f8@oss.qualcomm.com/",
+      "if": "Clang 20 이상과 CONFIG_FORTIFY_SOURCE로 Landlock 도메인을 스택할 때 restrict_self 경로를 검증한다면,",
+      "do": "Abel Vesa 패치와 LLVM 쪽 Landlock 관련 수정 제안(PR 228309) 진행을 함께 모니터링하세요.",
+      "verify": "fortify panic 재현 조건과 inherit_ruleset()의 handled_masks 복사 경로를 lore 스레드 원문으로 확인하세요."
+    },
+    {
+      "title": "KVM PPC Book3S HV: memslot SRCU·선점 가드",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "Power KVM Book3S HV(HPT)·nested 가상화 운영자",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20261007182116.12479-1-amachhiw@linux.ibm.com/",
+      "if": "6165d5dd99db 이후 virtual-mode HPT hcall과 nested KVM Book3S HV를 운영한다면,",
+      "do": "Amit Machhiwal v4 시리즈(3패치)의 stable·linux-hardening 제출 상태를 배포 백포트 계획에 반영하세요.",
+      "verify": "memslot walk SRCU 보호와 kvm_htab_write() h_remove 선점 가드 수정을 스레드 원문에서 확인하세요."
+    },
+    {
+      "title": "EFI libstub: Kees 시리즈 EFI 트리 큐",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "EFI/libstub 및 i386 defconfig 빌드를 돌리는 배포·보안 팀",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/31318d3b-1738-49d2-8017-d4ebf98aa22f@app.fastmail.com/",
+      "if": "hardening.config·i386 mixed-mode EFI 빌드를 CI에 포함한다면,",
+      "do": "큐된 시리즈와 패치 #1의 GCC i386 asmlinkage/regparm 수정이 들어간 빌드를 재검증하세요.",
+      "verify": "EFI 트리 큐 공지와 i386 빌드 회귀 관련 설명을 해당 lore 스레드에서 확인하세요."
+    },
+    {
+      "title": "compiler_types: __counted_by opt-out 필요성 재검토",
+      "priority": "중",
+      "impactType": "project",
+      "affectedAudience": "__counted_by/__counted_by_ptr 및 Clang 빌드 정책 담당",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20261008161724.GA459@ax162/",
+      "if": "efistub에 late-parse attributes가 KBUILD_CFLAGS로 전달되는 방향을 따른다면,",
+      "do": "Nathan Chancellor가 제시한 opt-out 패치 불필요 판단을 반영해 중복 API 우회가 mainline에 들어가지 않게 리뷰 우선순위를 조정하세요.",
+      "verify": "CC_FLAGS_DIALECT 후속 일정은 미확인이므로, 관련 답글 스레드를 직접 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.2.9 stable**\n\nGreg K-H가 2026-10-03에 태그한 stable 7.2.9에 457건의 upstream 백포트가 포함됩니다. ChangeLog에는 net/sched act_ct UAF·공유 conntrack 수정, landlock gcc-16 빌드 워크어라운드, superblock refcount 변경 등이 언급됩니다.\n\n영향: 7.2.x stable 트랙 사용자는 TC act_ct·Landlock 빌드·VFS 수명 주기 관련 수정을 이 점 릴리스로 받을 수 있어 배포 보안 업데이트 계획의 기준점이 됩니다.\n\n> net/sched: act_ct: fix helper UAF due to extensions realloc\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.9)\n\n**Linux 5.10.271 / 5.15.222 / 6.1.189 longterm**\n\n2026-10-03 longterm 점 릴리스에는 각각 588·747·967건 백포트가 있습니다. 5.10.271 ChangeLog 상위에는 Bluetooth RFCOMM/L2CAP/hci_sock 검증, NFC 길이 검사, netfilter ip6t_rt OOB read 등이, 5.15.222에는 eventpoll ep_remove UAF 수정 시리즈와 Bluetooth/NFC/net 경로 수정이, 6.1.189에는 Bluetooth/NFC/netfilter·openvswitch conntrack·xfs 및 RISC-V KVM hrtimer teardown 동기화 등이 포함됩니다.\n\n영향: LTS 기반 배포는 스택·epoll·conntrack 경로 수정을 이번 점 릴리스 묶음으로 우선 검토할 수 있습니다. 457·967건 전체와 CVE 공지의 1:1 매핑은 확인이 필요합니다.\n\n> eventpoll: fix ep_remove struct eventpoll / struct file UAF\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.222)\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.1.189)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**landlock: Move the domain layer counter out of the anonymous union**\n\nAbel Vesa는 Clang이 union 안 __counted_by 카운터 오프셋을 잘못 읽어 CONFIG_FORTIFY_SOURCE에서 도메인 스택 시 fortify panic이 난다고 설명했고, LLVM 수정 PR이 이미 제출된 Clang 코드생성 버그로 확인했습니다.\n\n영향: Landlock 샌드박싱 핵심 경로에서 잘못된 bounds 검사는 정상 restrict_self 호출을 커널 패닉으로 바꿀 수 있어, 커널 워크어라운드와 컴파일러 수정 추적이 모두 필요합니다. LLVM PR 228309 병합 전 모든 지원 Clang에서 커널 패치가 필수인지는 확인이 필요합니다.\n\n> With Clang 20 and CONFIG_FORTIFY_SOURCE, stacking Landlock domains can trigger a fortify panic in the handled_masks copy in inherit_ruleset()\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20261007-b4-landlock-fix-domain-fortify-panic-v1-1-042e9108f5f8@oss.qualcomm.com/)\n\n**KVM: PPC: Fixes for Book3S HV HPT locking and paired-single decoding**\n\nAmit Machhiwal v4 시리즈(3패치)는 virtual-mode HPT hcall에서 memslot walk에 SRCU 보호를 추가하고, HPTE bit-lock 보유 구간에 preempt_disable()을 씁니다. paired-single D-form의 12비트 displacement 부호 확장도 수정합니다.\n\n영향: 6165d5dd99db 이후 memslot UAF·선점 시 데드락/스톨과 게스트 명령 에뮬 오류는 호스트·중첩 KVM 안정성과 게스트 격리에 직결됩니다. stable 백포트 대상 버전과 머지 타임라인은 확인이 필요합니다.\n\n> Patch 1 adds SRCU read lock protection when walking memslots during virtual-mode HPT hcalls to prevent use-after-free races with concurrent memslot updates.\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20261007182116.12479-1-amachhiw@linux.ibm.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**efi/libstub: Build the x86 stub from KBUILD_CFLAGS (진척)**\n\nKees Cook 시리즈는 x86 EFI libstub가 KBUILD_CFLAGS를 기본으로 쓰고 decompressor에 맞지 않는 커널 전용 옵션만 제거하도록 바꿉니다. hardening.config의 -ftrivial-auto-var-init=zero, -fstrict-flex-arrays=3 등이 stub에 적용되며 Clang의 -fexperimental-late-parse-attributes로 __counted_by() 파싱 문제를 해소하는 방향입니다. Ard Biesheuvel은 시리즈를 EFI 트리에 큐했으나 패치 #1에 GCC i386 빌드 깨짐을 막는 asmlinkage/regparm 속성 수정을 추가했습니다. mainline 병합 전인지 다음 커널 릴리스 포함 시점은 확인이 필요합니다.\n\n영향: 부팅 경로(EFI stub)와 메인 커널의 하드닝 불일치로 조기 부트 코드에 공백이 생기는 문제를 줄이려는 신호이며, i386 mixed-mode EFI에서 빌드 회귀 없이 들어가야 합니다.\n\n> Flip the x86 option logic to match the other architectures... New flags that change code generation or semantics in a plain x86_64 defconfig hardening.config stub: Hardening: -ftrivial-auto-var-init=z\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20261006204224.1536491-2-kees@kernel.org/)\n\n[원문 확인](https://lore.kernel.org/linux-hardening/31318d3b-1738-49d2-8017-d4ebf98aa22f@app.fastmail.com/)\n\n**compiler_types: Allow opting out of __counted_by and __counted_by_ptr**\n\nNathan Chancellor는 efistub가 KBUILD_CFLAGS에서 -fexperimental-late-parse-attributes를 받으므로 __counted_by opt-out 패치는 더 이상 필요 없다고 답한 것으로 보입니다. CC_FLAGS_DIALECT 전역 추가는 낮은 우선순위로 남습니다.\n\n영향: 하드닝 속성 도입 시 임시 우회와 EFI stub CFLAGS 통합의 관계를 정리해 불필요한 API 우회가 mainline에 들어가지 않게 합니다. CC_FLAGS_DIALECT에 late-parse attributes를 넣는 후속 패치 일정은 확인이 필요합니다.\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20261008161724.GA459@ax162/)\n\n[원문 확인](https://lore.kernel.org/linux-hardening/eb644465-0c41-431c-85a3-f7eb6bd86cf3@app.fastmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "efi/libstub: Build the x86 stub from KBUILD_CFLAGS (Kees)",
+      "url": "https://lore.kernel.org/linux-hardening/20261006204224.1536491-2-kees@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "efi/libstub 시리즈 EFI 트리 큐 (Ard)",
+      "url": "https://lore.kernel.org/linux-hardening/31318d3b-1738-49d2-8017-d4ebf98aa22f@app.fastmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "landlock: domain layer counter / fortify panic",
+      "url": "https://lore.kernel.org/linux-hardening/20261007-b4-landlock-fix-domain-fortify-panic-v1-1-042e9108f5f8@oss.qualcomm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Landlock Clang 코드생성 버그 (Abel)",
+      "url": "https://lore.kernel.org/linux-hardening/66usntltyie7ii2rrqajy3izxrvwubwf2vqnery552v3akhwo2@xwb4t76d37wx/",
+      "note": "thread"
+    },
+    {
+      "title": "compiler_types __counted_by opt-out (Nathan)",
+      "url": "https://lore.kernel.org/linux-hardening/20261008161724.GA459@ax162/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM PPC Book3S HV fixes v4",
+      "url": "https://lore.kernel.org/linux-hardening/20261007182116.12479-1-amachhiw@linux.ibm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Linux 7.2.9 ChangeLog",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.9",
+      "note": "changelog"
+    },
+    {
+      "title": "kernel.org releases.json",
+      "url": "https://www.kernel.org/releases.json",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 5.10.271 ChangeLog",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.271",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 5.15.222 ChangeLog",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.222",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 6.1.189 ChangeLog",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.1.189",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-08T18:32:14.392Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

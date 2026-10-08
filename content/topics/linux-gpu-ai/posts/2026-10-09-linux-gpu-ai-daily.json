@@ -1,0 +1,118 @@
+{
+  "id": "2026-10-09-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-10-09 MSM DPU·RAS — GPU·AI 렌즈",
+  "headline": "Qualcomm DPU 레이어 믹서 한계 재정의와 GFX11 RAS 비활성 경로 UMC 크래시 수정이 dri-devel에서 동시에 논의됩니다.",
+  "date": "2026-10-09",
+  "summary": "MSM DPU v4 시리즈는 PINGPONG·DSC 하드웨어 한계와 클럭 기반 믹서 선택으로 고해상도 모드를 다시 맞추고, amdgpu는 RAS 컨텍스트가 NULL일 때 UMC 페이지 리타이어를 조기 종료합니다. virtio-gpu fdinfo는 v2에서 게스트·호스트 메모리 모델에 맞는 통계를 제안하고, vc4는 BCM2835 픽셀 클럭 상한에 대한 하드웨어 피드백이 이어집니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "drm/amdgpu: UMC 페이지 리타이어에서 NULL RAS 컨텍스트 방어",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "drm/amdgpu 및 amdkfd UMC/RAS 담당자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20261008161144.2671028-1-vulab@iscas.ac.cn/",
+      "if": "GFX11에서 RAS를 끈 구성에서도 KFD poison 인터럽트로 UMC 페이지 리타이어 경로가 타는 경우",
+      "do": "패치의 조기 return과 SMU HBM bad-page 메시징 회귀 커밋을 함께 읽고 테스트 구성을 점검하세요",
+      "verify": "amd-drm-fixes 풀 및 스테이블 백포트 일정은 아직 확인이 필요하니 스레드와 maintainer 응답을 추적하세요"
+    },
+    {
+      "title": "drm/msm/dpu: 레이어 믹서 할당·모드 한계 재작업",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "drm/msm DPU 및 Qualcomm 디스플레이 스택 유지보수자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20261008-lm_fixes_final-v4-0-fa986071c3c1@oss.qualcomm.com/",
+      "if": "신형 Snapdragon SoC에서 유효한 디스플레이 모드가 거절되거나 LM 폭 가정이 어긋난다면",
+      "do": "v4 6패치 시리즈의 PINGPONG·DSC 기반 예약과 source split 없는 LM 폭 가드를 리뷰에 반영하세요",
+      "verify": "v4의 32비트 나눗셈 등 리뷰·CI 지적이 머지 전 해소되는지 커버 레터와 후속 패치를 확인하세요"
+    },
+    {
+      "title": "drm/msm/dpu: 모드 클럭 검증의 ARM32 나눗셈 위험",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "drm/msm 빌드/CI 및 32-bit ARM MSM 플랫폼 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/sashiko-outbox-164414@kernel.org/",
+      "if": "DPU LM v4의 2/6 패치를 ARM32 allmodconfig CI에 태우는 경우",
+      "do": "dpu_crtc_mode_valid의 u64 /= u32를 do_div() 또는 div_u64()로 바꿀지 시리즈에 반영하세요",
+      "verify": "v4에 후속 수정이 포함됐는지, maintainer가 div_u64를 요구하는지 스레드를 확인하세요"
+    },
+    {
+      "title": "drm/virtio: fdinfo GEM 메모리 통계 노출 방향",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "drm/virtio-gpu 및 가상화 GPU 도구 개발자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20261008164135.510-1-shechenglong@xfusion.com/",
+      "if": "VM에서 fdinfo로 virtio-gpu 메모리를 관측·용량 계획하는 경우",
+      "do": "generic DRM fdinfo 대신 게스트 shmem·HOST3D blob 등 유형별 v2 회계와 문서화된 의미를 기준으로 도구를 맞추세요",
+      "verify": "v2 시리즈 일정과 호스트 측 할당 리포팅 요구 여부는 maintainer 스레드에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm/amdgpu: fix NULL RAS context dereference in UMC page retirement**\n\namdgpu_umc_handle_bad_pages()와 amdgpu_umc_do_page_retirement()에서 amdgpu_ras_get_context()가 NULL이면 조기 return하여 RAS 비활성 경로에서 page_retirement_lock·eeprom_control 역참조를 막습니다.\n\n영향: GFX11에서 RAS를 끈 프로덕션 구성에서도 ungated KFD poison 인터럽트가 UMC 페이지 리타이어를 건드려 커널 크래시가 날 수 있어 안정성 수정입니다.\n\n> Return early from amdgpu_umc_handle_bad_pages() and amdgpu_umc_do_page_retirement() when the RAS context is NULL.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20261008161144.2671028-1-vulab@iscas.ac.cn/)\n\n**회귀 원인 커밋 참고**\n\nSMU에 HBM bad page 수를 알리는 변경 이후 UMC 경로에 NULL 안전 처리가 없었던 점이 언급됩니다.\n\n> drm/amdgpu: message smu to update hbm bad page number\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=513befa63446)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/msm/dpu: rework layer mixer allocation and mode limits**\n\nPATCH v4 0/6은 LM 예약·모드 한계를 catalog max_mixer_width/MAX_HDISPLAY_SPLIT 대신 PINGPONG·DSC 인코더 하드웨어 한계로 옮기고, 클럭 기반 믹서 선택과 source split 없는 LM의 source-pipe 폭 가드를 추가합니다.\n\n영향: MSM DPU 유지보수자와 모바일 디스플레이 통합자가 고해상도·다중 LM 모드 배관을 더 정확히 맞출 수 있고, 잘못된 LM 폭 가정은 유효 모드 거절이나 경로 크기 오류를 일으킬 수 있습니다.\n\n> Switch to basing LM reservation off of PINGPONG and DSC encoder hardware limits. This revision also adds clock-based mixer selection and a source-pipe width guard for mixers without source split.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20261008-lm_fixes_final-v4-0-fa986071c3c1@oss.qualcomm.com/)\n\n**drm/msm/dpu: do not assume a merged datapath when validating mode clock**\n\nv4 2/6은 has_3d_merge 시 adjusted_mode_clk를 무조건 절반으로 두는 대신 dpu_crtc_num_lm_for_mode()로 나누지만, u64 /= u32가 ARM32에서 do_div()/div_u64() 없이 깨질 수 있다는 지적이 있습니다.\n\n영향: LM 시리즈의 모드 클럭 수정이 ARM32 allmodconfig/32비트 MSM CI 실패로 시리즈 전체를 막을 수 있습니다.\n\n> Could this be changed to perform the division using kernel macros like do_div() or div_u64() instead?\n\n[원문 확인](https://lore.kernel.org/dri-devel/sashiko-outbox-164414@kernel.org/)\n\n**drm/virtio: expose GEM memory statistics through fdinfo**\n\n리뷰 답변에서 generic DRM memory fdinfo는 virtio-gpu에 맞지 않는다고 하며, v2에서 게스트 shmem·HOST3D blob·혼합 blob·imported dma-buf 유형별 회계와 의미 문서화를 제안하고, 렌더러 프로토콜 변경 없이는 진짜 호스트 상주 통계는 미룹니다.\n\n영향: fdinfo로 메모리를 보는 virtio-gpu 사용자는 게스트/호스트/blob 모델에 맞는 통계가 필요하고, shmem만 보면 VM 용량 계획이 빗나갈 수 있습니다.\n\n> For v2, I plan to replace it with virtio-gpu-specific accounting and to document the semantics of each reported value explicitly.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20261008164135.510-1-shechenglong@xfusion.com/)\n\n**drm/vc4: hdmi: Defer pixel clock validation to HDMI helpers**\n\nRaspberry Pi의 Dave Stevenson은 BCM2835가 162 MHz TMDS/픽셀 클럭에 고정되지 않으며 HSM이 pixel*101/100을 따라 최대 166.65 MHz까지 가능해 165 MHz 모드가 유효해야 한다고 답했습니다.\n\n영향: vc4 HDMI 모드 검증과 supported_tmds_char_rate는 Pi 보드에서 동작하는 모드를 좌우하며, 162 MHz 상한은 HDMI 1.2급 모드를 불필요하게 막을 수 있습니다. 시리즈가 162 MHz 값을 올리거나 제거할지는 확인이 필요합니다.\n\n> The HSM clock can run at 166.65MHz without issue, so a pixel clock of 165MHz is fine.\n\n[원문 확인](https://lore.kernel.org/dri-devel/CAPY8ntDCU80hkxdDEGphQCX362ut4AdWJUTGkDOwOHWfkPW6BQ@mail.gmail.com/)\n\n**drm/panfrost: Move shrinker initialization and unplug one level down**\n\nv13 01/15의 0-day CI가 panfrost_gem_shrinker.c에서 kernel-doc 경고를 보고합니다: pfdev 파라미터 미기재, dev 설명 stale, panfrost_gem_shrinker_fini와 panfrost_gem_shrinker_cleanup 프로토타입 이름 불일치.\n\n영향: shrinker 리팩터는 GEM reclaim을 건드리며, doc/프로토타입 어긋남은 API 정리 미완 신호로 W=1 클린 빌드 전 머지를 막을 수 있습니다. v14에서 kernel-doc와 fini/cleanup 명명을 고칠지는 확인이 필요합니다.\n\n> Warning: drivers/gpu/drm/panfrost/panfrost_gem_shrinker.c:98 function parameter 'pfdev' not described in 'panfrost_gem_shrinker_init'\n\n[원문 확인](https://lore.kernel.org/dri-devel/202610090034.XP8OKWaV-lkp@intel.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/msm/dpu LM fixes v4 cover letter",
+      "url": "https://lore.kernel.org/dri-devel/20261008-lm_fixes_final-v4-0-fa986071c3c1@oss.qualcomm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/amdgpu NULL RAS context in UMC page retirement",
+      "url": "https://lore.kernel.org/dri-devel/20261008161144.2671028-1-vulab@iscas.ac.cn/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/amdgpu: message smu to update hbm bad page number",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=513befa63446",
+      "note": "commit"
+    },
+    {
+      "title": "drm/virtio-gpu fdinfo memory statistics review",
+      "url": "https://lore.kernel.org/dri-devel/20261008164135.510-1-shechenglong@xfusion.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/msm/dpu mode clock ARM32 division review",
+      "url": "https://lore.kernel.org/dri-devel/sashiko-outbox-164414@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/panfrost shrinker kernel-doc 0-day",
+      "url": "https://lore.kernel.org/dri-devel/202610090034.XP8OKWaV-lkp@intel.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/vc4 BCM2835 pixel clock limit reply",
+      "url": "https://lore.kernel.org/dri-devel/CAPY8ntDCU80hkxdDEGphQCX362ut4AdWJUTGkDOwOHWfkPW6BQ@mail.gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-08T18:43:34.031Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,126 @@
+{
+  "id": "2026-10-09-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-10-09 BPF·네트워크 보안 — 성능·RT",
+  "headline": "BPF iterator link 검증 강화와 LWT encap UAF 수정이 제안됐고 MANA RX headroom 패치는 netdev main에 머지됐습니다.",
+  "date": "2026-10-09",
+  "summary": "BPF_LINK_UPDATE 검증 우회와 LWT encap 헤더 stale 포인터가 커널 안전성 이슈로 올라왔습니다. skb defer_count 흡수 논의는 maintainer 피드백 단계이며 Azure MANA forwarding 회귀는 mainline에 반영됐습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "PREEMPT_RT",
+    "BPF",
+    "네트워크"
+  ],
+  "highlights": [
+    {
+      "title": "BPF iterator link update 검증 재수행",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF iterator/link 유지보수 및 보안 백포트 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20261008161309.8179-1-janten@gmail.com/",
+      "if": "RT 또는 fuzzing 환경에서 BPF iterator link의 BPF_LINK_UPDATE 경로를 쓰거나 selftest로 link 교체를 검증한다면",
+      "do": "d6c4503cc296 이후 bpf-next에 남을 수 있는 검증 우회 가능성을 가정하고 패치 시리즈 적용·재현 여부를 점검하세요",
+      "verify": "cover letter와 1/2 패치 스레드에서 target 재검증·sleepability 검사 추가 내용을 원문으로 확인하세요"
+    },
+    {
+      "title": "LWT BPF encap 헤더 skb cow UAF 방지",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF LWT encap 및 netdev 백포트 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/68db88ada2fd01fc03f17dc7d54a705aa245ddea.1791433504.git.rakukuip@gmail.com/",
+      "if": "bpf_dynptr_slice()로 skb 백킹 헤더를 쓰는 LWT IP encapsulation 경로를 RT 스택에서 테스트한다면",
+      "do": "클론·headroom 부족 시나리오에서 Fixes 52f278774e79 후보 패치와 stable 백포트 공지를 추적하세요",
+      "verify": "netdev/net 머지·stable 백포트 범위는 아직 공개 스레드에서 확인되지 않았으므로 lore 원문을 직접 확인하세요"
+    },
+    {
+      "title": "skb defer_count가 빈 defer_list를 넘기는 흡수",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "net/core skb deferral 및 PREEMPT_RT 네트워크 스택 유지보수",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20261007180056.1394868-1-jkain@nuro.ai/",
+      "if": "PREEMPT_RT arm64 등에서 고부하 네트워크 지연·defer 관련 이상을 본다면",
+      "do": "Joseph Kain v1의 drain 순서·counter 리셋 수정과 Eric Dumazet가 요청한 v1 문구 수정·v2 게시 여부를 lore에서 확인하세요",
+      "verify": "기본 skb_defer_max=128에서 프로덕션 latch 재현 가능성은 maintainer 검토 중이므로 단정하지 말고 스레드를 따라가세요"
+    },
+    {
+      "title": "MANA RX headroom으로 forwarding 성능 회복",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "MANA 드라이버 및 클라우드 forwarding 성능 검증 담당",
+      "verifyLink": "https://git.kernel.org/pub/scm/linux/kernel/git/netdev/net.git/commit/?id=259c4a519100e9182f264f8009ee212b32774277",
+      "if": "Azure MANA NIC에서 라우터·NVA형 forwarding 벤치마크를 돌린다면",
+      "do": "259c4a519100 머지 이후 ip_forward() skb_cow 핫패스 재할당 회귀가 해소됐는지 처리량·CPU를 재측정하세요",
+      "verify": "배포별 최소 커널 버전은 이미지마다 다르므로 커밋 포함 여부를 git log로 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**BPF iterator link update target validation**\n\nBPF iterator link의 BPF_LINK_UPDATE가 프로그램 타입·attach type·BTF ID만 비교해 target 검증을 우회할 수 있어, link program 교체 전 target 검증과 sleepability 검사를 다시 수행합니다.\n\n영향: QEMU에서 map metadata OOB·deterministic panic·stale map pointer UAF가 확인됐고 CAP_BPF/CAP_PERFMON만으로 타 UID map을 건드리는 시나리오도 있어 RT/BPF fuzzing·selftest의 격리 가정을 다시 점검해야 합니다.\n\n> BPF_LINK_UPDATE only compares program type, expected attach type, and attach BTF ID, allowing those checks to be bypassed\n\n[원문 확인](https://lore.kernel.org/bpf/20261008161309.8179-1-janten@gmail.com/)\n\n**net: lwt_bpf: preserve encap header across skb head realloc**\n\nbpf_lwt_push_ip_encap()에서 skb_cow_head()가 skb 헤드를 재할당할 때 encap 헤더 포인터가 무효화될 수 있어, hdr가 skb head 안이면 로컬 버퍼로 복사한 뒤 cow를 수행합니다.\n\n영향: BPF LWT IP encapsulation과 bpf_dynptr_slice() 경로에서 클론·headroom 부족 시 커널 메모리 안전성이 깨질 수 있어 LWT/BPF 네트워킹 RT 검증 담당자는 백포트·stable 후보를 추적해야 합니다.\n\n> If the encapsulation header pointer hdr points into the skb head, it becomes stale after reallocation. Subsequent reads ... lead to a use-after-free read.\n\n[원문 확인](https://lore.kernel.org/bpf/68db88ada2fd01fc03f17dc7d54a705aa245ddea.1791433504.git.rakukuip@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**net: do not let defer_count outlive an empty defer_list**\n\n__skb_defer_free_flush()가 빈 defer_list인데 defer_count가 skb_defer_max 이상으로 남는 흡수 상태를 만들 수 있어 drain 순서를 조정하고 빈 리스트 경로에서 stray counter를 0으로 리셋합니다. Eric Dumazet는 counter drift가 단일 flush의 clear/drain 창에 묶이며 기본 skb_defer_max=128에서는 선점이 필요하다고 v1 설명 수정을 요청했습니다.\n\n영향: 한번 걸리면 해당 CPU/노드에서 skb deferred free가 재부팅까지 꺼지고 cross-CPU free가 page allocator로 돌아가며, RT 백포트 arm64에서 defer_count가 수십만까지 치솟은 사례가 보고되어 고부하 성능·지연에 직접적입니다.\n\n> Deferred freeing stays off for that (cpu, node) until reboot, and cross-CPU frees fall back to the page allocator\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20261007180056.1394868-1-jkain@nuro.ai/)\n\n**net: mana: reserve RX buffer headroom to fix forwarding performance**\n\npage pool fragment RX가 headroom 0으로 바뀐 뒤 ip_forward()의 skb_cow가 매 forwarded 패킷에서 pskb_expand_head·memcpy를 유발해, MANA RX 버퍼에 LL_RESERVED_SPACE() 수준 headroom을 다시 예약합니다. netdev/net main에 259c4a519100이 머지됐습니다.\n\n영향: Azure MANA NIC에서 라우터/NVA형 forwarding은 패킷당 전체 skb 재할당이 핫패스에 걸려 처리량·CPU가 급락할 수 있어 클라우드 RT/고PPS 벤치마크 담당자는 머지 커밋을 추적해야 합니다.\n\n> every packet that is received and then forwarded out of a MANA port fails the skb_cow() in ip_forward() and gets reallocated and copied by pskb_expand_head()\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/netdev/net.git/commit/?id=259c4a519100e9182f264f8009ee212b32774277)\n\n**kcov: Keep timer and scheduler noise out of task coverage**\n\nKCOV_PAUSED 비트와 kcov_pause 가드를 추가해 deferred hrtimer rearm, __schedule(), try_to_wake_up(), wake_up_new_task()에서 비결정적 scheduler/timer 커버리지가 현재 태스크에 기록되지 않게 합니다.\n\n영향: PREEMPT_RT Raspberry Pi 400에서 syzkaller triage 비중이 26–34%에서 10%로 줄고 동일 실행 수 대비 corpus가 최대 82% 커져 RT 커널 fuzzing 효율이 개선됩니다. mainline 머지 전인지는 별도 확인이 필요합니다.\n\n> On a Raspberry Pi 400 with PREEMPT_RT, triage dropped from 26-34% of all executions to 10%\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20261005185803.39170-1-kmehltretter@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "net: lwt_bpf encap header across skb head realloc",
+      "url": "https://lore.kernel.org/bpf/68db88ada2fd01fc03f17dc7d54a705aa245ddea.1791433504.git.rakukuip@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "net: do not let defer_count outlive an empty defer_list (v1)",
+      "url": "https://lore.kernel.org/linux-rt-devel/20261007180056.1394868-1-jkain@nuro.ai/",
+      "note": "thread"
+    },
+    {
+      "title": "Eric Dumazet defer_count v1 wording feedback",
+      "url": "https://lore.kernel.org/linux-rt-devel/CAL4WiipPRh_=aWcHF1+JuKQno8AR-V1bf=yDfgaPQbTDvsOWSw@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Fix iterator link update target validation (cover)",
+      "url": "https://lore.kernel.org/bpf/20261008161309.8179-1-janten@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf_iter_link_update revalidation (1/2)",
+      "url": "https://lore.kernel.org/bpf/20261008161309.8179-2-janten@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "kcov timer/scheduler noise v4 cover",
+      "url": "https://lore.kernel.org/linux-rt-devel/20261005185803.39170-1-kmehltretter@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "net: mana reserve RX buffer headroom",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/netdev/net.git/commit/?id=259c4a519100e9182f264f8009ee212b32774277",
+      "note": "commit"
+    },
+    {
+      "title": "MANA patch applied to netdev/net.git main (patchwork notify)",
+      "url": "https://lore.kernel.org/bpf/179148180777.369078.5370771541534290369.git-patchwork-notify@kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-08T18:39:20.026Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
