@@ -1,0 +1,123 @@
+{
+  "id": "2026-10-10-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-10-10 skb·jobserver — 커널 보안",
+  "headline": "skb kmem_buckets 격리 시리즈가 memcg 누수 수정과 함께 net-next로 올라갔고, kbuild jobserver·rcutorture 재현 논의가 하드닝 CI 신뢰도를 건드립니다.",
+  "date": "2026-10-10",
+  "summary": "Kees Cook의 skb 데이터 영역 kmem_buckets 분리 v6 시리즈는 AF_UNIX·memcg 청구 경로를 보강합니다. pigz·LTO recipe에 recursive \"+\"를 주는 kbuild 수정은 GNU Make 4.3 환경의 jobserver 재오픈 문제를 겨냥하며, rcutorture 전경에서는 여전히 경고가 남는지 확인이 필요합니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "net: skb kmem_buckets로 데이터 영역 격리",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "net/core·slab·memcg·CONFIG_SLAB_BUCKETS 담당",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/70EBD8E2-6DBA-4758-9CA3-D5CB661CD3B7@suse.com/",
+      "if": "멀티테넌트에서 네트워크 버퍼·AF_UNIX IPC 할당과 memcg 한도를 함께 추적한다면,",
+      "do": "net-next v6 8패치 시리즈와 slab/for-next 리뷰·머지 일정을 우선 모니터링하세요.",
+      "verify": "CONFIG_SLAB_BUCKETS=n에서 msg_msg 미청구 수정(2/8)과 alignment 방향을 lore 스레드 원문으로 확인하세요."
+    },
+    {
+      "title": "kbuild: jobserver-exec용 recursive \"+\"",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "distro make 4.3·pigz·Clang LTO로 커널을 빌드하는 보안/회귀 테스트 담당",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20261009062722.i.253-kees@kernel.org/",
+      "if": "CentOS Stream 9 계열 GNU Make 4.3에서 pigz gzip이나 Clang LTO initcall ordering 빌드를 돌린다면,",
+      "do": "Kees Cook v1/2 시리즈의 gzip·initcall ordering recipe \"+\" 패치 병합 시점을 CI에 반영하세요.",
+      "verify": "jobserver read-side pipe 재오픈 WARNING과 Fixes 48ebe1cbbeb51 인용을 hardening 스레드에서 확인하세요."
+    },
+    {
+      "title": "gzip \"+\" 패치와 rcutorture 전경 불일치",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "rcutorture·linux-next 회귀 빌드를 운영하는 커널 QA",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/7fa8e996-d015-4f8d-a197-3f8901e0b31a@paulmck-laptop/",
+      "if": "회귀 하네스가 jobserver WARNING 문자열을 실패로 집계한다면,",
+      "do": "일반 make -j와 rcutorture 전경 실행 결과를 분리해 Tested-by 범위를 기록하세요.",
+      "verify": "Paul McKenney의 nohup·make -j632 통과 사례와 Kees Cook의 rustc ecab4115c44cc 선례 설명을 원문에서 확인하세요."
+    },
+    {
+      "title": "kmem_buckets v6: kmalloc alignment 정렬",
+      "priority": "하",
+      "impactType": "security",
+      "affectedAudience": "net/core·slab·memcg·CONFIG_SLAB_BUCKETS 담당",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/202610082331.853F0CBBA@keescook/",
+      "if": "v6에서 ctor·flags 인자를 줄이는 kmem_buckets 방향을 리뷰한다면,",
+      "do": "Harry Yoo·Vlastimil Babka와 합의된 kmalloc cache alignment 미러링 변경을 패치 diff에서 추적하세요.",
+      "verify": "Paolo Abresch netdev ack 이후 slab 트리 머지 일정은 미확인이므로 관련 답글을 직접 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "7.2.9 stable과 longterm 5.10.271·5.15.222·6.1.189은 2026-10-03 태그로 이미 공지된 점 릴리스이며, 이번 수집 주기에는 추가 진척이 없습니다. ChangeLog 상세·457·588·747·967건 전체와 공개 CVE 공지의 대응 관계는 확인이 필요합니다.\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.9)\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.271)\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.222)\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.1.189)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**net: skb: isolate skb data area allocations into a separate bucket**\n\nKees Cook net-next v6 8패치 시리즈는 skb 데이터 영역을 kmem_buckets로 분리해 memcg(GFP_KERNEL_ACCOUNT)·AF_UNIX 경로 격리를 지원하고, v6에서 kmem_buckets alignment를 kmalloc과 동일하게 맞추는 방향으로 Harry Yoo·Vlastimil Babka와 합의했습니다. msg_msg memcg 미청구(CONFIG_SLAB_BUCKETS=n) 버그는 2/8에서 수정됩니다.\n\n영향: 네트워크 버퍼와 IPC 메시지 할당의 cgroup 격리·회수 누락은 컨테이너·멀티테넌트 환경의 자원 한도 우회·측면 채널과 연결될 수 있습니다.\n\n> msg_msg allocations going uncharged to their memcg when CONFIG_SLAB_BUCKETS=n (fixed in 2/8).\n\n[원문 확인](https://lore.kernel.org/linux-hardening/70EBD8E2-6DBA-4758-9CA3-D5CB661CD3B7@suse.com/)\n\n**kbuild: Mark the kernel image gzip recipes as recursive**\n\nPaul E. McKenney는 gzip recipe \"+\" 패치를 일반 make -j에서는 검증했으나 rcutorture 전경 실행에서는 동일 WARNING이 남고, nohup으로 stdin을 끊은 make -j632는 통과한다고 답했습니다.\n\n영향: 회귀 테스트 하네스가 jobserver 경고를 어떻게 해석하는지에 따라 패치 검증·Tested-by 범위가 달라져 보안 회귀 자동화 신뢰도에 영향을 줍니다. rcutorture가 jobserver pipe를 닫는지, CentOS make-4.3-cloexec.patch 적용 여부가 재현에 필요한지는 확인이 필요합니다.\n\n> if I use \"make -j\" instead of rcutorture, this patch does work fine. Even with \"make -j632\".\n\n[원문 확인](https://lore.kernel.org/linux-hardening/7fa8e996-d015-4f8d-a197-3f8901e0b31a@paulmck-laptop/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**kbuild: Give jobserver-exec recipes the jobserver**\n\nKees Cook v1/2 시리즈가 pigz gzip 단계와 Clang LTO initcall ordering 단계의 Makefile recipe에 recursive \"+\" prefix를 붙여 scripts/jobserver-exec가 GNU Make 4.3(CentOS Stream 9 cloexec 백포트 포함) 환경에서 jobserver pipe를 다시 열 수 있게 합니다.\n\n영향: jobserver가 막히면 pigz가 단일 스레드로 돌고 rcutorture 등이 WARNING 문자열의 \"Error\"를 실패로 집계해, 하드닝·회귀 테스트 CI가 거짓 실패하거나 빌드가 느려질 수 있습니다. mainline·stable 병합 시점은 확인이 필요합니다.\n\n> scripts/jobserver-exec prints WARNING: Unable to reopen jobserver read-side pipe: FileNotFoundError(2, 'No such file or directory')\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20261009062722.i.253-kees@kernel.org/)\n\n**net: skb kmem_buckets v6 alignment**\n\nv6는 kmalloc cache의 alignment를 미러링하고 ctor·flags 인자를 줄이는 방향으로 조정됩니다. slab/for-next 경로 합의는 리뷰 후 진행으로 보입니다.\n\n영향: 버킷 정렬 불일치는 할당 경로 하드닝 검증 범위를 바꿀 수 있어 slab·net 교차 리뷰가 필요합니다.\n\n> So v6 goes back to mirroring the kmalloc cache's alignment, and drops the ctor and flags arguments for the same reason.\n\n[원문 확인](https://lore.kernel.org/linux-hardening/202610082331.853F0CBBA@keescook/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ChangeLog Linux 7.2.9",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.9",
+      "note": "changelog"
+    },
+    {
+      "title": "kbuild: Give jobserver-exec recipes the jobserver",
+      "url": "https://lore.kernel.org/linux-hardening/20261009062722.i.253-kees@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "kbuild: Mark the kernel image gzip recipes as recursive (Paul McKenney)",
+      "url": "https://lore.kernel.org/linux-hardening/7fa8e996-d015-4f8d-a197-3f8901e0b31a@paulmck-laptop/",
+      "note": "thread"
+    },
+    {
+      "title": "net: skb: isolate skb data area allocations (Kees Cook)",
+      "url": "https://lore.kernel.org/linux-hardening/70EBD8E2-6DBA-4758-9CA3-D5CB661CD3B7@suse.com/",
+      "note": "thread"
+    },
+    {
+      "title": "kmem_buckets v6 alignment (Kees Cook)",
+      "url": "https://lore.kernel.org/linux-hardening/202610082331.853F0CBBA@keescook/",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog Linux 5.10.271",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.271",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog Linux 5.15.222",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.222",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog Linux 6.1.189",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.1.189",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-09T18:33:29.858Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

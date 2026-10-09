@@ -1,0 +1,148 @@
+{
+  "id": "2026-10-10-linux-daily-briefing",
+  "topic": "linux",
+  "title": "2026-10-10 PMD 스왑 fork — 리눅스 개발",
+  "headline": "거대 페이지 스왑 시 fork 경로를 고치는 패치가 검토 중이고, stable·LTS 포인트 릴리스가 함께 갱신되었습니다.",
+  "date": "2026-10-10",
+  "summary": "PMD 단위 스왑 엔트리를 fork에서 올바르게 복제하도록 하는 메모리 패치가 공개 리뷰에 올라 왔습니다. 7.2.9·5.10.271 stable 계열 업그레이드와 7.3-rc6 mainline 스냅샷도 추적 대상입니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "fork 경로 PMD 스왑 복제",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "mm/THP·swap 개발자, 메모리 서브시스템 리뷰어, 대용량 anonymous THP·swap 워크로드 운영자",
+      "verifyLink": "https://lkml.iu.edu/2610.0/03579.html",
+      "if": "THP·스왑·fork를 다루는 mm 담당",
+      "do": "시리즈 리뷰와 워크로드 회귀 테스트를 검토하세요",
+      "verify": "LKML 스레드와 LWN 기사에서 패치 내용을 확인하세요"
+    },
+    {
+      "title": "Linux 7.2.9 stable",
+      "priority": "상",
+      "impactType": "backport",
+      "affectedAudience": "stable 커널 배포 담당자, 7.2.y 기반 배포판·벤더 트리 메인테이너",
+      "verifyLink": "https://lwn.net/Articles/1098405/",
+      "if": "7.2.y 기반 배포·벤더 트리",
+      "do": "7.2.9로 업그레이드 일정을 잡고 백포트를 반영하세요",
+      "verify": "LWN 공지와 ChangeLog-7.2.9에서 포함 수정을 확인하세요"
+    },
+    {
+      "title": "Linux 5.10.271 longterm",
+      "priority": "중",
+      "impactType": "backport",
+      "affectedAudience": "5.10.y LTS 배포 담당자, CIP·임베디드 장기 지원 팀, 보안 백포트 추적자",
+      "verifyLink": "https://lwn.net/Articles/1098411/",
+      "if": "5.10 LTS·CIP 장기 지원",
+      "do": "5.10.271 동기화와 배포 검증을 진행하세요",
+      "verify": "LWN 릴리스 공지와 ChangeLog-5.10.271을 확인하세요"
+    },
+    {
+      "title": "7.3-rc6 mainline",
+      "priority": "중",
+      "impactType": "release",
+      "affectedAudience": "mainline 커널 개발자, 배포판·하드웨어 벤더 QA, CI/회귀 테스트 담당자",
+      "verifyLink": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/diff/Makefile?h=v7.3-rc6",
+      "if": "mainline 회귀·CI 기준",
+      "do": "v7.3-rc6 기준으로 테스트 계획을 맞추세요",
+      "verify": "Makefile diff와 Linus 공지 스레드를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**7.3-rc6 mainline**\n\n어제도 다룬 7.3 개발 사이클이 Makefile EXTRAVERSION -rc5에서 -rc6으로 바뀐 v7.3-rc6 태그(2026-10-04)로 한 단계 진행했습니다.\n\n영향: 7.3 정식 전 mainline 회귀·드라이버 수정이 쌓이는 기준이므로 배포 전 테스트와 merge window 일정 추적에 필요합니다.\n\n> -EXTRAVERSION = -rc5\n+EXTRAVERSION = -rc6\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/diff/Makefile?h=v7.3-rc6)\n\n**7.3-rc6 mainline (공지)**\n\nLinus Torvalds는 이번 주 diffstat이 다시 드라이버 수정 비중이 큰 일반 패턴이라고 설명했습니다.\n\n영향: mainline 변화량이 평소 수준으로 돌아왔다는 신호로, 회귀 triage 시 참고할 수 있습니다.\n\n> Nothing looks strange this week - unlike last week's slightly unusual diffstat, we're back to the normal \"half the diff is driver fixes\" so we're back to normality.\n\n[원문 확인](https://lkml.iu.edu/2610.0/07391.html)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**handle PMD swap entries in fork path**\n\nUsama Arif 패치는 copy_huge_pmd()가 PMD swap entry를 PTE 경로처럼 복제하고, swap 슬롯 참조·MM_SWAPENTS 반영·extend-table 실패 시 GFP_KERNEL 재시도를 다룹니다. mainline 머지 여부는 확인하지 않았으며, 공개본은 v8 13/30(2026-10-02) 수준으로 보입니다.\n\n영향: PMD-level THP swap 시리즈의 fork 보완으로, swap된 huge mapping이 있는 프로세스 fork 시 잘못된 PMD 복제·swap refcount 누락을 막는 방향입니다.\n\n> copy_huge_pmd() only knows about migration and device-private PMDs, so a PMD swap entry would fall through to the present-PMD path and fork() would duplicate it without taking a reference on the slots\n\n[원문 확인](https://lkml.iu.edu/2610.0/03579.html)\n\n**7.2.9 stable**\n\nGreg Kroah-Hartman가 2026-10-03에 Linux 7.2.9를 올렸고, ChangeLog에는 릴리스 커밋 외 457건 upstream 백포트가 포함됩니다(SUBLEVEL 8→9).\n\n영향: 현재 7.2.y 권장 stable의 최신 포인트로 KVM·TC act_ct·VFS·XFS 등 광범위 수정이 배포 안정성 기준을 갱신합니다. CVE·배포판 공지와 1:1 대응은 확인하지 않았습니다.\n\n> I'm announcing the release of the 7.2.9 kernel.\n\nAll users of the 7.2 kernel series must upgrade.\n\n[원문 확인](https://lwn.net/Articles/1098405/)\n\n**5.10.271 longterm**\n\nGreg Kroah-Hartman가 2026-10-03에 Linux 5.10.271 longterm 태그를 올렸고, ChangeLog에는 릴리스 커밋 외 588건 upstream 백포트가 있습니다.\n\n영향: 5.10 LTS·CIP 등 레거시 장기 지원 트리의 공식 동기화 지점으로 Bluetooth·NFC·netfilter·CAN USB 등 수정이 포함됩니다.\n\n> I'm announcing the release of the 5.10.271 kernel.\n\nAll users of the 5.10 kernel series must upgrade.\n\n[원문 확인](https://lwn.net/Articles/1098411/)"
+    },
+    {
+      "heading": "기타",
+      "body": "**next-20261008 linux-next**\n\n2026-10-08자 linux-next 스냅샷 next-20261008이 올라갔고, Makefile은 7.3-rc6(EXTRAVERSION -rc6) 기반에 localversion-next는 \"-next-20261008\"입니다.\n\n영향: 다음 merge window 후보 패치 통합·빌드 회귀를 조기에 잡는 기준 트리입니다. non-merge 커밋 수·전체 diffstat은 확인하지 않았습니다.\n\n> Add linux-next specific files for 20261008\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/next/linux-next.git/commit/?h=next-20261008)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "torvalds/linux Makefile diff v7.3-rc6",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/diff/Makefile?h=v7.3-rc6",
+      "note": "commit"
+    },
+    {
+      "title": "Linus Torvalds 7.3-rc6 announcement",
+      "url": "https://lkml.iu.edu/2610.0/07391.html",
+      "note": "thread"
+    },
+    {
+      "title": "Linux 7.2.9 kernel release",
+      "url": "https://lwn.net/Articles/1098405/",
+      "note": "article"
+    },
+    {
+      "title": "7.2.9 stable review cycle",
+      "url": "https://lkml.iu.edu/hypermail/linux/kernel/2609.3/16065.html",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-7.2.9",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.9",
+      "note": "changelog"
+    },
+    {
+      "title": "linux-next next-20261008 commit",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/next/linux-next.git/commit/?h=next-20261008",
+      "note": "commit"
+    },
+    {
+      "title": "linux-next Makefile next-20261008",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/next/linux-next.git/plain/Makefile?h=next-20261008",
+      "note": "commit"
+    },
+    {
+      "title": "linux-next localversion-next next-20261008",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/next/linux-next.git/plain/localversion-next?h=next-20261008",
+      "note": "commit"
+    },
+    {
+      "title": "PMD swap entries in fork path (LKML)",
+      "url": "https://lkml.iu.edu/2610.0/03579.html",
+      "note": "thread"
+    },
+    {
+      "title": "PMD-level swap entry series (LWN)",
+      "url": "https://lwn.net/Articles/1082698/",
+      "note": "article"
+    },
+    {
+      "title": "Linux 5.10.271 kernel release",
+      "url": "https://lwn.net/Articles/1098411/",
+      "note": "article"
+    },
+    {
+      "title": "ChangeLog-5.10.271",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.271",
+      "note": "changelog"
+    },
+    {
+      "title": "5.10.271-rc1 stable review",
+      "url": "https://lkml.iu.edu/hypermail/linux/kernel/2609.3/15916.html",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-09T18:02:52.186Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-newsletter-from-dossier-ko.md"
+  }
+}

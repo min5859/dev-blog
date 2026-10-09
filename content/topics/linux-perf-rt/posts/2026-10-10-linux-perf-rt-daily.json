@@ -1,0 +1,121 @@
+{
+  "id": "2026-10-10-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-10-10 skb defer 회귀 — 성능·RT",
+  "headline": "빈 defer_list에 defer_count가 남는 네트워크 회귀 수정과 irq exit·ARM HWBP·efivarfs RT 패치가 linux-rt-devel에서 이어집니다.",
+  "date": "2026-10-10",
+  "summary": "Joseph Kain 패치는 llist 전환 이후 skb defer_count가 빈 리스트를 넘기며 지연 해제를 끄는 문제를 고칩니다. irq exit HARDIRQ_OFFSET, ARM perf HW breakpoint task_work 지연, efivarfs nostatfs도 RT 관점에서 리뷰 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "PREEMPT_RT",
+    "perf",
+    "네트워크"
+  ],
+  "highlights": [
+    {
+      "title": "빈 defer_list에 defer_count가 남는 skb flush",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "PREEMPT_RT·고처리량 네트워킹 스택을 운영·디버그하는 커널·네트워크 엔지니어",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20261008220256.1844072-1-jkain@nuro.ai/",
+      "if": "PREEMPT_RT 또는 고부하에서 skb defer·cross-CPU free 이상이나 지연 증가를 본다면",
+      "do": "844c9db7f7f5 이후 빈 defer_list 경로와 clear/drain 순서 수정안을 적용 전후로 defer_count·netdev 동작을 비교 점검하세요",
+      "verify": "netdev/mainline 머지·stable/backport 범위는 아직 공개 스레드에서 확정되지 않았으므로 lore 원문을 확인하세요"
+    },
+    {
+      "title": "irq exit에서 HARDIRQ_OFFSET 유지",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "PREEMPT_RT, tracing·BPF·perf 이벤트 컨텍스트를 다루는 관측성·실시간 커널 개발자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20260930191432.62760-1-kmehltretter@gmail.com/",
+      "if": "sched_waking/sched_wakeup BPF나 ftrace·perf·KCSAN이 irq exit 직후 컨텍스트를 검증한다면",
+      "do": "Karl Mehltretter v5와 Frederic Weisbecker 제안 반영본이 lore에 올라왔는지, tick_irq_exit()까지 HARDIRQ_OFFSET가 유지되는지 스레드를 따라가세요",
+      "verify": "리뷰 반영본 게시·mainline 머지 타깃 릴리스는 확인되지 않았으므로 원문 스레드를 직접 확인하세요"
+    },
+    {
+      "title": "ARM 계열 perf HW breakpoint SIGTRAP 지연",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "ARM/ARM64에서 perf HW breakpoint·watchpoint와 PREEMPT_RT를 함께 쓰는 도구·커널 개발자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/fd405cda-51bd-4b1c-803c-f2597b2b128e@arm.com/",
+      "if": "PREEMPT_RT ARM64에서 perf HW breakpoint·watchpoint 디버깅을 쓴다면",
+      "do": "overflow 알림을 task_work_add(TWA_RESUME)로 미루는 시리즈와 perf_hwbp_notify 등 심볼 정리안을 lore에서 추적하세요",
+      "verify": "다른 arch 사용자 공간 알림 타이밍 차이는 추가 테스트 여지가 있으므로 단정하지 말고 스레드를 확인하세요"
+    },
+    {
+      "title": "efivarfs nostatfs로 statfs 스톨 회피",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "PREEMPT_RT·EFI efivarfs를 쓰는 배포·펌웨어 업데이트(fwupd 등) 운영자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20261005232250.2620-1-singhpra@juniper.net/",
+      "if": "RT 워크로드와 efivarfs에서 df·statfs가 지터를 넣는다면",
+      "do": "v5 nostatfs 마운트 옵션과 CONFIG_PREEMPT_RT 기본 nostatfs 동작, remount 경로 data_race() 처리를 배포 커널에 포함 여부를 확인하세요",
+      "verify": "mainline 머지 여부와 non-RT 기본값은 linux-rt-devel 외 트래킹이 필요하므로 원문을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**net: do not let defer_count outlive an empty defer_list**\n\n__skb_defer_free_flush()가 빈 defer_list인데도 defer_count를 skb_defer_max 이상으로 남길 수 있는 844c9db7f7f5(llist 전환) 이후 버그를 고칩니다. 빈 리스트 경로에서 카운터를 0으로 리셋하고, drain 전 clear 순서로 인한 단일 flush 윈도우 내 드리프트도 정리합니다.\n\n영향: 카운터가 걸리면 해당 CPU·노드에서 skb 지연 해제가 재부팅까지 꺼지고 cross-CPU free가 페이지 할당자로 돌아가 네트워크 지연·캐시 경합이 커집니다. PREEMPT_RT에서는 local_bh_disable()이 선점을 막지 않아 flush가 clear와 drain 사이에서 선점될 수 있어 기본 skb_defer_max=128에서도 윈도우가 넓어집니다.\n\n> At the default of 128 the flusher has to be interrupted or preempted between those two lines for long enough, which is where PREEMPT_RT matters\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20261008220256.1844072-1-jkain@nuro.ai/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**softirq: Preserve interrupt context during IRQ exit**\n\nKarl Mehltretter가 irq exit 경로에서 HARDIRQ_OFFSET를 tick_irq_exit() 직전까지 유지하도록 v5를 수정 중이며, Frederic Weisbecker 리뷰에 따라 불필요한 from_irq_exit 변수·in_nmi() 검사를 제거하고 tick_irq_exit()까지 HARDIRQ_OFFSET 커버리지를 확장할 예정입니다.\n\n영향: 기존에는 irq exit 초반에 hardirq 컨텍스트가 task로 잘못 보고되어 ftrace·perf·ring buffer와 KCSAN/KMSAN이 잘못된 컨텍스트를 기록하고, PREEMPT_RT에서는 이 윈도우에서 can_spin_trylock()/local_trylock()이 잘못 통과해 sched_waking/sched_wakeup BPF→kmalloc_nolock() 경로까지 영향을 줄 수 있습니다.\n\n> BPF programs attached to sched_waking or sched_wakeup can reach it through kmalloc_nolock().\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20260930191432.62760-1-kmehltretter@gmail.com/)\n\n**ARM, ARM64, LONGARCH, XTENSA: Delay HW BP notification to task_work()**\n\nSebastian Andrzej Siewior 시리즈는 ARM 계열에서 perf 하드웨어 브레이크포인트 overflow 시 SIGTRAP 전달을 task_work_add()(TWA_RESUME)로 미루고, Ada Couprie Diaz가 제안한 대로 generic/arch perf HWBP 심볼 명명을 perf_hwbp_notify·perf_arch_hwbp_send_sig 등으로 정리했습니다.\n\n영향: PREEMPT_RT에서 ARM64 HW BP는 인터럽트 꺼진 atomic 컨텍스트에서 spinlock_t 기반 sighand_struct::siglock을 잡으려 sleeping while atomic이 발생했고, 지연 알림은 perf 기반 디버거·watchpoint 워크로드를 RT에서 다시 쓸 수 있게 합니다.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/fd405cda-51bd-4b1c-803c-f2597b2b128e@arm.com/)\n\n**efivarfs: add nostatfs mount option to skip QueryVariableInfo()**\n\nPrashant Singh v5는 nostatfs 마운트 옵션으로 statfs(2) 시 EFI QueryVariableInfo() 호출을 건너뛰게 하고, lockless remount 경로에 data_race() 래퍼를 두었습니다. CONFIG_PREEMPT_RT 기본은 nostatfs로 RT 커널이 기본적으로 statfs 스톨을 피합니다.\n\n영향: QueryVariableInfo()는 수십 ms 동안 선점이 꺼질 수 있어 df 같은 statfs가 실시간 워크로드에 지터를 넣습니다. RT 리뷰어는 remount 동시성 처리가 불필요한 memory barrier 없이 결정적 경계를 유지한다고 평가했습니다.\n\n> It defaults to nostatfs on CONFIG_PREEMPT_RT so real-time kernels do not take the stall out of the box\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20261005232250.2620-1-singhpra@juniper.net/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "net: do not let defer_count outlive an empty defer_list",
+      "url": "https://lore.kernel.org/linux-rt-devel/20261008220256.1844072-1-jkain@nuro.ai/",
+      "note": "thread"
+    },
+    {
+      "title": "softirq: Preserve interrupt context during IRQ exit",
+      "url": "https://lore.kernel.org/linux-rt-devel/20260930191432.62760-1-kmehltretter@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "irq exit HARDIRQ_OFFSET 리뷰 답장",
+      "url": "https://lore.kernel.org/linux-rt-devel/askelKsbreC8HLpa@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "ARM perf HW breakpoint task_work 지연",
+      "url": "https://lore.kernel.org/linux-rt-devel/fd405cda-51bd-4b1c-803c-f2597b2b128e@arm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "perf HWBP 심볼 명명 리뷰",
+      "url": "https://lore.kernel.org/linux-rt-devel/5becc0b8-9b31-4539-b477-2d4af66c89a4@arm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "efivarfs: add nostatfs mount option",
+      "url": "https://lore.kernel.org/linux-rt-devel/20261005232250.2620-1-singhpra@juniper.net/",
+      "note": "thread"
+    },
+    {
+      "title": "efivarfs nostatfs RT 리뷰",
+      "url": "https://lore.kernel.org/linux-rt-devel/CAFA5sMc+CSN1J=r+fXkD_0=wacVVFwk6xkgv-rMRFoyYv+xWkg@mail.gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-09T18:41:35.670Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

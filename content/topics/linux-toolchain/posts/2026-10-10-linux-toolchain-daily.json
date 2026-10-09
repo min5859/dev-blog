@@ -1,0 +1,108 @@
+{
+  "id": "2026-10-10-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-10-10 pigz jobserver — Linux 툴체인",
+  "headline": "kbuild gzip recipe 재귀 표시와 libbpf ksym 해석 가속이 제안되고, clang-tools 회귀·arm64 MPAM clang 빌드가 정리됩니다.",
+  "date": "2026-10-10",
+  "summary": "Kees Cook 시리즈는 pigz가 GNU Make jobserver를 받도록 arch boot·vmlinux gzip recipe에 recursive \"+\"를 붙이고, Paul McKenney는 일반 make -j에서는 통과하나 rcutorture 전경에서는 동일 경고가 남는다고 답했습니다. libbpf는 typeless ksym을 bpf_kallsyms_lookup_name()으로 해석해 로드 시간을 크게 줄이는 한편, run-clang-tools.py는 BrokenPipeError 경로의 NameError를 한 줄로 고칩니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "kbuild: Mark the kernel image gzip recipes as recursive",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "kbuild·distro CI에서 pigz 병렬 압축과 rcutorture/고병렬 make를 쓰는 커널 빌드 엔지니어",
+      "verifyLink": "https://patchew.org/linux/20261009062722.i.253-kees@kernel.org/",
+      "if": "CentOS Stream 9 등 make 4.3 cloexec 백포트 환경에서 pigz가 -p 1로 떨어지거나 jobserver 경고가 나면 이미지 압축 병목과 rcutorture 로그의 false-positive \"Error\" 검출이 생긴다면",
+      "do": "Kees Cook v1/2의 gzip recipe \"+\" 패치와 Paul McKenney의 rcutorture 전경 재현 결과를 lore에서 함께 확인하세요",
+      "verify": "일반 make -j와 rcutorture 전경에서 pigz 경고·병렬도가 달라지는지 로그로 비교하세요"
+    },
+    {
+      "title": "libbpf: Resolve typeless ksyms in the kernel",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "libbpf·BPF 로더·CO-RE skeleton을 쓰는 사용자 및 bpf-next 머지 추적자",
+      "verifyLink": "https://patchew.org/linux/20261009130708.1370675-1-wusamuel@google.com/",
+      "if": "typeless extern이 많은 BPF 프로그램 로드가 수백 ms 단위로 반복된다면",
+      "do": "BPF_PROG_TYPE_SYSCALL 기반 bpf_kallsyms_lookup_name() fast path와 ae5ef001aa98 미지원 시 kallsyms fallback 동작을 패치 설명과 맞춰 보세요",
+      "verify": "11개 typeless lock extern 시나리오에서 x86_64·ARM64 로드 시간이 작성자 보고(147ms→17ms, 626ms→55ms)와 같은 방향으로 줄는지 측정하세요"
+    },
+    {
+      "title": "clang-tools: Import os for broken pipe handling",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "CONFIG_CLANG_TOOLS·compile_commands.json·clang-tidy/clang-scan-deps 사용자",
+      "verifyLink": "https://patchew.org/linux/20261009175836.2277-1-ue081723@gmail.com/",
+      "if": "clang-tools/gen_compile_commands 워크플로에서 파이프가 끊길 때 BrokenPipeError 핸들러가 NameError로 CI·로컬 실행을 깨뜨린다면",
+      "do": "import os 한 줄 수정 v2를 적용하거나 동일 회귀 커밋(87c7ee67deb7) 경로가 내 환경에서 트리거되는지 확인하세요",
+      "verify": "BrokenPipeError 경로에서 stdout 리다이렉트와 종료 코드 1이 나오는지, NameError 없이 동작하는지 재현하세요"
+    },
+    {
+      "title": "arm_mpam: make the mon_sel guard conditional only",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "clang allmodconfig·KernelCI·arm64 MPAM/resctrl 유지보수",
+      "verifyLink": "https://patchew.org/linux/20261009163235.3-1-sashal@kernel.org/",
+      "if": "arm64 allmodconfig clang 빌드가 MPAM DEFINE_GUARD(mon_sel)의 __must_check 반환 무시로 -Werror에서 멈춘다면",
+      "do": "posix-timers식 조건부 DEFINE_CLASS(mon_sel_lock) v2와 Ben Horgan Reviewed-by를 따라 빌드 매트릭스를 다시 돌리세요",
+      "verify": "LLVM=allmodconfig에서 mpam_internal.h guard 관련 -Werror가 사라지는지 KernelCI·로컬 clang 빌드 로그로 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**clang-tools: Import os for broken pipe handling**\n\nrun-clang-tools.py의 BrokenPipeError 핸들러가 os.open()/os.dup2()를 쓰지만 os를 import하지 않아, 핸들러가 실행되면 NameError로 떨어지는 v2 한 줄 수정이 제출되었습니다.\n\n영향: clang-tools/gen_compile_commands 기반 정적 분석·IDE 워크플로에서 파이프가 끊길 때 stdout 리다이렉트 대신 예기치 않은 Python 예외가 나면 CI나 로컬 clang-tools 실행이 실패합니다.\n\n> If this handler is reached, it raises NameError instead of redirecting stdout and exiting with status 1.\n\n[원문 확인](https://patchew.org/linux/20261009175836.2277-1-ue081723@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**kbuild: Mark the kernel image gzip recipes as recursive**\n\nKees Cook v1/2가 arch boot·vmlinux gzip recipe에 recursive \"+\"를 붙여 pigz가 scripts/jobserver-exec로 GNU Make jobserver pipe를 받도록 하고, Paul McKenney는 일반 make -j에서는 통과하나 rcutorture 전경 실행에서는 동일 WARNING이 남는다고 답했습니다.\n\n영향: CentOS Stream 9 등 make 4.3 cloexec 백포트 환경에서 pigz가 -p 1로 떨어지거나 jobserver 경고가 나면 이미지 압축 병목과 rcutorture 로그의 false-positive \"Error\" 검출이 생겨, -j 빌드·자동 테스트를 돌리는 팀이 직접 영향을 받습니다.\n\n> Mark both recipes recursive, as was done for rustc.\n\n[원문 확인](https://patchew.org/linux/20261009062722.i.253-kees@kernel.org/)\n\n> So I guess I could give a Tested-by for builds using straight-up make, but not from rcutorture.  ;-)\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/7fa8e996-d015-4f8d-a197-3f8901e0b31a@paulmck-laptop/)\n\nrcutorture 전경만 jobserver 경고를 재현하는 원인과 패치 2/2(initcall ordering recursive)와의 공통 원인은 아직 확인이 필요합니다.\n\n**libbpf: Resolve typeless ksyms in the kernel**\n\nlibbpf가 typeless ksym을 /proc/kallsyms 선형 스캔 대신 BPF_PROG_TYPE_SYSCALL로 bpf_kallsyms_lookup_name()을 호출해 이진 탐색으로 해석하고, ae5ef001aa98 미지원·오류 시 기존 kallsyms 경로로 fallback합니다.\n\n영향: typeless extern이 많은 BPF 프로그램 로드 시간이 수백 ms 단위로 줄어 libbpf·CO-RE·모바일/CI에서 BPF 배포 반복 비용에 직접 영향을 줍니다.\n\n> Depending on the device, I see ~9-11x loading speedup when resolving a BPF program with 11 typeless lock externs.\n\n[원문 확인](https://patchew.org/linux/20261009130708.1370675-1-wusamuel@google.com/)\n\n커널·libbpf 버전 조합별 fast path 실패율과 bpf-next 머지 후 userspace libbpf 최소 버전은 추가 확인이 필요합니다.\n\n**arm_mpam: make the mon_sel guard conditional only**\n\narm64 allmodconfig clang 빌드가 DEFINE_GUARD(mon_sel)가 __must_check인 mpam_mon_sel_lock() 반환값을 무시해 -Werror로 깨지는 문제를, posix-timers식 조건부 DEFINE_CLASS(mon_sel_lock)로 바꾸는 v2 패치가 Reviewed-by를 받았습니다.\n\n영향: LLVM=allmodconfig·KernelCI clang 빌드가 MPAM/resctrl 경로에서 막히면 툴체인 회귀를 조기에 잡기 어려워지므로 clang 기본 빌드 매트릭스를 보는 팀에 중요합니다.\n\n> Building arm64 allmodconfig with clang fails:\n\n[원문 확인](https://patchew.org/linux/20261009163235.3-1-sashal@kernel.org/)\n\n> Reviewed-by: Ben Horgan <ben.horgan@arm.com>\n\n[원문 확인](https://patchew.org/linux/20261009163235.3-1-sashal@kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "kbuild: Mark the kernel image gzip recipes as recursive",
+      "url": "https://patchew.org/linux/20261009062722.i.253-kees@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "kbuild gzip recipes — Paul McKenney rcutorture follow-up",
+      "url": "https://lore.kernel.org/linux-kbuild/7fa8e996-d015-4f8d-a197-3f8901e0b31a@paulmck-laptop/",
+      "note": "thread"
+    },
+    {
+      "title": "clang-tools: Import os for broken pipe handling",
+      "url": "https://patchew.org/linux/20261009175836.2277-1-ue081723@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "libbpf: Resolve typeless ksyms in the kernel",
+      "url": "https://patchew.org/linux/20261009130708.1370675-1-wusamuel@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "arm_mpam: make the mon_sel guard conditional only",
+      "url": "https://patchew.org/linux/20261009163235.3-1-sashal@kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-09T18:36:46.551Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
