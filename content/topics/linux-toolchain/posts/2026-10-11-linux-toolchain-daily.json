@@ -1,0 +1,136 @@
+{
+  "id": "2026-10-11-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-10-11 kbuild jobserver — 툴체인",
+  "headline": "kbuild jobserver v2와 rcutorture 회귀 검증이 맞물리고, Rust alloc-7.4-rc1·dwarves·compiler_builtins 수정이 툴체인 흐름을 바꿉니다.",
+  "date": "2026-10-11",
+  "summary": "Kees Cook의 jobserver-exec '+' v2는 pigz·Clang LTO initcall 등 Makefile 규칙을 고치며, Paul McKenney의 kvm.sh 검증이 v2 범위 확장 근거를 보여 줍니다. Rust-for-Linux는 alloc-7.4-rc1 태그와 dwarves LTO BTF·compiler_builtins panic 수정 패치가 진행 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "툴체인",
+    "kbuild",
+    "Rust"
+  ],
+  "highlights": [
+    {
+      "title": "kbuild: jobserver-exec recipe에 GNU Make 재귀(+) 표시",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "kbuild·distro 툴체인을 맞추는 커널 빌드 담당, rcutorture/kvm.sh 사용자",
+      "verifyLink": "https://git.kernel.org/pub/scm/linux/kernel/git/kees/linux.git/log/?h=dev/next-20261001/pigz-recursive/v2",
+      "if": "CentOS Stream 9 등 make 4.3(58232 백포트)에서 pigz가 단일 스레드로 떨어지거나 jobserver 경고가 rcutorture 빌드 검사를 실패시키는 경우",
+      "do": "v2 커버레터와 v1 대비 diff를 읽고, 자신의 병렬 kbuild·selftest 경로에 동일 규칙이 필요한지 Makefile을 점검하세요",
+      "verify": "커버레터·diff 링크에서 '+' 적용 범위(usr/Makefile built-in initramfs gzip 등)를 원문으로 확인하세요"
+    },
+    {
+      "title": "kbuild: kernel image gzip recipe 재귀 표시와 kvm.sh 회귀",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "rcutorture/kvm.sh로 커널을 빌드하는 개발자, kbuild 회귀 추적 담당",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/6f077bd6-3919-43d3-a683-15156253330b@paulmck-laptop/",
+      "if": "plain make -jN만 쓰면 통과하지만 kvm.sh --build-only 포그라운드에서 jobserver 경고가 남는 경우",
+      "do": "Paul의 next 대비 Fix 표와 Kees v2 스레드를 함께 보며 CI·rcutorture 래퍼 경로를 우선 재현하세요",
+      "verify": "스레드 원문에서 make -jN과 kvm.sh 결과 표, rcutorture가 해당 Error 줄을 카운트하는 설명을 확인하세요"
+    },
+    {
+      "title": "Rust-for-Linux: alloc-7.4-rc1",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust-for-Linux alloc 서브시스템 기여자, in-tree Rust 모듈 작성자",
+      "verifyLink": "https://github.com/Rust-for-Linux/linux/releases/tag/alloc-7.4-rc1",
+      "if": "NUMA 바인딩이나 infallible 초기화를 쓰는 in-tree Rust 드라이버를 7.4-rc1 기준으로 맞추는 경우",
+      "do": "alloc-7.4-rc1 태그(6e8339118040)를 기준으로 리베이스·리뷰 일정을 잡고, pin_slice·NumaNode::id() 변경을 코드에 반영하세요",
+      "verify": "릴리스 태그 메시지와 tip 커밋에서 공동 메인테이너·API 변경 요약을 확인하세요"
+    },
+    {
+      "title": "dwarf_loader: LTO 병합 CU에서 --lang_exclude 수정",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "pahole/dwarves 유지보수자, LTO+BTF+Rust 빌드 설정 담당",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20261010005227.976-1-linux@alanderk.com/",
+      "if": "Rust+C 혼합 모듈에서 LTO+BTF 생성이 실패하거나 PAHOLE_HAS_LANG_EXCLUDE·LTO Kconfig 논의를 추적하는 경우",
+      "do": "Alan Derk dwarves v2 두 패치를 함께 적용할 수 있는지 툴체인을 점검하고, lang_exclude LTO 자가 테스트 스크립트 동작을 확인하세요",
+      "verify": "커버레터에서 LTO 혼합 모듈 BTF 실패 원인과 두 패치 동시 적용 필요성을 원문으로 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**kbuild: Mark the kernel image gzip recipes as recursive**\n\nPaul E. McKenney가 v1 gzip '+' 패치를 rcutorture kvm.sh --build-only로 검증하며, 포그라운드/백그라운드·plain make 대비 kvm.sh에서만 jobserver 경고가 남는 경우를 정리했고, Kees는 $(call if_changed,$(compress-y)) 같은 비문자 gzip 경로가 v1에서 빠졌다고 답했습니다.\n\n영향: 일반 make -j만으로는 놓치기 쉬운 selftest 래퍼 경로의 빌드 회귀를 드러내 v2 범위 확장의 근거가 되므로, CI·rcutorture 운영자는 패치 본문보다 이 스레드를 함께 봐야 합니다.\n\n> make -jN\tBug\tGood\tBug\tGood\n\n\tkvm.sh [1]\tBug\tBug\tBug\tBug\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/6f077bd6-3919-43d3-a683-15156253330b@paulmck-laptop/)\n\n> rcutorture's build check counts the \"Error\" in that line.\n\n[원문 확인](https://lore.kernel.org/all/0ddb5e5e-f801-444c-aa98-0cfe814a3026@paulmck-laptop/)\n\nrcutorture 포그라운드만 실패하는 stdin/TTY 조건의 정확한 원인은 확인이 필요합니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**kbuild: Give jobserver-exec recipes the jobserver**\n\nKees Cook의 v2 시리즈(2/2)는 pigz gzip 단계와 Clang LTO initcall ordering이 scripts/jobserver-exec를 쓰는 Makefile 규칙에 GNU Make 재귀 recipe 표시(+)를 붙여 CentOS Stream 9 등 make 4.3(58232 백포트) 환경에서 jobserver 파이프를 다시 열 수 있게 합니다.\n\n영향: pigz가 단일 스레드(-p 1)로 떨어지거나 jobserver 경고가 rcutorture 빌드 검사를 실패시키는 문제를 막아, 대규모 병렬 kbuild와 selftest 자동화에 직접 영향을 줍니다.\n\n> Mark these recipes recursive, as was done for rustc.\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/kees/linux.git/log/?h=dev/next-20261001/pigz-recursive/v2)\n\n> also mark the gzip rules that choose gzip through a variable, including the built-in initramfs in usr/Makefile\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/kees/linux.git/diff/?id=dev/next-20261001/pigz-recursive/v2&id2=dev/next-20261001/pigz-recursive/v1)\n\n시리즈가 linux-next/mainline에 머지되는 시점과 백포트 필요 여부는 확인이 필요합니다.\n\n**Alloc changes for 7.4-rc1**\n\nDanilo Krummrich가 Rust-for-Linux alloc-7.4-rc1 태그(6e8339118040)를 올렸으며, Alice Ryhl을 Rust [ALLOC] 공동 메인테이너로 추가하고 KBox::pin_slice 오류 타입 유연화와 NumaNode::id() 접근자를 포함합니다.\n\n영향: 7.4-rc1 Rust alloc API·유지보수 구조가 갱신되어 NUMA 바인딩이나 infallible 초기화를 쓰는 in-tree Rust 드라이버는 이 pull을 기준으로 리베이스·리뷰 타이밍을 잡아야 합니다.\n\n> Add Alice Ryhl as co-maintainer for Rust [ALLOC]\n\n[원문 확인](https://github.com/Rust-for-Linux/linux/releases/tag/alloc-7.4-rc1)\n\n> rust: alloc: add `NumaNode::id()` accessor\n\n[원문 확인](https://api.github.com/repos/Rust-for-Linux/linux/commits/6e8339118040f24ebcc21db22c9c1b7398b7e39e)\n\n변경이 upstream Linus 트리에 들어가는 merge window 일정은 확인이 필요합니다.\n\n**dwarf_loader: Fix --lang_exclude on merged CUs**\n\nAlan Derk의 dwarves v2(2/2)는 LTO로 병합된 DWARF CU에서 --lang_exclude가 첫 CU 언어만 보거나 제외 CU 타입 참조를 끊어 pahole/BTF가 깨지는 문제를 고치고, 두 패치를 함께 적용하도록 요구합니다.\n\n영향: Rust+C 혼합 모듈의 LTO+BTF 생성 실패와 CONFIG_RUST Kconfig 제약( PAHOLE_HAS_LANG_EXCLUDE / LTO ) 완화 논의의 전제가 되어, BTF·pahole 버전을 맞추는 툴체인 담당자에게 중요합니다.\n\n> With LTO, this is what makes BTF generation fail for kernel modules that mix Rust and C.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20261010005227.976-1-linux@alanderk.com/)\n\n> tests/lang_exclude_lto_refs.sh  |  76 +++++++++++++++++++\n\n[원문 확인](https://lore.kernel.org/all/20261009201032.40105-1-linux@alanderk.com/)\n\npahole 1.33 릴리스에 포함 후 제안된 Kconfig depends 변경이 실제로 올라갈지는 확인이 필요합니다.\n\n**rust: compiler_builtins: Fix silent trap in prohibited intrinsics**\n\nFUJITA Tomonori v4는 금지된 compiler_builtins 스텁이 Rust 1.79 이후 trap으로 조용히 죽고 oops 심볼이 어긋나는 문제를, 스텁을 kernel crate(core_builtins.rs)로 옮기고 panic 메시지로 LLVM 병합을 막는 방식으로 수정합니다.\n\n영향: 잘못된 u128 등 연산 사용 시 디버깅 가능한 panic과 objtool 경고 회피를 복구해, 최신 rustc로 빌드하는 Rust 커널 개발자의 런타임·빌드 검증 품질에 직결됩니다.\n\n> __udivti3 called: `u128` should not be used\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20261009224626.1331914-1-tomo@flapping.org/)\n\n> rustc does not allow code in a `#![compiler_builtins]` crate to link to functions in other crates\n\n[원문 확인](https://github.com/rust-lang/rust/pull/122580)\n\nv4가 rust 브랜치에 머지된 후 필요한 최소 rustc 버전은 확인이 필요합니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "kbuild pigz-recursive v2 log",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/kees/linux.git/log/?h=dev/next-20261001/pigz-recursive/v2",
+      "note": "changelog"
+    },
+    {
+      "title": "pigz-recursive v2 vs v1 diff",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/kees/linux.git/diff/?id=dev/next-20261001/pigz-recursive/v2&id2=dev/next-20261001/pigz-recursive/v1",
+      "note": "commit"
+    },
+    {
+      "title": "linux-kbuild: gzip recursive kvm.sh 검증",
+      "url": "https://lore.kernel.org/linux-kbuild/6f077bd6-3919-43d3-a683-15156253330b@paulmck-laptop/",
+      "note": "thread"
+    },
+    {
+      "title": "linux-kbuild: CentOS Stream 9 실패 보고",
+      "url": "https://lore.kernel.org/all/0ddb5e5e-f801-444c-aa98-0cfe814a3026@paulmck-laptop/",
+      "note": "thread"
+    },
+    {
+      "title": "Rust-for-Linux alloc-7.4-rc1",
+      "url": "https://github.com/Rust-for-Linux/linux/releases/tag/alloc-7.4-rc1",
+      "note": "release"
+    },
+    {
+      "title": "rust: alloc NumaNode::id()",
+      "url": "https://api.github.com/repos/Rust-for-Linux/linux/commits/6e8339118040f24ebcc21db22c9c1b7398b7e39e",
+      "note": "commit"
+    },
+    {
+      "title": "dwarf_loader lang_exclude 커버레터",
+      "url": "https://lore.kernel.org/rust-for-linux/20261010005227.976-1-linux@alanderk.com/",
+      "note": "thread"
+    },
+    {
+      "title": "dwarves lang_exclude LTO 패치",
+      "url": "https://lore.kernel.org/all/20261009201032.40105-1-linux@alanderk.com/",
+      "note": "thread"
+    },
+    {
+      "title": "compiler_builtins prohibited intrinsics v4",
+      "url": "https://lore.kernel.org/rust-for-linux/20261009224626.1331914-1-tomo@flapping.org/",
+      "note": "thread"
+    },
+    {
+      "title": "rustc compiler_builtins crate 링크 제한",
+      "url": "https://github.com/rust-lang/rust/pull/122580",
+      "note": "article"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-10T18:24:38.511Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

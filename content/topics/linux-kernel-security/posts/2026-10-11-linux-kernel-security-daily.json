@@ -1,0 +1,140 @@
+{
+  "id": "2026-10-11-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-10-11 하드닝 빌드 회귀 — 커널 보안",
+  "headline": "Landlock FORTIFY·GCC ICF·KCFI 스레드와 jobserver 회귀가 하드닝 CI와 stable 백포트 계획에 동시에 걸립니다.",
+  "date": "2026-10-11",
+  "summary": "linux-hardening에서 Landlock counted_by 제거, GCC IPA ICF·KCFI v18 설명, kbuild jobserver-exec v2가 이어졌습니다. 10월 3일 stable·LTS 태그는 백포트 기준점으로 유지됩니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "보안",
+    "하드닝"
+  ],
+  "highlights": [
+    {
+      "title": "landlock: __counted_by 제거",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "Landlock·clang/FORTIFY 기반 커널 빌드 담당",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20261010164450.194439-1-ngocthang2710.1999@gmail.com/",
+      "if": "clang 22 이상과 CONFIG_FORTIFY_SOURCE로 두 번째 landlock_restrict_self() 호출을 검증한다면",
+      "do": "inherit_ruleset() 경로의 fortify panic과 syzkaller WARNING 추적을 우선 확인하세요",
+      "verify": "메일 스레드와 syzkaller 버그 페이지에서 재현 로그를 대조하세요"
+    },
+    {
+      "title": "GCC IPA ICF 접근 경로 크기 비교",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "GCC·배포판 Werror 커널 빌드·네트워크 터널 유지보수",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20261010050537.i.784-kees@kernel.org/",
+      "if": "GCC 16과 -fno-strict-aliasing으로 net/ipv6/ip6_tunnel.c를 Werror 빌드한다면",
+      "do": "ip6_tnl_parm_from_user/to_user 병합으로 -Warray-bounds가 나는지 PR ipa/105438 수정 여부를 점검하세요",
+      "verify": "linux-hardening 스레드의 ip6_tunnel.c 인용과 패치 설명을 읽어보세요"
+    },
+    {
+      "title": "KCFI 코어 인프라·GCC v18",
+      "priority": "중",
+      "impactType": "project",
+      "affectedAudience": "CFI/KCFI·GCC 포트·x86 FineIBT 관련 하드닝 개발자",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20261010080449.fe2893-kees@kernel.org/",
+      "if": "-fsanitize=kcfi와 RISC-V C 확장 빌드를 함께 추적한다면",
+      "do": "간접 호출 검사 시퀀스 원자성·trap 레이아웃·TARGET_KCFI_NOP_SIZE 변경을 툴체인 리뷰에 반영하세요",
+      "verify": "Jeff Law 리뷰 답글 스레드에서 v18 RISC-V nop 길이 설명을 확인하세요"
+    },
+    {
+      "title": "kbuild jobserver-exec v2",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "kbuild·linux-next·rcutorture/KVM 테스트를 돌리는 배포판/하드닝 트리 메인테이너",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20261010081910.stay.092-kees@kernel.org/",
+      "if": "CentOS Stream 9 make 4.3에서 pigz·LTO initcall ordering을 돌린다면",
+      "do": "scripts/jobserver-exec WARNING과 pigz 단일 스레드 회귀가 v2의 '+' 표시로 사라지는지 테스트하세요",
+      "verify": "Paul McKenney가 언급한 usr/Makefile initramfs gzip 규칙 포함 여부를 스레드에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.2.9 stable**\n\n2026-10-03 stable 7.2.9가 7.2.8 대비 457건의 upstream 백포트를 포함하며, changelog에 net/sched act_ct NAT·helper UAF 수정과 landlock gcc-16 -Wuninitialized 회피 등이 있습니다.\n\n영향: 최신 stable 라인 사용자는 TC act_ct conntrack 경로와 Landlock 빌드 회귀를 패치 레벨에서 따라잡을 수 있어 배포·백포트 계획의 기준점이 됩니다.\n\n> net/sched: act_ct: avoid modifying shared unconfirmed ct entry... net/sched: act_ct: fix helper UAF due to extensions realloc\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.9)\n\n**Linux 6.1.189 longterm**\n\n2026-10-03 longterm 6.1.189가 967건의 upstream 백포트를 담으며, Bluetooth L2CAP/hci_sock 검증, netfilter ip6t_rt/ip6t_rpfilter, NFC·openvswitch conntrack, eventpoll UAF 등 수정이 상위에 옵니다.\n\n영향: 6.1 LTS는 엔터프라이즈·CIP 계열 배포의 보안 기준선이라 동일 주기 stable 묶음에서 어떤 공격면 백포트가 들어갔는지 파악하는 데 핵심입니다.\n\n> Linux 6.1.189\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.1.189)\n\n[원문 확인](https://www.kernel.org/releases.json)\n\n**Linux 5.15.222 longterm**\n\n2026-10-03 5.15.222가 747건 백포트를 포함하고 changelog 상위에 eventpoll ep_remove UAF 일련, net: tls pipe back-pressure 데이터 드롭, Bluetooth·netfilter·NFC 검증 수정이 나타납니다.\n\n영향: 아직 5.15 LTS를 유지하는 배포는 eventpoll·TLS·블루투스 스택의 최근 메모리 안전 백포트를 이 태그로 추적해야 합니다.\n\n> Linux 5.15.222\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.222)\n\n**Linux 5.10.271 longterm**\n\n2026-10-03 5.10.271이 588건 백포트로 can ems_usb 길이 검증, amdgpu atom kcalloc 검사, Bluetooth·netfilter·NFC·HID 등 드라이버/네트워크 경계 검증·UAF 수정을 포함합니다.\n\n영향: 5.10 LTS는 여전히 IoT·레거시 장기 지원 트리에서 보안 패치 수신 주기의 기준이며 USB CAN·블루투스 사용자 공간 인터페이스 취약면이 갱신됩니다.\n\n> Linux 5.10.271\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.271)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**kbuild: Give jobserver-exec recipes the jobserver**\n\nKees Cook의 v2 시리즈(2패치)가 pigz gzip 단계와 Clang LTO initcall ordering이 scripts/jobserver-exec를 쓰는 Makefile 규칙에 GNU Make 재귀(+) 표시를 붙여 CentOS Stream 9 등 make 4.3 환경에서 jobserver 파이프를 다시 열 수 있게 합니다.\n\n영향: 하드닝·CI 빌드에서 pigz가 단일 스레드로 떨어지거나 jobserver-exec WARNING을 내고 rcutorture가 그 문자열을 실패로 잡는 회귀를 막으며, 병렬 압축·LTO initcall 정렬의 예측 가능성을 회복합니다. Paul McKenney의 rcutorture 전경 실행 회귀가 v2로 완전히 해소되는지 formal apply 전 확인이 남아 있습니다.\n\n> scripts/jobserver-exec prints WARNING: Unable to reopen jobserver read-side pipe... pigz gets one thread... Mark these recipes recursive, as was done for rustc.\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20261010081910.stay.092-kees@kernel.org/)\n\n**landlock: Drop __counted_by from landlock_domain.layers**\n\nlandlock_domain.layers[]에 붙인 __counted_by(num_layers)를 제거하고, 익명 union 안 FAM에서 clang이 카운터 주소를 잘못 계산해 CONFIG_FORTIFY_SOURCE에서 거짓 memcpy 오버플로를 내는 문제를 피합니다.\n\n영향: clang 22+ FORTIFY 빌드에서 두 번째 landlock_restrict_self()가 __fortify_panic으로 실패해 Landlock 스택 배포·하드닝 CI가 깨질 수 있습니다. Alejandro Colomar가 제안한 clang 23+ 재현 여부와 __counted_by를 깨진 clang에서 no-op으로 두는 대안 채택 여부는 미정입니다.\n\n> memcpy: detected buffer overflow: 16 byte read of buffer size 0... landlock_merge_ruleset... __se_sys_landlock_restrict_self\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20261010164450.194439-1-ngocthang2710.1999@gmail.com/)\n\n**ipa-icf: Compare access path type sizes without TBAA [PR105438]**\n\nGCC IPA ICF가 -fno-strict-aliasing에서 TBAA 없이 서로 다른 크기의 구조체 필드 복사 함수를 병합하지 못하도록 접근 경로마다 타입 크기·배열 종류를 비교합니다.\n\n영향: 커널은 -fno-strict-aliasing으로 빌드되며 GCC 16에서 net/ipv6/ip6_tunnel.c의 ip6_tnl_parm_from_user/to_user가 잘못 병합되어 -Warray-bounds가 터질 수 있어, 하드닝·Werror 툴체인 업그레이드에 직접 영향을 줍니다. 패치가 upstream GCC trunk에 머지되는 시점과 커널이 요구할 최소 GCC 버전은 아직 불명확합니다.\n\n> The Linux kernel (which uses -fno-strict-aliasing) hit this with GCC 16 in net/ipv6/ip6_tunnel.c: ip6_tnl_parm_from_user() and ip6_tnl_parm_to_user()\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20261010050537.i.784-kees@kernel.org/)\n\n**kcfi: Add core Kernel Control Flow Integrity infrastructure**\n\nKees Cook가 Jeff Law의 GCC 리뷰에 답하며 KCFI 간접 호출 검사 시퀀스가 단일 원자 단위여야 하는 이유(스필·trap 레이아웃·FineIBT)와 v18에서의 RISC-V nop 길이·정렬·cold partition 처리 수정을 설명합니다.\n\n영향: 커널이 기대하는 -fsanitize=kcfi 동작과 GCC 백엔드 설계가 맞지 않으면 CFI 하드닝이 조용히 깨지거나 RISC-V 등에서 잘못된 type ID 로드가 날 수 있어, 커널·툴체인 양쪽 추적이 필요합니다. v18 시리즈가 GCC upstream에 언제 land하며 커널의 CONFIG_GCC_PLUGIN/KCFI 빌드 매트릭스가 어떻게 갱신될지 확인이 필요합니다.\n\n> a spill and reload in between would let attacker-writable memory supply an unchecked target... The kernel depends on the exact layout: its trap handlers decode the instructions around the trap\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20261010080449.fe2893-kees@kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "**syzkaller: landlock_merge_ruleset WARNING**\n\nsyzkaller가 landlock FORTIFY 경로의 WARNING을 추적 중입니다.\n\n영향: Landlock counted_by 제거 패치와 연계해 재현·수정 검증에 참고할 수 있습니다.\n\n> WARNING in landlock_merge_ruleset\n\n[원문 확인](https://syzkaller.appspot.com/bug?extid=a0eecb22de4d821a9e5d)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "kbuild jobserver-exec v2",
+      "url": "https://lore.kernel.org/linux-hardening/20261010081910.stay.092-kees@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "landlock __counted_by 제거",
+      "url": "https://lore.kernel.org/linux-hardening/20261010164450.194439-1-ngocthang2710.1999@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "syzkaller landlock_merge_ruleset",
+      "url": "https://syzkaller.appspot.com/bug?extid=a0eecb22de4d821a9e5d",
+      "note": "article"
+    },
+    {
+      "title": "GCC IPA ICF PR105438",
+      "url": "https://lore.kernel.org/linux-hardening/20261010050537.i.784-kees@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "KCFI GCC v18 설명",
+      "url": "https://lore.kernel.org/linux-hardening/20261010080449.fe2893-kees@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog 7.2.9",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.9",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog 6.1.189",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.1.189",
+      "note": "changelog"
+    },
+    {
+      "title": "kernel.org releases.json",
+      "url": "https://www.kernel.org/releases.json",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog 5.15.222",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.222",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog 5.10.271",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.271",
+      "note": "changelog"
+    },
+    {
+      "title": "stable tag v5.10.271",
+      "url": "https://git.kernel.org/stable/h/v5.10.271",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-10T18:22:26.930Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

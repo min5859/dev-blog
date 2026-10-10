@@ -1,0 +1,126 @@
+{
+  "id": "2026-10-11-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-10-11 skb defer·BPF — Perf·RT",
+  "headline": "skb defer_count v2가 RT race를 다루고, arm64 BPF plt 머지·libbpf 순서 가드·lwt_bpf verifier 방향이 이어집니다.",
+  "date": "2026-10-11",
+  "summary": "Joseph Kain v2는 빈 defer_list에서 defer_count가 남는 844c9db7f7f5 이후 회귀를 고치며, cross-CPU TCP에서 패치 전 카운터가 회복하지 않았던 사례를 제시합니다. bpf-next에는 arm64 text poke race 수정이 머지되었고, libbpf gen_loader 호출 순서와 lwt_bpf dynptr verifier 수정 요구가 스레드에 올라왔습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "PREEMPT_RT",
+    "BPF",
+    "네트워킹"
+  ],
+  "highlights": [
+    {
+      "title": "net: defer_count가 빈 defer_list를 넘지 않도록",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "PREEMPT_RT·고처리량 네트워킹 스택을 운영·백포트하는 커널·네트워크 엔지니어",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20261008220256.1844072-1-jkain@nuro.ai/",
+      "if": "v7.3-rc6급 cross-CPU TCP에서 skb_defer_max를 건드린 뒤 defer_count가 비정상적으로 오르거나 지연 해제가 꺼진 것 같다면",
+      "do": "v2 패치의 카운터 리셋·llist_del_all() 전 defer_count 정리 순서를 백포트 후보와 함께 검토하고, PREEMPT_RT에서 flush 선점 윈도우를 재현 테스트하세요",
+      "verify": "스레드의 패치 설명·측정 수치와 syzbot diff에서 빈 리스트 경로 동작을 원문으로 대조하세요"
+    },
+    {
+      "title": "libbpf: PREPARE 이후 gen_loader 거부",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "libbpf·CO-RE·gen_loader 스켈레톤을 쓰는 BPF 사용자·배포 도구 개발자",
+      "verifyLink": "https://lore.kernel.org/bpf/20261010143156.379864-2-andrey.grodzovsky@crowdstrike.com/",
+      "if": "bpf_object_prepare() 이후 bpf_object__gen_loader()를 호출하는 자동화나 스켈레톤 생성 경로가 있다면",
+      "do": "prepare 전에 gen_loader를 설정하도록 호출 순서를 고치고, -EINVAL이 나오는 경우 로드 시리즈 전체를 다시 점검하세요",
+      "verify": "패치 스레드와 bpf-ci 설명에서 prepare 단계 BTF·맵·reloc 기록이 generated loader에 빠지는 조건을 확인하세요"
+    },
+    {
+      "title": "bpf arm64: bpf_arch_text_poke() plt race 수정 머지",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "arm64에서 fentry/fexit·트램폴린 기반 BPF를 운영하는 커널·관측성 개발자",
+      "verifyLink": "https://git.kernel.org/pub/scm/linux/kernel/git/bpf/bpf-next.git/commit/?id=6335e6719fd323c345427b7cf2d5d17c28fdbc41",
+      "if": "arm64 64K 페이지에서 prog pack 공유 페이지에 동시 fentry attach·detach를 돌린다면",
+      "do": "bpf-next master의 text_mutex 아래 RW·WRITE_ONCE·RO 시퀀스가 포함된 빌드를 따라가고, 동시 poke 회귀 테스트를 유지하세요",
+      "verify": "patchwork 머지 알림과 커밋 메시지의 동시 poke·permission fault 설명을 읽어보세요"
+    },
+    {
+      "title": "lwt_bpf: encap 헤더 stale — verifier에서 차단 요구",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "LWT BPF·SEG6·dynptr_slice를 쓰는 eBPF 네트워크 프로그램·verifier 개발자",
+      "verifyLink": "https://lore.kernel.org/bpf/DM190ODIIKXQ.342O0FWIBBKTB@gmail.com/",
+      "if": "dynptr_slice와 packet-changing helper를 함께 쓰는 LWT·seg6·bpf_skb_store_bytes 프로그램이 있다면",
+      "do": "드라이버 memcpy만 믿지 말고 verifier에서 reg_is_dynptr_slice_pkt() 거부와 selftest가 bpf-next에 올라왔는지 추적하세요",
+      "verify": "maintainer 스레드에서 check_helper_mem_access 허용 경로와 helper 거부 지시를 원문으로 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**net: do not let defer_count outlive an empty defer_list**\n\nJoseph Kain v2는 __skb_defer_free_flush()가 빈 defer_list인데 defer_count가 skb_defer_max 이상으로 남는 844c9db7f7f5(llist 전환) 이후 버그를 고치며, 빈 리스트에서 카운터를 0으로 리셋하고 llist_del_all() 전에 defer_count를 지우는 순서를 바로잡습니다.\n\n영향: 카운터가 걸리면 해당 (cpu, node)에서 skb 지연 해제가 재부팅까지 꺼지고 cross-CPU free가 페이지 할당자로 돌아가 네트워크 경합이 커지며, PREEMPT_RT에서는 local_bh_disable()이 선점을 막지 않아 기본 skb_defer_max=128에서도 race 윈도우가 넓어집니다.\n\n> At the default of 128 the flusher has to be interrupted or preempted between those two lines for long enough, which is where PREEMPT_RT matters\n\n> defer_count reached 1918118 unpatched and did not recover when the default was restored; with this patch it peaked at 1.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20261008220256.1844072-1-jkain@nuro.ai/)\n\nnetdev/mainline 머지·stable 백포트 범위는 아직 공개 스레드에서 확정되지 않았습니다.\n\n**net: lwt_bpf: preserve encap header across skb head realloc**\n\nRen Wei의 lwt_bpf 드라이버 memcpy 수정에 대해 Alexei Starovoitov가 verifier 쪽 수정을 요구하며, skb dynptr_slice가 PTR_TO_MEM으로 packet-changing helper의 hdr 인자를 통과하는 것이 근본 원인이라 reg_is_dynptr_slice_pkt()를 해당 helper에서 거부하고 selftest를 bpf-next로 보낼 것을 지시했습니다.\n\n영향: 헤더 포인터가 skb head realloc 후 stale이 되면 LWT encap·seg6·bpf_skb_store_bytes 경로에서 패킷 손상이나 크래시가 날 수 있어 dynptr 기반 BPF 네트워킹 프로그램의 안전 모델과 직결됩니다.\n\n> Reject reg_is_dynptr_slice_pkt() arguments in the helpers that change packet data.\n\n[원문 확인](https://lore.kernel.org/bpf/DM190ODIIKXQ.342O0FWIBBKTB@gmail.com/)\n\nverifier 수정 패치와 selftest가 bpf-next에 올라왔는지, net 트리로 보낸 원 패치 처리 방향은 아직 확인되지 않았습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**libbpf: Reject gen_loader set after PREPARE step.**\n\nbpf-next v6 1/7은 bpf_object__gen_loader()가 obj->state >= OBJ_PREPARED이면 -EINVAL을 반환해 prepare 이후 gen_loader 기록을 막는 가드로, prepare 단계에서 이미 수행된 BTF·맵·reloc 기록이 gen_loader에 빠지는 잘못된 순서를 차단합니다.\n\n영향: prepare/load 분리와 gen_loader·MANUAL 프로그램 로딩을 쓰는 도구는 호출 순서가 어긋나면 생성 스켈레톤이 실제 로드와 어긋날 수 있어 관측·배포 자동화에서 조용한 fd 배선 오류를 막는 API 계약이 됩니다.\n\n> if (obj->state >= OBJ_PREPARED) return libbpf_err(-EINVAL);\n\n> the BTF load, map creation, and extern and CO-RE relocation recording done inside bpf_object_prepare() never make it into the generated loader.\n\n[원문 확인](https://lore.kernel.org/bpf/20261010143156.379864-2-andrey.grodzovsky@crowdstrike.com/)\n\n**bpf, arm64: Fix racy plt target update in bpf_arch_text_poke()**\n\nMatthew Wood v3가 bpf_arch_text_poke()에서 set_memory_rw/WRITE_ONCE/set_memory_ro 시퀀스를 text_mutex 아래로 옮겨 bpf prog pack에서 같은 페이지를 공유하는 서로 다른 prog의 plt 갱신이 겹치지 않게 했고, 2026-10-10에 bpf-next master에 머지되었습니다.\n\n영향: arm64 64K 페이지에서 fentry 등 트램폴린 attach 시 다른 CPU가 동시에 poke하면 read-only 페이지에 쓰기로 커널 Oops가 발생했으며, RT·고밀도 BPF attach 워크로드에서 동시 텍스트 패치 안정성에 직접 영향을 줍니다.\n\n> Two CPUs attaching to or detaching from different target progs in the same page can therefore race\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/bpf/bpf-next.git/commit/?id=6335e6719fd323c345427b7cf2d5d17c28fdbc41)\n\nnet/mainline 백포트 일정은 이 알림만으로는 확인되지 않았습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "**selftests: net: veth: test peer ndo-xmit after GRO toggle while down**\n\nTianyi Gao 시리즈 2/2는 veth.sh에 chk_xdp_feature()를 추가해 링크 down 상태에서 GRO를 토글한 뒤 peer의 ndo-xmit XDP feature가 올바르게 갱신되는지 ynl CLI로 검증하고, cli.py가 없으면 해당 검사를 건너뜁니다.\n\n영향: veth에서 GRO와 XDP feature(NETDEV_XDP_ACT_NDO_XMIT)가 독립적으로 동작해야 하는 동작을 회귀 테스트로 고정해 XDP·GRO를 함께 쓰는 컨테이너·가상 NIC 환경의 관측·배포 신뢰도를 높입니다.\n\n> toggling GRO on a veth device while it is down updates the peer's ndo-xmit XDP feature once the device comes up.\n\n[원문 확인](https://lore.kernel.org/bpf/179165459278.434549.1711113374323842550@kernel.org/)\n\n작성자는 chk_gro 경로 회귀를 net-next follow-up으로 고칠 예정이라고 답했으나 해당 follow-up 패치는 아직 확인되지 않았습니다. ynl CLI 존재만 검사해 broken Python 환경에서 fail이 날 수 있다는 리뷰 지적도 있습니다."
+    }
+  ],
+  "confidence": {
+    "level": "높음",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "linux-rt-devel: skb defer_count v2",
+      "url": "https://lore.kernel.org/linux-rt-devel/20261008220256.1844072-1-jkain@nuro.ai/",
+      "note": "thread"
+    },
+    {
+      "title": "syzbot: defer_count 패치 diff",
+      "url": "https://ci.syzbot.org/patches/bc7923bf-489a-4376-8944-d13a72b67238",
+      "note": "changelog"
+    },
+    {
+      "title": "bpf: libbpf gen_loader after PREPARE",
+      "url": "https://lore.kernel.org/bpf/20261010143156.379864-2-andrey.grodzovsky@crowdstrike.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf-ci: prepare recording vs generated loader",
+      "url": "https://lore.kernel.org/bpf/ac05874f317b38b72dc1378b1c27a14669a75cf05b19fb7a3cdce307c954d637@mail.kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: arm64 text poke merge notify",
+      "url": "https://lore.kernel.org/bpf/179164500701.1749710.14140149592072860929.git-patchwork-notify@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf-next commit: arm64 bpf_arch_text_poke",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/bpf/bpf-next.git/commit/?id=6335e6719fd323c345427b7cf2d5d17c28fdbc41",
+      "note": "commit"
+    },
+    {
+      "title": "bpf: lwt_bpf dynptr verifier direction",
+      "url": "https://lore.kernel.org/bpf/DM190ODIIKXQ.342O0FWIBBKTB@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: veth GRO·ndo-xmit selftest",
+      "url": "https://lore.kernel.org/bpf/179165459278.434549.1711113374323842550@kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-10T18:29:04.605Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

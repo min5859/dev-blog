@@ -1,0 +1,121 @@
+{
+  "id": "2026-10-11-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-10-11 icache flush 회귀 — 아키텍처·플랫폼",
+  "headline": "RISC-V SMP에서 exec folio icache flush 누락 회귀 수정안이 올라왔고, hotplug pagetable teardown·Meson GPIO wake·스택 KUnit이 함께 논의됐습니다.",
+  "date": "2026-10-11",
+  "summary": "01261e24cfab 이후 per-mm icache flush와 PG_dcache_clean 불일치로 다른 mm·hart 매핑 시 flush가 건너뛸 수 있는 RISC-V 회귀에 v3 수정안이 제출됐습니다. memory hot-remove pagetable teardown 공통화, Meson GPIO s2idle wake, RISC-V 스택 트레이스 KUnit도 메일링 리스트에서 다뤄졌습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "RISC-V",
+    "ARM",
+    "플랫폼"
+  ],
+  "highlights": [
+    {
+      "title": "RISC-V exec folio icache flush 회귀",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "RISC-V arch/mm 및 SMP icache 일관성을 다루는 커널 개발자",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20261010155110.764010-1-nickolai@csail.mit.edu/",
+      "if": "SMP RISC-V에서 JIT·동적 코드 로딩·페이지 캐시 기반 실행 파일 매핑을 유지한다면",
+      "do": "v3 패치와 회귀 커밋 01261e24cfab을 대조하고 mainline·stable 백포트 일정은 아직 미확인이므로 머지 스레드를 추적하세요",
+      "verify": "스레드에서 mm A·hart X와 mm B·hart Y 교차 매핑 시 flush 누락 설명과 syzbot 수정안 인용을 읽어보세요"
+    },
+    {
+      "title": "memory hot-remove pagetable teardown",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "RISC-V/arm64 memory hotplug 및 공통 MM pagetable 할당 경로 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20261010112457.49485-1-songmuchun@bytedance.com/",
+      "if": "CONFIG_MEMORY_HOTPLUG에서 RISC-V·arm64 hot-remove 경로를 다룬다면",
+      "do": "v2 시리즈의 pagetable_free() PageTable() 조건부 destructor 호출과 arch 통합 변경을 MM 트리와 함께 검토하세요",
+      "verify": "cover letter의 constructor 상태 불일치 설명과 c75a74f4ba19 Fixes 맥락을 원문에서 확인하세요"
+    },
+    {
+      "title": "Meson GPIO irq wake (s2idle)",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "Amlogic/Meson 플랫폼·irqchip·suspend-to-idle 통합 담당",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20261010-meson-gpio-wake-v2-1-790ecc6df792@iav.lv/",
+      "if": "Amlogic 보드에서 GPIO 경유 RTC·센서 IRQ로 suspend-to-idle wake를 쓴다면",
+      "do": "IRQCHIP_SKIP_SET_WAKE 적용 패치 v2를 따라 enable_irq_wake() 실패 경로가 해소되는지 보드 시나리오와 대조하세요",
+      "verify": "패치의 -ENXIO·IRQD_WAKEUP_STATE 설명과 ODROID-HC4 PCF8563 4/4 wake 결과를 스레드에서 확인하세요"
+    },
+    {
+      "title": "RISC-V stack trace start KUnit",
+      "priority": "하",
+      "impactType": "project",
+      "affectedAudience": "RISC-V kernel debug·stack unwinding·KUnit 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20261010132712.46931-2-kmehltretter@gmail.com/",
+      "if": "FRAME_POINTER와 arch_stack_walk() 기반 스택 덤프·프로파일링을 유지한다면",
+      "do": "세 단계 noinline 체인 KUnit이 stack_trace_save()·return_address() 첫 프레임 번호를 검증하도록 패치를 리뷰하세요",
+      "verify": "스레드에서 기존 프레임 numbering 테스트 부재 인용을 읽어보세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**riscv: Fix icache flush being skipped for a second mm mapping an exec folio**\n\nv3 패치는 01261e24cfab 이후 per-mm icache flush가 folio 전역 PG_dcache_clean과 맞지 않아, 서로 다른 mm·hart에서 exec folio를 매핑할 때 flush가 건너뛰는 회귀를 icache_folio_gen/icache_gen 세대 카운터로 per-mm로 다시 검증하도록 고칩니다.\n\n영향: SMP RISC-V에서 JIT·동적 코드 로딩·페이지 캐시 기반 실행 파일 매핑 시 잘못된 icache 내용이 실행될 수 있어, arch/mm 교차 영역 유지보수 담당자는 머지·stable 백포트 여부를 추적해야 합니다. mainline 머지 시점과 stable/backport 대상 브랜치는 확인 필요합니다.\n\n> So when a folio that was written through the page cache is mapped executable first by mm A on hart X and then by a different mm B on a hart Y outside A's cpumask, B gets no flush on Y\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20261010155110.764010-1-nickolai@csail.mit.edu/)\n\n> riscv: Only flush the mm icache when setting an exec pte\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=01261e24cfab)\n\n> Keep the per-mm flush and make the skip decision per mm instead: count the flushes that set the bit in a global generation\n\n[원문 확인](https://ci.syzbot.org/patches/7f466164-c51f-4080-b9eb-57ca6b7297d9)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**mm: Fix page-table teardown during memory hot-remove**\n\nv2 시리즈는 pagetable_free()가 PageTable()일 때만 destructor를 호출하도록 공통 MM을 고치고, RISC-V·arm64 메모리 hot-remove 경로가 이 helper를 쓰도록 정리한다(x86에서 제안된 destructor 판별을 공통화).\n\n영향: CONFIG_MEMORY_HOTPLUG에서 constructor 없이 할당된 vmemmap/예약 페이지와 constructor 있는 linear-map 페이지가 섞일 때 teardown이 깨질 수 있어, RISC-V·arm64 플랫폼 hotplug 담당자는 MM 트리 통합 패치를 함께 봐야 한다. MM 트리 적용 후 각 arch maintainer ack가 반영된 최종 리비전의 mainline 반영 여부는 확인 필요합니다.\n\n> Make pagetable_free() test PageTable() and run the destructor only when the constructor initialized the page.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20261010112457.49485-1-songmuchun@bytedance.com/)\n\n> riscv: mm: Add memory hotplugging support\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=c75a74f4ba19)\n\n**irqchip/meson-gpio: Allow the GPIO interrupts to wake the system**\n\nmeson_gpio irqchip에 IRQCHIP_SKIP_SET_WAKE를 설정해 enable_irq_wake()가 -ENXIO로 실패하지 않도록 하고, suspend-to-idle에서 GIC 부모와 같은 hierarchical wake 처리를 따른다.\n\n영향: Amlogic 보드에서 GPIO 경유 RTC·센서 IRQ가 s2idle에서 한 번만 깨운 뒤 마스크되는 문제를 막아, ARM 플랫폼 suspend·IRQ 계층을 다루는 엔지니어가 실제 보드 wake 시나리오에 영향을 받는다. suspend-to-RAM(mem sleep) 경로는 firmware가 wake source를 고르므로 패치가 명시한 대로 동일 효과가 없을 수 있습니다.\n\n> enable_irq_wake() fails with -ENXIO for every interrupt routed through it, and such an interrupt never gets IRQD_WAKEUP_STATE.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20261010-meson-gpio-wake-v2-1-790ecc6df792@iav.lv/)\n\n> Tested on ODROID-HC4 with the PCF8563 alarm interrupt routed through this controller: with the flag the alarm wakes the board from s2idle 4/4\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20261010-meson-gpio-wake-v2-1-790ecc6df792@iav.lv/)\n\n**riscv: Add KUnit test for stack trace start frames**\n\narch_stack_walk()가 보고하는 첫 프레임이 stack_trace_save()·return_address() 결과에 어떻게 반영되는지 세 단계 noinline 호출 체인으로 검증하는 KUnit 테스트를 추가한다(FRAME_POINTER 필요).\n\n영향: 스택 덤프·프로파일링 도구가 RISC-V에서 올바른 심볼/스킵 수준을 내는지 회귀를 막는 테스트로, arch 디버그·KUnit 설정을 다루는 개발자에게 직접적이다.\n\n> stack_trace_save() and return_address() depend on the first frame reported by arch_stack_walk(), but no test checks their frame numbering.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20261010132712.46931-2-kmehltretter@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "riscv icache flush 회귀 (Nickolai Karulin)",
+      "url": "https://lore.kernel.org/linux-riscv/20261010155110.764010-1-nickolai@csail.mit.edu/",
+      "note": "thread"
+    },
+    {
+      "title": "01261e24cfab — per-exec-pte mm icache flush",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=01261e24cfab",
+      "note": "commit"
+    },
+    {
+      "title": "syzbot patch — icache generation fix v3",
+      "url": "https://ci.syzbot.org/patches/7f466164-c51f-4080-b9eb-57ca6b7297d9",
+      "note": "thread"
+    },
+    {
+      "title": "pagetable_free hot-remove v2 (Muchun Song)",
+      "url": "https://lore.kernel.org/linux-riscv/20261010112457.49485-1-songmuchun@bytedance.com/",
+      "note": "thread"
+    },
+    {
+      "title": "c75a74f4ba19 — RISC-V memory hotplug",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=c75a74f4ba19",
+      "note": "commit"
+    },
+    {
+      "title": "RISC-V stack trace KUnit (Kyle Mehltretter)",
+      "url": "https://lore.kernel.org/linux-riscv/20261010132712.46931-2-kmehltretter@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "meson-gpio wake v2",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20261010-meson-gpio-wake-v2-1-790ecc6df792@iav.lv/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-10T18:30:42.845Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
