@@ -1,0 +1,125 @@
+{
+  "id": "2026-10-12-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-10-12 랜드락 Clang22 — 툴체인",
+  "headline": "Clang 22와 FORTIFY_SOURCE 조합에서 Landlock이 두 번째 restrict 호출 시 오탐 fortify로 깨지는 문제에 대한 v7.3-rc7용 수정이 llvm@에 올라왔습니다.",
+  "date": "2026-10-12",
+  "summary": "Landlock은 익명 구조체·union 안 유연 배열에 대한 Clang 22의 __counted_by 계산 오류를 피하기 위해 헤더 한 줄을 수정했습니다. Kconfig 검색 UI·jobserver·kallsyms 헤더 패키징·Rust ALSA rawmidi RFC도 kbuild·툴체인 쪽에서 이어졌습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "툴체인",
+    "kbuild"
+  ],
+  "highlights": [
+    {
+      "title": "Landlock fix for v7.3-rc7",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Clang 기반 커널 빌드·Landlock 사용자 및 security 서브시스템 유지보수자",
+      "verifyLink": "https://git.kernel.org/pub/scm/linux/kernel/git/mic/linux.git/commit/?id=3d8cc52db2f86b624308321c58513019f6b21eec",
+      "if": "Clang 22와 CONFIG_FORTIFY_SOURCE로 빌드한 커널에서 landlock_restrict_self()를 반복 호출하는 테스트나 통합을 돌리는 경우",
+      "do": "mic/linux의 landlock-7.3-rc7 풀에 포함된 __counted_by 제거 수정을 적용하거나 동일 커밋을 베이스에 반영할 것",
+      "verify": "두 번째 landlock_restrict_self() 호출 시 inherit_ruleset()에서 bogus fortify가 재현되지 않는지 확인할 것"
+    },
+    {
+      "title": "kconfig: show number of search results in search UI",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "Kconfig/menuconfig 사용자 및 kbuild 스크립트 유지보수자",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/asvB7fchdB8lUkMc@gmail.com/",
+      "if": "대형 트리에서 menuconfig·nconfig·xconfig 심볼 검색을 자주 쓰는 경우",
+      "do": "v3 패치의 sym_re_search() 결과 개수 표시와 nconfig 제목 폭 수정을 리뷰·로컬 적용해 검색 범위를 조정할 것",
+      "verify": "검색 팝업 제목에 \"Search Results (N)\" 형태로 개수가 표시되는지 확인할 것"
+    },
+    {
+      "title": "kbuild: install-extmod-build: install kernel/kallsyms_internal.h",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "linux-headers/kernel-devel 패키징 및 외부 모듈 빌드 환경 구성자",
+      "verifyLink": "https://lkml.iu.edu/2610.0/09323.html",
+      "if": "install-extmod-build로 헤더를 재패키징한 뒤 HOSTCC로 scripts/kallsyms를 다시 빌드하는 경우",
+      "do": "Andrew Morton이 요청한 v2 리스핀(헤더 설치) 또는 Jim Cromie의 매크로 중복 대안 중 채택안을 추적할 것",
+      "verify": "scripts/kallsyms.c가 ../kernel/kallsyms_internal.h를 찾지 못해 실패하지 않는지 스테이징 빌드로 확인할 것"
+    },
+    {
+      "title": "rust: snd: Introduce experimental ALSA rawmidi abstractions",
+      "priority": "하",
+      "impactType": "project",
+      "affectedAudience": "Rust for Linux 및 ALSA 드라이버 개발자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20261011-rust-snd-v1-0-7974ecdcd345@midirus.com/",
+      "if": "Rust로 ALSA rawmidi 드라이버나 out-of-tree 하드웨어 바인딩을 검토하는 경우",
+      "do": "병합 불가 RFC의 snd_card·snd_rawmidi 래퍼 범위에 피드백을 남기고 Takashi Iwai 측 ALSA Rust 프로토타입과의 정렬 여부를 확인할 것",
+      "verify": "프로토타입이 devres·rawmidi 수명을 아직 강제하지 않는다는 전제를 유지한 채 스레드에서 피드백할 것"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**Landlock fix for v7.3-rc7**\n\nLandlock이 landlock_domain.handled_masks에서 __counted_by를 제거하는 한 줄 헤더 수정을 끌어옵니다. Clang 22가 union 안 익명 구조체의 유연 배열에 대해 카운터를 잘못 계산해 CONFIG_FORTIFY_SOURCE에서 두 번째 landlock_restrict_self() 호출 시 bogus overflow가 납니다.\n\n영향: 최근 Clang과 FORTIFY_SOURCE를 쓰는 빌드는 런타임 검사 실패나 v7.3-rc7 통합 지연을 막기 위해 이 컴파일러·레이아웃 상호작용을 우회해야 하며, 풀은 landlock-7.3-rc7로 태그됩니다. llvm-project PR 228309이 이 레이아웃에서 __counted_by 유지를 안전하게 만들지는 확인이 필요합니다.\n\n> With clang 22 and CONFIG_FORTIFY_SOURCE, the second landlock_restrict_self() call hits a bogus fortify report in inherit_ruleset(): memcpy: detected buffer overflow\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/mic/linux.git/commit/?id=3d8cc52db2f86b624308321c58513019f6b21eec)\n\n> This fixes a Clang bug by removing an annotation, which was introduced mostly for documentation.\n\n[원문 확인](https://lore.kernel.org/llvm/20261011160819.1376118-1-mic@digikod.net/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**kconfig: show number of search results in search UI**\n\nv3는 sym_re_search()가 매치 개수를 반환하고 menuconfig·nconfig·xconfig 검색 팝업 제목에 표시합니다(예: \"Search Results (42)\"). v2 리뷰의 nconfig 제목 폭 수정도 포함됩니다.\n\n영향: 대형 트리에서 Kconfig를 조정할 때 과도하게 넓은 심볼 검색을 스크롤 없이 바로 파악할 수 있습니다. Julian Wollgraber의 v2 리뷰 이후 다음 kbuild 머지 윈도에 v3가 들어갈지는 확인이 필요합니다.\n\n> When searching for config symbols, the search results popup will now display a count of the results in the title bar, e.g. \"Search Results (42)\".\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/asvB7fchdB8lUkMc@gmail.com/)\n\n**kbuild: Give jobserver-exec recipes the jobserver**\n\nv2는 pigz gzip 레시피와 Clang LTO generate_initcall_order.pl 단계를 recursive(+)로 표시해 Make 4.3에서 비재귀 레시피에 숨겨진 GNU Make jobserver 파이프를 scripts/jobserver-exec가 다시 열 수 있게 합니다.\n\n영향: 수정 없으면 pigz와 initcall 순서 생성이 단일 스레드 또는 CPU 제한 병렬로 돌아가고 jobserver 경고가 나며 CentOS Stream 9류 호스트의 rcutorture kvm.sh 로그 검사를 깨뜨릴 수 있습니다. gzip·initcall 순서 밖의 jobserver-exec 호출부에도 recursive 표시가 더 필요한지는 확인이 필요합니다.\n\n> WARNING: Unable to reopen jobserver read-side pipe: FileNotFoundError(2, 'No such file or directory')\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20261010081910.stay.092-kees@kernel.org/)\n\n> Mark every recipe that can run cmd_gzip as recursive with \"+\", as commit ecab4115c44cc did for rustc.\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/kees/linux.git/commit/?id=dev/next-20261001/pigz-recursive/v2~1)\n\n**kbuild: install-extmod-build: install kernel/kallsyms_internal.h**\n\nAndrew Morton은 Denis Benato에게 kernel/kallsyms_internal.h를 install-extmod-build 출력에 넣는 패치의 v2 리스핀을 요청했고, Jim Cromie는 세 매크로를 scripts/kallsyms.c에 중복하는 대안을 제안했습니다.\n\n영향: marker-density 작업이 상수를 kernel/kallsyms_internal.h로 옮긴 뒤 CC≠HOSTCC 헤더 패키지에서 hostprogs를 재빌드하면 scripts/kallsyms.c include가 깨집니다. v2가 헤더만 스테이징할지 매크로 중복안을 택할지는 확인이 필요합니다.\n\n> scripts/kallsyms.c:39:10: fatal error: '../kernel/kallsyms_internal.h' file not found\n\n[원문 확인](https://lkml.iu.edu/2610.0/09323.html)\n\n> I think a v2 patch, please. To give a clean history and to give reviewers a second chance to go through it.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20261010170909.8d90c362c3779a43ebffa180@linux-foundation.org/)\n\n**rust: snd: Introduce experimental ALSA rawmidi abstractions**\n\nRFC 시리즈는 실험적 Rust snd_card·snd_rawmidi 래퍼, substream 헬퍼, rust_midi_device 샘플을 추가하며 병합 준비가 아니라고 명시하고 Takashi Iwai의 병행 ALSA Rust 프로토타입과 조율을 구합니다.\n\n영향: Rust-for-Linux가 bindgen만이 아닌 ALSA rawmidi 수명(substream 경쟁, devres)을 어떻게 노출할지에 대한 신호입니다. alsa-devel Rust 사운드 프로토타입과의 정렬 및 rawmidi vs 더 좁은 API 공유 여부는 확인이 필요합니다.\n\n> This is not merge-ready. In particular, the prototype does not yet enforce the devres lifetime of the card or the lifetime of its rawmidi wrapper.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20261011-rust-snd-v1-0-7974ecdcd345@midirus.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "높음",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Landlock: drop __counted_by for Clang 22 FORTIFY",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/mic/linux.git/commit/?id=3d8cc52db2f86b624308321c58513019f6b21eec",
+      "note": "commit"
+    },
+    {
+      "title": "llvm@ pull: landlock-7.3-rc7",
+      "url": "https://lore.kernel.org/llvm/20261011160819.1376118-1-mic@digikod.net/",
+      "note": "thread"
+    },
+    {
+      "title": "kconfig search result count v3",
+      "url": "https://lore.kernel.org/linux-kbuild/asvB7fchdB8lUkMc@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Rust snd rawmidi RFC",
+      "url": "https://lore.kernel.org/rust-for-linux/20261011-rust-snd-v1-0-7974ecdcd345@midirus.com/",
+      "note": "thread"
+    },
+    {
+      "title": "jobserver-exec reopen on Make 4.3",
+      "url": "https://lore.kernel.org/linux-kbuild/20261010081910.stay.092-kees@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "pigz recipes recursive (+)",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/kees/linux.git/commit/?id=dev/next-20261001/pigz-recursive/v2~1",
+      "note": "commit"
+    },
+    {
+      "title": "kallsyms_internal.h missing on extmod rebuild",
+      "url": "https://lkml.iu.edu/2610.0/09323.html",
+      "note": "thread"
+    },
+    {
+      "title": "install-extmod-build v2 request",
+      "url": "https://lore.kernel.org/linux-kbuild/20261010170909.8d90c362c3779a43ebffa180@linux-foundation.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-11T18:20:47.735Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

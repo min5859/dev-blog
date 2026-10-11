@@ -1,0 +1,127 @@
+{
+  "id": "2026-10-12-linux-perf-rt-weekly-rollup",
+  "topic": "linux-perf-rt",
+  "title": "2026-10-12 주간 요약",
+  "headline": "PREEMPT_RT·고처리량 네트워킹 스택을 운영·백포트하는 커널·네트워크 엔지니어 주목: net: do not let defer_count o",
+  "date": "2026-10-12",
+  "summary": "오늘의 핵심: 릴리스/로드맵 0건, 회귀·보안 신호 8건, 핵심 변경 0건. 리서치 dossier 의 출처를 근거로 정리했습니다.",
+  "tags": [
+    "주간"
+  ],
+  "highlights": [
+    {
+      "title": "net: do not let defer_count outlive an empty defer_list",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "PREEMPT_RT·고처리량 네트워킹 스택을 운영·백포트하는 커널·네트워크 엔지니어",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20261008220256.1844072-1-jkain@nuro.ai/",
+      "if": "PREEMPT_RT·고처리량 네트워킹 스택을 운영·백포트하는 커널·네트워크 엔지니어라면",
+      "do": "Joseph Kain v2는 __skb_defer_free_flush()가 빈 defer_list인데 defer_count가 skb_defer_",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/linux-rt-devel/20261008220256.1844072-1-jkain@nuro.ai/"
+    },
+    {
+      "title": "sched_ext: idle: Respect task affinity in restricted CPU selection",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "sched_ext·SCX idle kfunc를 쓰는 BPF 스케줄러·실시간 스택 개발자",
+      "verifyLink": "https://lore.kernel.org/bpf/20261011173100.2090211-1-sh_def@163.com/",
+      "if": "sched_ext·SCX idle kfunc를 쓰는 BPF 스케줄러·실시간 스택 개발자라면",
+      "do": "Hui Su v3는 restricted select_cpu kfunc가 migration-disabled·단일 CPU 태스크에서 prev_cpu",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/bpf/20261011173100.2090211-1-sh_def@163.com/"
+    },
+    {
+      "title": "net: lwt_bpf: preserve encap header across skb head realloc",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "LWT BPF·SEG6·dynptr_slice를 쓰는 eBPF 네트워크 프로그램·verifier 개발자",
+      "verifyLink": "https://lore.kernel.org/bpf/DM190ODIIKXQ.342O0FWIBBKTB@gmail.com/",
+      "if": "LWT BPF·SEG6·dynptr_slice를 쓰는 eBPF 네트워크 프로그램·verifier 개발자라면",
+      "do": "Ren Wei의 lwt_bpf 드라이버 쪽 memcpy 수정에 대해 Alexei Starovoitov가 verifier 쪽 수정을 요구합니다. ",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/bpf/DM190ODIIKXQ.342O0FWIBBKTB@gmail.com/"
+    },
+    {
+      "title": "net: lwt_bpf: preserve encap header across skb head realloc",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF LWT encap 및 netdev 백포트 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/68db88ada2fd01fc03f17dc7d54a705aa245ddea.1791433504.git.rakukuip@gmail.com/",
+      "if": "BPF LWT encap 및 netdev 백포트 담당라면",
+      "do": "bpf_lwt_push_ip_encap()에서 skb_cow_head()가 skb 헤드를 재할당할 때, skb 내부를 가리키던 encap 헤더 ",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/bpf/68db88ada2fd01fc03f17dc7d54a705aa245ddea.1791433504.git.rakukuip@gmail.com/"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**net: do not let defer_count outlive an empty defer_list**\n\nJoseph Kain v2는 __skb_defer_free_flush()가 빈 defer_list인데 defer_count가 skb_defer_max 이상으로 남는 844c9db7f7f5(llist 전환) 이후 회귀를 고칩니다. 거부된 defer 시도가 카운터만 올리는 문제와 flush\n\n영향: 카운터가 걸리면 해당 (cpu, node)에서 skb 지연 해제가 재부팅까지 꺼지고 cross-CPU free가 페이지 할당자로 돌아가 네트워크 경합이 커집니다. PREEMPT_RT에서는 local_bh_disable()이 선점을 막지 않아 기본 skb_defer_max=128에서도 f\n\n> Two changes from commit 844c9db7f7f5 (\"net: use llist for sd->defer_list\") combine to produce it.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20261008220256.1844072-1-jkain@nuro.ai/)\n\n**sched_ext: idle: Respect task affinity in restricted CPU selection**\n\nHui Su v3는 restricted select_cpu kfunc가 migration-disabled·단일 CPU 태스크에서 prev_cpu 힌트만 쓰지 않고 p->cpus_ptr·task_cpu(p)에서 후보를 derive한 뒤 @allowed와 affinity를 검증하고, SCX\n\n영향: 잘못된 CPU 선택은 affinity 밖 idle CPU를 고르거나 idle 비트를 소비해 sched_ext 기반 스케줄러·실시간 워크로드의 CPU placement·전력·지연에 직접 영향을 줍니다.\n\n> With a caller-provided @allowed mask, this can also return an idle CPU outside p->cpus_ptr.\n\n[원문 확인](https://lore.kernel.org/bpf/20261011173100.2090211-1-sh_def@163.com/)\n\n**net: lwt_bpf: preserve encap header across skb head realloc**\n\nRen Wei의 lwt_bpf 드라이버 쪽 memcpy 수정에 대해 Alexei Starovoitov가 verifier 쪽 수정을 요구합니다. skb dynptr_slice가 PTR_TO_MEM으로 packet-changing helper의 hdr 인자를 통과하는 것이 근본 원인이며, \n\n영향: 헤더 포인터가 skb head realloc 후 stale이 되면 LWT encap·seg6·bpf_skb_store_bytes 경로에서 패킷 손상이나 크래시가 날 수 있어, dynptr 기반 BPF 네트워킹 프로그램의 안전 모델과 직결됩니다.\n\n> That's the bug. Fix it there. The slice of skb dynptr is the same memory, but it's PTR_TO_MEM and check_helper_mem_access() lets it through.\n\n[원문 확인](https://lore.kernel.org/bpf/DM190ODIIKXQ.342O0FWIBBKTB@gmail.com/)\n\n**net: lwt_bpf: preserve encap header across skb head realloc**\n\nbpf_lwt_push_ip_encap()에서 skb_cow_head()가 skb 헤드를 재할당할 때, skb 내부를 가리키던 encap 헤더 포인터가 무효화되어 UAF 읽기가 날 수 있어, hdr가 skb head 안이면 로컬 버퍼로 복사한 뒤 cow를 수행합니다.\n\n영향: BPF LWT IP encapsulation과 bpf_dynptr_slice()로 skb 백킹 헤더를 쓰는 경로에서 클론·headroom 부족 시 커널 메모리 안전성이 깨질 수 있어, LWT/BPF 네트워킹을 RT 환경에서 검증하는 엔지니어는 백포트·stable 후보를 추적해야 합니다.\n\n> If the encapsulation header pointer hdr points into the skb head, it becomes stale after reallocation. Subsequent reads ... lead to a use-after-free read.\n\n[원문 확인](https://lore.kernel.org/bpf/68db88ada2fd01fc03f17dc7d54a705aa245ddea.1791433504.git.rakukuip@gmail.com/)\n\n**bpf: Fix iterator link update target validation**\n\nBPF iterator link의 BPF_LINK_UPDATE가 프로그램 타입·attach type·BTF ID만 비교해 target별 검증을 우회할 수 있어, link program 교체 전에 target 검증과 sleepability 검사를 다시 수행합니다.\n\n영향: QEMU에서 map metadata OOB·deterministic panic·stale map pointer UAF가 확인됐고 CAP_BPF/CAP_PERFMON만으로 타 UID map을 건드리는 시나리오도 있어, RT/BPF fuzzing·selftest 환경의 커널 안정성과 격리 \n\n> BPF_LINK_UPDATE only compares program type, expected attach type, and attach BTF ID, allowing those checks to be bypassed\n\n[원문 확인](https://lore.kernel.org/bpf/20261008161309.8179-1-janten@gmail.com/)\n\n**net: skbuff: replace most BUG_ON()s with error returns**\n\nJosef Bacik v2 시리즈가 skbuff.c의 17개 BUG_ON()을 DEBUG_NET_WARN_ON_ONCE()와 기존 에러 반환 경로로 바꾸고, v2에서는 panic_on_warn 환경을 위해 WARN 대신 DEBUG_NET_WARN을 씁니다. unreadable frags\n\n영향: syzbot·user namespace에서 net/core/skbuff.c BUG가 반복되며, BPF selftest(skb_segment)와 커널 퍼징·관측성 워크플로에 직접적인 안정성 이슈입니다.\n\n> 89 commits in the tree quote \"kernel BUG at net/core/skbuff.c\", 31 of them since 2024\n\n[원문 확인](https://lore.kernel.org/bpf/20261007-b4-skbuff-bug-on-v2-0-b9a5f732895b@toxicpanda.com/)\n\n**bpf: test_run: Fix false -EBADMSG with BPF_F_TEST_SKB_CHECKSUM_COMPLETE**\n\nBPF_PROG_TEST_RUN의 CHECKSUM_COMPLETE 검증이 bpf_skb_change_tail() 이후 CHECKSUM_NONE skb의 stale skb->csum과 비교해 정상 tc 프로그램을 -EBADMSG로 거부합니다. 패치는 skb가 여전히 CHECKSUM_COM\n\n영향: BPF_F_TEST_SKB_CHECKSUM_COMPLETE를 쓰는 tc/BPF 개발·CI에서 change_tail 시나리오가 거짓 실패하지 않게 합니다.\n\n> BPF_PROG_TEST_RUN with BPF_F_TEST_SKB_CHECKSUM_COMPLETE returns -EBADMSG for correct tc programs that call bpf_skb_change_tail()\n\n[원문 확인](https://lore.kernel.org/bpf/20261007181249.352831-1-skokovmaksimevg@gmail.com/)\n\n**bpf: Validate stack arg reads against caller state**\n\ncheck_stack_arg_read()가 callee BTF 인자 수로만 인덱싱해 caller->out_stack_arg_cnt보다 큰 stack_arg_regs 슬롯을 읽을 수 있었고, BTF unreliable 경로와 조합 시 verifier가 잘못된 레지스터 상태를 복사할 수 있\n\n영향: BPF_PROG_LOAD 단계 verifier 우회로 잘못된 포인터 추적이 가능해져, 스택 인자·서브프로그램 호출을 쓰는 BPF 보안 모델의 핵심 결함입니다.\n\n> BUG: KASAN: slab-out-of-bounds in check_load_mem+0xb51/0xc60 Read of size 80\n\n[원문 확인](https://lore.kernel.org/bpf/20261007174203.37071-1-bestswngs@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "국부 드라이버/플랫폼 패치는 본문에서 제외했습니다. 자기 영역 키워드로 lore.kernel.org에서 직접 검색하세요."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "net: do not let defer_count outlive an empty defer_list",
+      "url": "https://lore.kernel.org/linux-rt-devel/20261008220256.1844072-1-jkain@nuro.ai/",
+      "note": "thread"
+    },
+    {
+      "title": "sched_ext: idle: Respect task affinity in restricted CPU selection",
+      "url": "https://lore.kernel.org/bpf/20261011173100.2090211-1-sh_def@163.com/",
+      "note": "thread"
+    },
+    {
+      "title": "net: lwt_bpf: preserve encap header across skb head realloc",
+      "url": "https://lore.kernel.org/bpf/DM190ODIIKXQ.342O0FWIBBKTB@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "net: lwt_bpf: preserve encap header across skb head realloc",
+      "url": "https://lore.kernel.org/bpf/68db88ada2fd01fc03f17dc7d54a705aa245ddea.1791433504.git.rakukuip@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Fix iterator link update target validation",
+      "url": "https://lore.kernel.org/bpf/20261008161309.8179-1-janten@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "net: skbuff: replace most BUG_ON()s with error returns",
+      "url": "https://lore.kernel.org/bpf/20261007-b4-skbuff-bug-on-v2-0-b9a5f732895b@toxicpanda.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: test_run: Fix false -EBADMSG with BPF_F_TEST_SKB_CHECKSUM_COMPLETE",
+      "url": "https://lore.kernel.org/bpf/20261007181249.352831-1-skokovmaksimevg@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Validate stack arg reads against caller state",
+      "url": "https://lore.kernel.org/bpf/20261007174203.37071-1-bestswngs@gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "source": "research-dossier",
+    "bucketCounts": {
+      "릴리스/로드맵": 0,
+      "회귀·보안 신호": 8,
+      "핵심 변경": 0,
+      "기타": 0
+    },
+    "entryCount": 8
+  }
+}

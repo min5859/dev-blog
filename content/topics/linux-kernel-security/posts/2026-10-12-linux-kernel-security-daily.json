@@ -1,0 +1,133 @@
+{
+  "id": "2026-10-12-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-10-12 7.2.10·LTS 백포트 — 커널 보안",
+  "headline": "7.2.10·6.18.56에 perf text-poke·callchain 권한 백포트가 실렸고, Landlock은 Clang __counted_by 회귀 수정이 v7.3-rc7로 올라갑니다.",
+  "date": "2026-10-12",
+  "summary": "2026-10-11 stable 7.2.10과 longterm 6.18.56이 perf·네트워킹 보안 수정을 대량 백포트했습니다. 하드닝 트래킹에서는 Landlock FORTIFY panic, kbuild jobserver, GCC IPA ICF 논의가 이어집니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "Linux 7.2.10 stable",
+      "priority": "상",
+      "impactType": "backport",
+      "affectedAudience": "7.2 stable·배포판 커널 메인테이너, perf/네트워킹 보안 담당",
+      "verifyLink": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.10",
+      "if": "7.2 stable 또는 동일 백포트를 추적한다면",
+      "do": "ChangeLog-7.2.10 기준 회귀·보안 테스트 범위에 perf text-poke·inet_opt RCU UAF 수정을 반영하세요",
+      "verify": "425건 전체와 공개 CVE·distro 보안 공지의 1:1 대응은 ChangeLog만으로는 확인되지 않았으므로 배포판 공지를 별도로 대조하세요"
+    },
+    {
+      "title": "Linux 6.18.56 longterm",
+      "priority": "상",
+      "impactType": "backport",
+      "affectedAudience": "6.18 LTS·엔터프라이즈 배포 담당, perf 보안 설정 운영자",
+      "verifyLink": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.18.56",
+      "if": "6.18 LTS 트리를 운영하거나 perf 권한 모델을 감사한다면",
+      "do": "이번 점 릴리스의 perf text-poke·커널 callchain 권한 수정이 배포 이미지에 포함되는지 확인하세요",
+      "verify": "ChangeLog-6.18.56에서 perf_allow_kernel() 관련 커밋 문구를 원문으로 확인하세요"
+    },
+    {
+      "title": "landlock: Drop __counted_by from landlock_domain.layers",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Landlock 유지보수·clang/FORTIFY·syzkaller 하드닝 담당",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20261011.queif1Ohf1Uf@digikod.net/",
+      "if": "Clang 22와 CONFIG_FORTIFY_SOURCE로 Landlock을 빌드·테스트한다면",
+      "do": "두 번째 landlock_restrict_self() 경로가 __fortify_panic을 내지 않도록 v7.3-rc7 제안 수정 추적을 우선하세요",
+      "verify": "handled_masks 제거 pull과 layers 수정의 최종 머지 순서·단일 패치 통합 여부는 미정이며, Clang 23+에서 동일 miscompile 해소 여부는 제보자가 확인하지 못했습니다"
+    },
+    {
+      "title": "kbuild: Give jobserver-exec recipes the jobserver",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "kbuild·linux-next·배포판 보안 회귀 CI 운영자",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/179167827085.3510825.11265184087970988253.b4-ty@b4/",
+      "if": "CentOS Stream 9 make 4.3 등에서 하드닝·rcutorture CI가 jobserver WARNING으로 깨진다면",
+      "do": "kbuild-next-speedups에 적용된 recursive \"+\" 시리즈가 본인 브랜치에 도달했는지 확인하세요",
+      "verify": "unstable 브랜치 적용 후 일주일 내 mainline 병합 여부와 rcutorture 전경 회귀는 추가 리포트를 기다리세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.2.10 stable**\n\n2026-10-11 stable 7.2.10이 7.2.9 대비 425건의 upstream 백포트를 포함하며, perf text-poke·커널 callchain 권한 강화, ipv4 inet_opt RCU 해제(UAF) 수정 등이 ChangeLog에 실린다.\n\n영향: 비권한 perf로 KASLR 텍스트 베이스가 노출될 수 있던 경로와 TCP request-socket 경합 UAF가 배포 중인 7.2 트리에 백포트되므로, stable 추적·회귀 테스트 범위를 갱신해야 한다.\n\n> An unprivileged task can therefore open and mmap a task-local software event with text_poke=1... any such address reveals the runtime kernel text base despite KASLR.\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.10)\n\n**Linux 6.18.56 longterm**\n\n2026-10-11 longterm 6.18.56이 6.18.55 대비 402건의 백포트를 담고, 7.2.10과 동일 계열의 perf text-poke·커널 callchain 권한 수정이 포함된다.\n\n영향: 6.18 LTS 사용자는 perf 하드닝 백포트를 이번 점 릴리스로 받게 되어, 장기 지원 트리의 KASLR·perf 권한 모델이 mainline/stable과 맞춰진다.\n\n> Update the permission check to call perf_allow_kernel() when either kernel sampling is requested or kernel callchains are requested.\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.18.56)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**landlock: Drop __counted_by from landlock_domain.layers**\n\nclang 22 + CONFIG_FORTIFY_SOURCE에서 layers[]의 __counted_by가 카운터 주소를 잘못 계산해 두 번째 landlock_restrict_self()가 __fortify_panic을 일으키는 문제가 보고되었고, Mickaël은 자체 v7.3-rc5 기반 수정을 v7.3-rc7에 제안한다.\n\n영향: 거짓 FORTIFY panic은 Landlock 샌드박스 배포를 막고 syzkaller가 추적 중인 경로와 겹쳐, counted_by 하드닝 어노테이션의 실효성을 검증하는 사례가 된다.\n\n> memcpy: detected buffer overflow: 16 byte read of buffer size 0... landlock_merge_ruleset... __se_sys_landlock_restrict_self\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20261011.queif1Ohf1Uf@digikod.net/)\n\n**Linux 5.15.222 longterm (추적)**\n\n이번 수집 주기에서는 5.15.222 자체의 신규 서술은 생략하고, 7.2.10 stable에 eventpoll UAF 수정(a6dc643c6931 계열)이 포함됐는지는 ChangeLog만으로 확인되지 않았다는 점만 추적한다.\n\n영향: 5.15 LTS는 eventpoll UAF 클래스 수정을 이미 담고 있으므로, 7.2 추적자는 동일 수정의 백포트 여부를 배포판 공지·ChangeLog 대조로 확인해야 한다.\n\n> eventpoll: fix ep_remove struct eventpoll / struct file UAF\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.222)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Landlock fix for v7.3-rc7**\n\nMickaël Salaün이 v7.3-rc7용 git pull을 보냈고, Nguyen Ngoc Thang 패치가 landlock_domain.handled_masks의 __counted_by 문서화 어노테이션을 제거해 Clang 빌드 문제를 피한다.\n\n영향: Landlock 도메인 레이아웃과 Clang __counted_by/FORTIFY 상호작용은 하드닝 CI와 7.3-rc 머지 창에서 깨질 수 있어, 동일 패턴의 layers 수정과 함께 추적이 필요하다.\n\n> This fixes a Clang bug by removing an annotation, which was introduced mostly for documentation.\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20261011160819.1376118-1-mic@digikod.net/)\n\n**kbuild: Give jobserver-exec recipes the jobserver**\n\nNathan Chancellor가 Kees Cook v2 kbuild 시리즈( gzip·initcall ordering recipe에 recursive \"+\" )를 git/kbuild/linux.git의 kbuild-next-speedups에 적용했다.\n\n영향: CentOS Stream 9 make 4.3 등에서 jobserver-exec WARNING과 pigz 단일 스레드 빌드는 하드닝·rcutorture CI의 거짓 실패·느린 회귀 검증을 유발할 수 있다.\n\n> Applied to https://git.kernel.org/pub/scm/linux/kernel/git/kbuild/linux.git kbuild-next-speedups\n\n[원문 확인](https://lore.kernel.org/linux-hardening/179167827085.3510825.11265184087970988253.b4-ty@b4/)\n\n**ipa-icf: Compare access path type sizes without TBAA [PR105438]**\n\nGCC IPA ICF가 -fno-strict-aliasing에서 서로 다른 구조체 크기의 필드 복사 함수를 병합해 -Warray-bounds를 유발하는 문제에 대한 Kees Cook 패치에 Richard Biener가 대안(원본 바디 인라인·-fno-strict-aliasing에서 경고 비활성)을 제시했다.\n\n영향: 커널은 -fno-strict-aliasing으로 GCC 16에서 net/ipv6/ip6_tunnel.c 등이 깨질 수 있어, Werror 하드닝 빌드와 upstream GCC 수정 방향이 갈리면 배포 일정에 영향한다.\n\n> The Linux kernel (which uses -fno-strict-aliasing) hit this with GCC 16 in net/ipv6/ip6_tunnel.c\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20261010050537.i.784-kees@kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ChangeLog-7.2.10",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.10",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-6.18.56",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.18.56",
+      "note": "changelog"
+    },
+    {
+      "title": "Landlock v7.3-rc7 pull (handled_masks)",
+      "url": "https://lore.kernel.org/linux-hardening/20261011160819.1376118-1-mic@digikod.net/",
+      "note": "thread"
+    },
+    {
+      "title": "Landlock layers __counted_by 회귀",
+      "url": "https://lore.kernel.org/linux-hardening/20261011.queif1Ohf1Uf@digikod.net/",
+      "note": "thread"
+    },
+    {
+      "title": "syzkaller bug tracking",
+      "url": "https://syzkaller.appspot.com/bug?extid=a0eecb22de4d821a9e5d",
+      "note": "article"
+    },
+    {
+      "title": "kbuild jobserver series applied",
+      "url": "https://lore.kernel.org/linux-hardening/179167827085.3510825.11265184087970988253.b4-ty@b4/",
+      "note": "thread"
+    },
+    {
+      "title": "kbuild gzip recursive recipe commit",
+      "url": "https://git.kernel.org/kbuild/c/0d4d70da348b0",
+      "note": "commit"
+    },
+    {
+      "title": "GCC IPA ICF kernel hit (Kees Cook)",
+      "url": "https://lore.kernel.org/linux-hardening/20261010050537.i.784-kees@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "GCC maintainer ICF alternative",
+      "url": "https://lore.kernel.org/linux-hardening/CAFiYyc2gYAjiKDi+TeC9_qEX+LHa7fSxj42JjRtM6Dbi6Yfidw@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-5.15.222",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.222",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-11T18:19:01.328Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

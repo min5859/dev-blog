@@ -1,0 +1,132 @@
+{
+  "id": "2026-10-12-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-10-12 softirq·sched_ext — perf·RT",
+  "headline": "IRQ exit 컨텍스트 보정, sched_ext idle CPU affinity 회귀 수정, tracing_multi BTF 중복 주소 거부가 RT·관측성 경로를 집중 다룹니다.",
+  "date": "2026-10-12",
+  "summary": "Karl Mehltretter v6는 __irq_exit_rcu()에서 HARDIRQ_OFFSET를 tick_irq_exit() 끝까지 유지해 PREEMPT_RT에서 lock 검사 misclassification 가능성을 줄입니다. Hui Su v3·Alexei Starovoitov tracing_multi 시리즈와 Joseph Kain defer_list v2가 각각 스케줄링·BPF attach·네트워크 defer 회귀를 맞춥니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "PREEMPT_RT",
+    "perf",
+    "BPF",
+    "sched_ext"
+  ],
+  "highlights": [
+    {
+      "title": "softirq: IRQ exit 동안 인터럽트 컨텍스트 유지",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "PREEMPT_RT·tracing·BPF·perf 이벤트 컨텍스트를 다루는 관측성·실시간 커널 개발자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20261011060742.30584-1-kmehltretter@gmail.com/",
+      "if": "PREEMPT_RT에서 ftrace·perf·KCSAN/KMSAN 기록이나 sched_waking/sched_wakeup BPF→kmalloc_nolock() trylock 경로를 추적한다면",
+      "do": "Karl Mehltretter v6가 HARDIRQ_OFFSET를 __irq_exit_rcu() 끝( tick_irq_exit() 포함)까지 유지하고 softirq 처리 시 SOFTIRQ_OFFSET로 전환하는지 메일과 패치 diff를 확인하세요",
+      "verify": "원문에서 misclassification으로 알려진 실제 장애 사례가 없다는 설명과 maintainer 리뷰·mainline 머지 타깃은 아직 확인되지 않았으니 lore 스레드를 다시 열어보세요"
+    },
+    {
+      "title": "sched_ext idle: restricted CPU 선택에서 affinity 준수",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "sched_ext·SCX idle kfunc를 쓰는 BPF 스케줄러·실시간 스택 개발자",
+      "verifyLink": "https://lore.kernel.org/bpf/20261011173100.2090211-1-sh_def@163.com/",
+      "if": "scx_bpf_select_cpu_and() 또는 restricted select_cpu kfunc로 idle CPU를 고르는 BPF 스케줄러를 운영한다면",
+      "do": "Hui Su v3가 p->cpus_ptr·task_cpu(p)에서 후보를 derive하고 @allowed·affinity를 검증하며 SCX_PICK_IDLE_IN_NODE 시 cross-node idle을 거부하는지 검토하세요",
+      "verify": "Fixes: 683d2d0faba1 인용과 bpf-next 머지·selftest 반응은 이 메일만으로는 확인되지 않았으니 patchwork·리뷰 스레드를 추적하세요"
+    },
+    {
+      "title": "bpf: tracing_multi에서 동일 주소 BTF id 거부",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "tracing_multi·fentry/fexit·BTF 기반 다중 attach를 쓰는 BPF·관측성 개발자",
+      "verifyLink": "https://lore.kernel.org/bpf/20261011164836.2233874-1-alexei.starovoitov@gmail.com/",
+      "if": "CONFIG_DEBUG_INFO_BTF_INLINE 빌드에서 tracing_multi attach·detach를 CI나 개발 환경에서 돌린다면",
+      "do": "Alexei Starovoitov 2패치 시리즈가 attach 시 동일 함수 주소의 서로 다른 BTF id를 거부하고 selftest를 추가하는지 확인하세요",
+      "verify": "test_progs -t tracing_multi 재현 설명과 bpf-next master 머지 여부는 patchwork 알림을 아직 확인하지 못했으니 lore 원문을 열어보세요"
+    },
+    {
+      "title": "net: defer_list 빈 리스트·defer_count 고착 v2",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "PREEMPT_RT·고처리량 네트워킹 스택을 운영·백포트하는 커널·네트워크 엔지니어",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20261008220256.1844072-1-jkain@nuro.ai/",
+      "if": "844c9db7f7f5(llist defer_list) 이후 skb 지연 해제·cross-CPU free 경합을 RT 네트워킹에서 모니터링한다면",
+      "do": "Joseph Kain v2가 빈 defer_list에서 defer_count를 0으로 리셋하고 flush 순서를 바로잡는지 패치를 따라가세요",
+      "verify": "netdev/mainline·stable 백포트 범위와 v7.3-rc6 벤치 수치는 공개 스레드에서 확정·재확인되지 않았으니 lore를 직접 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**net: do not let defer_count outlive an empty defer_list**\n\nJoseph Kain v2는 __skb_defer_free_flush()가 빈 defer_list인데 defer_count가 skb_defer_max 이상으로 남는 844c9db7f7f5(llist 전환) 이후 회귀를 고칩니다. 거부된 defer 시도가 카운터만 올리는 문제와 flush가 llist_del_all() 전에 defer_count를 지우는 순서를 바로잡고, 빈 리스트에서 카운터를 0으로 리셋합니다.\n\n영향: 카운터가 걸리면 해당 (cpu, node)에서 skb 지연 해제가 재부팅까지 꺼지고 cross-CPU free가 페이지 할당자로 돌아가 네트워크 경합이 커집니다. PREEMPT_RT에서는 local_bh_disable()이 선점을 막지 않아 기본 skb_defer_max=128에서도 flush clear·drain 사이 선점으로 race 윈도우가 넓어집니다.\n\n> Two changes from commit 844c9db7f7f5 (\"net: use llist for sd->defer_list\") combine to produce it.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20261008220256.1844072-1-jkain@nuro.ai/)\n\n**sched_ext: idle: Respect task affinity in restricted CPU selection**\n\nHui Su v3는 restricted select_cpu kfunc가 migration-disabled·단일 CPU 태스크에서 prev_cpu 힌트만 쓰지 않고 p->cpus_ptr·task_cpu(p)에서 후보를 derive한 뒤 @allowed와 affinity를 검증하고, SCX_PICK_IDLE_IN_NODE를 위해 cross-node idle 후보를 거부합니다.\n\n영향: 잘못된 CPU 선택은 affinity 밖 idle CPU를 고르거나 idle 비트를 소비해 sched_ext 기반 스케줄러·실시간 워크로드의 CPU placement·전력·지연에 직접 영향을 줍니다.\n\n> With a caller-provided @allowed mask, this can also return an idle CPU outside p->cpus_ptr.\n\n[원문 확인](https://lore.kernel.org/bpf/20261011173100.2090211-1-sh_def@163.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**softirq: Preserve interrupt context during IRQ exit**\n\nKarl Mehltretter v6는 __irq_exit_rcu()가 IRQ exit 작업 전에 HARDIRQ_OFFSET를 내리며 task 컨텍스트로 잘못 보이는 윈도우를 없애기 위해 HARDIRQ_OFFSET를 tick_irq_exit() 끝까지 유지하고, softirq 처리 중 SOFTIRQ_OFFSET로 전환합니다.\n\n영향: 잘못된 컨텍스트는 ftrace·perf·KCSAN/KMSAN 기록을 흐리고, PREEMPT_RT에서는 이 윈도우에서 can_spin_trylock()/local_trylock()이 통과해 sched_waking/sched_wakeup BPF→kmalloc_nolock()까지 영향을 줄 수 있습니다.\n\n> BPF programs attached to sched_waking or sched_wakeup can reach the trylock path through kmalloc_nolock().\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20261011060742.30584-1-kmehltretter@gmail.com/)\n\n**bpf: Reject BTF ids with the same address in tracing_multi link**\n\nAlexei Starovoitov 2패치 시리즈는 서로 다른 BTF id가 동일 함수 주소로 해석될 때 tracing_multi link attach는 성공하고 detach는 ftrace에서 실패해 해제된 trampoline 이미지를 실행할 수 있는 경로를 막기 위해 attach 시 거부하고 selftest를 추가합니다.\n\n영향: CONFIG_DEBUG_INFO_BTF_INLINE 등에서 인라인으로 BTF id가 늘어나는 빌드에서 tracing_multi 사용자·CI가 커널 크래시를 맞을 수 있어 BPF tracing attach API 안전성과 직결됩니다.\n\n> The attach succeeds, the detach fails in ftrace and the kernel crashes in freed trampoline images.\n\n[원문 확인](https://lore.kernel.org/bpf/20261011164836.2233874-1-alexei.starovoitov@gmail.com/)\n\n**net: netmem: document netmem and memory provider design in comments**\n\nMina Almasry가 netmem·memory provider·page_pool 설계를 주석으로 정리하고 skb_try_coalesce()에 skb_frags_readable() 불일치 시 병합을 거부하는 가드를 넣은 net-next 시리즈에 대해, Sashiko가 서로 다른 memory provider 프래그 혼합 가능성을 지적한 리뷰에 답했습니다.\n\n영향: 유지보수자는 unreadable 프래그를 memory provider로 가정한 가드가 다중 provider 환경에서 충분하지 않다고 인정했으며, page_pool·netmem 기반 고성능 경로에서 잘못된 coalesce는 refcount·메모리 수명 버그로 이어질 수 있습니다.\n\n> It documents that all frags in an skb must either all be struct page-backed or all belong to the same memory provider instance, and adds a check in skb_try_coalesce()\n\n[원문 확인](https://lore.kernel.org/netdev/20261008023030.1089616-1-almasrymina@google.com/)\n\n**net: kunit: test netmem, page_pool, and skb frag refcounting**\n\nMina Almasry net-next 6/6 KUnit 시리즈가 netmem·page_pool·skb frag refcount 균형을 검증하려 하나, patchwork 빌드에서 net_test.ko가 EXPORT되지 않은 skb_shift 심볼을 참조해 modpost가 실패했고 작성자가 pw-bot: cr로 수정 리스핀을 예고했습니다.\n\n영향: 시리즈가 netmem refcount 모델 회귀를 잡는 안전망이지만 빌드 깨짐은 net-next CI와 시리즈 머지를 막아 page_pool·netmem 경로 검증 지연을 초래합니다.\n\n> ERROR: modpost: net/core/net_test.ko: symbol 'skb_shift' undefined!\n\n[원문 확인](https://lore.kernel.org/bpf/CAHS8izP58-H+bGw+4RJazukywpeDX5jMKaH9coMwcXh-mFa7AQ@mail.gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "**net: netmem 시리즈 리뷰 논의**\n\nreadable 비교만으로 memory provider를 구분하는 shortcut에 대한 follow-up 필요성이 리뷰에서 드러났으며, 다중 memory provider를 구분하는 follow-up 패치 일정은 아직 공개되지 않았습니다.\n\n> Yep this is one of the biggest shortcuts we took in the memory provider stuff.\n\n[원문 확인](https://lore.kernel.org/bpf/CAHS8izP7iHx9po4p0mfOsriKPFiY2Xwa0=Gyt2yxUmLPRG6cxQ@mail.gmail.com/)\n\n**회귀 원인 커밋 참고**\n\nper-CPU defer_list를 llist로 바꾼 netdev 변경이 defer_count 고착 회귀 맥락에서 인용됩니다.\n\n> net: use llist for sd->defer_list\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=844c9db7f7f5)\n\n**sched_ext 도입 커밋 참고**\n\nrestricted idle CPU 선택 kfunc API가 affinity 회귀 수정의 Fixes 대상입니다.\n\n> sched_ext: idle: Introduce scx_bpf_select_cpu_and()\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/bpf/bpf-next.git/commit/?id=683d2d0faba1)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Joseph Kain — defer_list defer_count v2",
+      "url": "https://lore.kernel.org/linux-rt-devel/20261008220256.1844072-1-jkain@nuro.ai/",
+      "note": "thread"
+    },
+    {
+      "title": "844c9db7f7f5 — net: use llist for sd->defer_list",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=844c9db7f7f5",
+      "note": "commit"
+    },
+    {
+      "title": "Mina Almasry — netmem·memory provider documentation",
+      "url": "https://lore.kernel.org/netdev/20261008023030.1089616-1-almasrymina@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Sashiko — memory provider shortcut 리뷰",
+      "url": "https://lore.kernel.org/bpf/CAHS8izP7iHx9po4p0mfOsriKPFiY2Xwa0=Gyt2yxUmLPRG6cxQ@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Hui Su — sched_ext idle affinity v3",
+      "url": "https://lore.kernel.org/bpf/20261011173100.2090211-1-sh_def@163.com/",
+      "note": "thread"
+    },
+    {
+      "title": "683d2d0faba1 — scx_bpf_select_cpu_and()",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/bpf/bpf-next.git/commit/?id=683d2d0faba1",
+      "note": "commit"
+    },
+    {
+      "title": "Karl Mehltretter — softirq IRQ exit context v6",
+      "url": "https://lore.kernel.org/linux-rt-devel/20261011060742.30584-1-kmehltretter@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Alexei Starovoitov — tracing_multi duplicate BTF address",
+      "url": "https://lore.kernel.org/bpf/20261011164836.2233874-1-alexei.starovoitov@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Mina Almasry — netmem KUnit modpost skb_shift",
+      "url": "https://lore.kernel.org/bpf/CAHS8izP58-H+bGw+4RJazukywpeDX5jMKaH9coMwcXh-mFa7AQ@mail.gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-11T18:25:39.950Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

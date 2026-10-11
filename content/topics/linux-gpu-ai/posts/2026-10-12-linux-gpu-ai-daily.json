@@ -1,0 +1,126 @@
+{
+  "id": "2026-10-12-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-10-12 Panthor perf·HDMI HDR — GPU/AI 렌즈",
+  "headline": "bridge HDMI colorspace와 Panthor perf counter v7이 dri-devel에 올라왔고, libdrm 호환·glandagpu atomic/teardown 리뷰가 uAPI·안정성 병목으로 부각됩니다.",
+  "date": "2026-10-12",
+  "summary": "drm_bridge_connector에서 HDMI colorspace 프로퍼티 RFC v2가 KWin HDR 토글 전제를 맞추려 합니다. Panthor는 perf counter uAPI v7과 Mesa MR 35024 연동이 진행 중이며, ioctl 반환값·glandagpu atomic 경로에 대한 High 리뷰가 따라붙었습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "DRM",
+    "GPU",
+    "Panthor"
+  ],
+  "highlights": [
+    {
+      "title": "bridge HDMI colorspace(RFC v2)",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "DRM bridge/connector 유지보수자, HDMI bridge를 쓰는 SoC·보드 드라이버 및 KWin/Plasma 디스플레이 스택 개발자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20261011142733.7806-1-jan.claussen10@web.de/",
+      "if": "RK3588+LG OLED 등 bridge HDMI에서 userspace가 HDR colorimetry를 못 넣어 KWin이 HDR 토글을 막는 상황이면",
+      "do": "RFC v2 스레드에서 atomic_check·modeset 강제 동작과 Plasma 6.7.5 modetest 결과를 보드 스택에 대조해 보세요",
+      "verify": "lore 스레드 원문에서 colorspace 프로퍼티·BT.2020 전환 주장을 직접 확인하세요"
+    },
+    {
+      "title": "drm/panthor 성능 카운터 v7",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "drm/panthor·Mesa Panthor 스택 개발자, Mali GPU 성능 분석·게임 엔진 도구 제작자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20261011-panthor-performance-counters-v7-0-12c32495062f@arm.com/",
+      "if": "Mali Panthor에서 커널 uAPI 기반 GPU counter·프로파일링 기반을 맞추려면",
+      "do": "v7 cover의 DRM_PANTHOR_PERF_SESSION·CAP_PERFMON·Mesa MR 35024 연동 범위를 도구 체인에 반영할지 검토하세요",
+      "verify": "패치 시리즈 통계(약 2547줄 추가)와 v7 changelog 인용을 원문에서 확인하세요"
+    },
+    {
+      "title": "Panthor PERF_SESSION_CREATE ioctl 반환값",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "drm/panthor uAPI 설계자, libdrm·Mesa Panthor 클라이언트 개발자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/sashiko-outbox-167357@kernel.org/",
+      "if": "세션 ID를 ioctl 양수 반환값으로 주는 설계가 libdrm drmIoctl()과 맞지 않으면",
+      "do": "userspace struct 출력 필드 등 DRM ioctl 규약에 맞는 handle 전달안이 v7 이후에 나오는지 추적하세요",
+      "verify": "Sashiko 리뷰 인용과 v7 1/8 in-reply 링크를 대조해 확인하세요"
+    },
+    {
+      "title": "glandagpu v6 atomic·teardown",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "drm/glanda 및 drm atomic helper 사용 드라이버 개발자",
+      "verifyLink": "https://lore.kernel.org/dri-devel/sashiko-outbox-167308@kernel.org/",
+      "if": "tiny DRM 신규 드라이버를 QEMU·FPGA 실험에 쓰려면",
+      "do": "plane atomic_update의 GFP_KERNEL·cpu_access와 drm_dev_unplug 순서 지적이 v6에서 해결됐는지 확인 필요 상태로 리뷰를 따라가세요",
+      "verify": "High 리뷰 스레드에서 atomic context·IRQ storm 인용을 원문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**Re: [PATCH v6 2/2] drm/glanda: Add initial DRM driver for GlandaGPU**\n\nSashiko AI 리뷰가 glandagpu v6에서 plane atomic_update 경로의 GFP_KERNEL·drm_gem_fb_begin_cpu_access(슬립 가능) 사용과 drm_dev_unplug() 선행으로 인한 VSYNC IRQ 미차단·IRQ storm 가능 teardown 순서를 High로 지적했습니다.\n\n영향: 머지 전에 수정되지 않으면 atomic 컨텍스트 BUG, 모듈 제거 시 공유 IRQ 라인 장애 등 실제 시스템 불안정이 나올 수 있어 tiny DRM 신규 드라이버 리뷰의 핵심입니다.\n\n> plane atomic update callbacks execute in atomic context where sleeping is strictly forbidden. GFP_KERNEL allows the memory allocator to block and reclaim memory.\n\n[원문 확인](https://lore.kernel.org/dri-devel/sashiko-outbox-167308@kernel.org/)\n\n> Should drm_atomic_helper_shutdown() be called before drm_dev_unplug() to ensure hardware teardown logic executes properly?\n\n[원문 확인](https://lore.kernel.org/dri-devel/sashiko-outbox-167308@kernel.org/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**[PATCH RFC v2] drm/bridge: connector: Support the colorspace property for HDMI**\n\ndrm_bridge_connector에서 HDMI bridge connector에 colorspace 프로퍼티를 노출하고, colorspace 변경 시 CRTC modeset을 강제해 sink에 colorimetry(BT.2020 등)가 전달되도록 atomic_check를 확장합니다.\n\n영향: bridge HDMI 경로에서는 userspace가 HDR colorimetry를 설정할 수 없어 KWin 등이 HDR 토글을 제공하지 못하는 문제를 막습니다. RK3588+LG OLED 등 실기 테스트가 RFC v2로 올라와 bridge/컴포저 스택 담당자의 리뷰 포인트가 됩니다.\n\n> Bridge connectors for HDMI do not expose the colorspace property, so userspace cannot signal the colorimetry (e.g. BT.2020 for HDR). KWin requires the property before it offers the HDR toggle.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20261011142733.7806-1-jan.claussen10@web.de/)\n\n**[PATCH v7 0/8] drm/panthor: Performance counter implementation with single manual client support**\n\nPanthor에 Mali perf counter 샘플링 초기 구현(v7, 8패치)이 제출되었습니다. DRM_PANTHOR_PERF_SESSION ioctl·ring buffer·eventfd 기반 수동 샘플링, 커널 offset 테이블, CAP_PERFMON 검사, Mesa MR 35024 연동이 포함됩니다.\n\n영향: Arm Mali(Panthor)에서 게임 엔진·libGPUCounters·파워 모델이 쓰는 GPU counter 접근이 커널 uAPI로 정식화되는 단계로, Mesa와 맞물려 프로파일링·튜닝 워크플로의 기반이 됩니다.\n\n> v7: - Move the perf commands into their own ioctls - Moved session tracking to the pfile - Added check for CAP_PERFMON on session setup\n\n[원문 확인](https://lore.kernel.org/dri-devel/20261011-panthor-performance-counters-v7-0-12c32495062f@arm.com/)\n\n**Re: [PATCH v7 1/8] drm/panthor: Add performance counter uAPI**\n\nSashiko AI 리뷰가 PERF_SESSION_CREATE uAPI에서 세션 ID를 ioctl 양수 반환값으로 돌려주는 설계를 지적했습니다. libdrm drmIoctl()이 성공을 오류로 해석하거나 drm_ioctl() 디버그 로그가 오염될 수 있다고 합니다.\n\n영향: Panthor perf counter uAPI가 머지되기 전에 libdrm 등 표준 wrappers와 호환되지 않으면 userspace 도구가 사실상 사용 불가가 될 수 있어, api-abi 리뷰가 시리즈 핵심 병목입니다.\n\n> Returning positive values from ioctls can cause standard DRM wrappers, such as libdrm's drmIoctl(), to misinterpret the positive return value as an error code.\n\n[원문 확인](https://lore.kernel.org/dri-devel/sashiko-outbox-167357@kernel.org/)\n\n**[PATCH v6 0/2] drm: Add DRM driver for GlandaGPU (VHDL soft-IP GPU)**\n\nVHDL soft-IP 2D 디스플레이 컨트롤러 GlandaGPU용 dt-binding과 drm/tiny glandagpu 드라이버 v6가 제출되었습니다. v5 리뷰에 따라 CRTC flush를 drm_crtc_vblank_atomic_flush()로 바꿨고 QEMU·DE10-Standard 실기/QEMU twin 테스트를 주장합니다.\n\n영향: 교육·FPGA·QEMU 기반 GPU/KMS 실험용 tiny DRM 드라이버가 drm-next에 들어가는 과정으로, shadow plane·atomic KMS 패턴과 바인딩 정리 사례를 제공합니다.\n\n> Replace the custom glanda_crtc_atomic_flush() with drm_crtc_vblank_atomic_flush() (Thomas Zimmermann).\n\n[원문 확인](https://lore.kernel.org/dri-devel/20261011154556.155831-1-kieweg.leander@gmail.com/)\n\n**[PATCH] drm/panel-edp: Add BOE NV140FHD-N43 panel**\n\npanel-edp.c에 Sunniwell Z96A용 BOE NV140FHD-N43 14\" 1920×1080 eDP 패널 EDID 한 줄이 추가됩니다.\n\n영향: 특정 보드에서 내장 eDP 패널을 드라이버 테이블로 바로 인식시키는 루틴 변경으로, 패널/보드 포팅 담당자에게는 직접적인 부팅 디스플레이 지원 이슈입니다.\n\n> Add the BOE NV140FHD-N43 14.0\" 1920x1080 eDP panel found in the Sunniwell Z96A.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20261011164417.151770-1-jerrysteve1101@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "GlandaGPU 하드웨어·QEMU·userspace 테스트 저장소가 cover letter에 링크되어 있습니다.\n\n> GlandaGPU is a small VHDL soft-IP 2D display controller, currently targeting a Terasic DE10-Standard (Cyclone V SoC).\n\n[원문 확인](https://github.com/stiangglanda/GlandaGPU)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "[PATCH RFC v2] drm/bridge: connector: Support the colorspace property for HDMI",
+      "url": "https://lore.kernel.org/dri-devel/20261011142733.7806-1-jan.claussen10@web.de/",
+      "note": "thread"
+    },
+    {
+      "title": "[PATCH v7 0/8] drm/panthor: Performance counter implementation",
+      "url": "https://lore.kernel.org/dri-devel/20261011-panthor-performance-counters-v7-0-12c32495062f@arm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/panthor: Add performance counter uAPI (v7 1/8)",
+      "url": "https://lore.kernel.org/dri-devel/20261011-panthor-performance-counters-v7-1-12c32495062f@arm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Re: Panthor perf uAPI — ioctl return value review",
+      "url": "https://lore.kernel.org/dri-devel/sashiko-outbox-167357@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "[PATCH v6 0/2] drm: Add DRM driver for GlandaGPU",
+      "url": "https://lore.kernel.org/dri-devel/20261011154556.155831-1-kieweg.leander@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Re: drm/glanda — atomic and teardown review",
+      "url": "https://lore.kernel.org/dri-devel/sashiko-outbox-167308@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "[PATCH] drm/panel-edp: Add BOE NV140FHD-N43 panel",
+      "url": "https://lore.kernel.org/dri-devel/20261011164417.151770-1-jerrysteve1101@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "GlandaGPU project repository",
+      "url": "https://github.com/stiangglanda/GlandaGPU",
+      "note": "article"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-11T18:29:54.636Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
