@@ -1,0 +1,130 @@
+{
+  "id": "2026-10-13-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-10-13 페이지테이블 회귀 — 아키·플랫폼",
+  "headline": "generic pagetable_free() destructor 누락과 RISC-V 핫플러그 teardown이 NR_PAGETABLE 회귀를 막는 패치가 리뷰 단계에 있습니다.",
+  "date": "2026-10-13",
+  "summary": "pagetable constructor/dtor 이후 pagetable_free()와 RISC-V free_pte_table() 경로에서 destructor가 빠져 통계가 깨지는 회귀가 v2 시리즈로 정리되었습니다. arm64 vmalloc CONT_PTE 배치, UP RISC-V topology sysfs, CS75xx 플랫폼, KVM G-stage selftest도 메일링 리스트에 올라왔습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "arm64",
+    "riscv"
+  ],
+  "highlights": [
+    {
+      "title": "mm: fix missing page-table destructor in pagetable_free()",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "generic MM, x86/arm64/riscv pagetable ctor/dtor 경로 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20261010112457.49485-2-songmuchun@bytedance.com/",
+      "if": "HVO·memory hot-remove 등에서 중간 PTE가 pagetable_free()로만 해제되는 경로를 유지한다면",
+      "do": "generic mm.h v2 1/4의 PageTable() 조건 destructor 호출과 David Hildenbrand·Dave Hansen Acked-by 스레드를 추적하세요",
+      "verify": "원문 스레드에서 x86-64 hot-remove 시나리오와 Fixes 설명을 확인하세요"
+    },
+    {
+      "title": "riscv/mm: fix hotplug page-table destructor handling",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "RISC-V MM 및 memory hotplug 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20261010112457.49485-3-songmuchun@bytedance.com/",
+      "if": "선형 맵과 vmemmap이 같은 teardown을 공유하는 RISC-V 핫플러그·sparse vmemmap 플랫폼을 다룬다면",
+      "do": "free_pgtable_page()로 reserved·constructor-backed 경로를 나누는 v2 2/4 패치와 maintainer 리뷰를 따라가세요",
+      "verify": "스레드에서 free_pgtable_page() 동작과 Fixes 문구를 원문으로 확인하세요"
+    },
+    {
+      "title": "riscv: Populate boot CPU topology on UP kernels",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "RISC-V UP 빌드 및 topology/sysfs 사용자",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20261012131034.1026-1-cp0613@linux.alibaba.com/",
+      "if": "CONFIG_SMP 없는 UP RISC-V에서 sysfs topology를 읽는 스케줄러·툴을 운용한다면",
+      "do": "UP 전용 early initcall로 cpu_topology[]를 채우는 패치와 QEMU virt 검증 내용을 검토하세요",
+      "verify": "원문에서 빈 sibling mask가 stable ABI 위반으로 기술된 부분을 확인하세요"
+    },
+    {
+      "title": "arm64/vmalloc: allow arch_vmap_pte_range_map_size() to batch multiple CONT_PTE",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "arm64 MM 및 vmalloc/huge-mapping 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/CA+KHdyVjjk3B0gsfsx+NPeuNH+ZyN7HbiP=S0F9kspRO9ZAXAg@mail.gmail.com/",
+      "if": "arm64 vmalloc·동적 매핑의 contiguous PTE 효율을 추적한다면",
+      "do": "v10 05/10 팔로업과 ARM maintainer(Jain/Ryan) 리뷰 요청 스레드를 모니터하세요",
+      "verify": "수집 피드에 diff가 없으므로 CONT_PTE 배치 로직·테스트는 스레드 원문에서 추가 확인이 필요합니다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**mm: fix missing page-table destructor in pagetable_free()**\n\n커널 PTE constructor/dtor(49f599666420) 이후 pagetable_free()가 constructor-backed 페이지를 해제할 때 destructor를 건너뛰어 NR_PAGETABLE이 올라가는 문제를, PageTable()일 때 pagetable_dtor()를 호출하도록 generic mm.h v2 1/4 패치가 정리되었습니다.\n\n영향: HVO·memory hot-remove 등에서 중간 PTE가 pagetable_free()로만 해제되면 통계가 영구히 어긋나 디버깅이 어려워지며, David Hildenbrand·Dave Hansen ack로 generic 경로 수정 방향이 합의된 상태입니다.\n\n> a later memory hot-remove eventually frees it through pagetable_free() on x86-64. That releases the page without running the matching destructor and leaves NR_PAGETABLE elevated.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20261010112457.49485-2-songmuchun@bytedance.com/)\n\n**riscv/mm: fix hotplug page-table destructor handling**\n\nRISC-V 메모리 핫플러그 해제 경로에서 free_pte_table()이 constructor 없는 페이지 테이블에도 pagetable_dtor()를 호출해 NR_PAGETABLE 통계가 깨지는 문제를, free_pgtable_page() 헬퍼로 reserved/constructor-backed 경로를 분리하는 v2 2/4 패치로 수정했습니다.\n\n영향: 선형 맵과 vmemmap이 같은 teardown 코드를 공유하는 RISC-V에서, 런타임 vmemmap이 일반 pgalloc를 쓰기 시작하면 is_vmemmap 기반 회피가 더 이상 안전하지 않아 핫플러그·sparse vmemmap 조합을 쓰는 플랫폼에서 조용한 통계/메모리 회귀가 납니다.\n\n> Introduce free_pgtable_page() to select free_reserved_page() for reserved pages and pagetable_free() otherwise. The latter runs the destructor only when PageTable() is set\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20261010112457.49485-3-songmuchun@bytedance.com/)\n\nstable 백포트 범위와 다른 아키 동일 시리즈 머지 순서는 아직 공개되지 않았습니다. Jose A. Perez de Azpillaga가 지적한 x86 6.16–6.18 백포트 실익에 대한 최종 답변은 수집 피드에 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**arm64/vmalloc: allow arch_vmap_pte_range_map_size() to batch multiple CONT_PTE**\n\n[PATCH v10 05/10]로 arm64 vmalloc의 arch_vmap_pte_range_map_size()가 여러 CONT_PTE를 한 번에 배치할 수 있게 하는 변경이 올라왔고, ARM maintainer(Jain/Ryan) 리뷰를 기다리는 상태에서 작성자가 팔로업만 올렸습니다.\n\n영향: vmalloc 영역의 contiguous PTE 매핑 효율과 모듈/동적 매핑 성능에 직접 영향을 주는 arm64 MM 경로이므로, arm64 메모리 매핑을 다루는 엔지니어는 리뷰 결과와 경계 조건 처리를 추적할 가치가 있습니다.\n\n> This is arch/arm64 code. Can you, Jain or Ryan from ARM folk review this change? ... I will come to this soon.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/CA+KHdyVjjk3B0gsfsx+NPeuNH+ZyN7HbiP=S0F9kspRO9ZAXAg@mail.gmail.com/)\n\n**Cortina Systems CS75xx: interrupt controller, GPIO, I2C and TWD watchdog**\n\nCortina CS75xx(Securifi Almond+ 등)용 v2 시리즈가 irqchip·GPIO·I2C·per-CPU TWD watchdog 드라이버와 DT/defconfig를 추가하며, 삭제된 mpcore_wdt를 대체하는 arm,cortex-a9-twd-wdt 구현과 Almond+ 부팅 워치독(~300s) 처리를 포함합니다.\n\n영향: 문서 없는 레거시 ARM SoC 브링업 사례로, multi_v7 플랫폼·워치독·GPIO mux 제약(잘못된 sysfs export 시 보드 hang)이 실제 보드 테스트와 함께 제시되어 플랫폼/DT 통합 패턴 참고가 됩니다.\n\n> On the Almond+ the stock U-Boot arms the watchdog and the board resets after ~300 s unless it is serviced. With this driver the watchdog core pings it until userspace takes over.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20261012-b4-cs75xx-s2-v1-0-8a7641b7b79c@gmail.com/)\n\nGPIO_MUX를 pinctrl/syscon 모델로 옮기는 후속 계획에 대한 maintainer 선호는 스레드에서 아직 결론이 없습니다.\n\n**riscv: Populate boot CPU topology on UP kernels**\n\nCONFIG_SMP 없는 UP RISC-V 빌드에서 cpu_topology[]가 초기화되지 않아 sysfs topology가 cpu0의 thread_siblings_list/core_siblings_list를 빈 mask로보내는 문제를, UP 전용 early initcall에서 부트 CPU topology를 채우도록 수정합니다.\n\n영향: GENERIC_ARCH_TOPOLOGY가 항상 켜진 RISC-V에서 sysfs topology는 안정 ABI로 취급되는데, UP 임베디드·QEMU virt 설정에서 스케줄러/툴이 빈 sibling list를 보면 잘못된 가정을 할 수 있습니다.\n\n> cpu0 exports empty thread_siblings_list and core_siblings_list attributes rather than masks containing itself, violating the expected topology semantics of this stable ABI.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20261012131034.1026-1-cp0613@linux.alibaba.com/)\n\n리뷰/머지 여부와 Fixes 커밋 fbd92809997a 백포트 필요성은 메일 스레드에 아직 follow-up이 없습니다.\n\n**KVM: riscv: selftests: Add G-stage dirty logging transition test**\n\nKVM RISC-V G-stage 2M huge leaf 안의 4K dirty 추적 한계를 전제로, hugepage split과 dirty logging 전환 시 4K dirty bitmap·데이터 무결성을 검증하는 selftest(gstage_dirty_log_transitions.c)를 추가합니다.\n\n영향: RISC-V KVM은 2M leaf 내부 4K write를 정확히 추적하지 못해 migration/live update 경로에서 split 동작이 핵심이며, 0d9dc20842db 회귀를 unaligned memslot으로 잠그는 테스트는 gstage WP/dirty log 유지보수에 직접 도움이 됩니다.\n\n> Since KVM RISC-V cannot track 4K writes inside a 2M leaf, an exact dirty bitmap also shows that the huge mapping was split.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20261012153024.390554-1-suunj1331@gmail.com/)\n\nCI/selftests 실행 환경에서의 통과 여부와 upstream KVM maintainer 리뷰는 아직 피드에 없습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "arm64/vmalloc CONT_PTE batch — linux-arm-kernel thread",
+      "url": "https://lore.kernel.org/linux-arm-kernel/CA+KHdyVjjk3B0gsfsx+NPeuNH+ZyN7HbiP=S0F9kspRO9ZAXAg@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv/mm hotplug page-table destructor v2 2/4",
+      "url": "https://lore.kernel.org/linux-riscv/20261010112457.49485-3-songmuchun@bytedance.com/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv/mm hotplug — maintainer review thread",
+      "url": "https://lore.kernel.org/linux-riscv/87ik37aq9s.fsf@all.your.base.are.belong.to.us/",
+      "note": "thread"
+    },
+    {
+      "title": "Cortina CS75xx platform series cover",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20261012-b4-cs75xx-s2-v1-0-8a7641b7b79c@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv UP boot CPU topology",
+      "url": "https://lore.kernel.org/linux-riscv/20261012131034.1026-1-cp0613@linux.alibaba.com/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM riscv G-stage dirty logging selftest",
+      "url": "https://lore.kernel.org/linux-riscv/20261012153024.390554-1-suunj1331@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "mm pagetable_free destructor v2 1/4",
+      "url": "https://lore.kernel.org/linux-riscv/20261010112457.49485-2-songmuchun@bytedance.com/",
+      "note": "thread"
+    },
+    {
+      "title": "pagetable_free — David Hildenbrand ack thread",
+      "url": "https://lore.kernel.org/linux-riscv/919fcaa9-5ebe-4940-b4fc-59ea0c655ec3@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "pagetable_free destructor — Dave Hansen ack",
+      "url": "https://lore.kernel.org/linux-riscv/6834c567-63ae-4795-aa27-25f478f0c0e2@intel.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-12T18:32:25.626Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

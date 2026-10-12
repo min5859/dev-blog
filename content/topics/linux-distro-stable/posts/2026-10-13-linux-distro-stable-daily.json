@@ -1,0 +1,153 @@
+{
+  "id": "2026-10-13-linux-distro-stable-daily",
+  "topic": "linux-distro-stable",
+  "title": "2026-10-13 xarray·tc 보안 — 스테이블·배포",
+  "headline": "스테이블 큐에 xarray UAF·tc action 배치 UAF 백포트와 ath12k M3 백포트 불일치 수정이 올라왔고, 5.10.271 longterm이 공개되었습니다.",
+  "date": "2026-10-13",
+  "summary": "stable 메일링에 메모리·네트워킹·가상화·드라이버 백포트 제안이 집중되었습니다. 배포판은 LTS 태그 동기화와 큐에 올라온 수정의 적용·의존 커밋을 함께 점검하는 것이 좋습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "xarray: 노드 해제 전 unlink",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "스테이블 커널 전역·메모리 관리 백포트 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20261012174230.772325-1-nickolai@csail.mit.edu/",
+      "if": "xarray·page cache 경로를 스테이블로 유지한다면",
+      "do": "xa_node_free() 순서 수정 백포트를 릴리스 노트에 반영하고 배포 전 ChangeLog를 확인하세요",
+      "verify": "스레드 원문에서 unlink·RCU walker 시나리오와 worst-case folio 반환 설명을 읽어보세요"
+    },
+    {
+      "title": "net/sched act_api: 배치 중복 action 거부",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "traffic control(tc)·net/sched 스테이블 유지보수",
+      "verifyLink": "https://lore.kernel.org/stable/QDISC-K1TH.v1.r3.20261012134653-1@mojatatu.com/",
+      "if": "tc actions를 스크립트로 삭제하는 환경을 운영한다면",
+      "do": "동일 인덱스 중복 삭제 시 -EINVAL로 막는 백포트 적용 여부를 추적하세요",
+      "verify": "스레드의 refcount underflow·UAF 재현 예시 tc 명령을 로컬 정책에 맞게 검증하세요"
+    },
+    {
+      "title": "ath12k: CVE-2024-40979 M3 백포트 불일치",
+      "priority": "상",
+      "impactType": "backport",
+      "affectedAudience": "6.6/6.12 스테이블 커널·ath12k 드라이버 유지보수 및 배포판 백포트 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20261012165925.32575-1-artem@trailofbits.com/",
+      "if": "6.6 LTS 또는 6.12.y에서 ath12k Wi-Fi를 패키징한다면",
+      "do": "9a38ba5561d9 백포트와 업스트림 00575bb44b2c·6.6.y 전용 재사용 시 항상 복사 수정 시리즈를 큐 대비하세요",
+      "verify": "제출 스레드와 upstream 커밋 페이지에서 M3 버퍼 early return 동작 차이를 확인하세요"
+    },
+    {
+      "title": "KVM x86/mmu: nested NPF SS 비트",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "KVM/x86 스테이블 백포트 및 가상화 플랫폼 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20261012165651.130826-1-pbonzini@redhat.com/",
+      "if": "Windows 11 Hyper-V 중첩 KVM 호스트를 운영한다면",
+      "do": "permission_fault() 입력 정리 백포트가 어떤 stable 브랜치에 들어갈지 stable 리스트를 모니터하세요",
+      "verify": "스레드의 UBSAN array-index-out-of-bounds 로그와 Cc: stable 표시를 원문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 5.10.271 longterm**\n\n2026-10-03에 Linux 5.10.271 longterm이 릴리스되었으며 ChangeLog에는 588건 이상의 백포트 커밋이 기록됩니다(589 commit 항목).\n\n영향: 아직 5.10 LTS를 유지하는 엔터프라이즈·임베디드 배포는 이 태그를 추적해 netfilter·Bluetooth·네트워크 드라이버 등 대량 수정을 반영해야 합니다.\n\n> Linux 5.10.271\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.271)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**KVM: x86/mmu: Cope with the SS bit being set in #NPF exit codes**\n\nWindows 11 Hyper-V 중첩 환경에서 shadow NPT의 nested page fault 에러 코드에 SS 비트가 설정되어 permission_fault()가 배열 범위를 벗어나 UBSAN/WARN이 납니다. 패치는 permission_fault() 입력에서 SS 등 예상 외 비트를 정리하고, L1에 반영할 fault error code에는 SS를 유지합니다.\n\n영향: KVM+nested 가상화를 쓰는 호스트(특히 Hyper-V 게스트)는 스테이블 백포트 없이 WARN/UBSAN 또는 잘못된 페이지 폴트 처리로 이어질 수 있습니다. 어떤 stable 브랜치에 머지될지는 아직 공개 릴리스 태그에 반영 전입니다.\n\n> kernel: UBSAN: array-index-out-of-bounds in arch/x86/kvm/mmu.h:225:27\n\n[원문 확인](https://lore.kernel.org/stable/20261012165651.130826-1-pbonzini@redhat.com/)\n\n**net/sched: sch_teql: fix shared headroom and header strip on slave retry**\n\nteql 슬레이브 실패 재시도 경로에서 공유 skb headroom에 dev_hard_header()가 쓰여 클론이 깨지고, AF_PACKET/SOCK_RAW 프레임은 잘못된 pull로 MAC 헤더가 제거됩니다. skb_cow_head()와 슬레이브별 실제 추가 헤더 길만 undo하도록 수정합니다.\n\n영향: TEQL·패킷 탭·raw 소켓을 쓰는 네트워크 스택은 드물지만 데이터 손상·패킷 변조로 이어질 수 있어 스테이블 네트워킹 트리에 포함될 수정입니다.\n\n> Fix this by calling skb_cow_head() before dev_hard_header(), and by pulling back only the header length that this slave actually added\n\n[원문 확인](https://lore.kernel.org/stable/QDISC-6HS9.v1.r1.20261012134711-1@mojatatu.com/)\n\n**net/sched: act_api: reject duplicate actions in a batch**\n\nRTM_DELACTION 배치에 동일 tc action 인덱스가 반복되면 참조 카운트가 중복 소비되어 use-after-free가 납니다. 삭제 배치 구성 시 중복 action을 -EINVAL로 거부합니다.\n\n영향: tc actions를 스크립트·오케스트레이션으로 삭제하는 환경에서 커널 크래시·refcount underflow를 막기 위해 스테이블 백포트가 필요합니다.\n\n> refcount_t: underflow; use-after-free.\n\n[원문 확인](https://lore.kernel.org/stable/QDISC-K1TH.v1.r3.20261012134653-1@mojatatu.com/)\n\n**powerpc: Restore all registers after a traced syscall again**\n\nGENERIC_ENTRY 전환 후 syscall_exit_prepare()가 _TIF_SYSCALL_DOTRACE 대신 설정되지 않는 플래그를 보면 GPR/CTR/XER를 pt_regs에서 복원하지 않아, syscall-exit stop에서 레지스터를 고친 tracer가 동작하지 않습니다. syscall_work 비트로 동일 조건을 검사합니다.\n\n영향: powerpc에서 strace·dettrace 등 syscall tracer를 쓰는 배포판·CI는 7.2.x 스테이블 백포트(및 c7585b8e99ad 의존) 없이 잘못된 syscall 재실행·레지스터 값을 봅니다. PPC_SYSCALL_WORK_RESTOREALL과 SYSCALL_WORK_ENTER 통합 가능성은 maintainer 확인 중입니다.\n\n> A tracer that writes r4 at the syscall-exit stop of an sc sees the tracee continue with r4 = 0 instead\n\n[원문 확인](https://lore.kernel.org/stable/4c1da7f31a6603455ec452960af529e4d77f5334.1791826411.git.msuchanek@suse.de/)\n\n**xprtrdma: trim head iovec when the payload arrives via a Write chunk**\n\nRPC-over-RDMA Write chunk로 페이로드가 page list에 직접 놓일 때, 과대 추정된 head.iov_len 때문에 xdr_realign_pages()가 수신 버퍼의 잔여 바이트를 페이로드 앞으로 밀어 NFSv4 READ 첫 64바이트가 깨집니다. inline 길이에 맞게 head/buflen을 줄입니다.\n\n영향: pNFS flexfile over RDMA·sec=krb5 스토리지 스택을 스테이블로 제공하는 배포판은 첫 READ에서 데이터 손상 위험이 있어 백포트 적용이 중요합니다. Chuck Lever v1에서 post-receive 경로의 head iov_len 의존 여부에 대한 maintainer 답변은 확인 필요합니다.\n\n> The first 64 bytes returned by each such READ are incorrect\n\n[원문 확인](https://lore.kernel.org/stable/20261012170619.674785-1-tmenninger@everpuredata.com/)\n\n**xarray: unlink a node before freeing it**\n\nxas_delete_node()가 노드를 call_rcu()로 해제한 뒤에야 부모 슬롯을 NULL로 바꿔, RCU walker가 해제된 radix_tree_node를 읽을 수 있습니다. xa_node_free()를 unlink 이후로 옮깁니다.\n\n영향: xarray/page cache 등 전역 자료구조에 영향을 주는 클래스의 UAF·잘못된 folio 반환은 스테이블 트리 전반에 백포트될 때 배포판 영향 범위가 큽니다. 프로덕션에서 결정적으로 재현하기 어렵다고 제출자가 명시했습니다.\n\n> Move xa_node_free() after the store that unlinks the node, in both branches.\n\n[원문 확인](https://lore.kernel.org/stable/20261012174230.772325-1-nickolai@csail.mit.edu/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**wifi: ath12k: fix M3 buffer reuse in my CVE-2024-40979 backport**\n\n6.6.y에 CVE-2024-40979 관련 M3 버퍼 재사용 백포트(9a38ba5561d9)가 업스트림과 달라, 버퍼가 충분히 크면 새 펌웨어를 복사하지 않고 early return하여 resume/recovery 후에도 이전 M3 이미지가 남을 수 있습니다. 시리즈는 upstream 00575bb44b2c 백포트와 재사용 시 항상 복사하도록 하는 6.6.y 전용 수정을 제안합니다.\n\n영향: 6.6 LTS 및 6.12.y(00575bb44b2c 대기) 배포판이 ath12k Wi-Fi를 쓰면 잘못된 M3 로딩·DMA 해제 크기 문제와 맞물릴 수 있어, 스테이블 큐에 올라온 수정을 적용 여부와 함께 추적해야 합니다. 제출자는 ath12k 실제 하드웨어에서 테스트하지 않았으며, 6.12.y용 00575bb44b2c 백포트가 큐에 반영된 정확한 태그는 별도 공지 확인이 필요합니다.\n\n> When the existing M3 buffer is large enough, it returns early without copying the new image or updating its length. Upstream copies the current image into the reused buffer every time.\n\n[원문 확인](https://lore.kernel.org/stable/20261012165925.32575-1-artem@trailofbits.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "high",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ath12k M3 buffer reuse backport thread",
+      "url": "https://lore.kernel.org/stable/20261012165925.32575-1-artem@trailofbits.com/",
+      "note": "thread"
+    },
+    {
+      "title": "wifi: ath12k: fix reusing m3 memory",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=00575bb44b2c",
+      "note": "commit"
+    },
+    {
+      "title": "kernel.org releases.json",
+      "url": "https://www.kernel.org/releases.json",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-7.2.10",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.10",
+      "note": "changelog"
+    },
+    {
+      "title": "KVM nested NPF SS bit stable thread",
+      "url": "https://lore.kernel.org/stable/20261012165651.130826-1-pbonzini@redhat.com/",
+      "note": "thread"
+    },
+    {
+      "title": "sch_teql slave retry stable thread",
+      "url": "https://lore.kernel.org/stable/QDISC-6HS9.v1.r1.20261012134711-1@mojatatu.com/",
+      "note": "thread"
+    },
+    {
+      "title": "act_api duplicate batch stable thread",
+      "url": "https://lore.kernel.org/stable/QDISC-K1TH.v1.r3.20261012134653-1@mojatatu.com/",
+      "note": "thread"
+    },
+    {
+      "title": "powerpc traced syscall restore stable thread",
+      "url": "https://lore.kernel.org/stable/4c1da7f31a6603455ec452960af529e4d77f5334.1791826411.git.msuchanek@suse.de/",
+      "note": "thread"
+    },
+    {
+      "title": "xprtrdma Write chunk head iovec stable thread",
+      "url": "https://lore.kernel.org/stable/20261012170619.674785-1-tmenninger@everpuredata.com/",
+      "note": "thread"
+    },
+    {
+      "title": "xprtrdma inline_fixup regression commit",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=cb0ae1fbb2f5",
+      "note": "commit"
+    },
+    {
+      "title": "xarray unlink before free stable thread",
+      "url": "https://lore.kernel.org/stable/20261012174230.772325-1-nickolai@csail.mit.edu/",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-6.18.56",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.18.56",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-5.10.271",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.271",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-5.15.222",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.222",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-12T18:26:04.598Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
