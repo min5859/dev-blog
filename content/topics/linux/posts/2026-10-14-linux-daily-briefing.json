@@ -1,0 +1,136 @@
+{
+  "id": "2026-10-14-linux-daily-briefing",
+  "topic": "linux",
+  "title": "2026-10-14 RC7·회귀수정 — 리눅스 개발",
+  "headline": "일곱 번째 릴리스 후보가 나왔고 네트워크·스케줄러·타이밍 하드웨어에서 부팅·동기화 회귀 수정이 이어졌습니다.",
+  "date": "2026-10-14",
+  "summary": "Linux 7.3-rc7가 태그되며 다음 주말 stable 공개 일정이 유지되고 있습니다. HiSilicon FEMAC·QorIQ PTP·스케줄 클래스 변경 경로에서 회귀 수정 패치가 올라왔습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "릴리스",
+    "회귀",
+    "네트워크"
+  ],
+  "highlights": [
+    {
+      "title": "hisi_femac probe 순서 회귀",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "HiSilicon FEMAC 임베디드 보드 사용자, NET_SHAPER를 켠 네트워크 스택/배포 담당",
+      "verifyLink": "https://ci.syzbot.org/patches/a7a98be1-4f6e-43b3-b00f-b4c88ce74c96",
+      "if": "NET_SHAPER 켠 HiSilicon FEMAC 보드라면",
+      "do": "미머지 트리 부팅 전 패치 적용 여부를 확인하세요",
+      "verify": "syzbot 패치 페이지와 Fixes 커밋 참조를 확인하세요"
+    },
+    {
+      "title": "QorIQ PTP 외부 타임스탬프 회귀",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "NXP QorIQ 플랫폼 엔지니어, PTP/linuxptp 운영자",
+      "verifyLink": "https://lkml.iu.edu/2610.1/02006.html",
+      "if": "LX2160A 등 QorIQ에서 ts2phc를 쓰면",
+      "do": "supported_extts_flags 수정 패치 머지 상태를 추적하세요",
+      "verify": "LKML 스레드에서 LX2160A 실패 수정 내용을 확인하세요"
+    },
+    {
+      "title": "스케줄 클래스 변경 lost resched",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "스케줄러/RT 개발자, RCU·PREEMPT 검증 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/10/13/2329",
+      "if": "RT·RCU 스트레스 워크로드를 검증하면",
+      "do": "queued 경로 wakeup_preempt 패치 적용 전후를 비교하세요",
+      "verify": "Openwall 스레드에서 rq->next_class 증상 설명을 확인하세요"
+    },
+    {
+      "title": "7.3-rc7 태그",
+      "priority": "중",
+      "impactType": "release",
+      "affectedAudience": "메인라인 커널 추적자, 배포판/자체 빌드 담당자, 릴리스 전 회귀 테스트 담당",
+      "verifyLink": "https://lkml.iu.edu/2610.1/07182.html",
+      "if": "메인라인 7.3 릴리스를 준비하면",
+      "do": "rc7에서 마지막 회귀 테스트를 돌리세요",
+      "verify": "Linus 공지와 kernel.org mainline 태그를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**7.3-rc7 mainline**\n\nLinus Torvalds가 2026-10-11(일)에 Linux 7.3의 일곱 번째 릴리스 후보를 태그했습니다. 마운트 네임스페이스 관련 버그 수정과 selftest, 드라이버·VFS·네트워킹 회귀 수정이 포함된 fixes-only RC입니다.\n\n영향: 특별한 지연 요인이 없다면 다음 주말에 7.3 stable을 낼 계획이므로, 배포·CI·하드웨어 검증 담당자는 마지막 RC에서 회귀를 잡을 시점입니다.\n\n> the final release. So that's still set for next weekend unless something new comes up.\n\n[원문 확인](https://lkml.iu.edu/2610.1/07182.html)\n\n**next-20261012 linux-next**\n\nlinux-next 통합 트리에 next-20261012 스냅샷이 2026-10-12에 올라왔고, kernel.org와 공개 git 미러에 같은 날짜·태그가 표시됩니다.\n\n영향: 다음 merge window에 들어갈 패치 묶음을 미리 검증하는 기준 트리가 갱신되므로, upstream-first 팀은 회귀 원인 추적 시 이 태그를 기준점으로 쓸 수 있습니다. 어느 mainline RC 위에 리베이스되었는지는 ChangeLog 없이는 확인 필요로 보입니다.\n\n> linux-next: | next-20261012 | 2026-10-12\n\n[원문 확인](https://www.kernel.org/)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**hisi_femac: Move setting of netops to fix crash**\n\nhisi_femac 드라이버 probe에서 netdev_ops를 PHY 연결(of_phy_get_and_connect) 이전에 설정하도록 순서를 바꿉니다. CONFIG_NET_SHAPER가 켜진 경우 phy_attach_direct() 경로가 netdev_ops를 읽어 NULL dereference로 부팅이 멈출 수 있습니다.\n\n영향: NET_SHAPER와 최근 phy/ethtool locking 변경이 만나 probe 순서가 중요해졌고, HiSilicon FEMAC 보드 사용자는 미머지 상태에서 부팅 실패를 맞을 수 있습니다.\n\n> so probing crashes with a NULL pointer dereference when CONFIG_NET_SHAPER is enabled.\n\n[원문 확인](https://ci.syzbot.org/patches/a7a98be1-4f6e-43b3-b00f-b4c88ce74c96)\n\n**Call wakeup_preempt() for queued tasks during class change**\n\nsched_change_end()에서 태스크가 queued 상태로 스케줄 클래스가 올라갈 때도 wakeup_preempt()를 호출해 rq->next_class를 갱신합니다. Paul McKenney가 RCU 테스트에서 RT runnable 태스크가 있는데 rq->next_class가 fair에 머무는 lost resched를 보고했습니다.\n\n영향: 클래스 승격이 enqueue 직후 __sched_setscheduler()와 겹치면 idle로 잘못 내려갈 수 있어, RT/DL/RCU 스트레스 워크로드에서 응답성 버그로 이어질 수 있습니다. 패치 머지 여부는 추가 확인이 필요합니다.\n\n> Although the waiting task was an RT task, \"rq->next_class\" did not point to rt_sched_class and was stuck at the lower priority fair_sched_class.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/10/13/2329)\n\n**fix PTP_EXTTS_REQUEST2 for QorIQ 1588**\n\ndpaa2-ptp, enetc, ptp_qoriq 드라이버에 .supported_extts_flags(PTP_RISING_EDGE | PTP_STRICT_FLAGS)를 선언합니다. PTP core가 supported_extts_flags 없는 드라이버의 PTP_EXTTS_REQUEST2를 거부하게 된 7c571ac57d9d 이후 linuxptp ts2phc가 외부 타임스탬프 입력을 arm하지 못했습니다.\n\n영향: NXP QorIQ/LX2160A 등 PTP 하드웨어 동기화를 쓰는 플랫폼에서 ts2phc/phc2sys 워크플로가 막히는 사용자 가시적 회귀입니다.\n\n> the PTP core rejects every PTP_EXTTS_REQUEST2 request for a driver that does not set .supported_extts_flags.\n\n[원문 확인](https://lkml.iu.edu/2610.1/02006.html)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**7.2.10 stable**\n\nGreg Kroah-Hartman이 2026-10-11에 Linux 7.2.10 stable을 태그했습니다. ChangeLog에는 수백 건의 upstream 백포트가 포함됩니다.\n\n영향: 최신 stable 트랙 사용자는 보안·크래시·드라이버 회귀 수정을 이 점 릴리스로 받게 되므로 업그레이드·백포트 계획을 맞춰야 합니다.\n\n> The 7.2.10 and 6.18.56 stable kernels have been released. Each contains another several hundred important fixes.\n\n[원문 확인](https://lwn.net/Articles/1099764/)\n\n**6.18.56 longterm**\n\nGreg Kroah-Hartman이 2026-10-11에 Linux 6.18.56 longterm stable을 태그했습니다. KVM, perf, arm64 errata, net/mana 등 수백 건 백포트가 포함됩니다.\n\n영향: 6.18 LTS 트랙을 따르는 배포·제품은 장기 지원 브랜치의 누적 수정을 받습니다.\n\n> The 7.2.10 and 6.18.56 stable kernels have been released.\n\n[원문 확인](https://kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.18.56)\n\n**avoid irqsave in skb_defer_free_flush**\n\nskb_defer_free_flush()의 defer_lock을 spin_lock_irqsave 대신 spin_lock_irq로 바꿉니다. 호출은 net_rx_action()의 NAPI-RX 경로로 IRQ가 이미 enable된 상태라 irqsave가 불필요하다는 설명입니다.\n\n영향: defer_list가 있는 멀티 CPU RX 경로의 락 오버헤드를 줄이는 미세 최적화이며, 작성자도 패킷 처리량 개선은 기대하지 않습니다. mainline 머지 상태는 별도 확인하지 못했습니다.\n\n> because the skb_defer_free_flush() function is only called during NAPI-RX processing in net_rx_action(), where it is known the IRQs are enabled.\n\n[원문 확인](https://github.com/cilium/linux/commit/3176eb82681ec9c8af31c6588ddedcc6cfb9e445)"
+    },
+    {
+      "heading": "기타",
+      "body": "벤더 단일 SoC용 신규 드라이버 제안 등은 일반 배포 영향 범위 밖으로 이번 dossier에서 제외되었습니다. lore 원문 403 등으로 열람하지 못한 후보는 단정하지 않았습니다."
+    }
+  ],
+  "confidence": {
+    "level": "high",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Linus Torvalds 7.3-rc7 announcement",
+      "url": "https://lkml.iu.edu/2610.1/07182.html",
+      "note": "thread"
+    },
+    {
+      "title": "kernel.org mainline and linux-next",
+      "url": "https://www.kernel.org/",
+      "note": "changelog"
+    },
+    {
+      "title": "LWN stable kernel release (7.2.10, 6.18.56)",
+      "url": "https://lwn.net/Articles/1099764/",
+      "note": "article"
+    },
+    {
+      "title": "ChangeLog-7.2.10",
+      "url": "https://kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.10",
+      "note": "changelog"
+    },
+    {
+      "title": "linux-next tag next-20261012",
+      "url": "https://kernel.googlesource.com/pub/scm/linux/kernel/git/next/linux-next.git/+/refs/tags/next-20261012",
+      "note": "changelog"
+    },
+    {
+      "title": "hisi_femac netops fix (syzbot)",
+      "url": "https://ci.syzbot.org/patches/a7a98be1-4f6e-43b3-b00f-b4c88ce74c96",
+      "note": "thread"
+    },
+    {
+      "title": "skb_defer_free_flush irq lock change",
+      "url": "https://github.com/cilium/linux/commit/3176eb82681ec9c8af31c6588ddedcc6cfb9e445",
+      "note": "commit"
+    },
+    {
+      "title": "sched_change_end wakeup_preempt",
+      "url": "https://lists.openwall.net/linux-kernel/2026/10/13/2329",
+      "note": "thread"
+    },
+    {
+      "title": "QorIQ PTP_EXTTS_REQUEST2 fix",
+      "url": "https://lkml.iu.edu/2610.1/02006.html",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-6.18.56",
+      "url": "https://kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.18.56",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-13T18:04:52.827Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-newsletter-from-dossier-ko.md"
+  }
+}

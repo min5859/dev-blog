@@ -1,0 +1,136 @@
+{
+  "id": "2026-10-14-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-10-14 x86 BPF JIT개선 — Perf·RT",
+  "headline": "x86-64 BPF JIT 18패치 시리즈와 AF_XDP 풀 수명·ksock 워크큐·hrtimer lockdep 수정이 perf·RT 추적 포인트를 한꺼번에 갱신합니다.",
+  "date": "2026-10-14",
+  "summary": "LLVM이 내는 단일 BPF 명령 패턴에 맞춘 x86-64 JIT 축소·가속과 test_bpf.ko 제거가 제안되었고, PREEMPT_RT·XDP·eBPF API·lockdep 경로에 대한 회귀·운영 패치가 메일링 리스트에 올라왔습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "eBPF",
+    "PREEMPT_RT",
+    "성능"
+  ],
+  "highlights": [
+    {
+      "title": "bpf: Various x86-64 BPF JIT improvements",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "x86-64 BPF JIT 및 in-kernel eBPF 프로그램 운영·벤치마크 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20261013171230.523677-1-daniel@iogearbox.net/",
+      "if": "Cilium·Tetragon·Katran·sched_ext 등 배포 객체에서 jited_prog_len·i-cache 회귀를 감시한다면",
+      "do": "526개 로드 가능 프로그램 before/after와 test_progs 이전 범위를 벤치마크에 포함하세요",
+      "verify": "머지 후 instruction-cycle 이득과 non-x86 JIT 동등 개선은 maintainer 리뷰에서 확인이 필요합니다"
+    },
+    {
+      "title": "xsk: freeze deferred pool teardown without blocking unregister",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "AF_XDP·XSK 버퍼 풀 및 netdev teardown 경로 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20261013-xsk-suspend-teardown-v3-1-2d6be7602947@gmail.com/",
+      "if": "suspend/resume·NETDEV_UNREGISTER와 AF_XDP 풀 해제를 함께 다룬다면",
+      "do": "system_freezable_wq·netdev별 xsk_pools 추적 변경이 ndo_bpf() 참조 순서에 미치는지 hot-unplug 시나리오를 재검증하세요",
+      "verify": "v3 net 트리에서 copy-mode·queue lease 조합별 재현 요구 여부는 리뷰 스레드를 따라가세요"
+    },
+    {
+      "title": "entry: Account the deferred hrtimer rearm as hardirq context for lockdep",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "PREEMPT_RT·lockdep 디버그 커널 및 hrtimer/irqentry 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20261013071318.33300-1-mikhail.v.gavrilov@gmail.com/",
+      "if": "PROVE_LOCKING·LOCKDEP_CHAINS_BITS=19 설정에서 며칠 내 lockdep 비활성화를 겪었다면",
+      "do": "deferred hrtimer rearm 경로와 15dd3a948855 reprogramming 변경의 lock chain을 함께 추적하세요",
+      "verify": "패치는 x86_64 PREEMPT_DYNAMIC에서만 시험됐으며 PREEMPT_RT·다른 arch generic entry는 미시험으로 명시되어 있습니다"
+    },
+    {
+      "title": "bpf: allow ksock connect/send calls from wq",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "ksock kfunc·BPF 워크큐 기반 네트워킹/트레이싱 프로그램 작성자",
+      "verifyLink": "https://lore.kernel.org/bpf/20261013182726.276372-1-mahe.tardy@gmail.com/",
+      "if": "non-sleepable tracing에서 워크큐로 connect/send를 쓰려 한다면",
+      "do": "bpf_ksock_create()의 kthread·nsproxy 검사와 LSM 호출 전제를 정책·selftest test_ksock_wq()와 맞춰 재검토하세요",
+      "verify": "tracing 프로그램 타입으로의 connect/send 확장 일정은 follow-up 패치에서 명시됩니다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**entry: Account the deferred hrtimer rearm as hardirq context for lockdep**\n\n인터럽트 복귀 경로에서 지연된 hrtimer reprogram(rearm)이 lockdep hardirq 컨텍스트 밖에서 실행되며 lock chain이 폭증하는 문제를, rearm 주변에서 hardirq 컨텍스트를 다시 잡도록 수정합니다.\n\n영향: PROVE_LOCKING·LOCKDEP_CHAINS_BITS=19 같은 디버그/RT 친화 설정에서 며칠 내 lockdep가 자동 비활성화되면 실시간·락 검증이 무력화됩니다.\n\n> a fifth of it, 533509 of 2621431 chain hlocks ... had been created by the deferred hrtimer rearm on return from interrupt.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20261013071318.33300-1-mikhail.v.gavrilov@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**bpf: Various x86-64 BPF JIT improvements**\n\nx86-64 BPF JIT이 LLVM/clang이 실제로 내는 단일 BPF 명령 패턴에 대해 더 짧고 빠른 네이티브 코드를 내도록 개선하고, test_bpf.ko 검증을 test_progs로 이전한 뒤 레거시 모듈을 제거하는 18패치 시리즈입니다.\n\n영향: Cilium·Tetragon·Katran·sched_ext 등 실제 배포 객체에서 JIT 코드 크기가 전반적으로 줄었고(일부는 30% 이상), i-cache·로드 경로에 직접 영향을 주므로 고부하 eBPF/RT 워크로드 튜닝·회귀 감시에 핵심입니다.\n\n> This series changes the x86-64 BPF JIT to emit shorter and faster native code for the instruction patterns that LLVM-compiled programs hit in the real world.\n\n[원문 확인](https://lore.kernel.org/bpf/20261013171230.523677-1-daniel@iogearbox.net/)\n\n**xsk: freeze deferred pool teardown without blocking unregister**\n\n지연된 AF_XDP 버퍼 풀 해제를 system_freezable_wq로 옮기고 netdev별 xsk_pools 목록으로 할당 풀을 추적해, 시스템 슬립·재개·NETDEV_UNREGISTER 시 ndo_bpf()와 참조 순서가 꼬이는 수명 버그를 막습니다.\n\n영향: 고성능 XDP/AF_XDP 스택은 suspend/resume와 hot-unplug에서 데드락·클럭 게이팅 이후 드라이버 콜백 같은 실운영 장애로 이어질 수 있어, 네트워킹 eBPF 경로를 다루는 엔지니어가 백포트·검증 우선순위를 잡아야 합니다.\n\n> system_wq is not frozen during system sleep, so that callback can run after a device has suspended and gated its clocks.\n\n[원문 확인](https://lore.kernel.org/bpf/20261013-xsk-suspend-teardown-v3-1-2d6be7602947@gmail.com/)\n\n**bpf: allow ksock connect/send calls from wq**\n\nksock kfunc의 connect()/send()를 워크큐 콜백에서 허용하고, bpf_ksock_create()만 kthread·nsproxy 검사를 유지하며 selftest test_ksock_wq()를 실제 connect/send 성공 경로로 갱신합니다.\n\n영향: non-sleepable tracing 등에서 비동기로 소켓 I/O를 쓰려는 eBPF 작성자의 API 제약이 완화되며, LSM은 여전히 호출되므로 보안·RT 태스크 컨텍스트 정책을 함께 재검토해야 합니다.\n\n> we relax the constraint on not using the workqueues as it will be useful for users triggering connect() or send() from non-sleepable programs\n\n[원문 확인](https://lore.kernel.org/bpf/20261013182726.276372-1-mahe.tardy@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "**selftests/bpf: Add tests for memcg kfuncs**\n\nbpf_get_root_mem_cgroup(), bpf_mem_cgroup_usage(), bpf_mem_cgroup_memory_events(), bpf_proactive_reclaim()에 대한 memcg kfuncs selftest와 verifier 규칙 검사를 추가하고 alloc_pagecache() 헬퍼를 cgroup_helpers로 공유화합니다.\n\n영향: 런타임 동작은 바꾸지 않지만 memcg kfunc 계약을 CI/vmtest로 고정해, cgroup 기반 eBPF·메모리 회수 프로그램의 회귀를 조기에 잡을 수 있습니다.\n\n> bpf_get_root_mem_cgroup(), bpf_mem_cgroup_usage(), bpf_mem_cgroup_memory_events() and bpf_proactive_reclaim() have no selftest coverage.\n\n[원문 확인](https://lore.kernel.org/bpf/20261013181932.1739238-1-listout@listout.xyz/)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "bpf: Various x86-64 BPF JIT improvements",
+      "url": "https://lore.kernel.org/bpf/20261013171230.523677-1-daniel@iogearbox.net/",
+      "note": "thread"
+    },
+    {
+      "title": "sched: non_block_start sleeping spinlocks on PREEMPT_RT",
+      "url": "https://lore.kernel.org/linux-rt-devel/20261012101704.gZyF2O9M@linutronix.de/",
+      "note": "thread"
+    },
+    {
+      "title": "syzbot non_block_start report",
+      "url": "https://syzkaller.appspot.com/bug?extid=c3178b6b512446632bac",
+      "note": "thread"
+    },
+    {
+      "title": "xsk: freeze deferred pool teardown v3",
+      "url": "https://lore.kernel.org/bpf/20261013-xsk-suspend-teardown-v3-1-2d6be7602947@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "xsk: Create and free buffer pool independently from umem",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=1c1efc2af158",
+      "note": "commit"
+    },
+    {
+      "title": "bpf: allow ksock connect/send calls from wq",
+      "url": "https://lore.kernel.org/bpf/20261013182726.276372-1-mahe.tardy@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "LPC ksock API presentation",
+      "url": "https://lpc.events/event/20/contributions/2430/",
+      "note": "article"
+    },
+    {
+      "title": "entry: deferred hrtimer rearm lockdep",
+      "url": "https://lore.kernel.org/linux-rt-devel/20261013071318.33300-1-mikhail.v.gavrilov@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "hrtimer: Push reprogramming into interrupt return path",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=15dd3a948855",
+      "note": "commit"
+    },
+    {
+      "title": "selftests/bpf: Add tests for memcg kfuncs",
+      "url": "https://lore.kernel.org/bpf/20261013181932.1739238-1-listout@listout.xyz/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-13T18:38:32.202Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,143 @@
+{
+  "id": "2026-10-14-linux-distro-stable-daily",
+  "topic": "linux-distro-stable",
+  "title": "2026-10-14 skbuff 보안회귀 — 배포판 스테이블",
+  "headline": "stable 큐의 skbuff·DRM 백포트와 7.2.10 CVE 대조 필요 신호가 LTS 이미지 패키징 우선순위를 좌우합니다.",
+  "date": "2026-10-14",
+  "summary": "netdev stable v2는 읽을 수 없는 frag에서 TCP 제로 페이로드가 전달될 수 있는 경로를 막기 위해 skb_copy_and_csum_bits() 실패 처리를 바꿉니다. drm fb-helper·SCSI changer·Bluetooth RFCOMM 백포트와 Intel PCIe YoYo 디버그 제출이 큐에 쌓였고, 7.2.10의 425건 백포트와 배포판 보안 공지 대응은 별도 대조가 필요합니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "net: skbuff: make skb_copy_and_csum_bits() report unreadable frags",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "네트워킹·stable 백포트 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20261013-b4-skb-segment-nosg-unreadable-v2-1-6c28d8ffa51e@toxicpanda.com/",
+      "if": "devmem TX와 소프트웨어 GSO를 쓰는 네트워크 스택·배포 이미지를 운영한다면",
+      "do": "stable 백포트 반영 전까지 ab9414ed70bd 이후 데이터 무결성·정보 노출 회귀 가능성을 릴리스 노트에 명시하십시오.",
+      "verify": "stable 스레드와 회귀 커밋 원문에서 unreadable frag 반환값 변경 경로를 확인하십시오."
+    },
+    {
+      "title": "drm/fb-helper: defer setup when fbdev_probe() fails, not just on -EAGAIN",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "DRM fb-helper·배포판 그래픽 스택 담당",
+      "verifyLink": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=755c94d178b7e972bb766199d34e4ba4f63a89eb",
+      "if": "fbdev 복원·drm_lastclose() 경로를 타는 데스크톱·가상화 이미지를 패키징한다면",
+      "do": "LTS 백포트 일정에 upstream 755c94d178b7 계열 deferred_setup 확대 수정을 포함하십시오.",
+      "verify": "syzkaller 보고와 upstream 커밋에서 mode_set->fb==NULL 시 WARN 경로를 대조하십시오."
+    },
+    {
+      "title": "scsi: ch: Do not keep references to data transfer element devices",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "SCSI 미디어 체인저·스토리지 백엔드 운영·배포 담당",
+      "verifyLink": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=27c0f718d3b3c99e6d315308e95d987d0382a8a8",
+      "if": "테이프 라이브러리·mhvtl 등 SCSI changer를 쓰는 서버 이미지를 유지한다면",
+      "do": "드라이브 제거 후 H:C:T:L 재사용이 막히는 운영 장애를 막기 위해 longterm stable 백포트를 추적하십시오.",
+      "verify": "upstream 커밋과 stable 제출 스레드에서 scsi_device 참조 누수 수정 범위를 확인하십시오."
+    },
+    {
+      "title": "Bluetooth: RFCOMM: connect the session socket without rfcomm_mutex",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "Bluetooth 스택·배포판 LTS 백포트 담당",
+      "verifyLink": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=ac022970e9fb0a5f7e7d1f6c8e104c1ed924dd1c",
+      "if": "BR/EDR 인증 중 RFCOMM connect를 쓰는 데스크톱·임베디드 이미지를 배포한다면",
+      "do": "rfcomm_mutex와 hdev->lock lockdep 순환을 줄이는 stable 백포트를 다음 커널 업데이트에 반영하십시오.",
+      "verify": "upstream 커밋과 stable 제출 메일에서 connect 재구성 diff를 검토하십시오."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.2.10 stable**\n\nGreg Kroah-Hartman이 2026-10-11에 stable 7.2.10을 태그했고 ChangeLog에는 425건의 upstream 백포트가 실렸습니다.\n\n영향: 7.2.y stable 트랙을 따라가는 배포판·자체 빌드는 이번 점 릴리스 tarball·incr 패치를 기준으로 보안·회귀 백포트 범위를 재정렬해야 합니다. 425건 전체와 배포판 CVE·보안 공지의 대응 관계는 별도 대조가 필요합니다.\n\n> \"version\": \"7.2.10\", \"released\": { \"isodate\": \"2026-10-11\" }\n\n[원문 확인](https://www.kernel.org/releases.json)\n\n**Linux 6.18.56 longterm**\n\n2026-10-11 longterm 6.18.56 ChangeLog에 402건의 백포트가 있으며 7.2.10과 겹치는 ipv4 inet_opt·perf text-poke·KVM nested·arm64 errata 등이 포함됩니다.\n\n영향: 6.18 LTS 트랙을 유지하는 배포·엔터프라이즈 이미지는 이번 점 릴리스를 다음 보안 업데이트 베이스로 잡아야 합니다.\n\n> Linux 6.18.56\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.18.56)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**net: skbuff: make skb_copy_and_csum_bits() report unreadable frags**\n\nstable 큐에 올라온 v2 패치는 skb_copy_and_csum_bits()가 읽을 수 없는 frag에서도 0을 반환해 skb_segment()의 !sg&&!csum 경로가 제로 페이로드에 유효 TCP 체크섬을 붙일 수 있던 문제를, __must_check 반환값(-EFAULT)으로 호출자가 실패를 처리하도록 바꿉니다. 아직 mainline 머지·각 stable 브랜치 태그 포함 시점은 ChangeLog에 반영되지 않았습니다.\n\n영향: devmem TX·소프트웨어 GSO 조합을 쓰는 네트워크 스택·배포 이미지는 stable 백포트 전까지 데이터 무결성·정보 노출 회귀(ab9414ed70bd 이후) 가능성을 인지해야 합니다.\n\n> every segment ends up with a payload of zeroes, tcp_gso_segment() writes a valid TCP checksum over it, and the peer accepts the zeroes as stream data.\n\n[원문 확인](https://lore.kernel.org/stable/20261013-b4-skb-segment-nosg-unreadable-v2-1-6c28d8ffa51e@toxicpanda.com/)\n\n**drm/fb-helper: defer setup when fbdev_probe() fails, not just on -EAGAIN**\n\nupstream 755c94d178b7의 stable 백포트는 drm_fb_helper_single_fb_probe()가 -EAGAIN 외 오류로 실패할 때도 fb_helper->deferred_setup를 설정해, mode_set->fb==NULL 상태에서 restore가 WARN_ON(!set->fb)로 터지는 syzbot 경로를 막습니다.\n\n영향: fbdev 복원·drm_lastclose() 경로를 타는 데스크톱·가상화 이미지는 LTS 백포트로 커널 WARN·불안정 modeset commit을 피할 수 있습니다.\n\n> Mark fb_helper->deferred_setup on any drm_fb_helper_single_fb_probe() failure, not just -EAGAIN\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=755c94d178b7e972bb766199d34e4ba4f63a89eb)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**scsi: ch: Do not keep references to data transfer element devices**\n\nupstream 27c0f718d3b3의 stable 백포트는 SCSI changer 드라이버가 READ ELEMENT STATUS로 조회한 scsi_device에 참조를 영구 보관해 드라이브 제거 후 scsi_device·모듈 언로드가 막히는 누수를, 이름 출력 직후 put하고 dt[] 배열을 제거해 해결합니다.\n\n영향: 테이프 라이브러리·mhvtl 등 changer를 쓰는 서버 이미지는 LTS 백포트 없이는 H:C:T:L 재사용 불가·재부팅만 회복되는 운영 장애가 남습니다.\n\n> Once such a drive is removed, its scsi_device can never be released.\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=27c0f718d3b3c99e6d315308e95d987d0382a8a8)\n\n**Bluetooth: RFCOMM: connect the session socket without rfcomm_mutex**\n\nupstream ac022970e9fb의 stable 백포트는 RFCOMM connect()가 rfcomm_mutex를 잡은 뒤 kernel_connect()로 hdev->lock을 잡는 순서와 HCI 이벤트 경로의 역순이 겹치며 lockdep이 보고하는 실제 AB/BA 순환을, 세션 소켓 connect를 mutex 전에 수행하도록 재구성합니다.\n\n영향: BR/EDR 인증 중 RFCOMM connect를 쓰는 데스크톱·임베디드 이미지는 stable 백포트로 lockdep 경고·잠재적 교착 리스크를 줄일 수 있습니다.\n\n> makes lockdep report a circular dependency, and the reported cycle is a real AB/BA between rfcomm_mutex and hdev->lock.\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=ac022970e9fb0a5f7e7d1f6c8e104c1ed924dd1c)\n\n**Bluetooth: btintel_pcie: Add initial YoYo debug support**\n\nIntel PCIe Bluetooth 드라이버에 optional YoYo 디버그 설정(ibt_bt_dbg_cfg.ini, intel/ibt_debug_yoyo.bin) 로드·TLV 검증·레거시 DBGC 폴백 경로가 stable 큐 3패치 시리즈로 제출되었습니다. stable 브랜치별 머지 여부와 배포 기본값(ini/YoYo 활성화)은 아직 정해지지 않았을 수 있습니다.\n\n영향: Intel PCIe BT 하드웨어를 싣는 배포 이미지는 펌웨어 디버그 수집 기능 추가 시 firmware 패키징·기본 비활성 정책을 미리 정해야 합니다.\n\n> load intel/ibt_debug_yoyo.bin only when YoYo is enabled and host DRAM routing is selected.\n\n[원문 확인](https://lore.kernel.org/stable/20261013182627.81957-1-ajay.k.v@intel.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "kernel.org releases.json",
+      "url": "https://www.kernel.org/releases.json",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-7.2.10",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.10",
+      "note": "changelog"
+    },
+    {
+      "title": "stable: skbuff unreadable frags v2",
+      "url": "https://lore.kernel.org/stable/20261013-b4-skb-segment-nosg-unreadable-v2-1-6c28d8ffa51e@toxicpanda.com/",
+      "note": "thread"
+    },
+    {
+      "title": "ab9414ed70bd — skb_copy_and_csum_bits unreadable frags",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=ab9414ed70bd",
+      "note": "commit"
+    },
+    {
+      "title": "755c94d178b7 — drm fb-helper deferred_setup",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=755c94d178b7e972bb766199d34e4ba4f63a89eb",
+      "note": "commit"
+    },
+    {
+      "title": "syzkaller — __drm_atomic_helper_set_config WARNING",
+      "url": "https://syzkaller.appspot.com/bug?extid=ca23c8570669ead78867",
+      "note": "article"
+    },
+    {
+      "title": "27c0f718d3b3 — scsi ch dt element references",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=27c0f718d3b3c99e6d315308e95d987d0382a8a8",
+      "note": "commit"
+    },
+    {
+      "title": "stable: scsi ch backport",
+      "url": "https://lore.kernel.org/stable/20261013175819.592584-1-sashal@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "ac022970e9fb — RFCOMM connect without rfcomm_mutex",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=ac022970e9fb0a5f7e7d1f6c8e104c1ed924dd1c",
+      "note": "commit"
+    },
+    {
+      "title": "stable: Bluetooth RFCOMM backport",
+      "url": "https://lore.kernel.org/stable/20261013181247.713931-1-sashal@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "stable: btintel_pcie YoYo debug 1/3",
+      "url": "https://lore.kernel.org/stable/20261013182627.81957-1-ajay.k.v@intel.com/",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-6.18.56",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.18.56",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-13T18:35:30.585Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

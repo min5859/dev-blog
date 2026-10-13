@@ -1,0 +1,116 @@
+{
+  "id": "2026-10-14-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-10-14 objtool kCFI 점프테이블 — 커널 보안",
+  "headline": "GCC kCFI 빌드에서 objtool이 BPF 점프 테이블을 어떻게 볼지, stable 다중 LTS 보안 백포트가 함께 움직입니다.",
+  "date": "2026-10-14",
+  "summary": "Peter Zijlstra와 Kees Cook가 objtool kCFI 패치에서 GCC·retpoline 점프 테이블과 IBT·FineIBT 상호작용을 이어 논의했습니다. 7.2.10·6.18.56·5.15.222·5.10.271 ChangeLog에는 perf·네트워킹·가상화·블루투스 등 보안 백포트가 실렸습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "보안",
+    "kCFI",
+    "stable"
+  ],
+  "highlights": [
+    {
+      "title": "objtool: kCFI 간접 호출 검사에서 jump table 분기",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "x86 kCFI·FineIBT·objtool·BPF 인터프리터 하드닝 담당",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20261013091159.GM4121620@noisy.programming.kicks-ass.net/",
+      "if": "GCC로 kCFI를 켠 하드닝 빌드에서 objtool이 jump-table 간접 호출을 no-cfi로 경고하거나 예외를 과하게 허용하면 보호 범위 판단이 흔들릴 수 있다면",
+      "do": "linux-hardening 스레드에서 jump-table 예외·GCC 코드생성·IBT 경로 논의를 따라가며 로컬 빌드 경고를 대조하세요",
+      "verify": "스레드 원문에서 Peter Zijlstra의 FineIBT·ENDBR 코멘트와 Kees Cook의 GCC·retpoline 설명을 직접 확인하세요"
+    },
+    {
+      "title": "Linux 7.2.10 stable ChangeLog",
+      "priority": "중",
+      "impactType": "backport",
+      "affectedAudience": "7.2 stable·배포판 커널 메인테이너, perf·네트워킹 보안 담당",
+      "verifyLink": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.10",
+      "if": "7.2 stable 이미지에서 perf text-poke·ipv4 inet_opt UAF 백포트 추적이 필요하다면",
+      "do": "ChangeLog-7.2.10의 426건 백포트와 배포 회귀·보안 테스트 기준을 맞추세요",
+      "verify": "ChangeLog에 perf_allow_kernel text-poke 조건과 inet_sock_destruct RCU grace 수정 문구를 확인하세요"
+    },
+    {
+      "title": "Linux 6.18.56 longterm ChangeLog",
+      "priority": "중",
+      "impactType": "backport",
+      "affectedAudience": "6.18 LTS 배포·KVM·perf 보안 담당",
+      "verifyLink": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.18.56",
+      "if": "6.18 LTS에서 perf KASLR 노출·중첩 KVM capability를 함께 점검해야 한다면",
+      "do": "403건 백포트 목록에서 perf text-poke·nested CAP 거부 항목을 cherry-pick 계획에 반영하세요",
+      "verify": "ChangeLog-6.18.56 원문의 KASLR·nested CAP 인용 구절을 대조하세요"
+    },
+    {
+      "title": "Linux 5.15.222·5.10.271 longterm",
+      "priority": "하",
+      "impactType": "backport",
+      "affectedAudience": "5.15·5.10 LTS 배포·epoll/kTLS·Bluetooth·netfilter 보안 담당",
+      "verifyLink": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.222",
+      "if": "장기 지원 트리에서 epoll·kTLS·블루투스·netfilter 메모리 안전 백포트를 묶어 추적한다면",
+      "do": "각 배포판이 실제 적용하는 백포트 하위집합을 ChangeLog와 대조해 계획을 갱신하세요",
+      "verify": "ChangeLog-5.15.222·5.10.271 및 v5.10.271 태그 페이지를 원문으로 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**objtool: Skip jump table jumps in the kCFI indirect call check**\n\nKees Cook의 objtool kCFI 패치(3/3)에 대해 Peter Zijlstra가 GCC+retpoline이 만드는 BPF 인터프리터 점프 테이블 간접 분기를 objtool이 어떻게 처리할지, IBT/FineIBT와의 상호작용까지 논의를 이어갔습니다.\n\n영향: GCC로 kCFI를 켠 하드닝 빌드에서 objtool이 jump-table 간접 호출을 no-cfi로 잘못 경고하거나 예외를 과하게 허용하면, kCFI·FineIBT 채택 전에 도구 신뢰성과 실제 보호 범위 판단이 흔들립니다.\n\n> And that would in turn cause more problems for FineIBT evasion, since that more or less depends on ENDBR being followed by the hash check.\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20261013091159.GM4121620@noisy.programming.kicks-ass.net/)\n\njump-table 간접 분기를 영구 예외로 인정할지·GCC 코드생성을 바꿀지에 대한 유지보수자 합의는 아직 확인되지 않았습니다. IBT 활성 빌드에서 해당 경로에 ENDBR가 실제로 추가되는지도 스레드에서 확인되지 않았습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Linux 7.2.10 stable**\n\n2026-10-11 stable 7.2.10 ChangeLog에 426건 upstream 백포트가 포함되며, 비권한 perf text-poke로 KASLR 텍스트 베이스가 노출될 수 있던 경로를 막는 수정과 ipv4 inet_opt RCU grace 이후 해제(UAF) 수정 등이 실렸습니다.\n\n영향: 7.2 stable·배포 이미지 운영자는 이번 점 릴리스로 perf·TCP SYN 경로의 exploit surface가 줄어드므로 보안 회귀 테스트와 백포트 추적 기준을 갱신해야 합니다.\n\n> Call perf_allow_kernel() whenever attr.text_poke is set, regardless of exclude_kernel.\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.10)\n\n426건 전체와 공개 CVE·배포판 보안 공지의 1:1 대응은 별도 대조가 필요합니다.\n\n**Linux 6.18.56 longterm**\n\n2026-10-11 longterm 6.18.56 ChangeLog에 403건 백포트가 있으며, 7.2.10과 동일 계열의 perf text-poke 권한 강화·ipv4 inet_opt UAF 수정과 KVM nested CAP 과다 노출 수정 등이 포함됩니다.\n\n영향: 6.18 LTS는 장기 지원 이미지에서 perf 기반 KASLR 정보 노출과 가상화 capability 신뢰성을 동시에 점검해야 하는 대상입니다.\n\n> For a known kernel image, any such address reveals the runtime kernel text base despite KASLR.\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.18.56)\n\n**Linux 5.15.222 longterm**\n\nChangeLog-5.15.222에 748건 stable 백포트가 실렸고, eventpoll ep_remove UAF, kTLS splice_read 데이터 드롭, Bluetooth·netfilter 관련 메모리 안전 수정 등이 포함됩니다.\n\n영향: 5.15 LTS는 서버 워크로드에서 epoll 중첩·TLS·블루투스 스택 UAF/OOB가 직접적인 보안·무결성 리스크이므로 cherry-pick 계획에 반영해야 합니다.\n\n> eventpoll: fix ep_remove struct eventpoll / struct file UAF\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.222)\n\n배포판이 실제 적용하는 백포트 하위집합은 배포판별로 다릅니다.\n\n**Linux 5.10.271 longterm**\n\nChangeLog-5.10.271에 589건 stable 백포트가 포함되며, Bluetooth L2CAP 짧은 프레임 OOB read, hci_sock OCF 필터 우회, netfilter ip6t_rt OOB read 등이 실렸습니다.\n\n영향: 5.10 LTS는 여전히 대량 배포되므로 블루투스·방화벽 경로의 메모리 안전 백포트 추적이 필요합니다.\n\n> A short ERTM or streaming-mode frame can therefore cause an out-of-bounds read.\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.271)\n\nhci_sock OCF alias 취약점의 exploitability는 ChangeLog 본문만으로는 완전히 검증되지 않았습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "linux-hardening: objtool kCFI jump table thread",
+      "url": "https://lore.kernel.org/linux-hardening/20261013091159.GM4121620@noisy.programming.kicks-ass.net/",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-7.2.10",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.10",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-6.18.56",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.18.56",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-5.15.222",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.222",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-5.10.271",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.271",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 5.10.271 stable tag",
+      "url": "https://git.kernel.org/stable/h/v5.10.271",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-13T18:30:38.502Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

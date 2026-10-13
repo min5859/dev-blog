@@ -1,0 +1,123 @@
+{
+  "id": "2026-10-14-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-10-14 Rust Error 머지 — 툴체인",
+  "headline": "Greg Kroah-Hartman이 Rust Binder용 Error ZeroableOption 패치를 이미 가져갔고, dyndbg v12는 pr_fmt와 테스트 인프라를 동시에 다룹니다.",
+  "date": "2026-10-14",
+  "summary": "Rust for Linux에서는 Binder TransactionInfo와 clk typestate API가 merge window 안에서 움직이고, kbuild·llvm 쪽은 dyndbg·perf annotate·Clang 주석 동기화가 겹칩니다. dyndbg pr_fmt 최종 형태와 perf 시리즈 머지 일정은 스레드에서 아직 명확히 정리되지 않았습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "rust: Error에 ZeroableOption — merge window 반영",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust for Linux·Rust Binder 개발자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/2026101306-unlimited-pasted-e039@gregkh/",
+      "if": "Rust Binder나 TransactionInfo의 Option<Error>·Zeroable 경로를 추적한다면",
+      "do": "Greg가 패치를 이미 가져갔다는 응답과 Alice Ryhl 시리즈 목적을 lore 스레드에서 확인하세요.",
+      "verify": "시리즈 2/3·3/3가 어느 브랜치에 합쳐지는지는 이 응답만으로는 확인이 필요합니다."
+    },
+    {
+      "title": "dyndbg: pr_fmt 추가 인자와 DEFINE_DYNAMIC_DEBUG_METADATA_CLS",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "dynamic debug·printk 매크로를 쓰는 드라이버 개발자와 linux-kbuild 리뷰어",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/as4W9hToBqAvbzJ-@pathway.suse.cz/",
+      "if": "모듈에서 pr_fmt(KBUILD_MODNAME …, __func__)와 dynamic debug·ratelimited printk를 함께 쓰는 빌드를 돌린다면",
+      "do": "Philipp Hahn 패치와 Petr Mladek의 varargs 매크로 대안을 linux-kbuild 스레드에서 비교하세요.",
+      "verify": "합의 전 dyndbg 필터 문자열과 실제 printk 출력이 어긋날 수 있으니 필터·출력을 짝지어 검증하세요."
+    },
+    {
+      "title": "perf annotate arm64: 데이터 타입 프로파일링 명령 추적 v7",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "tools/perf·arm64 성능 분석 담당",
+      "verifyLink": "https://lore.kernel.org/llvm/cover.1791629326.git.wutengda@huaweicloud.com/",
+      "if": "arm64에서 perf data type profiling·annotate 정확도를 CI나 벤치로 관리한다면",
+      "do": "Tengda Wu v7 커버 레터의 ok 비율 표와 Sashiko 리뷰 반영 내용을 따라 리뷰하세요.",
+      "verify": "llvm@ 리뷰 후 tools/perf 또는 perf-tools-next 머지 일정은 커버 레터에 없어 추적이 필요합니다."
+    },
+    {
+      "title": "tools/perf: compiler-context-analysis.h 주석 채택",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "tools/perf·Clang 기반 커널 툴 빌드 담당",
+      "verifyLink": "https://lore.kernel.org/llvm/20261013182458.1234616-1-irogers@google.com/",
+      "if": "perf를 Clang thread-safety 분석으로 빌드하거나 커널 tools 헤더와 동기화 정책을 맞춘다면",
+      "do": "Ian Rogers 10패치 시리즈의 mutex.h→커널 스타일 주석 전환과 잠금 수정을 Makefile.config와 함께 확인하세요.",
+      "verify": "thread-safety 플래그가 기본 빌드와 optional Clang 빌드 중 어디에만 켜지는지는 이 dossier만으로는 확인이 필요합니다."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**dyndbg: Ignore additional arguments from pr_fmt**\n\nPhilipp Hahn 패치는 pr_fmt가 __func__ 등 추가 인자를 넣을 때 DEFINE_DYNAMIC_DEBUG_METADATA_CLS 빌드 오류를 막기 위해 variadic 매크로와 pr_debug_ratelimited 경로에서 pr_fmt(fmt) 대신 fmt만 넘기도록 바꾸고, Petr Mladek는 pr_fmt 접두가 dyndbg 메타데이터에 더 저장되지 않는 동작 변화를 지적해 pr_fmt(fmt)를 유지하는 varargs 매크로 대안을 제안했습니다.\n\n영향: 흔한 pr_fmt·dynamic debug·ratelimited printk 조합을 쓰는 드라이버·CI 빌드가 영향을 받으며, 최종 합의 전 필터 문자열과 printk 출력 불일치 가능성을 봐야 합니다.\n\n> IMHO, this changes the existing behavior. The prefix added by pr_fmt() will no longer be stored in DEFINE_DYNAMIC_DEBUG_METADATA().\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/as4W9hToBqAvbzJ-@pathway.suse.cz/)\n\n**rust: error: implement ZeroableOption for Error**\n\nAlice Ryhl 패치는 Rust Binder가 TransactionInfo에 Option<Error>를 두기 위해 Error에 ZeroableOption을 구현하고, Miguel Ojeda가 이번 사이클 머지를 제안했으며 Greg Kroah-Hartman은 패치를 이미 가져갔다고 답했습니다.\n\n영향: Binder·Rust IPC 경로의 FFI 안전 제로 초기화 타입과 merge window 진입을 Rust for Linux·Android Binder 추적자가 알아야 합니다.\n\n> Already grabbed it :)\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/2026101306-unlimited-pasted-e039@gregkh/)\n\n**perf annotate arm64: Support instruction tracking for data type profiling**\n\nTengda Wu v7(15패치)는 v6에서 머지된 부분을 제외하고 arm64 perf annotate 데이터 타입 프로파일링용 명령 추적과 공유 인프라를 추가하고, 커버 레터는 insn_track 적용 후 arm64 ok 비율이 56.2%에서 74.9%로 올랐다고 보고합니다.\n\n영향: arm64 perf data type profiling·annotate 정확도와 LLVM 툴체인 arm64 CI 검증 담당은 리뷰·벤치 표를 따라야 합니다.\n\n> Patches 01-11 of v6 have already been merged. This version only contains the remaining instruction tracking part, renumbered from 01.\n\n[원문 확인](https://lore.kernel.org/llvm/cover.1791629326.git.wutengda@huaweicloud.com/)\n\n**dyndbg-test: add do_bulk testpoint, rename do_prints to do_classes**\n\nJim Cromie v12 26/40은 test_dynamic_debug.ko에 do_bulk(N) 고부하 테스트와 do_prints→do_classes 이름 정리·공통 param-ops를 추가하고, v11에서 반복 횟수 클램프·signal_pending 중단·cond_resched를 넣었습니다.\n\n영향: dyndbg classmap·대량 printk 자가검증이 강화되어 동일 v12의 pr_fmt·dyndbg 패치 리뷰·회귀 테스트에 쓰일 수 있습니다.\n\n> clamp repeat count input to 10,000 in param_set_do_repeats() and add signal_pending(current) break check\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20261012-dd-cmap-part2-clean-v12-26-3c8cc5725def@gmail.com/)\n\n**tools/perf: Adopt kernel compiler-context-analysis.h annotations**\n\nIan Rogers 10패치 시리즈는 compiler-context-analysis.h를 tools와 동기화하고 perf mutex.h 스타일 Clang 주석을 커널 스타일로 바꾼 뒤 comm·dso·thread·maps 등에 __guarded_by·__must_hold를 확장하고, __machine__addnew_vdso()의 잠금 없는 __dsos__add()와 tpebs_stop()의 tpebs_reader_thread 읽기 등을 고칩니다.\n\n영향: Clang thread-safety로 perf를 빌드하는 워크플로와 커널 헤더 동기화 정책에 직접 맞닿습니다.\n\n> converts tools/perf from its custom mutex.h macros to the kernel-style compiler-context-analysis.h annotations\n\n[원문 확인](https://lore.kernel.org/llvm/20261013182458.1234616-1-irogers@google.com/)\n\n**Clk improvements**\n\nDaniel Almeida v6(7패치)는 Rust clk API를 Regulator와 같은 typestate(Prepared/Enabled), EnabledGuard·devres 헬퍼, ExclusiveClk로 정리하고 OptionalClk를 Clk::get_optional()로 대체하며, guard 기반 공유 clk 뷰와 pwm-th1520 rate exclusive 예를 포함합니다.\n\n영향: clk prepare/enable·rate exclusive 수명을 타입으로 강제하므로 clk-next와 Rust for Linux 드라이버 팀은 API 표면 변화를 맞춰야 합니다.\n\n> implements the same typestate pattern that has been used successfully for Regulators\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20261013-clk-type-state-v6-0-a5e9977b3509@collabora.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "dyndbg: pr_fmt 접두와 DEFINE_DYNAMIC_DEBUG_METADATA 동작",
+      "url": "https://lore.kernel.org/linux-kbuild/as4W9hToBqAvbzJ-@pathway.suse.cz/",
+      "note": "thread"
+    },
+    {
+      "title": "dyndbg: Ignore additional arguments from pr_fmt",
+      "url": "https://lore.kernel.org/linux-kbuild/20261012-dd-cmap-part2-clean-v12-33-3c8cc5725def@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: Error ZeroableOption — Greg 응답",
+      "url": "https://lore.kernel.org/rust-for-linux/2026101306-unlimited-pasted-e039@gregkh/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: implement ZeroableOption for Error",
+      "url": "https://lore.kernel.org/rust-for-linux/CANiq72mfVY7a9+GyHsO_MWXiXhjS-Nj7ki54HJrMCqnQ-RgOmg@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "perf annotate arm64 instruction tracking v7",
+      "url": "https://lore.kernel.org/llvm/cover.1791629326.git.wutengda@huaweicloud.com/",
+      "note": "thread"
+    },
+    {
+      "title": "dyndbg-test: do_bulk, do_classes",
+      "url": "https://lore.kernel.org/linux-kbuild/20261012-dd-cmap-part2-clean-v12-26-3c8cc5725def@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "tools/perf: compiler-context-analysis.h annotations",
+      "url": "https://lore.kernel.org/llvm/20261013182458.1234616-1-irogers@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: Clk typestate v6",
+      "url": "https://lore.kernel.org/rust-for-linux/20261013-clk-type-state-v6-0-a5e9977b3509@collabora.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-13T18:32:43.933Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
