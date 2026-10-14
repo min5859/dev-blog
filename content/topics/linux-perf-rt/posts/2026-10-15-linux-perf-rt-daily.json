@@ -1,0 +1,132 @@
+{
+  "id": "2026-10-15-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-10-15 IRQ·defer 회귀 — linux-perf-rt",
+  "headline": "PREEMPT_RT softirq IRQ exit 정리와 skb defer·page_pool refcount 회귀 수정이 스레드에서 진행되며 vmscan tracepoint 헤더 RFC가 리뷰됩니다.",
+  "date": "2026-10-15",
+  "summary": "Karl Mehltretter softirq v6는 IRQ exit 시 preempt_count 전환을 재정렬해 ftrace·perf·BPF sched 훅의 잘못된 task context 기록을 줄이는 방향입니다. Joseph Kain defer_count·Mina Almasry netmem refcount 시리즈는 고부하·RT 네트워크에서 누수·영구 defer 비활성화를 막는 회귀 수정으로 제시됩니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "PREEMPT_RT",
+    "perf",
+    "BPF",
+    "네트워크"
+  ],
+  "highlights": [
+    {
+      "title": "softirq: IRQ exit 시 인터럽트 context 보존",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "PREEMPT_RT·tracing·BPF sched 훅 및 IRQ exit 경로 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20261011060742.30584-1-kmehltretter@gmail.com/",
+      "if": "PREEMPT_RT에서 sched_waking·sched_wakeup BPF가 IRQ exit 창에서 task context로 관측되거나 trylock 경로에 들어갈 수 있으면",
+      "do": "Mehltretter v6 패치의 __irq_exit_rcu() preempt_count 재정렬과 Rostedt LGTM 코멘트를 대조해 tracing·BPF 검증 계획을 갱신하세요",
+      "verify": "원문 스레드에서 HARDIRQ_OFFSET·SOFTIRQ_OFFSET 전환 설명과 인용문을 직접 확인하세요"
+    },
+    {
+      "title": "net: defer_count가 defer_list를 초과하지 않도록",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "네트워크 core·멀티큐/RPS·PREEMPT_RT 스택 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20261013205416.3417296-1-jkain@nuro.ai/",
+      "if": "net.core.skb_defer_max sysctl 조정 후 cross-CPU defer가 복구되지 않거나 RT·고부하 TX에서 지연 스파이크가 보이면",
+      "do": "Joseph Kain v3의 defer_max 거부 시 증가 롤백·flush drain 후 clear 동작을 배포 브랜치 backport 후보와 함께 검토하세요",
+      "verify": "재현 시퀀스와 v7.3-rc6 defer_count 수치 주장을 메일 원문에서 확인하세요"
+    },
+    {
+      "title": "net: netmem·page_pool refcount 대칭 API 통일",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "네트워크 스택·page_pool 드라이버·ULP 및 skb 조작 경로 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20261014173945.373295-1-almasrymina@google.com/",
+      "if": "page_pool·XDP 경로에서 skb_split/shift 등으로 backing memory 누수나 pp_ref_count 언더플로우를 의심하면",
+      "do": "Almasry net-next v3 시리즈와 KUnit 6/6을 로컬에서 돌려 refcount 경로를 회귀 테스트에 넣으세요",
+      "verify": "코드 검사로 발견·프로덕션 미관측 주장과 인용문을 원문에서 확인하세요"
+    },
+    {
+      "title": "v6.1-rt: backlog-NAPI 스레드 백포트 제안",
+      "priority": "중",
+      "impactType": "backport",
+      "affectedAudience": "PREEMPT_RT 네트워킹·RPS·NAPI 스레드 백포트 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20261014151137.-fFJKa4D@linutronix.de/",
+      "if": "PREEMPT_RT SMP flush 중 NET_RX_SOFTIRQ 관련 스케줄러 경고를 v6.1-rt에서 추적 중이면",
+      "do": "Wen Yang 제안의 v6.6-rt 선행 수정·Siewior 업그레이드 경로 코멘트를 반영해 백포트 순서를 정하세요",
+      "verify": "RPS IPI·softirq 경고 설명은 원문 스레드에서 재확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**net: unify symmetric netmem and page_pool refcounting**\n\nMina Almasry net-next v3 0/6은 skb_frag_ref/unref와 netmem·page_pool(pp_ref_count) 조합을 대칭 API(skb_netmem_ref/unref, skb_frag_ref/unref)로 통일하고 KUnit(6/6)으로 누수·언더플로를 검증합니다.\n\n영향: page_pool·XDP/고속 NIC 경로에서 refcount 불일치는 메모리 누수와 pp_ref_count 언더플로를 낳아 데이터 플레인·BPF adjacency 네트워크 스택 안정성에 영향을 줍니다.\n\n> increments one counter and decrements the other, leaking the backing memory while underflowing pp_ref_count\n\n[원문 확인](https://lore.kernel.org/bpf/20261014173945.373295-1-almasrymina@google.com/)\n\n**net: do not let defer_count outlive an empty defer_list**\n\nJoseph Kain v3는 skb_attempt_defer_free()가 defer_max 거부 시 defer_count 증가를 되돌리지 않아 (cpu,node)별 defer가 영구 비활성화되는 문제를 고치고, flush에서 drain 후 counter를 clear합니다.\n\n영향: cross-CPU skb defer 실패는 RT·고부하 TX CPU에서 page allocator 경합으로 돌아가 네트워크 지연 스파이크를 키우며, sysctl 튜닝만으로는 복구되지 않습니다.\n\n> defer_count reached 1918118 unpatched and did not recover when the default was restored; with this patch it stayed at 0.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20261013205416.3417296-1-jkain@nuro.ai/)\n\n6.18–7.0에서 skb_defer_disable_key 없이 sysctl 0 토글 시 동일 고착이 남는지 배포 커널별 backport 범위는 확인이 필요합니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**cpuidle/poll_state: Wait for need-resched via tif_need_resched_relaxed_wait()**\n\nv15 시리즈 12/16에서 cpuidle poll_state가 need_resched 대기에 새 원자 대기 API tif_need_resched_relaxed_wait()를 쓰도록 논의 중이며, Catalin Marinas가 Peter Zijlstra의 atomic 인프라 maintainer 코멘트에 답했습니다.\n\n영향: 타임아웃 기반 relaxed wait 패턴이 확산되면 idle poll·스핀 대기 경로의 지연·전력 특성과 atomic maintainer 정책이 함께 움직여, 스케줄러·관측 도구가 가정하는 idle 루프 동작을 추적할 필요가 있습니다.\n\n패치 시그니처·타임아웃 처리와 v15 머지 일정은 수집 아카이브에 없어 원문 스레드 재확인이 필요합니다.\n\n[원문 확인](https://lore.kernel.org/bpf/as-eaNfjOAUnfvVF@arm.com/)\n\n[원문 확인](https://lore.kernel.org/bpf/20261014130306.GK2009045@noisy.programming.kicks-ass.net/)\n\n**softirq: Preserve interrupt context during IRQ exit**\n\nKarl Mehltretter v6 패치는 __irq_exit_rcu()가 IRQ exit 작업 전에 HARDIRQ_OFFSET를 빼 task context로 보이는 창을 없애고, softirq 처리 시 SOFTIRQ_OFFSET로 전환하도록 preempt_count 전환을 재정렬합니다.\n\n영향: 이 창에서 ftrace·perf·ring buffer가 task context로 기록되고, PREEMPT_RT에서 sched_waking/sched_wakeup BPF가 kmalloc_nolock() 경로로 잘못된 trylock 판단을 받을 수 있어 관측·RT 동작 정확도에 직접 영향이 있습니다.\n\n> BPF programs attached to sched_waking or sched_wakeup can reach the trylock path through kmalloc_nolock().\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20261011060742.30584-1-kmehltretter@gmail.com/)\n\n**mm/vmscan: move vmscan tracepoints to a local header**\n\nRidong Chen RFC v3 2/7은 include/trace/events/vmscan.h를 mm/trace_vmscan.h로 옮겨 mm 내부 struct scan_control 등을 tracepoint 필드에 쓸 수 있게 하며, 기능 변경은 없다고 합니다.\n\n영향: vmscan tracepoint 스키마 확장은 BPF/perf가 회수 경로를 더 깊게 관측할 수 있는 전제이며, trace 헤더·Makefile 규칙은 tracing maintainer 리뷰 기준과 맞아야 합니다.\n\n> Move include/trace/events/vmscan.h to mm/trace_vmscan.h so that the tracepoints can be extended to reference vmscan-internal structures\n\n[원문 확인](https://lore.kernel.org/bpf/20261013131309.2790253-3-ridong.chen@linux.dev/)\n\n> The proper way to do this is to have: #define TRACE_INCLUDE_PATH . And update the Makefile with: CFLAGS_vmscan.o := -I$(src)\n\n[원문 확인](https://lore.kernel.org/bpf/20261014124914.21c21559@gandalf.local.home/)\n\n시리즈 후속 패치가 Rostedt Makefile 요구를 반영했는지는 아직 확인되지 않았습니다.\n\n**net: Backport backlog-NAPI threads to resolve PREEMPT_RT softirq warning in SMP flush**\n\nWen Yang은 v6.1-rt-next에 backlog-NAPI smpboot thread와 선행 NAPI/RPS/defer_list 변경(v6.4–v6.9) 백포트를 제안했고, Sebastian Siewior는 v6.1 RT의 기존 workaround가 RPS를 빠뜨렸다고 확인했습니다.\n\n영향: PREEMPT_RT에서 RPS IPI가 NET_RX_SOFTIRQ를 smp flush 중에 깨우면 스케줄러 경고·예기치 않은 softirq 실행이 나와 RT 네트워킹 검증·배포 브랜치 우선순위에 영향을 줍니다.\n\n15-패치 시리즈 전체의 리뷰·큐 상태와 Clark 측 회신은 이 메일 이후 스레드에서 확인이 필요합니다.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20261014151137.-fFJKa4D@linutronix.de/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "cpuidle poll_state — Peter Zijlstra maintainer ack",
+      "url": "https://lore.kernel.org/bpf/as-eaNfjOAUnfvVF@arm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "cpuidle poll_state — Catalin 타임아웃 논의",
+      "url": "https://lore.kernel.org/bpf/20261014130306.GK2009045@noisy.programming.kicks-ass.net/",
+      "note": "thread"
+    },
+    {
+      "title": "softirq IRQ exit — Karl Mehltretter v6",
+      "url": "https://lore.kernel.org/linux-rt-devel/20261011060742.30584-1-kmehltretter@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "softirq IRQ exit — Steven Rostedt LGTM",
+      "url": "https://lore.kernel.org/linux-rt-devel/20261014120524.5e6e6efe@gandalf.local.home/",
+      "note": "thread"
+    },
+    {
+      "title": "vmscan tracepoints RFC — Ridong Chen v3 2/7",
+      "url": "https://lore.kernel.org/bpf/20261013131309.2790253-3-ridong.chen@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "vmscan tracepoints — Rostedt Makefile 지침",
+      "url": "https://lore.kernel.org/bpf/20261014124914.21c21559@gandalf.local.home/",
+      "note": "thread"
+    },
+    {
+      "title": "netmem·page_pool refcount — Mina Almasry v3",
+      "url": "https://lore.kernel.org/bpf/20261014173945.373295-1-almasrymina@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "skb defer_count — Joseph Kain v3",
+      "url": "https://lore.kernel.org/linux-rt-devel/20261013205416.3417296-1-jkain@nuro.ai/",
+      "note": "thread"
+    },
+    {
+      "title": "backlog-NAPI 백포트 — Wen Yang v6.1-rt-next",
+      "url": "https://lore.kernel.org/linux-rt-devel/20261014151137.-fFJKa4D@linutronix.de/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-14T18:29:32.522Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

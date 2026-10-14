@@ -1,0 +1,93 @@
+{
+  "id": "2026-10-15-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-10-15 ashmem LRU 회귀 — Android 커널",
+  "headline": "신규 ashmem LRU_COUNT 회귀 수정과 MEMCG 비활성 빌드 vmscan 스텁, cfg80211 cookie API revert가 ACK mainline 흐름을 짚습니다.",
+  "date": "2026-10-15",
+  "summary": "android-mainline에는 v7.3 block 병합과 GKI defconfig 정리가 이어지고, ashmem purge 시 LRU_COUNT 미감소 버그가 새로 수정되었습니다. Pixel WLAN 준비 전 cfg80211 cookie 입력 파라미터 변경은 ACK에서 잠시 revert된 상태입니다.",
+  "tags": [
+    "안드로이드",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "ashmem purge 시 LRU_COUNT 미감소",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "ashmem(Rust)·Android 메모리 shrinker 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/$h",
+      "if": "Rust ashmem free_lru() 경로에서 purge 후 LRU_COUNT가 줄지 않으면 shrinker·메모리 압박 시 reclaim이 왜곡될 수 있다면",
+      "do": "mainline의 LRU_COUNT 직접 감소 수정이 포함된 빌드를 기준으로 ashmem·shrinker 동작을 재검증하세요",
+      "verify": "프로덕션에서 LRU_COUNT 불일치가 LMK 등 사용자 영향으로 이어지는 범위는 별도 트래킹이 필요할 수 있으니, 관련 이슈·테스트 로그를 함께 확인하세요"
+    },
+    {
+      "title": "CONFIG_MEMCG 비활성 빌드 vmscan 회귀",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "android16-6.12 ACK·메모리 reclaim(MGLRU) 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/$h",
+      "if": "MEMCG 없는 ACK·테스트 defconfig에서 MGLRU vmscan 변경 이후 컴파일·링크가 깨졌다면",
+      "do": "shrink_root_memcg_slab() 스텁이 들어간 android16-6.12·mainline 트리에서 !CONFIG_MEMCG 빌드를 다시 돌려보세요",
+      "verify": "aa438a63587f MGLRU shrinker 변경과의 조합에서 root_mem_cgroup 미정의가 사라졌는지 빌드 로그로 확인하세요"
+    },
+    {
+      "title": "cfg80211 cookie API upstream revert",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Wi‑Fi cfg80211·Pixel/벤더 WLAN 드라이버 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/$h",
+      "if": "remain_on_channel·mgmt_tx 등에서 cookie가 출력 포인터(u64 *) 모델을 기대하는 OOT WLAN을 쓰고 있다면",
+      "do": "ACK revert 상태와 upstream 914781c72813 전환 시점을 맞춰 드라이버·cfg80211 호출부 ABI 기대를 점검하세요",
+      "verify": "Pixel 드라이버가 pre-assigned cookie 모델로 전환될 시점과 mainline 동기화 계획은 미공개이므로, 팀 내부 일정이 있으면 그에 맞춰 재검토하세요"
+    },
+    {
+      "title": "android-mainline에 v7.3 block 병합",
+      "priority": "중",
+      "impactType": "release",
+      "affectedAudience": "android-mainline 추적·블록/NVMe·MD 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/$h",
+      "if": "GKI·벤더가 android-mainline 스토리지 스택을 추적 중이라면",
+      "do": "55ab7e14222e(for-7.3/block-20260819) 반영 후 NVMe·MD 등 I/O 경로 회귀 테스트 범위를 정하세요",
+      "verify": "전체 merge diff 대비 선별 backport·회귀 테스트 범위는 팀 정책에 따르므로, 필요한 block 변경만 골라 검증 계획을 세우세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Merge 55ab7e14222e (\"Merge tag 'for-7.3/block-20260819' ...\") into android-mainline**\n\nandroid-mainline에 Linus의 for-7.3/block-20260819 병합(55ab7e14222e)을 끌어와 블록/NVMe/MD 등 서브시스템 업데이트를 ACK mainline에 통합했습니다.\n\n영향: v7.3-rc1 준비 단계의 스토리지 스택 변경이 ACK에 들어오므로 GKI·벤더가 mainline 추적 시 I/O·NVMe 동작 차이를 검토해야 합니다.\n\n> Steps on the way to v7.3-rc1\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/$h)\n\n> Pull block updates from Jens Axboe: - NVMe updates via Keith: ... - MD updates via Yu Kuai:\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/$h)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ANDROID: ashmem: decrement LRU_COUNT when purging ranges**\n\nRust ashmem free_lru()가 lru_list에서 pop한 뒤 remove_lru()를 호출해 LRU_COUNT가 감소하지 않는 문제를 수정하고, purge 시 LRU_COUNT를 직접 감소시킵니다.\n\n영향: LRU_COUNT가 계속 커지면 ashmem shrinker·메모리 압박 시 reclaim 동작이 왜곡되어 앱 공유 메모리 회수가 지연될 수 있습니다.\n\n> LRU_COUNT to never be decremented when ranges are purged. Thus, decrement LRU_COUNT directly in free_lru() instead of calling remove_lru().\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/$h)\n\n**ANDROID: mm: vmscan: Fix !CONFIG_MEMCG builds**\n\nCONFIG_MEMCG가 꺼진 빌드에서 root_mem_cgroup을 참조하지 않도록 shrink_root_memcg_slab() 스텁을 추가하고 MGLRU vmscan 경로가 이를 사용합니다.\n\n영향: MEMCG 비활성 구성(일부 ACK/테스트 빌드)에서 aa438a63587f MGLRU shrinker 변경이 컴파일·링크 실패를 일으키는 회귀를 막습니다.\n\n> Builds with CONFIG_MEMCG disabled do not have root_mem_cgroup defined, so define a stub function to invoke for those builds.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/$h)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Revert \"wifi: cfg80211: convert cookie output to input parameter\"**\n\nupstream 914781c72813(cfg80211 remain_on_channel/mgmt_tx 등 cookie를 사전 할당·입력 파라미터로 바꾼 변경)을 ACK에서 revert하여 cookie가 다시 출력 포인터(u64 *) 모델로 돌아갑니다.\n\n영향: 일부 Pixel OOT Wi‑Fi 드라이버가 pre-assigned cookie 모델에 미준비라 ACK에서 API 전환을 잠시 보류합니다; cfg80211·mac80211·인트리넷 드라이버와 벤더 드라이버 간 ABI 기대가 어긋날 수 있습니다.\n\n> Some of the Pixel drivers are not ready to convert to the pre-assigned cookie model. Let's temporarily revert this upstream patch\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/$h)\n\n**GKI·defconfig 정리(지속)**\n\nupstream Kconfig·ARCH_QCOM 기본값 변화에 맞춰 GKI·microdroid defconfig를 조정하는 커밋들(blk-crypto 명시 옵션 제거, MEM_ALLOC_PROFILING 순서, QCOM 드라이버·QCOM_SCM 비활성화, QCOM_GENI_SE 명시 제거, microdroid CONFIG_CRYPTO_SHA256_SSSE3 제거)이 동일 방향으로 유지됩니다.\n\n영향: 범용 GKI 이미지는 불필요한 QCOM 서브시스템을 기본 off·모듈 경로로 두고, upstream 의존성과 defconfig drift·merge 충돌을 줄입니다.\n\n> Remove the now redundant configs from all the GKI defconfig files.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/$h)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ANDROID defconfig / gki / ashmem / vmscan / merge / wifi revert (commit)",
+      "url": "https://android.googlesource.com/kernel/common/+/$h",
+      "note": "commit"
+    },
+    {
+      "title": "for-7.3 block pull changelog",
+      "url": "https://android.googlesource.com/kernel/common/+/$h",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-14T18:05:51.783Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/android-newsletter-from-dossier-ko.md"
+  }
+}

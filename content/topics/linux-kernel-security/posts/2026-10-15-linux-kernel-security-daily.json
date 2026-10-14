@@ -1,0 +1,133 @@
+{
+  "id": "2026-10-15-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-10-15 kobj release 강제 — 커널 보안",
+  "headline": "kobj_type release 컴파일 타임 강제 논의와 msg_msg memcg 수정이 slab/for-7.4에 적용됐으며 powerpc KASAN r2 회귀가 닫혔습니다.",
+  "date": "2026-10-15",
+  "summary": "Ian Rogers kobject 시리즈는 Greg K-H가 사용자 수정 선행을 요청했고, Kees Cook msg_msg 과금 수정은 mm/slab.git에 머지됐습니다. 릴리스 쪽은 이미 다룬 stable·LTS ChangeLog에 이번 수집 추가 진척은 없습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "kobj_type::release 명시 초기화 강제",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "core kobject 사용자, 하드닝/Clang 빌드 담당",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/2026101425-why-boring-4f2d@gregkh/",
+      "if": "Clang __require_explicit_initialization 기반 kobject 하드닝 시리즈를 추적한다면",
+      "do": "Greg K-H가 요청한 .release 누락 사용자 수정 후 속성 추가 순서를 lore 스레드에서 확인하세요.",
+      "verify": "스레드에서 30개 kobj_type 누락·10건 leak/UAF 위험 수정 주장과 Greg 답장을 원문으로 대조하세요."
+    },
+    {
+      "title": "msg_msg GFP_KERNEL_ACCOUNT 복원(7.4)",
+      "priority": "상",
+      "impactType": "backport",
+      "affectedAudience": "slab/for-7.4 팔로워, distro 7.4 준비 담당",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/179196561882.18524.5893215402239363173.b4-ty@b4/",
+      "if": "SysV 메시지 큐와 memcg 격리를 7.4 브랜치에서 검증한다면",
+      "do": "slab/for-7.4/misc 적용 커밋 49c0b3dedf7c와 kernel-doc 패치 655668f0caf를 브랜치에 맞춰 따라가세요.",
+      "verify": "Babka 적용 공지 인용과 커밋 해시를 lore 원문에서 확인하세요."
+    },
+    {
+      "title": "kmem_buckets·msg_msg 과금 시리즈",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "mm/slab·IPC 유지보수, cgroup/메모리 격리 운영자",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20261014052338.nothing.279-kees@kernel.org/",
+      "if": "CONFIG_SLAB_BUCKETS 비활성 또는 bucket 생성 실패 환경을 운영한다면",
+      "do": "cover letter의 SLAB_ACCOUNT·GFP_KERNEL_ACCOUNT 병행 과금 의도를 패치 2/2와 함께 읽고 배포 설정을 점검하세요.",
+      "verify": "나머지 skb buckets(3/8–8/8) 일정과 stable Cc 반영은 아직 확인이 필요합니다."
+    },
+    {
+      "title": "powerpc KASAN mem* r2 corruption",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "powerpc KASAN/툴체인 담당, distro powerpc64le 빌드 엔지니어",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/179196918691.1557523.109435781185152788.b4-ty@linux.ibm.com/",
+      "if": "GENERIC_ENTRY와 구형 컴파일러로 powerpc KASAN CI를 돌린다면",
+      "do": "powerpc/next 적용 커밋과 googlesource 커밋 메시지의 r2 손상 설명을 빌드 매트릭스에 반영하세요.",
+      "verify": "CONFIG_CC_HAS_KASAN_MEMINTRINSIC_PREFIX만 쓰는 배포의 실제 노출 범위는 추가 확인이 필요합니다."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "7.2.10 stable, 6.18.56·5.10.271·5.15.222 longterm ChangeLog는 이전 브리핑과 동일한 kernel.org 공개 상태이며, 이번 수집에서 릴리스·로드맵 관련 새 진척 신호는 없습니다.\n\n7.2.10의 425건 CVE·stable 태그 전수 매핑은 ChangeLog 전수 검토가 필요합니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**kobject: Require explicit initialization of struct kobj_type::release**\n\nIan Rogers 시리즈가 Clang __require_explicit_initialization으로 kobj_type::release 초기화를 강제하고, 누락된 .release에서 누수·조기 free(UAF 위험)를 고칩니다. Greg K-H는 속성 적용 전 사용자 수정을 선행하라고 답했습니다.\n\n영향: kobject 생명주기 오류는 광범위한 서브시스템에서 UAF·누수로 이어지며, 컴파일 타임 강제는 하드닝·DEBUG_KOBJECT_RELEASE 검증 전략과 맞닿아 있습니다.\n\n> Sounds great, but let's fix up the users before adding the attribute. Looks like some of these need another version\n\n> Annotating struct kobj_type::release caught 30 struct kobj_type definitions across the tree that omitted .release\n\n[원문 확인](https://lore.kernel.org/linux-hardening/2026101425-why-boring-4f2d@gregkh/)\n\nKees Cook이 제안한 속성만 선행 머지(v7.4-rc1)와 kobject fixup 병행 일정이 최종 합의됐는지는 확인이 필요합니다.\n\n**mm/slab, ipc: kmem_buckets kernel-doc and msg_msg accounting fixes**\n\nKees Cook v7 2패치가 kmem_buckets_create() kernel-doc Context 섹션을 고치고, msg_msg 할당을 GFP_KERNEL_ACCOUNT로 복원해 CONFIG_SLAB_BUCKETS 비활성·bucket 생성 실패 시에도 memcg 과금이 되도록 합니다.\n\n영향: SysV 메시지 할당이 cgroup 한도를 우회하면 컨테이너·다테넌트 환경에서 메모리 격리 실패가 되어, 슬랩 버킷 하드닝의 보안·자원 경계 측면을 다시 맞춥니다.\n\n> 2/2 now keeps SLAB_ACCOUNT on the msg_msg bucket caches and allocates with GFP_KERNEL_ACCOUNT as well\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20261014052338.nothing.279-kees@kernel.org/)\n\n패치 2/2에서 GFP_KERNEL만 쓰면 SLAB_BUCKETS=n 또는 bucket 생성 실패 시 sender memcg에 미과금된다는 설명은 lore에서 추가 대조가 필요합니다.\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20261014052344.384723-2-kees@kernel.org/)\n\n**powerpc/kasan: fix r2 corruption in mem*() on GENERIC_ENTRY with old compilers**\n\nGENERIC_ENTRY와 구형 컴파일러 조합에서 KASAN mem*()가 이중 ELFv2 global entry를 만들어 r2(TOC)가 손상되던 버그를 수정했고, powerpc/next에 적용됐습니다.\n\n영향: KASAN 빌드에서 r2 corruption은 잘못된 메모리 검사·크래시로 이어져 powerpc64le 하드닝·CI 신뢰도에 직접 영향을 줍니다.\n\n> Applied to powerpc/next. [1/1] powerpc/kasan: fix r2 corruption in mem*() on GENERIC_ENTRY with old compilers\n\n[원문 확인](https://lore.kernel.org/linux-hardening/179196918691.1557523.109435781185152788.b4-ty@linux.ibm.com/)\n\n> The result is r2 pointing at garbage on return. Same-TOC callers do not reload r2 after the call\n\n[원문 확인](https://kernel.googlesource.com/pub/scm/linux/kernel/git/powerpc/linux.git/+commit/de5a7fedf5061bdf6823eb509353bd7c128e34b5)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**mm/slab, ipc: kmem_buckets kernel-doc and msg_msg accounting fixes (applied)**\n\nVlastimil Babka가 동일 2패치 시리즈를 mm/slab.git의 slab/for-7.4/misc에 적용했고, 커밋 해시를 공개했습니다.\n\n영향: 메시지 큐 memcg 회귀 수정이 7.4 머지 윈도에 실질적으로 들어가 하드닝·배포 브랜치 추적이 가능해집니다.\n\n> Applied to mm/slab.git slab/for-7.4/misc, thanks! [2/2] ipc, msg: Account msg_msg allocations with GFP_KERNEL_ACCOUNT again commit: 49c0b3dedf7c8c64e432e63dd7b24f00909916d8\n\n[원문 확인](https://lore.kernel.org/linux-hardening/179196561882.18524.5893215402239363173.b4-ty@b4/)\n\ntorvalds/master 및 stable 라인 머지 시점은 확인이 필요합니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ChangeLog-7.2.10",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.10",
+      "note": "changelog"
+    },
+    {
+      "title": "kobject release 시리즈 (Greg K-H)",
+      "url": "https://lore.kernel.org/linux-hardening/2026101425-why-boring-4f2d@gregkh/",
+      "note": "thread"
+    },
+    {
+      "title": "kmem_buckets·msg_msg cover letter",
+      "url": "https://lore.kernel.org/linux-hardening/20261014052338.nothing.279-kees@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "msg_msg GFP_KERNEL_ACCOUNT 패치 2/2",
+      "url": "https://lore.kernel.org/linux-hardening/20261014052344.384723-2-kees@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "slab/for-7.4/misc 적용 공지",
+      "url": "https://lore.kernel.org/linux-hardening/179196561882.18524.5893215402239363173.b4-ty@b4/",
+      "note": "thread"
+    },
+    {
+      "title": "powerpc KASAN r2 fix 적용",
+      "url": "https://lore.kernel.org/linux-hardening/179196918691.1557523.109435781185152788.b4-ty@linux.ibm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "powerpc KASAN mem* 커밋",
+      "url": "https://kernel.googlesource.com/pub/scm/linux/kernel/git/powerpc/linux.git/+commit/de5a7fedf5061bdf6823eb509353bd7c128e34b5",
+      "note": "commit"
+    },
+    {
+      "title": "ChangeLog-6.18.56",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.18.56",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-5.10.271",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.271",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-5.15.222",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.222",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-14T18:21:13.723Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,143 @@
+{
+  "id": "2026-10-15-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-10-15 kobject release 강제 — Linux 툴체인",
+  "headline": "Clang 초기화 속성과 kobject 수정이 v7.4-rc1 논의와 맞물리고, LLVM 23 BPF selftest·Rust workqueue·kbuild 검증 패치가 llvm@와 kbuild에 올라왔습니다.",
+  "date": "2026-10-15",
+  "summary": "Ian Rogers의 kobj_type::release 명시 초기화 시리즈가 메인테이너 합의와 Clang 20+ 제약을 둘러싸고 진행 중입니다. 같은 날 LLVM 23 selftest 회귀 수정, Rust workqueue API 정리, kbuild pipefail·Kconfig range 검증 RFC가 툴체인 CI 신뢰도와 직결되는 주제로 이어졌습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "툴체인",
+    "Clang",
+    "LLVM",
+    "kbuild",
+    "Rust"
+  ],
+  "highlights": [
+    {
+      "title": "kobject: struct kobj_type::release 명시 초기화",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "Clang/LLVM으로 커널·툴을 빌드하는 개발자, compiler_attributes·kobject 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/llvm/CAP-5=fVLWh4uay2HGy6DOpZmtTr5WAd-TehAkN+P-pQgq_BZhg@mail.gmail.com/",
+      "if": "Clang 20+와 LLVM 17+ 지원 주석을 혼동하면 속성이 조용히 무시될 수 있다면",
+      "do": "compiler_attributes 주석과 -Wextra perf/tools 빌드 로그에서 kobject 관련 경고를 추적하세요",
+      "verify": "Greg Kroah-Hartman 스레드와 11패치 시리즈 원문에서 매크로·kobject 수정 병행 계획을 확인하세요"
+    },
+    {
+      "title": "selftests/bpf: LLVM 23 빌드 실패 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "BPF selftest·verifier 담당, LLVM 23/clang-latest로 커널을 빌드하는 CI",
+      "verifyLink": "https://lore.kernel.org/llvm/20261014113043.640435-1-kafai.wan@linux.dev/",
+      "if": "clang-latest 또는 LLVM 23으로 test_progs가 깨진다면",
+      "do": "KaFai Wan v2 7패치의 verifier·기대 로그 변경과 compare_text skip 조건을 CI 매트릭스에 반영 검토하세요",
+      "verify": "커버 레터의 실패 서브테스트 목록과 freplace staticness BTF linkage 패치를 원문에서 대조하세요"
+    },
+    {
+      "title": "rust: deprecated system_wq를 system_percpu/dfl로 전환",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "Rust for Linux·workqueue 래퍼 사용자, CONFIG_RUST 빌드/테스트 담당",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20261014-rust-workqueue-system-fix-v2-1-c018b8f870f9@google.com/",
+      "if": "v7.3-rc7 이후 Rust KUnit·Binder 로그에 workqueue deprecated 경고가 보인다면",
+      "do": "Danilo Krummrich/Alice Ryhl v2의 system_unbound 제거와 SpinLockIrq KUnit 변환을 로컬 CONFIG_RUST 빌드에 적용해 보세요",
+      "verify": "패치 메일의 Fixes 64d8eae3f895 태그와 런타임 경고 문구를 원문에서 확인하세요"
+    },
+    {
+      "title": "kbuild: cmd 매크로에 pipefail 시도",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "kbuild·scripts/Kbuild.include 유지보수, 커널 CI/kbuild-all 담당",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20261014-kbuild-error-propagation-v1-1-573adaa0a076@linutronix.de/",
+      "if": "파이프라인 앞단 실패 후 난독화된 kbuild 오류를 robot 빌드에서 겪는다면",
+      "do": "Thomas Weißschuh RFC의 try-pipefail 동작을 CONFIG_SHELL 환경에서 시험하고 회귀 신호를 메일링 리스트에 남기세요",
+      "verify": "kernel test robot Reported-by 인용과 cmd 매크로 diff를 RFC 원문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**selftests/bpf: Fix selftests failures with LLVM 23**\n\nKaFai Wan bpf-next v2 7패치는 clang/LLVM 23으로 빌드·test_progs 실행 시 깨지는 BPF selftest와 verifier 로그 기대값을 고치고, freplace staticness를 BTF linkage에서 판별하도록 kernel/bpf/verifier.c를 수정합니다.\n\n영향: LLVM 메이저 업그레이드(23)는 BPF verifier·selftest 기대 출력과 맞물려 커널 CI와 distro clang-latest 검증을 막으므로, llvm@에 올라온 이 시리즈는 툴체인 롤아웃 일정을 추적하는 엔지니어에게 필수입니다.\n\n> Building with clang/LLVM 23 breaks several selftests. Patches #1 to #4 fix those failures.\n\n[원문 확인](https://lore.kernel.org/llvm/20261014113043.640435-1-kafai.wan@linux.dev/)\n\n**selftests/bpf: compare_text 서브테스트**\n\ncompare_text 관련 패치는 stdout이 저장되지 않으면 skip합니다.\n\n영향: prog_tests_framework 관련 서브테스트는 -v 비병렬 모드에서 stdout_saved가 없어 signal 11로 종료되는 문제와 연결됩니다.\n\n> Skip it when stdout was not saved.\n\n[원문 확인](https://lore.kernel.org/llvm/20261014113043.640435-8-kafai.wan@linux.dev/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**kobject: Require explicit initialization of struct kobj_type::release**\n\nIan Rogers 11패치 시리즈가 Clang __require_explicit_initialization으로 struct kobj_type::release 초기화를 강제하고 누락된 .release 사용처를 고치며, 10월 14일 스레드에서 Kees Cook은 매크로만 v7.4-rc1에 먼저 넣고 kobject 수정은 병행하자고 제안했고 Greg Kroah-Hartman은 빌드가 깨지지 않으면 속성 추가에 동의했습니다.\n\n영향: 커널이 지원하는 LLVM(17+) 대비 속성은 Clang 20+에서만 동작해 문서·매크로 주석이 중요하고, compile-time 검사는 Clang 기반 CI와 perf/tools 같은 -Wextra 빌드에서 kobject 생명주기 버그를 조기에 잡는 툴체인 패턴으로 확장될 수 있습니다. 매크로 제출 경로와 11패치 머지 순서는 스레드에 최종 명시되지 않았습니다.\n\n> Annotating struct kobj_type::release caught 30 struct kobj_type definitions across the tree that omitted .release\n\n[원문 확인](https://lore.kernel.org/llvm/CAP-5=fVLWh4uay2HGy6DOpZmtTr5WAd-TehAkN+P-pQgq_BZhg@mail.gmail.com/)\n\n**compiler-context-analysis: Avoid unused parameter warning in _context_unsafe_alias()**\n\nIan Rogers의 compiler-context-analysis 시리즈 v2 01/10은 include/linux/compiler-context-analysis.h에서 _context_unsafe_alias()에 (void)p를 넣어 -Wextra(-Wunused-parameter) 경고를 없애며, Marco Elver가 Reviewed-by를 달았습니다.\n\n영향: context lock 분석 헤더는 tools/perf·lib/perf·subcmd·symbol 등 -Wextra로 빌드되는 사용자 공간 툴과 Clang/LLVM 툴체인 검증 경로에 포함되어, 작은 한 줄 변경도 LLVM 기반 perf CI 실패를 막습니다.\n\n> _context_unsafe_alias() does not use its parameter 'p', which triggers -Wunused-parameter when building code that enables -Wextra (such as tools/perf\n\n[원문 확인](https://lore.kernel.org/llvm/CANpmjNP=4T4pRpoiW_Y442KQbWyVtECUD3_SYs5ZYrdwkWh2rQ@mail.gmail.com/)\n\n**kbuild: enable pipefail for commands where possible**\n\nThomas Weißschuh RFC 패치는 scripts/Kbuild.include의 cmd 매크로에 try-pipefail(set -o pipefail || true)를 넣어 파이프라인 중간 명령 실패가 조용히 무시되지 않도록 하고, POSIX 2024 이전 셸에서는 실패를 무시합니다.\n\n영향: 커널 빌드 스크립트가 부분 실패 상태로 계속 돌면 후속 오류가 난독화되어 LLVM/Clang 기반 distcheck·robot 빌드에서 원인 추적 비용이 커지므로, kbuild 오류 전파 개선은 툴체인 CI 신뢰도와 직결됩니다. RFC 상태이며 dash/bash 외 셸·CONFIG_SHELL 환경 회귀는 리뷰 응답이 아직 없습니다.\n\n> If an earlier command fails this is silently ignored. In this case the build continues operating on intermediate state, potentially leading to confusing follow-up failures.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20261014-kbuild-error-propagation-v1-1-573adaa0a076@linutronix.de/)\n\n**rust: workqueue: replace deprecated system_wq with system_{percpu,dfl}_wq**\n\nDanilo Krummrich/Alice Ryhl v2 패치는 rust/kernel/workqueue.rs와 binder·sync 등에서 deprecated system_wq/system_unbound API를 system_percpu·system_dfl로 바꾸고 문서·KUnit 예제를 갱신하며, Fixes 64d8eae3f895(workqueue 경고 커밋)를 태그합니다.\n\n영향: workqueue deprecate 경고는 v7.3-rc7 이후 Rust KUnit·Binder 빌드/부팅 로그를 오염시키고 SpinLockIrq 테스트는 system() 호출 때문에 빌드가 깨질 수 있어, Rust for Linux 툴체인을 최신 C workqueue API와 맞추는 필수 정리입니다. rust-for-linux 또는 Linus 트리 머지 시점은 패치 메일에 나오지 않았습니다.\n\n> system_wq is deprecated and triggers a runtime warning: work func ... enqueued on deprecated workqueue. Use system_{percpu|dfl}_wq instead.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20261014-rust-workqueue-system-fix-v2-1-c018b8f870f9@google.com/)\n\n**kconfig: error on reverse range**\n\nJulian Braha v2 2패치 시리즈는 Kconfig 숫자 옵션의 range가 역순이면 prop_err()로 빌드 시 오류를 내고, scripts/kconfig/tests/err_num_reverse_range 자가검증을 추가합니다.\n\n영향: Kconfig 입력 검증이 강화되면 잘못된 range 정의가 조기에 걸려 defconfig·CI에서 LLVM/Clang 프리셋을 돌리기 전에 설정 오류를 분리할 수 있습니다. 머지 후 기존 out-of-tree Kconfig 영향은 실제 적용 전까지 확인되지 않습니다.\n\n> This series adds more input validation to Kconfig, specifically checking that ranges for numeric options are properly ordered.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20261014134017.2310819-1-julianbraha@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "**kobject 시리즈: 메인테이너 스레드 신호**\n\nGreg Kroah-Hartman은 속성을 지금 추가하는 것에 동의하며 빌드 파손만 없으면 된다고 답했고, Kees Cook은 patch 1(매크로)과 seq_file first user를 이번 merge window에 넣어 v7.4-rc1부터 쓰고 kobj fixup은 병행하자고 제안했습니다. Miguel Ojeda와 Nick Desaulniers는 __require_explicit_initialization이 Clang 20+에서만 보인다고 확인했습니다.\n\n영향: LLVM 17+ 지원 주석과 실제 Clang 20+ 동작 차이를 문서화하지 않으면 툴체인 기대가 어긋날 수 있습니다.\n\n> I agree, not a problem to add the attribute now as long as it doesn't break the build.\n\n[원문 확인](https://lore.kernel.org/llvm/2026101434-scam-padding-87a5@gregkh/)\n\n**compiler-context-analysis: Assisted-by 태그**\n\nPeter Zijlstra는 Assisted-by 태그 논쟁에 \"The tag is going away.\"라고 답했습니다. v3에서 LLM 표기 줄 처리 방향은 미정입니다.\n\n영향: coding-assistants.rst 정책과 패치 메타데이터 정리가 이어질 수 있습니다.\n\n> The tag is going away.\n\n[원문 확인](https://lore.kernel.org/llvm/20261014095950.GB4121339@noisy.programming.kicks-ass.net/)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "kobject release 시리즈 (Ian Rogers)",
+      "url": "https://lore.kernel.org/llvm/CAP-5=fVLWh4uay2HGy6DOpZmtTr5WAd-TehAkN+P-pQgq_BZhg@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Greg Kroah-Hartman on adding attribute now",
+      "url": "https://lore.kernel.org/llvm/2026101434-scam-padding-87a5@gregkh/",
+      "note": "thread"
+    },
+    {
+      "title": "Kees Cook v7.4-rc1 macro proposal",
+      "url": "https://lore.kernel.org/llvm/202610140932.5F9CFCE5@keescook/",
+      "note": "thread"
+    },
+    {
+      "title": "Clang 20+ __require_explicit_initialization",
+      "url": "https://lore.kernel.org/llvm/202610140937.B68C8C9AAC@keescook/",
+      "note": "thread"
+    },
+    {
+      "title": "compiler-context-analysis v2 01/10",
+      "url": "https://lore.kernel.org/llvm/CANpmjNP=4T4pRpoiW_Y442KQbWyVtECUD3_SYs5ZYrdwkWh2rQ@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Peter Zijlstra on Assisted-by tag",
+      "url": "https://lore.kernel.org/llvm/20261014095950.GB4121339@noisy.programming.kicks-ass.net/",
+      "note": "thread"
+    },
+    {
+      "title": "kbuild pipefail RFC",
+      "url": "https://lore.kernel.org/linux-kbuild/20261014-kbuild-error-propagation-v1-1-573adaa0a076@linutronix.de/",
+      "note": "thread"
+    },
+    {
+      "title": "rust workqueue system_wq fix v2",
+      "url": "https://lore.kernel.org/rust-for-linux/20261014-rust-workqueue-system-fix-v2-1-c018b8f870f9@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "kconfig error on reverse range v2",
+      "url": "https://lore.kernel.org/linux-kbuild/20261014134017.2310819-1-julianbraha@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "BPF selftests LLVM 23 v2 series",
+      "url": "https://lore.kernel.org/llvm/20261014113043.640435-1-kafai.wan@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "BPF compare_text skip when no stdout",
+      "url": "https://lore.kernel.org/llvm/20261014113043.640435-8-kafai.wan@linux.dev/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-14T18:23:50.102Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

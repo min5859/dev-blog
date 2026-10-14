@@ -1,0 +1,151 @@
+{
+  "id": "2026-10-15-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-10-15 arm64 GCS 교차태스크 — 아키·플랫폼",
+  "headline": "arm64 GCS 컨텍스트 복원 버그가 태스크 간 GCS 비활성화를 허용할 수 있어 보안·ABI 정리가 논의 중입니다.",
+  "date": "2026-10-15",
+  "summary": "Mark Brown의 GCSCRE0_EL1 저장 방식 변경과 Catalin Marinas의 restore_gcs_context·sigreturn 지적이 CONFIG_ARM64_GCS 경로를 집중 조명합니다. sysreg 스펙 동기화, PSCI 병렬 CPU 온라인, 보드 DT, lib/crypto size_t 정리도 arm64·플랫폼 담당자가 함께 따라가야 할 축입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "arm64",
+    "device-tree",
+    "PSCI"
+  ],
+  "highlights": [
+    {
+      "title": "arm64 GCS: GCSCRE0_EL1 저장 및 교차 태스크 비활성화 위험",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "arm64 GCS·shadow stack·signal/ucontext 경로 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/as-8IqsbMbOBo5Oq@arm.com/",
+      "if": "CONFIG_ARM64_GCS를 켠 arm64에서 스케줄 전환·sigreturn·gcs_set_el0_mode() 경로를 유지보수한다면",
+      "do": "restore_gcs_context()가 하드웨어 레지스터를 갱신하지 않는 기존 버그와 Brown 패치의 GCSCRE0_EL1 직접 기록 방향을 대조해 리뷰하고, sigreturn ucontext GCS 필드 처리 방안은 머지 전에 확인하십시오.",
+      "verify": "Catalin Marinas 스레드에서 restore_gcs_context()·gcs_thread_switch() 동작과 Mark Brown 답신의 기존 버그·ABI 설명을 원문으로 읽어보십시오."
+    },
+    {
+      "title": "PSCI v0.2+ 병렬 secondary CPU 온라인(for-next 일부 적용)",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "arm64 SMP·PSCI·cpuhotplug 및 대칭 멀티코어 서버 플랫폼 담당",
+      "verifyLink": "https://git.kernel.org/pub/scm/linux/kernel/git/arm64/linux.git/commit/?id=c8491bbf35e5e1e30f349e7629bae2e5e2eeddda",
+      "if": "대형 arm64·느린 펌웨어·confidential guest에서 CPU 핫플러그·부팅 시간을 다룬다면",
+      "do": "for-next/secondary-boot-prep에 들어간 capabilities·RCU 재배치 커밋을 추적하고, 전체 23패치 시리즈의 mainline·cpuhp.parallel 폴백 일정은 아직 공개되지 않았으므로 벤더 PSCI CPU_ON 인자 동작은 보드에서 검증할 계획을 세우십시오.",
+      "verify": "Will Deacon v2 시리즈 설명과 c8491bbf·e21f4de 커밋 메시지에서 병렬 bringup 전후 검증 순서를 확인하십시오."
+    },
+    {
+      "title": "sysreg를 DDI0601 2026-09에 맞춤(for-next/sysreg)",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "arm64 sysreg·cpufeature·BRBE(perf) 유지보수 담당",
+      "verifyLink": "https://git.kernel.org/pub/scm/linux/kernel/git/arm64/linux.git/commit/?id=4a90fba44e3b0c86fc61b749ccb08b06a08d6288",
+      "if": "arm64 sysreg 헤더·perf BRBE 또는 KVM 관련 비트 정의를 건드린다면",
+      "do": "Fuad Tabba 시리즈가 for-next/sysreg에 적용된 상태를 기준으로 BRBINFx_EL1의 폐기된 T·LASTFAILED 검사 제거와 enum 수정이 downstream에 미치는 영향을 diff로 따라가십시오.",
+      "verify": "af0010f2·4a90fba4 커밋과 Catalin 적용 공지 스레드에서 스펙 불일치 항목과 현재 사용자 없음 주장을 대조하십시오."
+    },
+    {
+      "title": "lib/crypto Poly1305·ChaCha 길이를 size_t로 통일",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "lib/crypto 및 arm64/riscv/mips/powerpc arch crypto asm 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20261014152604.323310-1-ebiggers@kernel.org/",
+      "if": "arch별 lib/crypto asm wrapper나 ChaCha·Poly1305 호출 경로를 수정한다면",
+      "do": "Eric Biggers 2패치가 libcrypto-next를 대상으로 S32_MAX 초과·sign extension·상위 32비트 미정 ABI 이슈를 정리했으므로 arm64·riscv64 등 해당 arch 조합에서 리뷰 의견을 남기십시오.",
+      "verify": "커버 레터와 Poly1305·ChaCha 패치 스레드에서 mips64·riscv64·arm64·x86_64별 서술을 원문으로 확인하십시오."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**arm64: zynqmp: Add support for ALINX EdgeBoard FZ3A**\n\nPufan Jin v3는 ALINX EdgeBoard FZ3A(Zynq UltraScale+ XCZU3EG)용 vendor prefix·binding·device tree를 추가해 UART·eMMC/SD·GEM3·I2C·QSPI·PCIe·USB3·DisplayPort 등 PS 주변을 기술합니다.\n\n영향: Baidu AI EdgeBoard 계열 보드 사용자는 upstream DT·binding 머지 여부가 부트·네트워킹·스토리지 기본 지원과 장기 유지보수 경로를 결정합니다.\n\n> The ALINX EdgeBoard FZ3A is an embedded computing board from ALINX based on the Xilinx Zynq UltraScale+ XCZU3EG SoC.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20261014175020.62907-1-cyan2254650260@gmail.com/)\n\nLinux 7.3.0-rc5에서 SD 부트·serial·gem3 1000Mbps·eMMC HS200이 하드웨어에서 검증되었다는 제보가 같은 스레드에 있습니다.\n\n> Tested on ALINX EdgeBoard FZ3A hardware with Linux 7.3.0-rc5: the board boots from SD card into userspace over the serial console.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20261014175020.62907-1-cyan2254650260@gmail.com/)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**arm64: gcs: Store GCSCRE0_EL1 values instead of userspace mode**\n\nMark Brown의 패치는 thread_struct에 userspace GCS 모드 대신 GCSCRE0_EL1 값을 저장하고, 컨텍스트 전환 시 해당 레지스터를 직접 쓰도록 바꾸며, Catalin Marinas는 restore_gcs_context·sigreturn 경로의 기존 버그와 gcs_set_el0_mode() 시그니처·WRITE_ONCE 필요성을 짚고 있습니다.\n\n영향: CONFIG_ARM64_GCS를 쓰는 arm64에서는 restore_gcs_context()가 하드웨어 GCSCRE0_EL1을 갱신하지 않아 스케줄 전환 시 GCS가 잘못 공유될 수 있고, Catalin은 한 태스크가 다른 태스크의 GCS를 끌 수 있다고 경고해 보안·ABI 정리가 시급합니다.\n\n> restore_gcs_context() does not update the actual register and, with current mainline, we may even skip the hardware write in gcs_thread_switch(). Basically one task can disable GCS for another task.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/as-8IqsbMbOBo5Oq@arm.com/)\n\nMark Brown는 교차 태스크 GCS 문제가 기존 버그이며, sigreturn으로 EL1 sysreg를 노출한 것은 ABI이지만 현재 userspace 사용은 없다고 답했습니다.\n\n> with current mainline, we may even skip the hardware write in gcs_thread_switch(). Basically one task can disable GCS for another task. Right, that's an existing bug.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/c39b2cc4-832f-49cb-8a59-e5b7a8bd9317@sirena.org.uk/)\n\ngcs_set_el0_mode()가 스레드 레지스터까지 즉시 반영하는 최종 형태와 sigreturn ucontext GCS 필드 fault 처리·upstream 머지 일정은 아직 확인이 필요합니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**arm64: sysreg: Bring field definitions in line with the spec**\n\nFuad Tabba의 4패치 시리즈는 arch/arm64/tools/sysreg를 DDI0601 2026-09에 맞춰 잘못된 enum·철자·폐기된 FEAT_TME 필드를 정리했고, Catalin Marinas가 arm64 for-next/sysreg에 적용했으며 마지막 패치는 BRBE가 더 이상 존재하지 않는 BRBINFx_EL1 필드를 검사하지 않게 합니다.\n\n영향: 자동 생성 sysreg 헤더와 perf BRBE가 스펙과 어긋나면 미래 KVM·perf 코드가 잘못된 비트를 신뢰할 수 있어, arm64 유지보수자는 for-next/sysreg 동기화와 BRBE 동작 변화를 추적해야 합니다.\n\n> Three enum values in the sysreg file don't match DDI0601 2026-09. There are currently no users of these values.\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/arm64/linux.git/commit/?id=af0010f2961083bf32370846556ef9e5c4773994)\n\n> FEAT_TME has been withdrawn from the architecture, and both fields are RES0 in DDI0601 2026-09, so the check tests fields that no longer exist.\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/arm64/linux.git/commit/?id=4a90fba44e3b0c86fc61b749ccb08b06a08d6288)\n\n> Applied to arm64 (for-next/sysreg), thanks!\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/179199925311.3163994.15808107527690275071.b4-ty@b4/)\n\n**[PATCH v2 00/23] arm64: Implement parallel CPU onlining with PSCI v0.2+**\n\nWill Deacon v2(23패치)는 PSCI v0.2+ CPU_ON 인자로 secondary 부트 파라미터를 전달하고 HOTPLUG_PARALLEL을 켜 병렬 CPU 온라인을 구현하며, cpufeature·RCU·capabilities 갱신을 재배치하고 잘못된 PSCI 구현에 대한 MPIDR 검증을 추가합니다. Catalin Marinas는 일부 패치를 for-next/secondary-boot-prep에 적용했습니다.\n\n영향: 대형 arm64·느린 펌웨어·confidential guest에서 순차 secondary bringup 병목과 RCU/cpuhp 상호작용이 부팅·핫플러그 시간과 안정성에 직접 영향을 주므로, SMP·PSCI 플랫폼 담당은 병렬 bringup 기본값과 firmware 회귀 대비를 검토해야 합니다.\n\n> This series implements CONFIG_HOTPLUG_PARALLEL for arm64 by utilising the argument to CPU_ON introduced in PSCI v0.2.\n\n[원문 확인](https://patchew.org/linux/20261009100738.31288-1-will@kernel.org/)\n\n> In preparation for parallel bringup of secondary CPUs, move the call to update_cpu_capabilities() into update_cpu_features().\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/arm64/linux.git/commit/?id=c8491bbf35e5e1e30f349e7629bae2e5e2eeddda)\n\n> Calling rcutree_report_cpu_starting() early during boot can lead to livelocks with the generic CPU hotplug mechanism.\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/arm64/linux.git/commit/?id=e21f4de88acaa9f417b8bde54a9c33b4cec33f10)\n\n23패치 전체 mainline 머지 시점과 cpuhp.parallel=off 폴백 정책, 벤더별 PSCI CPU_ON 인자 버그 재현 보드 목록은 확인이 필요합니다.\n\n**arm64: dts: rockchip: NanoPi 6 series fixes and improvements**\n\nJoachim Eastwood의 9패치 시리즈는 NanoPi 6(RK3588) DT에서 SDMMC 레귤레이터 전압 범위 수정, eMMC HS400 활성화, 입력 전압 HWMON 추가, R6 전용 레귤레이터 dtsi 이동, 회로도와 맞춘 노드/신호 이름 변경을 제안합니다.\n\n영향: NanoPi M6/R6 사용자는 레귤레이터·eMMC 타이밍 수정이 스토리지 안정성과 성능에 직접 영향을 주며, 이름 변경 패치는 리뷰어가 churn로 볼 수 있어 최종 시리즈 구성을 따라야 합니다.\n\n> Patch 1 fixes the voltage range on the SDMMC regulator. Patch 2 enables HS400 mode on eMMC. Tested on my M6 board.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20261014-nanopi-m6-improvements-v1-0-e713f71eb4d3@gmail.com/)\n\n패치 5–9는 회로도 신호명과 DT 이름을 맞추는 변경이며, 리뷰어가 churn로 판단하면 제거할 수 있다고 합니다(해당 주장의 verified 플래그는 dossier에서 false).\n\n> If patch 5-9 is just considered churn I'll drop them.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20261014-nanopi-m6-improvements-v1-0-e713f71eb4d3@gmail.com/)\n\nlinux-rockchip maintainer의 HS400·레귤레이터 패치 수용과 이름 변경 패치 유지 여부는 아직 확인이 필요합니다.\n\n**lib/crypto: Use size_t lengths for Poly1305 and ChaCha**\n\nEric Biggers의 2패치는 Poly1305·ChaCha API와 arch별 asm wrapper를 size_t 길이로 통일하고, S32_MAX 초과 길이·32비트 인자 sign/zero 확장·상위 32비트 미정 ABI 문제를 정리합니다(libcrypto-next 대상).\n\n영향: arm64·riscv64 등 arch별 lib/crypto 헤더를 쓰는 경로는 길이 타입 불일치가 잠재적 잘못된 Poly1305 동작(mips64/riscv64, S32_MAX 초과)과 ChaCha asm ABI 미정 동작을 낳을 수 있어 crypto·arch 공동 검토가 필요합니다.\n\n> It also fixes the (not currently reached) handling of lengths above S32_MAX bytes, and the assembly functions depending on unspecified high register bits.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20261014152604.323310-1-ebiggers@kernel.org/)\n\n> On mips64 and riscv64, this caused incorrect behavior on lengths above S32_MAX, due to the sign extension done by those architectures' ABIs.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20261014152604.323310-2-ebiggers@kernel.org/)\n\n> For arm64 and x86_64, this caused unspecified behavior due to the high 32 bits of the corresponding register having an unspecified value.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20261014152604.323310-3-ebiggers@kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "arm64 GCS restore_gcs_context 교차 태스크 이슈 (Catalin Marinas)",
+      "url": "https://lore.kernel.org/linux-arm-kernel/as-8IqsbMbOBo5Oq@arm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "arm64 GCS 기존 버그·ABI (Mark Brown)",
+      "url": "https://lore.kernel.org/linux-arm-kernel/c39b2cc4-832f-49cb-8a59-e5b7a8bd9317@sirena.org.uk/",
+      "note": "thread"
+    },
+    {
+      "title": "arm64 sysreg enum DDI0601 2026-09 정렬",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/arm64/linux.git/commit/?id=af0010f2961083bf32370846556ef9e5c4773994",
+      "note": "commit"
+    },
+    {
+      "title": "arm64 BRBE BRBINFx_EL1 폐기 필드 검사 제거",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/arm64/linux.git/commit/?id=4a90fba44e3b0c86fc61b749ccb08b06a08d6288",
+      "note": "commit"
+    },
+    {
+      "title": "sysreg 시리즈 for-next/sysreg 적용",
+      "url": "https://lore.kernel.org/linux-arm-kernel/179199925311.3163994.15808107527690275071.b4-ty@b4/",
+      "note": "thread"
+    },
+    {
+      "title": "arm64 PSCI v0.2 병렬 CPU 온라인 v2 시리즈",
+      "url": "https://patchew.org/linux/20261009100738.31288-1-will@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "병렬 bringup 전 capabilities 재배치",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/arm64/linux.git/commit/?id=c8491bbf35e5e1e30f349e7629bae2e5e2eeddda",
+      "note": "commit"
+    },
+    {
+      "title": "secondary bringup 초기 RCU 등록 지연",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/arm64/linux.git/commit/?id=e21f4de88acaa9f417b8bde54a9c33b4cec33f10",
+      "note": "commit"
+    },
+    {
+      "title": "ALINX EdgeBoard FZ3A ZynqMP DT v3",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20261014175020.62907-1-cyan2254650260@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "NanoPi 6 RK3588 DT 개선 시리즈",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20261014-nanopi-m6-improvements-v1-0-e713f71eb4d3@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "lib/crypto Poly1305·ChaCha size_t (커버)",
+      "url": "https://lore.kernel.org/linux-riscv/20261014152604.323310-1-ebiggers@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "Poly1305 size_t 및 S32_MAX",
+      "url": "https://lore.kernel.org/linux-riscv/20261014152604.323310-2-ebiggers@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "ChaCha size_t 및 arm64/x86_64 상위 비트",
+      "url": "https://lore.kernel.org/linux-riscv/20261014152604.323310-3-ebiggers@kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-14T18:32:18.576Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
