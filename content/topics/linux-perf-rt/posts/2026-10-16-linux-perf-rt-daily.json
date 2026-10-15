@@ -1,0 +1,126 @@
+{
+  "id": "2026-10-16-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-10-16 defer_count 고착 — Perf·RT",
+  "headline": "skb 지연 해제 카운터가 빈 defer_list와 함께 고착되면 RT·고처리량 네트워크에서 cross-CPU free 경로가 다시 느려질 수 있습니다.",
+  "date": "2026-10-16",
+  "summary": "네트워크 defer_count 고착 수정(v4)과 6.18.y용 spin_lock_irq_disable() 백포트가 linux-rt-devel에서 논의됐습니다. backlog-NAPI 백포트 순서는 v6.6-rt 선행이 제안됐고, softirq IRQ exit·BPF selftest 보강 패치도 이어졌습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "PREEMPT_RT",
+    "네트워크",
+    "BPF"
+  ],
+  "highlights": [
+    {
+      "title": "net: defer_count가 빈 defer_list보다 오래 남는 문제",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "네트워크 스택·PREEMPT_RT 및 skb_defer_max 튜닝 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20261015162209.485940-1-jkain@nuro.ai/",
+      "if": "skb_defer_max를 낮춘 뒤 복구해도 defer_count가 skb_defer_max 이상에 머무르면",
+      "do": "v4 패치(한도 선검사·flush drain 후 0) 적용 여부와 netdev 머지·백포트 일정을 lore 스레드에서 확인하세요",
+      "verify": "sysctl로 skb_defer_max=1 후 128으로 복구했을 때 defer_count가 내려가는지 재현 테스트를 돌려보세요"
+    },
+    {
+      "title": "6.18.y: spin_lock_irq_disable()·Rust SpinLockIrq 백포트",
+      "priority": "상",
+      "impactType": "backport",
+      "affectedAudience": "stable 6.18.y·Rust in kernel·PREEMPT_RT 백포트 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20261015-spinlock-irq-6-18-v1-0-72c58975994e@google.com/",
+      "if": "6.18.y stable에서 upstream IRQ-aware spin API 백포트를 따라가야 하면",
+      "do": "per-CPU nesting counter·saved irqflags 기반 6패치 시리즈 리뷰와 Sashiko가 언급한 selftest/workqueue·PREEMPT_RT lockdep 이슈 해결 여부를 확인하세요",
+      "verify": "시리즈 설명에 따른 SpinLockIrq 중첩·unlock 순서 요구와 PREEMPT_RT에서 spin_lock_irq()가 IRQ를 끄지 않는다는 문서화를 원문에서 맞춰보세요"
+    },
+    {
+      "title": "softirq: IRQ exit 시 interrupt context 유지",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "PREEMPT_RT·softirq·ftrace/tracepoint 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/atByy9l7zW4TKtrK@gmail.com/",
+      "if": "hardirq와 softirq 사이 preempt·interrupt 상태가 어긋나 tracing에서 오판이 나면",
+      "do": "[PATCH v6] 스레드와 preempt_count를 더 일찍 맞추는 follow-up RFC 진행을 추적하세요",
+      "verify": "패치가 IRQ exit의 hardirq-to-softirq 전환을 다룬다는 답변과 trace recursion transition bit 제거 가능성 논의를 lore에서 읽어보세요"
+    },
+    {
+      "title": "selftests/bpf: jit_insns JIT 검증 공백 보강",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "BPF JIT·selftests·arch BPF 백엔드 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20261015171917.599025-1-daniel@iogearbox.net/",
+      "if": "verifier만 통과하고 arch JIT 분기·atomic·로드가 잘못 생성될 여지가 있으면",
+      "do": "Daniel Borkmann follow-up이 Sashiko 리뷰·rfc9669에서 지적된 분기·atomics·probe_mem 공백을 어떻게 메우는지 diff를 확인하세요",
+      "verify": "staggered jump 사례 인용과 vmtest jit_insns 결과 보고를 패치 메일에서 대조하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**selftests/bpf: Follow-up coverage to JIT instruction tests**\n\nDaniel Borkmann이 jit_insns selftest를 강화해 Sashiko 리뷰·rfc9669에서 드러난 JIT 검증 공백(분기·atomics·probe_mem 등)을 메우고, verifier가 실제 JIT에 도달하는 프로그램과 비교하도록 수정했습니다.\n\n영향: 테스트가 느슨하면 arch JIT의 잘못된 분기·atomic·로드가 통과할 수 있어, eBPF 성능·관측 경로의 코드 생성 신뢰도가 떨어집니다.\n\n> The staggered jumps loaded their operands once, so the verifier decided every jump after the first, and a landing short of the target passed with r0 at zero.\n\n[원문 확인](https://lore.kernel.org/bpf/20261015171917.599025-1-daniel@iogearbox.net/)\n\n**selftests/bpf: Record only the test ICMP echo in tc8 of tc_netkit_scrub**\n\nQiliang Yuan 패치는 tc_netkit_scrub의 tc8가 IPv6 ND·mDNS 등 비테스트 패킷까지 기록해 ICMP echo 검증이 깨지는 문제를 막기 위해 IPv4 ICMP만 기록하도록 필터를 넣었고, Daniel Borkmann은 __bpf_constant_htons 등 스타일 정리를 요청했습니다.\n\n영향: netkit·TCX selftest flake는 CI와 bpf-next 개발 속도를 해치며, skb mark/priority 검증 회귀는 netkit 스택 변경 추적을 어렵게 합니다.\n\nDaniel이 요청한 스타일 수정이 포함된 리비전이 제출·머지됐는지는 확인이 필요합니다.\n\n[원문 확인](https://lore.kernel.org/bpf/c1492f78-5229-4cc1-b4f6-691199a0e521@iogearbox.net/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**net: do not let defer_count outlive an empty defer_list**\n\nskb_attempt_defer_free()가 한도 검사 전에 defer_count를 올리고 거절 시 내리지 않아, 빈 defer_list와 함께 카운터가 skb_defer_max 이상에 고착될 수 있습니다. v4 패치는 한도를 먼저 검사하고 flush에서 drain 후 카운터를 0으로 맞춥니다.\n\n영향: 고착되면 해당 (cpu,node)에서 지연 해제가 재부팅까지 꺼지고 cross-CPU skb free가 페이지 할당자로 돌아가 RT·고처리량 네트워크에서 본래 피하려던 lock 경합이 다시 커집니다.\n\n> It is reachable with no race at all:\n\n>   sysctl -w net.core.skb_defer_max=1    # frees increment, then reject\n>   sysctl -w net.core.skb_defer_max=128  # does not recover\n\nnetdev 트리에 v4가 머지되는 시점과 stable/backport 계획은 확인이 필요합니다.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20261015162209.485940-1-jkain@nuro.ai/)\n\n**net: Backport backlog-NAPI threads to resolve PREEMPT_RT softirq warning in SMP flush**\n\nv6.1-rt용 15패치 시리즈 백포트가 linux-rt-devel에서 논의 중이며, Clark Williams는 v6.6-rt를 먼저 하자는 데 동의했고 Sebastian은 RPS 코드 선행 백포트가 필요하다고 Wen에게 v6.6-RT 시리즈 준비를 요청했습니다.\n\n영향: RPS·backlog 경로에서 SMP flush 중 NET_RX_SOFTIRQ가 올라가면 PREEMPT_RT의 do_softirq_post_smp_call_flush WARN이 날 수 있어, backlog NAPI 스레드 백포트는 RT 네트워킹 안정화의 선행 작업입니다.\n\nv6.6-RT용 RPS 선행 시리즈 제출·머지 시점과 15패치 전체 diff는 이 수집 범위에서 미확인입니다. 스레드 인용은 검증 실패로 단정을 피했습니다.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20261015133811.PtBdJYyx@linutronix.de/)\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/atDWZDywit4ilzJ8@demetrius/)\n\n**softirq: Preserve interrupt context during IRQ exit**\n\n[PATCH v6] softirq 스레드에서 Karl Mehltretter가 Steven Rostedt의 질문에 답해, 패치가 IRQ exit 시 hardirq→softirq 전환을 다룬다고 확인했고 preempt_count를 더 일찍 맞추는 follow-up RFC를 검토 중입니다.\n\n영향: hardirq와 softirq 사이 interrupt/preempt 상태가 어긋나면 PREEMPT_RT·tracing에서 잘못된 컨텍스트 판별이나 trace recursion transition bit 유지 문제가 남습니다.\n\n> Yes, this handles the hardirq-to-softirq transition on IRQ exit.\n\n> If that works, it may allow the transition bit to be removed from trace recursion.\n\n> I would LOVE that!\n\nv6 패치의 정확한 코드 변경 전문과 mainline 머지 타임라인은 확인이 필요합니다.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/atByy9l7zW4TKtrK@gmail.com/)\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20261015084821.3fcf69bf@gandalf.local.home/)\n\n**Backport spin_lock_irq_disable() to 6.18.y**\n\nAlice Ryhl이 spin_lock_irq_disable()과 Rust SpinLockIrq를 6.18.y로 백포트하는 6패치 시리즈를 제출했습니다. upstream e901c1510e24의 preempt_count 방식 대신 per-CPU nesting counter와 saved irqflags로 refcounted IRQ disable API를 구현합니다.\n\n영향: 6.18.y에서 upstream이 새 IRQ-aware spin API를 쓰는 백포트를 깨지 않게 하고, Rust SpinLockIrq가 요구하는 중첩·임의 순서 unlock을 stable에서도 맞출 수 있습니다. PREEMPT_RT에서는 spin_lock_irq()가 IRQ를 끄지 않는다는 점도 문서화됩니다.\n\n> This series backports the new spin_lock_irq_disable() API, as well as the new SpinLockIrq API for Rust to 6.18.y.\n\n> patch 1 implements the same refcounted interrupt disabling API using a dedicated per-CPU nesting counter and saved irqflags word.\n\nSashiko가 지적한 selftest/workqueue·PREEMPT_RT lockdep 이슈 해결 여부는 확인이 필요합니다.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20261015-spinlock-irq-6-18-v1-0-72c58975994e@google.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "net: do not let defer_count outlive an empty defer_list",
+      "url": "https://lore.kernel.org/linux-rt-devel/20261015162209.485940-1-jkain@nuro.ai/",
+      "note": "thread"
+    },
+    {
+      "title": "backlog-NAPI backport discussion (Linutronix)",
+      "url": "https://lore.kernel.org/linux-rt-devel/20261015133811.PtBdJYyx@linutronix.de/",
+      "note": "thread"
+    },
+    {
+      "title": "[PATCH v6.1-rt 00/15] backlog-NAPI threads",
+      "url": "https://lore.kernel.org/linux-rt-devel/atDWZDywit4ilzJ8@demetrius/",
+      "note": "thread"
+    },
+    {
+      "title": "softirq: IRQ exit hardirq-to-softirq",
+      "url": "https://lore.kernel.org/linux-rt-devel/atByy9l7zW4TKtrK@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "trace recursion transition bit discussion",
+      "url": "https://lore.kernel.org/linux-rt-devel/20261015084821.3fcf69bf@gandalf.local.home/",
+      "note": "thread"
+    },
+    {
+      "title": "Backport spin_lock_irq_disable() to 6.18.y",
+      "url": "https://lore.kernel.org/linux-rt-devel/20261015-spinlock-irq-6-18-v1-0-72c58975994e@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "selftests/bpf: JIT instruction test follow-up",
+      "url": "https://lore.kernel.org/bpf/20261015171917.599025-1-daniel@iogearbox.net/",
+      "note": "thread"
+    },
+    {
+      "title": "tc_netkit_scrub tc8 ICMP filter",
+      "url": "https://lore.kernel.org/bpf/c1492f78-5229-4cc1-b4f6-691199a0e521@iogearbox.net/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-15T18:27:44.901Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,130 @@
+{
+  "id": "2026-10-16-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-10-16 mmap ASLR 기본 상향 — 아키텍처·플랫폼",
+  "headline": "arm64 mmap ASLR 기본값 상향·GCS prctl errno 정렬, BE text-poke 수정, mm VM_SPECIAL 정리, RISC-V TLB trace가 이번 수집의 핵심입니다.",
+  "date": "2026-10-16",
+  "summary": "48·52비트 VA arm64에서 ARCH_MMAP_RND_BITS 기본값이 올라가 distro·보안 기준선 점검이 필요합니다. GCS 잠금 실패 errno 변경, big-endian aarch64_insn_set() 수정, VMA predicate 전환, kselftest·TLB tracepoint 작업도 함께 따라가야 합니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "arm64",
+    "riscv"
+  ],
+  "highlights": [
+    {
+      "title": "arm64: raise default ARCH_MMAP_RND_BITS for 48-bit and 52-bit VA",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "arm64 mm/ASLR·distro 커널 패키징·보안 하드닝 담당",
+      "verifyLink": "https://patchew.org/linux/CAOx7e9K5sgNcWNj4CemyZd0Ar1ZjR4o44B4nryohq-Ue6TNdKA@mail.gmail.com/",
+      "if": "48·52비트 VA arm64 빌드의 기본 mmap ASLR 정책이나 배포판 sysctl을 담당하는 경우",
+      "do": "신규 커널 기본 ARCH_MMAP_RND_BITS와 배포판 sysctl 오버라이드를 재점검하세요",
+      "verify": "for-next/misc 적용과 mainline·stable/backport 필요성은 링크된 스레드·커밋에서 확인하세요"
+    },
+    {
+      "title": "arm64: gcs: Return -EPERM when changes are prevented by locking",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "arm64 GCS·prctl·kselftest 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/179208783673.159915.17856867908691720090.b4-ty@b4/",
+      "if": "CONFIG_ARM64_GCS 런타임이나 GCS prctl() 오류 처리를 유지하는 경우",
+      "do": "잠금으로 설정 변경이 거부될 때 -EBUSY에 의존한 userspace·selftest 코드를 -EPERM 처리로 맞추세요",
+      "verify": "minor ABI 변경 범위와 stable/backport 일정은 링크된 스레드를 확인하세요"
+    },
+    {
+      "title": "arm64: patching: Fix instruction byte order in aarch64_insn_set()",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "arm64 patching·BPF JIT·모듈/livepatch 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/atEGBsR3eI3cXKay@arm.com/",
+      "if": "big-endian arm64에서 text-poke·BPF JIT·livepatch 경로를 다루는 경우",
+      "do": "3패치 시리즈 리뷰와 stable 제안 여부를 따라가며 백포트 필요성을 판단하세요",
+      "verify": "시리즈 전체 for-next/mainline 적용 상태는 patchew 시리즈 링크에서 확인하세요"
+    },
+    {
+      "title": "mm: make VMA flag semantics explicit, eliminate VM_SPECIAL",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "커널 mm·드라이버 mmap·arm/riscv 플랫폼 포팅 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20261013115040.1583b1d8e85c4b5d65a1ae0e@linux-foundation.org/",
+      "if": "드라이버 mmap·hugetlb·GUP·THP와 mm-unstable 테스트를 교차 담당하는 경우",
+      "do": "VM_SPECIAL 대신 행동 기반 predicate API 전환에 맞춰 arch 드라이버 mmap 코드를 미리 점검하세요",
+      "verify": "mainline 머지 윈도와 arch별 회귀 범위는 링크된 mm-unstable 업데이트 스레드를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**arm64: raise default ARCH_MMAP_RND_BITS for 48-bit and 52-bit VA**\n\n48·52비트 VA arm64 빌드에서 Kconfig 기본 ARCH_MMAP_RND_BITS를 페이지 크기별 28/26/24비트(4K/16K/64K)로 올려 x86_64와 같은 약 1TiB mmap ASLR 범위를 맞춥니다. Catalin Marinas가 arm64 for-next/misc에 ac9de62b1902로 적용했습니다.\n\n영향: 기본값이 MIN(18/16/14)에 머물면 최대 엔트로피 대비 ASLR이 약해 distro·보안 기준선과 맞지 않을 수 있어, arm64 플랫폼·보안 담당은 신규 커널 기본 mmap_rnd_bits와 배포판 sysctl 오버라이드를 재점검해야 합니다.\n\n> Set the default ARCH_MMAP_RND_BITS for 48-bit and 52-bit VA to 28 (4K pages), 26 (16K pages), and 24 (64K pages)... Applied to arm64 (for-next/misc), thanks!\n\n[원문 확인](https://patchew.org/linux/CAOx7e9K5sgNcWNj4CemyZd0Ar1ZjR4o44B4nryohq-Ue6TNdKA@mail.gmail.com/)\n\n**arm64: patching: Fix instruction byte order in aarch64_insn_set()**\n\ntext-poke 재작업 이후 aarch64_insn_set()이 host-endian u32를 memset해 big-endian 커널에서 A64 명령어 바이트 순이 뒤집히는 버그를 cpu_to_le32()로 수정하는 3패치 시리즈의 2/3입니다.\n\n영향: BE arm64에서 BPF JIT 무효화(bpf_arch_text_invalidate) 등이 UNDEF 예외를 낼 수 있고, 같은 시리즈는 late livepatch PLT/veneer ROX 쓰기 패닉도 다루므로 text-poke·모듈·livepatch 경로 담당은 리뷰·백포트를 따라가야 합니다.\n\n> aarch64_insn_set() passes the host-endian u32 instruction straight to text_poke_memset()... bpf_arch_text_invalidate() fills freed JIT regions with AARCH64_BREAK_FAULT through aarch64_insn_set()\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/atEGBsR3eI3cXKay@arm.com/)\n\n> Patch 2 fixes big-endian breakage in aarch64_insn_set()... All three are tagged for stable.\n\n[원문 확인](https://patchew.org/linux/20261010084721.2197683-1-qirui.001@bytedance.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**arm64: gcs: Return -EPERM when changes are prevented by locking**\n\nGCS prctl()에서 잠금으로 설정 변경이 거부될 때 errno를 -EBUSY에서 -EPERM으로 바꾸고 kselftest를 맞춥니다. arm64 for-next/gcs에 988be99717ae·8c831e5cd3ad로 적용됐습니다.\n\n영향: x86·RISC-V와 동일한 errno로 userspace·selftest가 GCS 잠금 실패를 처리할 수 있어, CONFIG_ARM64_GCS를 쓰는 런타임·ABI 담당은 기존 -EBUSY에 의존한 코드가 있으면 수정이 필요합니다.\n\n> Applied to arm64 (for-next/gcs), thanks! While a minor ABI change, it's pretty harmless. The benfit is eventual (hopefully) common handling with x86 and risc-v.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/179208783673.159915.17856867908691720090.b4-ty@b4/)\n\n**kselftest/arm64: keep building and installing after a subdirectory fails**\n\narm64 kselftest 상위 Makefile이 서브디렉터리를 셸 루프로 빌드·설치할 때 마지막 서브디렉터리 상태만 반영하는 문제를, 최소 하나 성공 시 make는 성공하도록 바꾸고 $(MAKE)와 부분 빌드 리포트를 정리합니다.\n\n영향: CI·벤더에서 일부 arm64 selftest만 깨져도 전체 install이 건너뛰어지던 문제가 줄어 arm64 회귀 테스트 커버리지 추적이 쉬워집니다.\n\n> A failure in the last one fails \"make all\" and, through \"install: all\", drops the installation of every other arm64 test as well.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/atERXTfz9xsIuv-7@arm.com/)\n\n> Acked-by: Catalin Marinas <catalin.marinas@arm.com>\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/atERXTfz9xsIuv-7@arm.com/)\n\n**mm: make VMA flag semantics explicit, eliminate VM_SPECIAL**\n\nLorenzo Stoakes v6(39패치)가 VM_SPECIAL/VMA_SPECIAL_FLAGS 혼란을 행동 기반 predicate로 정리하고 드라이버 VMA 플래그 사용을 제한합니다. Andrew Morton이 mm-unstable에 이 버전을 반영했습니다.\n\n영향: 드라이버·hugetlb·GUP·THP 경계가 바뀌어 arm64/riscv 등 arch 드라이버 mmap 코드와 mm-unstable 기반 테스트가 깨질 수 있어, 플랫폼 드라이버·mm 교차 담당은 predicate API 전환을 미리 따라가야 합니다.\n\n> This series brings some order to things by both limiting what drivers can do with VMA flags and switching to using predicates that describe behaviour, not arbitrary flags.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20261013115040.1583b1d8e85c4b5d65a1ae0e@linux-foundation.org/)\n\n**riscv: mm: Trace TLB flush requests**\n\nRISC-V에서 flush_tlb_all()·__flush_tlb_range()에 riscv_tlb:riscv_tlb_flush_request tracepoint를 추가해 범위·stride·ASID·CPU mask·scope 등 arch별 TLB 무효화 요청을 기록합니다(v4).\n\n영향: generic tlb_flush 이벤트만으로는 RISC-V 무효화 맥락이 부족해 SMP·firmware(IPI/SBI) 상호작용 분석 시 perf/ftrace 담당이 새 이벤트로 MM·스케줄러 활동을 상관할 수 있습니다.\n\n> Add riscv_tlb:riscv_tlb_flush_request in flush_tlb_all() and __flush_tlb_range(). Record start, size, stride, the hardware-visible ASID...\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20261015-tlb_tracepoint-v4-1-f238a2bd8f7e@gmail.com/)\n\n> The event describes the semantic invalidation request before it is dispatched. It intentionally does not record whether a remote request is implemented through SBI RFENCE or Linux cross-CPU coordinati\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20261015-tlb_tracepoint-v4-1-f238a2bd8f7e@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "arm64 mmap RND bits — Patchew 스레드",
+      "url": "https://patchew.org/linux/CAOx7e9K5sgNcWNj4CemyZd0Ar1ZjR4o44B4nryohq-Ue6TNdKA@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "arm64: raise default ARCH_MMAP_RND_BITS",
+      "url": "https://git.kernel.org/arm64/c/ac9de62b1902",
+      "note": "commit"
+    },
+    {
+      "title": "arm64 GCS prctl errno — lore 스레드",
+      "url": "https://lore.kernel.org/linux-arm-kernel/179208783673.159915.17856867908691720090.b4-ty@b4/",
+      "note": "thread"
+    },
+    {
+      "title": "arm64: gcs: Return -EPERM not -EBUSY",
+      "url": "https://git.kernel.org/arm64/c/988be99717ae",
+      "note": "commit"
+    },
+    {
+      "title": "aarch64_insn_set byte order — lore 스레드",
+      "url": "https://lore.kernel.org/linux-arm-kernel/atEGBsR3eI3cXKay@arm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "arm64 patching 시리즈 — Patchew",
+      "url": "https://patchew.org/linux/20261010084721.2197683-1-qirui.001@bytedance.com/",
+      "note": "thread"
+    },
+    {
+      "title": "kselftest/arm64 Makefile — lore 스레드",
+      "url": "https://lore.kernel.org/linux-arm-kernel/atERXTfz9xsIuv-7@arm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "mm VM_SPECIAL predicate 시리즈 — lore 스레드",
+      "url": "https://lore.kernel.org/linux-riscv/20261013115040.1583b1d8e85c4b5d65a1ae0e@linux-foundation.org/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv TLB flush tracepoint v4 — lore 스레드",
+      "url": "https://lore.kernel.org/linux-riscv/20261015-tlb_tracepoint-v4-1-f238a2bd8f7e@gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-15T18:30:54.030Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
