@@ -1,0 +1,131 @@
+{
+  "id": "2026-10-17-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-10-17 RISC-V FP·execmem — 아키·플랫폼",
+  "headline": "RISC-V는 시그널 FP 복원·execmem PGD 사전 할당이 급하고, TLB flush 추적 설계와 arm64 T7 thermal·SMMUv3 속성 정렬이 이어집니다.",
+  "date": "2026-10-17",
+  "summary": "RISC-V MM·시그널 경로에서 FP 오염과 CONFIG_EXECMEM 빌드 Oops가 동시에 논의되었고, TLB shootdown은 semantic request tracepoint로 재설계되었습니다. arm64는 Amlogic T7 thermal 시리즈와 non-coherent SMMUv3 메모리 속성 패치가 리뷰 단계입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "RISC-V",
+    "arm64",
+    "아키텍처"
+  ],
+  "highlights": [
+    {
+      "title": "시그널 FP 복원 전 Clean 표시",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "RISC-V signal·FPU·userspace ABI·stable/backport 담당",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/101643.html",
+      "if": "FP를 쓰는 rt_sigreturn·PREEMPT·userfault 시나리오를 운영한다면",
+      "do": "Nickolai Zeldovich v1의 restore_fp_state() Clean-before-copy 패치와 vector rt_sigreturn(c27fa53) 동일 패턴 백포트를 검토하세요",
+      "verify": "스레드 원문에서 선점 윈도우와 v4.15 이후 영향 범위를 확인하세요"
+    },
+    {
+      "title": "execmem용 module PGD 사전 할당",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "RISC-V mm·BPF JIT·execmem 빌드 구성 담당",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/101629.html",
+      "if": "CONFIG_MODULES=n이고 CONFIG_BPF_JIT=y인 RISC-V 빌드를 쓴다면",
+      "do": "Karl Mehltretter v2의 CONFIG_EXECMEM 기반 PGD preallocate와 Cc: stable 백포트 일정을 distro 설정과 맞춰 점검하세요",
+      "verify": "BeagleV Ahead native XDP attach 재현·패치 후 정상 동작 설명을 원문에서 확인하세요"
+    },
+    {
+      "title": "TLB flush semantic request trace",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "RISC-V mm·TLB shootdown·tracing 유지보수 담당",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/101567.html",
+      "if": "generic tlb:tlb_flush만으로 shootdown 상관이 부족하다면",
+      "do": "Roman Storozhenko v4의 riscv_tlb_flush_request 필드·arch 트리 배치 요구를 ftrace 워크로드 분석에 반영하세요",
+      "verify": "SBI RFENCE vs cross-CPU 경로가 이벤트에서 제외된 의도를 인용문과 함께 확인하세요"
+    },
+    {
+      "title": "Amlogic T7 thermal·VIM4 cooling",
+      "priority": "중",
+      "impactType": "project",
+      "affectedAudience": "arm64 Amlogic/Meson·thermal·Khadas VIM4 플랫폼 담당",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-October/1187837.html",
+      "if": "Khadas VIM4 등 T7 bring-up·distro thermal 정책을 맡는다면",
+      "do": "Ronald Claveau v7의 SMC 0x82000047 센서 경로·MCU 팬 cooling map·hot trip 타입 수정을 DT·드라이버 리뷰에 따라가세요",
+      "verify": "6개 센서가 eFuse 직접 매핑이 아닌 secure monitor 경로라는 설명을 원문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**riscv: mm: Pre-allocate module page tables for execmem**\n\nKarl Mehltretter v2는 RV64에서 MODULES_VADDR PGD 사전 할당 조건을 CONFIG_MODULES에서 CONFIG_EXECMEM으로 바꿔, CONFIG_BPF_JIT=y·CONFIG_MODULES=n에서 execmem이 init_mm에 매핑을 넣을 때 빈 PGD로 bpf_prog_pack_alloc 등이 커널 페이징 Oops를 내는 문제를 막습니다.\n\n영향: 모듈 없이 BPF JIT·native XDP만 쓰는 빌드는 부팅 후 첫 JIT/execmem 사용에서 바로 실패할 수 있어 distro·네트워킹 스택 담당은 설정 조합과 stable 백포트를 봐야 합니다. mainline 머지·Fixes 2c9e5d4a0082 백포트 일정은 확인이 필요합니다.\n\n> With CONFIG_BPF_JIT=y and CONFIG_MODULES=n, execmem adds a mapping to init_mm while the current process retains an empty PGD entry. Initializing a BPF program pack then faults\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-October/101629.html)\n\n**riscv: signal: mark the FP state clean before restoring it from the frame**\n\nNickolai Zeldovich v1은 restore_fp_state()가 시그널 프레임 FP 이미지를 thread.fstate에 복사하기 전에 live FP 상태를 Clean으로 표시해, 핸들러가 FP를 쓴 뒤 rt_sigreturn 중 선점·페이지 fault 시 fstate_save가 핸들러 레지스터로 부분 복사본을 덮어 sporadic FP corruption이 나는 경로를 막습니다.\n\n영향: v4.15 이후 커널이 영향을 받는 조용한 FP 레지스터 오염으로, FP 시그널 핸들러·PREEMPT·userfault userspace는 vector rt_sigreturn 수정과 같은 패턴의 FP 수정·백포트를 검토해야 합니다. CVE·stable 태그 일정은 확인이 필요합니다.\n\n> A context switch anywhere between the first store of the copy and fstate_restore() goes through __switch_to_fpu(), whose fstate_save() sees FS == Dirty and stores the live FP registers\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-October/101643.html)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**riscv: mm: Trace TLB flush requests**\n\nRoman Storozhenko v4는 flush_tlb_all()·__flush_tlb_range()에 riscv_tlb:riscv_tlb_flush_request tracepoint를 추가해 범위·stride·ASID·CPU mask·무효화 scope 등 요청 컨텍스트를 기록하고, SBI RFENCE vs Linux cross-CPU 경로는 부팅 시 고정이라 이벤트에서 뺍니다. Steven Rostedt는 arch별 이벤트를 include/trace/events/가 아닌 arch 트리에 두라고 재확인했습니다.\n\n영향: RISC-V MM·SMP 담당은 generic tlb:tlb_flush만으로는 shootdown 특성 상관이 어려워 ftrace 필드·파일 위치 리뷰를 따라가야 합니다. v4가 samples/trace_events 패턴으로 arch/riscv 아래로 옮겨지는지, disabled-path 코드 생성 비용 최종 판단은 확인이 필요합니다.\n\n> Add riscv_tlb:riscv_tlb_flush_request in flush_tlb_all() and __flush_tlb_range()... It intentionally does not record whether a remote request is implemented through SBI RFENCE or Linux cross-CPU coord\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-October/101567.html)\n\n**riscv: mm: Trace TLB flush path selection**\n\nv2는 local·SBI RFENCE·cross-CPU-call을 riscv_tlb_flush_path로 노출하려 했으나 Jisheng Zhang 리뷰로 RFENCE vs IPI는 초기화 시 고정이라 per-request 경로 이벤트가 맞지 않다는 합의 후 Roman은 v3/v4에서 semantic request 이벤트로 재구성했습니다. 10월 16일 스레드는 Steve Rostedt가 v2 diff의 include/trace 배치를 다시 거부한 답입니다.\n\n영향: 옛 v2 시리즈를 추적하는 엔지니어는 transport 관측 대신 요청 단위 필드와 이벤트 파일 위치 요구를 기준으로 리뷰해야 합니다. v2 시리즈 공식 철회·riscv_tlb_flush_path enum 제거 여부는 확인이 필요합니다.\n\n> riscv_sbi_for_rfence is effectively a system-wide choice established during initialization... The tracepoint no longer reports the local/SBI RFENCE/cross-CPU implementation path.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-October/101568.html)\n\n**arm64: amlogic: T7 thermal support**\n\nRonald Claveau v7(8패치)는 Amlogic T7(Khadas VIM4) thermal을 추가합니다. 6개 센서는 SMC 0x82000047로 읽고 DT·Meson SM·amlogic thermal·T7 DTSI·VIM4 MCU 팬 cooling map를 연결하며, v7은 passive로 잘못 선언된 hot trip 4곳을 hot 타입으로 고칩니다.\n\n영향: T7 bring-up·distro는 upstream thermal zone·팬 정책 없이 userspace hack에 의존할 수 있어 SMC 경로와 cooling map(1–5 단계) 변경을 따라가야 합니다. v6 bindings/driver와 v7 DTS mainline 순서·SMC calibration fallback 테스트는 확인이 필요합니다.\n\n> The T7 exposes six thermal sensors (a53, a73, gpu, nna, vpu, hevc), each accessible through the secure monitor firmware interface rather than a directly mapped eFuse register\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-arm-kernel/2026-October/1187837.html)\n\n**iommu/arm-smmu-v3: Align memory attributes for SMMU-originated accesses**\n\nDaniel Mentz v2는 non-coherent SMMU에서 stream/CD 테이블·큐 접근이 하드코딩 Inner Shareable Write-Back인 점을 ARM_SMMU_FEAT_COHERENCY에 맞춰 SMMU_CR1·STE cacheability를 Outer Shareable Non-Cacheable로 맞춥니다. Jason Gunthorpe는 성능 손실 방지를 위해 수정이 필요하다고 지지하고 Reviewed-by를 달았습니다.\n\n영향: FW가 non-coherent SMMU 모드인 통합에서 잘못된 cache attribute는 명세 불일치·성능 저하를 낼 수 있어 arm64 IOMMU·DMA coherent성·GPU/NIC SMMUv3 담당은 v2 머지와 플랫폼 coherent 플래그를 재확인해야 합니다. 스펙 access-type 표 커버리지·실 HW 기능적 버그 사례는 확인이 필요합니다.\n\n> I think we should fix this. At least we have HW that respects these attributes and they have a performance impact depending on how they are set.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-arm-kernel/2026-October/1187844.html)"
+    },
+    {
+      "heading": "기타",
+      "body": "**Steven Rostedt: arch trace event 배치 (RISC-V TLB 스레드)**\n\n10월 16일 답글에서 architecture specific events는 include/trace가 아니라 architecture 디렉터리에 두어야 한다고 재확인했습니다.\n\n영향: RISC-V TLB trace 패치 리뷰 시 이벤트 파일 위치 요구를 공통 체크리스트로 두는 것이 좋습니다.\n\n> Please do not put architecture specific events in include/trace. They belong in the architecture.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-October/101641.html)\n\n**iommu/arm-smmu-v3 v2: CPU·SMMU attribute 불일치 요약**\n\nnon-coherent 시스템에서 stream tables·CD tables·queues는 dma_alloc_coherent()로 잡히는데 SMMU 쪽 접근 속성이 어긋나 mismatch가 난다는 요약이 별도 스레드에 있습니다.\n\n영향: v2 패치 맥락을 읽을 때 dma_alloc_coherent CPU mapping과의 대비를 함께 보면 됩니다.\n\n> On non-coherent systems, however, memory for stream tables, CD tables, and queues is allocated via dma_alloc_coherent()... results in mismatched memory attributes between the CPU and the SMMU.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-arm-kernel/2026-October/1187845.html)"
+    }
+  ],
+  "confidence": {
+    "level": "high",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "riscv: mm: Trace TLB flush requests (v4)",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/101567.html",
+      "note": "thread"
+    },
+    {
+      "title": "Steven Rostedt on arch-specific trace events",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/101641.html",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: mm: Trace TLB flush path selection → semantic request",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/101568.html",
+      "note": "thread"
+    },
+    {
+      "title": "Steve Rostedt reply on v2 include/trace placement",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/101640.html",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: mm: Pre-allocate module page tables for execmem v2",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/101629.html",
+      "note": "thread"
+    },
+    {
+      "title": "arm64: amlogic: T7 thermal support v7",
+      "url": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-October/1187837.html",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: signal: FP state clean before restore v1",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/101643.html",
+      "note": "thread"
+    },
+    {
+      "title": "iommu/arm-smmu-v3: Jason Gunthorpe review",
+      "url": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-October/1187844.html",
+      "note": "thread"
+    },
+    {
+      "title": "iommu/arm-smmu-v3: Align memory attributes v2 summary",
+      "url": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-October/1187845.html",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-16T18:33:33.711Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

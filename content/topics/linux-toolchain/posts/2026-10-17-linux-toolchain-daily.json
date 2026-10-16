@@ -1,0 +1,138 @@
+{
+  "id": "2026-10-17-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-10-17 Rust·perf 정비 — 리눅스 툴체인",
+  "headline": "GlobalLockedBy 수법 결함 수정 제안, perf Clang 분석 주석 전환, mod_devicetable 헤더 분리, Rust 분기 힌트·serdev·LED 추상이 이어집니다.",
+  "date": "2026-10-17",
+  "summary": "kbuild·perf·Rust-for-Linux 쪽에서 빌드 의존성 축소, 정적 분석 정렬, 동시성 안전성·런타임 경합 수정이 패치 시리즈로 올라왔습니다. 대부분은 리뷰·머지 전이며 mainline 반영 시점은 확인이 필요합니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "rust: sync: GlobalLockedBy::as_ref에 T: Sync 요구",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "kernel::sync·global_lock!·GlobalLockedBy 사용 Rust 드라이버 작성자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/b3cd79f567b83712155bec1a32a0e1fe174e9b1a.1791594262.git.pgovind2@uci.edu/",
+      "if": "global_lock! 또는 GlobalLockedBy로 여러 스레드에서 &T를 공유하는 Rust 드라이버를 유지한다면,",
+      "do": "비-Sync 타입에 as_ref가 열리지 않도록 패치 반영 후 호출부를 빌드해 컴파일 오류·리팩터 필요 여부를 점검하세요.",
+      "verify": "스레드 메일과 Fixes 대상 커밋·현재 mainline global.rs 정의를 대조해 bound 추가 여부를 확인하세요."
+    },
+    {
+      "title": "tools/perf: compiler-context-analysis.h 주석 체계 도입",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "Clang 기반 perf·tools/ 빌드 담당, perf util 잠금 경로 유지보수자",
+      "verifyLink": "https://patchew.org/linux/20261016173106.679725-1-irogers@google.com/",
+      "if": "Clang으로 perf 또는 tools/를 -Wthread-safety 계열 플래그와 함께 빌드한다면,",
+      "do": "v3 시리즈의 Makefile.config·헤더 변경을 따라가며 dso/vdso·intel-tpebs·maps 잠금 경로를 재빌드해 경고·데드락 수정이 깨지지 않았는지 보세요.",
+      "verify": "Patchew 커버와 include/linux/compiler-context-analysis.h 원문을 열어 매크로·정책이 일치하는지 확인하세요."
+    },
+    {
+      "title": "devicetable-offsets: device-id 헤더 직접 include",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "kbuild·scripts/mod·모듈 alias 유지보수 담당",
+      "verifyLink": "https://lkml.iu.edu/2609.2/14110.html",
+      "if": "scripts/mod·모듈 alias 생성 경로를 수정하거나 mod_devicetable.h 의존을 줄이는 작업을 한다면,",
+      "do": "Uwe Kleine-König v2에서 devicetable-offsets.c가 DEVID()에 맞는 linux/device-id/*.h만 쓰는 diff를 기준으로 나머지 mod_devicetable.h 사용자 전환 순서를 계획하세요.",
+      "verify": "LKML 스레드와 Patchew v2 2/3 인덱스에서 동일 diff와 폐기 계획 문구를 확인하세요."
+    },
+    {
+      "title": "rust: std_vendor에 likely·unlikely·cold_path 추가",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "Rust-for-Linux·rustc 최소 버전·성능 경로 작성자",
+      "verifyLink": "https://lore.kernel.org/llvm/20261016162446.121509-1-ojeda@kernel.org/",
+      "if": "커널 Rust hot path에서 C측 likely/unlikely와 맞는 분기 힌트가 필요하다면,",
+      "do": "v3 시리즈의 std_vendor API와 #[cold] 기반 cold_path 에뮬레이션 범위를 읽고 CONFIG_RUSTC·prelude 노출과 맞춰 사용 여부를 결정하세요.",
+      "verify": "llvm 리스트 스레드와 upstream stabilization 이슈에서 core::hint::likely/unlikely 상태를 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**rust: sync: Make `GlobalLockedBy::as_ref` unavailable if T is not Sync**\n\nPriya Bala Govindasamy 패치가 GlobalLockedBy::as_ref에 T: Sync bound를 추가해, 비-Sync T에 대해 여러 스레드가 &T를 얻을 수 있는 soundness 결함을 막습니다. Fixes: 8eea62ff94f4.\n\n영향: global_lock!·GlobalLockedBy 사용자가 컴파일 타임에 잘못된 공유 접근을 막을 수 있어, Rust 커널 추상의 안전성 회귀를 줄입니다.\n\n> Fix this by adding a trait bound to `GlobalLockedBy::as_ref` requiring `T: Sync`.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/b3cd79f567b83712155bec1a32a0e1fe174e9b1a.1791594262.git.pgovind2@uci.edu/)\n\nstable/backport 대상 릴리스와 기존 in-tree 호출부 컴파일 영향은 확인이 필요합니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**devicetable-offsets: Include the needed device-id headers instead of the catch-all**\n\nUwe Kleine-König v2 시리즈가 scripts/mod/devicetable-offsets.c에서 <linux/mod_devicetable.h> 대신 DEVID()가 쓰는 linux/device-id/*.h 헤더를 직접 include하도록 바꿉니다.\n\n영향: mod_devicetable.h 폐기 계획에 맞춰 mod/오프셋 생성 단계의 헤더 의존을 줄여, kbuild·모듈 alias 도구를 유지하는 팀이 분리된 device-id 헤더 레이아웃 변화를 따라가야 합니다.\n\n> <linux/mod_devicetable.h> is planned to go away. Include just the needed bits in scripts/mod/devicetable-offsets.c which reduces dependencies\n\n[원문 확인](https://lkml.iu.edu/2609.2/14110.html)\n\n**tools/perf: Adopt kernel compiler-context-analysis.h annotations**\n\nIan Rogers v3(17패치)가 tools/perf를 커널의 compiler-context-analysis.h 주석 체계로 맞추고, tools 헤더·Makefile.config의 Clang thread-safety 플래그를 갱신하며, dso/vdso·intel-tpebs·maps 등에서 잠금 누락·데드락·OOB를 함께 수정합니다.\n\n영향: 커널이 도입한 Clang context analysis와 perf 사용자 빌드가 같은 매크로·경고 정책을 공유하게 되고, 정적 분석을 켠 Clang perf 빌드에서 실제 동시성 버그가 드러날 수 있습니다.\n\n> converts tools/perf from its custom mutex.h macros to the kernel-style compiler-context-analysis.h annotations\n\n[원문 확인](https://patchew.org/linux/20261016173106.679725-1-irogers@google.com/)\n\nperf-tools-next 리베이스 후 Reviewed-by·머지 게이트와 CI 매트릭스의 thread-safety 프로브 영향은 확인이 필요합니다.\n\n**rust: std_vendor: add `likely()`, `unlikely()` and `cold_path()`**\n\nMiguel Ojeda v3 시리즈가 rust/std_vendor에 likely/unlikely/cold_path()를 추가하고, #[cold] 기반 cold_path 에뮬레이션으로 지원 rustc 범위에서 C측 분기 힌트와 유사한 LLVM 코드 생성을 노립니다.\n\n영향: 커널 Rust가 C의 likely/unlikely 패턴을 쓸 수 있게 되어 hot path 최적화·rustc 업그레이드 정책과 맞물리며, upstream의 likely/unlikely는 여전히 unstable입니다.\n\n> `{un,}likely()` are commonly used macros on the C side -- there are more than 25k occurrences in the tree.\n\n[원문 확인](https://lore.kernel.org/llvm/20261016162446.121509-1-ojeda@kernel.org/)\n\nv3에서 core::hint::cold_path 직접 사용 대 #[cold] 단일 경로 선택과 CONFIG_RUSTC 최소 버전·prelude 노출은 확인이 필요합니다.\n\n**rust: serdev: Refactor**\n\nMarkus Probst v4가 C serdev TTY 포트에 mutex를 두고 receive_buf 일시정지 API를 추가한 뒤, Rust serdev가 active Mutex 대신 pause/resume_rx로 probe·수신 경합을 정리합니다.\n\n영향: Rust serdev 드라이버와 C tty/serdev 코어의 경합 수정이 한 시리즈에 묶여 Greybus 등 상위 Rust serdev 사용자의 probe 안정성에 직접 영향을 줍니다.\n\n> introduce mutex to C serdev tty port controller\n\n[원문 확인](https://lkml.iu.edu/hypermail/linux/kernel/2610.2/02190.html)\n\nC측 serdev pause API mainline 머지와 Rust 바인딩 동기화·예제 드라이버 업데이트 필요 여부는 확인이 필요합니다.\n\n**rust: leds: Add led classdev abstractions**\n\nMarkus Probst v27이 rust/kernel/led에 단색·멀티컬러 led classdev 등록 추상을 정리하고, v26 대비 Atomic 사용 등 리뷰 반영을 계속합니다(Synology microp 드라이버가 소비 예정).\n\n영향: Rust LED 클래스 드라이버의 공통 API가 안정화되면 drivers/leds/*.rs 신규 드라이버가 C classdev 패턴을 Rust 타입으로 올릴 수 있습니다.\n\n> Changes since v26: * use Atomic (Boqun)\n\n[원문 확인](https://lkml.iu.edu/hypermail/linux/kernel/2610.2/02208.html)\n\nv27 MAINTAINERS·멀티컬러 Kconfig 상호작용과 공개 API freeze 시점은 확인이 필요합니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "high",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "devicetable-offsets v2 LKML",
+      "url": "https://lkml.iu.edu/2609.2/14110.html",
+      "note": "thread"
+    },
+    {
+      "title": "devicetable-offsets Patchew cover",
+      "url": "https://patchew.org/linux/cover.1792144769.git.u.kleine-koenig@baylibre.com/b67483fb2e838141c98fa41f926435f346daf8e8.1792144769.git.u.kleine-koenig@baylibre.com/",
+      "note": "thread"
+    },
+    {
+      "title": "perf compiler-context-analysis v3",
+      "url": "https://patchew.org/linux/20261016173106.679725-1-irogers@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "compiler-context-analysis.h",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/plain/include/linux/compiler-context-analysis.h?id=HEAD",
+      "note": "changelog"
+    },
+    {
+      "title": "rust std_vendor likely/unlikely",
+      "url": "https://lore.kernel.org/llvm/20261016162446.121509-1-ojeda@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "Rust core::hint likely/unlikely tracking",
+      "url": "https://github.com/rust-lang/rust/issues/151619",
+      "note": "article"
+    },
+    {
+      "title": "GlobalLockedBy as_ref T: Sync",
+      "url": "https://lore.kernel.org/rust-for-linux/b3cd79f567b83712155bec1a32a0e1fe174e9b1a.1791594262.git.pgovind2@uci.edu/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: sync: add global lock support",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=8eea62ff94f4",
+      "note": "commit"
+    },
+    {
+      "title": "global.rs GlobalLockedBy::as_ref",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/plain/rust/kernel/sync/lock/global.rs?id=HEAD",
+      "note": "changelog"
+    },
+    {
+      "title": "rust serdev refactor v4",
+      "url": "https://lkml.iu.edu/hypermail/linux/kernel/2610.2/02190.html",
+      "note": "thread"
+    },
+    {
+      "title": "rust leds classdev v27",
+      "url": "https://lkml.iu.edu/hypermail/linux/kernel/2610.2/02208.html",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-16T18:23:01.326Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

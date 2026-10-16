@@ -1,0 +1,148 @@
+{
+  "id": "2026-10-17-linux-daily-briefing",
+  "topic": "linux",
+  "title": "2026-10-17 iSCSI 타깃 회귀 — 리눅스 개발",
+  "headline": "스토리지 타깃에서 중단된 쓰기가 연결을 막는 버그가 수정 제안되었고, 안정판과 차기 릴리스 일정 신호가 이어졌습니다.",
+  "date": "2026-10-17",
+  "summary": "iSCSI LIO 타깃에서 LUN 리셋 시 장시간 멈춤을 막는 패치가 공개되었습니다. 7.3 정식 릴리스는 다음 주말 전망이 유지되고 7.2.11·5.10.272 안정판이 갱신되었습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "iSCSI 타깃 중단 WRITE 정지",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "iSCSI LIO target 운영자, 엔터프라이즈 SAN/클러스터 스토리지 엔지니어, SCSI target 메인테이너",
+      "verifyLink": "https://patchew.org/linux/20261016175351.126373-1-loberman@redhat.com/",
+      "if": "LIO iSCSI 타깃·클러스터 LUN 리셋을 운영한다면",
+      "do": "패치 머지 전 해당 스레드와 백포트 계획을 추적하세요",
+      "verify": "patchew·lore 원문에서 스톨 사례와 v2 수정 내용을 확인하세요"
+    },
+    {
+      "title": "SG passthrough 무한 루프",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "블록 레이어·SCSI passthrough 개발자, 스토리지 QA",
+      "verifyLink": "https://lkml.iu.edu/hypermail/linux/kernel/2609.3/13102.html",
+      "if": "SG_IO passthrough·블록 백엔드 테스트를 다룬다면",
+      "do": "해당 수정 패치 리뷰 상태를 확인하고 테스트에 반영하세요",
+      "verify": "lkml 스레드에서 무한 루프 원인과 iov_iter 수정을 확인하세요"
+    },
+    {
+      "title": "7.2.11 stable 갱신",
+      "priority": "중",
+      "impactType": "backport",
+      "affectedAudience": "stable 커널 배포 담당자, 엔터프라이즈 LTS 운영자, io_uring·가상화 스택 유지보수자",
+      "verifyLink": "https://www.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.11",
+      "if": "7.2 stable 계열을 패키징·배포한다면",
+      "do": "ChangeLog로 io_uring·mm 등 포함 수정을 검토 후 업데이트하세요",
+      "verify": "kernel.org ChangeLog-7.2.11에서 백포트 항목을 확인하세요"
+    },
+    {
+      "title": "virtio 체크섬 검증 opt-out",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "virtio-net·TUN/TAP·AF_PACKET 사용자, 클라우드/가상화 네트워킹 엔지니어",
+      "verifyLink": "https://lore.kernel.org/lkml/20261016135328-mutt-send-email-mst@kernel.org/",
+      "if": "KVM·컨테이너 virtio ingress 경로를 운영한다면",
+      "do": "제안 sysctl과 호환 이슈를 스레드에서 추적하세요",
+      "verify": "lore 스레드에서 sysctl 동작·리뷰 논의를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**next-20261016 linux-next**\n\n2026-10-16에 linux-next 통합 트리가 next-20261016 태그로 갱신된 것으로 kernel.org에 표시됩니다.\n\n영향: linux-next 기반 bisect·자동 테스트의 일일 기준점이 바뀝니다.\n\n> linux-next: | next-20261016 | 2026-10-16\n\n[원문 확인](https://www.kernel.org/)\n\n**7.3-rc7 mainline**\n\n7.3-rc7(10-12 태그) 이후에도 Linus Torvalds는 정식 7.3을 다음 주말(약 10월 18일)로 유지한다고 밝혔습니다.\n\n영향: 마지막 RC 테스트 창 일정이 그대로이며, rc8 필요 여부는 이후 새 회귀 발견에 달려 있습니다.\n\n> So that's still set for next weekend unless something new comes up.\n\n[원문 확인](https://lkml.iu.edu/2610.1/07182.html)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**scsi: target: iscsi: fix stalled aborted WRITE commands**\n\niSCSI target에서 중단된 WRITE가 완료되지 않아 core_tmr_lun_reset()이 연결 유지 동안 블록되는 경로를 v2 패치가 닫습니다.\n\n영향: LIO/iSCSI target·멀티세션 클러스터에서 LUN_RESET 시 hung task와 장시간 I/O 정지가 발생할 수 있습니다.\n\n> core_tmr_lun_reset() then blocks for as long as the connection stays up.\n\n[원문 확인](https://patchew.org/linux/20261016175351.126373-1-loberman@redhat.com/)\n\n**block: advance iterator after copy-in for SG_DXFER_TO_FROM_DEV**\n\nSG_DXFER_TO_FROM_DEV passthrough에서 copy-in 후 iov_iter를 진행하지 않아 blk_rq_map_user_iov()가 무한 루프에 빠지는 문제를 수정합니다.\n\n영향: SG_IO passthrough·블록 백엔드 테스트가 map_data 페이지를 고갈시키며 -EINVAL로 실패할 수 있습니다.\n\n> blk_rq_map_user_iov() loops indefinitely, continually allocating bios and consuming map_data pages until it exhausts pages and fails with -EINVAL.\n\n[원문 확인](https://lkml.iu.edu/hypermail/linux/kernel/2609.3/13102.html)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**7.2.11 stable**\n\nGreg Kroah-Hartman이 2026-10-15 Linux 7.2.11 stable을 태그했고 ChangeLog에는 7.2.10 대비 284건의 업스트림 백포트가 포함됩니다.\n\n영향: io_uring RLIMIT_MEMLOCK 회귀 수정, mm/mremap locked_vm 누수 등이 stable 최신선에 반영됩니다.\n\n> io_uring: do not charge the SQ/CQ rings to RLIMIT_MEMLOCK\n\n[원문 확인](https://www.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.11)\n\n**5.10.272 longterm**\n\n2026-10-15 Linux 5.10.272 longterm stable이 태그되었고 세 건의 네트워크 백포트가 포함됩니다.\n\n영향: ipv4 inet_opt UAF 방지, checksum_start 검증, nfnetlink_queue SCTP GSO 체크섬 처리가 5.10 LTS 계열에 들어갑니다.\n\n> leading to a use-after-free in ip_options_build().\n\n[원문 확인](https://www.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.272)\n\n**net: add a sysctl to opt out of virtio net hdr checksum validation**\n\nnet-next v2에서 per-netns sysctl net.core.virtio_net_hdr_csum_check(기본 1)가 제안되어 VIRTIO_NET_HDR_F_NEEDS_CSUM 검증을 켜고, 0이면 이전 신뢰 기반 동작으로 돌아갑니다.\n\n영향: ingress 검증 강화로 KVM/컨테이너·NFV 스택에서 호환성 리스크가 있어 sysctl이 롤백 레버를 제공합니다.\n\n> Make more generic, virtio_net_hdr_validate?\n\n[원문 확인](https://lore.kernel.org/lkml/20261016135328-mutt-send-email-mst@kernel.org/)\n\n**nvme: honor the volatile write cache enable state**\n\nNVMe 드라이버가 VWC_PRESENT만 보고 write-back를 선택하는 문제를 고쳐 NVME_FEAT_VWC_ENABLE을 반영합니다.\n\n영향: volatile write cache가 꺼진 디스크에서 잘못된 write-back는 fsync·flush 폭증과 IOPS 급락을 유발할 수 있습니다.\n\n> the kernel treats it as enabled and switches to \"write back\" mode, causing tons of sync and bad performance.\n\n[원문 확인](https://lore.kernel.org/lkml/CAL2Jzux8v6zCxfcdd=MY5n0zQMVSa-_8Lki9z-fz7bFShNf7vw@mail.gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 제외된 항목은 MACB MDIO 타임스탬프(net-next) 리뷰 논의와 hugetlb cgroup selftest SKIP 조정 등 특정 하드웨어·테스트에 국한된 변경입니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "kernel.org mainline / linux-next",
+      "url": "https://www.kernel.org/",
+      "note": "changelog"
+    },
+    {
+      "title": "Torvalds 7.3-rc7 release timing",
+      "url": "https://lkml.iu.edu/2610.1/07182.html",
+      "note": "thread"
+    },
+    {
+      "title": "Phoronix Linux 7.3-rc7",
+      "url": "https://www.phoronix.com/news/Linux-7.3-rc7-Released",
+      "note": "article"
+    },
+    {
+      "title": "ChangeLog-7.2.11",
+      "url": "https://www.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.11",
+      "note": "changelog"
+    },
+    {
+      "title": "linux-next tag next-20261016",
+      "url": "https://gitlab.com/linux-kernel/linux-next/-/tags/next-20261016",
+      "note": "changelog"
+    },
+    {
+      "title": "iSCSI target WRITE stall fix (patchew)",
+      "url": "https://patchew.org/linux/20261016175351.126373-1-loberman@redhat.com/",
+      "note": "thread"
+    },
+    {
+      "title": "iSCSI target WRITE stall (lore)",
+      "url": "https://lore.kernel.org/lkml/20261016175351.126373-1-loberman@redhat.com/",
+      "note": "thread"
+    },
+    {
+      "title": "virtio_net_hdr_csum_check sysctl",
+      "url": "https://lore.kernel.org/lkml/20261016135328-mutt-send-email-mst@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-5.10.272",
+      "url": "https://www.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.272",
+      "note": "changelog"
+    },
+    {
+      "title": "block SG_DXFER iterator fix",
+      "url": "https://lkml.iu.edu/hypermail/linux/kernel/2609.3/13102.html",
+      "note": "thread"
+    },
+    {
+      "title": "block fix maintainer ping",
+      "url": "https://lore.kernel.org/lkml/CAL54Jgdt2QFZ1_p9nOXHviQsSHnXpOt=x55_Jm3srN5fqVsMoA@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "nvme volatile write cache",
+      "url": "https://lore.kernel.org/lkml/CAL2Jzux8v6zCxfcdd=MY5n0zQMVSa-_8Lki9z-fz7bFShNf7vw@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "nvme VWC review reply",
+      "url": "https://lore.kernel.org/lkml/atJk_2FmzjUZYO_Z@kbusch-mbp/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-16T18:02:30.271Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-newsletter-from-dossier-ko.md"
+  }
+}

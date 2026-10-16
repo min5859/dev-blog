@@ -1,0 +1,124 @@
+{
+  "id": "2026-10-17-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-10-17 VFIO 리셋 통합 — 커널 보안",
+  "headline": "VFIO 리셋 경로 통합과 USB input strscpy 하드닝이 제안되고, LTS·stable에는 네트워크 보안 백포트가 이어집니다.",
+  "date": "2026-10-17",
+  "summary": "linux-hardening에 vfio-pci 리셋 통합과 USB input 드라이버 strscpy 전환 시리즈가 올라왔습니다. 5.10·5.15·6.1 longterm과 7.2.11 stable ChangeLog에는 운영에 직결되는 네트워크·하드닝 백포트가 포함됩니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "보안"
+  ],
+  "highlights": [
+    {
+      "title": "vfio/pci: 모든 리셋 경로를 try-reset으로 통일",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "VFIO·vfio-cxl·PCI passthrough 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20261016161839.2765592-16-mhonap@nvidia.com/",
+      "if": "VFIO로 CXL·PCIe 장치를 게스트에 패스스루하고 FLR·CXL DVSEC 리셋을 다루는 경우",
+      "do": "vfio_pci_try_reset_function() 통합과 provider reset op 필수화, CXL Type-2의 provider 리셋·Status2 반영 동작을 패치 시리즈와 함께 추적하세요",
+      "verify": "linux-hardening v6 15/31 스레드에서 리셋 경로·도어벨 처리 원문을 확인하세요"
+    },
+    {
+      "title": "Input: USB input 드라이버 strlcat→strscpy",
+      "priority": "중",
+      "impactType": "project",
+      "affectedAudience": "input·USB 드라이버 및 KSPP 하드닝 추적 담당",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20261016170411.51025-1-shlomojune6@gmail.com/",
+      "if": "USB input 드라이버에서 usb_make_path() 뒤 경로 접미를 붙이는 코드를 유지보수하는 경우",
+      "do": "strlcat() 대신 strnlen()+strscpy() 패턴으로 맞추는 5패치 시리즈 리뷰·머지 여부를 추적하세요",
+      "verify": "커버레터와 18파일 변경 diff를 스레드에서 확인하세요"
+    },
+    {
+      "title": "modpost: section mismatch 캐시",
+      "priority": "하",
+      "impactType": "performance",
+      "affectedAudience": "커널 빌드·모듈 링크·하드닝 CI 담당",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/atJSEhfOu-LWWHr_@gremlin/",
+      "if": "linux-hardening modpost 개편 시리즈와 allmodconfig 증분 빌드 시간을 관심 두는 경우",
+      "do": "v4 13/22 캐시 패치의 리뷰 코멘트 반영과 시리즈 머지 순서를 확인하세요",
+      "verify": "벤치 수치와 Petr Pavlu 리뷰 스레드를 원문에서 확인하세요"
+    },
+    {
+      "title": "LTS: TCP·IPv4·NFQUEUE SCTP 백포트",
+      "priority": "중",
+      "impactType": "backport",
+      "affectedAudience": "5.10·5.15·6.1 LTS 커널·네트워크 스택 유지보수 담당",
+      "verifyLink": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.272",
+      "if": "5.10·5.15·6.1 longterm 커널을 배포·유지보수하는 경우",
+      "do": "각 ChangeLog에서 inet_opt RCU 해제, checksum_start 검증, nfnetlink_queue SCTP 수정 3건 포함 여부를 확인한 뒤 마이너 업그레이드·회귀 검증을 계획하세요",
+      "verify": "ChangeLog-5.10.272, ChangeLog-5.15.223, ChangeLog-6.1.190 원문을 대조하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.2.11 stable**\n\n2026-10-15 공개된 7.2.11 stable ChangeLog에는 284건의 업스트림 백포트가 담겨 있습니다.\n\n영향: OVS IPv6 액션 검증, BPF flow dissector 길이 처리, riscv ptrace 버퍼 초기화, mm/io_uring 수정 등이 섞여 있어 7.2.x 운영 커널은 마이너 업그레이드와 회귀 검증이 필요합니다. 배포 정책별 우선 적용 CVE·안정성 커밋은 ChangeLog 전체 검토가 확인 필요합니다.\n\n> Linux 7.2.11\n\n> net: openvswitch: validate transport header presence in set_ipv6_addr\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.11)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**vfio/pci: Route every reset point through a try-reset helper**\n\nvfio-pci-core의 enable/close/리셋 ioctl·가상 FLR·CXL DVSEC 리셋 도어벨을 vfio_pci_try_reset_function()으로 통일하고 provider reset op를 필수화합니다. CXL Type-2는 FLR 대신 provider 리셋을 쓰며 도어벨 Status2에 성공·실패를 반영합니다.\n\n영향: VFIO로 CXL·PCIe 장치를 게스트에 노출할 때 잘못된 FLR는 fault 매핑과 격리를 깨뜨릴 수 있어 리셋 경로 변경과 provider API 요구사항을 추적해야 합니다. linux-hardening 시리즈 v6 전체 머지·stable 백포트 일정과 기존 provider reset op 호환 영향은 확인 필요합니다.\n\n> A CXL Type-2 function must not take an FLR, and its reset changes what the provider lets the fault path map.\n\n> status2 |= ret ? PCI_DVSEC_CXL_RST_ERR : PCI_DVSEC_CXL_RST_DONE;\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20261016161839.2765592-16-mhonap@nvidia.com/)\n\n**Input: replace strlcat() with strscpy() in USB input drivers**\n\nUSB input 드라이버 18개 파일에서 usb_make_path() 뒤 \"/input0\" 접미를 strlcat() 대신 strnlen()+strscpy()로 구성하는 5패치 시리즈가 linux-hardening에 게시되었습니다.\n\n영향: KSPP가 strlcat() 제거를 준비하는 맥락에서 input 서브디렉터리 전반의 하드닝 정리로, 버퍼 경계 실수를 줄이는 방향과 일치합니다. mainline input 트리 머지 여부와 strlcat() 제거 일정은 확인 필요합니다.\n\n> In preparation for removing the deprecated strlcat() API [1], replace it with strnlen() followed by strscpy()\n\n> 18 files changed, 59 insertions(+), 20 deletions(-)\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20261016170411.51025-1-shlomojune6@gmail.com/)\n\n**Linux 5.10.272 / 5.15.223 / 6.1.190 longterm**\n\n각 longterm 릴리스에 TCP 요청 소켓 inet_opt RCU 안전 해제, IPv4 checksum_start 방어 검증, nfnetlink_queue SCTP GSO 체크섬 등 동일 3건이 백포트되었습니다.\n\n영향: SYN 재전송 경로 use-after-free, 잘못된 체크섬 메타데이터로 인한 스택 손상, NFQUEUE SCTP 장애를 막는 최소 수정 묶음으로 LTS·엔터프라이즈·배포판 커널 담당자는 이번 마이너 적용을 검토해야 합니다.\n\n> leading to a use-after-free in ip_options_build()\n\n> as a defence in depth measure, let's also check before we complete the checksum\n\n> Another cpu can concurrently process a retransmitted SYN for the same request socket\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.272) · [5.15.223](https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.223) · [6.1.190](https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.1.190)\n\n**modpost: cache section relocation mismatch state**\n\nmodpost가 relocation마다 section_mismatch()를 반복 호출하는 대신 섹션별 mismatch 결과를 캐시하는 v4 13/22 패치에 대해 Petr Pavlu가 리뷰했고 Lorenzo Stoakes가 응답했습니다.\n\n영향: linux-hardening modpost 개편 일부로 allmodconfig 증분 빌드에서 modpost 병목을 줄여 하드닝 빌드 회귀 테스트 비용을 낮춥니다. v4 22패치 시리즈 mainline 머지 순서와 section mismatch 정책 변경 여부, mismatch_cache 추가 리뷰 반영 상태는 확인 필요합니다.\n\n> x86 allmodconfig, touch mm/vma.c, gcc    33.9s    29.4s     -4.5s (-13%)\n\n> This looks mostly ok to me. Below are some nits you might want to consider addressing.\n\n[원문 확인](https://lore.kernel.org/linux-hardening/atJSEhfOu-LWWHr_@gremlin/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ChangeLog-7.2.11",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.11",
+      "note": "changelog"
+    },
+    {
+      "title": "kernel.org releases.json",
+      "url": "https://www.kernel.org/releases.json",
+      "note": "changelog"
+    },
+    {
+      "title": "vfio/pci try-reset helper (linux-hardening)",
+      "url": "https://lore.kernel.org/linux-hardening/20261016161839.2765592-16-mhonap@nvidia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "USB input strscpy series (linux-hardening)",
+      "url": "https://lore.kernel.org/linux-hardening/20261016170411.51025-1-shlomojune6@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-5.10.272",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.272",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-5.15.223",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.223",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-6.1.190",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.1.190",
+      "note": "changelog"
+    },
+    {
+      "title": "modpost mismatch cache review (linux-hardening)",
+      "url": "https://lore.kernel.org/linux-hardening/atJSEhfOu-LWWHr_@gremlin/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-16T18:18:33.327Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

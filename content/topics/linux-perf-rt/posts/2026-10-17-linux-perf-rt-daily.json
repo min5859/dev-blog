@@ -1,0 +1,156 @@
+{
+  "id": "2026-10-17-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-10-17 TEQL·백로그RT — Linux Perf·RT",
+  "headline": "PREEMPT_RT에서 sch_teql 데드락·UAF 수정이 올라왔고, backlog-NAPI 스레드는 v6.6-rt 우선 백포트로 정리됩니다.",
+  "date": "2026-10-17",
+  "summary": "Jamal Hadi Salim의 sch_teql 2패치는 netconsole·VLAN qdisc drop 경로의 RT 데드락과 skb UAF를 고칩니다. Wen Yang 시리즈는 RPS IPI softirq WARN을 막는 backlog NAPI 스레드를 v6.6-rt에 먼저 넣기로 합의된 상태입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "PREEMPT_RT",
+    "네트워킹",
+    "BPF"
+  ],
+  "highlights": [
+    {
+      "title": "sch_teql 전송 경로 회귀·보안",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "TEQL·traffic shaping 사용자, PREEMPT_RT 네트워킹 운영자, net/sched 메인테이너",
+      "verifyLink": "https://lists.openwall.net/netdev/2026/10/16/205",
+      "if": "PREEMPT_RT에서 TEQL과 netconsole 또는 VLAN 하위 qdisc drop을 함께 쓰면 데드락·UAF가 재현될 수 있으면",
+      "do": "10월 16일 net 2패치 시리즈와 syzbot CI 결과를 확인하고 stable 백포트 대상 릴리스는 maintainer 처리를 기다리세요",
+      "verify": "netdev 스레드와 syzbot 시리즈 페이지에서 patch 1(raw_spinlock_irqsave)·patch 2(dev_xmit_complete) 원문을 읽어 보세요"
+    },
+    {
+      "title": "backlog-NAPI 스레드 v6.6-rt 우선 백포트",
+      "priority": "상",
+      "impactType": "backport",
+      "affectedAudience": "PREEMPT_RT 배포·백포트 담당자, net/core·RPS 스택 유지보수자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/2c3a8c0f-3820-4531-b179-b2656a7d3c7e@linux.dev/",
+      "if": "PREEMPT_RT에서 RPS·멀티큐 환경에 SMP flush 중 NET_RX_SOFTIRQ WARN이 보이면",
+      "do": "v6.6-rt 백포트를 v6.1-rt보다 먼저 적용하는 방향과 선행 커밋 8fcb76b934da·56364c910691 포함 여부를 점검하세요",
+      "verify": "linux-rt-devel 스레드와 Wen Yang cover letter에서 defer_list·RPS 의존성 답변을 확인하세요"
+    },
+    {
+      "title": "TCP ECN·AccECN sockops kfunc 설계 피드백",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "TCP·BPF sockops/bpf_tcp_ops 개발자, ECN/AccECN 실험·배포 엔지니어",
+      "verifyLink": "https://lore.kernel.org/bpf/DM6GLQVDXGWL.1ZV7PCL5B2B0K@gmail.com/",
+      "if": "per-socket ECN·AccECN을 BPF sockops kfunc로 덮어쓰는 net-next v7을 추적 중이면",
+      "do": "신규 TCP 훅은 bpf_tcp_ops·bpf-next 재제출, ECN mode는 handshake 시점 prog 조회 모델로 바뀔 수 있음을 가정하고 v8 범위를 확인하세요",
+      "verify": "Samsung v7 패치와 bpf 리스트 리뷰 인용문을 대조해 API 방향을 검토하세요"
+    },
+    {
+      "title": "x86-64 arena fetching atomic JIT",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "BPF JIT/verifier 개발자, sched_ext·arena 기반 BPF 프로그램 작성자",
+      "verifyLink": "https://lore.kernel.org/bpf/6780de9ee6208d26065d42ec10c23efa@kernel.org/",
+      "if": "arena에서 fetching AND/OR/XOR atomic 로드가 거부되거나 sched_ext가 hand-rolled cmpxchg를 쓰고 있으면",
+      "do": "bpf-next v4(10월 14–16일)의 JIT·verifier rescan과 selftests·cid.bpf.h 변경을 따라가며 syzbot KASAN verdict는 확인이 필요합니다",
+      "verify": "Puranjay v4 JIT 스레드와 기존 거부 메시지 패치에서 exception table entry 계약을 읽어 보세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**net/sched: sch_teql: fix transmit-path regressions**\n\nJamal Hadi Salim이 10월 16일 net 2패치 시리즈를 올렸다. patch 1은 PREEMPT_RT에서 netconsole 경로가 teql slaves_lock을 hardirq off 상태에서 spinlock_t로 잡아 deadlock나는 문제를 raw_spinlock_irqsave로 고치고, patch 2는 VLAN 하위 qdisc가 NET_XMIT_DROP로 skb를 소비한 뒤 teql이 skb를 재사용해 UAF가 나는 경로를 dev_xmit_complete()로 수정한다.\n\n영향: TEQL은 다중 슬레이브 로드밸런싱에 쓰이며, PREEMPT_RT+netconsole과 VLAN+qdisc drop 조합은 관리자 권한으로 재현 가능한 deadlock·UAF로 stable 백포트 후보다.\n\n> Patch 1 is a followup that addresses an issue discovered by sashiko ... it looks serious enough to push upstream.\n\n[원문 확인](https://lists.openwall.net/netdev/2026/10/16/205)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Add Xilinx TSN Endpoint Ethernet MAC driver**\n\nAMD/Xilinx TSN Endpoint Ethernet MAC용 net-next v3 8패치 시리즈가 wrapper·endpoint MAC 드라이버, DT binding, MCDMA 멀티큐 TX/RX 경로를 추가한다. v3에서는 probe 시점에 TX/RX dmaengine 채널을 모두 잡아 hold하고, DSA switch·PTP·bridge offload는 후속 시리즈로 분리했다.\n\n영향: 802.1 TSN(PTP·Qbv·Qbu 등) 산업용 이더넷을 Linux에서 쓰려는 팀은 endpoint conduit와 이후 DSA switch 시리즈의 선행 조건이며, MCDMA metadata 의존성 없이는 RX가 동작하지 않는다.\n\n> this series sends only the wrapper and endpoint side (patches 1-8). The DSA switch driver, tag protocol, MDIO, phylink, PTP and bridge offloads will follow\n\n[원문 확인](https://patchew.org/linux/20261016-patches._5Fv2._5Fexternal-v3-0-e33d3960ca1e@amd.com/)\n\n**net: Backport backlog-NAPI threads to resolve PREEMPT_RT softirq warning in SMP flush**\n\nPREEMPT_RT에서 RPS IPI가 backlog NAPI 처리 중 NET_RX_SOFTIRQ를 올려 do_softirq_post_smp_call_flush() WARN을 유발하는 문제에 대해, RT 메인테이너들이 v6.6-rt 백포트를 v6.1-rt보다 먼저 하기로 합의했고 Wen Yang이 RPS 선행 커밋·defer_list 의존성을 점검한 뒤 v6.6-RT용 시리즈를 준비한다고 답했다.\n\n영향: PREEMPT_RT + RPS/멀티큐 네트워킹 환경에서는 backlog NAPI 스레드가 필수이며, 백포트 순서와 선행 패치 누락이 업그레이드 시 경고·동작 회귀를 다시 살릴 수 있다.\n\n> Agreed, v6.6-rt should be fixed first to avoid reintroducing the issue when users upgrade from v6.1-rt.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/2c3a8c0f-3820-4531-b179-b2656a7d3c7e@linux.dev/)\n\n**tcp: add BPF kfuncs to set per-socket ECN mode and AccECN option**\n\nSamsung 제출 net-next v7은 sockops용 bpf_sock_ops_set_ecn_mode·bpf_sock_ops_set_accecn_option kfunc로 소켓별 ECN·AccECN sysctl을 덮어쓰도록 하며, 10월 16일 bpf 리스트 리뷰에서는 신규 TCP 훅은 bpf_tcp_ops struct_ops로 가야 하고 ECN mode는 handshake 시점에 prog에 물어보는 timeout_init/rwnd_init 패턴이 낫다는 설계 피드백이 올라왔다.\n\n영향: AccECN·per-socket ECN은 데이터센터 TCP/BPF 운영자에게 중요하고, bpf_tcp_ops 전환과 handshake 시점 조회 모델은 kfunc API·tcp_sock 필드 설계를 크게 바꿀 수 있다.\n\n> sockops is legacy. New tcp hooks go into bpf_tcp_ops. ... pls respin on top of bpf-next\n\n[원문 확인](https://lore.kernel.org/bpf/DM6GLQVDXGWL.1ZV7PCL5B2B0K@gmail.com/)\n\n**bpf, x86: Support fetching AND/OR/XOR atomics in arena**\n\nbpf-next v4(10월 14–16일)는 x86-64 arena에서 fetching AND/OR/XOR atomic JIT 거부를 제거하고, CMPXCHG 루프에 예외 테이블 엔트리를 두 개 쓰도록 JIT·verifier rescan을 맞춘다. selftests 확장과 sched_ext cid.bpf.h의 hand-rolled cmpxchg 루프 제거가 함께 온다.\n\n영향: arena atomic이 막혀 있던 x86-64에서 sched_ext 등 BPF 프로그램이 native fetching RMW를 쓸 수 있게 되며, JIT·verifier 예외 테이블 계약 변경은 다른 arch 패턴(s390)과도 맞물린다.\n\n> give each of the two accesses its own exception table entry. The verifier still reserves one per instruction, so the JIT accounts for the extra entry itself by rescanning\n\n[원문 확인](https://lore.kernel.org/bpf/6780de9ee6208d26065d42ec10c23efa@kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Xilinx TSN Endpoint MAC v3 cover",
+      "url": "https://patchew.org/linux/20261016-patches._5Fv2._5Fexternal-v3-0-e33d3960ca1e@amd.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Xilinx TSN v3-5 probe DMA channels",
+      "url": "https://patchew.org/linux/20261016-patches._5Fv2._5Fexternal-v3-0-e33d3960ca1e@amd.com/20261016-patches._5Fv2._5Fexternal-v3-5-e33d3960ca1e@amd.com/",
+      "note": "thread"
+    },
+    {
+      "title": "backlog NAPI threads for PREEMPT_RT",
+      "url": "https://www.spinics.net/lists/kernel/msg6009471.html",
+      "note": "thread"
+    },
+    {
+      "title": "Wen Yang backlog-NAPI cover prerequisites",
+      "url": "https://patchew.org/linux/cover.1768751557.git.wen.yang@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "v6.6-rt first backport agreement",
+      "url": "https://lore.kernel.org/linux-rt-devel/2c3a8c0f-3820-4531-b179-b2656a7d3c7e@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "Samsung TCP ECN/AccECN sockops kfuncs v7",
+      "url": "https://patchew.org/linux/20261016101007.2044546-1-irlanki.s@samsung.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf review: bpf_tcp_ops and handshake ECN model",
+      "url": "https://lore.kernel.org/bpf/DM6GLQVDXGWL.1ZV7PCL5B2B0K@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf_tcp_ops struct_ops netdev discussion",
+      "url": "https://lists.openwall.net/netdev/2026/09/17/713",
+      "note": "thread"
+    },
+    {
+      "title": "syzbot series: x86 arena fetching atomics",
+      "url": "https://ci.syzbot.org/series/a2067a46-b2d4-4fcd-bf0e-83d750baf6ac",
+      "note": "thread"
+    },
+    {
+      "title": "arena atomic rejection context",
+      "url": "https://patchew.org/linux/20260925134828.2012199-1-puranjay@kernel.org/20260925134828.2012199-2-puranjay@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "x86 arena JIT exception table v4",
+      "url": "https://lore.kernel.org/bpf/6780de9ee6208d26065d42ec10c23efa@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "sch_teql upstream push (Jamal)",
+      "url": "https://lists.openwall.net/netdev/2026/10/16/205",
+      "note": "thread"
+    },
+    {
+      "title": "sch_teql patches syzbot all_patches",
+      "url": "https://ci.syzbot.org/series/e71b5f67-f43c-4e07-bfb5-bc55e733bbdc/all_patches",
+      "note": "thread"
+    },
+    {
+      "title": "sch_teql syzbot CI series",
+      "url": "https://ci.syzbot.org/series/e71b5f67-f43c-4e07-bfb5-bc55e733bbdc",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-16T18:31:07.768Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

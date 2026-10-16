@@ -1,0 +1,133 @@
+{
+  "id": "2026-10-17-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-10-17 GKI·회귀·Wi-Fi — Android 커널",
+  "headline": "Rust ashmem LRU 회계 회귀 수정, GKI Qualcomm 드라이버 기본 비활성화 정리, cfg80211 cookie API 변경은 Pixel WLAN 준비 전 revert로 보류됩니다.",
+  "date": "2026-10-17",
+  "summary": "android-mainline은 블록 서브시스템 for-7.3 병합을 따라가며, GKI defconfig는 upstream Kconfig·blk-crypto 기본값과 맞추는 정리가 이어집니다. ashmem purge 경로 LRU_COUNT 버그 수정과 !CONFIG_MEMCG vmscan 빌드 수정이 빌드·메모리 안정성 신호입니다.",
+  "tags": [
+    "안드로이드",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "Rust ashmem purge 시 LRU_COUNT 미감소 회귀",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Android 메모리, ashmem/Rust ashmem 이식 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/f4e228698334242913d69797aa0a4f41432d27e4",
+      "if": "Rust ashmem LRU purge·메모리 압력 통계를 추적한다면",
+      "do": "free_lru() 경로에서 pop_back 이후 LRU_COUNT 갱신이 맞는지 해당 커밋 기준으로 벤치·회귀를 돌려보세요",
+      "verify": "원문 커밋에서 remove_lru()와 LRU_COUNT 동작 설명을 확인하세요"
+    },
+    {
+      "title": "cfg80211 cookie 출력→입력 변경 ACK revert",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "Wi-Fi/cfg80211, Pixel·vendor WLAN 드라이버 포팅",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/6046dc37e5c3baa94a399bfd44e27cb545efdfac",
+      "if": "remain-on-channel·mgmt_tx cookie 모델에 맞춰 OOT WLAN을 빌드한다면",
+      "do": "ACK는 upstream cookie 변경을 잠시 되돌렸으므로 드라이버가 자체 cookie를 쓰는 전제로 빌드·동작을 재검증하세요",
+      "verify": "revert 메시지에서 Pixel 드라이버 준비 시점은 커밋만으로는 알 수 없으니 이슈·벤더 노트를 따로 확인하세요"
+    },
+    {
+      "title": "!CONFIG_MEMCG 빌드 vmscan 컴파일 수정(android16-6.12)",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "android16-6.12 ACK 백포트, 메모리/빌드 variant 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/56e06df0a40e2b5f08e5af33bd5395f5d0922c83",
+      "if": "MEMCG 없는 ACK·테스트 variant를 빌드한다면",
+      "do": "shrink_slab 경로가 스텁으로 감싸졌는지 해당 브랜치에서 !CONFIG_MEMCG 설정으로 빌드를 확인하세요",
+      "verify": "커밋 인용문으로 root_mem_cgroup 부재 시 스텁이 필요함을 원문에서 확인하세요"
+    },
+    {
+      "title": "android-mainline 블록 for-7.3 병합",
+      "priority": "중",
+      "impactType": "release",
+      "affectedAudience": "ACK android-mainline 추적, 스토리지·NVMe·MD 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/1c17d3228249d9a6e77b0aa9363de63bb749608c",
+      "if": "android-mainline 베이스에서 NVMe·MD·io_uring 관련 스택을 추적한다면",
+      "do": "병합분이 GKI 빌드·회귀에 어떤 조합으로 검증됐는지는 공개 자료에서 확인하지 못했으니, 스토리지 관련 자체 테스트 계획을 두세요",
+      "verify": "병합 커밋 제목·인용은 원문 링크에서 직접 대조하세요(인용 자동 검증은 실패한 상태입니다)"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Merge 55ab7e14222e (\"Merge tag 'for-7.3/block-20260819'...\") into android-mainline**\n\nandroid-mainline에 Jens Axboe의 for-7.3/block-20260819 블록 서브시스템 업데이트(NVMe, MD, s390/dasd, io_uring zone, integrity 등)를 병합했습니다.\n\n영향: ACK가 v7.3-rc 방향 블록 스택을 따라가며 NVMe-TCP read path 메모리 노출 수정, MD reshape, RWF_DONTCACHE 등이 Android GKI 베이스에 들어옵니다.\n\n> Merge 55ab7e14222e (\"Merge tag 'for-7.3/block-20260819' of git://git.kernel.org/pub/scm/linux/kernel/git/axboe/linux\") into android-mainline\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/1c17d3228249d9a6e77b0aa9363de63bb749608c)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ANDROID: ashmem: decrement LRU_COUNT when purging ranges**\n\nRust ashmem free_lru()가 purge 시 remove_lru() 대신 LRU_COUNT를 직접 감소해, pop_back 후에는 lru_list에 없는 range에 대한 LRU accounting 오류를 고칩니다.\n\n영향: LRU_COUNT가 어긋나면 ashmem 메모리 회수·압력 통계가 틀어져 Android 앱 공유 메모리 동작에 영향을 줄 수 있습니다.\n\n> remove_lru() only decrements LRU_COUNT if the range is still in lru_list, which is false after pop_back(), causing LRU_COUNT to never be decremented when ranges are purged.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/f4e228698334242913d69797aa0a4f41432d27e4)\n\n보안(CVE 등) 신호는 이번 수집 entries에 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Revert \"wifi: cfg80211: convert cookie output to input parameter\"**\n\ncfg80211에서 remain-on-channel·mgmt_tx의 cookie를 출력에서 입력 포인터로 바꾼 upstream 변경을 ACK에서 revert했습니다.\n\n영향: 일부 Pixel Wi-Fi 드라이버가 새 cookie 모델에 맞지 않아, OOT 드라이버가 자체 cookie를 쓸 때까지 upstream API 변경을 보류합니다.\n\n> Some of the Pixel drivers are not ready to convert to the pre-assigned cookie model. Let's temporarily revert this upstream patch and let the drivers override the pre-assigned cookie with their own.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/6046dc37e5c3baa94a399bfd44e27cb545efdfac)\n\n**ANDROID: mm: vmscan: Fix !CONFIG_MEMCG builds**\n\nCONFIG_MEMCG가 꺼진 빌드에서 root_mem_cgroup에 의존하는 shrink_slab 호출을 shrink_root_memcg_slab() 스텁으로 감싸 컴파일 오류를 제거했습니다.\n\n영향: MEMCG 없는 구성(일부 ACK/테스트 빌드)에서 vmscan이 깨지지 않아 android16-6.12 라인 빌드 안정성이 올라갑니다.\n\n> Builds with CONFIG_MEMCG disabled do not have root_mem_cgroup defined, so define a stub function to invoke for those builds.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/56e06df0a40e2b5f08e5af33bd5395f5d0922c83)\n\n**ANDROID: gki_defconfig: disable \"important\" qcom drivers**\n\nGKI arm64 defconfig에서 QCOM_AOSS_QMP, QCOM_SMEM, QCOM_RPMH 등 ARCH_QCOM용 important qcom 드라이버 다수를 기본 비활성(# CONFIG_...)으로 돌렸습니다.\n\n영향: GKI 이미지에 불필요한 Qualcomm 전용 코드를 빼고, 벤더는 필요 시 loadable module로 켜는 정책과 맞춥니다.\n\n> enabled several qcom drivers by default for ARCH_QCOM. These aren't needed for GKI so let's turn them off. Users can still enable these as loadable modules as needed.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/40a38b59c5bc75e6567c14beaa0c140c643e94e3)\n\n**ANDROID: gki_defconfig: disable QCOM_SCM**\n\nGKI defconfig에 # CONFIG_QCOM_SCM is not set를 명시해, upstream에서 user-visible Kconfig로 돌아온 QCOM_SCM을 GKI 기본 빌드에서 끕니다.\n\n영향: SCM 호출은 SoC별 벤더 모듈 영역에 가깝고, GKI 공통 이미지에 내장하면 ABI·이미지 크기 부담이 커집니다.\n\n> turned QCOM_SCM back into a user-visible config. However, we can now disable it from GKI and let users add it as a loadable module.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/677e84a1294c78cd229ab53577d2931231d01a17)\n\n**ANDROID: gki_defconfig: drop implicit QCOM_GENI_SE**\n\nGKI defconfig에서 CONFIG_QCOM_GENI_SE=y를 제거해, upstream important-driver 기본 선택과 중복되는 implicit enable을 없앴습니다.\n\n영향: GENI 시리얼 엔진은 SoC 벤더 영역이며 GKI에 기본 포함할 필요가 없어, 다른 qcom important-driver 정리와 같은 방향입니다.\n\n> Remove this from the gki_defconfig since this option is now implicitly selected.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/2be74515e3a000169993cffb1043638ac447d9a3)\n\n**ANDROID: defconfig: default blk-crypto**\n\n업스트림 fscrypt가 blk-crypto를 기본 사용하도록 바뀐 뒤, GKI·microdroid 등 defconfig에서 중복된 CONFIG_BLK_INLINE_ENCRYPTION·CONFIG_FS_ENCRYPTION_INLINE_CRYPT 항목을 제거했습니다.\n\n영향: ACK defconfig를 upstream 기본값과 맞춰 merge 충돌과 이중 설정을 줄이며, 블록 기반 파일시스템 암호화 경로는 계속 blk-crypto를 따릅니다.\n\n> Upstream commit 5acc6f649a68 selects BLK_INLINE_ENCRYPTION and BLK_INLINE_ENCRYPTION_FALLBACK for block-based builds via FS_ENCRYPTION. Remove the now redundant configs from all the GKI defconfig file\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/93a7d2de520294b64ad997bf249a322739cd415c)\n\n**ANDROID: gki_defconfig: adjust MEM_ALLOC_PROFILING**\n\narm64·x86 GKI defconfig에서 CONFIG_DEBUG_MEMORY_INIT를 CONFIG_MEM_ALLOC_PROFILING 바로 아래로 재배치해 upstream이 mm/로 옮긴 Kconfig 순서에 맞췄습니다.\n\n영향: Kconfig 의존 순서가 어긋나면 merge나 oldconfig에서 경고·실패가 날 수 있어, GKI 빌드 설정을 최신 mm Kconfig 레이아웃과 동기화합니다.\n\n> Upstream commit 3c77682d80d0 relocated the MEM_ALLOC_PROFILING configs and code under mm/, so adjust gki_defconfig accordingly.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/0304bb852ee945ba1ed1691f5080c095ef2a2b68)\n\n**ANDROID: MICRODROID: Remove CONFIG_CRYPTO_SHA256_SSSE3**\n\nx86 microdroid_defconfig에서 obsolete된 CONFIG_CRYPTO_SHA256_SSSE3를 제거했습니다.\n\n영향: upstream crypto 라이브러리 전환 후 남은 dead Kconfig를 제거해 microdroid GKI 빌드 설정을 유지보수 가능하게 합니다.\n\n> This config was removed in commit 11d7956d526f and is now obsolete, so drop it from microdroid_defconfig. The new library is already enabled.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/caf46ff7514c908829071c455c887fca6aa5c143)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 droppedCandidates로 db845c 참조 보드 BUILD.bazel의 smem.ko→qcom_smem.ko 이름 변경만 있어 범용 GKI/ACK 배포 영향이 거의 없다고 판단된 항목이 있습니다. Qualcomm GKI 비활성 드라이버를 vendor module로 대체할 때 android-mainline GKI와 벤더 트리 간 권장 module 세트가 문서화되어 있는지는 확인하지 못했습니다."
+    }
+  ],
+  "confidence": {
+    "level": "medium",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ANDROID: ashmem: decrement LRU_COUNT when purging ranges",
+      "url": "https://android.googlesource.com/kernel/common/+/f4e228698334242913d69797aa0a4f41432d27e4",
+      "note": "commit"
+    },
+    {
+      "title": "Revert \"wifi: cfg80211: convert cookie output to input parameter\"",
+      "url": "https://android.googlesource.com/kernel/common/+/6046dc37e5c3baa94a399bfd44e27cb545efdfac",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: mm: vmscan: Fix !CONFIG_MEMCG builds",
+      "url": "https://android.googlesource.com/kernel/common/+/56e06df0a40e2b5f08e5af33bd5395f5d0922c83",
+      "note": "commit"
+    },
+    {
+      "title": "Merge 55ab7e14222e (\"Merge tag 'for-7.3/block-20260819'...\") into android-mainline",
+      "url": "https://android.googlesource.com/kernel/common/+/1c17d3228249d9a6e77b0aa9363de63bb749608c",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: gki_defconfig: disable \"important\" qcom drivers",
+      "url": "https://android.googlesource.com/kernel/common/+/40a38b59c5bc75e6567c14beaa0c140c643e94e3",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: gki_defconfig: disable QCOM_SCM",
+      "url": "https://android.googlesource.com/kernel/common/+/677e84a1294c78cd229ab53577d2931231d01a17",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: gki_defconfig: drop implicit QCOM_GENI_SE",
+      "url": "https://android.googlesource.com/kernel/common/+/2be74515e3a000169993cffb1043638ac447d9a3",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: defconfig: default blk-crypto",
+      "url": "https://android.googlesource.com/kernel/common/+/93a7d2de520294b64ad997bf249a322739cd415c",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: gki_defconfig: adjust MEM_ALLOC_PROFILING",
+      "url": "https://android.googlesource.com/kernel/common/+/0304bb852ee945ba1ed1691f5080c095ef2a2b68",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: MICRODROID: Remove CONFIG_CRYPTO_SHA256_SSSE3",
+      "url": "https://android.googlesource.com/kernel/common/+/caf46ff7514c908829071c455c887fca6aa5c143",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-16T18:04:45.817Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/android-newsletter-from-dossier-ko.md"
+  }
+}
