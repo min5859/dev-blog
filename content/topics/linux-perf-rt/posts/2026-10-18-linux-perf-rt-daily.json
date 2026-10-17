@@ -1,0 +1,142 @@
+{
+  "id": "2026-10-18-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-10-18 io_uring RT 회귀 — Linux Perf·RT",
+  "headline": "PREEMPT_RT에서 io_uring CQ 타임아웃이 RT 대기자를 늦게 깨우는 회귀가 수정 제안됐고, BPF skb 겹침 복사·defer_count 고착 이슈도 함께 논의됐다.",
+  "date": "2026-10-18",
+  "summary": "io_uring은 RT/DL waiter에 HRTIMER_MODE_ABS_HARD로 타이머를 arm하는 패치로 Jetson Orin Nano 6.18.39-rt에서 지연·미기상이 크게 줄었다고 보고됐다. net 스택·Xilinx TSN endpoint·BPF iterator 문서화도 실시간·데이터 플레인 관점에서 주목할 만하다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "PREEMPT_RT",
+    "io_uring",
+    "BPF",
+    "네트워킹"
+  ],
+  "highlights": [
+    {
+      "title": "io_uring CQ 타임아웃 RT 대기자 기상",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "PREEMPT_RT 배포·io_uring 실시간 애플리케이션·스케줄러/타이머 유지보수자",
+      "verifyLink": "https://patchew.org/linux/20261017013303.3919170-1-austin.linux@gmail.com/",
+      "if": "SCHED_FIFO/DEADLINE 워크로드가 io_uring_enter() 타임아웃으로 동기화한다면",
+      "do": "for-7.4/io_uring 기반 패치와 cebf123c634a 회귀 맥락을 확인하고 Orin 등 RT 환경에서 타임아웃 기상 지연을 재측정하세요",
+      "verify": "PREEMPT_RT에서 hard IRQ 만료가 아닌 hrtimer가 ktimers 스레드에서 만료되는 경로와 패치 후 100us 이내 지연 보고를 원문에서 대조하세요"
+    },
+    {
+      "title": "bpf_skb_store_bytes dynptr 겹침 복사",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF 네트워킹 헬퍼·verifier·selftest 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20261017163745.3341787-43-alexei.starovoitov@gmail.com/",
+      "if": "TC/XDP·sock_skb에서 dynptr로 패킷을 자기 skb와 겹치게 수정한다면",
+      "do": "bpf-next 37/38 memmove() 변경이 포함된 시리즈 머지 여부와 Fixes 2012c867c800 영향 범위를 추적하세요",
+      "verify": "x86 FSRM에서 앞 바이트가 반복되는 증상과 memmove() 수정 diff를 syzbot 시리즈·메일 스레드에서 확인하세요"
+    },
+    {
+      "title": "skb defer_count 빈 defer_list 고착",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "net/core·PREEMPT_RT 네트워크 스택·sysctl 튜닝 담당",
+      "verifyLink": "https://patchew.org/linux/20261015162209.485940-1-jkain@nuro.ai/",
+      "if": "net.core.skb_defer_max를 낮추거나 고부하 TX에서 cross-CPU free·lock 스파이크가 보인다면",
+      "do": "v4의 한도 선검사 패치와 Eric Dumazet이 지적한 sysctl 축소 시 엣지 케이스를 함께 읽고 배포 sysctl 값을 점검하세요",
+      "verify": "sysctl -w net.core.skb_defer_max=1 재현 시나리오와 defer_count가 skb_defer_max에 고착되는 설명을 patchew 스레드에서 확인하세요"
+    },
+    {
+      "title": "Xilinx TSN endpoint MAC 골격",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Xilinx/AMD TSN·DSA·dmaengine 네트워크 드라이버 유지보수자",
+      "verifyLink": "https://patchew.org/linux/20261016-patches._5Fv2._5Fexternal-v3-0-e33d3960ca1e@amd.com/20261016-patches._5Fv2._5Fexternal-v3-3-e33d3960ca1e@amd.com/",
+      "if": "802.1 TSN endpoint와 DSA switch·PTP 시리즈를 Linux에서 쌓는 중이라면",
+      "do": "net-next v3 3/8 스켈레톤과 후속 MCDMA RX/TX 시리즈 의존 순서를 패치 시리즈 단위로 맞춰 보세요",
+      "verify": "DSA conduit용 netdev 필요성과 compatible \"xlnx,tsn-ep-mac\" bring-up 동작을 patchew 원문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**io_uring/wait: wake real-time waiters from hard interrupt context**\n\nPREEMPT_RT에서 io_uring CQ 타임아웃 hrtimer가 hard IRQ 만료로 표시되지 않으면 ktimers 스레드(SCHED_FIFO 1)에서 늦게 만료되어 RT 대기자가 deadline에 깨지지 않는 문제를, RT/DL waiter일 때 HRTIMER_MODE_ABS_HARD로 타이머를 arm하도록 수정한다.\n\n영향: SCHED_FIFO/DEADLINE이 io_uring_enter() 타임아웃으로 동기화할 때 수백 μs~ms급 지연·미기상이 나면 PREEMPT_RT 실시간 보장이 깨지며 epoll_pwait2()와 동일한 hrtimer sleeper 규칙을 맞추는 회귀 수정이다. for-7.4/io_uring 기반 패치의 mainline·stable 백포트 일정과 작성자의 for-7.4 Orin 부팅 여부는 확인이 필요하다.\n\n> On PREEMPT_RT, an hrtimer that isn't marked for hard interrupt expiry expires in the per-CPU ktimers thread, which runs at SCHED_FIFO 1.\n\n[원문 확인](https://patchew.org/linux/20261017013303.3919170-1-austin.linux@gmail.com/)\n\n**bpf: Use memmove() to store bytes in an skb**\n\nbpf_dynptr_write()/bpf_dynptr_copy() 경로로 bpf_skb_store_bytes() 소스가 동일 skb와 겹치면 memcpy가 덮어쓴 바이트를 다시 읽고, x86 FSRM에서는 앞 바이트가 반복되는 잘못된 결과가 난다. skb 저장을 memmove()로 바꾼다.\n\n영향: TC/XDP·sock_skb 등 데이터 플레인 BPF에서 dynptr로 패킷을 자기 자신과 겹치게 수정하면 조용한 데이터 손상이 나며 RT·고처리량 네트워킹 검증에서도 재현 가능한 정확성 버그다. 시리즈 전체 머지 전 개별 백포트 필요성과 FSRM 외 arch 노출 여부는 확인이 필요하다.\n\n> On x86 with FSRM it repeats the first bytes of the source instead of copying it.\n\n[원문 확인](https://lore.kernel.org/bpf/20261017163745.3341787-43-alexei.starovoitov@gmail.com/)\n\n**net: do not let defer_count outlive an empty defer_list**\n\nJoseph Kain 제안은 skb_attempt_defer_free()가 한도 검사 전 defer_count를 올려 거절 시 내리지 않아 빈 defer_list와 함께 카운터가 skb_defer_max에 고착되는 흡수 상태를 막기 위해 한도를 먼저 검사한다. Eric Dumazet은 sysctl로 한도를 줄일 때 kick 조건(==) 때문에 여전히 도달 가능하다고 지적했다.\n\n영향: 고착되면 해당 (cpu,node)에서 skb 지연 해제가 재부팅까지 꺼지고 cross-CPU free가 페이지 할당자로 돌아가 RT·고부하 TX CPU에서 lock 경합 스파이크가 다시 커진다. Eric가 제안한 defer_count*2 bump 등 추가 수정이 다음 리비전에 들어가는지, netdev/mainline 머지·stable 백포트 범위는 확인이 필요하다.\n\n> sysctl -w net.core.skb_defer_max=1    # frees increment, then reject\n\n[원문 확인](https://patchew.org/linux/20261015162209.485940-1-jkain@nuro.ai/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**net: xilinx: tsn: add endpoint MAC driver skeleton**\n\nnet-next v3 3/8 패치가 compatible \"xlnx,tsn-ep-mac\" 플랫폼 드라이버로 TSN Endpoint MAC netdev 스켈레톤을 추가하고, DSA switch가 conduit로 쓸 eth%d 인터페이스·MAC·최소 ethtool을 등록한다. ndo_open은 큐를 켜고 ndo_start_xmit는 프레임을 드롭하는 bring-up 수준이다.\n\n영향: 802.1 TSN endpoint는 후속 DSA switch·PTP 시리즈의 전제 netdev이며, 산업용 시간민감 이더넷 스택을 Linux에서 쌓는 팀은 이 MAC 골격과 MCDMA RX/TX 시리즈 진행을 함께 봐야 한다. linux-rt-devel에 올라왔지만 타겟은 net-next이며 mainline 머지 일정과 DSA·PTP 후속 의존 순서는 확인이 필요하다.\n\n> The DSA switch needs this netdev to exist as its conduit.\n\n[원문 확인](https://patchew.org/linux/20261016-patches._5Fv2._5Fexternal-v3-0-e33d3960ca1e@amd.com/20261016-patches._5Fv2._5Fexternal-v3-3-e33d3960ca1e@amd.com/)\n\n**net: xilinx: tsn: add the endpoint RX data path**\n\nnet-next v3 6/8이 endpoint RX dmaengine 경로를 추가해 버퍼를 post하고 completion에서 프레임을 처리·리필한다. Sashiko 리뷰는 dmaengine_desc_get_metadata_ptr() 후 metadata[1] 접근 전 meta_len 검증 부재로 OOB 읽기 가능성을 지적했다.\n\n영향: TSN endpoint RX는 MCDMA metadata(TUSER 등)에 의존하며, 메타 길이 검증 없이 sideband를 읽으면 잘못된 DMA 백엔드에서 커널 OOB·드롭 통계만으로는 놓치기 쉬운 결함이 될 수 있다. 메타데이터 최소 길이 검사 패치 반영 여부와 8바이트 미만 metadata 사례는 확인이 필요하다.\n\n> There isn't a check to see if meta_len is large enough before accessing metadata[1].\n\n[원문 확인](https://patchew.org/linux/20261016-patches._5Fv2._5Fexternal-v3-0-e33d3960ca1e@amd.com/20261016-patches._5Fv2._5Fexternal-v3-6-e33d3960ca1e@amd.com/)\n\n**bpf: reject sleepable programs for task_vma iterator**\n\ntask_vma iterator가 mmap_lock 아래에서 sleepable BPF를 거부하도록 BPF_ITER_NOSLEEP 플래그가 bpf.h에 추가됐으나, 리뷰는 Documentation/bpf/bpf_iterators.rst가 여전히 BPF_ITER_RESCHED만 지원한다고 적어 새 플래그·sleepable 제약을 문서화하지 않았다고 지적했다.\n\n영향: PREEMPT_RT·tracing에서 iterator target을 추가할 때 sleepable prog와 락 규칙을 잘못 이해하면 데드락·RCU misbehavior를 유발할 수 있어 문서·플래그 의미를 맞춰야 한다. 시리즈에 bpf_iterators.rst 업데이트 follow-up이 올라오는지, task_vma 외 mmap_lock 보유 target 목록은 확인이 필요하다.\n\n> Currently, only BPF_ITER_RESCHED is supported.\n\n[원문 확인](https://lore.kernel.org/bpf/9e4f2779a5571380e019033e4d1c30a14ed609bffcd34faf2074b3a9c437703d@mail.kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "Eric Dumazet의 defer_list 한도 축소 엣지 케이스 지적은 net defer_count 스레드와 별도로 읽을 만하다.\n\n> I think the state is still reachable when reducing the knob if the new value >> 1 is smaller than the current defer_count\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/atMVsAmXKl7D-Fxh@google.com/)\n\nio_uring 회귀 원인 커밋과 Jetson 벤치 인용은 동일 패치 스레드·커밋 페이지에서 교차 확인하세요.\n\n> After, none were more than 100us late and the latest was 18us.\n\n[원문 확인](https://patchew.org/linux/20261017013303.3919170-1-austin.linux@gmail.com/)\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=cebf123c634a)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "io_uring RT hrtimer wake (patchew)",
+      "url": "https://patchew.org/linux/20261017013303.3919170-1-austin.linux@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "io_uring schedule timeout regression",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=cebf123c634a",
+      "note": "commit"
+    },
+    {
+      "title": "bpf skb memmove (lore)",
+      "url": "https://lore.kernel.org/bpf/20261017163745.3341787-43-alexei.starovoitov@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf-next memmove series (syzbot)",
+      "url": "https://ci.syzbot.org/series/8d3232ad-ccfc-4366-91a1-98572d28f3f2",
+      "note": "patch"
+    },
+    {
+      "title": "bpf dynptr mem helper",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=2012c867c800",
+      "note": "commit"
+    },
+    {
+      "title": "skb defer_count fix (patchew)",
+      "url": "https://patchew.org/linux/20261015162209.485940-1-jkain@nuro.ai/",
+      "note": "thread"
+    },
+    {
+      "title": "defer_count sysctl edge case",
+      "url": "https://lore.kernel.org/linux-rt-devel/atMVsAmXKl7D-Fxh@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "TSN endpoint MAC skeleton",
+      "url": "https://patchew.org/linux/20261016-patches._5Fv2._5Fexternal-v3-0-e33d3960ca1e@amd.com/20261016-patches._5Fv2._5Fexternal-v3-3-e33d3960ca1e@amd.com/",
+      "note": "patch"
+    },
+    {
+      "title": "TSN endpoint RX path",
+      "url": "https://patchew.org/linux/20261016-patches._5Fv2._5Fexternal-v3-0-e33d3960ca1e@amd.com/20261016-patches._5Fv2._5Fexternal-v3-6-e33d3960ca1e@amd.com/",
+      "note": "patch"
+    },
+    {
+      "title": "TSN RX meta_len review",
+      "url": "https://lore.kernel.org/linux-rt-devel/sashiko-outbox-175444@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "BPF_ITER_NOSLEEP task_vma",
+      "url": "https://lore.kernel.org/bpf/9e4f2779a5571380e019033e4d1c30a14ed609bffcd34faf2074b3a9c437703d@mail.kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-17T18:28:09.208Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

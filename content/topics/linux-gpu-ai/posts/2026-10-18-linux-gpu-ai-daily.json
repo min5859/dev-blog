@@ -1,0 +1,153 @@
+{
+  "id": "2026-10-18-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-10-18 TTM stable 정리 — Linux GPU·AI",
+  "headline": "6.18.57 TTM stable에 bulk_move 수정 누락이 이어지고, DCN21 bandwidth 검증 회귀와 drm_ras 텔레메트리 uAPI가 동시에 논의됩니다.",
+  "date": "2026-10-18",
+  "summary": "Dave Airlie가 swapout LRU만 들어간 6.18.57 stable과 upstream bulk_move 수정의 backport 방식을 Greg KH와 조율 중입니다. DCN 2.1 APU 고주사율 모드 회귀와 drm_ras·Tyr·vmwgfx uAPI 패치도 리뷰가 진행 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "drm/ttm bulk_move stable backport",
+      "priority": "상",
+      "impactType": "backport",
+      "affectedAudience": "drm/ttm·amdgpu VM/hibernation 경로 및 stable kernel backport 담당",
+      "verifyLink": "https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg644838.html",
+      "if": "6.18.57·7.0.x 등 swapout LRU 수정만 backport된 amdgpu/TTM 스택을 운영한다면",
+      "do": "누락된 bulk_move 수정의 stable 정리와 backport 일정을 dri-devel stable 스레드를 따라가세요",
+      "verify": "hibernation 이후 bulk_move 커서 UAF(CVE-2026-98166) 영향 범위를 gcve 원문과 maintainer git id 정리를 대조해 확인하세요"
+    },
+    {
+      "title": "drm/amd/display DCN21 self-refresh fallback",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "amdgpu display(DCN 2.1 Renoir/Cezanne 등) 및 데스크톱 KMS 모드 검증 담당",
+      "verifyLink": "https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg644849.html",
+      "if": "DCN 2.1 APU에서 고주사율 eDP 또는 외장 144Hz 모드가 잘리는 제보를 받았다면",
+      "do": "b96150a70696 bisect 결과와 Julien Le Bourg 패치 스레드에서 fallback 복원·v2 watermark 수정 논의를 추적하세요",
+      "verify": "MPO flip_done timeout 회귀 trade-off 경고가 있는 리뷰 스레드를 읽고 배포 전 모드 검증 계획을 세우세요"
+    },
+    {
+      "title": "drm/drm_ras telemetry 노드 uAPI",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "drm-ras 인프라·QAIC/accel 드라이버 및 GPU 헬스 모니터링 도구 작성자",
+      "verifyLink": "https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg642574.html",
+      "if": "가속기 헬스·텔레메트리를 genetlink로 노출하는 도구나 드라이버를 다룬다면",
+      "do": "telemetry-read·telemetry-write 연산과 QAIC 소비자 구현이 들어간 패치 시리즈를 검토하세요",
+      "verify": "list-nodes admin 요구 제거와 netlink 속성(uint vs u64+pad) 피드백이 반영되는지 thread를 확인하세요"
+    },
+    {
+      "title": "drm/tyr dev_query 버퍼 크기 호환",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "drm/tyr·Panthor UAPI 및 Rust drm 드라이버 개발자",
+      "verifyLink": "https://patchew.org/linux/20261016-b4-dev._5Fquery._5Ffixes-v3-0-f8071cda3515@collabora.com/",
+      "if": "Mesa가 최소 필드만 담는 DRM_IOCTL_TYR_DEV_QUERY 호출을 쓴다면",
+      "do": "v3 시리즈의 set_uobj·UserSliceWriter::clear와 Panthor UAPI 정렬 변경을 리뷰하세요",
+      "verify": "최소 크기 미만 EINVAL·이상 시 truncate·zero-fill 동작을 패치 인용문과 대조해 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**drm/ttm: fix swapped-out resources never leaving their bulk_move range**\n\n6.18.57 stable에는 swapout LRU 무한 루프 수정만 들어갔고, bulk_move에서 swap-out된 리소스가 빠지지 않는 후속 수정은 빠졌다는 제보에 Dave Airlie가 upstream의 3db7d7d/fcfe6471 및 squashed 수정안을 stable에 어떻게 넣을지 Greg KH와 조율 중입니다.\n\n영향: swapout LRU 수정만 backport된 6.18.57·7.0.x 등은 hibernation 이후 bulk_move 커서 UAF(CVE-2026-98166) 위험이 남아, amdgpu/TTM 스택을 쓰는 배포는 누락된 bulk_move 수정의 stable 정리를 따라야 합니다.\n\n> 6.18.57 has commit 060f8f3020516d71bc4d6159d4d0beef85606a74 ... upstream has two fixes, because we messed up, commit 3db7d7d583419f7b1f2e141e36418802dbb25cf8\n\n[원문 확인](https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg644838.html)\n\nstable에 squashed 패치만 넣을지 upstream 두 커밋을 그대로 넣을지 Greg KH·stable maintainers의 최종 선택은 아직 공개되지 않았습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm/amd/display: Restore self-refresh fallback in DCN21 bandwidth validation**\n\nJulien Le Bourg 패치는 dcn21_validate_bandwidth_fp()가 다시 allow_self_refresh_only=true로 self-refresh fallback을 쓰게 하고, v2는 DCN21 watermark 계산의 stutter latency 누수 복원을 추가합니다. 10월 ping에서는 5400U+외장 144Hz 모니터 추가 제보가 이어졌습니다.\n\n영향: b96150a70696 이후 DCN 2.1 APU에서 고주사율·짧은 vblank 모드가 잘리는 사용자 회귀가 eDP 360Hz뿐 아니라 일반 144Hz 외장 디스플레이까지 확대되었고, MPO flip_done 회귀와의 trade-off가 리뷰 핵심입니다.\n\n> a second user reported the same regression on https://gitlab.freedesktop.org/drm/amd/-/issues/5628 and bisected it independently to b96150a70696.\n\n[원문 확인](https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg644849.html)\n\n**drm/ttm stable과 CVE-2026-98166**\n\n6.18.57은 CVE-2026-98166 영향 범위(6.18.57 < 6.19)로 분류됩니다.\n\n> Affected: 6.18.57 , < 6.19 (semver)\n\n[원문 확인](https://db.gcve.eu/vuln/cve-2026-98166)\n\nv2의 stutter latency save/restore가 DCN 3.01(dcn301)에도 필요한지 maintainer 답은 확인되지 않았습니다. 패치가 drm-amd-next에 머지되기 전 DC 팀의 최종 방향은 미정입니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/drm_ras: Extend DRM RAS interface to include telemetry nodes**\n\nZack McKevitt 시리즈가 drm-ras YAML·코어에 telemetry 노드 타입과 telemetry-read/write netlink 연산을 추가하고, QAIC가 첫 소비자로 telemetry_read/write·telemetry_pre 콜백을 구현합니다.\n\n영향: 가속기/DRM 드라이버가 Panthor 이외에도 genetlink로 SoC 텔레메트리를 노출할 공통 uAPI가 생기며, list-nodes의 admin 요구 제거와 함께 비관리자 도구의 노드 탐색이 가능해집니다.\n\n> This patch series extends the drm_ras netlink interface to include a new node type for telemetry nodes. Telemetry nodes support two operations, reading and writing\n\n[원문 확인](https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg642574.html)\n\nsyzbot CI의 drm_ras_nl_pre_telemetry general protection fault가 v2 YAML uint 전환과 함께 해소되는지 확인이 필요합니다. drm-misc-next 머지 일정은 thread에서 확인되지 않았습니다.\n\n**drm/tyr: allow userspace buffers to be mismatched**\n\nDeborah Brouwer v3 시리즈가 DRM_IOCTL_TYR_DEV_QUERY에서 Panthor UAPI와 같이 최소 크기 이상 버퍼는 잘라 쓰고, 더 큰 버퍼는 나머지를 zero-fill하도록 set_uobj()·UserSliceWriter::clear()를 추가합니다.\n\n영향: Mesa/유저스페이스가 구조체 최소 필드만 담는 dev_query 호출을 쓰는 경우 Tyr가 EINVAL로 거부하면 Panthor 호환 스택이 깨지므로, 커널 Rust uaccess 패턴 리뷰가 머지 품질에 직결됩니다.\n\n> Panthor UAPI for DRM_IOCTL_TYR_DEV_QUERY allows userspace to provide a smaller or larger buffer than the kernel needs.\n\n[원문 확인](https://patchew.org/linux/20261016-b4-dev._5Fquery._5Ffixes-v3-0-f8071cda3515@collabora.com/)\n\n**drm/vmwgfx: Convert to atomic_create_state**\n\nMaxime Ripard의 drm/crtc reset 제거 시리즈 일부로 vmwgfx CRTC가 vmw_du_crtc_reset 대신 vmw_du_crtc_create_state와 __drm_atomic_helper_crtc_state_init를 쓰도록 바뀌었고, Maaz Mombasawala가 vmwgfx 변경에 Reviewed-by를 달았습니다.\n\n영향: connector/crtc reset 훅 제거가 마무리되는 대형 리팩터의 vmwgfx 조각으로, VMware 가상 GPU KMS가 새 atomic_create_state 패턴을 따르지 않으면 빌드·리뷰 시리즈가 막힙니다.\n\n> LGTM for the vmwgfx changes. Reviewed-by: Maaz Mombasawala\n\n[원문 확인](https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg644834.html)\n\n70패치 시리즈 전체 머지 트리와 vmwgfx plane/connector 변환 완료 여부는 이 스레드만으로는 불명확합니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Dave Airlie — 6.18.57 TTM stable backport 조율",
+      "url": "https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg644838.html",
+      "note": "thread"
+    },
+    {
+      "title": "TTM bulk_move swapout 회귀 설명",
+      "url": "https://lists.freedesktop.org/archives/dri-devel/2026-September/595477.html",
+      "note": "thread"
+    },
+    {
+      "title": "CVE-2026-98166",
+      "url": "https://db.gcve.eu/vuln/cve-2026-98166",
+      "note": "cve"
+    },
+    {
+      "title": "drm_ras telemetry 시리즈 cover",
+      "url": "https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg642574.html",
+      "note": "thread"
+    },
+    {
+      "title": "drm_ras.yaml telemetry 연산",
+      "url": "https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg642583.html",
+      "note": "patch"
+    },
+    {
+      "title": "drm_ras netlink uint 스타일 리뷰",
+      "url": "https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg644832.html",
+      "note": "thread"
+    },
+    {
+      "title": "DCN21 self-refresh fallback 패치",
+      "url": "https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg630026.html",
+      "note": "patch"
+    },
+    {
+      "title": "DCN21 144Hz 회귀 ping",
+      "url": "https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg644849.html",
+      "note": "thread"
+    },
+    {
+      "title": "MPO flip_done trade-off 경고",
+      "url": "https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg630037.html",
+      "note": "thread"
+    },
+    {
+      "title": "drm/tyr dev_query v3 cover",
+      "url": "https://patchew.org/linux/20261016-b4-dev._5Fquery._5Ffixes-v3-0-f8071cda3515@collabora.com/",
+      "note": "patch"
+    },
+    {
+      "title": "drm/tyr 버퍼 truncate·zero-fill",
+      "url": "https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg644813.html",
+      "note": "patch"
+    },
+    {
+      "title": "drm/tyr Rust cast 리뷰",
+      "url": "https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg644835.html",
+      "note": "thread"
+    },
+    {
+      "title": "vmwgfx atomic_create_state 패치",
+      "url": "https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg629856.html",
+      "note": "patch"
+    },
+    {
+      "title": "vmwgfx Reviewed-by",
+      "url": "https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg644834.html",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-17T18:34:28.372Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

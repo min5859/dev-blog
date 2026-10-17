@@ -1,0 +1,130 @@
+{
+  "id": "2026-10-18-linux-daily-briefing",
+  "topic": "linux",
+  "title": "2026-10-18 SMMU·LTS 보안 — 리눅스 개발",
+  "headline": "주소 변환과 절전 순서가 겹치는 입력출력 메모리 관리 유닛 논의가 이어지고, 장기 지원·안정 브랜치에 네트워크 백포트가 반영됐습니다.",
+  "date": "2026-10-18",
+  "summary": "arm-smmu-v3에서 주소 변환 활성 시 절전과 명령 큐 제출을 어떻게 막을지 메일링 리스트에서 설계가 논의됐습니다. Linux 5.10.272와 7.2.11 stable은 네트워크·입출력 관련 백포트가 포함된 최신 스냅샷으로 유지됩니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "stable",
+    "IOMMU"
+  ],
+  "highlights": [
+    {
+      "title": "arm-smmu-v3 ATS·suspend",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "IOMMU·PCIe 드라이버 개발자, ARM 서버/SoC 플랫폼 엔지니어, 가상화 스택 담당자",
+      "verifyLink": "https://lkml.iu.edu/2610.2/03739.html",
+      "if": "ATS·런타임 절전·VFIO 경로를 다루는 경우",
+      "do": "suspend 순서와 명령 큐 게이트 패치 스레드를 따라가며 정책 합의 여부는 단정하지 마세요",
+      "verify": "아래 링크의 메일 스레드와 arm-kernel 시리즈 원문을 직접 읽어 확인하세요"
+    },
+    {
+      "title": "5.10.272 longterm",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "5.10 LTS/CIP 배포 담당자, 네트워크 스택·netfilter 운영자",
+      "verifyLink": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.272",
+      "if": "5.10 장기 지원 커널을 운영·패키징하는 경우",
+      "do": "이번 마이너의 TCP·IPv4·NFQUEUE SCTP 백포트를 배포 계획에 반영하세요",
+      "verify": "ChangeLog-5.10.272에서 해당 커밋 제목과 설명을 대조해 확인하세요"
+    },
+    {
+      "title": "7.2.11 stable",
+      "priority": "중",
+      "impactType": "backport",
+      "affectedAudience": "stable 커널 배포 담당자, io_uring/컨테이너·네트워크 스택 운영자",
+      "verifyLink": "https://www.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.11",
+      "if": "7.2.x stable 또는 배포 채널 커널을 쓰는 경우",
+      "do": "io_uring 메모리 잠금 한도, mremap, 가상 네트워킹 관련 백포트 포함 여부를 검토하세요",
+      "verify": "ChangeLog-7.2.11과 origin.kernel.org stable 태그를 함께 확인하세요"
+    },
+    {
+      "title": "hugetlb CMA pool",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "mm/HugeTLB 개발자, 대용량 메모리·가상화·데이터베이스 플랫폼 엔지니어",
+      "verifyLink": "https://patchew.org/linux/cover.1792136742.git.zhengqi.arch@bytedance.com/100b5e1400e692086b1af70e88732faa5a638be1.1792136742.git.zhengqi.arch@bytedance.com/",
+      "if": "HugeTLB·CMA 예약과 대용량 페이지를 다루는 경우",
+      "do": "pool·configuration 리팩터와 PMD 크기 확장 시리즈 리뷰 진행을 추적하세요",
+      "verify": "patchew 커버레터와 lkml 시리즈 설명을 원문으로 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**7.3-rc7 mainline**\n\n어제도 다룬 7.3-rc7 기준으로, dossier 작성 시점 mainline 최신은 여전히 7.3-rc7이며 Linux 7.3.0 stable 태그 여부는 별도 확인이 필요합니다.\n\n영향: 최종 릴리스 예정 주말(10월 18일)이 도래했으나 finger_banner만으로 stable 출시를 단정할 수 없습니다.\n\n> So that's still set for next weekend unless something new comes up.\n\n[원문 확인](https://lkml.iu.edu/2610.1/07182.html)\n\n**next-20261016 linux-next**\n\nlinux-next 통합 트리에 2026-10-16자 next-20261016 스냅샷이 올라와 다음 merge window 검증 기준이 갱신됐습니다.\n\n영향: linux-next 기반 개발·CI 회귀 테스트 담당자는 새 태그를 기준으로 재검증합니다.\n\n> linux-next: | next-20261016 | 2026-10-16\n\n[원문 확인](https://origin.kernel.org/)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**arm-smmu-v3: CMDQ_PROD_STOP_FLAG and ATS suspend**\n\nJason Gunthorpe가 ATS가 켜진 PCIe 장치의 IOMMU·디바이스 suspend 순서 문제를 지적했고, ATS 활성 시 power management를 거부하는 방향을 제안했으며 패치는 bit 30으로 suspend 중 CMDQ 제출을 막습니다.\n\n영향: ATS·runtime PM·IOMMU invalidate 경합은 VFIO·PCIe PM 설계에 보안·안정성 함의가 있습니다. upstream에 PM 거부 정책이 합의·머지됐는지는 이 스레드만으로 확인되지 않았습니다.\n\n> Maybe lets just start by refusing power management when ATS is on? For PCIe devices too?\n\n[원문 확인](https://lkml.iu.edu/2610.2/03739.html)\n\n**5.10.272 longterm**\n\n10-15 태그된 5.10.272는 TCP inet_opt/ireq_opt RCU grace period 해제(UAF 수정), ipv4 checksum_start 검증, nfnetlink_queue SCTP GSO 체크섬 경로 수정 등 네트워크 백포트 3건을 포함합니다.\n\n영향: 5.10 LTS·CIP 사용자는 SYN 처리·reuseport migrate·IPv4 체크섬·NFQUEUE+SCTP 관련 수정을 한 번에 받습니다.\n\n> leading to a use-after-free in ip_options_build().\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.272)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**7.2.11 stable**\n\nGreg Kroah-Hartman가 2026-10-15 Linux 7.2.11 stable을 태그했고 ChangeLog에는 7.2.10 대비 284건의 업스트림 백포트가 있으며 io_uring RLIMIT_MEMLOCK 과금, MREMAP_DONTUNMAP locked_vm 누수, OVS IPv6·veth/XDP·mlx5e 등이 포함됩니다.\n\n영향: 7.2.x stable·배포 채널은 고부하 io_uring·mremap·가상 네트워킹·NIC 관련 안정성 백포트를 이번 마이너로 받습니다.\n\n> io_uring: do not charge the SQ/CQ rings to RLIMIT_MEMLOCK\n\n[원문 확인](https://www.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.11)\n\n**hugetlb: group CMA pool and reservation state**\n\nQi Zheng 시리즈 2/5 패치가 singleton CMA 상태를 hugetlb_cma_pool·hugetlb_cma_config로 묶는 리팩터이며 Jose A. Perez de Azpillaga가 2026-10-17 Reviewed-by를 달았고, 이후 PMD 크기 HugeTLB용 CMA pool 준비 단계입니다.\n\n영향: 페이지 order별 HugeTLB CMA 분리와 메모리 예약·라이브 업그레이드 시나리오의 기반이 됩니다. 이 패치 단독의 머지 여부·타깃 커널 버전은 ChangeLog에서 확인하지 않았습니다.\n\n> Group the runtime areas and size into a pool, and the temporary reservation inputs into a separate configuration structure.\n\n[원문 확인](https://patchew.org/linux/cover.1792136742.git.zhengqi.arch@bytedance.com/100b5e1400e692086b1af70e88732faa5a638be1.1792136742.git.zhengqi.arch@bytedance.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 dossier에서는 범용 영향이 작은 단일 USB 액세서리 드라이버 ID 추가와 Device Tree 스키마 설명 단위 정정만 있는 항목은 제외했습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Linus Torvalds — 7.3-rc7 release timing",
+      "url": "https://lkml.iu.edu/2610.1/07182.html",
+      "note": "thread"
+    },
+    {
+      "title": "kernel.org origin finger banner",
+      "url": "https://origin.kernel.org/",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-7.2.11",
+      "url": "https://www.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.11",
+      "note": "changelog"
+    },
+    {
+      "title": "linux-next googlesource",
+      "url": "https://kernel.googlesource.com/pub/scm/linux/kernel/git/next/linux-next/",
+      "note": "changelog"
+    },
+    {
+      "title": "Jason Gunthorpe — ATS and PCI suspend",
+      "url": "https://lkml.iu.edu/2610.2/03739.html",
+      "note": "thread"
+    },
+    {
+      "title": "arm-smmu-v3 CMDQ_PROD_STOP_FLAG series",
+      "url": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-September/1170317.html",
+      "note": "thread"
+    },
+    {
+      "title": "hugetlb CMA pool refactor (patchew)",
+      "url": "https://patchew.org/linux/cover.1792136742.git.zhengqi.arch@bytedance.com/100b5e1400e692086b1af70e88732faa5a638be1.1792136742.git.zhengqi.arch@bytedance.com/",
+      "note": "thread"
+    },
+    {
+      "title": "HugeTLB CMA PMD extension cover",
+      "url": "https://lkml.iu.edu/2610.2/00839.html",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-5.10.272",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.272",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-17T18:02:48.299Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-newsletter-from-dossier-ko.md"
+  }
+}
