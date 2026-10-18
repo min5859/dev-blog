@@ -1,0 +1,131 @@
+{
+  "id": "2026-10-19-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-10-19 backlog-NAPI RT — Perf·RT",
+  "headline": "v6.6-rt-next에서 backlog-NAPI 스레드 백포트가 PREEMPT_RT softirq WARN 대안으로 올라왔고, 6.18.y spin_lock_irq_disable stable 백포트는 거절됐습니다.",
+  "date": "2026-10-19",
+  "summary": "Wen Yang이 RPS·defer 경로의 IPI 대신 per-CPU backlog NAPI 스레드로 remote backlog를 처리하는 upstream v6.10 백포트를 v6.6-rt-next에 제안했습니다. Alice Ryhl의 spin_lock_irq_disable() 6.18.y 백포트는 Greg Kroah-Hartman이 stable 규칙상 거절했습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "PREEMPT_RT",
+    "BPF",
+    "네트워크"
+  ],
+  "highlights": [
+    {
+      "title": "net: backlog-NAPI 스레드 v6.6-rt-next 백포트",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "PREEMPT_RT 네트워크 스택·RPS 튜닝·v6.6/v6.1 stable-rt 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/cover.1792345413.git.wen.yang@linux.dev/",
+      "if": "6.6/6.1 LTS+RT에서 RPS·cross-CPU defer를 쓰는 배포를 운영한다면",
+      "do": "기존 RT workaround(1f7514c9c75d) 대체안으로 올라온 5패치 시리즈 리뷰·virtme-ng RPS/defer 검증 계획을 추적하세요",
+      "verify": "idle queue flushing에서 do_softirq_post_smp_call_flush() WARN이 간헐 재현되는지 프로덕션·테스트 게스트 로그를 확인하세요"
+    },
+    {
+      "title": "spin_lock_irq_disable() 6.18.y stable 백포트 거절",
+      "priority": "중",
+      "impactType": "backport",
+      "affectedAudience": "stable 6.18.y 백포트·Rust for Linux·락킹/IRQ 유지보수 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/10/18/901",
+      "if": "upstream counted irq-disable·SpinLockIrq API를 6.18.y에 선행 머지하려는 백포트 흐름을 기대한다면",
+      "do": "실제 버그픽스가 spin_lock_irq_disable()을 요구할 때만 stable 제출을 준비하세요",
+      "verify": "Greg Kroah-Hartman·Sasha Levin 스레드에서 stable 규칙 거절·신규 기능 백포트 논의를 원문으로 확인하세요"
+    },
+    {
+      "title": "net: stmmac XDP rx multi-buff (net-next v8)",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "stmmac/XDP·AF_XDP·ARM 임베디드 네트워크 드라이버 담당",
+      "verifyLink": "https://lists.openwall.net/netdev/2026/10/18/247",
+      "if": "stmmac에서 분할 RX descriptor·AF_XDP·비선형 XDP 경로를 다룬다면",
+      "do": "v8 시리즈의 stmmac_rx() 다중 descriptor xdp_buff 구성·rx_q 상태 누수 수정 리뷰를 우선순위에 두세요",
+      "verify": "Sashiko가 지적한 실제 버그 수정·Qualcomm RB3-gen2 보드 테스트 답변 스레드를 확인하세요"
+    },
+    {
+      "title": "kallsyms: 심볼 이름 검색 최적화",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "kallsyms·BPF tracing·perf 도구·빌드 스크립트(kallsyms.c) 유지보수 담당",
+      "verifyLink": "https://patchew.org/linux/20260930132109.260597-1-david.laight.linux@gmail.com/20260930132109.260597-3-david.laight.linux@gmail.com/",
+      "if": "kallsyms_lookup_name() 경로를 BPF stack trace·perf·ftrace에서 공통으로 쓴다면",
+      "do": "이름 검색 bisect의 선형 스캔 제거 패치와 static branch·do-once 관련 리뷰 코멘트를 따라가세요",
+      "verify": "set_kallsyms_off_size()의 static_branch_disable() 수면·DO_ONCE_LITE 경쟁 지적에 대한 David Laight 답변을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**net: Backport backlog-NAPI threads to resolve PREEMPT_RT softirq warning in SMP flush**\n\nWen Yang이 v6.6-rt-next(베이스 6.6.151-rt78-rc1)에 5패치 시리즈를 올려 기존 RT workaround(1f7514c9c75d)를 되돌리고 upstream v6.10의 backlog-NAPI 스레드·RPS 관련 4커밋을 의존 순서로 백포트합니다. RPS/defer 경로의 function-call IPI 대신 per-CPU backlog NAPI 스레드로 remote backlog를 처리해 idle flush에서 do_softirq_post_smp_call_flush() WARN을 없애는 것이 목표입니다.\n\n영향: 6.6/6.1 LTS+RT와 RPS·cross-CPU defer를 쓰는 배포에서 softirq가 IPI 경로로 idle에서 올라오면 RT 정책 위반 WARN과 ksoftirqd 깨움이 반복될 수 있어, stable-rt 대체안 검토·머지 여부가 네트워크+PREEMPT_RT 운영팀의 핵심 이슈입니다. linux-rt-devel 리뷰어 승인 후 v6.1-rt 백포트 일정과 기존 6.6.y 부분 백포트와 RT 트리 정합은 확인이 필요합니다.\n\n> In a fresh RT guest this still triggers do_softirq_post_smp_call_flush() from idle queue flushing.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/cover.1792345413.git.wen.yang@linux.dev/)\n\n> we are using 6.6/6.1 lts + rt patch, and this issue occasionally occurs in production environments.\n\n[원문 확인](https://lkml.iu.edu/hypermail/linux/kernel/2602.0/10543.html)\n\n> raising SOFTIRQ from smp_call_functio triggers WARN_ON_ONCE() in do_softirq_post_smp_call_flush().\n\n[원문 확인](https://www.spinics.net/lists/stable/msg906958.html)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Backport spin_lock_irq_disable() to 6.18.y**\n\nAlice Ryhl의 6.18.y 6패치 시리즈(새 spin_lock_irq_disable()·Rust SpinLockIrq)에 Greg Kroah-Hartman이 stable 규칙상 거절했습니다. Sasha Levin도 신규 기능 백포트 필요성에 의문을 제기했고, Greg은 실제 버그픽스가 이 API를 요구할 때만 넣겠다고 했습니다.\n\n영향: counted irq-disable·SpinLockIrq 기반 upstream 백포트를 6.18.y로 깔끔히 가져오려는 흐름이 막혀, RT·락킹 쪽은 stable에 API만 선행 머지되지 않는다는 전제로 백포트 패치를 작성해야 합니다. 첫 실제 버그픽스가 spin_lock_irq_disable()을 요구하는 시점과 6.18.y Rust SpinLockIrq 백포트 재제출 여부는 확인이 필요합니다.\n\n> As Sasha says, this doesn't seem to fit the stable kernel rules, sorry.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/10/18/901)\n\n> I'm a bit puzzled why we need this backported. It looks like a new feature?\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/10/15/2805)\n\n**net: stmmac: introduce XDP rx multi-buff support**\n\nLorenzo Bianconi의 net-next v8 5패치가 stmmac_rx()를 다중 RX descriptor를 하나의 xdp_buff로 모아 XDP가 분할 프레임 전체를 보게 하고, rx_q 상태 누수·VLAN·AF_XDP 제약 등 v6–v7 리뷰 이슈를 정리합니다. netdev-bot이 요구한 메타데이터에 Lorenzo는 Sashiko가 찾은 실제 버그·Qualcomm RB3-gen2 보드 테스트를 답했습니다.\n\n영향: stmmac에서 XDP multi-buffer RX가 들어오면 BPF/XDP 데이터 플레인이 비선형 패킷을 다루게 되어, 임베디드 GMAC·AF_XDP 경로의 verifier·selftest·드라이버 리뷰 우선순위가 올라갑니다. NETDEV_XDP_ACT_RX_SG 광고·jumbo/SPH gating과 netpoll budget 0 경로 saved state 처리 완전성은 확인이 필요합니다.\n\n> Rework stmmac_rx() to build the xdp_buff from all the descriptors that make up a frame\n\n[원문 확인](https://lists.openwall.net/netdev/2026/10/18/247)\n\n> The issues are real bugs spotted by sashiko.\n\n[원문 확인](https://lore.kernel.org/bpf/atT_ve7qmxaE9ZBl@lore-desk/)\n\n**kallsyms: Optimise symbol name search**\n\nDavid Laight 시리즈 2/2가 kallsyms 이름 검색에서 압축 이름 테이블 직접 인덱싱·static branch로 24/32비트 오프셋을 선택해 이진 탐색 중 선형 스캔을 제거합니다. Sashiko는 set_kallsyms_off_size()의 static_branch_disable() 수면·DO_ONCE_LITE 경쟁을 High로 지적했고, David는 do-once를 인라인해야 한다고 답한 것으로 보입니다.\n\n영향: kallsyms_lookup_name()은 BPF stack trace·perf·ftrace가 공통으로 쓰므로, lookup 최적화가 early boot/atomic 경로 버그나 레이스로 이어지면 관측성·RT 트레이싱 전반에 영향을 줄 수 있습니다. static_branch_disable()을 부팅 전에 안전히 설정하는 방법과 ARM OABI·x86-32 weak 심볼 레이아웃 이슈 해결 여부는 확인이 필요합니다.\n\n> Change the alphabetically ordered lookup table (kallsyms_seqs_of_names) with one that indexed the table of compressed names\n\n[원문 확인](https://patchew.org/linux/20260930132109.260597-1-david.laight.linux@gmail.com/20260930132109.260597-3-david.laight.linux@gmail.com/)\n\n> Patch 2 Removes the linear scan from the 'search by name' binary bisect.\n\n[원문 확인](https://lkml.iu.edu/2609.3/15656.html)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "v6.6-rt-next 0/5 커버: workaround 한계와 5단계 virtme-ng RPS/defer 검증 계획",
+      "url": "https://lore.kernel.org/linux-rt-devel/cover.1792345413.git.wen.yang@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "동일 이슈가 6.6/6.1 LTS+RT 프로덕션에서 간헐 재현됨",
+      "url": "https://lkml.iu.edu/hypermail/linux/kernel/2602.0/10543.html",
+      "note": "thread"
+    },
+    {
+      "title": "RPS IPI가 PREEMPT_RT에서 smp_call_function 경로 softirq WARN을 유발하는 배경",
+      "url": "https://www.spinics.net/lists/stable/msg906958.html",
+      "note": "thread"
+    },
+    {
+      "title": "Greg K-H: stable 규칙에 맞지 않아 거절",
+      "url": "https://lists.openwall.net/linux-kernel/2026/10/18/901",
+      "note": "thread"
+    },
+    {
+      "title": "Sasha Levin: 신규 기능 백포트 필요성 질문",
+      "url": "https://lists.openwall.net/linux-kernel/2026/10/15/2805",
+      "note": "thread"
+    },
+    {
+      "title": "v8 0/5: 프레임 전체 xdp_buff 구성 및 rx_q 상태 누수 수정",
+      "url": "https://lists.openwall.net/netdev/2026/10/18/247",
+      "note": "thread"
+    },
+    {
+      "title": "Lorenzo: Sashiko 리포트·실버그·RB3-gen2 테스트",
+      "url": "https://lore.kernel.org/bpf/atT_ve7qmxaE9ZBl@lore-desk/",
+      "note": "thread"
+    },
+    {
+      "title": "패치 2/2: 압축 이름 인덱스로 이진 탐색 선형 스캔 제거",
+      "url": "https://patchew.org/linux/20260930132109.260597-1-david.laight.linux@gmail.com/20260930132109.260597-3-david.laight.linux@gmail.com/",
+      "note": "patch"
+    },
+    {
+      "title": "시리즈 커버: 이름 검색 bisect에서 선형 스캔 제거 목표",
+      "url": "https://lkml.iu.edu/2609.3/15656.html",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-18T18:33:00.844Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

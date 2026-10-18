@@ -1,0 +1,127 @@
+{
+  "id": "2026-10-19-linux-kernel-security-weekly-rollup",
+  "topic": "linux-kernel-security",
+  "title": "2026-10-19 주간 요약",
+  "headline": "BPF JIT·set_memory_* 하드닝 및 6.6 stable 유지보수 담당 주목: bpf: Take return from set_memo",
+  "date": "2026-10-19",
+  "summary": "오늘의 핵심: 릴리스/로드맵 0건, 회귀·보안 신호 8건, 핵심 변경 0건. 리서치 dossier 의 출처를 근거로 정리했습니다.",
+  "tags": [
+    "주간"
+  ],
+  "highlights": [
+    {
+      "title": "bpf: Take return from set_memory_rox() into account with bpf_jit_binary_lock_ro()",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF JIT·set_memory_* 하드닝 및 6.6 stable 유지보수 담당",
+      "verifyLink": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=e60adf513275c3a38e5cb67f7fd12387e43a3ff5",
+      "if": "BPF JIT·set_memory_* 하드닝 및 6.6 stable 유지보수 담당라면",
+      "do": "Christophe Leroy 패치가 bpf_jit_binary_lock_ro()에서 set_memory_rox() 실패 시 오류를 반환하도록 ",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=e60adf513275c3a38e5cb67f7fd12387e43a3ff5"
+    },
+    {
+      "title": "string: instrument the word loads in sized_strscpy()",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "KASAN/KCSAN·lib/string 및 word-at-a-time arch 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20261018-bug-string-strscpy-kasan-first-byte-v1-1-375a2c46d88f@gmail.com/",
+      "if": "KASAN/KCSAN·lib/string 및 word-at-a-time arch 유지보수 담당라면",
+      "do": "Qiliang Yuan 패치가 CONFIG_DCACHE_WORD_ACCESS 경로에서 load_unaligned_zeropad() 호출 전 in",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/linux-hardening/20261018-bug-string-strscpy-kasan-first-byte-v1-1-375a2c46d88f@gmail.com/"
+    },
+    {
+      "title": "netdev: Hide the netdev_priv() origin from GCC in netdev_from_priv()",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "네트워크 드라이버·하드닝 빌드·NET_TEAM 운영 담당",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20261015165959.i.798-kees@kernel.org/",
+      "if": "네트워크 드라이버·하드닝 빌드·NET_TEAM 운영 담당라면",
+      "do": "GCC 15.1+가 netdev_from_priv()의 container_of() 경로에서 net_device 전체 크기를 0으로 추론해 FOR",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/linux-hardening/20261015165959.i.798-kees@kernel.org/"
+    },
+    {
+      "title": "kobject: Require explicit initialization of struct kobj_type::release",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "core kobject 사용자, 하드닝/Clang 빌드 담당",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/2026101425-why-boring-4f2d@gregkh/",
+      "if": "core kobject 사용자, 하드닝/Clang 빌드 담당라면",
+      "do": "Ian Rogers 시리즈가 Clang __require_explicit_initialization으로 kobj_type::release 초기화",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.kernel.org/linux-hardening/2026101425-why-boring-4f2d@gregkh/"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**bpf: Take return from set_memory_rox() into account with bpf_jit_binary_lock_ro()**\n\nChristophe Leroy 패치가 bpf_jit_binary_lock_ro()에서 set_memory_rox() 실패 시 오류를 반환하도록 하며, Greg Kroah-Hartman이 6.6-stable 리뷰용으로 linux-hardening에 게시했습니다. 업스트림 커밋 e60adf\n\n영향: JIT 코드 영역이 ROX로 잠기지 않으면 W^X 하드닝이 무력화될 수 있어, BPF JIT·메모리 보호를 다루는 엔지니어는 stable 백포트와 실패 경로 처리를 추적해야 합니다.\n\n> set_memory_rox() can fail, leaving memory unprotected. Check return and bail out when bpf_jit_binary_lock_ro() returns an error.\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=e60adf513275c3a38e5cb67f7fd12387e43a3ff5)\n\n**string: instrument the word loads in sized_strscpy()**\n\nQiliang Yuan 패치가 CONFIG_DCACHE_WORD_ACCESS 경로에서 load_unaligned_zeropad() 호출 전 instrument_read()로 첫 바이트를 검사해, sized_strscpy()가 KASAN/KCSAN에서 놓치던 OOB·해제된 소스 읽기를 다\n\n영향: strscpy() 최적화가 sanitizer 가시성을 깎으면 CI·KUnit이 실제 UAF/OOB를 놓칠 수 있어, 하드닝·KASAN 담당자는 call-site 패치와 arch 공통 instrumented wrapper 시리즈 중 어느 방향이 머지되는지 봐야 합니다.\n\n> Since sized_strscpy() switched to it, generic and software tag-based KASAN no longer report strscpy() reading from a freed or out-of-bounds source on x86_64, arm64\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20261018-bug-string-strscpy-kasan-first-byte-v1-1-375a2c46d88f@gmail.com/)\n\n**netdev: Hide the netdev_priv() origin from GCC in netdev_from_priv()**\n\nGCC 15.1+가 netdev_from_priv()의 container_of() 경로에서 net_device 전체 크기를 0으로 추론해 FORTIFY가 team_add_slave() 등에서 정상 memcpy를 거부하는 문제를 OPTIMIZER_HIDE_VAR(priv)로 회피함.\n\n영향: hardening.config·Debian 유사 설정·ppc64le 등에서 NET_TEAM 사용 시 GRE 포트 추가 등이 커널 BUG로 실패할 수 있어, GCC 기반 하드닝 빌드의 네트워크 스택 담당자가 영향 범위를 알아야 합니다.\n\n> memcpy: detected buffer overflow: 4 byte write of buffer size 0\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20261015165959.i.798-kees@kernel.org/)\n\n**kobject: Require explicit initialization of struct kobj_type::release**\n\nIan Rogers 시리즈가 Clang __require_explicit_initialization으로 kobj_type::release 초기화를 강제하고, 누락된 .release에서 누수·조기 free(UAF 위험)를 고칩니다. Greg K-H는 속성 적용 전 사용자 수정을 선행하라고\n\n영향: kobject 생명주기 오류는 광범위한 서브시스템에서 UAF·누수로 이어지며, 컴파일 타임 강제는 하드닝·DEBUG_KOBJECT_RELEASE 검증 전략과 맞닿아 있습니다.\n\n> Sounds great, but let's fix up the users before adding the attribute. Looks like some of these need another version\n\n[원문 확인](https://lore.kernel.org/linux-hardening/2026101425-why-boring-4f2d@gregkh/)\n\n**mm/slab, ipc: kmem_buckets kernel-doc and msg_msg accounting fixes**\n\nKees Cook v7 2패치가 kmem_buckets_create() kernel-doc Context 섹션을 고치고, msg_msg 할당을 GFP_KERNEL_ACCOUNT로 복원해 CONFIG_SLAB_BUCKETS 비활성·bucket 생성 실패 시에도 memcg 과금이 되도록 합\n\n영향: SysV 메시지 할당이 cgroup 한도를 우회하면 컨테이너·다테넌트 환경에서 메모리 격리 실패가 되어, 슬랩 버킷 하드닝의 보안·자원 경계 측면을 다시 맞춥니다.\n\n> 2/2 now keeps SLAB_ACCOUNT on the msg_msg bucket caches and allocates with GFP_KERNEL_ACCOUNT as well\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20261014052338.nothing.279-kees@kernel.org/)\n\n**powerpc/kasan: fix r2 corruption in mem*() on GENERIC_ENTRY with old compilers**\n\nGENERIC_ENTRY와 구형 컴파일러 조합에서 KASAN mem*()가 이중 ELFv2 global entry를 만들어 r2(TOC)가 손상되던 버그를 수정했고, powerpc/next에 적용됐습니다.\n\n영향: KASAN 빌드에서 r2 corruption은 잘못된 메모리 검사·크래시로 이어져 powerpc64le 하드닝·CI 신뢰도에 직접 영향을 줍니다.\n\n> Applied to powerpc/next. [1/1] powerpc/kasan: fix r2 corruption in mem*() on GENERIC_ENTRY with old compilers\n\n[원문 확인](https://lore.kernel.org/linux-hardening/179196918691.1557523.109435781185152788.b4-ty@linux.ibm.com/)\n\n**objtool: Skip jump table jumps in the kCFI indirect call check**\n\nKees Cook의 objtool kCFI 패치(3/3)에 대해 Peter Zijlstra가 GCC+retpoline이 만드는 BPF 인터프리터 점프 테이블 간접 분기를 objtool이 어떻게 처리할지, IBT/FineIBT와의 상호작용까지 논의를 이어갔습니다.\n\n영향: GCC로 kCFI를 켠 하드닝 빌드에서 objtool이 jump-table 간접 호출을 no-cfi로 잘못 경고하거나 예외를 과하게 허용하면, kCFI·FineIBT 채택 전에 도구 신뢰성과 실제 보호 범위 판단이 흔들립니다.\n\n> And that would in turn cause more problems for FineIBT evasion, since that more or less depends on ENDBR being followed by the hash check.\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20261013091159.GM4121620@noisy.programming.kicks-ass.net/)\n\n**x86/cfi: Fix a few kCFI issues found with GCC**\n\nKees Cook가 GCC로 kCFI를 시험하며 세 가지를 고친 3패치 시리즈를 linux-hardening에 올렸습니다: kCFI 트랩 디코드 오프셋, FineIBT paranoid cs 프리픽스를 .byte로, objtool jump-table 점프 예외.\n\n영향: v7.3-rc1 이후 최적화된 kCFI 시퀀스와 GCC 빌드에서 실패 보고가 틀리거나 빌드가 깨지면, kCFI/FineIBT 하드닝 채택 전에 신뢰할 수 있는 진단·툴체인 호환이 필요합니다.\n\n> Since the kCFI call sequence was optimized in v7.3-rc1, the trap handler decodes the check one byte off... objtool's kCFI check treats GCC's jump-table jump for the BPF interpreter's computed goto as\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20261012090424.i.497-kees@kernel.org/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "국부 드라이버/플랫폼 패치는 본문에서 제외했습니다. 자기 영역 키워드로 lore.kernel.org에서 직접 검색하세요."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "bpf: Take return from set_memory_rox() into account with bpf_jit_binary_lock_ro()",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=e60adf513275c3a38e5cb67f7fd12387e43a3ff5",
+      "note": "commit"
+    },
+    {
+      "title": "string: instrument the word loads in sized_strscpy()",
+      "url": "https://lore.kernel.org/linux-hardening/20261018-bug-string-strscpy-kasan-first-byte-v1-1-375a2c46d88f@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "netdev: Hide the netdev_priv() origin from GCC in netdev_from_priv()",
+      "url": "https://lore.kernel.org/linux-hardening/20261015165959.i.798-kees@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "kobject: Require explicit initialization of struct kobj_type::release",
+      "url": "https://lore.kernel.org/linux-hardening/2026101425-why-boring-4f2d@gregkh/",
+      "note": "thread"
+    },
+    {
+      "title": "mm/slab, ipc: kmem_buckets kernel-doc and msg_msg accounting fixes",
+      "url": "https://lore.kernel.org/linux-hardening/20261014052338.nothing.279-kees@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "powerpc/kasan: fix r2 corruption in mem*() on GENERIC_ENTRY with old compilers",
+      "url": "https://lore.kernel.org/linux-hardening/179196918691.1557523.109435781185152788.b4-ty@linux.ibm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "objtool: Skip jump table jumps in the kCFI indirect call check",
+      "url": "https://lore.kernel.org/linux-hardening/20261013091159.GM4121620@noisy.programming.kicks-ass.net/",
+      "note": "thread"
+    },
+    {
+      "title": "x86/cfi: Fix a few kCFI issues found with GCC",
+      "url": "https://lore.kernel.org/linux-hardening/20261012090424.i.497-kees@kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "source": "research-dossier",
+    "bucketCounts": {
+      "릴리스/로드맵": 0,
+      "회귀·보안 신호": 8,
+      "핵심 변경": 0,
+      "기타": 0
+    },
+    "entryCount": 8
+  }
+}

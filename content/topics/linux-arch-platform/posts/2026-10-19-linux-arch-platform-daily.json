@@ -1,0 +1,143 @@
+{
+  "id": "2026-10-19-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-10-19 RISC-V mm 보안 — Arch·Platform",
+  "headline": "RISC-V에서 PAGE_KERNEL_RO 누락·execute-only PTE 회귀와 syscall restart 오판이 겹치고, TLB trace·K1 bootph·i.MX8MM suspend DT 수정이 리뷰 중입니다.",
+  "date": "2026-10-19",
+  "summary": "RISC-V mm는 read-only 매핑·execute-only 보호·signal restart 세 갈래에서 백포트 검토가 동시에 올라왔습니다. arm64 Variscite Symphony와 SpacemiT K1 DT는 suspend·SPL 부트 경로를 맞추는 패치가 진행 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "riscv: PAGE_KERNEL_RO 정의",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "RISC-V mm·hugetlb vmemmap·EFI/early ioremap 담당",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/101710.html",
+      "if": "HugeTLB vmemmap tail·early_memremap_ro·EFI read-only 매핑을 RISC-V에서 추적한다면",
+      "do": "generic fallback이 쓰기 가능 PTE를 내는지와 tail struct page 오염 가능성을 기준으로 백포트 필요성을 검토하세요",
+      "verify": "스레드 원문과 hugetlb vmemmap 최적화 관련 커밋 링크를 확인하세요"
+    },
+    {
+      "title": "riscv: pte_wrprotect execute-only 회귀",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "RISC-V mm·보안·THP/파일백엔드 경로 담당",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/101698.html",
+      "if": "PROT_EXEC·execute-only 워크로드를 v7.0 이후 RISC-V 커널에서 운영한다면",
+      "do": "folio_mkclean·msync·fork THP 경로에서 읽기 노출 여부를 보고 stable 백포트 범위를 정하세요",
+      "verify": "Fixes 540de7ade1e1 인용과 관련 커밋 diff를 원문에서 확인하세요"
+    },
+    {
+      "title": "riscv: TLB flush tracepoint v6",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "RISC-V mm·TLB shootdown·ftrace/perf 유지보수 담당",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/101715.html",
+      "if": "RISC-V에서 TLB shootdown을 perf·ftrace로 상관 분석한다면",
+      "do": "riscv_tlb_flush_request 필드·권한 모델과 SBI RFENCE·cross-CPU 경로 제외 범위를 리뷰 기준으로 따라가세요",
+      "verify": "v6 스레드에서 tracepoint 배치와 counting-only 권한 요구 문구를 확인하세요"
+    },
+    {
+      "title": "riscv: syscall restart 반환값 처리",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "RISC-V arch·signal/syscall restart·compat tracing 담당",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/101711.html",
+      "if": "lseek·brk 등 64비트 syscall 반환값과 signal restart를 함께 다룬다면",
+      "do": "상위 32비트가 잘리는 경로가 있는지 패치 머지·백포트 일정을 추적하세요",
+      "verify": "스레드 설명과 ce4f78f1b53d 관련 커밋 링크를 원문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**riscv: mm: Define PAGE_KERNEL_RO**\n\nNickolai Zeldovich 패치는 riscv에 PAGE_KERNEL_RO가 정의되지 않아 generic fallback이 PAGE_KERNEL(쓰기 가능)을 쓰는 문제를 고칩니다. PAGE_KERNEL_RO를 PAGE_KERNEL_READ로 정의해 HugeTLB vmemmap tail·early_memremap_ro·firmware/EFI read-only 매핑이 실제로 R-only가 됩니다.\n\n영향: 기본 HugeTLB vmemmap 최적화와 EFI/펌웨어 RO 매핑 경로는 잘못된 PTE로 tail struct page 공유 페이지가 쓰기 가능해져 전 huge page 메타데이터가 오염될 수 있어, RISC-V mm·보안·hugetlb 담당은 백포트 필요성을 검토해야 합니다.\n\n> On riscv that remap keeps _PAGE_WRITE, so such a write silently changes the struct pages of every optimized huge page instead... Define PAGE_KERNEL_RO as PAGE_KERNEL_READ.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-October/101710.html)\n\n**riscv: mm: Do not make execute-only PTEs readable in pte_wrprotect()**\n\nshadow stack용 540de7ade1e1 이후 pte_wrprotect()가 모든 PTE에 _PAGE_READ를 OR해 execute-only(XWR=100) 매핑이 writeback·fork THP 경로에서 읽기 가능(XWR=101)으로 바뀌는 문제를 고칩니다. writable PTE에만 _PAGE_READ를 추가하고 non-writable에는 no-op으로 돌립니다.\n\n영향: PROT_EXEC·execute-only 메모리를 쓰는 보안·JIT 워크로드는 v7.0 이후 모든 RISC-V 커널에서 사용자 공간 읽기 노출이 가능해, stable 백포트 필요성을 검토해야 합니다. CVE 부여·공개 일정은 확인이 필요합니다.\n\n> On riscv, a user page mapped execute-only becomes readable when the kernel write-protects its PTE... Fixes: 540de7ade1e1 (\"riscv/mm: update write protect to work on shadow stacks\")\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-October/101698.html)\n\n**riscv: signal: check the full syscall return value for a restart**\n\narch_do_signal_or_restart()가 regs->a0를 int로 잘라 64비트 syscall 반환값 상위 32비트를 버려, 하위 32비트가 -ERESTART*와 같으면 lseek()·brk() 등이 잘못 재시작되거나 -EINTR로 처리될 수 있습니다. 반환값을 long으로 유지하고 compat는 32비트 sign-extend를 유지하는 수정이 제안됩니다.\n\n영향: ce4f78f1b53d 이후 signal 처리 순서 변경과 결합된 희귀 재시작 오판은 파일 오프셋·heap 주소 등 사용자 가시 상태를 바꿀 수 있어, RISC-V arch·libc·tracing 담당은 패치 머지·백포트를 따라가야 할 수 있습니다. 실제 관측 빈도와 mainline 머지 일정은 확인이 필요합니다.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-October/101711.html)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**riscv: mm: Trace TLB flush requests**\n\nRoman Storozhenko v6가 flush_tlb_all()·__flush_tlb_range()에 riscv_tlb:riscv_tlb_flush_request tracepoint를 추가하고 범위·stride·ASID·대상 CPU mask·scope 등 RISC-V 무효화 요청 컨텍스트를 기록합니다. 커널 VA가 start에 들어갈 수 있어 perf tracepoint 권한을 counting-only에도 요구하고, SBI RFENCE vs cross-CPU 경로는 의도적으로 제외합니다.\n\n영향: RISC-V MM·SMP 담당자는 generic tlb:tlb_flush만으로는 shootdown 특성을 상관하기 어려워, v6의 arch 내 이벤트 배치·필드·권한 모델을 리뷰·머지 기준으로 따라가야 합니다. mainline 머지 일정과 CONFIG_PERF_EVENTS 없는 빌드 오버헤드는 확인이 필요합니다.\n\n> Add riscv_tlb:riscv_tlb_flush_request in flush_tlb_all() and __flush_tlb_range()... It does not report whether a remote flush uses SBI RFENCE or Linux cross-CPU coordination\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-October/101715.html)\n\n**arm64: dts: imx8mm-var-som: fix touchscreen IRQ trigger**\n\nimx8mm-var-som Symphony 보드 DTS에서 터치스크린 IRQ를 level-high에서 falling-edge로 바꿉니다. level-high 설정이 pending wakeup을 남겨 touchscreen wakeup 사용 시 suspend 진입을 막았습니다.\n\n영향: Variscite i.MX8MM Symphony 기반 제품은 upstream DT IRQ 설정이 suspend·wakeup 경로를 막을 수 있어, arm64 플랫폼·power-management 담당은 패치 적용 여부를 확인해야 합니다.\n\n> The touchscreen interrupt is configured as level-high, causing a pending wakeup that prevents Symphony from entering suspend.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-arm-kernel/2026-October/1188224.html)\n\n**riscv: dts: spacemit: mark K1 boot nodes bootph-pre-ram**\n\nHung-Chun Tseng v2가 SpacemiT K1 SoC·보드 DTS에 bootph-pre-ram을 추가해 SRAM SPL이 DRAM 이전에 필요한 클럭·UART·부트 미디어·PMIC(i2c8)·EEPROM·SPI NOR 노드를 upstream DT에 태그합니다. v2는 i2c8을 k1.dtsi로 옮기고 dtbs_check를 통과합니다.\n\n영향: mainline U-Boot SPL이 per-board overlay 대신 Linux DT를 쓰려면 upstream bootph-pre-ram이 필요해, K1·Milk-V Jupiter 등 RISC-V 플랫폼·부트 체인 담당은 E Shattow 리뷰와 v3 커밋 메시지 정리를 따라가야 합니다.\n\n> Patch 1 tags the SoC nodes in k1.dtsi, including i2c8, which every K1 board uses for the PMIC.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-October/101703.html)"
+    },
+    {
+      "heading": "기타",
+      "body": "**SpacemiT K1 DT 리뷰 맥락**\n\nE Shattow는 Linux DT가 하드웨어를 설명해야 하며 다른 소프트웨어 프로젝트의 임의적 요구만으로 정당화하기 어렵다는 점을 짚었고, BootROM/SRAM 부트 워크플로 정당화가 필요하다고 했습니다.\n\n> Device tree in Linux describes hardware and not the arbitrary needs of some other specific software project.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-October/101707.html)\n\n**imx8mm-var-som lore 스레드**\n\n터치스크린 wakeup을 켠 상태에서 보드가 suspend에 들어가려면 인터럽트를 falling-edge로 바꿔야 한다는 설명이 lore에도 올라왔습니다.\n\n> Change the interrupt to falling-edge so the board can suspend with touchscreen wakeup enabled.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20261018170007.38381-1-stefano.r@variscite.com/)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "riscv TLB flush tracepoint v6 (infradead)",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/101715.html",
+      "note": "thread"
+    },
+    {
+      "title": "riscv TLB flush tracepoint v6 (lore)",
+      "url": "https://lore.kernel.org/linux-riscv/20261018-tlb_tracepoint-v6-1-14476427870f@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv PAGE_KERNEL_RO",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/101710.html",
+      "note": "thread"
+    },
+    {
+      "title": "riscv hugetlb vmemmap optimize commit",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=a3c7d6b642e4",
+      "note": "commit"
+    },
+    {
+      "title": "riscv pte_wrprotect execute-only",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/101698.html",
+      "note": "thread"
+    },
+    {
+      "title": "riscv shadow stack pte_wrprotect commit",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=540de7ade1e1327119e367ec5f662a627b3fe9f9",
+      "note": "commit"
+    },
+    {
+      "title": "riscv syscall restart signal",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/101711.html",
+      "note": "thread"
+    },
+    {
+      "title": "riscv signal restart refactor commit",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=ce4f78f1b53d",
+      "note": "commit"
+    },
+    {
+      "title": "imx8mm-var-som touchscreen IRQ (infradead)",
+      "url": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-October/1188224.html",
+      "note": "thread"
+    },
+    {
+      "title": "imx8mm-var-som touchscreen IRQ (lore)",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20261018170007.38381-1-stefano.r@variscite.com/",
+      "note": "thread"
+    },
+    {
+      "title": "SpacemiT K1 bootph-pre-ram v2",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/101703.html",
+      "note": "thread"
+    },
+    {
+      "title": "SpacemiT K1 DT review (E Shattow)",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/101707.html",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-18T18:35:16.420Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

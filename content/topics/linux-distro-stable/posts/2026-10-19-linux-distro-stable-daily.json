@@ -1,0 +1,141 @@
+{
+  "id": "2026-10-19-linux-distro-stable-daily",
+  "topic": "linux-distro-stable",
+  "title": "2026-10-19 ISO-TP·Rust 부팅 — 배포판 stable",
+  "headline": "stable 큐에 CAN ISO-TP UAF·x86 Rust RETPOLINE 부팅 실패·QEMU ACPI 전원 버튼 회귀가 올라왔고, 10월 15일 LTS·7.2.11 태그는 전일과 동일합니다.",
+  "date": "2026-10-19",
+  "summary": "신규는 SocketCAN ISO-TP 필터 레이스, RETPOLINE/FineIBT Rust 빌드, PLPKS errno, DaVinci GPIO suspend, 6.6 shrinker WERROR, UFS BSG 누수, QEMU ACPI 전원 버튼 회귀입니다. 7.2.11·5.10.272·5.15.223·6.1.190은 이미 공개된 추적 기준입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "stable",
+    "LTS",
+    "배포판"
+  ],
+  "highlights": [
+    {
+      "title": "can: isotp: filter removal race",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "SocketCAN ISO-TP 워크로드를 패키징하는 배포·임베디드 커널 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20261018164417.1540449-5-mkl@pengutronix.de/",
+      "if": "CAN/ISO-TP 소켓과 netns 변경·해제 경로를 운영 이미지에서 쓴다면",
+      "do": "stable@vger 백포트 머지 전 동일 시나리오에서 크래시 회귀 테스트를 돌리고 보안 업데이트 채널을 함께 추적하세요",
+      "verify": "lore 스레드의 KASAN use-after-free 인용과 Cc: stable@vger.kernel.org 줄을 확인하세요"
+    },
+    {
+      "title": "x86/rust: RETPOLINE indirect branch",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "Rust for Linux 및 x86 Spectre mitigations를 기본 켠 배포판 빌드·QA 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20261018175457.87803-1-ojeda@kernel.org/",
+      "if": "CONFIG_RUST와 RETPOLINE 또는 FineIBT를 함께 켠 x86 이미지를 빌드한다면",
+      "do": "6.18.y+ stable 백포트 반영 전 부팅·retpoline 패치 경고를 재현 테스트하고 rustc 1.91 미만 환경은 LLVM module flag 경로를 점검하세요",
+      "verify": "apply_retpolines WARNING 인용과 Cc: stable@vger.kernel.org # 6.18.y+ 줄을 lore에서 확인하세요"
+    },
+    {
+      "title": "pseries/plpks: flush errno 이중 변환",
+      "priority": "중",
+      "impactType": "backport",
+      "affectedAudience": "powerpc/pseries Platform KeyStore를 쓰는 엔터프라이즈·배포 커널 유지보수",
+      "verifyLink": "https://lore.kernel.org/stable/20261018170844.491252-2-ssrish@linux.ibm.com/",
+      "if": "PowerVM/PSeries에서 PLPKS 키 저장소 작업을 패키징한다면",
+      "do": "stable.git 태그 갱신 후 Cc 6.0 반영 시점을 보고 errno 오판 경로 회귀 테스트를 수행하세요",
+      "verify": "HCALL 오류만 변환하고 flush 확인 오류는 그대로 전달한다는 lore 인용문을 확인하세요"
+    },
+    {
+      "title": "6.18.57 QEMU ACPI power button 회귀",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "6.18 stable/longterm 및 QEMU 기반 CI·데스크톱 배포 커널 담당",
+      "verifyLink": "https://lore.kernel.org/stable/atT4M12w4Em-JdsA@ametros.net/",
+      "if": "6.18.x stable을 QEMU 가상머신·클라우드 이미지에 쓴다면",
+      "do": "전원 관리 UI·graceful shutdown 동작을 점검하고 stable 트리 revert·fix 형태가 나오면 따라가세요",
+      "verify": "6.18.57부터 버튼이 없다는 보고와 7.3-rc7 QEMU에서는 정상이라는 답장 인용을 lore에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**can: isotp: fix filter removal race between release and netns change**\n\nisotp_release()가 RTNL 잠금 전에 notifier 목록에서 소켓을 빼면 netns 이동과 겹쳐 CAN 필터가 해제되지 않고 KASAN use-after-free가 난다고 설명되며, RTNL을 먼저 잡고 dev_net(so->dev)로 can_rx_unregister()를 호출하도록 고칩니다.\n\n영향: CAN/ISO-TP 소켓을 쓰는 automotive·산업 배포판은 stable 백포트 전에도 동일 경로에서 크래시가 가능하므로 stable 큐와 보안 업데이트 채널을 함께 추적해야 합니다. Doyensec 보고 스레드와 연계된 CVE 공개 일정은 별도 확인이 필요합니다.\n\n> BUG: KASAN: use-after-free in isotp_rcv+0x1570/0x24d0\n\n[원문 확인](https://lore.kernel.org/stable/20261018164417.1540449-5-mkl@pengutronix.de/)\n\n**scsi: ufs: bsg: Complete the job on error**\n\nufs_bsg_request() 실패 시 bsg_job_done()을 호출하지 않아 BSG job의 디바이스 참조와 scatterlist가 누수되던 경로를, 항상 bsg_job_done()으로 완료하고 SG_IO errno 규약을 다른 BSG transport와 맞추는 stable 백포트가 올라왔습니다.\n\n영향: UFS BSG(RPMB 등)를 쓰는 모바일·서버 이미지는 I/O 오류 후 리소스 누수로 스토리지 스택이 망가질 수 있어 stable 반영을 검토해야 합니다. 어느 stable 브랜치에 머지되는지는 아직 kernel.org ChangeLog에 없습니다.\n\n[원문 확인](https://lore.kernel.org/stable/361e83f8ae479909597238b4ddf9b3a1e40ef0c2.camel@iokpp.de/)\n\n**regression 6.18.57: acpi power button vanished in machines running in qemu**\n\n6.18.57 이후 QEMU 가상머신에서 ACPI 전원 버튼이 사라진 회귀가 stable 스레드에 올라왔고, 38c79dacc8063 revert로 증상이 사라진다는 보고에 Bob Anderson은 7.3-rc7 QEMU에서는 버튼이 정상이라고 답했습니다.\n\n영향: 6.18.x stable을 QEMU/클라우드 이미지에 쓰는 배포는 전원 관리·graceful shutdown UI가 깨질 수 있어 stable 백포트·revert 여부를 추적해야 합니다. 물리 하드웨어 동일 회귀와 stable 트리 fix 형태는 아직 미정입니다.\n\n> since 6.18.57 there is no acpi power button any more in virtual qemu based machines\n\n[원문 확인](https://lore.kernel.org/stable/atT4M12w4Em-JdsA@ametros.net/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**pseries/plpks: fix double conversion of write and remove flush errors**\n\nplpks_confirm_object_flushed()가 이미 Linux errno를 반환하는데 plpks_write_var()/plpks_remove_var()가 이를 다시 pseries_status_to_err()로 변환하던 버그를, HCALL 오류만 변환하고 flush 확인 오류는 그대로 전달하도록 고칩니다.\n\n영향: PowerVM/PSeries에서 PLPKS를 쓰는 엔터프라이즈 배포는 잘못된 errno로 키 저장소 작업 실패를 오판할 수 있어 stable 백포트(Cc 6.0) 반영 시점을 봐야 합니다. 정확히 어떤 stable/longterm 점 릴리스에 머지되는지는 stable.git 태그 갱신 후 확인이 필요합니다.\n\n> Convert only errors returned by the write and remove HCALLs, and propagate errors from plpks_confirm_object_flushed() unchanged.\n\n[원문 확인](https://lore.kernel.org/stable/20261018170844.491252-2-ssrish@linux.ibm.com/)\n\n**gpio: davinci: Clear interrupt status in every bank on suspend**\n\ndavinci_gpio_save_context()가 suspend 시 마지막 GPIO 뱅크만 intstat을 지워 앞선 뱅크의 pending 인터럽트가 남던 문제를, 뱅크 루프 안에서 intstat을 비우도록 수정합니다.\n\n영향: TI DaVinci/AM642 등 임베디드 LTS 배포는 resume 후 유령 GPIO 인터럽트로 wake·전원 관리가 깨질 수 있어 stable 백포트 적용을 검토해야 합니다. 다른 DaVinci SoC에서 동일 증상 리포트는 이번 dossier에 없습니다.\n\n> At that point g refers to the last bank, so pending status in all preceding banks is left uncleared.\n\n[원문 확인](https://lore.kernel.org/stable/20261018170622.3406158-1-sahaj123.sc@gmail.com/)\n\n**x86/rust: use `-Zindirect-branch-cs-prefix` for RETPOLINE builds**\n\nRETPOLINE/FineIBT 빌드에서 Rust 간접 호출이 5바이트로 남아 patch_retpoline()이 패치 공간을 넘치며 부팅 시 WARNING·double fault가 나던 문제를, Rust 1.91+의 -Zindirect-branch-cs-prefix(구버전은 LLVM module flag)로 C와 동일한 6바이트 호출을 생성합니다.\n\n영향: CONFIG_RUST + RETPOLINE/FineIBT를 켠 배포(보안 기본값)는 이 stable 백포트(6.18.y+) 없이 부팅 실패할 수 있어 Rust 커널 빌드 매트릭스를 즉시 점검해야 합니다.\n\n> WARNING: arch/x86/kernel/alternative.c:736 at apply_retpolines+0x2ee/0x400\n\n[원문 확인](https://lore.kernel.org/stable/20261018175457.87803-1-ojeda@kernel.org/)\n\n**mm: shrinker: add infrastructure for dynamically allocating shrinker**\n\n6.6-stable 리뷰 중인 동적 shrinker 인프라 백포트가 -Werror=suggest-attribute=format로 shrinker_debugfs_name_alloc에서 빌드 경고를 일으키며, SJ Park가 upstream f04eba134e59(printf 속성 추가)도 함께 cherry-pick해 달라고 요청했습니다.\n\n영향: 6.6 LTS를 WERROR로 빌드하는 배포(또는 CI)는 shrinker 시리즈만 반영하면 빌드가 깨질 수 있어 stable 큐에 동반 패치가 들어가는지 모니터해야 합니다. Greg이 f04eba134e59를 같은 6.6-stable 배치에 포함할지는 stable 메일 답장을 기다려야 합니다.\n\n[원문 확인](https://lore.kernel.org/stable/20261018181413.376492-1-sj@kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ChangeLog-7.2.11",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.11",
+      "note": "changelog"
+    },
+    {
+      "title": "pseries/plpks flush errno stable thread",
+      "url": "https://lore.kernel.org/stable/20261018170844.491252-2-ssrish@linux.ibm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "can isotp filter race stable thread",
+      "url": "https://lore.kernel.org/stable/20261018164417.1540449-5-mkl@pengutronix.de/",
+      "note": "thread"
+    },
+    {
+      "title": "gpio davinci suspend stable thread",
+      "url": "https://lore.kernel.org/stable/20261018170622.3406158-1-sahaj123.sc@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "x86/rust RETPOLINE stable thread",
+      "url": "https://lore.kernel.org/stable/20261018175457.87803-1-ojeda@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "mm shrinker 6.6-stable build warning",
+      "url": "https://lore.kernel.org/stable/20261018181413.376492-1-sj@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "scsi ufs bsg job completion stable thread",
+      "url": "https://lore.kernel.org/stable/361e83f8ae479909597238b4ddf9b3a1e40ef0c2.camel@iokpp.de/",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-5.10.272",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.272",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-5.15.223",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.223",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-6.1.190",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.1.190",
+      "note": "changelog"
+    },
+    {
+      "title": "QEMU ACPI power button regression stable thread",
+      "url": "https://lore.kernel.org/stable/atT4M12w4Em-JdsA@ametros.net/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-18T18:28:43.499Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

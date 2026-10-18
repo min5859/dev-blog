@@ -1,0 +1,128 @@
+{
+  "id": "2026-10-19-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-10-19 gfx1201 디스플레이 회귀 — Linux GPU·AI",
+  "headline": "gfx1201 혼합 주사율 멀티 모니터 DCN vblank 통합 회귀 revert가 제안되고, Mediatek DSI·Smartisan 패널·kmb encoder 정리가 이어집니다.",
+  "date": "2026-10-19",
+  "summary": "Ava H가 c87e6635d2db DCN vblank/flip vupdate_no_lock 통합을 되돌리는 3패치 시리즈를 올려 gfx1201 Wayland 듀얼 모니터 corruption을 다룹니다. drm/mediatek DSI command-mode 강제, Smartisan TD4362 패널 upstream, drm/kmb dsi의 drm_simple_encoder_init 인라인화도 리뷰 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "drm/amd/display vupdate_no_lock revert",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "amdgpu DCN display·멀티 CRTC/KMS 및 gfx1201 데스크톱 사용자",
+      "verifyLink": "https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg644927.html",
+      "if": "gfx1201(RX 9070 XT)에서 서로 다른 주사율 듀얼 모니터 Wayland 시 약 0.1초 화이트 노이즈 띠가 반복된다면",
+      "do": "c87e6635d2db revert 3패치 시리즈와 GitLab #6004 bisect 제보를 dri-devel 스레드에서 추적하세요",
+      "verify": "70de0a021658 적용 후에도 glitch가 남는지 cover letter 인용과 #6004 재현 로그를 대조해 확인하세요"
+    },
+    {
+      "title": "drm/mediatek dsi command mode 강제",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "drm/mediatek DSI·모바일/태블릿 패널 bring-up 담당",
+      "verifyLink": "https://patchew.org/linux/20261004-rbrue-suez-upstreaming-mtk-dsi-cmd-mode-v1-1-53a4f46ca489@gmail.com/",
+      "if": "부트로더가 DSI video mode로 켠 뒤 첫 DCS가 VM_DONE 타임아웃(-62)으로 실패한다면",
+      "do": "mtk_dsi_poweron()에서 mtk_dsi_set_cmd_mode()를 호출하는 Ryan Brue 패치와 Roman Vivchar Acked-by를 검토하세요",
+      "verify": "mtk_dsi_reset_engine()이 DSI_MODE_CTRL을 건드리지 않는다는 패치 설명과 IRQ 타임아웃 로그를 대조해 확인하세요"
+    },
+    {
+      "title": "drm/panel Smartisan TD4362",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "drm/panel·MIPI DSI 스마트폰/레거시 기기 포팅 담당",
+      "verifyLink": "https://patchew.org/linux/20261017103250.800109-1-tianshi12127@gmail.com/",
+      "if": "Smartisan R1(trident) 1080x2242 command-mode DSI 패널을 upstream drm/panel로 올리는 작업을 한다면",
+      "do": "Lu Chen v2 시리즈의 DT binding·panel-smartisan-td4362.c(4 lane, RGB888)와 vsp/vsn supply 이름 변경을 따라가세요",
+      "verify": "v2가 3패치 모두 리뷰·머지되었는지 patchew 수신 상태와 maintainer 처리를 확인하세요"
+    },
+    {
+      "title": "drm/kmb/dsi drm_simple_encoder_init 인라인",
+      "priority": "하",
+      "impactType": "project",
+      "affectedAudience": "drm/kmb 및 DRM encoder 초기화 패턴 정리 담당",
+      "verifyLink": "https://patchew.org/linux/20261018105217.233443-1-melihemik@noirlang.tr/",
+      "if": "Documentation/gpu/todo.rst의 drm_simple_encoder_init 제거 작업을 다른 DRM 드라이버에 적용할 계획이 있다면",
+      "do": "Melih Emik 패치의 drm_encoder_init·로컬 drm_encoder_funcs 인라인과 W=1·lockdep·QEMU 검증 주장을 참고하세요",
+      "verify": "drm-misc-next 머지 여부와 maintainer 리뷰 코멘트는 이 단일 패치 thread만으로는 확인되지 않았으므로 추가 스레드를 찾아보세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm/amd/display: revert vupdate_no_lock vblank consolidation (causes display corruption on gfx1201 multi-monitor)**\n\nAva H가 DCN vblank/flip을 vupdate_no_lock으로 통합한 c87e6635d2db와 후속 두 커밋을 되돌리는 3패치 시리즈를 제안합니다. gfx1201(RX 9070 XT)에서 서로 다른 주사율의 듀얼 모니터 Wayland 사용 시 약 0.1초짜리 화이트 노이즈 띠가 모든 화면에 동시에 반복된다고 보고합니다.\n\n영향: flip_done 타임아웃(#5616)용 IRQ 원자화 수정(70de0a021658)과는 별개의 두 번째 실패 모드로, 로그 없이 화면이 깨지는 회귀라서 RDNA4 멀티 모니터·혼합 타이밍 사용자와 amdgpu display 유지보수자가 blanket revert 대신 타깃 수정이 나올지 추적해야 합니다.\n\n> this series reverts the \"consolidate DCN vblank/flip handling onto vupdate_no_lock\" change (c87e6635d2db) ... The known follow-up fix (70de0a021658 ... ) does NOT cover this failure mode\n\n[원문 확인](https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg644927.html)\n\nGitLab #6004는 RX 9070 XT에서 4K@144 DP + 1080p@60 HDMI 구성에서 약 6초마다 corruption이 재현되고, 모듈 단위 bisect로 동일 커밋을 지목합니다.\n\n> Bisected to c87e6635d2db ... commit kept + 70de0a021658 applied | glitchy\n\n[원문 확인](https://gitlab.freedesktop.org/drm/amd/-/issues/6004)\n\n원 통합 시리즈는 DCN에서 VUPDATE_NO_LOCK 하나로 vblank와 flip completion을 처리하도록 IRQ 경로를 바꿉니다.\n\n> Stop registering VSTARTUP (crtc_irq) and GRPH_PFLIP (pageflip_irq) on DCN ... Enable VUPDATE whenever vblank is enabled on DCN\n\n[원문 확인](https://www.mail-archive.com/amd-gfx@lists.freedesktop.org/msg146211.html)\n\nmaintainer가 blanket revert 대신 multi-CRTC/혼합 타이밍에서 legacy vblank IRQ로 fallback하는 타깃 수정을 선택할지는 thread에서 미결입니다. mainline·stable에 revert 시리즈가 머지되는 일정은 아직 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/mediatek: dsi: force command mode in mtk_dsi_poweron()**\n\nRyan Brue 패치는 mtk_dsi_poweron()에서 엔진 리셋 직후 mtk_dsi_set_cmd_mode()를 호출해 부트로더가 남긴 video mode DSI_MODE_CTRL 상태를 지웁니다. Roman Vivchar는 mt6572·mt6768 등 여러 모바일 SoC에도 유용하다며 Acked-by를 달았습니다.\n\n영향: 부트로더가 DSI를 video mode로 켠 뒤 커널에 넘기면 첫 DCS 명령이 VM_DONE을 기다리다 타임아웃(-62)으로 패널 초기화가 실패하는데, 공통 mtk_dsi 경로 수정이라 Fire HD 10(2017)뿐 아니라 upstream Mediatek 보드 bring-up에도 영향이 큽니다.\n\n> mtk_dsi_reset_engine() does not touch DSI_MODE_CTRL ... Wait DSI IRQ(0x00000008) Timeout ... sending dcs data 8f a5 failed: -62\n\n[원문 확인](https://patchew.org/linux/20261004-rbrue-suez-upstreaming-mtk-dsi-cmd-mode-v1-1-53a4f46ca489@gmail.com/)\n\n> This is useful for quite lot of mobile SoCs, at least mt6572 and 6768. Acked-by: Roman Vivchar\n\n[원문 확인](https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg644897.html)\n\nMT8196 DSI 레지스터 오프셋 리팩터 시리즈와의 rebase 순서는 Ryan Brue가 patchew cover에서 언급했으나 머지 전 최종 정리는 미확인입니다.\n\n**drm/panel: Add Smartisan TD4362 panel support**\n\nLu Chen v2 시리즈가 Smartisan R1(trident)용 1080x2242 command-mode MIPI DSI 패널 TD4362용 vendor prefix·DT binding·panel-smartisan-td4362.c 드라이버(4 lane, RGB888)를 추가합니다. v2는 리뷰에 따라 lab/ibb supply 이름을 vsp/vsn으로 바꿨습니다.\n\n영향: upstream에 없던 레거시 스마트폰 패널이 drm/panel로 들어오면 DSI command-mode 패널·DT binding 패턴과 mdss-dsi-panel-driver-generator 워크플로를 추적하는 DRM 패널 담당자에게 참고 사례가 됩니다.\n\n> This series adds support for the Smartisan TD4362, a 1080x2242 command mode DSI panel found in the Smartisan R1 (trident) smartphone.\n\n[원문 확인](https://patchew.org/linux/20261017103250.800109-1-tianshi12127@gmail.com/)\n\n> title: Smartisan TD4362 MIPI-DSI panel ... required: - compatible - reg - vddio-supply - vsp-supply - vsn-supply\n\n[원문 확인](https://patchew.org/linux/20261017103250.800109-1-tianshi12127@gmail.com/20261017103250.800109-3-tianshi12127@gmail.com/)\n\nv2 시리즈가 3패치 모두 리뷰·머지되었는지 patchew에는 일부 패치만 수신된 상태로 표시되어 maintainer 최종 처리를 확인해야 합니다.\n\n**drm/kmb/dsi: inline drm_simple_encoder_init()**\n\nMelih Emik 패치가 deprecated drm_simple_encoder_init()를 drm_encoder_init()와 로컬 drm_encoder_funcs로 인라인화하고 drm_simple_kms_helper.h 의존을 제거합니다. W=1·lockdep·QEMU 부팅으로 드라이버 등록을 검증했다고 합니다.\n\n영향: Documentation/gpu/todo.rst에서 권장하는 drm_simple_encoder_init 제거 작업의 일부로, atomic KMS 경로를 단순화하는 DRM 전반 리팩터의 선행 패턴을 kmb_dsi에서 확인할 수 있습니다.\n\n> The helper drm_simple_encoder_init() is deprecated because it adds an unnecessary intermediate layer between atomic modesetting and DRM drivers\n\n[원문 확인](https://patchew.org/linux/20261018105217.233443-1-melihemik@noirlang.tr/)\n\n> The task here is to remove drm_simple_encoder_init(). Search for a driver that calls drm_simple_encoder_init() and inline the helper.\n\n[원문 확인](https://docs.kernel.org/gpu/todo.html)\n\ndrm-misc-next 머지 여부와 maintainer 리뷰 코멘트는 이 단일 패치 thread만으로는 확인되지 않았습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "AMD DCN vupdate_no_lock revert cover",
+      "url": "https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg644927.html",
+      "note": "thread"
+    },
+    {
+      "title": "GitLab #6004 gfx1201 corruption bisect",
+      "url": "https://gitlab.freedesktop.org/drm/amd/-/issues/6004",
+      "note": "article"
+    },
+    {
+      "title": "DCN vblank/flip VUPDATE_NO_LOCK 통합 시리즈",
+      "url": "https://www.mail-archive.com/amd-gfx@lists.freedesktop.org/msg146211.html",
+      "note": "patch"
+    },
+    {
+      "title": "mtk_dsi_poweron command mode 패치",
+      "url": "https://patchew.org/linux/20261004-rbrue-suez-upstreaming-mtk-dsi-cmd-mode-v1-1-53a4f46ca489@gmail.com/",
+      "note": "patch"
+    },
+    {
+      "title": "Mediatek DSI Acked-by 스레드",
+      "url": "https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg644897.html",
+      "note": "thread"
+    },
+    {
+      "title": "Smartisan TD4362 v2 cover",
+      "url": "https://patchew.org/linux/20261017103250.800109-1-tianshi12127@gmail.com/",
+      "note": "patch"
+    },
+    {
+      "title": "Smartisan TD4362 DT binding",
+      "url": "https://patchew.org/linux/20261017103250.800109-1-tianshi12127@gmail.com/20261017103250.800109-3-tianshi12127@gmail.com/",
+      "note": "patch"
+    },
+    {
+      "title": "drm/kmb/dsi encoder 인라인 패치",
+      "url": "https://patchew.org/linux/20261018105217.233443-1-melihemik@noirlang.tr/",
+      "note": "patch"
+    },
+    {
+      "title": "Kernel GPU TODO — drm_simple_encoder_init",
+      "url": "https://docs.kernel.org/gpu/todo.html",
+      "note": "article"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-18T18:37:28.499Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

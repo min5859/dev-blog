@@ -1,0 +1,138 @@
+{
+  "id": "2026-10-19-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-10-19 strscpy KASAN 회귀 — 커널 보안",
+  "headline": "sized_strscpy() 최적화가 KASAN 가시성을 깎은 회귀가 linux-hardening에 올라왔고, 7.2.11·LTS 마이너와 BPF JIT ROX 검사가 함께 움직입니다.",
+  "date": "2026-10-19",
+  "summary": "Qiliang Yuan의 sized_strscpy() instrument_read() 패치가 KUnit이 놓치던 OOB·해제 소스 읽기를 다시 잡도록 제안되었습니다. stable·longterm 릴리스와 BPF 6.6-stable 리뷰, USB joystick strscpy 시리즈 방향도 함께 추적할 worth가 있습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "sized_strscpy() KASAN/KCSAN 회귀",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "KASAN/KCSAN·lib/string 및 word-at-a-time arch 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20261018-bug-string-strscpy-kasan-first-byte-v1-1-375a2c46d88f@gmail.com/",
+      "if": "CONFIG_DCACHE_WORD_ACCESS 경로에서 strscpy() 관련 CI·KUnit이 UAF/OOB를 놓치고 있다면",
+      "do": "call-site instrument_read() 패치와 arch 공통 wrapper 대안 리뷰를 따라가며 머지 방향을 정리하세요",
+      "verify": "generic KASAN kasan_strings KUnit과 lore 스레드 원문을 대조해 회귀 조건을 확인하세요"
+    },
+    {
+      "title": "USB joystick strlcat() 제거 시리즈",
+      "priority": "중",
+      "impactType": "project",
+      "affectedAudience": "input 서브시스템 메인테이너, USB 드라이버·KSPP 하드닝 추적 담당",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/al4du5juolbkhpa42fmewxaa62kre7ohmz7h6pako2dkjtnqtt@cdziwambsido/",
+      "if": "KSPP strlcat() 치환을 18개 드라이버에 오픈코딩으로 반복하려 한다면",
+      "do": "usb_make_subpath() 같은 공통 helper 제안을 기준으로 패치 범위를 재설계하세요",
+      "verify": "메인테이너 스레드에서 거부 사유와 helper 시그니처를 원문으로 확인하세요"
+    },
+    {
+      "title": "BPF JIT set_memory_rox() 실패 처리",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF JIT·set_memory_* 하드닝 및 6.6 stable 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20261017160447.045374196@linuxfoundation.org/",
+      "if": "6.6 stable에서 BPF JIT ROX 잠금 실패 경로를 백포트할 계획이 있다면",
+      "do": "Greg Kroah-Hartman이 올린 6.6-stable 리뷰 패치와 업스트림 e60adf513275 검사를 함께 추적하세요",
+      "verify": "linux-hardening 리뷰 스레드와 업스트림 커밋 메시지에서 set_memory_rox() 반환값 처리를 확인하세요"
+    },
+    {
+      "title": "Linux 7.2.11 stable",
+      "priority": "중",
+      "impactType": "release",
+      "affectedAudience": "7.2 stable 커널 배포·유지보수 담당",
+      "verifyLink": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.11",
+      "if": "7.2.x 운영 커널을 이번 마이너로 올릴 예정이라면",
+      "do": "ChangeLog 284건 백포트 중 openvswitch IPv6·flow_dissector BPF·mm/mremap·riscv ptrace 항목을 배포 정책에 맞게 선별해 검증하세요",
+      "verify": "ChangeLog-7.2.11에서 해당 커밋 제목과 전체 백포트 목록을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.2.11 stable**\n\n2026-10-15 Linux 7.2.11 stable이 태그되었고 ChangeLog에는 7.2.10 대비 284건의 백포트가 있습니다. openvswitch IPv6 transport 헤더 검증, flow_dissector BPF 길이 처리, mm/mremap locked_vm 누수, riscv ptrace regset 초기화 등이 포함됩니다.\n\n영향: 7.2.x 운영 커널은 가상 네트워킹·BPF dissect·메모리 계정 관련 보안·안정성 수정을 이번 마이너로 받으며 배포 전 회귀 검증이 필요합니다.\n\n> Linux 7.2.11\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.11)\n\n**Linux 5.10.272 / 5.15.223 / 6.1.190 longterm**\n\n각 longterm 마이너에 TCP 요청 소켓 inet_opt RCU 안전 해제, IPv4 checksum_start 방어 검증, nfnetlink_queue SCTP GSO 체크섬 수정 3건이 동일하게 백포트됩니다.\n\n영향: 5.10·5.15·6.1 LTS 환경은 SYN 재전송 경쟁, 잘못된 체크섬 메타데이터 스택 손상, NFQUEUE SCTP 장애를 막는 최소 수정 묶음을 이번 릴리스로 받습니다.\n\n> Linux 5.10.272\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.272)\n\n> Linux 5.15.223\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.223)\n\n> Linux 6.1.190\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.1.190)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**string: instrument the word loads in sized_strscpy()**\n\nQiliang Yuan 패치가 CONFIG_DCACHE_WORD_ACCESS 경로에서 load_unaligned_zeropad() 호출 전 instrument_read()로 첫 바이트를 검사해, sized_strscpy()가 KASAN/KCSAN에서 놓치던 OOB·해제된 소스 읽기를 다시 잡도록 합니다. linux-hardening에 v1으로 게시되었고 Peter Collingbourne는 load_unaligned_zeropad() 자체에 instrument_read()를 넣는 대안을 제안했습니다. mainline 머지 전 call-site 패치 vs arch 공통 instrumented wrapper 시리즈 중 최종 선택은 확인이 필요합니다.\n\n영향: strscpy() 최적화가 sanitizer 가시성을 깎으면 CI·KUnit이 실제 UAF/OOB를 놓칠 수 있어, 하드닝·KASAN 담당자는 어느 방향이 머지되는지 봐야 합니다.\n\n> Since sized_strscpy() switched to it, generic and software tag-based KASAN no longer report strscpy() reading from a freed or out-of-bounds source on x86_64, arm64\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20261018-bug-string-strscpy-kasan-first-byte-v1-1-375a2c46d88f@gmail.com/)\n\n**bpf: Take return from set_memory_rox() into account with bpf_jit_binary_lock_ro()**\n\nGreg Kroah-Hartman이 Christophe Leroy 패치를 6.6-stable 리뷰용으로 linux-hardening에 게시했습니다. 업스트림 커밋 e60adf513275는 BPF JIT ROX 잠금 경로에 set_memory_rox() 실패 시 오류 반환 검사를 넣습니다. 6.6 외 다른 stable 브랜치 백포트 일정과 set_memory_rox() 실패가 관측되는 플랫폼·조건은 확인이 필요합니다.\n\n영향: JIT 코드 영역이 ROX로 잠기지 않으면 W^X 하드닝이 무력화될 수 있어, BPF JIT·메모리 보호를 다루는 엔지니어는 stable 백포트와 실패 경로 처리를 추적해야 합니다.\n\n> set_memory_rox() can fail, leaving memory unprotected.\n\nCheck return and bail out when bpf_jit_binary_lock_ro() returns\nan error.\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=e60adf513275c3a38e5cb67f7fd12387e43a3ff5)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Input: joystick - replace strlcat() with strscpy()**\n\nUSB input joystick 1/5 패치에 대해 Dmitry Torokhov가 strnlen()+strscpy() 오픈코딩을 18개 드라이버에 반복하는 방식을 거부하고 usb_make_subpath() 같은 공통 helper를 제안했으며, Greg KH가 linux-hardening 스레드로 전달했습니다. usb_make_subpath() 패치가 linux-usb 또는 input 트리 어디에 제출되는지는 확인이 필요합니다.\n\n영향: KSPP strlcat() 제거가 단순 치환이 아니라 USB 경로 helper API 정리로 갈 수 있어, 하드닝·input·USB 공통 헤더 변경 범위를 미리 짚어야 합니다.\n\n> I really dislike this conversion pattern, and I do not want to see it open-coded across 18 drivers in this series.\n\n[원문 확인](https://lore.kernel.org/linux-hardening/al4du5juolbkhpa42fmewxaa62kre7ohmz7h6pako2dkjtnqtt@cdziwambsido/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "sized_strscpy() KASAN 회귀 v1 (linux-hardening)",
+      "url": "https://lore.kernel.org/linux-hardening/20261018-bug-string-strscpy-kasan-first-byte-v1-1-375a2c46d88f@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "load_unaligned_zeropad() 회귀 원인 커밋",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=d94c12bd97d5",
+      "note": "commit"
+    },
+    {
+      "title": "instrument_read() wrapper 대안 제안",
+      "url": "https://lore.kernel.org/linux-hardening/20261017231909.c9fa8474da8fc1079f112891@linux-foundation.org/",
+      "note": "thread"
+    },
+    {
+      "title": "BPF JIT set_memory_rox() 업스트림",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=e60adf513275c3a38e5cb67f7fd12387e43a3ff5",
+      "note": "commit"
+    },
+    {
+      "title": "BPF 6.6-stable 리뷰 (linux-hardening)",
+      "url": "https://lore.kernel.org/linux-hardening/20261017160447.045374196@linuxfoundation.org/",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog Linux 7.2.11",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.11",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog Linux 5.10.272",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.272",
+      "note": "changelog"
+    },
+    {
+      "title": "IPv4 checksum_start 검증 (stable)",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/commit/?id=a464d950f31c89565cbaae038cc60db04fe01956",
+      "note": "commit"
+    },
+    {
+      "title": "ChangeLog Linux 5.15.223",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.223",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog Linux 6.1.190",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.1.190",
+      "note": "changelog"
+    },
+    {
+      "title": "USB joystick strlcat() 시리즈 리뷰",
+      "url": "https://lore.kernel.org/linux-hardening/al4du5juolbkhpa42fmewxaa62kre7ohmz7h6pako2dkjtnqtt@cdziwambsido/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-18T18:20:33.670Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
