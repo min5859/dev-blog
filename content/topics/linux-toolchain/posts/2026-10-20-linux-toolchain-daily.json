@@ -1,0 +1,108 @@
+{
+  "id": "2026-10-20-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-10-20 kbuild 견고성 — Linux 툴체인",
+  "headline": "elf-parse 검증 시리즈와 kconfig EOF 무한 루프 수정이 kbuild 안정성을, drm-misc LLVM CI와 nova-core pin-init이 툴체인 추적 포인트입니다.",
+  "date": "2026-10-20",
+  "summary": "Leizhen Zhang의 elf-parse 5패치와 Simon Glass kconfig 수정의 stable 백포트가 손상·잘못된 Kconfig 입력에서 빌드 호스트가 크래시·OOM 대신 명확히 실패하도록 합니다. drm-misc push CI와 nova-core self-reference 리팩터는 LLVM·Rust 빌드 경로를 함께 봐야 합니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "elf-parse: 매핑 범위 대조 검증",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "kbuild·kallsyms/sorttable/tracepoint-update 및 LLVM=1 빌드 도구 유지보수 담당",
+      "verifyLink": "https://patchew.org/linux/20261019000218.3977398-1-lzsx618@gmail.com/",
+      "if": "linux-next elf-parse 경로로 kallsyms·sorttable·tracepoint-update를 돌리는 경우",
+      "do": "손상된 .o/vmlinux로 ASan/UBSan 없이 한 줄 오류로 종료되는지 재현하고 패치 1–2의 mainline 필요 여부를 추적하세요",
+      "verify": "스레드의 퍼저 결과와 Rostedt가 요구하는 최소 복잡도·시리즈 범위 조정 여부를 원문에서 확인하세요"
+    },
+    {
+      "title": "kconfig: stdin EOF에서 무한 재프롬프트 중단",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "Kconfig/kbuild 및 stable·LTS 커널 빌드 파이프라인 담당",
+      "verifyLink": "https://patchew.org/linux/20261019135441.1420968-151-sashal@kernel.org/",
+      "if": "CI·distro에서 비대화형 syncconfig/oldconfig를 쓰는 경우",
+      "do": "크로스 타입 default로 루프·OOM이 나지 않고 심볼 이름과 exit(1)로 끝나는지 검증하고 AUTOSEL stable 라인 반영을 따라가세요",
+      "verify": "백포트 기준 커밋 f915149f와 torvalds/master 반영 상태는 스레드에서 확인이 필요합니다"
+    },
+    {
+      "title": "drm-misc: LLVM=1 push CI",
+      "priority": "중",
+      "impactType": "project",
+      "affectedAudience": "drm-misc·DRM CI 및 LLVM=1 커널 빌드 추적자",
+      "verifyLink": "https://patchew.org/linux/20260911-drm-drm-misc-ci-v2-1-1847f89585cb@kernel.org/",
+      "if": "drm-misc-next/fixes/next-fixes 대량 머지를 추적하는 경우",
+      "do": "arm·arm64·x86_64 LLVM 빌드, DRM KUnit, dt_binding_check가 push마다 도는지 파이프라인 로그를 확인하세요",
+      "verify": "llvm@ 스레드의 최신 Ack/머지와 mainline 반영 시점은 원문에서 확인이 필요합니다"
+    },
+    {
+      "title": "nova-core: pin-init self-reference",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust for Linux·nova-core 및 pin-init API 사용자",
+      "verifyLink": "https://patchew.org/linux/20261019133647.1279779-1-gary@kernel.org/",
+      "if": "Rust GPU 드라이버와 pin-init 수명 패턴을 참고하는 경우",
+      "do": "probe에서 unsafe self-pointer 대신 pin_init!(NovaCoreApi { gpu, pdev }) 패턴과 BAR 필드 순서 변경을 리뷰하세요",
+      "verify": "리뷰어 피드백 및 drm-misc/rust 트리 머지 일정은 스레드에서 확인이 필요합니다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**elf-parse: validate what the host ELF tools read from the file**\n\nLeizhen Zhang의 5패치 시리즈가 scripts/elf-parse.c에서 ELF 헤더·섹션 테이블·심볼/스트링 테이블 오프셋을 매핑 범위와 대조해, kallsyms·sorttable·tracepoint-update가 손상된 .o/vmlinux에서 OOB 읽기·거대 할당·0으로 나누기 대신 한 줄 오류로 종료하도록 합니다.\n\n영향: kbuild가 linux-next의 elf-parse 경로에 의존하는 팀은 손상 객체로 빌드 호스트가 ASan/UBSan 크래시나 hang 없이 실패하는지, 그리고 패치 1–2가 mainline에도 필요한지 추적해야 합니다.\n\n> so a truncated or corrupted object file makes the tools read outside the mapping, allocate from a file-supplied count, or divide by zero instead of printing an error.\n\n[원문 확인](https://patchew.org/linux/20261019000218.3977398-1-lzsx618@gmail.com/)\n\n**Re: elf-parse robustness vs corruption detection**\n\nSteven Rostedt는 elf-parse 검증 강화가 보안 위협이 아니며, 도구는 입력이 손상되지 않았다고 가정하고 아키텍처 포팅 시 경고용 검사만 필요하다고 답했습니다. 견고성 추가는 괜찮지만 ‘존재하지 않아야 하는’ 문제를 위한 복잡성은 원치 않는다고 밝혔습니다.\n\n영향: kbuild 도구 견고성 패치를 리뷰할 때 유지보수자가 ‘손상 탐지기’로 확장하는지, 최소 검증만 허용하는지에 따라 시리즈가 축소·재작성될 수 있습니다.\n\n> Definitely not a security threat here. If the object files are corrupted, then this is not where you should be detecting it.\n\n[원문 확인](https://patchew.org/linux/20261019000218.3977398-1-lzsx618@gmail.com/)\n\n**kconfig: abort rather than loop for ever on EOF**\n\nSasha Levin이 제출한 AUTOSEL 백포트는 Simon Glass의 kconfig 수정을 stable 트리로 옮깁니다. 비대화형 oldconfig/syncconfig에서 기본값이 sym_string_valid()에 실패하는 새 int/hex 심볼이 stdin EOF에 걸리면 conf_string()이 무한 재프롬프트로 로그·메모리를 키우던 동작을 feof(stdin)에서 심볼 이름을 내고 exit(1)로 바꿉니다.\n\n영향: CI·distro가 syncconfig를 쓰는 환경에서 잘못된 Kconfig 기본(예: int가 hex 심볼을 참조)이 들어오면 빌드 호스트가 조용히 OOM까지 갈 수 있어, stable AUTOSEL과 upstream kbuild 트리 반영을 같이 봐야 합니다.\n\n> with empty stdin, the code without this change produces around 190MB of repeated prompts within two seconds, while with the change it exits 1 naming the symbol.\n\n[원문 확인](https://patchew.org/linux/20261019135441.1420968-151-sashal@kernel.org/)\n\n**drm/ci: Add CI pipeline for drm-misc branches**\n\nMaxime Ripard v2는 drivers/gpu/drm/ci/drm-misc-ci.yml을 추가해 drm-misc-next/fixes/next-fixes 브랜치 push마다 LLVM=1로 arm·arm64·x86_64 커널 빌드, DRM KUnit, dt_binding_check(check-devicetrees.yml)를 한 Debian 컨테이너에서 돌립니다. v1의 MR 트리거 대신 push 트리거로 바뀌었습니다.\n\n영향: drm-misc 대량 머지에서 LLVM 크로스 빌드·KUnit·DT 바인딩 검사가 자동화되면 툴체인/CI 담당자는 Mesa IGT 파이프라인 없이도 조기 빌드 깨짐을 잡을 수 있습니다.\n\n> Changes in v2:\n- Run dt_bindings_check\n- Run on push instead of MR after some discussions with Dave and Sima\n\n[원문 확인](https://patchew.org/linux/20260911-drm-drm-misc-ci-v2-1-1847f89585cb@kernel.org/)\n\n**gpu: nova-core: replace unsafe pointer cast with pin-init self-reference**\n\nGary Guo 패치는 nova-core probe에서 BAR/Gpu에 대한 unsafe self-pointer 캐스트를 pin-init self-reference와 existential lifetime(NovaCoreApi의 'bar)로 바꾸고, pin-init drop 순서를 맞추기 위해 bar0/bar1 필드 순서를 조정합니다.\n\n영향: Rust GPU 드라이버가 pin-init self-ref를 쓰면 LLVM/Rust 빌드하는 팀은 auxiliary 등록과 BAR 수명을 soundness 있게 묶는 패턴이 nova-core에 어떻게 적용되는지 참고할 수 있습니다.\n\n> pin_init!(NovaCoreApi { gpu, pdev }),\n\n[원문 확인](https://patchew.org/linux/20261019133647.1279779-1-gary@kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "elf-parse 시리즈는 작성자가 로컬 빌드 트리의 손상 객체가 필요한 견고성 이슈로 분류했으며, ASan/UBSan 퍼저 적용 후 kallsyms·sorttable·tracepoint-update 경로에 더 이상 도달하지 않는다고 합니다. 패치 3–5의 linux-next 전용 머지 일정과 sorttable/tracepoint-update 섹션 이름 검증 별도 패치 상태는 확인이 필요합니다.\n\nNicolas Schier는 원 kconfig 수정을 kbuild/linux.git(kbuild-next-unstable)에 적용했다고 기록했습니다.\n\n[원문 확인](https://patchew.org/linux/20260714133545.3294648-1-sjg@chromium.org/)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "elf-parse validation series (Leizhen Zhang)",
+      "url": "https://patchew.org/linux/20261019000218.3977398-1-lzsx618@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "kconfig EOF abort (Sasha Levin AUTOSEL)",
+      "url": "https://patchew.org/linux/20261019135441.1420968-151-sashal@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "kconfig fix applied to kbuild-next-unstable",
+      "url": "https://patchew.org/linux/20260714133545.3294648-1-sjg@chromium.org/",
+      "note": "thread"
+    },
+    {
+      "title": "drm-misc CI pipeline v2 (Maxime Ripard)",
+      "url": "https://patchew.org/linux/20260911-drm-drm-misc-ci-v2-1-1847f89585cb@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "nova-core pin-init self-reference (Gary Guo)",
+      "url": "https://patchew.org/linux/20261019133647.1279779-1-gary@kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-19T18:27:47.639Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

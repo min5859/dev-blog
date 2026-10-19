@@ -1,0 +1,143 @@
+{
+  "id": "2026-10-20-linux-distro-stable-daily",
+  "topic": "linux-distro-stable",
+  "title": "2026-10-20 vmalloc UAF·MPTCP — 배포판 스테이블",
+  "headline": "stable 큐에 vmalloc ptdump UAF·BPF flow_keys·MPTCP fullmesh·x86 fpstate 누수 등 백포트가 올라왔고, LTS 점 릴리스는 추가 진척이 없습니다.",
+  "date": "2026-10-20",
+  "summary": "CVE-2026-74672(vmalloc/ptdump)와 CVE-2024-26589(BPF) 등 보안 백포트와 MPTCP·FPU·zonelist 회귀 수정이 stable 리스트에 제안되었습니다. 7.2.11 및 5.10/5.15/6.1 LTS 점 태그는 이전에 다룬 상태로 이번 수집에는 새 릴리스 신호가 없습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "mm/vmalloc: huge vmap 승격 시 ptdump UAF",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "mm/vmalloc·커널 페이지 테이블 워커 및 stable 백포트 담당",
+      "verifyLink": "https://lists.openwall.net/linux-cve-announce/2026/08/22/74",
+      "if": "arm64 ptdump 또는 vmap huge 승격 경로를 디버그·검증하는 stable 트리를 유지한다면",
+      "do": "CVE-2026-74672에 해당하는 init_mm mmap read lock 백포트가 어느 브랜치·태그에 들어가는지 추적하세요",
+      "verify": "ChangeLog 갱신 전일 수 있으므로 stable 제출 스레드와 kernel.org 태그를 대조해 반영 시점을 확인하세요"
+    },
+    {
+      "title": "bpf: PTR_TO_FLOW_KEYS 변수 오프셋 alu 거부",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF flow dissector·netfilter를 패키징하는 배포·클라우드 커널 유지보수",
+      "verifyLink": "https://lists.openwall.net/linux-cve-announce/2024/02/22/8",
+      "if": "오래된 stable 브랜치에 flow dissector BPF가 남아 있다면",
+      "do": "CVE-2024-26589 백포트를 보안 업데이트 채널에 포함할지 배포 정책을 정하세요",
+      "verify": "2026-10-19 stable 제출의 대상 브랜치는 메일 Cc를 보고 확인하세요"
+    },
+    {
+      "title": "mptcp: fullmesh에서 닫힌 subflow 건너뛰기",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "MPTCP fullmesh 엔드포인트를 배포하는 네트워크·클라우드 커널 유지보수",
+      "verifyLink": "https://lore.kernel.org/stable/20261019180306.382039-2-w453y.me@gmail.com/",
+      "if": "ip mptcp endpoint fullmesh로 단일 피어 멀티패스를 운영한다면",
+      "do": "백포트 전 재연결 실패를 회귀 테스트에 넣고 stable 머지 태그를 기다리세요",
+      "verify": "kernel.org 태그 갱신 후 어느 stable/longterm 점에 들어갔는지 ChangeLog에서 확인하세요"
+    },
+    {
+      "title": "x86/fpu: exec() 후 동적 fpstate 누수",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "x86 FPU/XSTATE 및 stable 백포트를 담당하는 아키텍처·배포 커널 유지보수",
+      "verifyLink": "https://lkml.iu.edu/2610.1/00110.html",
+      "if": "AMX 등 확장 FPU 상태를 쓰는 KVM 게스트나 exec() 반복 워크로드를 지원한다면",
+      "do": "v2 패치(fpstate_reset()이 old fpstate를 fpstate_free()) 반영 전 /proc/vmallocinfo 누수를 점검하세요",
+      "verify": "stable 리스트 스레드가 리뷰 답장일 수 있으므로 최종 백포트 해시는 stable.git에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "Linux 7.2.11 stable(2026-10-15, ChangeLog 약 284건 백포트)과 5.10.272·5.15.223·6.1.190 longterm 점 릴리스(각 네트워킹 3건)는 이전 브리핑에서 다룬 항목이며, 이번 dossier에는 태그·changelog 기준 추가 진척이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**mm/vmalloc: acquire init_mm lock on huge vmap to avoid ptdump UAF**\n\nvmap/ioremap이 huge leaf로 승격할 때 하위 페이지 테이블을 잠금 없이 해제하면 ptdump가 동시 접근해 use-after-free가 납니다; huge 엔트리 설정·해제 시 init_mm mmap read lock(trylock)을 잡는 stable 백포트가 제안됩니다.\n\n영향: CVE-2026-74672로 분류된 페이지 테이블 UAF는 디버그·arm64 ptdump 경로에서 메모리 손상을 일으킬 수 있어 LTS/stable 반영 시점을 추적해야 합니다.\n\n> ptdump can access a freed page table, resulting in a use-after-free and memory corruption.\n\n[원문 확인](https://lists.openwall.net/linux-cve-announce/2026/08/22/74)\n\n**bpf: Reject variable offset alu on PTR_TO_FLOW_KEYS**\n\nBPF 검증기가 PTR_TO_FLOW_KEYS에 변수 오프셋 ptr alu를 막지 않아 flow dissector가 flow_keys 밖을 읽을 수 있습니다; 변수 오프셋 arithmetic을 거부하는 stable 백포트가 제안됩니다.\n\n영향: CVE-2024-26589가 오래된 stable에 남으면 로컬 권한으로 커널 메모리 접근이 가능해 배포 보안 업데이트가 필요합니다.\n\n> Fix this by rejecting ptr alu with variable offset on flow_keys.\n\n[원문 확인](https://lists.openwall.net/linux-cve-announce/2024/02/22/8)\n\n**KEYS: Prevent overflow of quota in key_alloc()**\n\nkey_alloc()에서 description 길이와 def_datalen으로 계산한 quotalen이 INT_MAX를 넘지 않도록 검사하는 소규모 stable 백포트가 제안됩니다.\n\n영향: 키 할당 quota 오버플로는 사용자 namespace quota 계정을 깨뜨릴 수 있어 keyring·IMA/EVM 등 keys 의존 배포는 stable 반영을 추적해야 합니다.\n\n> Check that the calculated quota length does not go over INT_MAX.\n\n[원문 확인](https://lore.kernel.org/stable/20261019181732.449591-5-jarkko@kernel.org/)\n\n**mptcp: pm: in-kernel: fullmesh: skip closed subflows**\n\nfullmesh 엔드포인트에서 닫힌 초기 subflow가 conn_list에 남으면 재추가된 로컬 주소의 remote ID가 잘못 예약되어 새 subflow가 만들어지지 않습니다; TCP_CLOSE·closing subflow를 remote ID/주소 선택에서 건너뜁니다.\n\n영향: ip mptcp endpoint fullmesh를 쓰는 서버·멀티패스 워크로드는 stable 백포트 전에도 단일 피어 주소 환경에서 연결이 막힐 수 있습니다.\n\n> no new subflow is created from it: the connection never uses this local address again.\n\n[원문 확인](https://lore.kernel.org/stable/20261019180306.382039-2-w453y.me@gmail.com/)\n\n**x86/fpu: Fix memory leak with dynamic fpstate and exec()**\n\nXFD로 동적 fpstate(vzalloc)를 쓴 뒤 exec()가 fpstate_reset()만 하면 포인터가 embedded로 바뀌어 vmalloc 영역이 누수됩니다; v2는 fpstate_reset()이 old fpstate를 fpstate_free()로 해제합니다.\n\n영향: AMX 등 확장 FPU 상태를 쓰는 x86_64 워크로드·KVM 게스트는 stable 반영 전 exec() 반복 시 /proc/vmallocinfo 누수로 메모리가 고갈될 수 있습니다.\n\n> 1000 iterations left 1000 dynamic fpstate allocations on an unfixed kernel and none with this change.\n\n[원문 확인](https://lkml.iu.edu/2610.1/00110.html)\n\n**mm/page_alloc: validate zonelist slots against concurrent rebuilds**\n\n메모리 hotplug로 zonelist가 in-place 재구성되는 동안 할당이 슬롯 인덱스만 믿으면 GFP_KERNEL 요청이 ZONE_MOVABLE 등 잘못된 zone에서 페이지를 받을 수 있습니다; zone 포인터를 nodemask·highest_zoneidx로 재검증합니다.\n\n영향: virtio-mem·DIMM online을 쓰는 클라우드·서버 LTS는 unmovable 페이지가 ZONE_MOVABLE에 들어가 offline이 깨질 수 있어 stable 묶음 백포트를 봐야 합니다.\n\n> a GFP_KERNEL allocation can get a page from ZONE_MOVABLE.\n\n[원문 확인](https://patchew.org/linux/20261015210539.3243563-1-gourry@gourry.net/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "KEYS quota 패치는 Jarkko Sakkinen의 더 큰 keys RFC 시리즈와 범위가 겹치는지 maintainer 응답이 필요합니다. page_alloc zonelist 수정은 관련 seqlock 패치와 한 세트로 재패키징될 수 있어 stable merge 순서는 메일 follow-up을 확인하세요."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ChangeLog-7.2.11",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.11",
+      "note": "changelog"
+    },
+    {
+      "title": "CVE-2026-74672 (vmalloc/ptdump UAF)",
+      "url": "https://lists.openwall.net/linux-cve-announce/2026/08/22/74",
+      "note": "cve"
+    },
+    {
+      "title": "vmalloc huge vmap mmap lock fix",
+      "url": "https://github.com/torvalds/linux/commit/26444eb71465c9934d9d418ef69c43f61185329b",
+      "note": "commit"
+    },
+    {
+      "title": "mptcp fullmesh skip closed subflows",
+      "url": "https://lore.kernel.org/stable/20261019180306.382039-2-w453y.me@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "x86/fpu dynamic fpstate exec() leak v2",
+      "url": "https://lkml.iu.edu/2610.1/00110.html",
+      "note": "thread"
+    },
+    {
+      "title": "CVE-2024-26589 (BPF flow_keys)",
+      "url": "https://lists.openwall.net/linux-cve-announce/2024/02/22/8",
+      "note": "cve"
+    },
+    {
+      "title": "CVE-2024-26589 NVD",
+      "url": "https://nvd.nist.gov/vuln/detail/CVE-2024-26589",
+      "note": "cve"
+    },
+    {
+      "title": "mm/page_alloc zonelist validation",
+      "url": "https://patchew.org/linux/20261015210539.3243563-1-gourry@gourry.net/",
+      "note": "thread"
+    },
+    {
+      "title": "KEYS key_alloc quota overflow",
+      "url": "https://lore.kernel.org/stable/20261019181732.449591-5-jarkko@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-5.10.272",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.272",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-5.15.223",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.223",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-6.1.190",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.1.190",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-19T18:31:11.836Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

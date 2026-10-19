@@ -1,0 +1,88 @@
+{
+  "id": "2026-10-20-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-10-20 defer 고착·RT WARN — Perf·RT",
+  "headline": "skb defer 거부 경로 고착 수정안과 6.6-rt backlog-NAPI 백포트가 PREEMPT_RT 네트워크 회귀 논의의 중심에 있다.",
+  "date": "2026-10-20",
+  "summary": "Joseph Kain의 net v6 패치는 defer 큐 거부 시 purge가 예약되지 않아 skb_defer_max 고착이 날 수 있는 경로를 다룬다. Wen Yang은 v6.6-rt-next에서 upstream v6.10 backlog-NAPI 스레드 백포트로 idle flush의 do_softirq_post_smp_call_flush() WARN을 줄이려 한다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "net: schedule a purge when the defer queue rejects a free",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "네트워크 스택·cross-CPU skb defer·PREEMPT_RT 게스트/베어메탈 튜닝 담당",
+      "verifyLink": "https://patchew.org/linux/20261019174258.1375583-1-jkain@nuro.ai/",
+      "if": "cross-CPU skb defer와 net.core.skb_defer_max sysctl을 RT·고처리량 TX/RPS 환경에서 쓴다면",
+      "do": "sysctl로 skb_defer_max를 낮춘 뒤 복원했을 때 지연 해제가 다시 살아나는지 해당 (cpu,node)에서 확인하세요",
+      "verify": "patchew v6 패치와 lkml 재현 글에서 거부 경로 kick_defer_list_purge() 변경을 원문으로 대조하세요"
+    },
+    {
+      "title": "net: Backport backlog-NAPI threads to resolve PREEMPT_RT softirq warning in SMP flush",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "PREEMPT_RT 네트워크·RPS·v6.6/v6.1 stable-rt 유지보수 담당",
+      "verifyLink": "https://www.spinics.net/lists/stable/msg906958.html",
+      "if": "6.6/6.1 LTS+out-of-tree RT에서 RPS·cross-CPU defer를 켠 SMP 게스트를 돌린다면",
+      "do": "v6.6-rt-next soaking 빌드에서 idle queue flush 시 do_softirq_post_smp_call_flush() WARN이 여전히 나는지 재현 테스트를 돌려보세요",
+      "verify": "linux-rt-devel 시리즈 소개 글과 spinics stable 스레드에서 smp_call_function 경로 softirq WARN 설명을 맞춰 읽어보세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**net: schedule a purge when the defer queue rejects a free**\n\nJoseph Kain의 net v6 패치는 skb_attempt_defer_free()가 한도 초과로 거부될 때도 defer_count를 올린 뒤 kick_defer_list_purge()를 호출하지 않아, 빈 defer_list인데도 카운터가 skb_defer_max 이상으로 고착되는 상태를 만든다. 거부 경로에서 purge를 예약해 카운터가 리스트보다 오래 남지 않게 하고, skb_defer_max를 낮춘 경우도 같은 경로로 복구한다.\n\n영향: 고착되면 해당 (cpu,node)에서 지연 해제가 재부팅까지 꺼지고 cross-CPU skb free가 page allocator로 떨어져 RT·고처리량 TX/RPS 분리 배치에서 캐시 경합이 커질 수 있다. sysctl로 net.core.skb_defer_max=1 후 복원만으로도 복구되지 않는 재현이 제시됐다. netdev 쪽 v4(거부 시 increment undo) 대비 v6(거부 경로 purge kick) 선호안과 6.18–7.0에서 skb_defer_max=0 토글 시 동일 고착 가능성은 확인이 필요하다.\n\n> Kick the purge from the reject path instead. The reject is the one place that observes a full queue, so scheduling the flush there is what stops the counter outliving the list\n\n[원문 확인](https://patchew.org/linux/20261019174258.1375583-1-jkain@nuro.ai/)\n\n> sysctl -w net.core.skb_defer_max=1    # frees increment, then reject\n  sysctl -w net.core.skb_defer_max=128  # does not recover\n\n[원문 확인](https://lkml.iu.edu/2610.1/13300.html)\n\n**net: Backport backlog-NAPI threads to resolve PREEMPT_RT softirq warning in SMP flush**\n\nWen Yang이 v6.6-rt-next(베이스 6.6.151-rt78-rc1)에 5패치 시리즈를 올려 RT workaround 1f7514c9c75d를 되돌리고 upstream v6.10의 backlog-NAPI 스레드 관련 4커밋을 백포트한다. RPS/defer function-call IPI 대신 per-CPU backlog NAPI 스레드로 remote backlog를 처리해 idle flush에서 do_softirq_post_smp_call_flush() WARN을 없애는 것이 목표이다.\n\n영향: 6.6/6.1 LTS+out-of-tree RT에서 RPS·cross-CPU defer를 쓰면 softirq가 IPI 경로로 idle에서 올라와 PREEMPT_RT 정책 위반 WARN이 간헐 재현될 수 있다. Clark Williams는 v6.6-rt-next와 v6.1-rt-next(15패치) 양쪽 soaking을 검토 중인 것으로 보인다. v6.1-rt 15패치 선행 전제와 virtme-ng kprobe 검증 공유 시점은 확인이 필요하다.\n\n> In a fresh RT guest this still triggers do_softirq_post_smp_call_flush() from idle queue flushing.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/b957b12e-f272-4dbf-a308-c6b61bcb3d66@linux.dev/)\n\n> raising SOFTIRQ from smp_call_functio triggers WARN_ON_ONCE() in do_softirq_post_smp_call_flush().\n\n[원문 확인](https://www.spinics.net/lists/stable/msg906958.html)\n\n> I'll try and get to that tonight or tomorrow and see if we can have both v6.6-rt-next and v6.1-rt-next soaking.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/atZWIBciePyeMnWa@demetrius/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "v6 패치: 거부 경로에서 kick_defer_list_purge()로 고착 방지",
+      "url": "https://patchew.org/linux/20261019174258.1375583-1-jkain@nuro.ai/",
+      "note": "thread"
+    },
+    {
+      "title": "sysctl만으로도 흡수 상태(absorbing state) 재현 가능",
+      "url": "https://lkml.iu.edu/2610.1/13300.html",
+      "note": "thread"
+    },
+    {
+      "title": "Wen: v6.6-rt-next에서 workaround 한계와 upstream v6.10 4커밋 백포트",
+      "url": "https://lore.kernel.org/linux-rt-devel/b957b12e-f272-4dbf-a308-c6b61bcb3d66@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "RPS IPI가 PREEMPT_RT에서 smp_call_function 경로 softirq WARN을 유발",
+      "url": "https://www.spinics.net/lists/stable/msg906958.html",
+      "note": "thread"
+    },
+    {
+      "title": "Clark: v6.6-rt-next·v6.1-rt-next soaking 진행 의사",
+      "url": "https://lore.kernel.org/linux-rt-devel/atZWIBciePyeMnWa@demetrius/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-19T18:36:45.686Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

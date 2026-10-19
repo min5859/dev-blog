@@ -1,0 +1,133 @@
+{
+  "id": "2026-10-20-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-10-20 KASAN strscpy 회귀 — 커널 보안",
+  "headline": "load_unaligned_zeropad() 최적화가 KASAN·KCSAN 가시성을 깎는 회귀가 하드닝 리스트에서 동시에 논의되고, LTS·7.2 stable은 네트워크·메모리 수정을 백포트합니다.",
+  "date": "2026-10-20",
+  "summary": "Qiliang Yuan의 strscpy·word-at-a-time 패치 시리즈는 sanitizer가 놓치던 OOB·단어 로드를 복구하는 방향입니다. Iurii Trukhin의 checkpatch vmalloc 검사 확장과 5.10·5.15·6.1·7.2.x 릴리스 백포트가 함께 수집되었습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "sized_strscpy() KASAN 회귀 수정 v2",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "KASAN·lib/string 및 word-at-a-time arch 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20261019-bug-string-strscpy-kasan-first-byte-v2-1-c93073250e6b@gmail.com/",
+      "if": "CONFIG_DCACHE_WORD_ACCESS에서 strscpy() 관련 KASAN CI가 최근 조용해졌다면,",
+      "do": "v2 스레드와 Fixes가 가리키는 load_unaligned_zeropad() 경로를 기준으로 테스트 매트릭스를 재실행하세요.",
+      "verify": "generic·software tag-based KASAN에서 바이트 단위 복사 전환과 instrument_read 대안 중 mainline 선택은 스레드에서 확인하세요."
+    },
+    {
+      "title": "load_unaligned_zeropad() KASAN/KCSAN 가시성",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "word-at-a-time arch·KASAN KUnit·lib/string 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20261019-bug-word-at-a-time-zeropad-kasan-v1-0-f21a3ed6a477@gmail.com/",
+      "if": "dcache 이름 비교·path 해싱·csum_partial() 등 zeropad 사용자를 sanitizer로 감시한다면,",
+      "do": "arch 6곳 첫 바이트 검사 패치를 strscpy v2와 독립적으로 리뷰·벤치마크하세요.",
+      "verify": "six arch별 성능 회귀와 strscpy v2 동시 머지 시 중복 검사 여부는 아직 확인이 필요합니다."
+    },
+    {
+      "title": "checkpatch vmalloc 곱셈 검사 확장",
+      "priority": "중",
+      "impactType": "project",
+      "affectedAudience": "checkpatch·KSPP alloc 하드닝 및 mm 할당 패턴 리뷰 담당",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/CAOx7e9KafYk03k-5vPLm=ud4NKxm5kw79uYaci2qTEWFNknPtQ@mail.gmail.com/",
+      "if": "vmalloc(n * sizeof(*p)) 패턴을 alloc-array 하드닝으로 막고 있다면,",
+      "do": "v2에서 vmalloc()/vzalloc()에 vmalloc_array()/vcalloc() 제안이 추가되는지 로컬 checkpatch로 시험하세요.",
+      "verify": "mainline scripts/checkpatch.pl 머지 일정은 아직 확인이 필요합니다."
+    },
+    {
+      "title": "5.10·5.15·6.1 LTS 네트워크 백포트",
+      "priority": "중",
+      "impactType": "backport",
+      "affectedAudience": "5.10 LTS 커널·네트워크 스택 유지보수 담당",
+      "verifyLink": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.272",
+      "if": "SYN 재전송·IPv4 체크섬·NFQUEUE SCTP 경로를 LTS에 유지한다면,",
+      "do": "5.10.272·5.15.223·6.1.190 ChangeLog에서 동일 3건 백포트 포함 여부를 배포 전에 대조하세요.",
+      "verify": "inet_opt RCU 해제·checksum_start 검증·nfnetlink_queue SCTP 수정 문구를 각 ChangeLog에서 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.2.11 stable**\n\n2026-10-15에 Linux 7.2.11 stable이 태그되었고 ChangeLog에는 7.2.10 대비 284건의 백포트가 있습니다.\n\n영향: 7.2.x 운영 커널은 가상 네트워킹·BPF dissect·메모리 계정 경로의 보안·안정성 수정을 이번 마이너로 받으며, 배포 정책별 우선 CVE·안정성 커밋 선별은 284건 전체에서 확인이 필요합니다.\n\n> Linux 7.2.11\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.11)\n\n**openvswitch IPv6 transport 헤더 검증 등**\n\nopenvswitch set_ipv6_addr 경로 transport 헤더 검증, bpf_flow_dissect 길이 처리, mm/mremap MREMAP_DONTUNMAP locked_vm 누수, io_uring RLIMIT_MEMLOCK 계정 등이 ChangeLog에 포함됩니다.\n\n영향: 7.2 stable 배포·유지보수 담당은 해당 서브시스템 회귀 검증이 필요합니다.\n\n> net: openvswitch: validate transport header presence in set_ipv6_addr\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.11)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**string: copy byte by byte in sized_strscpy() under KASAN**\n\nQiliang Yuan v2는 CONFIG_DCACHE_WORD_ACCESS에서 load_unaligned_zeropad()로 sized_strscpy()가 단어 단위 복사할 때 generic·software tag-based KASAN이 소스 OOB를 놓치는 회귀를 고치고, KASAN_GENERIC·KASAN_SW_TAGS에서도 바이트 단위 복사로 전환합니다.\n\n영향: strscpy() 최적화가 sanitizer 가시성을 깎으면 CI·KUnit이 실제 OOB·해제된 소스 읽기를 놓칠 수 있어, load_unaligned_zeropad() 공통 instrument_read 시리즈와 v2 바이트 복사 중 mainline 선택은 확인이 필요합니다.\n\n> Since sized_strscpy() switched to it, generic and software tag-based KASAN no longer report strscpy() reading from a freed or out-of-bounds source on x86_64, arm64\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20261019-bug-string-strscpy-kasan-first-byte-v2-1-c93073250e6b@gmail.com/)\n\n**word-at-a-time: let KASAN see load_unaligned_zeropad()**\n\nQiliang Yuan 2패치 시리즈는 load_unaligned_zeropad()가 inline asm이라 KASAN/KCSAN이 보지 못하는 단어 로드를, read_word_at_a_time()처럼 첫 바이트 검사를 arch 구현 6곳에 추가합니다. strscpy() 바이트 복사 수정과는 독립적으로 적용 가능합니다.\n\n영향: dcache 이름 비교·path 해싱·csum_partial() 등 zeropad 사용자 전반의 sanitizer 가시성을 한곳에서 복구할 수 있으며, six arch 구현별 성능 회귀는 확인이 필요합니다.\n\n> load_unaligned_zeropad() is inline assembly, so KASAN and KCSAN never see the word loads that sized_strscpy(), the dcache name compare, path name hashing and x86 csum_partial() do through it.\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20261019-bug-word-at-a-time-zeropad-kasan-v1-0-f21a3ed6a477@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**checkpatch: add vmalloc() and vzalloc() to alloc with multiplies check**\n\nIurii Trukhin v2 패치가 checkpatch.pl의 ALLOC_WITH_MULTIPLY 검사를 vmalloc()/vzalloc() 호출까지 확장해 vmalloc(n * sizeof(*p)) 형태에 vmalloc_array()/vcalloc() 사용을 제안합니다. KSPP 이슈 #342와 연계됩니다.\n\n영향: 커밋 전에 곱셈 오버플로우 가능한 vmalloc 패턴을 잡으면 KSPP alloc-array 하드닝이 리뷰 단계에서 일관되게 적용됩니다. v1 대비 v2 리뷰 피드백 반영 범위는 확인이 필요합니다.\n\n> Extend the check to suggest vmalloc_array() and vcalloc(). Unlike the k/kv object helpers, these functions take a count and a size\n\n[원문 확인](https://lore.kernel.org/linux-hardening/CAOx7e9KafYk03k-5vPLm=ud4NKxm5kw79uYaci2qTEWFNknPtQ@mail.gmail.com/)\n\n**Linux 5.10.272 longterm**\n\n5.10.272는 TCP 요청 소켓 inet_opt의 RCU 안전 해제, IPv4 checksum_start 방어 검증, nfnetlink_queue SCTP GSO 체크섬 수정 3건을 백포트합니다.\n\n영향: 5.10 LTS 환경에서 SYN 재전송 경로 경쟁 UAF, 잘못된 체크섬 메타데이터로 인한 스택 손상, NFQUEUE SCTP 장애를 막는 최소 수정 묶음입니다.\n\n> leading to a use-after-free in ip_options_build()\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.272)\n\n**Linux 5.15.223·6.1.190 longterm**\n\n5.15.223 longterm과 6.1.190 longterm에도 ipv4 inet_opt RCU 해제, checksum_start 검증, nfnetlink_queue SCTP 수정 3건이 동일하게 백포트됩니다.\n\n영향: 5.15·6.1 기반 배포·엔터프라이즈 커널은 TCP·IPv4 체크섬·NFQUEUE SCTP 경로의 최근 upstream 수정을 이번 릴리스로 받습니다.\n\n> ipv4: validate checksum_start before completing checksum\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.223)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ChangeLog-7.2.11",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.11",
+      "note": "changelog"
+    },
+    {
+      "title": "checkpatch vmalloc multiply check v2",
+      "url": "https://lore.kernel.org/linux-hardening/CAOx7e9KafYk03k-5vPLm=ud4NKxm5kw79uYaci2qTEWFNknPtQ@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "KSPP issue #342 checkpatch vmalloc",
+      "url": "https://github.com/KSPP/linux/issues/342",
+      "note": "article"
+    },
+    {
+      "title": "sized_strscpy KASAN byte copy v2",
+      "url": "https://lore.kernel.org/linux-hardening/20261019-bug-string-strscpy-kasan-first-byte-v2-1-c93073250e6b@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Fixes: load_unaligned_zeropad in sized_strscpy",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=d94c12bd97d5",
+      "note": "commit"
+    },
+    {
+      "title": "word-at-a-time zeropad KASAN visibility",
+      "url": "https://lore.kernel.org/linux-hardening/20261019-bug-word-at-a-time-zeropad-kasan-v1-0-f21a3ed6a477@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-5.10.272",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.272",
+      "note": "changelog"
+    },
+    {
+      "title": "ipv4 checksum_start validation commit",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/commit/?id=a464d950f31c89565cbaae038cc60db04fe01956",
+      "note": "commit"
+    },
+    {
+      "title": "ChangeLog-5.15.223",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.223",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-6.1.190",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.1.190",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-19T18:25:04.502Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,140 @@
+{
+  "id": "2026-10-20-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-10-20 RV32 BPF·TLB 추적 — 아키·플랫폼",
+  "headline": "RISC-V에서 TLB 무효화 tracepoint v7 리뷰와 RV32 eBPF JIT 부호 연산 수정, kprobe·PMU probe 회귀 대응이 겹칩니다.",
+  "date": "2026-10-20",
+  "summary": "Roman Storozhenko의 TLB flush tracepoint v7은 범위·ASID·CPU mask 등을 기록하며 perf 권한 모델을 강화합니다. mainline에 머지된 RV32 BPF MOVSX·SDIV/SMOD JIT 수정과 kprobe 블랙리스트·SBI PMU probe 정리는 stable AUTOSEL로 따라가야 합니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "RISC-V",
+    "아키텍처"
+  ],
+  "highlights": [
+    {
+      "title": "RV32 eBPF JIT 부호 연산 오류",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "RV32 eBPF JIT·네트워킹/보안 BPF 프로그램 담당",
+      "verifyLink": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=c6a08afdfe3a81b1a54e921921e9481dd6c78f8a",
+      "if": "32비트 RISC-V에서 JIT된 eBPF가 부호 MOV·나눗셈·모듈로를 쓰는 경우",
+      "do": "mainline 커밋과 5.10 등 stable AUTOSEL 백포트 포함 여부를 배포 커널에 맞춰 확인하세요",
+      "verify": "test_bpf 및 실제 BPF 워크로드에서 부호 연산 결과가 기대값과 일치하는지 검증하세요"
+    },
+    {
+      "title": "breakpoint 경로 kprobe 재귀 hang",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "RISC-V kprobes·tracing·stable AUTOSEL 담당",
+      "verifyLink": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=e7d8ea6c6d1bc685a8943ffad2d3679be92d164f",
+      "if": "ftrace selftest나 kprobe가 handle_break()를 프로브 대상으로 고르는 환경이면",
+      "do": "NOKPROBE_SYMBOL이 포함된 mainline 수정과 6.6용 AUTOSEL을 장기 브랜치에 반영 여부를 추적하세요",
+      "verify": "multiple_kprobes selftest와 breakpoint 핸들러 프로브 시나리오에서 hang이 재현되지 않는지 확인하세요"
+    },
+    {
+      "title": "TLB flush tracepoint v7",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "RISC-V mm·TLB shootdown·ftrace/perf 유지보수 담당",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/101760.html",
+      "if": "generic tlb:tlb_flush만으로 RISC-V shootdown 상관이 어려운 경우",
+      "do": "v7의 필드·권한 모델과 maintainer 네이밍 피드백을 기준으로 리뷰·머지 판단을 정리하세요",
+      "verify": "riscv_tlb_flush_request tracepoint와 counting-only perf 권한 요구가 설계 의도와 맞는지 스레드를 읽어 확인하세요"
+    },
+    {
+      "title": "SBI PMU probe 실패 경로 정리",
+      "priority": "중",
+      "impactType": "backport",
+      "affectedAudience": "RISC-V SBI PMU·perf 드라이버 및 stable 백포트 담당",
+      "verifyLink": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=e24a1418e90beac2ef4384bc9b0b5a10f19b806e",
+      "if": "pmu_sbi_device_probe()가 부분 초기화 후 실패할 수 있는 플랫폼을 유지한다면",
+      "do": "6.12.111 pending AUTOSEL 백포트와 사용 중인 stable/LTS에 동일 수정이 들어가는지 확인하세요",
+      "verify": "probe 실패 경로에서 PMU·IRQ·cpuhotplug 상태가 모두 해제되는지 커밋 diff를 따라 검증하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**riscv: kprobes: Prevent probes in breakpoint handlers**\n\nUpstream e7d8ea6c6d1bc가 handle_break()와 로컬 kprobe 디스패치 헬퍼에 NOKPROBE_SYMBOL을 추가해 breakpoint 예외 경로에 kprobe가 걸리지 않게 합니다.\n\n영향: ftrace selftest가 handle_break()를 대상으로 고르면 do_trap_break()가 재귀해 시스템이 멈출 수 있어, kprobes·tracing·stable AUTOSEL 담당은 블랙리스트 복원 수정을 따라가야 합니다.\n\n> If handle_break() is selected as a probe target on RISC-V, the breakpoint exception path can trap again before it reaches the kprobe breakpoint handler.\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=e7d8ea6c6d1bc685a8943ffad2d3679be92d164f)\n\n**6.6용 AUTOSEL 백포트**\n\nlinux-riscv에 handle_break() 등을 nokprobe로 표시하는 stable 백포트가 게시되었습니다.\n\n영향: 장기 브랜치에서 동일 hang을 막으려면 AUTOSEL 반영 범위를 확인해야 합니다.\n\n> Mark handle_break() and its local probe dispatch helpers as nokprobe symbols so they are added to the kprobe blacklist\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-October/101751.html)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**riscv: mm: Trace TLB flush requests**\n\nRoman Storozhenko v7이 flush_tlb_all()·__flush_tlb_range()에 riscv_tlb:riscv_tlb_flush_request tracepoint를 추가해 범위·stride·ASID·대상 CPU mask·scope 등을 기록합니다. counting-only perf에도 tracepoint 권한을 요구하고, remote flush가 SBI RFENCE인지 Linux cross-CPU인지는 기록하지 않습니다.\n\n영향: RISC-V MM·SMP 담당은 generic tlb:tlb_flush만으로는 shootdown 특성 상관이 어려워 v7 필드·권한과 maintainer 네이밍 피드백을 머지 기준으로 잡아야 합니다. riscv_tlb.h 대신 riscv_trace.h 등 네이밍 반영 여부와 CONFIG_PERF_EVENTS 없는 빌드 오버헤드는 확인이 필요합니다.\n\n> Add riscv_tlb:riscv_tlb_flush_request in flush_tlb_all() and __flush_tlb_range()... It does not report whether a remote flush uses SBI RFENCE or Linux cross-CPU coordination\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-October/101760.html)\n\n**RISC-V: perf: fix resource cleanup on driver probe failure**\n\nUpstream e24a1418e90be가 pmu_sbi_device_probe() 실패 시 등록된 PMU·per-CPU IRQ·pmu_ctr_list·cpuhotplug를 해제하도록 probe 오류 처리를 재구성했고, 6.12.111 pending AUTOSEL 백포트가 올라왔습니다.\n\n영향: probe 부분 초기화 후 실패 시 UAF·누수가 날 수 있어 stable 담당은 6.12.111 외 LTS cherry-pick 범위를 확인해야 합니다.\n\n> Sashiko pointed out various UAF and memory leak issues around pmu_sbi_device_probe() error paths.\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=e24a1418e90beac2ef4384bc9b0b5a10f19b806e)\n\n**riscv, bpf: Add support for BPF_MOVSX in RV32 JIT**\n\nUpstream c6a08afdfe3a가 RV32 BPF JIT에서 BPF_MOVSX를 zero-extend MOV로 잘못 컴파일하던 문제를 고치고, insn->off 8·16·32에서 slli/srai로 부호 확장을 내도록 했습니다. test_bpf #82–#86이 통과합니다.\n\n영향: 32비트 RISC-V eBPF는 jited:1인데도 조용히 잘못된 결과를 낼 수 있어 distro·임베디드는 stable 백포트를 검토해야 합니다. 5.10 AUTOSEL 외 다른 LTS 일정은 확인이 필요합니다.\n\n> The current rv32 bpf jit compiler incorrectly treats BPF_MOVSX as a standard zero-extended move operation.\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=c6a08afdfe3a81b1a54e921921e9481dd6c78f8a)\n\n**riscv, bpf: Add support for BPF_SDIV and BPF_SMOD in RV32 JIT**\n\nUpstream 2e0fa2389c50이 RV32 JIT이 BPF_SDIV/BPF_SMOD을 unsigned로 보내 insn->off==1 부호 연산을 무시하던 문제를 고치고, emit_alu_r32()가 is_sdiv에 따라 div/divu·rem/remu를 선택합니다.\n\n영향: 부호 나눗셈·모듈로 BPF는 RV32에서 잘못된 결과(예: -6/2 → 2147483645)를 낼 수 있어 mainline과 stable AUTOSEL을 함께 추적해야 합니다.\n\n> The current rv32 bpf jit compiler incorrectly treats BPF_SDIV and BPF_SMOD as unsigned operations.\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=2e0fa2389c50fd3a69bb738efa74e127b7516938)"
+    },
+    {
+      "heading": "기타",
+      "body": "**TLB trace v7 커버 레터·네이밍 스레드**\n\nv7 패치는 lore에 게시되었고, Steven Rostedt는 tracepoint 헤더에 trace가 들어가는 관례를 언급했습니다. v7에서 riscv_trace.h 등으로 바뀌는지는 스레드에서 확인이 필요합니다.\n\n영향: tracepoint 파일명·헤더 구조는 리뷰 시 네이밍 일관성을 맞추는 데 참고할 수 있습니다.\n\n> Normal convention would be to have \"trace\" in the name. riscv_trace.h ? As riscv_tlb.h looks to be specific about tlb and not tracing.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-October/101750.html)\n\n> Require perf tracepoint permissions even for counting-only events, since perf filters could otherwise reveal address information through event counts.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20261019-tlb_tracepoint-v7-1-4cc3e99d387a@gmail.com/)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "riscv TLB flush tracepoint v7 (linux-riscv)",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/101760.html",
+      "note": "thread"
+    },
+    {
+      "title": "TLB tracepoint v7 cover letter (lore)",
+      "url": "https://lore.kernel.org/linux-riscv/20261019-tlb_tracepoint-v7-1-4cc3e99d387a@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Steven Rostedt tracepoint naming feedback",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/101750.html",
+      "note": "thread"
+    },
+    {
+      "title": "RISC-V perf PMU probe cleanup (torvalds)",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=e24a1418e90beac2ef4384bc9b0b5a10f19b806e",
+      "note": "commit"
+    },
+    {
+      "title": "6.12.111 PMU probe cleanup AUTOSEL",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/101753.html",
+      "note": "thread"
+    },
+    {
+      "title": "RISC-V kprobes NOKPROBE on handle_break (torvalds)",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=e7d8ea6c6d1bc685a8943ffad2d3679be92d164f",
+      "note": "commit"
+    },
+    {
+      "title": "6.6 kprobes AUTOSEL backport",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/101751.html",
+      "note": "thread"
+    },
+    {
+      "title": "RV32 BPF_MOVSX JIT fix (torvalds)",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=c6a08afdfe3a81b1a54e921921e9481dd6c78f8a",
+      "note": "commit"
+    },
+    {
+      "title": "RV32 BPF_MOVSX review thread",
+      "url": "https://lore.kernel.org/bpf/20260714002451.4091139-3-visitorckw@gmail.com",
+      "note": "thread"
+    },
+    {
+      "title": "RV32 BPF_SDIV/SMOD JIT fix (torvalds)",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=2e0fa2389c50fd3a69bb738efa74e127b7516938",
+      "note": "commit"
+    },
+    {
+      "title": "5.10 BPF_SDIV/SMOD AUTOSEL",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/101748.html",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-19T18:38:51.378Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
