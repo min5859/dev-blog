@@ -1,0 +1,193 @@
+{
+  "id": "2026-10-21-linux-distro-stable-daily",
+  "topic": "linux-distro-stable",
+  "title": "2026-10-21 stable 보안 큐 — 배포판 스테이블",
+  "headline": "7.2.11 changelog 284건은 기준점으로 유지되고, lore stable 큐에는 hugetlb·DRBD·TLS·BPF LSM 등 백포트 검토가 이어집니다.",
+  "date": "2026-10-21",
+  "summary": "신규 stable 제안은 cgroup hugetlb UAF, DRBD digest 검증, TLS HW offload 훅 혼선, KEYS 설명 길이 거부 등이 보안 신호로 모입니다. arm64 GCS fork 누수와 x86 dynamic fpstate exec 누수는 런타임 안정성 백포트가 검토 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "hugetlb cgroup offline UAF",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "hugetlb cgroup·memory controller 및 stable 백포트 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20261020103057.8066217f6f6fc5b3ed84c90b@linux-foundation.org/",
+      "if": "멀티테넌트에서 hugetlb cgroup offline과 charge/migrate가 겹치면 KASAN UAF가 재현될 수 있으면",
+      "do": "mainline 머지·stable 대상 버전 범위가 changelog에 아직 미확인이므로 패치 스레드와 배포 커널 버전을 대조해 백포트 일정을 잡으세요",
+      "verify": "Andrew Morton ACK가 포함된 stable 제출 스레드와 KASAN 재현 본문을 읽어 영향 범위를 확인하세요"
+    },
+    {
+      "title": "DRBD digest 길이 검증",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "DRBD 스토리지 복제 및 stable 보안 백포트 담당",
+      "verifyLink": "https://patchew.org/linux/20261020182200.236875-1-yiboliume@gmail.com/",
+      "if": "DRBD 복제 경로에서 피어가 잘못된 digest 길이를 보낼 수 있는 환경이면",
+      "do": "negotiated digest 크기와 불일치 시 패킷 거부·연결 종료 패치의 stable v2 포함 여부를 유지보수 계획에 반영하세요",
+      "verify": "KASAN slab-out-of-bounds 스택과 stable v2 수정 요약을 원문에서 확인하세요"
+    },
+    {
+      "title": "TLS HW offload push_pending_record",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "kernel TLS offload(SW/HW)·NIC TLS 운영 및 stable 백포트 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20261020181147.939575-1-rjethwani@purestorage.com/",
+      "if": "HW TX offload 소켓에서 TLS_RX 설정 후 MSG_MORE와 TLS_SET_RECORD_TYPE를 쓰면",
+      "do": "TX context에만 push_pending_record를 설치하는 수정이 stable 큐 리비전과 net v2(11582)가 동일한지 머지 전에 대조하세요",
+      "verify": "ConnectX-6 재현과 stable Fixes 라인을 링크된 스레드에서 확인하세요"
+    },
+    {
+      "title": "bpf_path_d_path() 종료 태스크 크래시",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "BPF LSM·bpf_path_d_path() kfunc 및 stable 백포트 담당",
+      "verifyLink": "https://lore.kernel.org/stable/CAPhsuW5LcmQkANg1hzz0U0HskrJ-9NzN+7e8RmxBhvb+kHv+=w@mail.gmail.com/",
+      "if": "BPF LSM file_release에서 종료 중 current->fs가 NULL인 경로를 쓰면",
+      "do": "bpf 전용 -EINVAL과 d_path() 공통 수정·pipe/socket 회귀 논의가 열려 있으므로 stable 스레드 최종 형태를 따라 백포트를 보류하거나 선별 적용하세요",
+      "verify": "selftest와 리뷰어 주장이 교차하는지 stable 제출 메일과 syzbot 패치 링크를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**bpf: fix crash in bpf_path_d_path() for exiting tasks**\n\nexit_fs() 이후 exit_task_work()의 file_release BPF LSM이 bpf_path_d_path()를 호출할 때 current->fs가 NULL이면 d_path()가 크래시하며, current->fs==NULL이면 -EINVAL을 반환하도록 막는 stable 제안이 있습니다.\n\n영향: BPF LSM file_release는 보안 정책·감사 경로에 쓰이지만, stable 리뷰에서는 pipe/socket 경로 -EINVAL 회귀와 d_path() 공통 수정 필요성이 제기되어 백포트 형태가 아직 열려 있습니다.\n\n> Fix this by returning -EINVAL from bpf_path_d_path() when current->fs is NULL.\n\n[원문 확인](https://ci.syzbot.org/patches/ee5e4988-abd3-499a-b788-a3d65ef03e3f)\n\n**drbd: validate digest size in checksum resync and verify requests**\n\nreceive_DataRequest()가 피어 digest 길이를 negotiated 크기와 대조하지 않아 짧은 digest는 memcmp slab-out-of-bounds, 과대 길이는 oversized kmalloc 경고를 유발하며, 불일치 시 패킷 거부·연결 종료로 막습니다.\n\n영향: DRBD 복제에서 악의적·오류 피어 입력이 커널 메모리 안전을 직접 건드릴 수 있어 stable 백포트 포함 여부를 봐야 합니다. bugs.sh 신고 ID와 CVE 할당 여부는 공개 advisory에서 미확인입니다.\n\n> BUG: KASAN: slab-out-of-bounds in memcmp (lib/string.c:676)\n\n[원문 확인](https://patchew.org/linux/20261020182200.236875-1-yiboliume@gmail.com/)\n\n**KEYS: Reject descriptions larger than KEY_MAX_DESC_SIZE**\n\nkey_alloc(), __key_create_or_update(), keyring_search(), request_key 경로에서 desclen>=KEY_MAX_DESC_SIZE를 -EINVAL로 거부합니다.\n\n영향: 키 설명 길이 검증 누락은 quota·인덱싱·match 경로에서 예기치 않은 버퍼 동작을 열어 키링 기반 보안 모델을 약화할 수 있습니다.\n\n> Reject descriptions at or above KEY_MAX_DESC_SIZE with -EINVAL at the following sites:\n\n[원문 확인](https://lkml.iu.edu/hypermail/linux/kernel/2610.2/11531.html)\n\n**tls: only install push_pending_record for a TX context**\n\ntls_set_sw_offload()가 RX 초기화 때 TX용 push_pending_record 훅을 덮어써 HW TX offload 소켓에서 TLS_RX 후 tls_sw_push_pending_record()가 offload TX context를 SW 구조체로 잘못 읽습니다.\n\n영향: TLS 레코드 타입 혼선은 handshake/alert로 애플리케이션 데이터가 섞이는 프로토콜 위반이며, 잘못된 구조체 해석은 커널 크래시 가능성까지 있습니다. net v2(11582)와 stable 큐 리비전 동일 여부는 changelog 머지 전 확인이 필요합니다.\n\n> From then on tls_handle_open_record() (a TLS_SET_RECORD_TYPE cmsg after a MSG_MORE send\n\n[원문 확인](https://lkml.iu.edu/hypermail/linux/kernel/2610.2/00052.html)\n\n**mm/hugetlb_cgroup: prevent use-after-free during cgroup offlining**\n\ncharge 참조를 commit/취소까지 유지하고 commit 시 dying CSS를 live ancestor로 옮겨 offline 경쟁 UAF를 막습니다.\n\n영향: cgroup v1/v2 hugetlb 한도는 멀티테넌트 메모리 격리의 핵심이며, offline 경쟁 UAF는 로컬 권한 조합에서 커널 메모리 안전을 깨는 클래스입니다. mainline 머지·stable 백포트 대상 버전 범위는 changelog에서 아직 미확인입니다.\n\n> KASAN writes to a freed hugetlb_cgroup in three of three boots.\n\n[원문 확인](https://lkml.iu.edu/hypermail/linux/kernel/2610.2/10177.html)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**arm64/gcs: release GCS on failed fork**\n\nCONFIG_ARM64_GCS에서 copy_process() 실패 시 exit_thread()가 없어 gcs_free()가 호출되지 않아 부모 mm에 GCS VMA가 누적되며, exit_thread()에서 자식 GCS 해제와 gcs_reset_thread() 정리를 추가합니다.\n\n영향: 실패한 clone마다 부모 주소공간에 매핑이 남으면 VMA·메모리 고갈로 멀티테넌트·컨테이너 호스트 가용성·격리 검증에 영향을 줍니다. stable 머지 전 Mark Brown 등 arch 리뷰 코멘트 반영 범위는 lore 스레드에서 추가 확인이 필요합니다.\n\n> Sixteen clone3() calls with CLONE_VM|CLONE_PIDFD and an unwritable pidfd pointer leaked 16 GCS VMAs without the fix.\n\n[원문 확인](https://lkml.iu.edu/hypermail/linux/kernel/2610.2/11613.html)\n\n**x86/fpu: Fix memory leak with dynamic fpstate and exec()**\n\nexec() 시 fpu_flush_thread()가 fpstate_reset()만 하며 동적 fpstate 할당을 해제하지 않아 AMX 등 확장 상태가 누수되고, v2는 fpstate_free() 시그니처·해제 순서를 조정합니다.\n\n영향: 게스트·컨테이너에서 exec() 반복 시 커널 메모리 누수는 DoS·장기 운영 리스크이며, stable 리뷰에서는 fpstate_free() NULL/embedded 검사 제거에 대한 질문이 이어집니다. Chang S. Bae가 제안한 검사 유지 이유와 stable 큐 상태는 최종 답변 확인이 필요합니다.\n\n> On exec(), fpu_flush_thread() calls fpstate_reset(), which overwrites fpu->fpstate with the embedded fpstate. This leaks the dynamic\n\n[원문 확인](https://lkml.iu.edu/hypermail/linux/kernel/2610.1/00110.html)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Linux 7.2.11 stable 릴리스 태그",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tag/?h=v7.2.11",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-7.2.11",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.11",
+      "note": "changelog"
+    },
+    {
+      "title": "bpf_path_d_path syzbot 패치",
+      "url": "https://ci.syzbot.org/patches/ee5e4988-abd3-499a-b788-a3d65ef03e3f",
+      "note": "thread"
+    },
+    {
+      "title": "bpf_path_d_path stable 제출",
+      "url": "https://lore.kernel.org/stable/CAPhsuW5LcmQkANg1hzz0U0HskrJ-9NzN+7e8RmxBhvb+kHv+=w@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "arm64/gcs failed fork v2",
+      "url": "https://lkml.iu.edu/hypermail/linux/kernel/2610.2/11613.html",
+      "note": "thread"
+    },
+    {
+      "title": "arm64/gcs stable 제출",
+      "url": "https://lore.kernel.org/stable/8522b8d3d3ecda7474d0af8b8517c1f5d708ecc2.1792519121.git.ivanrwcm25@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "x86/fpu dynamic fpstate v2",
+      "url": "https://lkml.iu.edu/hypermail/linux/kernel/2610.1/00110.html",
+      "note": "thread"
+    },
+    {
+      "title": "x86/fpu stable fpstate_free 리뷰",
+      "url": "https://lore.kernel.org/stable/bb50436d-8af6-4420-b626-97f262f6759d@intel.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drbd digest KASAN",
+      "url": "https://patchew.org/linux/20261020182200.236875-1-yiboliume@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drbd digest stable v2",
+      "url": "https://lkml.iu.edu/hypermail/linux/kernel/2610.2/11609.html",
+      "note": "thread"
+    },
+    {
+      "title": "KEYS description size v4",
+      "url": "https://lkml.iu.edu/hypermail/linux/kernel/2610.2/11531.html",
+      "note": "thread"
+    },
+    {
+      "title": "KEYS stable 제출",
+      "url": "https://lore.kernel.org/stable/20261020174325.2229448-3-jarkko@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "tls push_pending_record 패치",
+      "url": "https://lkml.iu.edu/hypermail/linux/kernel/2610.2/00052.html",
+      "note": "thread"
+    },
+    {
+      "title": "tls stable 제출",
+      "url": "https://lore.kernel.org/stable/20261020181147.939575-1-rjethwani@purestorage.com/",
+      "note": "thread"
+    },
+    {
+      "title": "hugetlb_cgroup UAF 패치",
+      "url": "https://lkml.iu.edu/hypermail/linux/kernel/2610.2/10177.html",
+      "note": "thread"
+    },
+    {
+      "title": "hugetlb_cgroup stable ACK",
+      "url": "https://lore.kernel.org/stable/20261020103057.8066217f6f6fc5b3ed84c90b@linux-foundation.org/",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-5.10.272",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.272",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 5.10.272 태그",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tag/?h=v5.10.272",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-5.15.223",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.223",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 5.15.223 태그",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tag/?h=v5.15.223",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-6.1.190",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.1.190",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 6.1.190 태그",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tag/?h=v6.1.190",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-20T18:36:32.869Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

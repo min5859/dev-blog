@@ -1,0 +1,137 @@
+{
+  "id": "2026-10-21-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-10-21 mfentry·perf·Rust — Linux 툴체인",
+  "headline": "Debian PIE 툴체인 mfentry 탐지 회귀 수정, perf 컨텍스트 분석 주석 동기화, Rust ww_mutex·DRM ioctl 시리즈가 동시에 올라왔습니다.",
+  "date": "2026-10-21",
+  "summary": "kbuild는 default-PIE 32비트 환경에서 CC_HAS_MFENTRY 탐지를 -fno-pic과 함께 하도록 고치고, perf·Rust 동기화·DRM uAPI 패치가 리뷰 단계에서 API·빌드 정책을 바꿉니다. 머지 일정과 CI 결과는 아직 메일에서 확인이 필요합니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "툴체인",
+    "kbuild",
+    "perf",
+    "Rust"
+  ],
+  "highlights": [
+    {
+      "title": "kbuild: pass -fno-pic when probing for -mfentry",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "kbuild·x86 ftrace/mfentry 및 distro CI 빌드 담당",
+      "verifyLink": "https://patchew.org/linux/20261020-pie-v1-1-9be09f2324b1@chromium.org/",
+      "if": "Debian 등 default-PIE 32비트 툴체인에서 allmodconfig·media-ci 커널 빌드를 돌리는 경우",
+      "do": "scripts/Kconfig.toolchain의 CC_HAS_MFENTRY가 $(cc-option,-fno-pic -mfentry)로 바뀐 Ricardo Ribalda 패치 반영 여부를 추적하세요.",
+      "verify": "patchew 스레드에서 ftrace.h “Compiler does not support fentry?” 오류와 Fixes: 454e00cf8ee5 인용을 원문으로 확인하세요."
+    },
+    {
+      "title": "rust: add ww_mutex support",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust for Linux 동기화·ww_mutex 및 GPU/DRM Rust 드라이버 개발자",
+      "verifyLink": "https://patchew.org/linux/20261020153112.299745-1-work@onurozkan.dev/",
+      "if": "DRM·GPU 등에서 ww_mutex 다중 잠금을 Rust로 쓰거나 co-maintainer 변경을 따라가야 하는 경우",
+      "do": "Onur Özkan v13(7패치)의 AcquireCtxBackoff·DynLockSet·ww_transaction() API와 C ww_mutex 헤더 변경을 리뷰 기준으로 맞추세요.",
+      "verify": "patchew v13 커버와 ww_class 항상 초기화 패치 링크에서 안전 계약 변경 문구를 확인하고, PREEMPT_RT·PROVE_LOCKING 외 아키텍처 CI는 확인이 필요합니다."
+    },
+    {
+      "title": "tools/perf: Adopt kernel compiler-context-analysis.h annotations",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "LLVM/Clang 기반 perf·tools 빌드 및 compiler-context-analysis 추적 담당",
+      "verifyLink": "https://patchew.org/linux/20261020163640.746159-1-irogers@google.com/",
+      "if": "Clang으로 perf를 -Wthread-safety/-DWARN_CONTEXT_ANALYSIS로 빌드하는 경우",
+      "do": "Ian Rogers v5(17패치)의 커널식 context 분석 주석 전환과 vdso·tpebs·maps 잠금 수정을 빌드 플래그와 함께 검증하세요.",
+      "verify": "patchew v5 스레드와 lkml의 CFLAGS += -Wthread-safety -DWARN_CONTEXT_ANALYSIS 인용을 대조하고, llvm@ Ack·머지 일정은 확인이 필요합니다."
+    },
+    {
+      "title": "drm/tyr: add per-file VM pool",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust DRM( tyr/panthor)·ioctl/uAPI 및 pin-init API 사용자",
+      "verifyLink": "https://patchew.org/linux/20261020-tyr-ioctls-v4-0-704de77da223@kylinos.cn/20261020-tyr-ioctls-v4-4-704de77da223@kylinos.cn/",
+      "if": "Rust DRM에서 panthor식 VM uAPI·파일당 VM 수명을 맞추는 경우",
+      "do": "Alvin Sun v4(11패치)의 IdPool+XArray 풀과 VM_CREATE 실패 시 Arc<Vm> 에러 반환 패턴을 ioctl 시리즈와 함께 읽으세요.",
+      "verify": "patchew 04/11의 “aborted creation never leaks a VM” 인용과 drm-rust-next 머지 윈도우·Sami Tolvanen 버퍼 CM 패치 의존은 확인이 필요합니다."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**kbuild: pass -fno-pic when probing for -mfentry**\n\nRicardo Ribalda 패치는 Debian 등 default-PIE 32비트 툴체인에서 CC_HAS_MFENTRY 탐지 시 $(cc-option,-fno-pic -mfentry)를 쓰도록 scripts/Kconfig.toolchain을 바꿉니다.\n\n영향: 잘못된 탐지는 allmodconfig에서 ftrace.h의 “Compiler does not support fentry?” 오류를 내고, Debian 기반 media-ci·distro 32비트 x86 빌드는 454e00cf8ee5 이후 mfentry/ftrace Kconfig 탐지 회귀를 막기 위해 반영 여부를 봐야 합니다.\n\n> To properly probe for -mfentry on them we need to pass -fno-pic, otherwise allmodconfig will fail with: ./arch/x86/include/asm/ftrace.h:9:3: error: #error Compiler does not support fentry?\n\n[원문 확인](https://patchew.org/linux/20261020-pie-v1-1-9be09f2324b1@chromium.org/)\n\n**tools/perf: Adopt kernel compiler-context-analysis.h annotations**\n\nIan Rogers v5(17패치)는 tools/include의 compiler-context-analysis.h·compiler_types.h를 커널과 동기화하고, perf의 자체 mutex.h 주석을 커널식 context 분석 매크로로 바꾼 뒤 comm·dso/dsos·thread·intel-tpebs·maps 등에 주석을 확장합니다. v5는 vdso 초기화 경로의 dsos.write 잠금 범위를 넓히고 tpebs 시작 실패 시 pid/started 상태를 정리합니다.\n\n영향: Clang -Wthread-safety/-DWARN_CONTEXT_ANALYSIS로 perf를 빌드하는 팀은 커널과 같은 정적 잠금 검증 정책을 공유하게 되고, vdso·tpebs·maps 수정은 분석을 켰을 때 실제 동시성 결함이 드러날 수 있습니다.\n\n> converts tools/perf from its custom mutex.h macros to the kernel-style compiler-context-analysis.h annotations, and expands context analysis coverage across comm, dso/dsos, thread/threads\n\n[원문 확인](https://patchew.org/linux/20261020163640.746159-1-irogers@google.com/)\n\n**rust: add ww_mutex support**\n\nOnur Özkan v13(7패치)는 ww_mutex용 Rust Class·Mutex·AcquireCtx·MutexGuard와 AcquireCtxBackoff·DynLockSet·ww_transaction()을 추가하고, C inline ww_mutex를 rust/helpers/ww_mutex.c로 감쌉니다. v13은 static class만 허용하고 AcquireCtx 잠금 API를 safe로 바꾸며 LockSet을 AcquireCtxBackoff/DynLockSet으로 분리합니다.\n\n영향: DRM·GPU 등 ww_mutex 다중 잠금을 Rust로 쓰려는 코드는 안전 계약이 바뀐 v13 API와 ww_class가 항상 노출되는 C 헤더 변경을 함께 따라가야 하며, Onur가 WW MUTEX co-maintainer로 등록됩니다.\n\n> Split LockSet into AcquireCtxBackoff and DynLockSet in separate patches. Add ww_transaction() for allocation-free retries with ordinary guards.\n\n[원문 확인](https://patchew.org/linux/20261020153112.299745-1-work@onurozkan.dev/)\n\n**drm/tyr: add per-file VM pool**\n\nAlvin Sun의 drm/tyr ioctl v4(11패치)는 파일당 IdPool+XArray 기반 VM 풀을 Daniel AddError 방식으로 재작업해, VM_CREATE 삽입 실패 시 호출자가 Arc<Vm>을 에러로 받아 정리합니다. v4는 Deborah Brouwer 리뷰를 반영한 풀·ioctl 시리즈입니다.\n\n영향: Rust DRM 파일/VM 수명 패턴(AddError·pin-init 풀)은 tyr와 향후 Rust GPU 드라이버가 panthor식 다중 VM uAPI를 맞출 때 재사용되는 참고 구현입니다.\n\n> On a failed insertion the caller tears the VM down through the returned error, so an aborted creation never leaks a VM.\n\n[원문 확인](https://patchew.org/linux/20261020-tyr-ioctls-v4-0-704de77da223@kylinos.cn/20261020-tyr-ioctls-v4-4-704de77da223@kylinos.cn/)\n\n**drm/nova: mark the uAPI header as unstable**\n\nDanilo Krummrich 패치(리스트에 Signed-off)는 개발용 불안정 uAPI를 명시하기 위해 헤더를 nova_drm_unstable.h로 바꾸고 include/uapi/ 밖으로 옮기며, 안정화된 ioctl은 추후 include/uapi/drm/nova_drm.h로 분리할 계획을 적습니다.\n\n영향: Nova Rust DRM uAPI를 bindgen·사용자 도구로 다루는 팀은 공식 uapi 경로와 unstable 헤더 분리로 include/검색 경로·ABI 기대가 바뀌는지 확인해야 합니다(패치 머지 여부는 확인이 필요합니다).\n\n> Rename it to nova_drm_unstable.h and move it out of include/uapi/ to make this more explicit.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/CAAgWFh30UryzqyU0As6qi8AaHzQbO=pp-Y+gWMs0ap7i1D4qKw@mail.gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "kbuild: pass -fno-pic when probing for -mfentry",
+      "url": "https://patchew.org/linux/20261020-pie-v1-1-9be09f2324b1@chromium.org/",
+      "note": "thread"
+    },
+    {
+      "title": "tools/perf: Adopt kernel compiler-context-analysis.h annotations (patchew)",
+      "url": "https://patchew.org/linux/20261020163640.746159-1-irogers@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "tools/perf: compiler-context-analysis Clang flags",
+      "url": "https://lkml.rescloud.iu.edu/2610.2/02638.html",
+      "note": "thread"
+    },
+    {
+      "title": "rust: add ww_mutex support v13",
+      "url": "https://patchew.org/linux/20261020153112.299745-1-work@onurozkan.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: ww_class always initialize",
+      "url": "https://patchew.org/linux/cover.1791799751.git.work@onurozkan.dev/168394bb52a6c68b0b760fe00413c899ab95f8e3.1791799752.git.work@onurozkan.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/tyr: per-file VM pool (04/11)",
+      "url": "https://patchew.org/linux/20261020-tyr-ioctls-v4-0-704de77da223@kylinos.cn/20261020-tyr-ioctls-v4-4-704de77da223@kylinos.cn/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/tyr ioctl v4 series cover",
+      "url": "https://patchew.org/linux/20261020-tyr-ioctls-v4-0-704de77da223@kylinos.cn/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/tyr v4 pool rework announcement",
+      "url": "https://lore.kernel.org/rust-for-linux/5c0856e1dd1ecb48.1792508174@smtp.migadu.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/nova: unstable uAPI header",
+      "url": "https://lore.kernel.org/rust-for-linux/CAAgWFh30UryzqyU0As6qi8AaHzQbO=pp-Y+gWMs0ap7i1D4qKw@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "include/uapi/drm/nova_drm.h (yocto mirror)",
+      "url": "https://git.yoctoproject.org/linux-yocto-dev/plain/include/uapi/drm/nova_drm.h",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-20T18:32:26.988Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

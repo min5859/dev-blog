@@ -1,0 +1,108 @@
+{
+  "id": "2026-10-21-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-10-21 fork 실패 shadow stack — 아키·플랫폼",
+  "headline": "clone3 실패 시 arm64·RISC-V shadow stack 해제, APLIC 다중 probe 회귀, cpuidle genpd UAF 등 아키·플랫폼 스레드가 집중됐습니다.",
+  "date": "2026-10-21",
+  "summary": "arm64 GCS와 RISC-V shadow stack이 fork 실패 경로에서 해제되도록 하는 v2와 RISC-V APLIC v5 회귀 수정이 게시됐습니다. cpuidle PSCI/SBI 제거 경로 UAF 수정과 TLB flush tracepoint 논쟁, SMMU kdump kdoc 정리도 함께 따라왔습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "arm64·RISC-V: clone3 실패 시 shadow stack 해제",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "arm64 GCS·RISC-V USER_CFI/shadow stack 및 clone3 selftest 담당",
+      "verifyLink": "https://patchew.org/linux/cover.1792519121.git.ivanrwcm25@gmail.com/",
+      "if": "CLONE_VM|CLONE_PIDFD와 잘못된 pidfd로 copy_process()가 -EFAULT로 실패하는 CFI/GCS·shadow stack selftest를 돌린다면",
+      "do": "HAVE_EXIT_THREAD·exit_thread() 연결 v2와 KTAP selftest 리뷰·재현 로그를 따라가며 부모 mm에 VMA가 남지 않는지 확인하세요",
+      "verify": "QEMU에서 패치 전 VMA 1→17 누수·패치 후 1→1·3/3 KTAP 통과 주장을 커버 레터 원문과 대조하세요"
+    },
+    {
+      "title": "irqchip/riscv-aplic: 다중 APLIC probe v5",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "RISC-V APLIC/IMSIC irqchip 및 다중 interrupt controller 플랫폼 담당",
+      "verifyLink": "https://patchew.org/linux/20261020-aplic-async-probe-v5-0-c4861c2aafca@mobileye.com/",
+      "if": "다중 APLIC SoC에서 driver_async_probe= 또는 IMSIC defer 부팅을 쓴다면",
+      "do": "v5의 ro_after_init 분리 수정과 PROBE_FORCE_SYNCHRONOUS 동기 probe 강제 패치를 적용·리뷰해 syscore 이중 등록·list_add 경고가 사라지는지 보세요",
+      "verify": "비동기 probe 시 register_syscore() 이중 호출과 지연 probe의 __ro_after_init 쓰기 문제 설명을 patchew 스레드에서 확인하세요"
+    },
+    {
+      "title": "cpuidle: 제거된 CPU PM domain UAF",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "cpuidle PSCI/SBI genpd·RISC-V/ARM idle power-domain 담당",
+      "verifyLink": "https://patchew.org/linux/20261020-cpuidl-psci-fix-v1-1-d8ab9ac3b56d@oss.qualcomm.com/",
+      "if": "PSCI/SBI CPU PM domain probe가 defer·실패 후 제거되는 보드(Arduino Uno-Q 등)를 KASAN으로 부팅한다면",
+      "do": "psci_pd_remove()/sbi_pd_remove()에서 kfree() 전 device_link_wait_removal() 플러시 패치를 검토·백포트 필요성을 판단하세요",
+      "verify": "of_genpd_del_provider() 이후 device_link_wq의 kobject_put()이 해제된 genpd를 읽는 재현 설명을 원문에서 확인하세요"
+    },
+    {
+      "title": "riscv mm: TLB flush tracepoint v7 논쟁",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "RISC-V mm·TLB flush·ftrace/perf 유지보수 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/linux-riscv/CALsPMBP6pZAWz=sKhmVWbHPsBL5OLm_YOca8Y1pnK9QvU9NSqw@mail.gmail.com/",
+      "if": "RISC-V에서 TLB shootdown 관측성과 tracing 정책을 맞춰야 한다면",
+      "do": "riscv_tlb_flush_request tracepoint 추가 v7과 maintainer 최종 결정 전까지 kprobe·함수 트레이스 대안을 염두에 두세요",
+      "verify": "Jisheng Zhang의 비활성 tracepoint 오버헤드 우려와 Roman의 정적 tracepoint 재주장을 스레드에서 읽어보세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**iommu/arm-smmu-v3: kdump kdoc 문단 정리**\n\nNicolin Chen이 v11 kdump 시리즈 리뷰에서 잘못 인용한 kdoc 문단을 바로잡아, 크래시 커널 레지스터 값은 구조적 검증만 하고 물리 주소는 검증하지 않는다고 명시했습니다.\n\n영향: kdump에서 SMMU stream table adoption의 보안·신뢰 한계를 오해하면 잘못된 주소 검증 기대나 운영 정책 실수로 이어질 수 있습니다.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-arm-kernel/atepRLlIFT%2F0xPTC@nvidia.com/)\n\nv11 STRTAB_SPLIT SW ABI 불일치 거부 로직·비 coherent SMMU kdump 지원 일정은 확인이 필요합니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**irqchip/riscv-aplic: fix probing of multiple APLIC instances**\n\nv5는 MSI 지연 probe 시 __ro_after_init 플래그 쓰기 문제를 분리 수정하고, 다중 APLIC 인스턴스의 공유 상태 레이스를 PROBE_FORCE_SYNCHRONOUS로 막습니다.\n\n영향: 다중 APLIC SoC에서 driver_async_probe= 또는 IMSIC defer 시 syscore 이중 등록·list_add 경고와 rodata 쓰기 fault가 나면 부팅 초기 인터럽트 설정이 불안정해집니다.\n\n> On a system with several APLIC instances this triggers a \"list_add double add\" report from CHECK_DATA_CORRUPTION\n\n[원문 확인](https://patchew.org/linux/20261020-aplic-async-probe-v5-0-c4861c2aafca@mobileye.com/)\n\n**cpuidle: Fix UAF of removed CPU PM domains**\n\npsci_pd_remove()/sbi_pd_remove()가 genpd를 kfree()하기 전에 device_link_wait_removal()로 device_link_wq를 플러시해 fw_devlink가 남긴 비동기 device 참조 UAF를 막습니다.\n\n영향: PSCI/SBI CPU PM domain probe가 defer·실패 경로로 제거될 때(Arduino Uno-Q 등) KASAN slab-use-after-free가 부팅마다 발생할 수 있습니다.\n\n> Flush device_link_wq with device_link_wait_removal() before the kfree(), so that the outstanding references are dropped while the domain is still alive.\n\n[원문 확인](https://patchew.org/linux/20261020-cpuidl-psci-fix-v1-1-d8ab9ac3b56d@oss.qualcomm.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**arm64, riscv: release shadow stacks on failed fork**\n\narm64 GCS와 RISC-V shadow stack이 clone3() 실패 시 exit_thread()에서 해제되도록 HAVE_EXIT_THREAD·exit_thread() 경로를 연결하고, KTAP 기반 selftest를 추가하는 v2 시리즈가 게시되었습니다.\n\n영향: CLONE_VM|CLONE_PIDFD와 잘못된 pidfd로 copy_process()가 -EFAULT로 실패하면 부모 mm에 shadow-stack VMA가 누적되어 CFI/GCS 활성 시 메모리·VMA 고갈과 디버깅 난이도가 커집니다.\n\n> exit_thread() does run, but arm64 and riscv did not implement it, so that mapping stays in the parent's mm.\n\n[원문 확인](https://patchew.org/linux/cover.1792519121.git.ivanrwcm25@gmail.com/)\n\n**riscv: mm: Trace TLB flush requests**\n\nv7은 riscv_tlb:riscv_tlb_flush_request tracepoint(헤더 asm/tlb_trace.h)를 제안했고, Jisheng Zhang은 kprobe/함수 트레이스·RISC-V tracepoint 오버헤드 이유로 추가를 선호하지 않는다고 답했으며 Roman은 정적 tracepoint의 의미론적 이점을 재주장했습니다.\n\n영향: TLB shootdown 분석용 관측성과 비활성 경로 오버헤드·도구 일관성 사이의 균형이 RISC-V mm·tracing 정책에 영향을 줍니다.\n\n> So I prefer not adding this tracepoint. But let's wait for riscv maintainers decision.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-riscv/CALsPMBP6pZAWz=sKhmVWbHPsBL5OLm_YOca8Y1pnK9QvU9NSqw@mail.gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 MT6392 regulator DT binding만 다루는 RESEND v10 3/9 항목은 아키·플랫폼 런타임(mm/irq/부팅) 변경이 없어 dossier에서 제외됐습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "arm64/riscv shadow stack on failed fork v2",
+      "url": "https://patchew.org/linux/cover.1792519121.git.ivanrwcm25@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv-aplic async probe v5",
+      "url": "https://patchew.org/linux/20261020-aplic-async-probe-v5-0-c4861c2aafca@mobileye.com/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv TLB flush tracepoint v7 discussion",
+      "url": "https://lore-kernel.gnuweeb.org/linux-riscv/CALsPMBP6pZAWz=sKhmVWbHPsBL5OLm_YOca8Y1pnK9QvU9NSqw@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "cpuidle PSCI/SBI genpd UAF fix",
+      "url": "https://patchew.org/linux/20261020-cpuidl-psci-fix-v1-1-d8ab9ac3b56d@oss.qualcomm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "arm-smmu-v3 kdump kdoc correction",
+      "url": "https://lore-kernel.gnuweeb.org/linux-arm-kernel/atepRLlIFT%2F0xPTC@nvidia.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-20T18:42:59.243Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

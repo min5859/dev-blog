@@ -1,0 +1,158 @@
+{
+  "id": "2026-10-21-linux-daily-briefing",
+  "topic": "linux",
+  "title": "2026-10-21 네트워크 회귀수정 — 리눅스 개발",
+  "headline": "네트워크 스택에서 지연 해제 고착과 가상화 경로 체크섬 누락을 막는 수정이 검토 중이고, linux-next 일일 통합 기준점이 갱신되었습니다.",
+  "date": "2026-10-21",
+  "summary": "skb defer 거부 경로·fraglist GSO 체크섬·sched_ext balance callback 관련 회귀 수정이 메일링 리스트에서 논의되고 있습니다. linux-next next-20261020이 게시되어 다음 메인라인 머지 전 통합 검증 기준이 올라갔습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "defer 거부 시 purge 예약",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "네트워크 스택·netdev 메인테이너, net.core.skb_defer_max를 다루는 운영자, 스테이블 백포트 담당자",
+      "verifyLink": "https://lkml.iu.edu/hypermail/linux/kernel/2610.2/08010.html",
+      "if": "고처리량·sysctl skb_defer 튜닝 환경",
+      "do": "해당 커널 버전과 패치 반영 여부를 추적하세요",
+      "verify": "LKML 스레드와 syzbot 시리즈에서 거부 경로 동작을 확인하세요"
+    },
+    {
+      "title": "fraglist GSO 체크섬 완성",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "네트워크 가상화·컨테이너·라우터 개발자, WireGuard/OpenWrt·OpenMPTCProuter 계열 사용자, net 스테이블 백포트 담당자",
+      "verifyLink": "https://lkml.iu.edu/hypermail/linux/kernel/2610.2/02067.html",
+      "if": "tun 등 오프로드 없는 출력으로 대량 전송",
+      "do": "드롭·정지 증상 시 패치 검토 일정을 확인하세요",
+      "verify": "LKML 원문과 patchew 시리즈에서 세그먼트 체크섬 경로를 확인하세요"
+    },
+    {
+      "title": "5.10.272 longterm",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "5.10 LTS 배포 담당자(RHEL/Ubuntu 22.04 등), 네트워크·netfilter 운영자, LTS 마이그레이션 계획 담당자",
+      "verifyLink": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.272",
+      "if": "5.10 LTS를 아직 운영 중",
+      "do": "배포 계획에 맞춰 갱신·마이그레이션을 검토하세요",
+      "verify": "kernel.org longterm 표와 ChangeLog-5.10.272를 대조하세요"
+    },
+    {
+      "title": "balance callback 중복 큐잉 방지",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "sched_ext·스케줄러 개발자, PREEMPT_RT·stress-ng로 SCX를 검증하는 팀",
+      "verifyLink": "https://lkml.iu.edu/hypermail/linux/kernel/2610.2/09916.html",
+      "if": "sched_ext·proxy execution 검증 중",
+      "do": "관련 패치 리뷰·재전송 동향을 따라가세요",
+      "verify": "LKML 스레드에서 singleton head 재삽입 수정을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**net: schedule a purge when the defer queue rejects a free**\n\nskb_attempt_defer_free()가 defer_max 초과로 거부될 때 비어 있지 않은 defer_list에 대해 kick_defer_list_purge()를 호출하고, 한도 비교를 >=에서 >로 바꾸며, __skb_defer_free_flush()에서 defer_count를 0으로 맞춥니다.\n\n영향: defer_count가 빈 defer_list와 함께 고착되면 해당 CPU/노드에서 skb 지연 해제가 영구적으로 꺼져 cross-CPU free가 페이지 할당자 경합으로 돌아갈 수 있습니다.\n\n> Kick the purge from the reject path instead. The reject is the one place that observes a full queue\n\n[원문 확인](https://lkml.iu.edu/hypermail/linux/kernel/2610.2/08010.html)\n\n**net: gso: complete partial checksums of fraglist segments**\n\nskb_segment_list_csum_help()를 추가해 fraglist GSO로 나뉜 CHECKSUM_PARTIAL 세그먼트의 체크섬을 출력 경로가 오프로드하지 못할 때 완성하고, TCP/UDP(v4/v6) fraglist GSO 경로에서 호출합니다.\n\n영향: rx-gro-list와 virtio/veth에서 모인 CHECKSUM_PARTIAL 패킷이 checksum 미지원 tun 등으로 나갈 때 수신측에서 드롭되어 VPN·VM·라우터 워크로드에서 대량 전송만 멈출 수 있습니다.\n\n> The fraglist path doesn't, so when the output device has no checksum offload, e.g. a tun device without TUN_F_CSUM, the segments leave\n\n[원문 확인](https://lkml.iu.edu/hypermail/linux/kernel/2610.2/02067.html)\n\n**sched/core: Avoid requeueing a singleton balance callback**\n\nqueue_balance_callback()이 리스트에 callback이 이미 head로 올라간 경우 재삽입을 막아, proxy execution에서 set_next_task_scx()가 kick_sync balance callback을 두 번 큐잉하는 문제를 막습니다.\n\n영향: sched_ext·proxy execution 경로에서 balance callback이 잘못 큐되면 rq_pin_lock() 경고나 스케줄러 불안정이 날 수 있습니다.\n\n> When the callback is the only list entry, its next pointer is NULL, so the existing duplicate check misses it.\n\n[원문 확인](https://lkml.iu.edu/hypermail/linux/kernel/2610.2/09916.html)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**iommu/arm-smmu-v3: Add ARM_SMMU_OPT_KDUMP_ADOPT for kdump kernel**\n\nkdump 커널이 ARM SMMUv3에서 CR0_SMMUEN·STRTAB_BASE를 무작정 리셋하지 않고 충돌 커널의 stream table을 memremap으로 입양하는 ARM_SMMU_OPT_KDUMP_ADOPT 경로를 제안하며, 10월 20일 스레드에서는 kdump helper kdoc이 물리 주소는 검증하지 않는다는 점을 명확히 하도록 수정이 올라왔습니다.\n\n영향: kdump 전환 시 in-flight DMA가 있는 서버/ARM 플랫폼에서 SMMU 리셋이 PCIe AER·메모리 손상을 유발할 수 있어 크래시 덤프 수집 가능성에 영향을 줍니다.\n\n> In a kdump scenario, this aggressive reset is highly destructive\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-arm-kernel/2026-October/1183733.html)"
+    },
+    {
+      "heading": "기타",
+      "body": "**Linux next-20261020 linux-next**\n\nMark Brown가 2026-10-20 linux-next 일일 트리 next-20261020을 게시했고, Linus 트리 대비 비머지 커밋 수는 17217건으로 기록됩니다.\n\n영향: 다음 메인라인 머지에 들어갈 변경의 통합 스모크 테스트 기준점이며, 서브시스템 간 충돌·빌드 실패를 조기에 드러냅니다.\n\n> Non-merge commits (relative to Linus' tree): 17217\n\n[원문 확인](https://lkml.iu.edu/hypermail/linux/kernel/2610.2/10877.html)\n\n단일 Wi-Fi 드라이버(rtw88) AP 모드 CSA 패치 등 범용 영향이 제한된 후보는 이번 브리핑에서 제외했습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "kernel.org mainline/stable/linux-next",
+      "url": "https://kernel.org/",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 7.3 tag",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tag/?h=v7.3",
+      "note": "commit"
+    },
+    {
+      "title": "ChangeLog-7.3",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.3",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-7.2.11",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.11",
+      "note": "changelog"
+    },
+    {
+      "title": "linux-next next-20261020 announcement",
+      "url": "https://lkml.iu.edu/hypermail/linux/kernel/2610.2/10877.html",
+      "note": "thread"
+    },
+    {
+      "title": "next-20261020 tag",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/next/linux-next.git/tag/?h=next-20261020",
+      "note": "commit"
+    },
+    {
+      "title": "net skb defer purge patch",
+      "url": "https://lkml.iu.edu/hypermail/linux/kernel/2610.2/08010.html",
+      "note": "thread"
+    },
+    {
+      "title": "syzbot skb defer series",
+      "url": "https://ci.syzbot.org/series/2007ae3f-11ce-4396-bf01-2f4be9ff75e1/all_patches",
+      "note": "article"
+    },
+    {
+      "title": "net gso fraglist checksum",
+      "url": "https://lkml.iu.edu/hypermail/linux/kernel/2610.2/02067.html",
+      "note": "thread"
+    },
+    {
+      "title": "fraglist csum patchew",
+      "url": "https://patchew.org/linux/20261016-fraglist-csum-v1-1-93945be7bb5d@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "ARM SMMU kdump destructive reset",
+      "url": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-October/1183733.html",
+      "note": "thread"
+    },
+    {
+      "title": "ARM_SMMU_OPT_KDUMP_ADOPT",
+      "url": "https://lkml.iu.edu/2610.0/09302.html",
+      "note": "thread"
+    },
+    {
+      "title": "kdump kdoc physical address",
+      "url": "https://lkml.iu.edu/hypermail/linux/kernel/2610.2/11550.html",
+      "note": "thread"
+    },
+    {
+      "title": "sched balance callback singleton",
+      "url": "https://lkml.iu.edu/hypermail/linux/kernel/2610.2/09916.html",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-5.10.272",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.272",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-20T18:09:00.181Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-newsletter-from-dossier-ko.md"
+  }
+}

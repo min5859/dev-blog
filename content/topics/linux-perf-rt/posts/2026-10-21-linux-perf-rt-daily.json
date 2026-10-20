@@ -1,0 +1,108 @@
+{
+  "id": "2026-10-21-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-10-21 ice RTNL·skb defer — Perf/RT",
+  "headline": "ice RTNL·RDMA 락 순서, APLIC 다중 probe, skb defer 거부 경로가 PREEMPT_RT 부팅·네트워크 경로에서 논의됩니다.",
+  "date": "2026-10-21",
+  "summary": "ice는 RTNL 보유 중 RDMA auxiliary 잠금을 device_trylock()으로 바꾸고 -EBUSY 재시도를 제안했습니다. riscv-aplic v5는 syscore 가드와 동기 probe로 다중 인스턴스 경쟁을 막고, net v6는 defer 거부 시 purge kick으로 defer_count 고착을 줄입니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "ice: avoid RTNL deadlock when notifying the RDMA auxiliary driver",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "ice/irdma·DCB(lldpad)·PREEMPT_RT 네트워크 스택 담당",
+      "verifyLink": "https://patchew.org/linux/20261019065301.3983537-1-poros@redhat.com/",
+      "if": "DCB(lldpad)와 RDMA auxiliary가 겹치는 PREEMPT_RT 부팅에서 rtnl_lock 대기가 끝나지 않는다면",
+      "do": "device_trylock() 전환과 BEFORE_TC_CHANGE -EBUSY 거부·재시도 패치를 리뷰 대상에 올리십시오",
+      "verify": "patchew 스레드와 Sashiko-bot이 제기한 -EBUSY 롤백·AFTER_TC_CHANGE 생략 영향을 원문에서 확인하십시오"
+    },
+    {
+      "title": "net: schedule a purge when the defer queue rejects a free",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "네트워크 스택·net.core.skb_defer_max·PREEMPT_RT cross-CPU skb free 튜닝 담당",
+      "verifyLink": "https://patchew.org/linux/20261019174400.1377093-1-jkain@nuro.ai/",
+      "if": "고처리량 TX/RPS 또는 RT 환경에서 skb 지연 해제가 page allocator 경로로 떨어진다면",
+      "do": "v6의 거부 경로 kick_defer_list_purge()와 flush 시 defer_count 리셋 순서 변경을 따라가십시오",
+      "verify": "net.core.skb_defer_max sysctl 시나리오와 skb_defer_max=0 후 복구 시 defer_count latch 가능성을 스레드에서 확인하십시오"
+    },
+    {
+      "title": "irqchip/riscv-aplic: fix probing of multiple APLIC instances",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "RISC-V APLIC·PREEMPT_RT·다중 IRQ 컨트롤러 플랫폼 담당",
+      "verifyLink": "https://patchew.org/linux/20261020-aplic-async-probe-v5-0-c4861c2aafca@mobileye.com/",
+      "if": "driver_async_probe=riscv-aplic로 다중 APLIC 병렬 probe 중 list_add double add WARN이 난다면",
+      "do": "v5의 atomic_cmpxchg syscore 가드와 PROBE_FORCE_SYNCHRONOUS 적용 여부를 플랫폼 설정과 대조하십시오",
+      "verify": "PREEMPT_RT EyeQ7H 재현 로그와 cover letter의 공유 aplics list 설명을 원문에서 확인하십시오"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**net: schedule a purge when the defer queue rejects a free**\n\nJoseph Kain net v6는 skb_attempt_defer_free() 거부 경로에서 defer_count가 skb_defer_max를 넘으면 kick_defer_list_purge()를 호출하고, flush에서 defer_count 리셋을 llist_del_all() 이후로 옮긴다. Sashiko-bot은 skb_defer_max=0 토글 후 defer_count 고착과 반복 IPI·락 경합을 여전히 지적한다.\n\n영향: defer_count가 리스트보다 오래 남는 absorbing state는 cross-CPU skb 지연 해제를 영구히 끊어 RT·고처리량 TX/RPS 환경에서 page allocator 경로로 떨어져 캐시·지연이 커질 수 있다.\n\n> Kick the purge from the reject path instead. The reject is the one place that observes a full queue.\n\n[원문 확인](https://patchew.org/linux/20261019174400.1377093-1-jkain@nuro.ai/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**ice: avoid RTNL deadlock when notifying the RDMA auxiliary driver**\n\nPetr Oros iwl-net 시리즈는 ice가 RTNL을 잡은 DCB/ethtool/TC 경로에서 RDMA auxiliary device_lock을 블로킹하지 않도록 device_trylock()으로 바꾸고, BEFORE_TC_CHANGE 이벤트는 -EBUSY로 거부·재시도하도록 한다. Sashiko-bot은 -EBUSY 롤백 시 devlink rate tree 등 선행 변경이 남는지와 AFTER_TC_CHANGE 생략이 RDMA QP를 막는지를 질문했다.\n\n영향: RDMA auxiliary probe가 device_lock→rtnl_lock 순서를 쓰는 반면 lldpad DCB 설정은 rtnl→aux lock 순서로 겹치면 부팅이 rtnl에서 영원히 멈출 수 있어 PREEMPT_RT·DCB+R DMA 동시 운영 환경에서 lock 순서와 부분 롤백을 추적해야 한다.\n\n> Everything else that needs the RTNL lock piles up behind lldpad and the boot never completes.\n\n[원문 확인](https://patchew.org/linux/20261019065301.3983537-1-poros@redhat.com/)\n\n**irqchip/riscv-aplic: fix probing of multiple APLIC instances**\n\nVladimir Kondratiev v5 시리즈는 패치 1에서 syscore 등록 가드를 atomic_cmpxchg로 바꿔 __ro_after_init 쓰기 오류와 이중 register_syscore()를 막고, 패치 2는 PROBE_FORCE_SYNCHRONOUS로 다중 APLIC 인스턴스의 공유 probe 상태 경쟁을 피한다.\n\n영향: driver_async_probe=riscv-aplic로 여러 APLIC이 병렬 probe될 때 PREEMPT_RT 부팅에서 list_add double add WARN이 재현됐고, 인터럽트 컨트롤러는 부팅 초기에 동기화되어야 RT·임베디드 플랫폼 부팅 시간·안정성에 직접 영향이 있다.\n\n> Patch 2 marks the driver PROBE_FORCE_SYNCHRONOUS. The shared state also includes the global aplics list\n\n[원문 확인](https://patchew.org/linux/20261020-aplic-async-probe-v5-0-c4861c2aafca@mobileye.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ice RTNL·RDMA auxiliary device_trylock() 시리즈",
+      "url": "https://patchew.org/linux/20261019065301.3983537-1-poros@redhat.com/",
+      "note": "thread"
+    },
+    {
+      "title": "ice_pf_dcb_cfg() -EBUSY 롤백 질문",
+      "url": "https://lore.kernel.org/linux-rt-devel/sashiko-outbox-178444@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv-aplic async probe v5 cover",
+      "url": "https://patchew.org/linux/20261020-aplic-async-probe-v5-0-c4861c2aafca@mobileye.com/",
+      "note": "thread"
+    },
+    {
+      "title": "PREEMPT_RT EyeQ7H list_add double add WARN",
+      "url": "https://lkml.iu.edu/2610.1/07796.html",
+      "note": "thread"
+    },
+    {
+      "title": "skb defer reject path purge kick v6",
+      "url": "https://patchew.org/linux/20261019174400.1377093-1-jkain@nuro.ai/",
+      "note": "thread"
+    },
+    {
+      "title": "net.core.skb_defer_max sysctl 재현",
+      "url": "https://lkml.iu.edu/hypermail/linux/kernel/2610.1/13300.html",
+      "note": "thread"
+    },
+    {
+      "title": "skb_defer_max=0 defer_count latch 질문",
+      "url": "https://lore.kernel.org/linux-rt-devel/sashiko-outbox-179440@kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-20T18:39:59.404Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
