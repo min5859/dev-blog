@@ -1,0 +1,103 @@
+{
+  "id": "2026-10-22-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-10-22 ice RTNL 교착 — perf·RT",
+  "headline": "ice DCB·RDMA auxiliary 경로의 RTNL 교착 회피 패치와 v6.6-rt backlog-NAPI 백포트가 linux-rt-devel에서 논의됩니다.",
+  "date": "2026-10-22",
+  "summary": "Petr Oros의 ice 시리즈는 RTNL·auxiliary device_lock ABBA로 부팅이 멈추는 문제를 device_trylock()과 -EBUSY 재시도로 다룹니다. Wen Yang은 backlog-NAPI 백포트에 추가 RPS 선행조건이 없다고 답했고, riscv-aplic v5는 다중 인스턴스 async probe 경쟁을 막습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "ice: RTNL 잡은 상태에서 auxiliary 이벤트 전달",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "ice/irdma·DCB(lldpad)·PREEMPT_RT 네트워크 스택 담당",
+      "verifyLink": "https://patchew.org/linux/20261019065301.3983537-1-poros@redhat.com/",
+      "if": "PREEMPT_RT 환경에서 DCB(lldpad)와 RDMA auxiliary probe가 겹치면 rtnl에서 부팅이 멈출 수 있다면,",
+      "do": "ice_send_event_to_aux()의 device_trylock()·BEFORE_TC_CHANGE -EBUSY 거부 동작과 ice_setup_tc() -EBUSY가 상위에서 어떻게 처리되는지 추적하세요.",
+      "verify": "patchew 스레드와 Loktionov의 mqprio_disable_offload() 질문 스레드를 열어 락 순서·에러 전파를 확인하세요."
+    },
+    {
+      "title": "v6.6-rt backlog-NAPI 스레드 백포트",
+      "priority": "상",
+      "impactType": "backport",
+      "affectedAudience": "v6.6-rt·v6.1-rt 네트워크 스택·RPS·PREEMPT_RT softirq 경로 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/cover.1792345413.git.wen.yang@linux.dev/",
+      "if": "6.6/6.1 LTS+RT에서 RPS·cross-CPU defer 사용 시 idle flush 경로에서 softirq WARN이 반복된다면,",
+      "do": "upstream v6.10 네 커밋 백포트 시리즈와 RPS·defer 의존성 검토 결과를 머지 전에 점검하세요.",
+      "verify": "cover 메일의 do_softirq_post_smp_call_flush() WARN 설명과 Wen Yang의 RPS prerequisite 답변 스레드를 대조하세요."
+    },
+    {
+      "title": "riscv-aplic 다중 인스턴스 probe v5",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "RISC-V APLIC·PREEMPT_RT·다중 IRQ 컨트롤러 플랫폼 담당",
+      "verifyLink": "https://patchew.org/linux/20261020-aplic-async-probe-v5-2-c4861c2aafca@mobileye.com/",
+      "if": "driver_async_probe=riscv-aplic로 여러 APLIC이 병렬 probe되는 플랫폼을 다룬다면,",
+      "do": "v5의 PROBE_FORCE_SYNCHRONOUS와 syscore 가드 __ro_after_init 제거 패치가 기존 async 이슈에 어떻게 닿는지 비교하세요.",
+      "verify": "v5-2·v5-1 patchew 스레드에서 공유 probe 상태 경쟁과 MSI defer 후 쓰기 fault 설명을 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**ice: avoid RTNL deadlock when notifying the RDMA auxiliary driver**\n\nPetr Oros iwl-net 시리즈는 RTNL을 잡은 DCB/TC 경로에서 ice_send_event_to_aux()가 auxiliary device_lock을 블로킹하지 않도록 device_trylock()으로 바꾸고, BEFORE_TC_CHANGE는 -EBUSY로 거부·재시도하도록 합니다. Aleksandr Loktionov는 ice_setup_tc()의 -EBUSY 반환이 mqprio_disable_offload()에서 조용히 무시되는지 질문했습니다.\n\n영향: RDMA auxiliary probe(device_lock→rtnl_lock)와 lldpad DCB(rtnl→aux lock)가 겹치면 부팅이 rtnl에서 멈출 수 있어 PREEMPT_RT·DCB+RDMA 환경에서 락 순서와 -EBUSY 시 부분 롤백·재시도 동작을 추적해야 합니다. -EBUSY 시 devlink rate tree 등 선행 변경 복구와 mqprio_disable_offload()의 에러 드롭 여부는 확인이 필요합니다.\n\n> Everything else that needs the RTNL lock piles up behind lldpad and the boot never completes. The probe side cannot be changed, so use device_trylock()\n\n[원문 확인](https://patchew.org/linux/20261019065301.3983537-1-poros@redhat.com/)\n\n**net: Backport backlog-NAPI threads to resolve PREEMPT_RT softirq warning in SMP flush**\n\nWen Yang은 Clark Williams의 RPS 선행조건 질문에 답해 Sebastian Siewior가 말한 추가 RPS 비트는 기존 RT defer_work workaround를 가리킨 것으로 보이며, upstream 대비 별도 RPS prerequisite는 찾지 못했다고 밝혔습니다. 시리즈 자체는 v6.6-rt에서 backlog-NAPI 스레드 백포트로 idle flush의 do_softirq_post_smp_call_flush() WARN을 줄이는 것이 목표입니다.\n\n영향: 6.6/6.1 LTS+RT에서 RPS·cross-CPU defer 사용 시 softirq가 idle IPI 경로로 올라오면 PREEMPT_RT 정책 WARN이 반복될 수 있어, 백포트 머지 전 RPS·defer 의존성 해소 여부가 RT 네트워크 운영팀의 검토 포인트입니다. Sebastian의 RPS coverage 우려가 답변으로 충분히 해소되는지와 v6.6-rt-next·v6.1-rt-next soaking 일정은 확인이 필요합니다.\n\n> After rechecking against the upstream code, I haven't found an additional RPS prerequisite needed for this series.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/7f5046fd-f38e-4966-a616-0c8d95833eed@linux.dev/)\n\n> In a fresh RT guest this still triggers do_softirq_post_smp_call_flush() from idle queue flushing.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/cover.1792345413.git.wen.yang@linux.dev/)\n\n**irqchip/riscv-aplic: fix probing of multiple APLIC instances (v5)**\n\n이전에 다룬 다중 APLIC async probe 이슈에 Vladimir Kondratiev v5가 올라왔습니다. 패치 1은 syscore 등록 가드의 __ro_after_init를 제거해 MSI defer probe 후 쓰기 fault를 막고, 패치 2는 PROBE_FORCE_SYNCHRONOUS로 다중 인스턴스가 공유 probe 상태를 락 없이 갱신하는 경쟁을 피합니다.\n\n영향: driver_async_probe=riscv-aplic에서 여러 인스턴스가 병렬 probe되면 list_add double add가 나고 인터럽트 컨트롤러는 부팅 초기에 동기화되어야 하므로 PREEMPT_RT·RISC-V 플랫폼 부팅 안정성에 직접 영향이 있습니다. v5 동기 probe가 maintainer 선호안인지는 확인이 필요합니다.\n\n> two instances can both observe it as false and both call register_syscore(), inserting the same list node twice and tripping CHECK_DATA_CORRUPTION\n\n[원문 확인](https://patchew.org/linux/20261020-aplic-async-probe-v5-2-c4861c2aafca@mobileye.com/)\n\n> With MSI, aplic_msi_setup() returns -EPROBE_DEFER while the MSI parent (IMSIC) is not ready, so the later successful probe writes the flag after it has been made read-only.\n\n[원문 확인](https://patchew.org/linux/20261020-aplic-async-probe-v5-1-c4861c2aafca@mobileye.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ice: avoid RTNL deadlock when notifying the RDMA auxiliary driver",
+      "url": "https://patchew.org/linux/20261019065301.3983537-1-poros@redhat.com/",
+      "note": "thread"
+    },
+    {
+      "title": "ice_setup_tc() -EBUSY and mqprio_disable_offload()",
+      "url": "https://lore.kernel.org/linux-rt-devel/CH3PR11MB566895C406B00646530A5249C9E5662@CH3PR11MB566895.namprd11.prod.outlook.com/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv-aplic async probe v5 (multiple instances)",
+      "url": "https://patchew.org/linux/20261020-aplic-async-probe-v5-2-c4861c2aafca@mobileye.com/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv-aplic async probe v5 (__ro_after_init guard)",
+      "url": "https://patchew.org/linux/20261020-aplic-async-probe-v5-1-c4861c2aafca@mobileye.com/",
+      "note": "thread"
+    },
+    {
+      "title": "backlog-NAPI backport — RPS prerequisite reply",
+      "url": "https://lore.kernel.org/linux-rt-devel/7f5046fd-f38e-4966-a616-0c8d95833eed@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "backlog-NAPI threads backport cover",
+      "url": "https://lore.kernel.org/linux-rt-devel/cover.1792345413.git.wen.yang@linux.dev/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-21T18:40:08.119Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

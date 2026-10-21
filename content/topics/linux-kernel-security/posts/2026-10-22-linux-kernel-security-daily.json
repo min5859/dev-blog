@@ -1,0 +1,143 @@
+{
+  "id": "2026-10-22-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-10-22 7.2.12·LTS 보안 — 커널 보안",
+  "headline": "7.2.12 stable과 6.x LTS 묶음이 KVM·ksmbd·dm-integrity 등을 백포트했고, Landlock v7.4-rc1 PR과 USB strlcat 정리 시리즈가 리뷰 중입니다.",
+  "date": "2026-10-22",
+  "summary": "2026-10-21 kernel.org에 7.2.12 stable과 6.18.58·6.12.114·6.6.160 longterm가 올라왔으며 KVM MMIO·ksmbd Kerberos heap OOB 등이 여러 트랙에 반복됩니다. upstream에서는 Landlock namespace·capability 제어 확장과 KSPP용 usb_make_subpath() 도입이 논의됩니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "Linux 7.2.12 stable",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "stable 7.2.y 사용자, KVM/SMB/ device-mapper integrity 운영·백포트 담당",
+      "verifyLink": "https://lwn.net/Articles/1101759/",
+      "if": "7.2 커널 계열을 운영 중이면",
+      "do": "7.2.12로 업그레이드하고 KVM·ksmbd·dm-integrity 관련 changelog를 배포 SLA에 반영하세요.",
+      "verify": "LWN 공지와 ChangeLog-7.2.12에서 백포트 목록을 대조하세요."
+    },
+    {
+      "title": "Linux 6.12.114 longterm",
+      "priority": "상",
+      "impactType": "backport",
+      "affectedAudience": "6.12.y LTS 사용자, 스토리지·가상화 보안 담당",
+      "verifyLink": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.12.114",
+      "if": "6.12 기반 배포에서 keyed discard 이후 dm-integrity를 쓰면",
+      "do": "6.12.114 적용 여부를 확인하고 KVM·ksmbd 수정과 중복 cherry-pick 여부를 distro 보안 팀과 맞추세요.",
+      "verify": "ChangeLog-6.12.114와 kernel.org longterm 표를 확인하세요."
+    },
+    {
+      "title": "Landlock update for v7.4-rc1",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Landlock·LSM 정책 작성자, sandboxed 서비스 유지보수자",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20261021162538.1852602-1-mic@digikod.net/",
+      "if": "Landlock으로 sandbox·컨테이너 격리를 설계 중이면",
+      "do": "namespace 타입·Linux capability 조합 API와 selftest·문서 변경을 머지 전에 추적하세요.",
+      "verify": "linux-hardening 스레드와 landlock-7.4-rc1 태그 커밋 목록을 읽으세요."
+    },
+    {
+      "title": "Linux 6.18.58 longterm",
+      "priority": "중",
+      "impactType": "backport",
+      "affectedAudience": "6.18.y LTS 소비자, distro kernel 보안 팀",
+      "verifyLink": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.18.58",
+      "if": "6.18 LTS 트랙을 유지하면",
+      "do": "48건 백포트 묶음 중 KVM MMIO·ksmbd·USB iowarrior UAF·IMA·SELinux 항목을 배포 노트에 반영하세요.",
+      "verify": "ChangeLog-6.18.58 원문을 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**Linux 7.2.12 stable**\n\n7.2.12 stable은 KVM x86 SMM MMIO 캐시 오류, ksmbd Kerberos 인증 경로 heap OOB, dm-integrity resume/superblock·bitmap 모드 NULL·오염 superblock 처리 등 12건의 백포트를 포함합니다.\n\n영향: 게스트가 nested EPT를 깨는 KVM MMIO 경로, 인-커널 SMB 서버의 Kerberos compounded 응답 버퍼 오버플로, suspend/resume 중 dm-integrity 저널/NULL 쓰기는 배포·가상화·스토리지 스택에서 직접적인 신뢰성·보안 패치 대상입니다.\n\n> I'm announcing the release of the 7.2.12 kernel.\n\nAll users of the 7.2 kernel series must upgrade.\n\n[원문 확인](https://lwn.net/Articles/1101759/)\n\n**KVM x86 MMIO 캐시 (7.2.12 changelog)**\n\nKVM x86 per-vCPU MMIO 캐시가 SMM address space에서 stale entry를 남겨 nested EPT 무결성을 깨는 경로가 수정되었습니다.\n\n영향: 게스트가 유효 RAM 접근을 userspace에 KVM_EXIT_MMIO로 돌려줄 수 있는 클래스의 수정입니다.\n\n> A guest can then cause an access to valid RAM at the same GFN to be returned to userspace as KVM_EXIT_MMIO.\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.12)\n\n**ksmbd krb5_authenticate() (7.2.12 changelog)**\n\nksmbd krb5_authenticate()가 compounded SMB2 응답에서 out_len을 과대 계산해 AP-REP memcpy가 response_buf 밖 heap에 쓰는 문제가 수정되었습니다.\n\n영향: 인-커널 SMB Kerberos 경로의 heap out-of-bounds 쓰기입니다.\n\n> allowing memcpy() to write the AP-REP blob past the end of response_buf into adjacent kernel heap memory.\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.12)\n\n**dm-integrity resume (7.2.12 changelog)**\n\ndm-integrity resume 시 superblock 검증 누락으로 journal 인덱스가 범위를 벗어나 NULL 페이지에 쓰는 문제와 'R' 모드 NULL dereference가 백포트되었습니다.\n\n영향: suspend/resume·bitmap 모드에서 스토리지 무결성 스택 신뢰성에 직결됩니다.\n\n> dm-integrity then writes 512 bytes through lowmem_page_address(NULL).\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.12)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Linux 6.18.58 longterm**\n\n6.18.58 LTS는 48건 백포트 중 KVM MMIO 캐시, ksmbd krb5 heap OOB, USB iowarrior disconnect UAF·minor race, IMA stack OOB·압축 모듈 서명 검증, SELinux policy 다중 open 허용 등이 포함됩니다.\n\n영향: 6.18 LTS 트랙은 가상화·네트워크 파일 서버·USB·무결성 부팅·MAC 정책 패치가 한 묶음으로 나와 배포 SLA에 직접 영향을 줍니다.\n\n> USB: iowarrior: fix use-after-free on disconnect race\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.18.58)\n\n**Linux 6.12.114 longterm**\n\n6.12.114는 대규모 LTS 묶음(855건)으로 KVM MMIO, ksmbd krb5 OOB, dm-integrity keyed discard 버퍼 오버플로 등 보안 관련 수정이 상위에 포함됩니다.\n\n영향: 6.12 기반 배포는 keyed discard 이후 dm-integrity checksum 버퍼 OOB와 KVM/ksmbd 수정의 백포트 적용 여부를 별도로 확인해야 합니다. 855건 전체와 distro가 이미 cherry-pick한 CVE·회귀의 중복 여부는 확인이 필요합니다.\n\n> dm-integrity: fix buffer overflow with keyed discard\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.12.114)\n\n**Linux 6.6.160 longterm**\n\n6.6.160 LTS(1643건)는 ksmbd krb5 heap OOB, Bluetooth L2CAP ECRED 연결 시 scid 배열 OOB, 기타 네트워크·BPF·SMB 클라이언트 수정을 포함합니다.\n\n영향: 6.6은 여전히 널리 쓰이는 LTS이며, in-kernel SMB 서버와 Bluetooth 스택의 메모리 안전 수정은 무선·파일 공유 노출면이 있는 시스템에 필수입니다.\n\n> Bluetooth: L2CAP: fix out-of-bounds write in l2cap_ecred_connect\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.6.160)\n\n**Landlock update for v7.4-rc1**\n\nMickaël Salaün이 v7.4-rc1용 Landlock PR을 제출했으며, LSM namespace 훅 기반으로 namespace 타입·Linux capability 제한을 조합 가능하게 추가하고 superblock use-after-free, umount race 등이 포함됩니다.\n\n영향: sandbox/LSM을 쓰는 배포·컨테이너 스택은 capability·namespace 격리가 Landlock 정책에 들어오면 애플리케이션 격리 모델이 바뀌므로, 머지 전 API·selftest(91.8% coverage)와 문서 변경을 추적해야 합니다. torvalds/master 실제 merge 커밋과 최종 사용자 공간 ABI 문서화 범위는 확인이 필요합니다.\n\n> The main change adds composable Landlock controls for namespace types and Linux capabilities, thanks to new LSM hooks (merged via the LSM tree).  A umount race condition is also fixed.\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20261021162538.1852602-1-mic@digikod.net/)\n\n**USB: add usb_make_subpath() to replace strlcat() in input drivers**\n\nShihuang Liu v2 6패치 시리즈가 include/linux/usb.h에 usb_make_subpath()를 추가하고 USB input joystick/misc/mouse/tablet/touchscreen 드라이버의 usb_make_path()+strlcat() 패턴을 일괄 교체합니다.\n\n영향: KSPP strlcat() 제거(#370)가 USB 물리 경로 구성을 공통 bounded helper로 모으는 방향이므로, 하드닝·input·USB 헤더를 함께 쓰는 트리는 머지 시 include/linux/usb.h API와 다수 드라이버 churn을 예상해야 합니다. linux-hardening vs linux-usb 리뷰 목적지와 strscat() 대안 수용 여부는 확인이 필요합니다.\n\n> In preparation for removing the deprecated strlcat() API [1], introduce usb_make_subpath() and convert these callers to use it.\n\n[원문 확인](https://patchew.org/linux/20261021123146.17202-1-shlomojune6@gmail.com/)\n\n**USB: add usb_make_subpath() for formatted device subpaths**\n\n동일 v2 시리즈의 패치 1/6이 linux-hardening에 게시되어 usb_make_subpath() 인라인 helper를 include/linux/usb.h에 추가합니다.\n\n영향: 공통 USB 경로 helper는 이후 strlcat() 호출 제거의 기준 API가 되며, 리뷰 초기에 maintainer 라우팅(get_maintainer.pl) 피드백이 나왔습니다.\n\n> Did you forget to use get_maintainer.pl for this?\n\n[원문 확인](https://lore.kernel.org/linux-hardening/2026102104-audition-unbraided-05d1@gregkh/)\n\n**Input: joystick - use usb_make_subpath()**\n\njoystick 패치 리뷰에서 Dmitry Torokhov는 usb_make_subpath() 대신 strscat() 같은 읽기 쉬운 API를 선호했으나 성능 이슈가 없으면 strlcat() 유지도 가능하다고 했고, Alejandro Colomar는 LGTM으로 시리즈 진행을 허용했습니다.\n\n영향: KSPP string 정리가 단순 치환인지 공통 helper 도입인지에 대한 maintainer 합의가 아직 열려 있어, 최종 머지 형태가 input 쪽 가독성 요구와 충돌할 수 있습니다. 최종 upstream이 usb_make_subpath() 시리즈인지 strscat() 기반 대안인지는 추정 단계입니다.\n\n> LGTM.\n\nHave a lovely night!\nAlex\n\n[원문 확인](https://lore.kernel.org/linux-hardening/atj0F7xJaHhs6u8D@debian/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "LWN: Linux 7.2.12 kernel release",
+      "url": "https://lwn.net/Articles/1101759/",
+      "note": "article"
+    },
+    {
+      "title": "ChangeLog-7.2.12",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.12",
+      "note": "changelog"
+    },
+    {
+      "title": "Landlock update for v7.4-rc1 (linux-hardening)",
+      "url": "https://lore.kernel.org/linux-hardening/20261021162538.1852602-1-mic@digikod.net/",
+      "note": "thread"
+    },
+    {
+      "title": "USB usb_make_subpath() series (patchew)",
+      "url": "https://patchew.org/linux/20261021123146.17202-1-shlomojune6@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "KSPP linux issue #370",
+      "url": "https://github.com/KSPP/linux/issues/370",
+      "note": "article"
+    },
+    {
+      "title": "usb_make_subpath() patch 1 mbox",
+      "url": "https://patchew.org/linux/20261021123146.17202-1-shlomojune6@gmail.com/mbox",
+      "note": "thread"
+    },
+    {
+      "title": "get_maintainer.pl routing feedback",
+      "url": "https://lore.kernel.org/linux-hardening/2026102104-audition-unbraided-05d1@gregkh/",
+      "note": "thread"
+    },
+    {
+      "title": "Input joystick usb_make_subpath() review",
+      "url": "https://lore.kernel.org/linux-hardening/atj0F7xJaHhs6u8D@debian/",
+      "note": "thread"
+    },
+    {
+      "title": "kernel.org release index",
+      "url": "https://www.kernel.org/",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-6.18.58",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.18.58",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-6.12.114",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.12.114",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-6.6.160",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.6.160",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-21T18:27:25.016Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
