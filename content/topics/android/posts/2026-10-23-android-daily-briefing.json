@@ -1,0 +1,118 @@
+{
+  "id": "2026-10-23-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-10-23 ashmem LRU 회귀 — Android 커널",
+  "headline": "ashmem purge 시 LRU_COUNT 미감소 회귀가 수정되었고, drm-fixes 머지로 dma-heap fd 설치 시점이 보강되었습니다.",
+  "date": "2026-10-23",
+  "summary": "Rust ashmem shrinker 경로의 LRU 카운트 버그가 ACK에 반영되었습니다. Microdroid defconfig 정리와 mm-stable 대량 머지도 android-mainline에 이어졌습니다.",
+  "tags": [
+    "안드로이드",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "ashmem purge 시 LRU_COUNT 미감소",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Android ashmem·메모리 압력 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/f4e228698334242913d69797aa0a4f41432d27e4",
+      "if": "Rust ashmem shrinker에서 range purge 후 LRU_COUNT가 줄지 않으면",
+      "do": "해당 커밋이 포함된 android-mainline에서 ashmem·메모리 압력 관련 회귀 테스트를 돌려보세요",
+      "verify": "LRU 통계와 purge 경로가 커밋 메시지의 Bug 543723016 설명과 일치하는지 원문을 확인하세요"
+    },
+    {
+      "title": "DMA_HEAP_IOCTL_ALLOC fd 설치 시점",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "ACK 머지·dma-buf/dma-heap 소비자",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/718136b3ae37acbdcda64dc8e373b26cb5082ca1",
+      "if": "dmabuf heap을 쓰는 그래픽·멀티미디어 스택을 ACK android-mainline에 올릴 때",
+      "do": "drm-fixes 머지 이후 dma-heap 할당 ioctl 실패·fd 누수 관련 스모크 테스트를 추가하세요",
+      "verify": "머지 커밋과 dri-devel 스레드에서 copy_to_user 성공 후 fd_install 경로를 확인하세요"
+    },
+    {
+      "title": "Microdroid obsolete SHA256 Kconfig 제거",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "Microdroid·pKVM/AVF 커널 빌드 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/caf46ff7514c908829071c455c887fca6aa5c143",
+      "if": "microdroid_defconfig로 AVF/Microdroid 이미지를 빌드할 때",
+      "do": "CONFIG_CRYPTO_SHA256_SSSE3 참조가 사라진 빌드가 깨지지 않는지 CI에서 확인하세요",
+      "verify": "커밋 인용문에 나온 upstream 제거 커밋과 새 라이브러리 구현 전환을 원문에서 대조하세요"
+    },
+    {
+      "title": "mm-stable 태그 android-mainline 통합",
+      "priority": "하",
+      "impactType": "release",
+      "affectedAudience": "ACK upstream 동기화·mm/zram 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/d4b2d700bb3e633545cc859a4c32597df6fdbc73",
+      "if": "android-mainline을 v7.3-rc1 방향 mm 안정화와 맞춰 동기화할 때",
+      "do": "머지 후 zram 등 자주 쓰는 mm 경로에서 스모크·회귀 테스트를 우선 돌리세요",
+      "verify": "mm-stable 묶음 패치 수·우선 검증 항목은 원문 인용 검증이 완료되지 않았으므로 changelog와 ACK 릴리스 노트를 직접 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Merge mm-stable-2026-08-26-15-22 into android-mainline**\n\nAndrew Morton mm-stable-2026-08-26-15-22가 android-mainline으로 머지되었고, zram_drv.c 충돌만 trivial하게 해소했습니다.\n\n영향: android-mainline이 v7.3-rc1 방향으로 mm 서브시스템 안정화·버그픽스를 따라가며, zram 등 Android에서 흔한 메모리 경로의 회귀 수정이 ACK에 들어올 수 있습니다(신뢰도 낮음).\n\n> Merge 18fbf5151d2c (\"Merge tag 'mm-stable-2026-08-26-15-22' of git://git.kernel.org/pub/scm/linux/kernel/git/akpm/mm\") into android-mainline\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/d4b2d700bb3e633545cc859a4c32597df6fdbc73)\n\n171개 패치 묶음이라는 설명은 changelog 인용과 일치한다고 기록되어 있으나, 원문 인용 검증이 실패했습니다. reclaim·swap·zsmalloc 등 Android 팀이 우선 검증할 항목이 ACK 릴리스 노트에 아직 반영되었는지는 확인이 필요합니다.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+show/18fbf5151d2c0bfe433c7428eef03cabf5fdb2fa)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ANDROID: ashmem: decrement LRU_COUNT when purging ranges**\n\nashmem free_lru()가 lru_list에서 range를 pop한 뒤 remove_lru()를 호출해 LRU_COUNT가 줄지 않던 경로를, purge 시 LRU_COUNT를 직접 감소시키도록 수정했습니다.\n\n영향: Rust ashmem shrinker 경로에서 LRU 카운트가 계속 커지면 메모리 회수·압력 통계가 어긋나 앱/시스템 메모리 동작이 왜곡될 수 있습니다.\n\n> remove_lru() only decrements LRU_COUNT if the range is still in lru_list, which is false after pop_back(), causing LRU_COUNT to never be decremented when ranges are purged.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/f4e228698334242913d69797aa0a4f41432d27e4)\n\n**Merge drm-fixes-2026-09-05 into android-mainline**\n\ndrm-fixes-2026-09-05 태그가 android-mainline에 머지되었고, dma-heap.c 충돌은 downstream dma_heap_*() 헬퍼를 유지하면서 upstream dma_heap_ioctl_allocate()(fd를 copy_to_user 성공 후에만 publish)를 따랐습니다.\n\n영향: DMA_HEAP_IOCTL_ALLOC에서 copy_to_user 실패 시 fd가 이미 설치되어 누수·다른 스레드에서 조작 가능했던 문제가 ACK에 반영되어, dmabuf heap을 쓰는 그래픽·멀티미디어 스택의 안정성이 좋아집니다.\n\n> Keep the downstream dma_heap_*() helpers but take upstream's dma_heap_ioctl_allocate() from commit 30d0aff2c65a, as using dma_heap_bufferfd_alloc() there would install the fd too early.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/718136b3ae37acbdcda64dc8e373b26cb5082ca1)\n\n> Restructure the allocation path so that fd_install() is the last, unfailable step of a successful ioctl.\n\n[원문 확인](https://lists.freedesktop.org/archives/dri-devel/2026-August/589570.html)\n\ndrm-fixes 머지에 포함된 나머지 DRM 패치 중 Android 벤더 드라이버에 직접 영향 주는 항목은 별도 트리아지가 필요합니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**ANDROID: MICRODROID: Remove CONFIG_CRYPTO_SHA256_SSSE3**\n\nupstream에서 제거된 CONFIG_CRYPTO_SHA256_SSSE3를 microdroid_defconfig에서 삭제했습니다. SHA256은 새 라이브러리 구현으로 이미 대체되었습니다.\n\n영향: Microdroid/AVF 이미지 빌드가 obsolete Kconfig를 참조해 실패하거나 경고가 나는 것을 방지합니다.\n\n> This config was removed in commit 11d7956d526f (\"crypto: x86/sha256 - implement library instead of shash\") and is now obsolete, so drop it from microdroid_defconfig.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/caf46ff7514c908829071c455c887fca6aa5c143)\n\n**ANDROID: gki_defconfig: adjust MEM_ALLOC_PROFILING**\n\nupstream 3c77682d80d0으로 MEM_ALLOC_PROFILING Kconfig·코드가 mm/ 아래로 옮겨진 뒤, GKI gki_defconfig가 새 경로·옵션에 맞게 갱신되었습니다(어제도 다룬 항목).\n\n영향: ACK/GKI 빌드가 upstream mm 리팩터 이후 defconfig 불일치로 깨지거나 메모리 할당 프로파일링 옵션이 잘못 켜지는 것을 막습니다.\n\n커밋은 upstream alloc-tag 이동에 맞춰 gki_defconfig를 수정한다고 적혀 있으나, 인용문은 원문에서 검증되지 않았습니다. 상세 문구는 원문에서 직접 확인하세요.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/0304bb852ee945ba1ed1691f5080c095ef2a2b68)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ANDROID: gki_defconfig: adjust MEM_ALLOC_PROFILING",
+      "url": "https://android.googlesource.com/kernel/common/+/0304bb852ee945ba1ed1691f5080c095ef2a2b68",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: ashmem: decrement LRU_COUNT when purging ranges",
+      "url": "https://android.googlesource.com/kernel/common/+/f4e228698334242913d69797aa0a4f41432d27e4",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: MICRODROID: Remove CONFIG_CRYPTO_SHA256_SSSE3",
+      "url": "https://android.googlesource.com/kernel/common/+/caf46ff7514c908829071c455c887fca6aa5c143",
+      "note": "commit"
+    },
+    {
+      "title": "Merge drm-fixes-2026-09-05 into android-mainline",
+      "url": "https://android.googlesource.com/kernel/common/+/718136b3ae37acbdcda64dc8e373b26cb5082ca1",
+      "note": "commit"
+    },
+    {
+      "title": "dma-heap allocation path (dri-devel)",
+      "url": "https://lists.freedesktop.org/archives/dri-devel/2026-August/589570.html",
+      "note": "thread"
+    },
+    {
+      "title": "Merge mm-stable-2026-08-26-15-22 into android-mainline",
+      "url": "https://android.googlesource.com/kernel/common/+/d4b2d700bb3e633545cc859a4c32597df6fdbc73",
+      "note": "commit"
+    },
+    {
+      "title": "mm-stable-2026-08-26-15-22 changelog",
+      "url": "https://android.googlesource.com/kernel/common/+show/18fbf5151d2c0bfe433c7428eef03cabf5fdb2fa",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-22T18:07:38.776Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/android-newsletter-from-dossier-ko.md"
+  }
+}

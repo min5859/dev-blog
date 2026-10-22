@@ -1,0 +1,113 @@
+{
+  "id": "2026-10-23-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-10-23 Rust Lock·perf maps — 커널 툴체인",
+  "headline": "Rust for Linux의 Lock pin-init·export DWARF 정리와 perf maps 교착 수정, serdev·arm64 annotate 시리즈가 리스트에서 진행 중입니다.",
+  "date": "2026-10-23",
+  "summary": "Philipp Stanner v4는 `Lock::new`가 fallible `PinInit`과 `try_pin_init!()`와 맞도록 sync API를 바꿉니다. Giuliano Procida v2는 bogus DWARF를 줄이고, Ian Rogers perf v7은 maps 로드·제거 경로의 교착·bounds 문제를 고칩니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "rust: sync: Lock fallible pin-init (v4)",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust for Linux sync/Lock·pin-init API 사용자 및 리뷰어",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/rust-for-linux/20261022160725.2215244-2-phasta@kernel.org/T/",
+      "if": "pin-init 기반 Rust 드라이버에서 mutex/spinlock 안 protected 데이터 초기화가 실패할 수 있는데 기존 `Lock` 시그니처가 맞지 않으면",
+      "do": "v4에서 `Lock::new`가 `PinInit<T, E>`를 받도록 바뀌는 부분을 머지 전에 호출부와 리뷰 코멘트를 추적하세요",
+      "verify": "스레드 커버 레터와 패치 diff에서 `try_pin_init!()` 호환 변경을 직접 확인하세요"
+    },
+    {
+      "title": "EXPORT_SYMBOL_RUST_GPL DWARF 정리 (v2)",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "Rust kbuild·module export·DWARF/ksym 도구 유지보수 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/rust-for-linux/20261022134617.228229-1-gprocida@google.com/T/",
+      "if": "Rust export 경로가 C `int`로 잘못된 DWARF를 남기면 `gendwarfksyms`·디버거·ABI 분석이 깨질 수 있으면",
+      "do": "`include/linux/export.h`로 옮긴 매크로와 `rust/exports.c`의 `___EXPORT_SYMBOL` 사용 방식을 빌드·디버그 정보 diff로 따라가세요",
+      "verify": "v2 요약과 패치에서 bogus type information 제거 목표를 원문에서 확인하세요"
+    },
+    {
+      "title": "perf maps: lock inversion·bounds (v7 16/17)",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "tools/perf maps·커널 맵 로딩 경로 및 LLVM/perf CI 담당",
+      "verifyLink": "https://lore.landau.one/lkml/20261021223905.715051-17-irogers@google.com/",
+      "if": "커널 맵 로드나 REFCNT_CHECKING 환경에서 perf가 hang·UAF 클래스 문제를 일으킬 수 있으면",
+      "do": "`maps__load_first()` 참조·락 순서와 `__maps__remove()` bounds 검사 패치를 로컬 perf 빌드에 적용해 재현 여부를 보세요",
+      "verify": "패치 설명의 read-to-write self-deadlock·인덱스 검사 문구를 스레드에서 확인하세요"
+    },
+    {
+      "title": "rust: serdev: Refactor (v5)",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "serdev/TTY 코어 및 Rust serdev 드라이버·바인딩 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/rust-for-linux/20261022-rust_serdev_probe_refactor-v5-0-a27d862a415a@posteo.de/T/",
+      "if": "Rust serdev 프로브가 C TTY/serdev 코어와 race하거나 mutex 밖 `serport->tty` 접근이 있으면",
+      "do": "C 쪽 mutex·receive pause API와 Rust 프로브 단순화 변경을 드라이버 트리와 함께 리뷰하세요",
+      "verify": "v5 changelog의 Sashiko 피드백 반영 항목을 스레드에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**perf maps: Fix lock inversion in maps__load_first() and bounds check in __maps__remove()**\n\nIan Rogers perf v7 16/17패치는 `maps__load_first()`에서 map 참조를 잡은 뒤 lock을 풀고 `map__load`를 호출해 read→write 자기 교착을 피하고, `__maps__remove()`에서 인덱스 bounds·free 순서를 바로잡습니다.\n\n영향: llvm 리스트의 perf 수정은 커널 맵 로딩·REFCNT_CHECKING 환경에서 hang·UAF 클래스 버그를 막아 LLVM 기반 perf 워크플로 안정성과 직결됩니다.\n\n> take a reference to the first map and drop\nmaps__lock(maps) before calling map__load() to avoid a read-to-write\nself-deadlock when loading kernel maps inserts extra trampoline maps.\n\n[원문 확인](https://lore.landau.one/lkml/20261021223905.715051-17-irogers@google.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**rust: sync: Accept errors for Lock payload data**\n\nPhilipp Stanner v4는 `Lock::new`가 fallible `PinInit<T, E>` 페이로드를 받아 `try_pin_init!()`와 함께 쓸 수 있게 하고 spinlock 예제 import를 정리합니다.\n\n영향: 동기화 프리미티브와 pin-init 스택을 함께 쓰는 toolchain·바인딩 작성자는 머지 전 시그니처 변화를 추적해야 합니다. v4가 rust-for-linux/next에 들어가는 시점과 기존 infallible 호출부 추가 수정 필요 여부는 확인이 필요합니다.\n\n> Add support for the lock base class so that it works with\ntry_pin_init!(). Adjust spinlock and mutex accordingly.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/rust-for-linux/20261022160725.2215244-2-phasta@kernel.org/T/)\n\n**clean up EXPORT_SYMBOL_RUST_GPL**\n\nGiuliano Procida v2(2패치)는 `EXPORT_SYMBOL_RUST_GPL` 정의를 `include/linux/export.h`로 옮기고 `rust/exports.c`에서 `___EXPORT_SYMBOL`을 직접 써 Rust 심볼마다 bogus C `int` DWARF가 생기지 않게 합니다.\n\n영향: Rust↔C export 매크로와 kbuild 연동 담당자에게 빌드·디버그 정보 이슈입니다. `drivers/gpu` Makefile·nova_core_exports.c 변경이 다른 GPU Rust export 사용자에 미치는 영향과 v2 머지 후 out-of-tree Rust 모듈 회귀는 확인이 필요합니다.\n\n> The two separate patches now move EXPORT_SYMBOL_RUST_GPL definitions\ninto linux/export.h and prevent the emission of bogus type information\nfor Rust symbols.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/rust-for-linux/20261022134617.228229-1-gprocida@google.com/T/)\n\n**rust: serdev: Refactor**\n\nMarkus Probst v5(4패치)는 C serdev tty-port에 mutex·receive pause API를 추가하고 Rust serdev 프로브 race를 줄이며 Sashiko가 지적한 `serport->tty` mutex 밖 접근을 수정합니다.\n\n영향: C API·동기화 변경은 Rust 드라이버 작성자와 serial/serdev 유지보수자 모두에게 ABI·런타임 안정성 신호입니다. C serdev pause API의 최종 export·GPL 범위와 Greybus/serial 트리 pick 경로는 확인이 필요합니다.\n\n> - introduce mutex to C serdev tty port controller\n- introduce a new C serdev API to fix race conditions and simplify rust\n  code. Should also be useful on the C side.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/rust-for-linux/20261022-rust_serdev_probe_refactor-v5-0-a27d862a415a@posteo.de/T/)\n\n**perf annotate arm64: instruction tracking for data type profiling**\n\nTengda Wu는 maintainer 스레드에서 Sashiko 코멘트가 v8에 반영되었으므로 v7 부분 적용보다 v8 시리즈 전체를 적용·테스트하는 편이 낫다고 답했고, Namhyung Kim은 이미 v8 커버를 가리켰습니다.\n\n영향: arm64 `perf annotate --data-type`은 LLVM·capstone·objdump 백엔드와 instruction tracking이 맞물려 perf+LLVM 조합의 타입 프로파일링 정확도 추적에 머지 단위가 중요합니다. Arnaldo가 v8 전체를 perf-tools-next에 올리는 일정과 벤치 ok(%)가 특정 워크로드에만 유효한지는 확인이 필요합니다.\n\n> Yes, applying based on v8 would be better. All Sashiko comments have been\naddressed in v8, so the whole series can be applied and tested as-is.\n\n[원문 확인](https://lore.landau.one/lkml/b6c0b7b2-3ffa-4dd6-a4e0-23333e9b7d92@huaweicloud.com/T/)"
+    },
+    {
+      "heading": "기타",
+      "body": "driver-core 7.4-rc1 머지 후 `rust/kernel/mem.rs` import 순서·rustfmt/주석 배치만 맞추는 후보는 toolchain 동작 변화가 없어 이번 본문에서는 제외했습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "rust: sync: Accept errors for Lock payload data",
+      "url": "https://lore-kernel.gnuweeb.org/rust-for-linux/20261022160725.2215244-2-phasta@kernel.org/T/",
+      "note": "thread"
+    },
+    {
+      "title": "clean up EXPORT_SYMBOL_RUST_GPL",
+      "url": "https://lore-kernel.gnuweeb.org/rust-for-linux/20261022134617.228229-1-gprocida@google.com/T/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: serdev: Refactor v5",
+      "url": "https://lore-kernel.gnuweeb.org/rust-for-linux/20261022-rust_serdev_probe_refactor-v5-0-a27d862a415a@posteo.de/T/",
+      "note": "thread"
+    },
+    {
+      "title": "perf maps: lock inversion and bounds check",
+      "url": "https://lore.landau.one/lkml/20261021223905.715051-17-irogers@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "perf annotate arm64: maintainer thread (v8)",
+      "url": "https://lore.landau.one/lkml/b6c0b7b2-3ffa-4dd6-a4e0-23333e9b7d92@huaweicloud.com/T/",
+      "note": "thread"
+    },
+    {
+      "title": "perf annotate arm64: v8 cover letter",
+      "url": "https://lore.landau.one/lkml/cover.1792411435.git.wutengda@huaweicloud.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-22T18:33:05.943Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

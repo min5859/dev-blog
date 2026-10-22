@@ -1,0 +1,171 @@
+{
+  "id": "2026-10-23-linux-distro-stable-daily",
+  "topic": "linux-distro-stable",
+  "title": "2026-10-23 stable 보안 백포트 — 배포·Stable",
+  "headline": "IPv4 FNHE·virtio vsock·virtio-net 통계 경로 등 stable 큐 보안·회귀 수정이 LTS 동기화 압력을 키웁니다.",
+  "date": "2026-10-23",
+  "summary": "어제 태그된 7.2.12·6.6/6.12/6.18 longterm 점프 이후, stable 리스트에는 UDP FNHE 사이드채널·vsock 소스 검증·virtio-net stats 범위 검증 등 백포트 제안이 집중됐습니다. Xe migrate 대기·ring buffer 부팅 초기 할당 회귀도 각 브랜치 changelog 반영 여부를 추적해야 합니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "stable",
+    "LTS",
+    "배포"
+  ],
+  "highlights": [
+    {
+      "title": "IPv4 UDP FNHE 사이드채널 stable 제안",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "IPv4 라우팅·UDP·stable 백포트 담당",
+      "verifyLink": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/patch/?id=4c3499f79f8c7e8561266bcc220a18538cec0458",
+      "if": "ICMP가 인용한 UDP 패킷 경로에서 FNHE 캐시로 ephemeral 포트가 노출될 수 있다고 판단되면",
+      "do": "ipv4_update_pmtu()/ipv4_redirect() 선호출 백포트가 담당 브랜치 stable 큐·changelog에 들어왔는지 추적하세요",
+      "verify": "upstream 커밋 4c3499f79f8c와 lore stable 스레드 본문에서 소켓 매칭 전 FNHE 생성 mitigations를 확인하세요"
+    },
+    {
+      "title": "virtio vsock 연결 소켓 출발지 검증",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "vsock/virtio·가상화 네트워킹 및 stable 보안 백포트 담당",
+      "verifyLink": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/patch/?id=dee44f41f206becb41c492899c1996cfd7f82a1b",
+      "if": "VM·컨테이너에서 권한 없는 UID가 AF_VSOCK sock_diag로 튜플을 알아낼 여지가 있다면",
+      "do": "vsock_check_source() 백포트를 6.6.y 등 대상 LTS에 vsock RST skb owner 패치와 함께 묶어 적용 일정을 잡으세요",
+      "verify": "upstream dee44f41f206 재현 설명과 6.6.y stable 제안 스레드에서 destination-only 조회 한계를 확인하세요"
+    },
+    {
+      "title": "virtio-net device stats vq_index 검증",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "virtio-net·ethtool 통계·가상화 네트워킹 stable 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20261022182710.2055771-1-karin0.zst@gmail.com/",
+      "if": "QEMU/KVM virtio-net에서 ethtool -S·per-queue netlink stats 경로를 노출한다면",
+      "do": "요청 범위 밖 vq_index 응답 거부 패치가 upstream 머지·stable 백포트 대상에 포함되는지 확인하세요",
+      "verify": "stable 스레드의 KASAN 재현 문구와 패치 적용 후 동일 응답 거부 동작을 대조하세요"
+    },
+    {
+      "title": "drm/xe suballocator 대기 회귀",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "drm/xe·Intel GPU 드라이버 및 stable 백포트 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20261022174058.226432-5-matthew.auld@intel.com/",
+      "if": "Lunar Lake 등에서 Xorg가 xe_migrate_clear에서 멈춘다는 보고가 있다면",
+      "do": "suballocator 대기를 uninterruptible로 바꾸는 stable 시리즈가 목표 LTS 브랜치에 올라왔는지 추적하세요",
+      "verify": "Intel stable 패치 본문과 GitLab work item #9644에서 -ERESTARTSYS·SIGALRM 상호작용을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.2.12 stable**\n\nGreg Kroah-Hartman이 2026-10-21에 Linux 7.2.12 stable을 태그했으며 changelog에는 KVM x86 SMM MMIO 캐시, ksmbd Kerberos heap OOB, sched_ext CPU hotplug hang, dm-integrity resume·bitmap 모드, nfsd async COPY stateid 등 12건의 백포트가 포함됩니다.\n\n영향: 7.2.y를 추적하는 배포·벤더 트리는 가상화·인-커널 SMB·BPF 스케줄러·NFS 서버·device-mapper integrity 경로의 보안·안정성 수정을 이번 점프로 한꺼번에 받아야 합니다.\n\n> I'm announcing the release of the 7.2.12 kernel.\n\n> All users of the 7.2 kernel series must upgrade.\n\n[원문 확인](https://lwn.net/Articles/1101759/)\n\n**ksmbd Kerberos heap OOB (7.2.12 changelog)**\n\nchangelog 백포트는 ksmbd krb5_authenticate() compounded SMB2 응답 시 response_buf 끝을 넘어 커널 heap에 memcpy가 일어날 수 있는 heap OOB 쓰기를 수정합니다.\n\n영향: 7.2 stable을 쓰는 배포는 인-커널 SMB Kerberos 경로를 이번 릴리스에 포함해 동기화해야 합니다.\n\n> allowing memcpy() to write the AP-REP blob past the end of response_buf into adjacent kernel heap memory.\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/patch/?id=4722d06b2907585074252061b1024a696c1cfc23)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ipv4: udp: Create exceptions before socket matching**\n\nstable 큐 제안은 ICMP가 인용한 UDP 패킷 처리 시 소켓 매칭 전에도 FNHE를 만들도록 ipv4_update_pmtu()/ipv4_redirect()를 먼저 호출해, 오프패스 공격자가 FNHE 캐시로 연결 UDP ephemeral 포트를 추측하는 사이드채널을 막습니다(upstream 4c3499f79f8c).\n\n영향: LTS·stable 브랜치를 유지하는 네트워크 스택 담당은 기존 siphash·버킷 랜덤화만으로는 우회 가능한 FNHE 캐시 정보 누출 수정이 각 브랜치 changelog에 들어오는지 추적해야 합니다. 할당된 CVE 번호 및 각 longterm 브랜치 머지 완료 시점은 확인이 필요합니다.\n\n> This behavior allows off-path attackers to conduct a side-channel attack on the FNHE cache in order to discover the ephemeral port used by a connected UDP socket.\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/patch/?id=4c3499f79f8c7e8561266bcc220a18538cec0458)\n\n**vsock/virtio: validate packet source for connected sockets**\n\nstable 백포트는 virtio vsock 수신 경로에서 destination-only 조회로 연결된 소켓을 찾을 때 출발지 CID/포트를 검증하지 않아, 무권한 sock_diag로 튜플을 알아낸 공격자가 피해 소켓에 16바이트를 주입할 수 있던 문제를 vsock_check_source()로 막습니다(upstream dee44f41f206).\n\n영향: VM·컨테이너에서 AF_VSOCK을 쓰는 배포는 capability 없는 UID 간 데이터 주입 가능성을 각 LTS에 백포트해야 합니다. CVE 부여 여부 및 net namespace 없는 구형 트리용 컨텍스트 조정 범위는 확인이 필요합니다.\n\n> The attacker discovered the target tuple through unprivileged AF_VSOCK sock_diag and caused the victim socket to read 16 attacker-chosen bytes\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/patch/?id=dee44f41f206becb41c492899c1996cfd7f82a1b)\n\n**virtio_net: reject stats replies for queues outside the request**\n\nstable 제안은 virtio-net 장치 통계 응답의 vq_index를 검증하지 않아 ethtool -S 배열 밖 쓰기와 per-queue netlink stats에서 tx/rx 구조체 혼동·스택 오버런이 날 수 있던 경로를, 요청 범위 밖 vq_index 응답을 거부하도록 고칩니다.\n\n영향: QEMU/KVM virtio-net을 쓰는 배포는 악의적·버그 있는 게스트가 호스트 커널 메모리를 덮을 수 있는 통계 경로를 stable 백포트로 닫아야 합니다. upstream netdev 머지 여부 및 백포트 대상 브랜치는 확인이 필요합니다.\n\n> On an unmodified kernel, KASAN then reports a write past the ethtool -S output array. With this patch, the driver rejects the same reply\n\n[원문 확인](https://lore.kernel.org/stable/20261022182710.2055771-1-karin0.zst@gmail.com/)\n\n**drm/xe/sa: make suballocator waits uninterruptible**\n\nstable 시리즈는 xe_migrate_clear()/xe_migrate_copy()가 커널 batchbuffer 풀을 기다릴 때 interruptible 대기로 SIGALRM 등에 -ERESTARTSYS가 나며 진행이 버려져 ioctl이 바이트 0부터 재시작·라이브락할 수 있는 문제를, suballocator 대기를 uninterruptible로 바꿔 고칩니다.\n\n영향: Intel Xe가 들어간 데스크톱·노트북 배포는 Lunar Lake 등에서 대용량 BO clear/migrate가 멈추는 회귀를 LTS 백포트 일정으로 닫아야 합니다. upstream drm/xe 머지 커밋 해시 및 대상 stable 브랜치 목록은 확인이 필요합니다.\n\n> Once the pool fills up, __xe_sa_bo_new() waits interruptibly for space, so a pending signal (e.g. Xorg's 5ms SIGALRM smart-scheduler timer) makes it fail mid-loop with -ERESTARTSYS.\n\n[원문 확인](https://lore.kernel.org/stable/20261022174058.226432-5-matthew.auld@intel.com/)\n\n**ring-buffer: Do not check si_mem_available() before deferred init completes**\n\nstable v3는 CONFIG_DEFERRED_STRUCT_PAGE_INIT 빌드에서 부팅~smp_init() 동안 si_mem_available()이 거짓 0을 반환해 trace ring buffer 할당이 -ENOMEM으로 실패하는 문제를, system_state가 SYSTEM_FREEING_INITMEM 이전에는 해당 검사를 건너뛰도록 고칩니다.\n\n영향: debug 옵션이 많은 distro·CI 커널은 deferred struct page 초기화 환경에서 ftrace/ring buffer가 아예 올라오지 않을 수 있어 LTS 백포트가 필요합니다. SUSE 보고 스레드와 동일 수정인지는 changelog 머지 후 확인이 필요합니다.\n\n> si_mem_available() therefore returns a false negative (often 0-1 pages) across both SYSTEM_BOOTING and SYSTEM_SCHEDULING, causing __rb_allocate_pages() to prematurely abort with -ENOMEM.\n\n[원문 확인](https://lore.kernel.org/stable/20261022181817.49717-1-amachhiw@linux.ibm.com/)\n\n**virtio: set skb owner of virtio_transport_reset_no_sock() reply**\n\nstable 6.12.y 1/2 백포트는 vsock RST 응답 skb에 송신 소켓을 owner로 묶어 sk 참조가 skb 수명까지 유지되게 하고, net namespace 해제와 vsock 조회 사이 레이스를 줄입니다(upstream a6ae12a599e0).\n\n영향: vsock 소스 검증 백포트(dee44f41f206)의 Stable-dep로 제시되어, virtio vsock 보안 수정을 LTS에 넣을 때 이 패치를 같은 시리즈로 따라가야 합니다.\n\n> This allows the net namespace to be used for socket lookups for the duration of the reply skb's lifetime, preventing race conditions between the namespace lifecycle\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/patch/?id=a6ae12a599e0f16bc01a38bcfe8d0278a26b5ee0)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Linux 6.12.114 longterm**\n\n2026-10-21 릴리스된 6.12.114 longterm에는 changelog 기준 855건의 백포트가 있으며 앞쪽에 KVM MMIO 캐시, ksmbd Kerberos OOB, dm-integrity keyed discard overflow, NPCM845 SVC I3C 수정 등이 포함됩니다.\n\n영향: 6.12 LTS 기반 배포판·엔터프라이즈 트리는 이번 롱텀 태그가 스토리지 integrity·BMC I3C·가상화 수정의 새 기준선이 됩니다.\n\n> Linux 6.12.114\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.12.114)\n\n**Linux 6.18.58 longterm**\n\n2026-10-21의 6.18.58 longterm에는 changelog 기준 48건의 백포트가 있으며 io_uring SQ/CQ·provided buffer ring의 RLIMIT_MEMLOCK 과금 제거, USB iowarrior disconnect UAF, ima 스택 OOB, net: mana RX headroom 등이 포함됩니다.\n\n영향: 6.18 longterm 라인을 쓰는 배포는 io_uring 테스트·컨테이너 워크로드와 USB/네트워크 드라이버 회귀를 이번 점프로 동기화해야 합니다.\n\n> io_uring: do not charge the SQ/CQ rings to RLIMIT_MEMLOCK\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.18.58)\n\n**Linux 6.6.160 longterm**\n\n2026-10-21의 6.6.160 longterm에는 changelog 기준 1643건의 백포트가 있으며 xfs unmount hang, Bluetooth L2CAP OOB write, bpf 검증기 loop_entry 중단, ksmbd·SMB client 범위 수정 등이 앞쪽에 실립니다.\n\n영향: 가장 넓게 쓰이는 6.6 LTS 트리는 파일시스템·Bluetooth·BPF 안정성 수정이 대량으로 들어오므로 벤더 백포트·배포 동기화 비용이 큽니다.\n\n> xfs: fix unmount hang with unflushable inodes stuck in the AIL\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.6.160)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Linux 7.2.12 릴리스 공지",
+      "url": "https://lwn.net/Articles/1101759/",
+      "note": "article"
+    },
+    {
+      "title": "ChangeLog-7.2.12",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.12",
+      "note": "changelog"
+    },
+    {
+      "title": "ksmbd Kerberos heap OOB 수정",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/patch/?id=4722d06b2907585074252061b1024a696c1cfc23",
+      "note": "commit"
+    },
+    {
+      "title": "IPv4 UDP FNHE upstream 수정",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/patch/?id=4c3499f79f8c7e8561266bcc220a18538cec0458",
+      "note": "commit"
+    },
+    {
+      "title": "IPv4 UDP FNHE 6.18.y stable 제안",
+      "url": "https://lore.kernel.org/stable/20261022172149.1756491-1-sashal@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "vsock/virtio 소스 검증 upstream",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/patch/?id=dee44f41f206becb41c492899c1996cfd7f82a1b",
+      "note": "commit"
+    },
+    {
+      "title": "vsock/virtio 6.6.y stable 제안",
+      "url": "https://lore.kernel.org/stable/20261022172214.1774645-1-sashal@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "virtio_net device stats 도입",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/patch/?id=941168f8b40e50518a3bc6ce770a7062a5d99230",
+      "note": "commit"
+    },
+    {
+      "title": "virtio_net stats vq_index stable 제안",
+      "url": "https://lore.kernel.org/stable/20261022182710.2055771-1-karin0.zst@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/xe Xorg hang GitLab",
+      "url": "https://gitlab.freedesktop.org/drm/xe/kernel/-/work_items/9644",
+      "note": "article"
+    },
+    {
+      "title": "drm/xe suballocator stable 패치",
+      "url": "https://lore.kernel.org/stable/20261022174058.226432-5-matthew.auld@intel.com/",
+      "note": "thread"
+    },
+    {
+      "title": "ring-buffer si_mem_available 도입",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/patch/?id=2a872fa4e9c8adc79c830e4009e1cc0c013a9d8a",
+      "note": "commit"
+    },
+    {
+      "title": "ring-buffer deferred init stable v3",
+      "url": "https://lore.kernel.org/stable/20261022181817.49717-1-amachhiw@linux.ibm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "virtio vsock RST skb owner upstream",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/patch/?id=a6ae12a599e0f16bc01a38bcfe8d0278a26b5ee0",
+      "note": "commit"
+    },
+    {
+      "title": "ChangeLog-6.12.114",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.12.114",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-6.18.58",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.18.58",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-6.6.160",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.6.160",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-22T18:38:45.898Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

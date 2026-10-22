@@ -1,0 +1,118 @@
+{
+  "id": "2026-10-23-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-10-23 ice·macb RT — Linux Perf RT",
+  "headline": "ice RTNL 데드락, macb TX·RCU 회귀, backlog-NAPI 백포트, no-lock free 수정이 PREEMPT_RT 경로를 동시에 건드린다.",
+  "date": "2026-10-23",
+  "summary": "linux-rt-devel에서는 ice auxiliary·DCB ABBA, ZynqMP macb 링크 플랩, v6.1-rt backlog-NAPI 백포트, free_pages_nolock() shuffle·reporting 회귀가 이어졌다. ice·irdma·DCB·embedded GEM·v6.1/v6.6-rt·BPF arena 담당은 각 스레드의 머지·soak 일정을 추적하세요.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "ice: RTNL 잡은 DCB 경로에서 auxiliary 락 데드락 회피",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "ice/irdma·DCB(lldpad)·PREEMPT_RT 네트워크 스택 담당",
+      "verifyLink": "https://patchew.org/linux/20261019065301.3983537-1-poros@redhat.com/mbox",
+      "if": "PREEMPT_RT·DCB·irdma 부팅에서 lldpad와 RDMA probe가 겹치면 부팅이 멈출 수 있으면",
+      "do": "Petr Oros iwl-net 시리즈의 device_trylock() 전환과 -EBUSY·재시도·부분 롤백 동작을 패치와 함께 검증하세요.",
+      "verify": "patchew 스레드에서 RTNL·auxiliary 락 순서와 ice_send_event_to_aux() 실패 처리를 원문으로 확인하세요."
+    },
+    {
+      "title": "net: macb TX 정지·TXUBR IRQ storm·RCU stall 수정 RFC",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "macb/GEM·Xilinx ZynqMP·PREEMPT_RT embedded 네트워크 담당",
+      "verifyLink": "https://patchew.org/linux/20261022-std-macb-v14-send-v1-0-9187bc545bf6@beckhoff.com/",
+      "if": "Beckhoff ZynqMP PREEMPT_RT에서 링크 업/다운·속도 토글 후 watchdog·RCU stall이 나면",
+      "do": "Steffen Dirkwinkel RFC 6패치의 NCR 직렬화·TBQP·TXUBR 마스킹·링크업 TX 재시작을 재현 환경에 적용해 보세요.",
+      "verify": "patchew·syzbot 인용과 패치 2–6의 0/300·0/74 개선 수치를 원문에서 대조하세요."
+    },
+    {
+      "title": "backlog-NAPI 스레드 백포트 시리즈 완결 판단",
+      "priority": "중",
+      "impactType": "backport",
+      "affectedAudience": "v6.1-rt·v6.6-rt 네트워크·RPS·PREEMPT_RT softirq 경로 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20261022092536.HVMUjSuS@linutronix.de/",
+      "if": "v6.1-rt·v6.6-rt에서 RPS IPI idle flush 경로로 do_softirq_post_smp_call_flush() WARN이 보이면",
+      "do": "Wen Yang v6.1-rt 15패치 백포트 적용 후 SMP-function 호출이 사라지는지 Clark Williams 검토 흐름을 따라 테스트하세요.",
+      "verify": "Sebastian Siewior 답장과 백포트 cover의 backlog_napi 설명을 lore 스레드에서 확인하세요."
+    },
+    {
+      "title": "mm/page_alloc: no-lock free shuffle·reporting 회귀 수정 v2",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "buddy allocator·BPF arena·PREEMPT_RT mm/lockdep 담당",
+      "verifyLink": "https://patchew.org/linux/20261022062523.97082-1-kmehltretter@gmail.com/mbox",
+      "if": "BPF arena 등 raw spinlock·NMI 아래 no-lock free에서 lockdep invalid wait context가 나면",
+      "do": "Karl Mehltretter v2의 per-CPU prandom 셔플·reporting 생략 경로를 PREEMPT_RT·mm 통합 테스트에 넣으세요.",
+      "verify": "patchew·syzbot에서 shuffle_pick_tail()·get_random_u64()·rtmutex 충돌 인용을 원문으로 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**net: macb: fix TX stalls, IRQ storms and a lost NCR update on link-up**\n\nSteffen Dirkwinkel RFC 6패치는 Beckhoff ZynqMP(PREEMPT_RT)에서 링크 업/다운·속도 토글 시 macb TX 정지, TXUBR IRQ storm, RCU stall을 막기 위해 NCR RMW 직렬화, TBQP 재프로그램, TXUBR 마스킹, 링크업 TX 링 회전·재시작 등을 묶는다.\n\n영향: Cadence GEM/macb는 mainline과 동일 코드 경로에서도 링크 플랩 시 level-triggered TXUBR로 CPU를 고정할 수 있고 PREEMPT_RT에서는 RT throttling·RCU stall로 네트워크가 죽어 industrial ARM 보드 RT 배포에 직접 영향이 있다.\n\n> This series fixes the TX stalls, TXUBR interrupt storms and RCU stalls we reproduce on ZynqMP (GEM rev 0x50070106, two TX queues, PREEMPT_RT).\n\n[원문 확인](https://patchew.org/linux/20261022-std-macb-v14-send-v1-0-9187bc545bf6@beckhoff.com/)\n\n**net: macb: fix TX stalls, IRQ storms and a lost NCR update on link-up** (syzbot 맥락)\n\n완료되지 않은 TX descriptor가 링크업 후 index 0에 남아 TXUBR storm과 PREEMPT_RT RCU stall을 유발한다는 재현 설명이 이어진다.\n\n영향: macb_tx_restart()가 동일 descriptor에 TSTART를 반복 쓰며 interrupt storm이 PREEMPT_RT에서 RCU stall로 이어질 수 있다.\n\n> macb_tx_restart() then keeps writing TSTART onto the same descriptor, an interrupt storm that on PREEMPT_RT ends in RCU stalls.\n\n[원문 확인](https://ci.syzbot.org/patches/f621e23a-9647-433f-a101-0713856ea655)\n\n**mm/page_alloc: fix shuffling and reporting for no-lock frees**\n\nKarl Mehltretter v2는 free_pages_nolock()이 zone trylock에 성공할 때도 shuffle_pick_tail()의 get_random_u64()와 page_reporting_notify_free()가 rtmutex·delayed work에 들어가 PREEMPT_RT·NMI·raw spinlock 아래에서 invalid wait context가 나지 않도록, no-lock 경로에 per-CPU prandom 셔플과 reporting 생략을 넣는다.\n\n영향: BPF arena 등 raw spinlock/NMI에서 no-lock free가 buddy shuffling·page reporting까지 타면 RT 전환된 CRNG 락과 충돌해 lockdep·데드락 위험이 있어 mm·BPF arena·PREEMPT_RT 통합 검증에 필요하다.\n\n> Once the CRNG is ready, this takes an rtmutex-backed local lock on PREEMPT_RT, which cannot be acquired while a raw spinlock is held.\n\n[원문 확인](https://patchew.org/linux/20261022062523.97082-1-kmehltretter@gmail.com/mbox)\n\n> For no-lock frees, use a pre-seeded per-CPU prandom state, following the slab allocator. Keep the cached get_random_u64() path for ordinary frees.\n\n[원문 확인](https://ci.syzbot.org/patches/3cd58ce1-da8c-4382-bb0a-2dafbbd4d048)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**ice: avoid RTNL deadlock when notifying the RDMA auxiliary driver**\n\nPetr Oros iwl-net 시리즈는 RTNL을 잡은 DCB 경로에서 ice_send_event_to_aux()가 auxiliary device_lock을 블로킹하지 않도록 device_trylock()으로 바꾸고, 락 경합 시 이벤트 전달 실패를 처리한다. linux-rt-devel에도 동일 스레드가 올라와 RT+RDMA 부팅 시나리오가 계속 논의된다.\n\n영향: RDMA auxiliary probe(device_lock→rtnl_lock)와 lldpad DCB(rtnl→aux lock) ABBA로 부팅이 멈출 수 있어 PREEMPT_RT·DCB·irdma 환경에서는 -EBUSY·재시도·부분 롤백 동작을 추적해야 한다. device_trylock() 실패·-EBUSY 시 ice_pf_dcb_cfg()와 DCB nl 호출자의 부분 롤백이 충분한지는 확인이 필요하다.\n\n> Everything else that needs the RTNL lock piles up behind lldpad and the boot never completes. The probe side cannot be changed, so use device_trylock()\n\n[원문 확인](https://patchew.org/linux/20261019065301.3983537-1-poros@redhat.com/mbox)\n\n**net: Backport backlog-NAPI threads to resolve PREEMPT_RT softirq warning in SMP flush**\n\nSebastian Siewior는 Clark Williams에게 Wen Yang v6.1-rt 15패치 백포트 시리즈를 검토해 upstream 커밋 표기와 SMP backlog-NAPI 스레드 패치가 맥락 변경만 있는지 확인했고, 적용 후 SMP-function 호출이 보이지 않아 시리즈가 완결된 것으로 보인다고 답했다.\n\n영향: v6.1-rt/v6.6-rt에서 RPS IPI가 idle flush 경로로 NET_RX_SOFTIRQ를 올리면 do_softirq_post_smp_call_flush() WARN이 나므로 RT maintainer의 완결 판단은 백포트 머지·soak 일정의 신호로 볼 수 있다. Clark가 기대한 v6.6-rt용 더 큰 시리즈와 v6.1-rt 15패치의 분기·테스트 일정은 확인이 필요하다.\n\n> On PREEMPT_RT, RPS steers packets to a remote CPU's backlog by sending an IPI. The IPI handler (rps_trigger_softirq) calls ____napi_schedule(), which raises NET_RX_SOFTIRQ.\n\n[원문 확인](https://lore.landau.one/lkml/d125f9f5c1328c2f4b96e613b4b8ad76837e58dc.1791912669.git.wen.yang@linux.dev/T/)\n\n> I don't see any SMP-function calls with the series applied. This looks complete to me.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20261022092536.HVMUjSuS@linutronix.de/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ice: avoid RTNL deadlock when notifying the RDMA auxiliary driver",
+      "url": "https://patchew.org/linux/20261019065301.3983537-1-poros@redhat.com/mbox",
+      "note": "thread"
+    },
+    {
+      "title": "net: macb: fix TX stalls, IRQ storms and a lost NCR update on link-up",
+      "url": "https://patchew.org/linux/20261022-std-macb-v14-send-v1-0-9187bc545bf6@beckhoff.com/",
+      "note": "thread"
+    },
+    {
+      "title": "macb TXUBR storm and PREEMPT_RT RCU stall (syzbot)",
+      "url": "https://ci.syzbot.org/patches/f621e23a-9647-433f-a101-0713856ea655",
+      "note": "thread"
+    },
+    {
+      "title": "backlog-NAPI backport review (Sebastian Siewior)",
+      "url": "https://lore.kernel.org/linux-rt-devel/20261022092536.HVMUjSuS@linutronix.de/",
+      "note": "thread"
+    },
+    {
+      "title": "Backport backlog-NAPI threads (Wen Yang cover)",
+      "url": "https://lore.landau.one/lkml/d125f9f5c1328c2f4b96e613b4b8ad76837e58dc.1791912669.git.wen.yang@linux.dev/T/",
+      "note": "thread"
+    },
+    {
+      "title": "mm/page_alloc: fix shuffling and reporting for no-lock frees",
+      "url": "https://patchew.org/linux/20261022062523.97082-1-kmehltretter@gmail.com/mbox",
+      "note": "thread"
+    },
+    {
+      "title": "no-lock free per-CPU prandom (syzbot)",
+      "url": "https://ci.syzbot.org/patches/3cd58ce1-da8c-4382-bb0a-2dafbbd4d048",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-22T18:43:55.139Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
