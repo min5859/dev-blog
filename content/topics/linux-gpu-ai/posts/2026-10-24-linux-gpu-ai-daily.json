@@ -1,0 +1,145 @@
+{
+  "id": "2026-10-24-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-10-24 nouveau abi16 idle — GPU·AI 렌즈",
+  "headline": "nouveau abi16 삭제 경로 채널 idle·vfb·DP AUX 파라미터 검증·xe survivability 로그 등 DRM 스택 패치가 dri-devel에 올라왔습니다.",
+  "date": "2026-10-24",
+  "summary": "nouveau v2는 Chromium 계열 3D 프로브 시 GR 엔진 FIFO fault 회귀를 막기 위해 ENGOBJ 파괴 전 채널 idle을 맞춥니다. vfb·drm/dp는 잘못된 설정으로 인한 vmalloc OOB·divide-by-zero를 차단하고, xe는 survivability 진입 가시성을 dmesg에 추가합니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "DRM",
+    "GPU"
+  ],
+  "highlights": [
+    {
+      "title": "drm/nouveau: abi16 DEL 전 채널 idle",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "drm/nouveau·NVIF abi16 경로 및 레거시 GPU 데스크톱 사용자",
+      "verifyLink": "https://lists.freedesktop.org/archives/dri-devel/2026-October/607473.html",
+      "if": "GF114 등 Fermi nouveau에서 GNOME dash로 Chromium·Electron 앱을 자주 실행한다면",
+      "do": "v2 패치 리뷰·머지 일정을 추적하고 패치 적용 후 동일 시나리오로 재현 여부를 확인하세요",
+      "verify": "10회 연속 실행에서 fault가 사라졌는지 dmesg와 데스크톱 응답을 확인하세요"
+    },
+    {
+      "title": "fbdev: vfb framebuffer geometry 검증",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "fbdev/core·fbcon 및 가상 디스플레이 테스트 담당",
+      "verifyLink": "https://lists.freedesktop.org/archives/dri-devel/2026-October/607475.html",
+      "if": "vfb·fbcon·KASAN으로 가상 framebuffer 모드를 테스트한다면",
+      "do": "line length·pan·videomemory u64 검증 패치가 머지되는지 추적하고 과도한 xres_virtual 설정을 피하세요",
+      "verify": "KASAN vmalloc-out-of-bounds가 sys_fillrect·fbcon_clear_margins 경로에서 재발하지 않는지 확인하세요"
+    },
+    {
+      "title": "drm/dp: I2C-over-AUX speed 파라미터 검증",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "drm/dp·DisplayPort AUX/I2C-over-AUX 유지보수자 및 distro GPU 모듈 설정 담당",
+      "verifyLink": "https://lists.freedesktop.org/archives/dri-devel/2026-October/607472.html",
+      "if": "dp_aux_i2c_speed_khz 모듈 파라미터를 배포 이미지에서 조정한다면",
+      "do": "1–400kHz 범위 밖·0 설정이 거부되는 검증 로직 머지를 따라가고 커스텀 값을 재검토하세요",
+      "verify": "0 설정 시 retry 계산 divide-by-zero가 더 이상 나지 않는지 확인하세요"
+    },
+    {
+      "title": "drm/xe/survivability: dmesg 브로드캐스트",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "drm/xe·Intel GPU survivability/pcode 담당 및 배포 지원 엔지니어",
+      "verifyLink": "https://lists.freedesktop.org/archives/dri-devel/2026-October/607261.html",
+      "if": "Xe에서 pcode 오류 후 사용자 공간은 정상인데 성능·기능이 이상하다면",
+      "do": "survivability 시도·성공·실패 메시지가 v2에서 동작에 맞게 정리됐는지 패치를 확인하세요",
+      "verify": "early pcode 오류 시 dmesg에 survivability 관련 로그가 남는지 부팅 직후 로그를 수집하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm/nouveau: idle the channel before destroying an engine object via abi16**\n\nv2 패치는 nouveau_abi16_ioctl_del()이 ENGOBJ를 파괴하기 전에 해당 엔진이 붙었던 채널을 기억하고 nouveau_channel_idle()로 동기화한 뒤 nvif_object_dtor()를 호출하도록 해, legacy gpuobj_free 경로와 동일한 순서를 맞춥니다.\n\n영향: Chromium·Electron 계열이 시작 시 3D 프로브 객체를 즉시 만들고 지울 때 채널이 바쁘면 GR 엔진 컨텍스트가 먼저 풀려 FIFO fault와 채널 kill로 데스크톱이 멈추는 GF114 등 Fermi nouveau 사용자 회귀를 막습니다.\n\n> If the GPU is busy with other work at that moment ... the engine context is unbound while the channel still references it, and the GPU faults\n\n[원문 확인](https://patchew.org/linux/20261023152332.9420-2-xnderv@yandex.com/)\n\n> reproducible almost every time by launching a Chromium app from the dash; not seen in 10 consecutive launches with this patch\n\n[원문 확인](https://lists.freedesktop.org/archives/dri-devel/2026-October/607473.html)\n\nupstream 머지 일정과 7.0.x 외 세대·GSP-RM 경로 동일 레이스는 확인이 필요합니다.\n\n**fbdev: vfb: Validate framebuffer geometry and memory size**\n\n가상 framebuffer 드라이버 vfb가 line length·pan offset·4GiB 근처 videomemory 크기 계산에서 int/PAGE_ALIGN 축소로 인한 wrap을 검증하고, u64 기반 크기 비교로 fbcon이 vmalloc 영역 밖을 쓰지 못하게 막습니다.\n\n영향: vfb는 테스트·가상 콘솔 경로에 쓰이지만 잘못된 모드 설정이 KASAN vmalloc OOB로 이어질 수 있어, fbdev·콘솔 스택과 보안 리뷰어는 동일 패턴이 다른 fb 드라이버에 있는지 교차 확인할 가치가 있습니다.\n\n> Setting xres_virtual to 0x8000000 at 32 bpp therefore wraps the product to zero and bypasses vfb_check_var()'s video-memory limit.\n\n[원문 확인](https://patchew.org/linux/20261023175128.4127122-2-bestswngs@gmail.com/)\n\n> BUG: KASAN: vmalloc-out-of-bounds in sys_fillrect\n\n[원문 확인](https://lists.freedesktop.org/archives/dri-devel/2026-October/607475.html)\n\nstable/backport 대상과 CVE 할당 일정은 확인이 필요합니다.\n\n**drm/vmwgfx: Treat zero SVGA_REG_CURSOR_MAX_DIMENSION as unset**\n\n2026-10-23 fausten follow-up은 v4 패치(0을 unset으로 취해 fallback 사용)에 대해 Maaz의 VM brick 보고 조사 상황을 묻고, VMware Fusion 26.0.1 게스트에서 7.3+패치로 커서가 복구됐다는 재현 환경을 공유합니다.\n\n영향: SVGA_REG_CURSOR_MAX_DIMENSION==0 환경에서 커서 업데이트가 -EINVAL로 거부되는 vmwgfx 회귀와, 동일 수정이 다른 하이퍼바이저에서 부팅 실패를 유발했을 수 있는 리스크가 동시에 열려 있어 머지 전 환경 매트릭스가 필요합니다.\n\n> rejects the update with -EINVAL if the cursor is larger than the reported maximum.\n\n[원문 확인](https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg631525.html)\n\n> Before the patch, every cursor update was rejected with -EINVAL because SVGA_REG_CURSOR_MAX_DIMENSION reads back 0 on this setup\n\n[원문 확인](https://lore.landau.one/lkml/20261023090121.5031-1-fausten@ebizmis.com/)\n\nMaaz가 보고한 bricked testing VM 원인과 v5 대안 수정 필요 여부는 확인이 필요합니다.\n\n**drm/dp: Validate the I2C-over-AUX speed parameter**\n\ndrm/dp_helper의 dp_aux_i2c_speed_khz 모듈 파라미터에 1–400kHz unsigned min/max setter를 적용해 문서화된 범위 밖(0·음수·401) runtime·부팅 시 설정을 거부하고, 0일 때 drm_dp_i2c_msg_duration() 제수로 인한 divide-by-zero를 막습니다.\n\n영향: DP AUX 디버그용 tunable이 잘못 설정되면 디스플레이 하드웨어 없이도 소프트웨어 DP AUX adapter에서 커널이 죽을 수 있어, DRM DP 스택·배포 커스텀 모듈 파라미터를 쓰는 팀은 검증 로직 머지를 추적해야 합니다.\n\n> Setting the parameter to zero can therefore trigger a division by zero when calculating the retry count for an I2C-over-AUX transfer.\n\n[원문 확인](https://lists.freedesktop.org/archives/dri-devel/2026-October/607472.html)\n\n[원문 확인](https://ci.syzbot.org/series/83facb54-4553-44fa-80b9-47a904fe32da)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm: renesas: rz-du: Split the mode setting initialization**\n\nRZ/G3E에서 두 DU 인스턴스가 하나의 DRM device를 공유하는 구조를 위해 rzg2l_du_modeset_init()을 DRM 공통 초기화·인스턴스별 KMS 객체 생성·전 인스턴스 완료 후 마무리 함수로 분리합니다.\n\n영향: 기능 변경은 없지만 RZ/G3E DU 멀티 인스턴스 bring-up 전제가 DRM device 수준 모드 설정과 per-DU 객체 생성 순서를 분리하므로, Renesas DRM/KMS 시리즈 리뷰어는 후속 패치 의존성을 이 리팩터에 맞춰 추적해야 합니다.\n\n> On RZ/G3E two instances share a DRM device, so the mode configuration is initialized once while each instance creates its own KMS objects.\n\n[원문 확인](https://lists.freedesktop.org/archives/dri-devel/2026-October/607454.html)\n\n> No functional change intended.\n\n[원문 확인](https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg646490.html)\n\nv9 06/10 포함 10패치 시리즈의 하드웨어 검증 보드와 머지 타깃 브랜치는 확인이 필요합니다.\n\n**drm/xe/survivability: broadcast dmesg when engaging survivability**\n\nIntel xe 드라이버가 early pcode 오류 등으로 명시적으로 요청된 survivability 진입을 시도·성공·실패할 때 dmesg에 상태 메시지를 남기도록 해, 그동안 드라이버가 로드된 채 완전히 조용했던 흐름에 가시성을 추가합니다.\n\n영향: Xe 플랫폼에서 pcode·survivability 경로를 디버깅할 때 사용자 공간은 정상처럼 보이는데 커널이 이미 제한 모드로 들어갔거나 실패했을 수 있어, 필드 이슈 triage 시 dmesg 힌트가 필수입니다.\n\n> During this flow the driver remains loaded and completely silent. No messages indicate that it may need or it attempted and succeeded or it attempted and failed, to enter survivability mode.\n\n[원문 확인](https://lists.freedesktop.org/archives/dri-devel/2026-October/607261.html)\n\n> v2 : Remove / modify messages to reflect underlying behavior. (Sashiko)\n\n[원문 확인](https://lore.kernel.org/dri-devel/20261023173625.601113-2-alan.previn.teres.alexis@intel.com/)\n\nxe_device_probe_early() unreachable branch·잘못된 로그 해소와 sysfs/debugfs 추가 계획은 확인이 필요합니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/nouveau: idle channel before abi16 ENGOBJ destroy (patchew)",
+      "url": "https://patchew.org/linux/20261023152332.9420-2-xnderv@yandex.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/nouveau v2 Chromium 재현 보고",
+      "url": "https://lists.freedesktop.org/archives/dri-devel/2026-October/607473.html",
+      "note": "thread"
+    },
+    {
+      "title": "drm/renesas rz-du modeset init split",
+      "url": "https://lists.freedesktop.org/archives/dri-devel/2026-October/607454.html",
+      "note": "thread"
+    },
+    {
+      "title": "rz-du No functional change intended",
+      "url": "https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg646490.html",
+      "note": "thread"
+    },
+    {
+      "title": "drm/xe survivability dmesg",
+      "url": "https://lists.freedesktop.org/archives/dri-devel/2026-October/607261.html",
+      "note": "thread"
+    },
+    {
+      "title": "drm/xe survivability v2 (Sashiko)",
+      "url": "https://lore.kernel.org/dri-devel/20261023173625.601113-2-alan.previn.teres.alexis@intel.com/",
+      "note": "thread"
+    },
+    {
+      "title": "fbdev vfb geometry validation (patchew)",
+      "url": "https://patchew.org/linux/20261023175128.4127122-2-bestswngs@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "fbdev vfb KASAN vmalloc OOB",
+      "url": "https://lists.freedesktop.org/archives/dri-devel/2026-October/607475.html",
+      "note": "thread"
+    },
+    {
+      "title": "drm/vmwgfx cursor max dimension v4",
+      "url": "https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg631525.html",
+      "note": "thread"
+    },
+    {
+      "title": "drm/vmwgfx Fusion 26.0.1 follow-up",
+      "url": "https://lore.landau.one/lkml/20261023090121.5031-1-fausten@ebizmis.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/dp I2C-over-AUX speed validation",
+      "url": "https://lists.freedesktop.org/archives/dri-devel/2026-October/607472.html",
+      "note": "thread"
+    },
+    {
+      "title": "syzbot series: drm/dp speed parameter",
+      "url": "https://ci.syzbot.org/series/83facb54-4553-44fa-80b9-47a904fe32da",
+      "note": "article"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-23T18:45:38.829Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

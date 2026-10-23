@@ -1,0 +1,145 @@
+{
+  "id": "2026-10-24-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-10-24 macb IRQ스톰 — Perf·RT",
+  "headline": "macb TXUBR·TBQP, ice RTNL 교착, backlog-NAPI 백포트, igc XSK 누수, bpf_d_path CI가 RT·네트워크 경로에서 동시에 논의됩니다.",
+  "date": "2026-10-24",
+  "summary": "Cadence GEM(macb)는 링크 플랩 후 TBQP 미갱신과 TX NAPI 시 TXUBR 마스크 누락이 겹쳐 IRQ 스톰·RT throttling 위험이 제기됩니다. PREEMPT_RT 유지보수는 backlog-NAPI 스레드 백포트를, XDP·BPF 쪽은 igc TX 실패 누수와 filp_close_sync() tracer 규칙을 각각 따라가야 합니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "PREEMPT_RT",
+    "네트워킹"
+  ],
+  "highlights": [
+    {
+      "title": "macb: mask TXUBR during TX NAPI poll to prevent IRQ storms",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "macb/GEM 드라이버·PREEMPT_RT·임베디드 이더넷 플랫폼 담당",
+      "verifyLink": "https://www.spinics.net/lists/kernel/msg6300784.html",
+      "if": "ZynqMP 등 macb·PREEMPT_RT에서 링크 플랩 후 MAC IRQ가 CPU를 고정하거나 RT throttling으로 NIC가 멈춘다면",
+      "do": "TCOMP만 마스크한 TX NAPI 경로와 TXUBR 마스크·재활성화 패치(시리즈 패치 2) 적용 여부를 TBQP 수정과 함께 확인하세요.",
+      "verify": "스핀ics 스레드에서 레벨 트리거 TXUBR 재발과 패치 1 단독 재현 여부를 원문으로 대조하세요."
+    },
+    {
+      "title": "ice: fix RTNL vs auxiliary device lock inversion",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "ice·irdma·RoCE/DCB 스택, PREEMPT_RT 네트워크 플랫폼 담당",
+      "verifyLink": "https://patchew.org/linux/20261023070258.730168-1-poros@redhat.com/",
+      "if": "E810+irdma·DCB(lldpad)에서 ethtool·dcbnl·부팅이 멈추거나 PREEMPT_RT에서 rtmutex deadlock이 보이면",
+      "do": "v2 5패치의 device_trylock()·DCB 경로 락 순서 수정을 테스트 트리에 반영하고 ethtool set_channels 재현을 다시 돌려보세요.",
+      "verify": "patchew 커버에서 교착 10/10 대 0/10 재현 수치와 스택 설명을 확인하세요."
+    },
+    {
+      "title": "Backport backlog-NAPI threads to resolve PREEMPT_RT softirq warning in SMP flush",
+      "priority": "중",
+      "impactType": "backport",
+      "affectedAudience": "PREEMPT_RT·linux-rt-devel 유지보수, RPS/백로그 경로를 다루는 네트워킹 스택 개발자",
+      "verifyLink": "https://lore.landau.one/lkml/cover.1791912669.git.wen.yang@linux.dev/T/",
+      "if": "PREEMPT_RT에서 RPS·defer_list 경로에 do_softirq_post_smp_call_flush() WARNING이나 ksoftirqd 웨이크업 이슈가 있다면",
+      "do": "Wen Yang v6.1-rt 15패치 시리즈의 backlog-NAPI smpboot 백포트 순서와 패치 03의 upstream 8fcb76b934da 인용을 v6.6-rt·v6.1-rt 트리에 맞춰 적용하세요.",
+      "verify": "커버 메일과 stable 스레드에서 IPI 유발 softirq 회피 요약을 읽고, 공개 URL로 확인되지 않은 후속 리뷰는 추정하지 말고 필요 시 스레드를 직접 찾아보세요."
+    },
+    {
+      "title": "igc: return XSK frame copies on XDP_TX failure",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "XDP/AF_XDP·igc 드라이버 개발·운영 담당",
+      "verifyLink": "https://lore.landau.one/lkml/20261023141317.3904442-1-p@1g4.org/",
+      "if": "I225 등 igc에서 AF_XDP zero-copy·XDP_TX 부하 테스트 중 링 포화나 pause-frame 백프레셔 후 메모리가 줄지 않으면",
+      "do": "xdp_return_frame() 복구 패치를 적용하고 TX 링 full·DMA 실패 경로에서 복사본 반환을 검증하세요.",
+      "verify": "LKML 패치 설명과 syzbot 테스트 인용(베이스라인 46건 누수)을 원문 링크로 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**macb: mask TXUBR during TX NAPI poll to prevent IRQ storms**\n\nCadence GEM(macb) 드라이버가 TX NAPI를 예약할 때 TCOMP만 마스크하고 레벨 트리거 TXUBR는 남겨 두어, used 비트가 유지되면 IRQ 핸들러 복귀 직후 인터럽트가 연속 재발합니다. 패치는 TXUBR를 TCOMP와 함께 마스크·재활성화해 NAPI 처리와 대칭으로 맞춥니다.\n\n영향: ZynqMP 등 macb·PREEMPT_RT 환경에서 링크 플랩 후 MAC IRQ 스톰이 CPU를 고정하고 RT throttling으로 NIC가 죽을 수 있어, TBQP 수정만으로는 막히지 않는 독립 버그로 RT·네트워크 담당자가 함께 추적해야 합니다.\n\n> Leaving a level-triggered source enabled while NAPI owns its processing means the interrupt refires immediately after the handler returns\n\n[원문 확인](https://www.spinics.net/lists/kernel/msg6300784.html)\n\n**macb: reprogram TBQP after shuffling the TX ring on link-up**\n\ngem_shuffle_tx_one_ring()가 link-up 시 tx_tail을 0으로 리셋할 때 하드웨어 TBQP를 queue->tx_ring_dma로 다시 쓰지 않아 stale descriptor를 가리킬 수 있습니다. Sashiko 리뷰는 count==0 경로에서 desc 0의 TX_USED 미설정 가능성을 질문합니다.\n\n영향: 링크 플랩 후 TXUBR·IRQ 스톰의 근본 원인 중 하나로 제시되며, TBQP만 고치면 NAPI 마스크 버그가 남아 PREEMPT_RT에서 여전히 장애가 날 수 있습니다.\n\n> leaving TBQP pointing at a stale descriptor\n\n[원문 확인](https://www.spinics.net/lists/kernel/msg6300989.html)\n\n> is descriptor 0 guaranteed to have MACB_BIT(TX_USED) set before TBQP is reprogrammed\n\n[원문 확인](https://lore.landau.one/lkml/sashiko-outbox-182612@kernel.org/)\n\n> Both patches are required: on the affected platform the interrupt storm still reproduces with patch 1 applied alone\n\n[원문 확인](https://www.spinics.net/lists/kernel/msg6301048.html)\n\n**igc: return XSK frame copies on XDP_TX failure**\n\nigc_xdp_xmit_back()가 XSK 버퍼를 xdp_frame으로 변환한 뒤 TX 링 full·DMA 실패 시 복사본을 반환하지 않아 페이지가 누수됩니다. 패치는 변환 전 mem type을 저장하고 XSK 풀 경로에서만 xdp_return_frame()으로 복구합니다.\n\n영향: AF_XDP zero-copy·XDP_TX를 igc(I225 등)에서 쓰는 팀은 백프레셔·링 포화 시 조용한 메모리 누수로 장시간 부하 테스트가 깨질 수 있어 stable 백포트 여부를 봐야 합니다.\n\n> If the TX ring is full or DMA mapping fails, igc_xdp_xmit_back() returns an error without freeing the copy.\n\n[원문 확인](https://lore.landau.one/lkml/20261023141317.3904442-1-p@1g4.org/)\n\n> Physical pause-frame backpressure caused 46 leaked copies on the baseline.\n\n[원문 확인](https://ci.syzbot.org/patches/85c2597c-ee6b-47de-84ac-5d0d606e033f)\n\n**ice: fix RTNL vs auxiliary device lock inversion**\n\nice가 RTNL을 잡은 상태에서 irdma auxiliary device_lock을 잡고, probe 경로는 반대 순서로 RTNL을 기다려 부팅·RTNL 전역 교착이 납니다. v2 5패치는 device_trylock()과 DCB 경로 락 순서·이벤트 전달을 고쳐 -EBUSY로 거부하거나 재시도 가능하게 합니다.\n\n영향: E810+irdma·DCB(lldpad) 조합에서 PREEMPT_RT는 rtmutex deadlock으로, 일반 커널은 lockdep가 못 잡는 교착이 나와 ethtool·dcbnl·부팅이 멈출 수 있습니다.\n\n> ice_send_event_to_aux         <- blocks on device_lock(&adev->dev)\n\n[원문 확인](https://patchew.org/linux/20261023070258.730168-1-poros@redhat.com/)\n\n> ethtool set_channels  deadlock 10/10       0/10, window entered 300x\n\n[원문 확인](https://patchew.org/linux/20261023070258.730168-1-poros@redhat.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Backport backlog-NAPI threads to resolve PREEMPT_RT softirq warning in SMP flush**\n\nWen Yang의 v6.1-rt 15패치 시리즈는 upstream backlog-NAPI smpboot 스레드를 백포트해 RPS·defer_list가 원격 CPU에서 IPI로 NET_RX_SOFTIRQ를 올리며 do_softirq_post_smp_call_flush() 경고가 나는 PREEMPT_RT 문제를 피합니다. 후속 스레드에서는 RPS 커버리지 검토와 패치 03 커밋 메시지의 upstream 참조 위치 정리가 논의됩니다.\n\n영향: PREEMPT_RT에서 RPS·백로그 경로는 softirq를 SMP flush 컨텍스트에서 올리는 설계 위반으로 경고·ksoftirqd 웨이크업 이슈를 낳으므로, v6.6-rt·v6.1-rt 유지보수 담당은 이 백포트 적용 순서와 선행 커밋을 맞춰야 합니다.\n\n> do_softirq_post_smp_call_flush() then sees a softirq pending that was not pending before the flush\n\n[원문 확인](https://lore.landau.one/lkml/cover.1791912669.git.wen.yang@linux.dev/T/)\n\n> The solution implements backlog NAPI threads to avoid IPI-triggered softirqs, which is required for PREEMPT_RT kernels\n\n[원문 확인](https://www.spinics.net/lists/stable/msg906958.html)\n\n> commit 8fcb76b934daff12cde76adeab3d502eeb0734b1 upstream.\n\n[원문 확인](https://lkml.iu.edu/2610.1/12688.html)\n\n**bpf: Allow bpf_d_path() from filp_close_sync()**\n\nclose_range()가 filp_close_sync()를 타면서 filp_close()에 붙인 bpf_d_path selftest가 호출되지 않아 BPF CI가 깨집니다. v3 패치는 filp_close_sync()의 fentry만 허용하고, Ihor Solodrai는 bpf-next에 선행 VFS 커밋이 없어 CI가 red라고 알립니다.\n\n영향: 파일 close 경로 추적·bpf_d_path()를 쓰는 tracing/보안 도구는 close_range·exec·exit 동기 close 경로와 verifier 규칙 변경을 함께 따라가야 합니다.\n\n> test_d_path_basic:FAIL:close trampoline for filp_close was not called\n\n[원문 확인](https://lkml.iu.edu/2610.2/14667.html)\n\n> they are red for this patch because commit 056069eb2b66 is not in bpf-next yet\n\n[원문 확인](https://lore.landau.one/lkml/3e0cb7ec-4849-4986-a474-83f8ad98c1ee@linux.dev/)"
+    },
+    {
+      "heading": "기타",
+      "body": "linux-rt-devel v14 macb 시리즈(2026-10-22 재제출)의 머지·stable 백포트 일정은 dossier에서 확인되지 않았습니다. ice provider-owned registration(i40e/mlx5 방식) net-next 후속 시리즈 일정도 확인이 필요합니다. macb TBQP 경로의 desc 0 TX_USED·wmb() 추가와 v14 반영 여부는 Sashiko 리뷰 기준으로 추적하세요."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "macb TXUBR IRQ storm (spinics)",
+      "url": "https://www.spinics.net/lists/kernel/msg6300784.html",
+      "note": "thread"
+    },
+    {
+      "title": "macb both patches required (spinics)",
+      "url": "https://www.spinics.net/lists/kernel/msg6301048.html",
+      "note": "thread"
+    },
+    {
+      "title": "backlog-NAPI PREEMPT_RT cover (lore)",
+      "url": "https://lore.landau.one/lkml/cover.1791912669.git.wen.yang@linux.dev/T/",
+      "note": "thread"
+    },
+    {
+      "title": "backlog NAPI stable summary (spinics)",
+      "url": "https://www.spinics.net/lists/stable/msg906958.html",
+      "note": "thread"
+    },
+    {
+      "title": "v6.1-rt patch 03 upstream reference (lkml)",
+      "url": "https://lkml.iu.edu/2610.1/12688.html",
+      "note": "thread"
+    },
+    {
+      "title": "igc XSK frame leak (lore)",
+      "url": "https://lore.landau.one/lkml/20261023141317.3904442-1-p@1g4.org/",
+      "note": "thread"
+    },
+    {
+      "title": "igc syzbot pause-frame test",
+      "url": "https://ci.syzbot.org/patches/85c2597c-ee6b-47de-84ac-5d0d606e033f",
+      "note": "thread"
+    },
+    {
+      "title": "ice RTNL vs auxiliary lock (patchew)",
+      "url": "https://patchew.org/linux/20261023070258.730168-1-poros@redhat.com/",
+      "note": "thread"
+    },
+    {
+      "title": "macb TBQP reprogram (spinics)",
+      "url": "https://www.spinics.net/lists/kernel/msg6300989.html",
+      "note": "thread"
+    },
+    {
+      "title": "macb TBQP Sashiko review (lore)",
+      "url": "https://lore.landau.one/lkml/sashiko-outbox-182612@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf_d_path filp_close_sync (lkml)",
+      "url": "https://lkml.iu.edu/2610.2/14667.html",
+      "note": "thread"
+    },
+    {
+      "title": "bpf-next CI red without VFS commit (lore)",
+      "url": "https://lore.landau.one/lkml/3e0cb7ec-4849-4986-a474-83f8ad98c1ee@linux.dev/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-23T18:32:26.928Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
