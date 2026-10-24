@@ -1,0 +1,118 @@
+{
+  "id": "2026-10-25-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-10-25 DP1000·GIC S4 — 아키·플랫폼",
+  "headline": "UltraRISC DP1000 보드 DT v6, SpacemiT K1 bootph-pre-ram v3, GICv3 hibernation SPI 복원 v2가 mailing list에 올라왔습니다.",
+  "date": "2026-10-25",
+  "summary": "RISC-V 쪽은 DP1000 SoC·보드 device tree와 K1 부트 노드 태깅이 리뷰를 거치며 정리되고 있습니다. arm64는 GICv3 hibernation 후 SPI 회귀 수정과 KVM selftest·P550 KVM quirk 진척이 함께 추적됩니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "RISC-V",
+    "arm64",
+    "devicetree",
+    "GIC",
+    "KVM"
+  ],
+  "highlights": [
+    {
+      "title": "UltraRISC DP1000 device tree v6",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "UltraRISC DP1000·Milk-V Titan·Shenzhen Rongda M0 devicetree 및 보드 포팅 담당",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/102083.html",
+      "if": "DP1000·M0·Titan bring-up에서 SoC 골격과 netdev·I2C·DMA binding 선행 조건을 맞춰야 한다면,",
+      "do": "v6 시리즈의 DTS·binding과 PLIC·CLINT·PHY 노드 이름 변경을 따라 패치 의존성과 보드 검증 범위를 점검하세요.",
+      "verify": "커버 레터의 부팅·PCIe·GMAC 검증 기록과 v6 rename 목록을 원문 스레드에서 확인하세요."
+    },
+    {
+      "title": "SpacemiT K1 bootph-pre-ram v3",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "SpacemiT K1 devicetree·U-Boot SPL·Banana Pi·Orange Pi·Milk-V Jupiter 보드 담당",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/102076.html",
+      "if": "mainline U-Boot SPL에서 per-board -u-boot.dtsi 중복을 줄이려면,",
+      "do": "k1.dtsi·보드 DTS의 bootph-pre-ram 태그와 v3의 i2c2·Orange Pi EEPROM 반영을 kernel DT 쪽에 먼저 맞추세요.",
+      "verify": "BootROM→SRAM→DRAM 경로 설명과 v3 변경 목록을 mailing list 원문에서 확인하세요."
+    },
+    {
+      "title": "GICv3 SPI 상태 hibernation 보존 v2",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "arm64 GICv3·PM/hibernation 및 SoC 플랫폼 담당",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-October/1190369.html",
+      "if": "S4 hibernate 복귀 후 chained IRQ 경로에서 공유 SPI가 hw_masked로 남는지 본다면,",
+      "do": "GICv3 드라이버의 distributor SPI 복원 범위(ITS 제외)와 Phytium E2000Q S4 테스트 결과를 기준으로 회귀를 재현·검증하세요.",
+      "verify": "v2가 generic IRQ PM을 건드리지 않는다는 설명과 patched/unpatched 비교 수치를 원문에서 확인하세요."
+    },
+    {
+      "title": "KVM arm64 set_id_regs selftest 수정",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "KVM arm64 selftest 및 KernelCI arm64 빌드 담당",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-October/1190379.html",
+      "if": "AArch64-only 호스트에서 KernelCI가 set_id_regs 실패를 반복한다면,",
+      "do": "쓰기 불가 AArch32 ID 레지스터 skip 로직이 selftest와 호스트 capability 불일치를 어떻게 막는지 빌드·CI 로그를 대조하세요.",
+      "verify": "GB300에서 104 pass·0 fail 결과와 KernelCI 실패 원인 인용을 스레드 원문에서 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**irqchip/gic-v3: Preserve SPI state across hibernation**\n\nv2는 genirq PM 대신 GICv3 드라이버에서 SPI/ESPI enable·trigger·priority·routing을 hibernation 이미지에 저장하고 syscore resume에서 복원해, S4 후 chained IRQ 경로에서 SPI가 hw_masked로 남는 문제를 고칩니다.\n\n영향: arm64 GICv3·hibernation 플랫폼은 디스크 hibernate 복귀 후 공유 SPI 인터럽트 유실·pending 누적을 SPI distributor 범위(ITS 제외) 안에서 추적해야 합니다. ITS·LPI까지의 완전한 S4 상태 보존은 별도 작업이 필요한지 확인이 필요합니다.\n\n> The new revision restores distributor configuration in the GICv3 driver and leaves generic IRQ PM policy unchanged.\n\n> unpatched chained           1/2           1         1        0\n  patched chained             2/2           0         0        0\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-arm-kernel/2026-October/1190369.html)\n\n**RISC-V: KVM: Do not touch the envcfg CSRs on the SiFive P550**\n\nv2는 kvm_riscv_no_xenvcfg로 henvcfg·senvcfg 접근을 건너뛰고, 리뷰 반영으로 henvcfg 의존 FWFT 기능을 끕니다. senvcfg context save/restore 이후 첫 guest entry illegal instruction 회귀 맥락은 이전과 동일합니다.\n\n영향: P550(ESWIN EIC7700X) KVM 호스트는 quirk 머지 전까지 guest 기동을 막을 수 있으며, marchid 비트마스크 최종 형태와 추가 테스트 범위 일정은 확인이 필요합니다.\n\n> changes from v1: disable FWFT features accordingly (Anup)\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-October/102068.html)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**riscv: Add device tree support for UltraRISC DP1000**\n\nv6 시리즈(7패치)가 UltraRISC DP1000 SoC DTS·binding과 Shenzhen Rongda M0·Milk-V Titan 보드 DT를 올리며, v6에서는 PLIC·CLINT·PHY 노드 이름을 generic 규칙에 맞게 바꿉니다.\n\n영향: DP1000 기반 RISC-V 보드 upstream bring-up 담당은 CP100 8코어·PCIe×3·GMAC 등 SoC 골격과 prerequisite netdev·I2C·DMA binding이 mainline/base에 어떻게 맞물리는지 추적해야 합니다. stmmac·I2C·DMA prerequisite가 base에 없을 때 linux-next·for-next 통합 일정은 확인이 필요합니다.\n\n> Boot-tested both DTBs on Shenzhen Rongda M0 and Milk-V Titan. Verified the CPU topology and CBO selftests, UART, SPI, I2C/RTC, system memory, and all three PCIe root complexes.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-October/102083.html)\n\n**riscv: dts: spacemit: mark K1 boot nodes bootph-pre-ram**\n\nv3(2패치)는 SpacemiT K1의 k1.dtsi와 여러 보드 DTS에 bootph-pre-ram을 달아 BootROM 이후 SRAM 단계에서 DRAM 학습에 필요한 클럭·UART·부트 미디어·I2C·EEPROM·PMIC·SPI NOR 노드를 표시합니다.\n\n영향: K1 보드와 mainline U-Boot SPL 담당은 per-board -u-boot.dtsi 중복을 줄이려면 이 태그가 kernel DT에 먼저 들어가야 하며, v3는 i2c2·OrangePi EEPROM 누락 등 리뷰 반영이 있습니다. dt-for-next 머지 후 mainline SPL 실기 검증 공유 여부는 확인이 필요합니다.\n\n> On the SpacemiT K1 the BootROM loads the next boot stage into SRAM, and that stage sets up DRAM. This series marks the nodes it needs for that bootph-pre-ram\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-October/102076.html)\n\n**KVM: arm64: selftests: Skip ignored AArch32 ID regs in the failed-run test**\n\nset_id_regs의 test_idreg_frozen_after_failed_run()이 KVM_ARM_GET_REG_WRITABLE_MASKS로 쓰기 불가인 AArch32 ID 레지스터를 건너뛰어, AArch32 미지원 EL0 호스트에서 RAZ/WI로 errno 0이 나와 EBUSY를 기대하던 KernelCI 실패를 막습니다.\n\n영향: arm64 KVM selftest·KernelCI 담당은 ID 레지스터 불변성 검증과 호스트 AArch32 capability 불일치로 깨지는 CI를 이 수정으로 추적합니다. nested virtualization 하의 AArch32 ID readback 이슈가 별도로 남는지는 확인이 필요합니다.\n\n> KernelCI hits this on every run on an AArch64 only GB300 host.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-arm-kernel/2026-October/1190379.html)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "riscv: Add device tree support for UltraRISC DP1000",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/102083.html",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: dts: spacemit: mark K1 boot nodes bootph-pre-ram",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/102076.html",
+      "note": "thread"
+    },
+    {
+      "title": "irqchip/gic-v3: Preserve SPI state across hibernation",
+      "url": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-October/1190369.html",
+      "note": "thread"
+    },
+    {
+      "title": "RISC-V: KVM: Do not touch the envcfg CSRs on the SiFive P550",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/102068.html",
+      "note": "thread"
+    },
+    {
+      "title": "Add senvcfg context save/restore for guest VCPUs",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=db3c01c7a308",
+      "note": "commit"
+    },
+    {
+      "title": "KVM: arm64: selftests: Skip ignored AArch32 ID regs in the failed-run test",
+      "url": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-October/1190379.html",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-24T18:34:24.598Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,141 @@
+{
+  "id": "2026-10-25-linux-daily-briefing",
+  "topic": "linux",
+  "title": "2026-10-25 TIPC·linux-next — 리눅스 개발",
+  "headline": "TIPC 낮은 MTU 협상이 메모리 오염으로 이어질 수 있는 수정이 검토되고, linux-next 통합 스냅샷이 갱신되었습니다.",
+  "date": "2026-10-25",
+  "summary": "TIPC는 암호화 오버헤드를 반영한 bearer MTU 하한 상향 패치로 cluster-scope publication의 slab 밖 쓰기를 막는 방향입니다. kernel.org에 next-20261023가 올라와 7.4 머지 윈도우 전 통합 기준선이 한 단계 갱신되었습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "TIPC",
+    "linux-next",
+    "안정 브랜치"
+  ],
+  "highlights": [
+    {
+      "title": "TIPC bearer MTU 하한 상향",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "TIPC 클러스터 운영자, net/tipc 메인테이너, KASAN 기반 네트워킹 QA",
+      "verifyLink": "https://ci.syzbot.org/patches/0d47b4af-a32a-45e9-be5e-4b2d4804a2e3",
+      "if": "암호화 TIPC 클러스터를 운영 중이시면",
+      "do": "낮은 bearer MTU 환경은 피하고 업스트림 패치 추적을 유지하세요",
+      "verify": "syzbot 패치·시리즈 페이지에서 KASAN CI 통과 여부를 확인하세요"
+    },
+    {
+      "title": "Atlantic AQC113 priv 초기화 회귀",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "AQC113/Atlantic 드라이버 사용자, netdev 메인테이너, Apple Silicon 등 내장 AQC113 장비를 Linux로 쓰는 사용자",
+      "verifyLink": "https://github.com/torvalds/linux/commit/6c1ca112a6e4e62706477b06ea94fa0fd8ff2e66.patch",
+      "if": "AQC113 Atlantic NIC에서 TX 이상이 보이시면",
+      "do": "6c1ca112 이후 netdev 회귀 수정 논의를 따라가며 원문을 확인하세요",
+      "verify": "해당 커밋 패치와 netdev 스레드 링크에서 리셋 경로 변경을 확인하세요"
+    },
+    {
+      "title": "linux-next next-20261023",
+      "priority": "중",
+      "impactType": "release",
+      "affectedAudience": "linux-next를 빌드·테스트하는 서브시스템 메인테이너와 통합 테스터",
+      "verifyLink": "https://kernel.org/",
+      "if": "다음 메인라인 머지 전 통합을 검증하시면",
+      "do": "next-20261023 스냅샷으로 빌드·충돌 분석을 갱신하세요",
+      "verify": "kernel.org 목록에서 next-20261023 게시일을 확인하세요"
+    },
+    {
+      "title": "mt7601u Tenda U2 probe",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "MT7601U USB Wi-Fi 사용자, wireless-next 백로그를 보는 네트워크 드라이버 메인테이너",
+      "verifyLink": "https://lkml.iu.edu/2609.1/20695.html",
+      "if": "MT7601U USB Wi-Fi probe 실패가 있으시면",
+      "do": "vendor reset 제거 패치 시리즈 적용 가능성을 검토하세요",
+      "verify": "LKML 스레드에서 펌웨어 업로드 전 reset 변경을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux next-20261023 linux-next**\n\nlinux-next 통합 스냅샷 next-20261023가 2026-10-23에 kernel.org에 게시되어 7.4 머지 윈도우 전 서브시스템 트리 통합 상태를 반영합니다.\n\n영향: 다음 메인라인에 들어갈 변경을 미리 검증·충돌 분석하는 개발자와 CI의 기준 스냅샷입니다.\n\n> <td><strong>next-20261023</strong></td>\n>             <td>2026-10-23</td>\n\n[원문 확인](https://kernel.org/)\n\n개별 커밋 목록은 이번 수집에서 확인하지 않았습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**tipc: raise minimum bearer MTU for tunnel and crypto overhead**\n\nTIPC 패치는 TIPC_MIN_BEARER_MTU를 올리고 CONFIG_TIPC_CRYPTO=y일 때 EMSG_OVERHEAD를 반영한 하한을 bearer·netlink·max_pkt 협상에 적용합니다. MTU 100에서 MSS가 28로 떨어지면 named_distribute()가 잘못된 버퍼 크기를 만들어 cluster-scope publication이 skb 밖으로 쓰이는 문제를 막습니다.\n\n영향: TIPC 클러스터에서 낮은 MTU 협상이 메모리 corruption으로 이어질 수 있어, 암호화 기본 설정 환경의 보안·안정성에 직접 영향을 줍니다.\n\n> every cluster-scope publication on the node is written with publ_to_item() past the end of that one skb, over skb_shared_info and into adjacent memory.\n\n[원문 확인](https://ci.syzbot.org/patches/0d47b4af-a32a-45e9-be5e-4b2d4804a2e3)\n\n**net: atlantic: AQC113 hw_atl2_priv initialization**\n\n메인라인 커밋 6c1ca112는 hw_atl2_hw_reset()에서 struct hw_atl2_priv 전체 memset을 선택적 필드 클리어로 바꿨습니다. 2026-10-24 netdev 패치(후보)는 l3/l4 filter 인덱스 -1 초기화는 유지하면서 전체 memset을 복원해 미초기화 priv 필드를 없애려 하는 것으로 보입니다.\n\n영향: AQC113 Atlantic NIC의 hw_atl2 리셋 경로에서 priv 상태가 불완전하면 TX 경로가 깨질 수 있어, 6c1ca112 이후 회귀 수정 논의가 진행 중인 것으로 보이며 원문 확인을 권장합니다.\n\n> hw_atl2_hw_reset: replace unconditional priv memset with selective\n>   field clears so that l3l4_filters[].l3_index and l4_index can be\n>   initialized to -1 (not allocated) rather than 0\n\n[원문 확인](https://github.com/torvalds/linux/commit/6c1ca112a6e4e62706477b06ea94fa0fd8ff2e66.patch)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**mt7601u: drop vendor reset for Tenda U2 probe**\n\nmt7601u 드라이버 패치 시리즈는 펌웨어 업로드 전 mt7601u_vendor_reset() 호출을 제거합니다. Tenda U2(148f:7601) 등에서 vendor reset이 MCU/FCE DMA를 멈추게 하여 probe가 -ETIMEDOUT으로 실패하는 문제를 해결합니다.\n\n영향: 저가 USB Wi-Fi 어댑터가 in-tree 드라이버로 동작하지 않는 장기 회귀를 수정하며, probe 단계에서 usb_reset_device()만으로 충분하다는 점을 정리합니다.\n\n> Drop mt7601u_vendor_reset() and its definition to allow firmware upload and probe to succeed on all MT7601U adapters.\n\n[원문 확인](https://lkml.iu.edu/2609.1/20695.html)\n\n**mt7601u vendor reset 삭제 제안**\n\n모듈 파라미터 대신 vendor reset 삭제가 제안되었습니다.\n\n영향: 유지보수 방향이 단순화되는 쪽으로 정리됩니다.\n\n> I don't think a new module parameter will be accepted.\n>\n> You could just delete the vendor reset.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/06/935)\n\n메인라인·안정 브랜치 머지 여부는 확인하지 않았습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "Linux 7.3 메인라인, Linux 7.2.12 stable, Linux 6.12.114 longterm은 어제 브리핑에서 다룬 항목이며, 이번 수집에서 새 태그·머지 진척 신호는 없었습니다.\n\n7.2.12에는 업스트림 12개 수정 백포트와 ksmbd Kerberos 경로 heap OOB 수정 등이 포함되어 있습니다(이전 안내와 동일 릴리스 기준).\n\n> commit cc9de5d4b5ab6459f5774946aa3195ad51236fa8\n> Author: Greg Kroah-Hartman\n> Date:   Wed Oct 21 10:33:40 2026 +0200\n>\n>     Linux 7.2.12\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.12)"
+    }
+  ],
+  "confidence": {
+    "level": "중",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ChangeLog-7.3",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.3",
+      "note": "changelog"
+    },
+    {
+      "title": "LWN Linux 7.3 coverage",
+      "url": "https://lwn.net/Articles/1101143/",
+      "note": "article"
+    },
+    {
+      "title": "ChangeLog-7.2.12",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.12",
+      "note": "changelog"
+    },
+    {
+      "title": "kernel.org release index",
+      "url": "https://kernel.org/",
+      "note": "changelog"
+    },
+    {
+      "title": "mt7601u vendor reset (lkml.iu.edu)",
+      "url": "https://lkml.iu.edu/2609.1/20695.html",
+      "note": "thread"
+    },
+    {
+      "title": "mt7601u module parameter discussion",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/06/935",
+      "note": "thread"
+    },
+    {
+      "title": "syzbot TIPC slab OOB patch",
+      "url": "https://ci.syzbot.org/patches/0d47b4af-a32a-45e9-be5e-4b2d4804a2e3",
+      "note": "thread"
+    },
+    {
+      "title": "syzbot TIPC series CI",
+      "url": "https://ci.syzbot.org/series/71cb132d-20ca-4044-922f-dedd6de853e4",
+      "note": "article"
+    },
+    {
+      "title": "atlantic hw_atl2_hw_reset commit",
+      "url": "https://github.com/torvalds/linux/commit/6c1ca112a6e4e62706477b06ea94fa0fd8ff2e66.patch",
+      "note": "commit"
+    },
+    {
+      "title": "atlantic priv memset (netdev archive)",
+      "url": "https://lists.openwall.net/netdev/2020/04/24/102",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-6.12.114",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.12.114",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-24T18:08:23.511Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,173 @@
+{
+  "id": "2026-10-25-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-10-25 RT 네트 백포트 — 성능·RT",
+  "headline": "v6.1-rt-next에 backlog-NAPI 백포트가 제안되고 ice·TEQL·AF_XDP 경로 회귀 수정이 동시에 논의됩니다.",
+  "date": "2026-10-25",
+  "summary": "PREEMPT_RT에서 RPS IPI가 NET_RX_SOFTIRQ 승격을 유발하는 경로를 스레드 wake로 바꾸는 15패치 백포트가 linux-rt-devel에 올라왔습니다. Intel ice DCB/RDMA·TEQL·멀티 버퍼 XSK TX checksum 등 운영 멈춤·데이터 무결성 이슈도 패치 시리즈로 따라붙었습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "backlog-NAPI 15패치 v6.1-rt-next 백포트",
+      "priority": "상",
+      "impactType": "backport",
+      "affectedAudience": "PREEMPT_RT 백포트·배포 담당자 및 net/core·RPS 스택 유지보수자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/cover.1792847031.git.wen.yang@linux.dev/",
+      "if": "idle SMP flush 중 do_softirq_post_smp_call_flush WARN이 RPS·멀티큐 RT 수신 경로에서 반복된다면",
+      "do": "cover letter의 15패치 범위와 v6.6-rt 선행 수정 제안을 기준으로 백포트·머지 상태를 추적하세요",
+      "verify": "PREEMPT_RT에서 RPS IPI가 remote CPU backlog를 깨우는 경로와 defer_list 정리가 스레드로 옮겨졌는지 원문 스레드를 확인하세요"
+    },
+    {
+      "title": "ice DCB/RDMA auxiliary RTNL 데드락 회피",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Intel ice·iRDMA/DCB 스택 유지보수자 및 PREEMPT_RT 네트워킹 운영자",
+      "verifyLink": "https://lkml.iu.edu/2610.2/05843.html",
+      "if": "PREEMPT_RT 부팅·lldpad·icrdma probe에서 RTNL 교차 대기로 시스템이 멈춘다면",
+      "do": "v2의 device_trylock 전달과 DCB 재구성 lock 순서 변경이 배포 브랜치에 포함되는지 판단하세요",
+      "verify": "RTNL 보유 상태의 ice_send_event_to_aux()와 auxiliary lock 경합 스택이 현재 패치에서 어떻게 바뀌었는지 스레드를 확인하세요"
+    },
+    {
+      "title": "멀티 버퍼 AF_XDP TX software checksum",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "AF_XDP·XSK TX 사용자 및 net/xdp·bpf selftest(xdp_metadata) 유지보수자",
+      "verifyLink": "https://lore.kernel.org/bpf/20261024141157.59301-1-testwrzwrz@gmail.com/",
+      "if": "copy 모드에서 XDP_UMEM_TX_SW_CSUM과 multi-buffer TX를 함께 쓰고 있다면",
+      "do": "마지막 descriptor 추가 후 skb_checksum_help() 호출·실패 시 drop 동작이 포함된 v2를 검토하세요",
+      "verify": "첫 fragment만 checksum에 포함되는 기존 동작과 패치 후 selftest 결과를 syzbot·스레드 원문으로 대조하세요"
+    },
+    {
+      "title": "BPF borrowed iterator 결과 수명 추적",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "BPF verifier·iterator kfunc 개발자 및 bpf-next selftest/프로그램 작성자",
+      "verifyLink": "https://lore.kernel.org/bpf/20261024100647.2579244-1-xyx2021@mail.ustc.edu.cn/",
+      "if": "task_vma 등 non-RCU iterator struct 반환을 tracing·관측 BPF에서 쓴다면",
+      "do": "기본 borrow 모델과 KF_ITER_RET_INDEPENDENT 예외가 selftest·프로그램에 미치는지 점검하세요",
+      "verify": "next/destroy 시 선행 결과 무효화와 trusted field·dynptr invalidation graph 공유 규칙을 v8 cover와 패치 본문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ice: avoid RTNL deadlock when notifying the RDMA auxiliary driver**\n\nIntel ice 드라이버가 DCB/RDMA auxiliary 이벤트 전달 시 RTNL과 auxiliary device lock ABBA 데드락을 피하도록 device_trylock 기반 전달과 DCB 재구성 중 lock 보유·AFTER_TC_CHANGE 순서를 재정렬합니다.\n\n영향: PREEMPT_RT·부팅 시 lldpad와 icrdma probe가 RTNL을 교차 대기하면 시스템이 멈출 수 있어, ice+RDMA(irdma) DCB 환경 운영·백포트 판단에 직접 영향을 줍니다. net-dev/mainline 머지와 v2에 AI 리뷰 지적이 반영됐는지는 원문 스레드 전체 확인이 필요합니다.\n\n> ice_send_event_to_aux() blocks on the auxiliary device lock, and the dcbnl callers reach it with the RTNL lock held.\n\n[원문 확인](https://lkml.iu.edu/2610.2/05843.html)\n\n**xsk: fix multi-buffer TX software checksum**\n\nAF_XDP copy 모드에서 XDP_UMEM_TX_SW_CSUM을 multi-buffer TX와 함께 쓸 때 skb_checksum_help()를 마지막 descriptor 추가 후로 미루고, 실패 시 패킷을 drop하도록 xsk TX 경로를 수정합니다.\n\n영향: 멀티 버퍼 AF_XDP TX는 저지연 데이터플레인에서 흔하며, 첫 fragment만 checksum에 포함되면 잘못된 UDP/TCP checksum이 전송되어 RT·관측 스택의 패킷 검증·피어 수신이 깨질 수 있습니다. net 트리 머지·stable 백포트 일정은 아직 공개 릴리스 태그에서 확인되지 않습니다.\n\n> Patch 1 moves the software checksum calculation from xsk_skb_metadata() to the point where the last descriptor has been added to the skb.\n\n[원문 확인](https://lore.kernel.org/bpf/20261024141157.59301-1-testwrzwrz@gmail.com/)\n\n**net/sched: sch_teql: fix transmit-path regressions**\n\nJamal Hadi Salim의 2패치 시리즈가 TEQL 전송 경로 회귀를 수정하며, patch 1은 sashiko가 보고한 이슈 후속이고 patch 2는 Owen이 보고한 별도 버그로 설명됩니다.\n\n영향: TEQL은 다중 슬레이브 로드밸런싱에 쓰이며, PREEMPT_RT·netconsole·VLAN qdisc drop 조합에서 데드락·UAF류 전송 경로 결함은 운영 중 시스템 정지·메모리 안전 리스크로 이어질 수 있습니다. patch 1/2의 구체적 diff는 netdev 10/16 시리즈 원문과 syzbot CI 결과 대조가 필요합니다.\n\n> Patch 1 is a followup of a report by sashiko and two was an independent bug reported by Owen\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/CAM0EoM=yCSeB9+Q8gFsB8sjQhddM9qWh8DOfSqqNtp6byubv2w@mail.gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**net: Backport backlog-NAPI threads to resolve PREEMPT_RT softirq warning in SMP flush**\n\nWen Yang이 upstream v6.4–v6.9의 per-CPU backlog_napi 스레드·RPS/defer_list 변경을 v6.1-rt-next에 15패치로 백포트해, RPS IPI 경로의 NET_RX_SOFTIRQ 승격을 스레드 wake로 대체합니다.\n\n영향: PREEMPT_RT에서 idle SMP flush 중 do_softirq_post_smp_call_flush WARN과 ksoftirqd 깨움은 RT 정책 위반으로 간주되며, RPS·멀티큐 RT 배포의 네트워크 수신 경로 안정성에 핵심입니다. cover 리비전의 v6.1-rt-next 실제 머지와 v6.6-rt 선행 백포트 상태는 별도 확인이 필요합니다.\n\n> On PREEMPT_RT, RPS steers packets to a remote CPU's backlog by sending an IPI.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/cover.1792847031.git.wen.yang@linux.dev/)\n\n**bpf: Track borrowed iterator result lifetimes**\n\nbpf-next v8에서 비-RCU iterator struct 반환값을 기본적으로 현재 요소 lifetime에 묶고, trusted field·dynptr가 invalidation graph를 공유하며 next/destroy 시 선행 결과를 무효화합니다.\n\n영향: verifier가 iterator 결과를 수명과 연결하지 않으면 task_vma 등에서 destroy 이후 포인터 사용이 허용될 수 있어, tracing·관측 BPF 프로그램의 안전 모델이 바뀝니다. Justin 시리즈와 reg_lifetime_id() 등 겹치는 지점 병합 시 최종 verifier 규칙은 아직 미확정입니다.\n\n> Make non-RCU, non-acquired struct iterator results borrow the current element lifetime by default.\n\n[원문 확인](https://lore.kernel.org/bpf/20261024100647.2579244-1-xyx2021@mail.ustc.edu.cn/)\n\n**bpf: Add syscall common attrs support for link_create**\n\nBPF_LINK_CREATE에 map_create와 같은 syscall common attrs를 연결해 내부 verifier log를 만들고 잘못된 prog fd·attach type·prog type 오류를 로그로 반환합니다.\n\n영향: userspace가 link_create 실패 원인을 verifier log로 받으면 AF_XDP·cgroup 등 링크 부착 자동화·CI 디버깅 비용이 줄어 관측·데이터플레인 BPF 운영에 실질적 도움이 됩니다. 단일 패치가 Leon Hwang v3 6패치 시리즈 일부인지·libbpf bpf_link_create_log 포함 범위는 cover 0/N 확인이 필요할 수 있습니다.\n\n> Similar to the syscall common attrs support for map_create [1], add the syscall common attrs support for link_create.\n\n[원문 확인](https://lore.kernel.org/bpf/20261024153608.58569-2-leon.hwang@linux.dev/)\n\n**selftests/bpf: Test overlapping dynptr copies on xdp frags**\n\nXDP frags를 가로지르는 overlapping bpf_dynptr_copy/read/write 시나리오 selftest를 추가하고, bpf_xdp_copy_buf·bpf_dynptr_copy 수정 없이는 XDP 쪽 세 테스트가 실패함을 고정합니다.\n\n영향: XDP/AF_XDP 고성능 경로에서 dynptr 복사 버그는 패킷 데이터 무결성·관측 결과 왜곡을 낳을 수 있어 verifier helper 수정과 회귀 테스트 추적이 중요합니다. kernel helper 수정 패치의 bpf 리스트 머지 여부는 시리즈 전체 상태 확인이 필요합니다.\n\n> Without the fixes to bpf_xdp_copy_buf() and bpf_dynptr_copy(), the three xdp tests fail.\n\n[원문 확인](https://lore.kernel.org/bpf/20261024092659.76422-4-ayushmanrout27@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ice RTNL·auxiliary lock 데드락 스레드",
+      "url": "https://lkml.iu.edu/2610.2/05843.html",
+      "note": "thread"
+    },
+    {
+      "title": "ice v2 patchew 시리즈",
+      "url": "https://patchew.org/linux/20261023070258.730168-1-poros@redhat.com/",
+      "note": "thread"
+    },
+    {
+      "title": "ice Sashiko AI 리뷰 linux-rt-devel",
+      "url": "https://lore.kernel.org/linux-rt-devel/sashiko-outbox-183579@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "backlog-NAPI 백포트 cover letter",
+      "url": "https://lore.kernel.org/linux-rt-devel/cover.1792847031.git.wen.yang@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "backlog-NAPI upstream 패치",
+      "url": "https://lkml.iu.edu/2610.1/13086.html",
+      "note": "thread"
+    },
+    {
+      "title": "v6.6-rt 선행 수정 제안",
+      "url": "https://lkml.iu.edu/2610.1/15570.html",
+      "note": "thread"
+    },
+    {
+      "title": "bpf iterator lifetime v8 cover",
+      "url": "https://lore.kernel.org/bpf/20261024100647.2579244-1-xyx2021@mail.ustc.edu.cn/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf iterator syzbot 시리즈",
+      "url": "https://ci.syzbot.org/series/99cbc5ff-4de9-433e-8d7f-385540fa23c6",
+      "note": "thread"
+    },
+    {
+      "title": "bpf iterator 패치 본문",
+      "url": "https://ci.syzbot.org/series/06cae073-d765-4897-bfde-865a95d0c2c1/all_patches",
+      "note": "thread"
+    },
+    {
+      "title": "bpf link_create common attrs",
+      "url": "https://lore.kernel.org/bpf/20261024153608.58569-2-leon.hwang@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf link_create syscall.c 변경",
+      "url": "https://lore.landau.one/lkml/20261020152804.39863-2-leon.hwang@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "dynptr XDP overlap selftest",
+      "url": "https://lore.kernel.org/bpf/20261024092659.76422-4-ayushmanrout27@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "overlapping copies syzbot 시리즈",
+      "url": "https://ci.syzbot.org/series/6cfd3ac6-352d-4076-918b-c4525f549324",
+      "note": "thread"
+    },
+    {
+      "title": "dynptr selftest syzbot 패치",
+      "url": "https://ci.syzbot.org/patches/4ab817e4-bf7a-44f0-9cc4-185b2f6a04f7",
+      "note": "thread"
+    },
+    {
+      "title": "xsk multi-buffer TX checksum v2",
+      "url": "https://lore.kernel.org/bpf/20261024141157.59301-1-testwrzwrz@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "xsk checksum 패치 본문",
+      "url": "https://ci.syzbot.org/patches/aa84bf1b-6e77-41a7-8385-2e78003b29d2",
+      "note": "thread"
+    },
+    {
+      "title": "sch_teql linux-rt-devel",
+      "url": "https://lore.kernel.org/linux-rt-devel/CAM0EoM=yCSeB9+Q8gFsB8sjQhddM9qWh8DOfSqqNtp6byubv2w@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "sch_teql netdev 스레드",
+      "url": "https://lists.openwall.net/netdev/2026/10/16/205",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-24T18:32:32.095Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

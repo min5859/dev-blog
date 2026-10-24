@@ -1,0 +1,133 @@
+{
+  "id": "2026-10-25-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-10-25 Clang·Rust VFIO — 툴체인",
+  "headline": "Clang thread-safety·serdev CI 신호와 kbuild DTB·__ASSEMBLER__ 정리, Rust VFIO v2·time/math v4가 병행됩니다.",
+  "date": "2026-10-25",
+  "summary": "ext2 alias 수정과 dell-uart-backlight randconfig 오류가 Clang toolchain 의존을 드러냈고, of_fdt·DTB kbuild 시리즈가 빌드 가드를 정리합니다. Rust VFIO PCI v2와 Delta/math v4는 API surface 변화를 이어갑니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "ext2_fill_super() Clang context analysis",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "ext2·VFS thread-safety annotation 유지보수자 및 Clang/W=error 커널 빌드 담당",
+      "verifyLink": "https://patchew.org/linux/20261023-ext2-fix-context-analysis-clang-24-v2-1-a33961453899@kernel.org/",
+      "if": "Clang -Wthread-safety-precise가 -Werror 빌드에 ext2를 포함한다면",
+      "do": "sbi를 EXT2_SB(sb)로 직접 alias하는 v2 패턴과 LLVM alias 한계를 반영해 수정·리뷰를 추적하세요",
+      "verify": "patchew v2 스레드와 LLVM 커밋 217e229a 원문에서 thread-safety 해석 변경을 확인하세요"
+    },
+    {
+      "title": "dell-uart-backlight Clang randconfig",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "Clang 커널 CI·LKP 담당 및 serdev/dell-uart-backlight 패치 리뷰어",
+      "verifyLink": "https://lore.landau.one/lkml/202610250118.t0UAW41j-lkp@intel.com/",
+      "if": "driver-core-testing 등 트리에서 Wu v4와 serdev core API 베이스가 어긋난다면",
+      "do": "serdev_device_add 인자 수·id_table 불일치를 serdev 시리즈 베이스와 dell v4 버전으로 구분해 재베이스 여부를 확인하세요",
+      "verify": "LKP Clang 22.1.8 로그와 patchew dell v4 스레드에서 serdev 매칭 변경을 확인하세요"
+    },
+    {
+      "title": "Rust VFIO PCI v2 12패치",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust for Linux PCI/VFIO 바인딩·nova-core/vGPU 드라이버 작성자 및 리뷰어",
+      "verifyLink": "https://patchew.org/linux/20261023154009.2246627-1-xinmengs@nvidia.com/",
+      "if": "VFIO variant를 Rust 공유 PCI 어댑터로 옮기는 시리즈를 추적한다면",
+      "do": "v2 묶음의 reset·bind·AER·runtime PM과 nvidia_vgpu.rs 의존, VFIO next 선행 커밋 순서를 머지 전에 맞춰 보세요",
+      "verify": "patchew v2 시리즈와 nova-core BAR1 self-test 커밋 원문을 확인하세요"
+    },
+    {
+      "title": "kbuild DTB directory targets v5",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "kbuild·devicetree 빌드 및 SoC DTS 디렉터리 유지보수자",
+      "verifyLink": "https://patchew.org/linux/20261023-dtb-dirs-v3-v5-0-dfe13d47aa64@kernel.org/",
+      "if": "vendor DTS 하위 디렉터리가 많은 보드에서 make dtbs를 자주 돌린다면",
+      "do": "디렉터리 타겟 단일화와 dtbs_prepare 유지가 자신의 DTS 트리·병렬 make에 맞는지 v5 리워크를 검토하세요",
+      "verify": "patchew DTB dirs v5 스레드에서 single-target·dtbs 규칙 변경을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Rust VFIO PCI support and NVIDIA vGPU driver**\n\nSimon Song이 Zhi Wang Rust VFIO PCI 시리즈를 v2 12패치로 갱신해 rust/kernel PCI·VFIO 어댑터(리셋·bind·AER·runtime PM)와 nova-core SR-IOV PF API, NVIDIA VFIO variant 드라이버(nvidia_vgpu.rs)를 한 묶음으로 제안합니다.\n\n영향: Rust for Linux toolchain 독자는 VFIO variant를 C가 아닌 공유 PCI 어댑터·타입드 driver data로 쓰게 되므로, 새 공개 Rust API와 Alex Williamson VFIO next 선행 커밋 의존을 머지 전에 추적해야 합니다.\n\n> Patches 1-4 provide the PCI helpers and VFIO PCI abstractions. Patches 5-8 add reset, bind, AER and runtime-PM support to the shared PCI adapter.\n\n[원문 확인](https://patchew.org/linux/20261023154009.2246627-1-xinmengs@nvidia.com/)\n\n**ext2: Make sbi an proper alias for EXT2_SB(sb) in ext2_fill_super()**\n\nNathan Chancellor v2는 ext2_fill_super()에서 sbi를 kzalloc 후 sb->s_fs_info에 넣는 대신 sb->s_fs_info에 할당한 뒤 sbi = EXT2_SB(sb)로 직접 alias를 만들어 Clang thread-safety 분석이 s_lock·s_rsv_window_lock 가드를 인식하게 합니다.\n\n영향: LLVM이 __guarded_by 검증을 강화하면 -Wthread-safety-precise가 -Werror 빌드에서 ext2를 깨므로, Clang 커널 CI·context analysis를 쓰는 filesystem 유지보수자는 alias 한계와 수정 패턴을 알아야 합니다.\n\n> Context analysis does very minimal alias detection, so it is not able to figure out that sbi == sb->s_fs_info == EXT2_SB(sb).\n\n[원문 확인](https://patchew.org/linux/20261023-ext2-fix-context-analysis-clang-24-v2-1-a33961453899@kernel.org/)\n\n**of: fdt: Replace __ASSEMBLY__ with __ASSEMBLER__ in of_fdt.h header file**\n\nThomas Huth v5 시리즈 01/13은 include/linux/of_fdt.h의 #ifndef __ASSEMBLY__ 가드를 컴파일러 정의 __ASSEMBLER__로 바꾸며, 전체 13패치는 treewide로 Makefile의 -D__ASSEMBLY__ 제거를 목표로 합니다.\n\n영향: kbuild·헤더 toolchain은 asm/C 혼용 가드 매크로를 컴파일러 표준으로 통일하면 headers_install·out-of-tree asm·UAPI 혼선을 줄이지만, 아직 Makefile과 헤더가 섞인 트리에서는 빌드 깨짐을 조기에 잡아야 합니다.\n\n[원문 확인](https://patchew.org/linux/20261023064908.66707-1-thuth@redhat.com/20261023064908.66707-2-thuth@redhat.com/)\n\n**kbuild: Support directory targets for DTBs**\n\nRob Herring v5(2패치)는 DTB 빌드를 디렉터리 타겟 하나로 통일하고 %.dtb(o) 규칙을 single-target으로 바꿔 vendor DTS 하위 디렉터리가 많은 아키텍처에서 make targets를 단순화합니다.\n\n영향: kbuild toolchain 변경은 병렬 make에서 DTB 경로가 둘로 갈라질 때 간헐적 실패를 낳었으므로, DT·randconfig 빌드를 돌리는 담당자는 dtbs_prepare 유지 등 v5 수정이 자신의 보드 DTS 트리에 미치는지 확인해야 합니다. Arnd randconfig 재검증·out-of-tree DTS Makefile 호환은 확인이 필요합니다.\n\n[원문 확인](https://patchew.org/linux/20261023-dtb-dirs-v3-v5-0-dfe13d47aa64@kernel.org/)\n\n**rust: time: fix Delta arithmetic and add math helpers**\n\nchenhan v4(3패치)는 Delta 나눗셈·rem_nanos()의 잘못된 입력을 아키텍처에 관계없이 일관되게 패닉시키고, math::div64_s64()·div_s64_rem() 헬퍼를 새 rust/kernel/math.rs에 두며 rem_s64() 대신 (quotient, remainder) 튜플 API로 바꿉니다.\n\n영향: Rust 커널 toolchain surface가 time에서 math로 분리되고 stable 후보(패치 1–2)와 비-stable math 모듈(패치 3)이 갈라지므로, 드라이버 crate·backport 담당은 overflow check 설정별 동작과 API 시그니처 변경을 추적해야 합니다.\n\n> Replace rem_s64() with div_s64_rem(i64, i32) -> (i64, i32), returning both quotient and remainder.\n\n> Patches 1 and 2 form the stable candidate pair... Patch 3 is separate and is not intended for stable.\n\n[원문 확인](https://patchew.org/linux/20261023130413.178487-1-chenhan0017.work@gmail.com/)\n\n**platform/x86: dell-uart-backlight: Bind through normal serdev matching**\n\nkernel test robot이 ChunAn Wu v4 dell-uart-backlight 패치를 driver-core-testing 등 트리에 적용한 Clang 22.1.8 randconfig에서 serdev_device_id 테이블이 불완전 타입이고 serdev_device_add()에 인자가 하나 더 있다고 보고합니다.\n\n영향: 드라이버 패치가 아직 머지되지 않은 serdev core API(2인자 serdev_device_add·id_table)를 가정하면 Clang CI가 조기에 깨지므로, llvm 리스트·LKP를 보는 toolchain 독자는 serdev 시리즈 베이스와 dell 드라이버 패치 버전 불일치를 구분해야 합니다.\n\n> error: too many arguments to function call, expected 1, have 2\n  363 |         ret = serdev_device_add(serdev, KBUILD_MODNAME);\n\n[원문 확인](https://lore.landau.one/lkml/202610250118.t0UAW41j-lkp@intel.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "**of_fdt.h __ASSEMBLER__ 시리즈 전체 맥락**\n\n13패치 시리즈는 treewide로 __ASSEMBLY__를 __ASSEMBLER__로 바꾼 뒤 Makefile의 -D__ASSEMBLY__ 정의를 제거하는 것을 목표로 합니다.\n\n영향: UAPI 분리 패치 포함 v5의 subsystem별 ack·머지 순서는 확인이 필요합니다.\n\n> changes all occurrences of __ASSEMBLY__ into __ASSEMBLER__ and finally removes the -D__ASSEMBLY__ from the Makefiles.\n\n[원문 확인](https://lore.landau.one/lkml/20261023064908.66707-1-thuth@redhat.com/T/)\n\n**dell-uart-backlight v4 serdev 매칭 의도**\n\nv4 패치는 modalias·id_table로 정상 serdev 매칭을 쓰도록 dell 드라이버를 바꿉니다.\n\n영향: serdev core 2/3 패치가 테스트 베이스에 머지된 후 dell v4 재베이스 여부와 GCC-only randconfig 통과는 확인이 필요합니다.\n\n> Pass the modalias to serdev_device_add() and give the serdev driver a matching id_table, so that the serdev core binds the two through normal matching.\n\n[원문 확인](https://patchew.org/linux/20261024022930.2704030-3-an.wu@canonical.com/)\n\n**Rust VFIO 시리즈 nova-core BAR1 self-test**\n\n시리즈 베이스에 nova-core BAR1 self-test 수정이 포함됩니다.\n\n영향: VFIO next driver_data 분리 등 선행 C 변경의 mainline·rust-for-linux 머지 순서와 Syzbot CI 추가 이슈는 확인이 필요합니다.\n\n> gpu: nova-core: mm: keep BAR1 self-test page tables alive\n\n[원문 확인](https://github.com/zhiwang-nvidia/nova-core/commit/317e76cc60b763a03664cbf8244f4de076e58aa7)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Rust VFIO PCI v2 시리즈",
+      "url": "https://patchew.org/linux/20261023154009.2246627-1-xinmengs@nvidia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "nova-core BAR1 self-test",
+      "url": "https://github.com/zhiwang-nvidia/nova-core/commit/317e76cc60b763a03664cbf8244f4de076e58aa7",
+      "note": "commit"
+    },
+    {
+      "title": "ext2 Clang context analysis v2",
+      "url": "https://patchew.org/linux/20261023-ext2-fix-context-analysis-clang-24-v2-1-a33961453899@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "LLVM thread-safety C/C++ parsing",
+      "url": "https://github.com/llvm/llvm-project/commit/217e229a1f32785fccdd3b3f51429f0d309dea45",
+      "note": "commit"
+    },
+    {
+      "title": "of_fdt.h __ASSEMBLER__ v5 01/13",
+      "url": "https://patchew.org/linux/20261023064908.66707-1-thuth@redhat.com/20261023064908.66707-2-thuth@redhat.com/",
+      "note": "thread"
+    },
+    {
+      "title": "__ASSEMBLY__ treewide 시리즈 개요",
+      "url": "https://lore.landau.one/lkml/20261023064908.66707-1-thuth@redhat.com/T/",
+      "note": "thread"
+    },
+    {
+      "title": "kbuild DTB directory targets v5",
+      "url": "https://patchew.org/linux/20261023-dtb-dirs-v3-v5-0-dfe13d47aa64@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "rust time Delta/math v4",
+      "url": "https://patchew.org/linux/20261023130413.178487-1-chenhan0017.work@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "dell-uart-backlight Clang LKP",
+      "url": "https://lore.landau.one/lkml/202610250118.t0UAW41j-lkp@intel.com/",
+      "note": "thread"
+    },
+    {
+      "title": "dell-uart-backlight serdev matching v4",
+      "url": "https://patchew.org/linux/20261024022930.2704030-3-an.wu@canonical.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-24T18:24:35.652Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
