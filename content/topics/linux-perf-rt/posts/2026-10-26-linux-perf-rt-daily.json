@@ -1,0 +1,156 @@
+{
+  "id": "2026-10-26-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-10-26 BPF 선점 누락 — 성능·RT 렌즈",
+  "headline": "non-sleepable fentry/fexit에서 선점이 false recursion_miss로 이벤트를 조용히 빼며, v6.1-rt-next는 backlog-NAPI 백포트로 RPS softirq WARN을 막는다.",
+  "date": "2026-10-26",
+  "summary": "Mike Bazov RFC는 __bpf_prog_enter_recur()가 선점을 막지 않아 unrelated 태스크가 recursion_misses로 스킵되는 경로를 짚고 !PREEMPT_RT에서 preempt_disable_notrace()를 제안합니다. Wen Yang은 upstream v6.4–v6.9의 backlog-NAPI 스레드를 v6.1-rt-next에 15패치로 백포트해 PREEMPT_RT SMP flush 중 NET_RX_SOFTIRQ WARN을 피합니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "PREEMPT_RT",
+    "BPF",
+    "성능"
+  ],
+  "highlights": [
+    {
+      "title": "BPF trampoline: 선점이 false recursion_miss 유발",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "fentry/fexit·트램폴린 BPF 프로그램 작성자, tracing/보안 관측 스택 운영자",
+      "verifyLink": "https://lore.kernel.org/bpf/20261025-b4-bpf-trampoline-preempt-v1-0-198dcdc0c6ac@sentinelone.com/",
+      "if": "7.0 이후 x86/arm64에서 lazy/full 선점만 쓰는 배포판에서 fentry/fexit 관측·보안 에이전트가 kprobe 대비 이벤트 누락을 겪을 수 있으면",
+      "do": "PREEMPT_RT·BPF 트레이싱 RFC와 patchwork 시리즈 1192980에서 enter/exit 선점 처리와 private stack 논의를 따라가세요",
+      "verify": "cover letter와 패치가 CPU N에서 prog->active 유지·recursion_misses 시나리오와 !PREEMPT_RT의 preempt_disable_notrace() 방안을 설명하는지 원문에서 확인하세요"
+    },
+    {
+      "title": "igc RX: skb 없이 프레임 경계 추적",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "igc 드라이버·AF_XDP/XDP zero-copy 운영자, NIC RX 타임스탬프를 쓰는 BPF 데이터플레인 개발자",
+      "verifyLink": "https://lore.kernel.org/bpf/20261025065154.2037149-1-p@1g4.org/",
+      "if": "TSIP 타임스탬프·XDP/AF_XDP zero-copy에서 split frame truncate·underflow가 보이면",
+      "do": "Paul Moses 패치가 링별 rx_in_frame으로 첫 버퍼만 strip하는지 patchwork 1192925와 netdev/bpf 스레드를 검토하세요",
+      "verify": "패치 본문이 skb 소유권으로는 프레임 경계를 알 수 없다는 설명과 Fixes: fc9df2a0b520 태그를 원문에서 확인하세요"
+    },
+    {
+      "title": "PSP: scrub 후 SKB_EXT_PSP 보존",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "PSP/netkit·skb extension 스택 개발자, selftests/net/psp.py를 돌리는 BPF 네트워킹 담당자",
+      "verifyLink": "https://patchwork.kernel.org/series/1192897/",
+      "if": "netkit cross-netns redirect 후 __psp_sk_rx_policy_check()가 TCP를 거부하면",
+      "do": "Wei Wang 시리즈의 skb_ext_scrub()과 psp.py 양방향 selftest 추가를 patchwork에서 따라가세요",
+      "verify": "cover가 scrub 시 SKB_EXT_PSP 유실과 반환 ACK에서 scrub을 놓친 기존 selftest 한계를 설명하는지 확인하세요"
+    },
+    {
+      "title": "x86 ftrace: jmp 모드와 함수 정렬",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "x86 ftrace·BPF 트램폴린 유지보수자, 커널 빌드 옵션(-Os/정렬)을 튜닝하는 배포 담당자",
+      "verifyLink": "https://patchwork.kernel.org/series/1192573/",
+      "if": "-Os 또는 정렬 없는 빌드에서 dyn_ftrace jmp·BPF attach가 깨지면",
+      "do": "Daniel Borkmann kconfig 제안과 Jiri Olsa text_gen_insn v2·Alexei의 ftrace_call_replace() 수정 논의를 비교해 추적하세요",
+      "verify": "패치가 HAVE_DYNAMIC_FTRACE_WITH_JMP 선택 조건과 리뷰 스레드의 -Os 대안 제안을 담는지 확인하세요(채택 방향은 아직 불확실할 수 있습니다)"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**bpf: Do not let preemption cause false recursion drops in trampoline progs**\n\nMike Bazov RFC는 non-sleepable fentry/fexit에서 __bpf_prog_enter_recur()가 선점을 막지 않아 CPU N에서 선점된 태스크가 prog->active를 들고 있으면 다른 태스크 호출이 recursion_misses로 조용히 스킵되는 문제를 설명하고, !PREEMPT_RT에서는 kprobe/perf와 같이 enter/exit에서 preempt_disable_notrace()를 씁니다.\n\n영향: 7.0 이후 x86/arm64 배포판이 lazy/full 선점만 남아 fentry/fexit 관측·보안 에이전트가 kprobe 대비 이벤트 누락을 겪을 수 있어, PREEMPT_RT·BPF 트레이싱 독자는 trampoline 완전성과 private stack 보호 논의를 따라가야 합니다.\n\n> Any unrelated task scheduled onto CPU N that triggers the same hook observes prog->active != 1 in bpf_prog_get_recursion_context(), increments recursion_misses, and has its BPF program invocation sile\n\n[원문 확인](https://lore.kernel.org/bpf/20261025-b4-bpf-trampoline-preempt-v1-0-198dcdc0c6ac@sentinelone.com/)\n\n**igc: track rx frame boundaries independent of skbs**\n\nPaul Moses 패치는 igc RX에서 TSIP 타임스탬프 헤더가 첫 버퍼에만 있는데 연속 descriptor마다 제거해 split frame이 깨지는 문제를, 링별 rx_in_frame으로 프레임 경계를 추적하고 XDP·AF_XDP zero-copy에서도 첫 버퍼만 strip하도록 수정합니다.\n\n영향: XDP/AF_XDP zero-copy는 skb 소유권으로 프레임 경계를 알 수 없어 타임스탬프 처리 회귀가 패킷 truncate·버퍼 underflow로 나타나며, 데이터플레인 BPF 사용자는 igc RX·하드웨어 타임스탬프 경로 회귀를 주시해야 합니다.\n\n> skb ownership cannot identify frame boundaries when XDP consumes the first buffer or AF_XDP uses zero-copy.\n\n[원문 확인](https://patchwork.kernel.org/series/1192925/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**net: Backport backlog-NAPI threads to resolve PREEMPT_RT softirq warning in SMP flush**\n\nWen Yang이 upstream v6.4–v6.9의 per-CPU backlog_napi smpboot 스레드·RPS/defer_list 변경을 v6.1-rt-next에 15패치로 백포트해, RPS IPI가 ____napi_schedule로 NET_RX_SOFTIRQ를 올리며 do_softirq_post_smp_call_flush에서 WARN이 나는 경로를 스레드 wake로 대체합니다.\n\n영향: PREEMPT_RT에서 idle SMP flush 중 softirq 승격·ksoftirqd 깨움은 RT 정책 위반으로 간주되며, RPS·멀티큐 수신 경로의 WARN·지연을 없애려면 backlog-NAPI 스레드 백포트 진행을 추적해야 합니다. cover.1792847031이 v6.1-rt-next에 머지됐는지는 확인이 필요합니다.\n\n> On PREEMPT_RT, RPS steers packets to a remote CPU's backlog by sending an IPI.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/cover.1792847031.git.wen.yang@linux.dev/)\n\n**x86/ftrace: Use jmp mode only where functions are aligned**\n\nDaniel Borkmann 패치는 x86 dyn_ftrace jmp 모드가 짝수 정렬 타깃에 의존하므로 HAVE_DYNAMIC_FTRACE_WITH_JMP를 정렬 보장 빌드에만 켜고, Jiri Olsa는 kconfig 대신 ftrace_call_replace를 text_gen_insn으로 바꾸는 코드 수정 v2를 제안합니다.\n\n영향: x86 BPF/ftrace 트램폴린은 jmp 모드 선택과 함수 정렬·-Os 빌드가 맞물려 트레이싱 패치가 깨질 수 있어, ftrace·BPF attach를 다루는 엔지니어는 kconfig vs 코드 수정 논의 결과를 따라가야 합니다. 메인라인 채택 방향은 아직 확인이 필요할 수 있습니다.\n\n> Select HAVE_DYNAMIC_FTRACE_WITH_JMP only where it is, with CONFIG_CC_HAS_SANE_FUNCTION_ALIGNMENT or without CONFIG_CC_OPTIMIZE_FOR_SIZE.\n\n[원문 확인](https://patchwork.kernel.org/series/1192573/)\n\n**net: psp: preserve SKB_EXT_PSP across packet scrubbing**\n\nWei Wang 2패치 시리즈는 netkit 등 cross-netns redirect 시 skb_scrub_packet()이 SKB_EXT_PSP를 지워 __psp_sk_rx_policy_check()가 TCP 데이터를 거부하는 문제를, skb_ext_scrub()으로 PSP 확장만 보존하고 psp.py selftest에 양방향 데이터 전송을 추가합니다.\n\n영향: PSP는 skb extension과 BPF selftest(netkit dev-assoc)에 걸려 있어, 암호화 소켓·가상 netdev 경로에서 scrub 후 메타데이터 유실은 관측·테스트 가능한 BPF 네트워킹 회귀입니다.\n\n> incoming PSP packets decapsulated by psp_dev_rcv() lose their SKB_EXT_PSP extension when scrubbed during redirection into the peer netns.\n\n[원문 확인](https://patchwork.kernel.org/series/1192897/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "bpf: Do not let preemption cause false recursion drops in trampoline progs",
+      "url": "https://lore.kernel.org/bpf/20261025-b4-bpf-trampoline-preempt-v1-0-198dcdc0c6ac@sentinelone.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf trampoline preempt — patchwork series 1192980",
+      "url": "https://patchwork.kernel.org/series/1192980/",
+      "note": "thread"
+    },
+    {
+      "title": "sched: Further restrict the preemption modes",
+      "url": "https://web.git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=7dadeaa6e851",
+      "note": "commit"
+    },
+    {
+      "title": "net: Backport backlog-NAPI threads (cover)",
+      "url": "https://lore.kernel.org/linux-rt-devel/cover.1792847031.git.wen.yang@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "net: Allow to use SMP threads for backlog NAPI",
+      "url": "https://web.git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=dad6b9770263",
+      "note": "commit"
+    },
+    {
+      "title": "Schedule backlog-NAPI for defer_list cleanup",
+      "url": "https://lore.landau.one/lkml/2f607e54ce19721f169a8c2fc4bd433aeab2c7a7.1791912669.git.wen.yang@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "igc: track rx frame boundaries independent of skbs",
+      "url": "https://lore.kernel.org/bpf/20261025065154.2037149-1-p@1g4.org/",
+      "note": "thread"
+    },
+    {
+      "title": "igc RX frame boundaries — patchwork 1192925",
+      "url": "https://patchwork.kernel.org/series/1192925/",
+      "note": "thread"
+    },
+    {
+      "title": "igc Fixes mbox",
+      "url": "https://patchwork.kernel.org/project/netdevbpf/patch/20261025065154.2037149-1-p@1g4.org/mbox/",
+      "note": "thread"
+    },
+    {
+      "title": "x86/ftrace: Use jmp mode only where functions are aligned",
+      "url": "https://patchwork.kernel.org/series/1192573/",
+      "note": "thread"
+    },
+    {
+      "title": "ftrace jmp mode review thread",
+      "url": "https://lore.kernel.org/bpf/8c2784c0-2b13-4cc2-b770-51bbb8006f26@iogearbox.net/",
+      "note": "thread"
+    },
+    {
+      "title": "net: psp: preserve SKB_EXT_PSP across packet scrubbing",
+      "url": "https://lore.kernel.org/bpf/20261025040523.678027-1-weiwan@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "psp scrub — patchwork 1192897",
+      "url": "https://patchwork.kernel.org/series/1192897/",
+      "note": "thread"
+    },
+    {
+      "title": "psp selftest mbox",
+      "url": "https://patchwork.kernel.org/series/1192897/mbox/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-25T18:27:06.016Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

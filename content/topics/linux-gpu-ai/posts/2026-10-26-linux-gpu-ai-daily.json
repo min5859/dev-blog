@@ -1,0 +1,135 @@
+{
+  "id": "2026-10-26-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-10-26 SSD2825 무출력 회귀 — GPU·AI 렌즈",
+  "headline": "SSD2825 panel-bridge enable 순서 회귀 복구 논의와 drm_mode.h 비-Linux 빌드 가드가 dri-devel에서 겹쳤습니다.",
+  "date": "2026-10-26",
+  "summary": "LG P880/P895 무출력 회귀를 막는 SSD2825 워크어라운드가 이중 atomic_enable 가능성과 함께 리뷰 중입니다. drm_mode.h Linux 헤더 가드, Tegra114 MIPI 클럭 누수 수정, NWL DSI 타이밍, Ingenic X1600 신규 드라이버도 이어졌습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "DRM",
+    "GPU"
+  ],
+  "highlights": [
+    {
+      "title": "drm/bridge: ssd2825 panel enable 회귀",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "drm/bridge·SSD2825 및 panel_bridge 자동화 추적 담당",
+      "verifyLink": "https://lists.freedesktop.org/archives/dri-devel/2026-October/607648.html",
+      "if": "Solomon SSD2825·panel_bridge 자동 체인을 LG 레거시 보드에서 다루고 있다면",
+      "do": "554d36acf5e0 이후 enable 순서 회귀와 pre_enable 워크어라운드 diff를 머지 전에 검토하세요",
+      "verify": "무출력 원인 설명과 P880·P895 복구 주장을 dri-devel 607648 스레드에서 확인하세요"
+    },
+    {
+      "title": "drm_mode.h Linux 헤더 가드",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "DRM UAPI·libdrm 동기화 및 비-Linux DRM 스택 포팅 담당",
+      "verifyLink": "https://lists.freedesktop.org/archives/dri-devel/2026-October/607646.html",
+      "if": "libdrm 업그레이드나 FreeBSD 등 비-Linux에서 drm_mode.h를 빌드한다면",
+      "do": "__KERNEL__·__linux__ 가드 패치와 Fixes 4c684596cde4 맥락을 배포 경로에 반영할지 판단하세요",
+      "verify": "비-Linux 빌드 실패 설명을 dri-devel 607646에서 확인하세요"
+    },
+    {
+      "title": "tegra114 MIPI power_down clk 누수",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "Tegra host1x MIPI 보정·DSI 패널 bring-up 담당",
+      "verifyLink": "https://lists.freedesktop.org/archives/dri-devel/2026-October/607652.html",
+      "if": "Tegra114 DSI/CSI에서 DPMS를 반복한다면",
+      "do": "clk_disable 한 줄 추가 패치와 DPMS 사이클 시 clk_summary를 함께 점검하세요",
+      "verify": "enable count 누수 설명을 dri-devel 607652에서 확인하세요"
+    },
+    {
+      "title": "nwl-dsi 수평 sync DSI 바이트 환산",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "drm/bridge/nwl-dsi·i.MX8M DSI 및 Librem 5 디스플레이 담당",
+      "verifyLink": "https://lists.freedesktop.org/archives/dri-devel/2026-October/604856.html",
+      "if": "i.MX8M NWL DSI 또는 Librem 5 디스플레이 타이밍을 추적한다면",
+      "do": "HFP/HSA/HBP 패킷 바이트 환산 v4 시리즈와 보드별 검증을 따라가세요",
+      "verify": "RM 기반 변환 설명을 dri-devel 604856에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm/bridge: ssd2825: Fix panel enable sequence**\n\n554d36acf5e0 이후 자동 panel_bridge 체인에서 panel enable이 bridge enable 뒤로 밀려 SSD2825가 설정을 마무리하지 못하는 회귀를, pre_enable 말미에 next bridge의 atomic_enable()을 직접 호출해 LG P880/P895 출력을 복구합니다.\n\n영향: Solomon SSD2825·panel-bridge 자동화를 쓰는 레거시 LG 폰 보드와 bridge 체인 순서를 다루는 DRM bridge 유지보수자는 패널-브리지 enable 순서가 다시 깨지면 즉시 무출력이 되므로, 머지 전에 이 워크어라운드와 프레임워크 쪽 정식 순서 제안 여부를 함께 봐야 합니다.\n\n> Commit 554d36acf5e0 removed this call, resulting in a regression where display output is missing\n\n[원문 확인](https://lists.freedesktop.org/archives/dri-devel/2026-October/607648.html)\n\npre_enable에서 next_bridge->atomic_enable()을 호출하면 modeset enable 시 동일 콜백이 두 번 불릴 수 있다는 리뷰 지적이 있으며, 작성자·maintainer 답변과 실기기 재검증은 확인이 필요합니다.\n\n> duplicate atomic_enable() call on next_bridge\n\n[원문 확인](https://lists.freedesktop.org/archives/dri-devel/2026-October/607649.html)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm: guard Linux-specific headers behind check in drm_mode.h**\n\ndrm_mode.h의 linux/bits.h·linux/const.h 포함을 __KERNEL__ 또는 __linux__일 때만 하도록 감싸 FreeBSD 등 비-Linux에서 libdrm 헤더 동기화 빌드가 깨지지 않게 합니다.\n\n영향: UAPI drm_mode.h는 libdrm·BSD 포팅과 커널이 공유하므로, CRTC background color 등 Linux 전용 매크로를 쓰는 배포·libdrm 업그레이드 경로는 이번 가드 없이는 빌드가 막힐 수 있습니다.\n\n> Non-Linux systems (e.g. FreeBSD) ship drm_mode.h but don't have Linux headers. This causes build failures\n\n[원문 확인](https://lists.freedesktop.org/archives/dri-devel/2026-October/607646.html)\n\n비-Linux에서 background color 관련 매크로 재구현 일정과 libdrm MR 462 실패 보드 목록은 확인이 필요합니다.\n\n**gpu: host1x: mipi: Disable clock again after powering down the pads**\n\ntegra114_mipi_power_down()가 패드 레지스터 접근 후 clk_disable()을 빠뜨려 DSI/CSI 사용자마다 mipi-cal 클럭 enable이 누적되는 버그에 clk_disable() 한 줄을 추가합니다.\n\n영향: Tegra114 MIPI 보정 클럭 부모 수정과 겹치면 누수가 PLL_P_OUT3까지 켜 둔 채 전력·타이밍 문제를 키우므로, Tegra DSI/CSI·host1x 드라이버 담당은 DPMS 반복 시 clk_summary를 확인해야 합니다.\n\n> Every disable/enable cycle of a DSI or CSI user therefore leaks one enable count\n\n[원문 확인](https://lists.freedesktop.org/archives/dri-devel/2026-October/607652.html)\n\nupstream tegra114-mipi.c power_down 경로는 패드 설정 후 return만 하는 동작이 코드에서 확인됩니다.\n\n[원문 확인](https://github.com/torvalds/linux/blob/master/drivers/gpu/host1x/tegra114-mipi.c)\n\n**drm/bridge: nwl-dsi: Correct MIPI DSI horizontal sync timing**\n\nNWL DSI의 HFP/HSA/HBP를 픽셀이 아니 DSI 패킷 바이트로 환산하고 32바이트 패킷 헤더를 비례 분배해 빼 i.MX8M NWL 호스트 타이밍을 RM에 맞춥니다.\n\n영향: i.MX8M·Librem 5 등 NWL DSI 경로는 잘못된 수평 blanking이 60 Hz 패널을 망가뜨리므로, DSI bridge·NXP i.MX 디스플레이 스택을 다루는 엔지니어는 v4 시리즈 머지와 보드별 검증을 추적해야 합니다.\n\n> converts the hfp, hsa, and hbp to DSI packet bytes and then subtracts the number of packet header bytes\n\n[원문 확인](https://lists.freedesktop.org/archives/dri-devel/2026-October/604856.html)\n\nLibrem 5에서 추가 타이밍 해크 없이 구동했다는 Tested-by가 있습니다.\n\n> This lets the Librem 5 screen be driven without additional timing hacks.\n\n[원문 확인](https://lists.freedesktop.org/archives/dri-devel/2026-October/607637.html)\n\nRESEND v4의 clk rate 직접 계산 변경 mainline 합류 시점은 확인이 필요합니다.\n\n**drm/ingenic: Add a driver for the X1600 LCD controller**\n\nOlivier Louvignes 시리즈가 Ingenic X1600용 디스크립터 체인 RGB565 단일 플레인 DRM 드라이버(및 HiBy R1 패널)를 신규 추가해 기존 ingenic-drm과 다른 LCD 블록을 다룹니다.\n\n영향: MIPS X1600·HiBy R1 같은 신규 보드는 이 드라이버 없이 디스플레이를 올릴 수 없고, Sashiko가 atomic commit 순서·plane visible·vblank 이벤트 타이밍을 질문해 리뷰 부담이 큽니다.\n\n> handles parallel RGB panels on a 24-bit bus, with one full-screen RGB565 plane\n\n[원문 확인](https://lists.freedesktop.org/archives/dri-devel/2026-October/607642.html)\n\n> premature plane cleanup via drm_atomic_helper_wait_for_vblanks()\n\n[원문 확인](https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg646681.html)\n\nHiBy R1 480x800에서 fbdev·blanking·약 61 Hz page flip 테스트가 커버 레터에 적혀 있습니다.\n\n> 60 page flips in 0.97 s at about 61 Hz\n\n[원문 확인](https://patchew.org/linux/20261025085816.60405-1-olivier@mgcrea.io/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/bridge ssd2825 panel enable regression",
+      "url": "https://lists.freedesktop.org/archives/dri-devel/2026-October/607648.html",
+      "note": "thread"
+    },
+    {
+      "title": "ssd2825 duplicate atomic_enable review",
+      "url": "https://lists.freedesktop.org/archives/dri-devel/2026-October/607649.html",
+      "note": "thread"
+    },
+    {
+      "title": "drm_mode.h Linux header guard",
+      "url": "https://lists.freedesktop.org/archives/dri-devel/2026-October/607646.html",
+      "note": "thread"
+    },
+    {
+      "title": "tegra114 MIPI clock disable fix",
+      "url": "https://lists.freedesktop.org/archives/dri-devel/2026-October/607652.html",
+      "note": "thread"
+    },
+    {
+      "title": "tegra114-mipi.c upstream",
+      "url": "https://github.com/torvalds/linux/blob/master/drivers/gpu/host1x/tegra114-mipi.c",
+      "note": "changelog"
+    },
+    {
+      "title": "nwl-dsi horizontal sync timing",
+      "url": "https://lists.freedesktop.org/archives/dri-devel/2026-October/604856.html",
+      "note": "thread"
+    },
+    {
+      "title": "nwl-dsi Librem 5 Tested-by",
+      "url": "https://lists.freedesktop.org/archives/dri-devel/2026-October/607637.html",
+      "note": "thread"
+    },
+    {
+      "title": "drm/ingenic X1600 driver patch",
+      "url": "https://lists.freedesktop.org/archives/dri-devel/2026-October/607642.html",
+      "note": "thread"
+    },
+    {
+      "title": "ingenic X1600 atomic review issues",
+      "url": "https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg646681.html",
+      "note": "thread"
+    },
+    {
+      "title": "ingenic X1600 series cover letter",
+      "url": "https://patchew.org/linux/20261025085816.60405-1-olivier@mgcrea.io/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-25T18:32:11.534Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
