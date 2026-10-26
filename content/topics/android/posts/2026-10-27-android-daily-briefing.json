@@ -1,0 +1,113 @@
+{
+  "id": "2026-10-27-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-10-27 ACK 회귀·보안 — Android 커널",
+  "headline": "android16-6.12 cgroup UAF 수정과 mainline 부트·PCI 회귀 대응이 ACK에 이어지며, 영구 init 해결 일정은 아직 공개되지 않았습니다.",
+  "date": "2026-10-27",
+  "summary": "이번 dossier는 전부 어제도 다룬 ACK 커밋이며, cgroup 해제 경쟁 UAF·init CLONE_FS·PCI RRS/NVMe 머지가 핵심입니다. gki_defconfig KUnit 옵션은 출처 인용 검증이 실패해 단정을 피했습니다.",
+  "tags": [
+    "안드로이드",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "ANDROID: cgroup: Free kmi_ext_info with cgroup",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "android16-6.12 ACK 담당, cgroup/KMI 확장 사용 팀",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/1bded4a2d9828c40c1e59421a3da826a77558014",
+      "if": "android16-6.12 ACK에서 KMI cgroup 확장과 cgroupfs 제거·cgroup.stat.local 읽기가 겹치는 워크로드를 돌리면",
+      "do": "해당 커밋 반영 여부를 확인하고 cgroup 해제 동시 접근 시나리오를 재검증하세요",
+      "verify": "커밋 원문에서 kmi_ext_info를 css_free_rwork_fn에서 해제하는 변경을 확인하세요"
+    },
+    {
+      "title": "ANDROID: init: spawn pid 1 with CLONE_FS",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "ACK 배포 담당, Android init/커널 부트 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/d82b1e9acccf66dcebefedad2635d28e1d63d895",
+      "if": "upstream fs 변경(14adbd5341aa) 병합 후 mount namespace unshare하는 GKI/ACK 부트 경로를 쓰면",
+      "do": "벤더 커널 동기화 시 pid 1 CLONE_FS 복구 패치가 빠지지 않도록 머지 체크리스트에 넣으세요",
+      "verify": "커밋 설명과 부트·펌웨어 로드 실패 회귀 수정 내용을 원문에서 확인하세요"
+    },
+    {
+      "title": "PCI: Don't treat ~0 as ready in pci_dev_wait() with RRS SV",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "ACK mainline 동기화 담당, PCI/NVMe·VFIO 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/e8df1d194c39b7a5159d570798941851f70a8668",
+      "if": "RRS Software Visibility를 쓰는 NVMe·VFIO passthrough 초기화 경로를 검증하면",
+      "do": "Vendor ID ~0을 ready로 오인하지 않도록 이 수정이 포함된 ACK 빌드로 스토리지·VFIO 테스트를 돌리세요",
+      "verify": "Intel·Samsung NVMe에서 조기 대기 종료 사례가 인용된 커밋을 확인하세요"
+    },
+    {
+      "title": "Merge tag 'pci-v7.3-fixes-6' … into ACK android-mainline",
+      "priority": "중",
+      "impactType": "backport",
+      "affectedAudience": "ACK mainline 머지 담당, 스토리지/VFIO 검증",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/4766082b791b515953d87f7a24c2ea857e6c10b0",
+      "if": "mainline ACK를 추적해 PCI 스택 변경을 벤더에 반영하면",
+      "do": "Samsung 990 PRO/990 EVO Plus Immediate Readiness·VFIO FLR 회귀 fix 묶음 포함 여부와 백포트 범위를 함께 점검하세요",
+      "verify": "머지 로그에 NVMe Immediate Readiness 무시·post-FLR 복원 실패 수정이 있는지 원문을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ANDROID: cgroup: Free kmi_ext_info with cgroup**\n\ncgroup_destroy_locked에서 kmi_ext_info를 너무 일찍 해제해 cgroup.stat.local 읽기와 cgroupfs 제거가 겹칠 때 use-after-free가 날 수 있어, css_free_rwork_fn에서 cgroup과 함께 해제하도록 옮깁니다.\n\n영향: Android 16 / 6.12 ACK 라인에서 KMI cgroup 확장 메타데이터를 쓰는 워크로드·테스트에서 cgroup 해제 경쟁 시 커널 메모리 안전성에 직접 영향을 줍니다.\n\n> allowing concurrent cgroup.stat.local readers to access freed memory. Free kmi_ext_info in css_free_rwork_fn alongside the cgroup itself.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/1bded4a2d9828c40c1e59421a3da826a77558014)\n\n**ANDROID: init: spawn pid 1 with CLONE_FS**\n\nupstream fs 변경으로 pid 1이 CLONE_FS 없이 생성된 뒤 Android init이 mount namespace를 unshare하면 kworker가 루트 파일시스템에 접근하지 못해 펌웨어 로딩이 깨지는 부트 회귀가 있어, ACK에서 pid 1 생성 시 CLONE_FS를 다시 켭니다.\n\n영향: GKI/ACK 기반 이미지에서 mainline fs 병합 후 부팅·펌웨어 로드 실패를 막는 임시 조치이며, 영구 해결(14adbd5341aa 동작을 유지하면서 Android init 요구를 만족하는 방안)의 ACK 머지 일정은 공개되지 않았습니다.\n\n> When Android init then unshares its mount namespace, kworkers lose access to the root filesystem, which breaks firmware loading.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/d82b1e9acccf66dcebefedad2635d28e1d63d895)\n\n**PCI: Don't treat ~0 as ready in pci_dev_wait() with RRS SV**\n\nRRS Software Visibility 사용 시 pci_dev_wait()이 Vendor ID 읽기 ~0을 ready로 오인해 대기를 조기 종료할 수 있어, ~0 응답과 Command 레지스터 검사를 보강합니다.\n\n영향: RRS를 잘못 광고하거나 준비 전에 응답하는 NVMe 등에서 장치 초기화·VFIO passthrough 회귀를 줄입니다.\n\n> the read may return ~0 and pci_dev_wait() stops waiting too early. This was seen with Intel and Samsung NVMe SSDs.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/e8df1d194c39b7a5159d570798941851f70a8668)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**ANDROID: iommu/arm-smmu-v3-kvm: Reject negative domain types**\n\narm-smmu-v3 KVM 경로의 smmu_alloc_domain()이 부호 있는 domain type을 상한만 검사해 음수 타입이 통과할 수 있어, 음수 domain type도 거부합니다.\n\n영향: 잘못된 domain type이 드라이버 내부에서 일관되지 않게 처리될 수 있는 KVM/IOMMU 통합 경로의 입력 검증 갭을 막아, 가상화·디바이스 할당 테스트 안정성에 영향을 줍니다.\n\n> smmu_alloc_domain() checks the signed domain type only against KVM_ARM_SMMU_DOMAIN_MAX, so a negative type is accepted. Reject negative types too.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/2231183cf51f939fd2410221c8f862cb419a7c09)\n\n**Merge tag 'pci-v7.3-fixes-6' of git://git.kernel.org/pub/scm/linux/kernel/git/pci/pci**\n\nLinus 트리의 pci-v7.3-fixes-6 태그를 ACK android-mainline에 머지해 Samsung 990 PRO/990 EVO Plus NVMe의 Immediate Readiness 오광고·VFIO FLR 회귀 수정과 pci_dev_wait() RRS 관련 수정 등 PCI 서브시스템 fix 묶음을 가져옵니다.\n\n영향: 벤더가 mainline ACK를 추적할 때 PCI 스택 동작이 바뀌므로, 스토리지·VFIO 검증 범위와 백포트 여부를 함께 봐야 합니다.\n\n> Ignore Immediate Readiness on Samsung 990 PRO and 990 EVO Plus NVMe, which falsely advertise it; removal of unrelated delays caused post-FLR state restoration to fail.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/4766082b791b515953d87f7a24c2ea857e6c10b0)\n\n**ANDROID: gki_defconfig: enable REFCOUNT_INTERRUPT_KUNIT_TEST**\n\nupstream이 refcount_interrupt KUnit 테스트를 CONFIG_REFCOUNT_INTERRUPT_KUNIT_TEST로 분리한 뒤, Android gki_defconfig에서 해당 옵션을 명시적으로 켜 기존 빌드에 테스트 모듈이 포함되도록 하는 변경으로 보입니다(출처 인용 검증 실패로 세부 인용은 생략).\n\n영향: GKI CI에서 refcount/irq 관련 KUnit 회귀를 계속 잡을 수 있는 설정 정합성 수정으로, ACK defconfig 관리·테스트 인프라 담당자에게 해당할 수 있습니다.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/83c0e0cc2b172d5dde4d7d7f6259edd30e8748b3)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ANDROID: init: spawn pid 1 with CLONE_FS",
+      "url": "https://android.googlesource.com/kernel/common/+/d82b1e9acccf66dcebefedad2635d28e1d63d895",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: cgroup: Free kmi_ext_info with cgroup",
+      "url": "https://android.googlesource.com/kernel/common/+/1bded4a2d9828c40c1e59421a3da826a77558014",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: iommu/arm-smmu-v3-kvm: Reject negative domain types",
+      "url": "https://android.googlesource.com/kernel/common/+/2231183cf51f939fd2410221c8f862cb419a7c09",
+      "note": "commit"
+    },
+    {
+      "title": "PCI: Don't treat ~0 as ready in pci_dev_wait() with RRS SV",
+      "url": "https://android.googlesource.com/kernel/common/+/e8df1d194c39b7a5159d570798941851f70a8668",
+      "note": "commit"
+    },
+    {
+      "title": "Merge tag 'pci-v7.3-fixes-6' of git://git.kernel.org/pub/scm/linux/kernel/git/pci/pci",
+      "url": "https://android.googlesource.com/kernel/common/+/4766082b791b515953d87f7a24c2ea857e6c10b0",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: gki_defconfig: enable REFCOUNT_INTERRUPT_KUNIT_TEST",
+      "url": "https://android.googlesource.com/kernel/common/+/83c0e0cc2b172d5dde4d7d7f6259edd30e8748b3",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-26T18:05:37.680Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/android-newsletter-from-dossier-ko.md"
+  }
+}

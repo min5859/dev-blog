@@ -1,0 +1,121 @@
+{
+  "id": "2026-10-27-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-10-27 Zalrsc·KVM dirty — 아키·플랫폼",
+  "headline": "RISC-V Zalrsc-only 원자 연산 v3와 queued spinlock 전제가 맞물리고, arm64 KVM dirty 수확·RV soft-dirty PMD·NSP SATA 수정이 리뷰 중입니다.",
+  "date": "2026-10-27",
+  "summary": "Mobileye v3는 Zaamo 없이 Zalrsc만 있는 P8700 등에서 커널 원자 연산을 LR/SC로 빌드합니다. 동시에 KVM stage-2 dirty, RISC-V soft-dirty migration PMD, Broadcom NSP SATA 시리즈가 회귀·런타임 이슈로 논의됩니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "RISC-V",
+    "arm64",
+    "플랫폼"
+  ],
+  "highlights": [
+    {
+      "title": "riscv: Zalrsc-only CPU 원자 연산 v3",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "RISC-V 임베디드·자동차 SoC 포팅 담당, 툴체인·distro가 RV64 이미지를 빌드하는 담당",
+      "verifyLink": "https://patchew.org/linux/20261026-lrsc-only-v3-0-ec29c8190fb1@mobileye.com/",
+      "if": "MIPS P8700·Mobileye eyeq7h처럼 Zalrsc만 있고 AMO는 SBI 트랩으로 에뮬되는 보드에서 이미지를 빌드·배포한다면",
+      "do": "v3가 LR/SC로 cmpxchg·futex 등을 빌드하는 경로와 기본 -march \"a\" 동작을 툴체인·런타임 벤치와 대조하세요",
+      "verify": "patchew v3 스레드에서 P8700 userspace atomics LR/SC·AMO 사이클 수와 BPF AMO 미지원 문구를 원문으로 확인하세요"
+    },
+    {
+      "title": "RISCV_QUEUED_SPINLOCKS와 P8700 forward progress",
+      "priority": "상",
+      "impactType": "project",
+      "affectedAudience": "RISC-V locking·스케줄러·Mobileye/MIPS 플랫폼 담당",
+      "verifyLink": "https://lore.landau.one/lkml/20261026103014.GC2668200@noisy.programming.kicks-ass.net/",
+      "if": "Zalrsc-only 포팅과 queued spinlock·스케줄러 락 경로를 함께 검증하는 역할이라면",
+      "do": "Kconfig 주석이 요구하는 cmpxchg 루프 forward progress가 P8700에서 실제로 성립하는지 원자 연산 패치와 별도로 추적하세요",
+      "verify": "Zijlstra 질문 스레드와 Kondratiev v3 답장(있을 경우)을 lore에서 확인하세요"
+    },
+    {
+      "title": "KVM arm64 stage-2 dirty를 host folio로 수확",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "arm64 KVM·pKVM·메모리 reclaim·live migration dirty tracking 담당",
+      "verifyLink": "https://lore.landau.one/lkml/at-WceRKAVM2kEnI@LeoBrasDK/",
+      "if": "FEAT_HDBSS·VTCR_EL2.HD 기반 stage-2 dirty 추적 v5 시리즈를 통합·리뷰한다면",
+      "do": "wrprotect·unmap walker에서 backing page dirty 마킹이 reclaim·swap만으로 대체 가능한지 Zheng의 재현·답장 여부를 확인하세요",
+      "verify": "Bras 반박 스레드와 Zheng v5 원안(HD·S2AP[1] 설명)을 링크된 lore 글에서 대조하세요"
+    },
+    {
+      "title": "riscv/mm: soft-dirty migration PMD present 오인",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "RISC-V MM·THP·soft-dirty·stable 백포트 담당",
+      "verifyLink": "https://lore.landau.one/lkml/20261026152745.11239-1-lance.yang@linux.dev/",
+      "if": "CONFIG_MEM_SOFT_DIRTY와 THP migration·CRIU·프로파일링을 RV64에서 쓴다면",
+      "do": "soft-dirty 비트 12번·swap offset 13번 재제안 패치와 stable Cc(Fixes: 2a3ebad4db63) 머지·Ack 일정을 확인하세요",
+      "verify": "Yang 10월 26일 ping 스레드의 fault 경로 설명과 infradead linux-riscv 답장(RISC-V V만 지우는 동작)을 읽어보세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**KVM: arm64: Harvest stage-2 dirty state into the host folio account**\n\nLeonardo Bras가 Tian Zheng v5 05/15 패치(VTCR_EL2.HD 하에서 stage-2 S2AP[1] dirty를 unmap·wrprotect 전에 host folio로 수확)에 대해, reclaim 시 swap으로 내용이 보존되므로 wrprotect·unmap walker에서 backing page를 dirty로 두는 설계가 불필요해 보인다고 반박하고 실제 버그 재현 여부를 요청했습니다.\n\n영향: FEAT_HDBSS·stage-2 dirty 추적은 arm64 KVM·pKVM 통합의 핵심인데, 공동 작성자 간 이해 불일치가 남으면 silent corruption 주장과 reclaim 경로 설계가 리뷰에서 다시 열릴 수 있습니다.\n\n> On your patch, I see you marking backing pages dirty at wrprotect and unmap walkers, and it's very confusing to me on why you are doing this.\n\n[원문 확인](https://lore.landau.one/lkml/at-WceRKAVM2kEnI@LeoBrasDK/)\n\n**KVM: arm64: stage-2 dirty와 reclaim(원안 맥락)**\n\n패치 원안은 HD 설정 시 stage-2 PTE의 S2AP[1]만 dirty 기록으로 남고 unmap이 이를 읽지 않으면 reclaim 시 게스트 데이터가 조용히 유실될 수 있다고 설명합니다.\n\n영향: Bras의 reclaim 모델 반박에 Zheng이 답장·재현을 공개했는지는 이번 수집에서 확인하지 못했습니다.\n\n> With VTCR_EL2.HD set, hardware promotes writable-clean descriptors to writable-dirty without any VM exit, and the only record of the write is the S2AP[1] bit in the stage-2 PTE.\n\n[원문 확인](https://lore.landau.one/lkml/20260929103655.85107-6-zhengtian10@huawei.com/)\n\n**riscv/mm: fix soft-dirty migration PMDs being treated as present**\n\nLance Yang이 10월 26일 리뷰를 재촉하며, CONFIG_MEM_SOFT_DIRTY에서 swap soft-dirty가 _PAGE_EXEC를 쓰면 migration PMD가 present THP로 오인되어 fault 경로가 깨질 수 있으니 soft-dirty 비트를 12번으로 옮기고 swap offset을 13번부터 쓰는 수정을 다시 제안했습니다(Fixes: 2a3ebad4db63, stable Cc).\n\n영향: soft-dirty·THP migration·PMD split을 쓰는 RISC-V RV64 워크로드에서 잘못된 pmd_present 판별은 migration entry를 실 PFN으로 해석해 데이터 무결성 문제를 일으킬 수 있습니다.\n\n> Even with _PAGE_PRESENT clear, we end up treating a migration PMD as a present THP! The fault handler skips pmd_migration_entry_wait(), and a write fault can end up in do_huge_pmd_wp_page()\n\n[원문 확인](https://lore.landau.one/lkml/20261026152745.11239-1-lance.yang@linux.dev/)\n\n**riscv/mm: THP 인식과 RISC-V PTE 비트(리뷰 맥락)**\n\nDavid Hildenbrand 리뷰에 Yang은 THP split 중 소프트웨어가 pmd_present()로 THP를 인식하려 RISC-V가 V만 지우고 R/W/X를 유지한다고 답했습니다.\n\n영향: 위 soft-dirty 비트 재배치 제안이 이 동작과 맞물리는지 maintainer Ack·머지 일정은 확인이 필요합니다.\n\n> RISC-V clears V but keeps the R/W/X bits for that, so the entry is invalid to hardware but still identifiable as a THP by software.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-October/100689.html)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**riscv: support CPUs with Zalrsc but not Zaamo (v3)**\n\nVladimir Kondratiev의 v3(2패치)는 Zaamo 없이 Zalrsc만 있는 CPU용으로 커널 원자 연산·bitops·cmpxchg·futex를 LR/SC 시퀀스로 빌드하고, Zaamo는 CONFIG_NONPORTABLE에서만 끌 수 있게 하며 Zalrsc는 필수로 둡니다. 기본 빌드는 기존과 같이 -march에 \"a\"를 유지합니다.\n\n영향: MIPS P8700·Mobileye eyeq7h 같은 Zalrsc-only 플랫폼에서 SBI 트랩 AMO 대신 LR/SC를 쓰지 않으면 스케줄링·MM·드라이버 경로의 원자 연산 비용이 커져 ADAS·자율주행 워크로드에 부담이 됩니다. v3가 linux-riscv 트리에 머지·Acked-by를 받았는지는 이번 조사에서 확인하지 못했습니다.\n\n> MIPS P8700 [1] implements only Zalrsc. AMO instructions are emulated by a trap into SBI. I measured typical userspace atomics on this CPU: an LR/SC atomic takes about 40 cycles, an AMO atomic about 60\n\n[원문 확인](https://patchew.org/linux/20261026-lrsc-only-v3-0-ec29c8190fb1@mobileye.com/)\n\n**riscv: Zalrsc-only와 BPF AMO**\n\nv3는 Zalrsc를 필수로 두고 Zaamo는 NONPORTABLE에서만 끄며, BPF AMO는 Zalrsc-only 커널에서 계속 미지원이라고 명시합니다.\n\n영향: BPF 원자 연산을 RV64 Zalrsc-only 이미지에서 기대하는 워크로드는 별도 검증이 필요합니다.\n\n> Zalrsc stays mandatory. cmpxchg, conditional atomics and futex CAS are already LR/SC sequences; Zaamo cannot replace them. BPF atomic ops still emit AMO and remain unsupported on a Zalrsc-only kernel.\n\n[원문 확인](https://patchew.org/linux/20261026-lrsc-only-v3-0-ec29c8190fb1@mobileye.com/)\n\n**riscv: support CPUs with Zalrsc but not Zaamo (리뷰)**\n\nPeter Zijlstra가 v3 커버에 답해, RISCV_QUEUED_SPINLOCKS 관련 주석이 Zalrsc에 cmpxchg() 루프의 forward progress를 요구한다고 적혀 있는데 이는 일반 LL/SC보다 강한 조건이라고 지적하고 MIPS P8700이 이를 만족하는지 묻습니다.\n\n영향: Zaamo 분리 지원이 들어가도 qspinlock·스케줄러 락 경로는 별도 ISA/마이크로아키텍처 전제가 있어, 자동차용 P8700 포팅 담당은 원자 연산 패치와 스핀락 요구사항을 함께 검증해야 합니다. Kondratiev 또는 MIPS/Mobileye 측의 공식 답변·문서는 확인이 필요합니다.\n\n> The comment with RISCV_QUEUED_SPINLOCKS state that Zalrsc requires that cmpxchg() loops have forward progress; which is much stronger than the typical LL/SC implementation. Does this MIPS thing indeed\n\n[원문 확인](https://lore.landau.one/lkml/20261026103014.GC2668200@noisy.programming.kicks-ass.net/)\n\n**Fix SATA support for NSP SoCs**\n\nFlorian Fainelli v2(6패치)는 Broadcom Northstar Plus(BCM58xxx/8831x) SATA를 고치며 공유 PCB 윈도 PHY 설정, AHCI IDM 클럭·리셋 초기화, BCM958625HR의 non-coherent DMA·SATA enable DT를 다룹니다.\n\n영향: NSP 참조 보드와 유사 SoC에서 부트로더 상태에 따라 AHCI가 리셋에 남거나 DMA coherent를 잘못 가정하면 타임아웃·데이터 손상이 나므로 ARM 플랫폼·스토리지 통합 담당은 DT·PHY·ahci_brcm 변경을 한 세트로 따라가야 합니다. Patchew 표시상 6패치 중 1개 수신 여부·Damien 트리 통합 일정은 확인이 필요합니다.\n\n> on some reference boards, the AHCI controller is not DMA coherent, assuming so leads to all sorts of timeouts, data corruption, etc.\n\n[원문 확인](https://patchew.org/linux/20261026182856.3168686-1-florian.fainelli@broadcom.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "riscv: support CPUs with Zalrsc but not Zaamo (v3)",
+      "url": "https://patchew.org/linux/20261026-lrsc-only-v3-0-ec29c8190fb1@mobileye.com/",
+      "note": "thread"
+    },
+    {
+      "title": "RISCV_QUEUED_SPINLOCKS forward progress 질문",
+      "url": "https://lore.landau.one/lkml/20261026103014.GC2668200@noisy.programming.kicks-ass.net/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM arm64 dirty harvest 리뷰 (Bras)",
+      "url": "https://lore.landau.one/lkml/at-WceRKAVM2kEnI@LeoBrasDK/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM arm64 stage-2 dirty v5 원안",
+      "url": "https://lore.landau.one/lkml/20260929103655.85107-6-zhengtian10@huawei.com/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv/mm: soft-dirty migration PMD fix",
+      "url": "https://lore.landau.one/lkml/20261026152745.11239-1-lance.yang@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv/mm: THP pmd_present 리뷰",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/100689.html",
+      "note": "thread"
+    },
+    {
+      "title": "Fix SATA support for NSP SoCs v2",
+      "url": "https://patchew.org/linux/20261026182856.3168686-1-florian.fainelli@broadcom.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-26T18:36:36.530Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
