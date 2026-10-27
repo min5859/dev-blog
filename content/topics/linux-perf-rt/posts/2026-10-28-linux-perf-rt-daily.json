@@ -1,0 +1,113 @@
+{
+  "id": "2026-10-28-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-10-28 arm64 BPF JIT — Perf/RT",
+  "headline": "arm64 BPF JIT·powerpc generic TIF·____napi_schedule RT 백포트와 bpftool CO-RE 덤프 변경이 lore·Patchew에 올라왔습니다.",
+  "date": "2026-10-28",
+  "summary": "Daniel Borkmann의 arm64 BPF JIT 시리즈는 LLVM 실전 패턴에 맞춘 단일 명령 lowering과 Cilium 벤치 수치를 제시했고, Mukesh Kumar Chaurasiya V2는 powerpc에서 HAVE_GENERIC_TIF_BITS로 RSEQ·hrtimer deferred 경로를 엽니다. Wen Yang RT 백포트는 upstream 8b43fd3d1d7d의 ____napi_schedule 최적화를 실었고, Ihor Solodrai bpftool v2는 GCC-BPF용 per-record __bpf_relocatable를 리뷰 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "arm64 BPF JIT 실전 패턴 최적화",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "arm64 BPF JIT·datapath BPF 유지보수자, 클라우드/edge arm64 eBPF 운영자",
+      "verifyLink": "https://lore.kernel.org/bpf/20261027182445.1156335-1-daniel@iogearbox.net/",
+      "if": "Graviton·Ampere 등 arm64에서 Cilium·Tetragon·sched_ext BPF 데이터플레인 CPU를 줄이려 한다면",
+      "do": "cover의 veristat·llvm-mca 델타와 selftest 결과를 보고 Neoverse 모델 가정이 내 워크로드와 맞는지 비교하세요",
+      "verify": "lore cover의 jited_prog_len·사이클 표와 인용 문구를 원문에서 대조하세요"
+    },
+    {
+      "title": "powerpc generic TIF 비트 지원 V2",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "powerpc 아키텍처·PREEMPT_RT·RSEQ 유지보수자",
+      "verifyLink": "https://patchew.org/linux/20261027074710.129819-1-mkchauras@gmail.com/",
+      "if": "powerpc PREEMPT_RT·RSEQ slice·hrtimer rearm deferred를 추적 중이라면",
+      "do": "POWER11 pSeries selftest 통과 보고와 msuchanek 별도 시리즈 스택 순서를 Patchew V2에서 확인하세요",
+      "verify": "HAVE_GENERIC_TIF_BITS가 풀어 주는 Kconfig 의존 목록을 cover 인용과 맞춰 보세요"
+    },
+    {
+      "title": "____napi_schedule NET_RX_SOFTIRQ 생략",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "PREEMPT_RT net 백포트 담당자, NAPI·RPS·softnet_data 유지보수자",
+      "verifyLink": "https://lkml.iu.edu/2610.1/12840.html",
+      "if": "PREEMPT_RT backlog-NAPI·RPS 백포트 체인에서 in_net_rx_action 전제를 맞추는 중이라면",
+      "do": "upstream 8b43fd3d1d7d 백포트 리비전과 raise_softirq_irqoff 유지 diff를 Wen Yang cover와 함께 따라가세요",
+      "verify": "LKML 백포트 패치의 softirq 생략·poll_list 재시작 설명을 원문으로 확인하세요"
+    },
+    {
+      "title": "bpftool BTF 덤프 per-record __bpf_relocatable",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "bpftool·libbpf·GCC-BPF CO-RE 사용자, BPF selftests 유지보수자",
+      "verifyLink": "https://lore.kernel.org/bpf/d81831c3-85f0-45de-acb2-fbf630bdd573@linux.dev/",
+      "if": "GCC-BPF로 vmlinux.h CO-RE 헤더를 생성·소비하는 RT·관측 툴체인을 쓴다면",
+      "do": "전역 pragma 대신 struct/union별 속성 출력이 리뷰 피드백에 어떻게 반영되는지 lore 스레드를 추적하세요",
+      "verify": "syzbot 패치 설명의 GCC-BPF pragma 한계와 Nakryiko 리뷰 인용을 대조하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**bpf: Various arm64 BPF JIT improvements**\n\nDaniel Borkmann 시리즈는 arm64 BPF JIT가 LLVM이 만든 실전 패턴에 대해 더 짧고 빠른 네이티브 코드를 내도록, 각 변경을 단일 BPF 명령 lowering 범위 안에서 조정합니다. x86-64 BPF JIT 최근 개선과 유사한 접근이며, Cilium·Tetragon·Katran·sched_ext 객체에 대한 veristat·llvm-mca 기반 크기·사이클 델타를 제시합니다.\n\n영향: Graviton·Ampere 등 arm64에서 Cilium/Tetragon/scx BPF를 돌리는 팀은 JIT 코드 크기와 사이클이 바로 데이터플레인 CPU 비용이므로, 머지 전 벤치·selftest 결과와 Neoverse 모델 가정을 확인할 가치가 있습니다. 시리즈 패치 수·머지 타깃과 llvm-mca가 helper 호출·LSE atomics를 제외한 델타만 반영한다는 전제가 프로덕션과 얼마나 맞는지는 확인이 필요합니다.\n\n> This series changes the arm64 BPF JIT to emit shorter and faster native code for the instruction patterns that LLVM-compiled programs hit in the real world.\n\n[원문 확인](https://lore.kernel.org/bpf/20261027182445.1156335-1-daniel@iogearbox.net/)\n\n**powerpc: Support for generic TIF bits**\n\nMukesh Kumar Chaurasiya V2는 powerpc에 HAVE_GENERIC_TIF_BITS를 켜고 asm-generic/thread_info_tif.h 레이아웃을 따르도록 thread_info.h를 정리하며, arch 전용 TIF 비트를 16번부터 재배치합니다. changelog는 RSEQ_SLICE_EXTENSION·HRTIMER_REARM_DEFERRED·전용 TIF_RSEQ 등 이전에 Kconfig 의존성 때문에 막혀 있던 기능을 powerpc에서 열어 준다고 설명합니다.\n\n영향: powerpc PREEMPT_RT·RSEQ·hrtimer 지터에 관심 있는 독자는 generic TIF 비트가 실제로 selftest(rseq slice, hrtimer-rearm)를 통과하는지와 msuchanek 별도 시리즈와의 스택 순서를 추적해야 합니다. V1 대비 thread_info 비트 재번호화가 out-of-tree KVM·디버거 도구에 미치는 영향은 확인이 필요합니다.\n\n> Enabling HAVE_GENERIC_TIF_BITS unlocks the following features that were previously unavailable on powerpc because their Kconfig dependencies could not be satisfied\n\n[원문 확인](https://patchew.org/linux/20261027074710.129819-1-mkchauras@gmail.com/)\n\n**net: optimize ____napi_schedule() to avoid extra NET_RX_SOFTIRQ**\n\nEric Dumazet upstream 커밋 8b43fd3d1d7d( Wen Yang RT 백포트)은 net_rx_action() 안에서 간접 호출될 때 ____napi_schedule()가 NET_RX_SOFTIRQ를 다시 올리지 않도록 하고, poll_list가 in_net_rx_action 동안 갱신되면 net_rx_action() 루프를 재시작합니다.\n\n영향: PREEMPT_RT backlog-NAPI·RPS 백포트 체인에서 불필요한 NET_RX_SOFTIRQ 재진입을 줄이는 최적화로, RT 네트워킹 백포트 담당자는 in_net_rx_action 전제가 포함된 리비전을 따라가야 합니다. v6.1-rt 15패치 시리즈의 해당 리비전과 6.1-rt에서 raise_softirq_irqoff 유지가 NOHZ ksoftirqd wake 회귀를 다시 열지 않는지는 확인이 필요합니다.\n\n> Idea of this patch is to not raise NET_RX_SOFTIRQ when being called indirectly from net_rx_action(), because we can process poll_list from this point\n\n[원문 확인](https://lkml.iu.edu/2610.1/12840.html)\n\n**bpftool: Apply __bpf_relocatable per record on BTF dump**\n\nIhor Solodrai v2 시리즈(리뷰 중)는 bpftool BTF C 덤프의 전역 Clang pragma 대신 struct/union마다 __bpf_relocatable 선언 속성을 붙여 GCC-BPF도 vmlinux.h에서 CO-RE relocation을 받을 수 있게 합니다. Clang 출력은 동일하고 selftests GCC-BPF는 BPF_NO_PRESERVE_ACCESS_INDEX로 아직 영향 없습니다.\n\n영향: GCC-BPF·CO-RE 워크플로를 RT/관측 BPF 툴체인에 맞추는 팀은 pragma 없이 per-record 속성으로 생성 헤더가 바뀌는지, verifier-rewritten context 타입의 __bpf_static_offset 후속 패치와 함께 봐야 합니다. __bpf_relocatable 매크로 정의에 대한 Nakryiko 질문 반영과 bpf-next v2 8패치 머지 일정은 확인이 필요합니다.\n\n> GCC-BPF supports the attribute but not the pragma, so it gets no CO-RE from the header.\n\n[원문 확인](https://ci.syzbot.org/patches/b4086684-01a0-48aa-a853-47ffff14a5a3)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "bpf: Various arm64 BPF JIT improvements (lore cover)",
+      "url": "https://lore.kernel.org/bpf/20261027182445.1156335-1-daniel@iogearbox.net/",
+      "note": "thread"
+    },
+    {
+      "title": "powerpc: Support for generic TIF bits V2 (Patchew cover)",
+      "url": "https://patchew.org/linux/20261027074710.129819-1-mkchauras@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "net: optimize ____napi_schedule() RT backport (LKML)",
+      "url": "https://lkml.iu.edu/2610.1/12840.html",
+      "note": "thread"
+    },
+    {
+      "title": "PREEMPT_RT net backport series cover (____napi_schedule)",
+      "url": "https://lore.landau.one/lkml/cover.1791912669.git.wen.yang@linux.dev/T/",
+      "note": "thread"
+    },
+    {
+      "title": "bpftool: Apply __bpf_relocatable per record (syzbot patch)",
+      "url": "https://ci.syzbot.org/patches/b4086684-01a0-48aa-a853-47ffff14a5a3",
+      "note": "thread"
+    },
+    {
+      "title": "bpftool __bpf_relocatable (lore review thread)",
+      "url": "https://lore.kernel.org/bpf/d81831c3-85f0-45de-acb2-fbf630bdd573@linux.dev/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-27T18:32:11.944Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
