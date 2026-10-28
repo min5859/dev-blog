@@ -1,0 +1,123 @@
+{
+  "id": "2026-10-29-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-10-29 icache·SSE·KVM — 아키·플랫폼",
+  "headline": "RISC-V icache stale race 수정 논의, SBI SSE v11, arm64 KVM ITS LPI pending 후속, fork 실패 shadow stack 해제, Aspeed flash DT 분리가 메일링 리스트에 올라왔습니다.",
+  "date": "2026-10-29",
+  "summary": "RISC-V는 icache flush 경쟁과 SBI Supervisor Software Events v11이 perf·OpenSBI 연동을 중심으로 진행 중입니다. arm64 KVM ITS LPI, clone3 실패 경로 shadow stack, Aspeed G6 flash DTS 구조 변경도 함께 추적할 항목입니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "riscv: set_icache_stale_mask() icache flush 유실 race",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "RISC-V mm/cacheflush·membarrier·userspace icache prctl 담당",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/101263.html",
+      "if": "비일관 icache SMP에서 JIT·membarrier SYNC_CORE·prctl icache flush를 쓰는 워크로드라면",
+      "do": "Nickolai Zeldovich 패치와 Yury Norov의 cpumask_setall 대안 리뷰 스레드를 따라가며 머지 전후 stale 실행 여부를 재현 테스트하세요",
+      "verify": "VisionFive 2 재현 통계와 Oct 28 리뷰 답글 원문을 확인하세요"
+    },
+    {
+      "title": "riscv: SBI Supervisor Software Events 지원 v11",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "RISC-V arch·SBI·perf/PMU 드라이버 유지보수 담당",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/102328.html",
+      "if": "SIE가 꺼진 구간 PMU 샘플·RAS 알림 경로를 맞춰야 한다면",
+      "do": "Anup Patel v11의 arch·firmware·PMU overflow SSE·perf callchain·selftest와 필요 OpenSBI·Kconfig 조합을 for-next(a5ae1bf65cee) 기준으로 검증하세요",
+      "verify": "v11 cover letter와 ratified SBI v3.0 SSE 문서를 확인하세요"
+    },
+    {
+      "title": "KVM: arm64: vgic-its: LPI pending-state fixes",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "arm64 KVM·GICv3/ITS 유지보수 담당",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-October/1191600.html",
+      "if": "게스트 ITS/LPI DISCARD·CLEAR 경로를 유지보수한다면",
+      "do": "Fuad Tabba 후속 두 패치가 discard·CLEAR 후 pending 제거와 vgic_v3_compute_lr() WARN_ON을 어떻게 막는지 kvmarm/fixes(e99ff76f4a02) 기준으로 리뷰하세요",
+      "verify": "Oct 28 cover letter 원문을 확인하세요"
+    },
+    {
+      "title": "arm64, riscv: failed fork 시 shadow stack 해제",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "arm64 GCS·RISC-V shadow stack(CFI) 담당 및 kselftest 운영자",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/102316.html",
+      "if": "clone3(CLONE_VM|CLONE_PIDFD) 실패 경로에서 GCS·shadow stack VMA를 다룬다면",
+      "do": "Iván Rodriguez v3(4패치)의 exit_thread() 해제와 clone3 pidfd kselftest 포함 여부를 리뷰·머지 일정과 함께 추적하세요",
+      "verify": "Oct 28 v3 cover letter 원문을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**riscv: Fix lost icache flush requests in set_icache_stale_mask()**\n\nNickolai Zeldovich 패치는 set_icache_stale_mask()의 read-modify-write가 concurrent flush_icache_mm() 설정 비트를 지워 deferred icache flush 요청을 잃게 하는 race를, 다른 hart 비트만 cpumask_set_cpu()로 세팅하도록 고친다. VisionFive 2에서 50000회 중 수천 회 stale 실행이 0으로 떨어졌다.\n\n영향: 비일관 icache RISC-V SMP에서 JIT·membarrier SYNC_CORE·prctl icache flush ctx를 쓰는 워크로드는 stale icache 실행으로 잘못된 코드 실행이 가능해 수정·리뷰 논의(cpumask_setall 대안)를 따라갈 필요가 있다.\n\n> v7.3-rc7 unpatched: 13177 and 14362 stale ... v7.3-rc7 + this patch: 0 and 0 stale\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-October/101263.html)\n\n**리뷰: loop vs cpumask_setall 대안**\n\nYury Norov는 Oct 28 답글에서 for-loop 대신 cpumask_setall(mask); __cpumask_clear_cpu(cpu) 형태를 제안했다.\n\n영향: 구현 형태가 v2로 갱신되는지는 아직 확인 필요하다.\n\n> The implementation should avoid the for-loop: cpumask_setall(mask); __cpumask_clear_cpu(cpu);\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-October/102317.html)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**KVM: arm64: vgic-its: LPI pending-state fixes for DISCARD and CLEAR**\n\nFuad Tabba가 DISCARD 수정 후속으로 두 패치를 제출했다. 첫 패치는 discard 후에도 게스트가 LPI를 받을 수 있는 창을 닫고, 둘째는 CLEAR에도 pending 상태 제거를 적용해 경쟁 CLEAR 시 vgic_v3_compute_lr() WARN_ON을 막는다.\n\n영향: arm64 KVM ITS/LPI를 다루는 유지보수자는 게스트가 이미 제거한 인터rupt를 다시 받는 동작과 GICv3 LR 계산 경고가 fixes pull 전에 정리되는지 추적해야 한다. Marc Zyngier cross-vcpu-sync 계열과의 최종 리베이스·머지 시점은 fixes pull 공지 전까지 확인 필요하다.\n\n> The second does for CLEAR what that fix did for DISCARD. Without it, the guest can take an LPI that it has cleared, and a racing CLEAR can trip the WARN_ON() in vgic_v3_compute_lr().\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-arm-kernel/2026-October/1191600.html)\n\n**arm64, riscv: release shadow stacks on failed fork**\n\nIván Rodriguez v3(4패치)는 clone3(CLONE_VM|CLONE_PIDFD)가 put_user()에서 실패한 뒤에도 arm64 GCS·RISC-V shadow stack VMA가 부모 mm에 남던 문제를 exit_thread()에서 해제하도록 연결하고, clone3 pidfd kselftest를 추가한다.\n\n영향: GCS/shadow stack을 쓰는 arm64·riscv 플랫폼은 fork 실패 경로 VMA 누수가 반복 clone3 실패 시 주소 공간을 불필요하게 키우므로 v3 리뷰·머지 여부를 봐야 한다.\n\n> clone3(CLONE_VM|CLONE_PIDFD) can fail in put_user() after copy_thread() has mapped a shadow stack into the shared mm. copy_process() then calls exit_thread(). arm64 and riscv did not implement it, so \n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-October/102316.html)\n\n**riscv: add SBI Supervisor Software Events support**\n\nAnup Patel v11(9패치)는 SBI SSE를 위한 arch 진입·firmware 드라이버·PMU overflow SSE 경로·perf callchain·selftest를 제출했고, for-next(a5ae1bf65cee) 기준으로 리베이스·하드웨어 PMU IRQ/SSE 양쪽 검증을 밝혔다.\n\n영향: RISC-V 서버·perf 담당은 SIE가 꺼진 구간에서도 PMU 샘플·RAS 알림을 받을 NMI 유사 경로가 커널에 들어오는지, 필요 OpenSBI 수정과 Kconfig 조합을 맞춰야 한다. mainline/for-next 머지 일정과 KVM-SSE·hibernation 미지원 한계는 후속 시리즈에 달려 있어 확인 필요하다.\n\n> Delivering overflows through SSE lets perf sample the code that was actually running while interrupts were disabled, rather than the later point where execution reached an interrupt-unmask boundary.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-October/102328.html)\n\n> The SBI Supervisor Software Events (SSE) extension provides a mechanism to inject software events from an SBI implementation to supervisor software such that it preempts all other traps and interrupts\n\n[원문 확인](https://docs.riscv.org/reference/sbi/v3.0/ext-sse.html)\n\n**ARM: dts: aspeed: Move flash nodes out of aspeed-g6.dtsi**\n\nJacky Huang v2(8패치)는 aspeed-g6.dtsi의 board-level SPI NOR flash stub을 각 보드·벤더 DTSI로 옮기고 마지막 패치에서 SoC dtsi stub을 제거한다. 중간 커밋 bisect-safe를 위해 status okay를 유지한다.\n\n영향: Aspeed AST2600 BMC DT를 유지보수하는 엔지니어는 flash 노드가 SoC IP가 아닌 보드 populate로만 남도록 DT 구조가 바뀌면 downstream 보드 DTS 병합 충돌을 예상해야 한다.\n\n> Move SPI NOR flash descriptions out of aspeed-g6.dtsi. The disabled flash@* stubs there describe board population, not SoC IP.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-arm-kernel/2026-October/1191603.html)"
+    },
+    {
+      "heading": "기타",
+      "body": "**arm64, riscv: shadow stack fork 실패 — v2 QEMU 재현 수치(미검증 출처)**\n\nv2 시리즈 문서에는 패치 전 shadow-stack VMA count 1→17, 패치 후 1→1 및 KTAP 3/3 pass가 QEMU 재현으로 적혀 있다.\n\n영향: fork 실패 경로 검증 시 참고할 수 있으나, 해당 스레드 evidence는 verified=false이므로 v3 cover와 kselftest 결과를 우선 확인하세요.\n\n> Unpatched VMA count 1->17. Patched 1->1, 3/3 KTAP pass.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-October/101820.html)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "KVM arm64 vgic-its LPI pending DISCARD/CLEAR follow-up",
+      "url": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-October/1191600.html",
+      "note": "thread"
+    },
+    {
+      "title": "Release shadow stacks on failed fork v3",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/102316.html",
+      "note": "thread"
+    },
+    {
+      "title": "Shadow stack fork failure QEMU repro v2",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/101820.html",
+      "note": "thread"
+    },
+    {
+      "title": "RISC-V SBI SSE support v11",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/102328.html",
+      "note": "thread"
+    },
+    {
+      "title": "SBI v3.0 Supervisor Software Events extension",
+      "url": "https://docs.riscv.org/reference/sbi/v3.0/ext-sse.html",
+      "note": "article"
+    },
+    {
+      "title": "Fix lost icache flush in set_icache_stale_mask",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/101263.html",
+      "note": "thread"
+    },
+    {
+      "title": "Review: cpumask_setall alternative for icache fix",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/102317.html",
+      "note": "thread"
+    },
+    {
+      "title": "Aspeed G6 move flash nodes out of SoC dtsi v2",
+      "url": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-October/1191603.html",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-28T18:30:45.203Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

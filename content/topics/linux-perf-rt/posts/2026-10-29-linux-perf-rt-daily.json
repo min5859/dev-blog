@@ -1,0 +1,123 @@
+{
+  "id": "2026-10-29-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-10-29 ftrace jmp 회귀 — Perf/RT 렌즈",
+  "headline": "x86 ftrace jmp 표시 회귀 수정, TEQL RT 데드락 패치, preempt= 문서 정리, powerpc generic TIF 진행이 RT·BPF 경로에 영향을 줍니다.",
+  "date": "2026-10-29",
+  "summary": "Daniel Borkmann v2는 DYNAMIC_FTRACE_WITH_JMP의 LSB 오인으로 BPF LSM detach 중 page fault가 나던 x86 ftrace 회귀를 bit 63 표시로 고칩니다. Jamal Hadi Salim TEQL raw spinlock 수정, Jinjie Ruan preempt= 문서 패치, Mukesh Kumar Chaurasiya powerpc generic TIF V2가 linux-rt-devel·관련 리스트에서 논의 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "x86/ftrace: Mark jmp mode by clearing bit 63 of trampoline address",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "x86 ftrace/BPF trampoline·BPF LSM 유지보수자, distro 커널 빌드 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20261028173805.1212039-1-daniel@iogearbox.net/",
+      "if": "PREEMPT_RT·BPF LSM·kprobe를 함께 쓰는 x86 배포에서 ftrace direct 갱신 경로를 추적한다면,",
+      "do": "gcc13+CONFIG_CC_OPTIMIZE_FOR_SIZE 조합과 v2 selftest(fentry_kprobe_shared) 머지 여부를 메일·패치 시리즈에서 확인하세요.",
+      "verify": "Borkmann v2 스레드와 bit 63(FTRACE_JMP_BIT) 변경 diff를 원문에서 대조하세요."
+    },
+    {
+      "title": "net/sched: sch_teql: fix slaves_lock IRQ deadlock",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "PREEMPT_RT 네트워킹·netpoll/netconsole·traffic-control 유지보수자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20261028142729.GW257209@horms.kernel.org/",
+      "if": "PREEMPT_RT+netconsole+TEQL 조합을 운영하거나 qdisc 백포트를 검토한다면,",
+      "do": "Fixes e5b811fe7931 체인과 slaves_lock을 raw_spinlock+IRQ save로 통일한 후속 패치를 따라가세요.",
+      "verify": "syzbot 패치 설명과 linux-rt-devel cover에서 netpoll·teql_master_xmit 경로를 원문으로 확인하세요."
+    },
+    {
+      "title": "docs: Remove the unsupported preempt= modes",
+      "priority": "중",
+      "impactType": "project",
+      "affectedAudience": "PREEMPT_RT·PREEMPT_DYNAMIC 배포·문서 유지보수자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20261028024333.795917-1-ruanjinjie@huawei.com/",
+      "if": "ARCH_HAS_PREEMPT_LAZY 아키텍처에서 lazy/full만 선택 가능한 RT·동적 선점 커널을 튜닝한다면,",
+      "do": "kernel-parameters.txt·sched-preemption.rst와 실제 부팅 파라미터 동작이 일치하는지 문서 패치 머지 후 다시 읽으세요.",
+      "verify": "cover에 인용된 7dadeaa6e851·d3d16750693b 이후 none/voluntary 미지원 설명을 스레드에서 확인하세요."
+    },
+    {
+      "title": "powerpc: Support for generic TIF bits",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "powerpc 아키텍처·PREEMPT_RT·RSEQ 유지보수자",
+      "verifyLink": "https://patchew.org/linux/20261027074710.129819-1-mkchauras@gmail.com/",
+      "if": "powerpc에서 PREEMPT_RT·RSEQ slice·deferred hrtimer rearm을 다룬다면,",
+      "do": "Michal Suchánek 선행 패치와 Mukesh V2 generic TIF 스택 순서 및 selftest 결과를 추적하세요.",
+      "verify": "Patchew V2 cover의 HAVE_GENERIC_TIF_BITS·RSEQ_SLICE_EXTENSION·HRTIMER_REARM_DEFERRED 설명을 원문에서 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**x86/ftrace: Mark jmp mode by clearing bit 63 of trampoline address**\n\nDaniel Borkmann v2는 DYNAMIC_FTRACE_WITH_JMP가 LSB로 jmp/call을 구분하면서 홀수 정렬 C 콜백(ftrace_ops_list_func 등)을 잘못 jmp 대상으로 패치해 BPF LSM detach 중 page fault가 나는 회귀를, x86_64 커널 텍스트 bit 63(FTRACE_JMP_BIT)로 jmp 표시를 옮겨 고칩니다.\n\n영향: PREEMPT_RT·BPF LSM·kprobe를 함께 쓰는 x86 배포는 ftrace direct 갱신 경로가 바쁜 훅에서 터질 수 있어, gcc13+CONFIG_CC_OPTIMIZE_FOR_SIZE 조합과 v2 selftest(fentry_kprobe_shared) 머지를 추적해야 합니다.\n\n> ftrace_regs_call then becomes a jmp to the byte before it: ... detaching one of several BPF LSM programs from a busy hook crashed the tasks\n\n[원문 확인](https://lore.kernel.org/bpf/20261028173805.1212039-1-daniel@iogearbox.net/)\n\ns390 등 다른 아키텍처에서 동일 헬퍼 반전 필요 여부와 v1 Kconfig 대안 대 v2 bit-63 시리즈 upstream 채택 순서는 확인이 필요합니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**net/sched: sch_teql: fix slaves_lock IRQ deadlock**\n\nJamal Hadi Salim 후속 패치는 sch_teql master->slaves_lock을 모든 경로에서 raw_spinlock+IRQ save로 잡고, PREEMPT_RT에서 netconsole/netpoll이 이미 local_irq_save()한 채 teql_master_xmit()이 spinlock_t(rtmutex)를 잡으려다 깨지는 데드락을 제거합니다. teql_destroy()의 skb_queue_purge()는 raw 구간 밖으로 옮깁니다.\n\n영향: PREEMPT_RT+netconsole+TEQL 조합은 패닉 없이 nbcon 프린터만으로도 재현 가능한 RT-mutex 규칙 위반이므로, RT 네트워킹·qdisc 백포트 담당자는 Fixes e5b811fe7931 체인을 따라가야 합니다.\n\n> On PREEMPT_RT spinlock_t is an rtmutex ... local_irq_disable(); spin_lock(&lock); as a sequence that breaks\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20261028142729.GW257209@horms.kernel.org/)\n\n**docs: Remove the unsupported preempt= modes**\n\nJinjie Ruan 2패치 시리즈는 CONFIG_PREEMPT_DYNAMIC이 ARCH_HAS_PREEMPT_LAZY 아키텍처에서 preempt=none·preempt=voluntary 파싱을 이미 제거한 뒤에도 kernel-parameters.txt와 sched-preemption.rst가 여전히 런타임 옵션처럼 적어 둔 문서만 고칩니다.\n\n영향: lazy/full만 선택 가능한 RT·동적 선점 커널을 운영하는 팀은 부팅 파라미터·debugfs 문서와 실제 동작 불일치로 잘못된 튜닝을 할 수 있어, 코드 변경은 없지만 운영 가이드 정합성이 중요합니다.\n\n> The none and voluntary preemption models can no longer be selected with CONFIG_PREEMPT_DYNAMIC ... Two documentation files still describe both as runtime options.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20261028024333.795917-1-ruanjinjie@huawei.com/)\n\n**powerpc: Support for generic TIF bits**\n\nMukesh Kumar Chaurasiya는 Michal Suchánek linuxppc-dev 선행 패치 위에 V2 generic TIF 시리즈를 쌓는다고 답했으며, Patchew cover는 HAVE_GENERIC_TIF_BITS로 RSEQ_SLICE_EXTENSION·HRTIMER_REARM_DEFERRED 등 lazy/RT 관련 TIF 의존 기능을 powerpc에서 열어 준다고 설명합니다.\n\n영향: powerpc PREEMPT_RT·RSEQ slice·deferred hrtimer rearm은 TIF 레이아웃에 묶여 있어, 두 시리즈 스택 순서와 selftest 통과 여부가 RT 지터·userspace RSEQ 동작에 직접 영향을 줄 수 있습니다.\n\n> Enabling HAVE_GENERIC_TIF_BITS unlocks the following features that were previously unavailable on powerpc because their Kconfig dependencies could not be satisfied\n\n[원문 확인](https://patchew.org/linux/20261027074710.129819-1-mkchauras@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "x86/ftrace jmp bit 63 — Daniel Borkmann cover",
+      "url": "https://lore.kernel.org/bpf/20261028173805.1212039-1-daniel@iogearbox.net/",
+      "note": "thread"
+    },
+    {
+      "title": "x86/ftrace jmp bit 63 — patch raw",
+      "url": "https://lore-kernel.gnuweeb.org/bpf/20261028173805.1212039-1-daniel@iogearbox.net/raw",
+      "note": "thread"
+    },
+    {
+      "title": "sch_teql slaves_lock IRQ deadlock — Jamal Hadi Salim",
+      "url": "https://lore.kernel.org/linux-rt-devel/20261028142729.GW257209@horms.kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "sch_teql fix — syzbot patch",
+      "url": "https://ci.syzbot.org/patches/2ac6026c-c7a3-4aec-9522-b820c0f0a715",
+      "note": "thread"
+    },
+    {
+      "title": "docs: unsupported preempt= modes — Jinjie Ruan cover",
+      "url": "https://lore.kernel.org/linux-rt-devel/20261028024333.795917-1-ruanjinjie@huawei.com/",
+      "note": "thread"
+    },
+    {
+      "title": "docs: unsupported preempt= modes — series raw",
+      "url": "https://lore-kernel.gnuweeb.org/linux-rt-devel/20261028024333.795917-1-ruanjinjie@huawei.com/",
+      "note": "thread"
+    },
+    {
+      "title": "powerpc generic TIF — Mukesh reply on linux-rt-devel",
+      "url": "https://lore.kernel.org/linux-rt-devel/auIHxotTRFuyJGBv@li-1a3e774c-28e4-11b2-a85c-acc9f2883e29.ibm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "powerpc generic TIF bits V2 — Patchew cover",
+      "url": "https://patchew.org/linux/20261027074710.129819-1-mkchauras@gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-28T18:28:17.621Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,123 @@
+{
+  "id": "2026-10-29-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-10-29 NVKV·soc UAF — 리눅스 툴체인",
+  "headline": "nova-core NVKV v5, SoC 등록 UAF, dyndbg classmap hoist, i386 vmware HB asm, cpufreq kobj release가 Rust·kbuild·clang 경로를 건드립니다.",
+  "date": "2026-10-29",
+  "summary": "Eliot Courtney NVKV v5와 Priya Govindasamy soc dangling pointer 수정은 Rust GSP·FFI 수명 이슈를 전면에 둡니다. Jim Cromie dyndbg v13, Zack Rusin i386 hypercall asm, Ian Rogers cpufreq 4/9는 kbuild·LLVM matrix와 driver-core 머지 순서 논의와 맞물립니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "nova-core NVKV wire format v5",
+      "priority": "상",
+      "impactType": "project",
+      "affectedAudience": "Rust for Linux·nova-core·NVIDIA GSP 드라이버 작성자 및 리뷰어",
+      "verifyLink": "https://patchew.org/linux/20261028-b4-nvkv-v5-0-ef78909b513e@nvidia.com/",
+      "if": "drm-rust-next 기준 nova-core GSP 직렬화·alloc 패턴을 추적 중이라면",
+      "do": "v5 7패치의 nvkv_encode!/nvkv_decode!·GSP_INIT 스키마와 Vec::try_push_init·ArrayVec 변경을 command queue 후속 연동 전에 리뷰하세요",
+      "verify": "patchew 커버에서 NVKV wire format과 \"Future patches will wire this up through the command queue.\" 후속 범위를 확인하세요"
+    },
+    {
+      "title": "SoC bus 미등록 시 dangling UAF",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "Rust for Linux soc 추상화·SoC core 연동 작성자",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/rust-for-linux/cover.1792628232.git.pgovind2@uci.edu/",
+      "if": "Registration::new()와 soc_device_register() 지연 등록 경로를 Rust 모듈에서 쓰고 있다면",
+      "do": "FerroLens가 지적한 early_soc_dev_attr dangling pointer 시나리오와 PoC를 따라 initcall 실패 경로의 drop·수명을 점검하세요",
+      "verify": "커버 스레드에서 soc_device_match() 역참조 UAF 인용과 1/1 diff가 Registration::new()를 어떻게 고치는지 원문을 확인하세요"
+    },
+    {
+      "title": "cpufreq release 정적 초기화와 clang 빌드",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "driver core·cpufreq·LLVM/clang allmodconfig 빌드 담당",
+      "verifyLink": "https://lists.xenproject.org/archives/html/xen-devel/2026-10/msg01590.html",
+      "if": "Ian Rogers kobj_type __must_init 시리즈와 clang -Wuninitialized-explicit-init 빌드를 함께 추적한다면",
+      "do": "cpufreq 4/9의 ondemand·conservative .kobj_type.release 정적 초기화가 driver-core 시리즈와 분리 머지되지 않도록 merge 계획에 넣으세요",
+      "verify": "xen-devel 스레드의 \"This prepares for annotating struct kobj_type::release with __must_init.\"와 Rafael Wysocki의 시리즈 일괄 수용 답변을 확인하세요"
+    },
+    {
+      "title": "dyndbg classmap modname 필터 hoist",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "dynamic_debug·kbuild 유지보수자",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/linux-kbuild/20261027-dd-cmap-part2-clean-v13-21-9267923be612@gmail.com/",
+      "if": "dynamic_debug classmap v13 39패치 리팩터의 회귀 범위를 미리 보려면",
+      "do": "21/39에서 ddebug_add_module()로 올린 classmap-filter-by-modname 매크로가 dynamic_debug_init() mod_name 분할과 맞는지 빌드·모듈 로드 테스트에 반영하세요",
+      "verify": "스레드에서 ddebug_attach_module_classes()에서 ddebug_add_module()로 hoist한 필터 단계 이동 인용을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**rust: soc: avoid dangling attributes when SoC bus is unavailable**\n\nPriya Govindasamy 1패치 시리즈는 FerroLens가 지적한 rust/kernel/soc.rs Registration::new() 경로를 다루며, SoC bus 미등록 시 soc_device_register()가 early_soc_dev_attr에 속성 포인터를 남긴 뒤 NULL을 반환하면 Rust drop으로 UAF가 날 수 있다는 분석과 PoC 모듈을 제출합니다.\n\n영향: Rust↔C soc_device_register() 지연 등록 경로의 수명은 Rust soundness·FFI 검증 관점에서 toolchain 독자가 반드시 봐야 하며, initcall 실패 같은 예외 경로에서도 안전해야 합니다.\n\n> A later call to `soc_device_match()` will dereference this dangling pointer, resulting in a use-after-free bug.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/rust-for-linux/cover.1792628232.git.pgovind2@uci.edu/)\n\nRegistration::new() 수정 diff와 rust-for-linux·C soc core 추가 수정 필요 여부는 확인이 필요합니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**gpu: nova-core: add NVKV codec**\n\nEliot Courtney v5 7패치는 GSP 통신용 NVKV wire format 인코더·디코더, nvkv_encode!/nvkv_decode! 매크로, GSP_INIT 스키마와 rust alloc의 Vec::try_push_init·ArrayVec를 추가합니다. v5에서는 ArrayVec Zeroable 제거·Encoder 실패 시 스트림 불변·KVVec<u64> 등 리뷰 반영이 있습니다.\n\n영향: NVKV는 r570 이후 GMCAPI RPC의 바이너리 계약이며, nova-core Rust GSP 경로에서 펌웨어 메시지 직렬화·alloc API 패턴이 커널 Rust toolchain·드라이버 작성자의 공통 참조가 됩니다.\n\n> This series adds support for the NVKV wire format for communicating with GSP.\n\n[원문 확인](https://patchew.org/linux/20261028-b4-nvkv-v5-0-ef78909b513e@nvidia.com/)\n\n> Future patches will wire this up through the command queue.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/rust-for-linux/20261028-b4-nvkv-v5-0-ef78909b513e@nvidia.com/)\n\ndrm-rust-next/rust-for-linux 머지 일정과 command queue 연동 후속 패치 의존 순서는 확인이 필요합니다.\n\n**dyndbg: hoist classmap-filter-by-modname up to ddebug_add_module**\n\nJim Cromie v13 시리즈 21/39는 modname으로 classmap 부분구간을 찾는 로직을 매크로화하고, ddebug_attach_module_classes() 대신 ddebug_add_module()에서 호출하도록 올려 dynamic_debug_init()의 mod_name 분할과 맞춥니다.\n\n영향: dynamic_debug classmap 리팩터는 kbuild·dyndbg 서브시스템의 모듈별 디버그 descriptor 배치를 바꾸므로, dyndbg 시리즈를 추적하는 빌드·디버그 toolchain 담당자가 회귀 범위를 미리 봐야 합니다.\n\n> And hoist its invocation out of ddebug_attach_module_classes() up into ddebug_add_module(). This moves the filtering step up closer to dynamic_debug_init()\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-kbuild/20261027-dd-cmap-part2-clean-v13-21-9267923be612@gmail.com/)\n\nv13 39패치 upstreaming 일정은 확인이 필요합니다.\n\n**x86/vmware: Fix i386 high-bandwidth hypercall arguments**\n\nZack Rusin v1은 i386에서 프레임 포인터 없이 GCC·Clang이 in6 피연산자를 %esp 기준으로 배치할 때 %ebp push 후 잘못된 값을 읽는 VMware HB hypercall asm 버그를, in6를 %eax에 먼저 스테이징하는 순서로 고칩니다. 2026-10-28 llvm@ 스레드에서 Peter Zijlstra와 convention 논의가 이어졌습니다.\n\n영향: 인라인 asm와 컴파일러 코드생성·UNWINDER_GUESS i386 구성에서 vmwgfx HB hypercall이 잘못된 인자로 동작할 수 있어, clang/GCC 커널 빌드 matrix를 다루는 toolchain 담당자에게 중요합니다.\n\n> On i386 without frame pointers, both GCC and Clang can address the memory-constrained operand relative to %esp. The push then moves the stack and the helpers load the wrong value.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/03/2273)\n\n> x86/vmware: Introduce VMware hypercall API\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=34bf25e820ae)\n\nx86 트리 머지·stable 6.11+ 백포트 일정은 확인이 필요합니다.\n\n**cpufreq: governor: Initialize kobj_type release callback statically**\n\nIan Rogers v2 시리즈 cpufreq 4/9는 ondemand·conservative governor에 .kobj_type.release = cpufreq_dbs_data_release 정적 초기화를 넣고 runtime 할당을 제거합니다. Rafael Wysocki는 2026-10-28 llvm@에서 driver core가 시리즈 전체를 한 번에 받아야 한다고 답했습니다.\n\n영향: struct kobj_type::release에 __must_init(require_explicit_initialization)을 붙이는 Ian Rogers 시리즈는 Clang -Wuninitialized-explicit-init 빌드를 깨므로, cpufreq fix 없이는 llvm 빌드가 깨진다는 merge 순서 논의가 toolchain 독자에게 직접 해당합니다(신뢰도 medium).\n\n> This prepares for annotating struct kobj_type::release with __must_init.\n\n[원문 확인](https://lists.xenproject.org/archives/html/xen-devel/2026-10/msg01590.html)\n\nmaintainer가 fix 없이 시리즈를 나눠 받으면 clang/llvm 빌드가 깨질 수 있다는 Ian Rogers 경고는 llvm@ 스레드에서 추가로 확인하세요.\n\n[원문 확인](https://lore.kernel.org/llvm/CAJZ5v0i0YoOW+ueh_aZJdYVS0etuCqfrf_S0NTKzCE9_6oKxPQ@mail.gmail.com/)\n\nv2 9패치 driver-core 머지 일정은 확인이 필요합니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "NVKV v5 series cover (patchew)",
+      "url": "https://patchew.org/linux/20261028-b4-nvkv-v5-0-ef78909b513e@nvidia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "NVKV v5 rust-for-linux thread",
+      "url": "https://lore-kernel.gnuweeb.org/rust-for-linux/20261028-b4-nvkv-v5-0-ef78909b513e@nvidia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "dyndbg classmap hoist v13 21/39",
+      "url": "https://lore-kernel.gnuweeb.org/linux-kbuild/20261027-dd-cmap-part2-clean-v13-21-9267923be612@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "rust soc dangling attribute cover",
+      "url": "https://lore-kernel.gnuweeb.org/rust-for-linux/cover.1792628232.git.pgovind2@uci.edu/",
+      "note": "thread"
+    },
+    {
+      "title": "vmware i386 HB hypercall fix",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/03/2273",
+      "note": "thread"
+    },
+    {
+      "title": "Introduce VMware hypercall API",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=34bf25e820ae",
+      "note": "commit"
+    },
+    {
+      "title": "cpufreq governor kobj_type release static init",
+      "url": "https://lists.xenproject.org/archives/html/xen-devel/2026-10/msg01590.html",
+      "note": "thread"
+    },
+    {
+      "title": "Ian Rogers llvm merge order discussion",
+      "url": "https://lore.kernel.org/llvm/CAJZ5v0i0YoOW+ueh_aZJdYVS0etuCqfrf_S0NTKzCE9_6oKxPQ@mail.gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-28T18:23:36.687Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
