@@ -1,0 +1,148 @@
+{
+  "id": "2026-10-30-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-10-30 하드닝·stable — 커널 보안",
+  "headline": "linux-hardening에서 nonnull 표준화·seq_buf 오버플로·slab_buckets 부트 정책이 논의되고, 7.2.13·6.18.59 등 stable/LTS 태그가 ChangeLog에 기록됐습니다.",
+  "date": "2026-10-30",
+  "summary": "Andrew Morton은 treewide __nonnull_args() 시리즈를 mm.git로 가져가겠다고 답했고, seq_buf 종료 시 overflowed 플래그 누락 수정과 SLAB_BUCKETS 부트 끄기가 제안됐습니다. 10월 21·26 릴리스의 longterm·stable ChangeLog에는 SMB·GPU·KVM·ntfs3 등 백포트가 묶여 있습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "seq_buf 종료 시 overflowed 플래그 누락",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "seq_buf·tracing·procfs 출력 경로 유지보수자, 커널 hardening 추적자",
+      "verifyLink": "https://lists.openwall.net/linux-hardening/2026/10/29/7",
+      "if": "버퍼가 정확히 꽉 찬 뒤 seq_buf_terminate()나 seq_buf_str()로 NUL을 쓰는 경로를 다룬다면",
+      "do": "overflowed 표시가 누락되지 않도록 패치 논의를 추적하고 /proc·trace call site 영향 범위는 아직 확인되지 않았으니 머지 일정을 함께 확인하세요",
+      "verify": "openwall hardening 스레드 원문에서 terminate 시 마지막 바이트 덮어쓰기와 overflowed 동작을 직접 확인하세요"
+    },
+    {
+      "title": "treewide __nonnull_args() 표준화",
+      "priority": "상",
+      "impactType": "project",
+      "affectedAudience": "커널 하드닝·driver-core·llvm 빌드 담당자",
+      "verifyLink": "https://lists.openwall.net/linux-hardening/2026/10/28/6",
+      "if": "clang/llvm CI나 커널 전역 nonnull 정책을 맞춰야 한다면",
+      "do": "10패치 시리즈가 open-coded __attribute__((nonnull))를 __nonnull_args()로 바꾸는 방향이므로 subsystem 트리 머지 순서는 아직 확정되지 않았음을 감안해 linux-hardening 후속 메일을 따라가세요",
+      "verify": "cover 메일에서 표준화 목적 문구와 Andrew Morton의 mm.git 수렴 답장을 각각 원문 링크로 확인하세요"
+    },
+    {
+      "title": "부트 시 SLAB_BUCKETS 끄기",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "mm/slub 메인테이너, 커널 hardening·distro 이미지 담당자",
+      "verifyLink": "https://lists.openwall.net/linux-hardening/2026/10/29/11",
+      "if": "CONFIG_SLAB_BUCKETS=y 이미지에서 fleet별 hardening 정책을 나눠야 한다면",
+      "do": "slab_buckets= early 파라미터로 부트 시 끌 수 있는 v2 3/6 패치를 검토하고, v2 cover의 다른 hardening 부트 파라미터·프리셋 최종 방향은 확인 중이니 후속 논의를 모니터하세요",
+      "verify": "스레드에서 early 파라미터 설명과 SLAB_BUCKETS가 memdup_user·msg_msg 등 user-controlled 할당용 cache를 두는 목적 인용을 확인하세요"
+    },
+    {
+      "title": "drm/i915 nonnull 패치 drm-intel-next 반영",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "drm/i915·Intel GPU 드라이버 유지보수자, 커널 hardening 추적자",
+      "verifyLink": "https://lists.openwall.net/linux-hardening/2026/10/28/11",
+      "if": "Intel GPU 스택에서 nonnull 하드닝이 CI에 먼저 반영되는지 보려면",
+      "do": "treewide 05/10이 gem·request wait 헬퍼를 __nonnull_args()로 바꾸며, Jani Nikula가 drm-intel-next에 push했다는 lore 답장은 수집 시점 excerpt 기반이므로 openwall 미러 동일 문구는 아직 없을 수 있음을 염두에 두세요",
+      "verify": "05/10 패치 표준화 인용과 lore Jani 답장 원문을 각각 링크에서 대조해 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.2.13 stable**\n\nGreg Kroah-Hartman이 2026-10-26에 Linux 7.2.13 stable을 릴리스했고 ChangeLog-7.2.13에 231건의 upstream 백포ort가 있습니다. CIFS ACL 힙 오버플로·O_TRUNC 데이터 손상, ksmbd/SMB 정보 버퍼 초기화, drm/i915 DMC·amdgpu userq 검증 강화 등이 포함됩니다.\n\n영향: 7.2.y 환경에서 SMB·GPU·네트워크 경로 메모리 안전·무결성 수정을 한 태그로 받을 수 있어 보안 백포트 우선순위의 기준점입니다. 231건 전체 CVE 매핑은 ChangeLog 전수 검증하지 않았습니다.\n\n> Author: Greg Kroah-Hartman <gregkh@linuxfoundation.org>\nDate:   Mon Oct 26 16:01:14 2026 +0100\n\n    Linux 7.2.13\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.13)\n\n**Linux 6.18.59 longterm**\n\nGreg Kroah-Hartman이 2026-10-26에 Linux 6.18.59 LTS를 릴리스했고 ChangeLog-6.18.59에 188건의 백포트가 있습니다. ntfs3 sbi/options UAF·vsock 소스 검증·scsi tape UAF·drm/i915 DMC 파싱 강화 등이 포함됩니다.\n\n영향: 6.18 LTS 기반 제품이 파일시스템·virtio/vsock·테이프·GPU 펌웨어 경로의 최신 메모리 안전 수정을 이번 longterm으로 받습니다. 188건 전체 보안 영향 분류는 수행하지 않았습니다.\n\n> Date:   Mon Oct 26 16:09:28 2026 +0100\n\n    Linux 6.18.59\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.18.59)\n\n**Linux 6.12.114 longterm**\n\nGreg Kroah-Hartman이 2026-10-21에 Linux 6.12.114 LTS를 릴리스했고 ChangeLog-6.12.114에 855건의 백포트가 있습니다. ksmbd krb5_authenticate() 힙 OOB·dm-integrity keyed discard 버퍼 오버플로·KVM x86 MMIO cache 등이 상위에 올라옵니다.\n\n영향: 6.12는 다수 배포판 기반 브랜치라 SMB 서버·device-mapper·KVM 경로 메모리 안전 수정 수확이 보안 유지보수의 핵심입니다. 855건 규모 릴리스의 CVE·취약점 번호 매핑은 확인하지 않았습니다.\n\n> Date:   Wed Oct 21 10:31:09 2026 +0200\n\n    Linux 6.12.114\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.12.114)\n\n**Linux 6.6.160 longterm**\n\nGreg Kroah-Hartman이 2026-10-21에 Linux 6.6.160 LTS를 릴리스했고 ChangeLog-6.6.160에 1643건의 백포트가 있습니다. ksmbd krb5 heap OOB·Bluetooth L2CAP OOB write·KVM x86 MMIO cache·bpf verifier nullness 등이 포함됩니다.\n\n영향: 6.6 LTS 장기 지원 제품이 네트워크·Bluetooth·가상화·BPF 경로의 누적 보안 수정을 대량으로 받는 주요 수확 지점입니다. 1643건 전체 보안 영향 분류는 수행하지 않았습니다.\n\n> Date:   Wed Oct 21 10:28:39 2026 +0200\n\n    Linux 6.6.160\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.6.160)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**seq_buf: Mark a seq_buf overflowed when terminating it loses a byte**\n\nKees Cook 패치는 seq_buf_terminate()/seq_buf_str()가 버퍼가 정확히 꽉 찬 상태에서 NUL을 쓸 때 마지막 데이터 바이트를 덮어도 overflowed를 표시하지 않던 문제를 고칩니다. Steven Rostedt는 seq_buf_putmem()이 이미 NUL을 넣은 경우 terminate가 다시 overflow하지 않아야 한다고 정리했습니다.\n\n영향: /proc·trace 등 seq_buf 사용자가 overflow 상태를 잘못 판단하면 silent truncation·데이터 손상 신호가 사라져 hardening·디버깅에 영향을 줍니다. mainline 머지 일정과 /proc 등 주요 call site 영향 범위는 아직 확인되지 않았습니다.\n\n> writes it over the last byte of the buffer. An overflowed seq_buf has already lost data, but one that is exactly full, as seq_buf_putc(), seq_buf_putmem(), and seq_buf_commit() can leave it, has not\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/10/29/7)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**treewide: switch to __nonnull_args() macro**\n\nDmitry Ilvokhin 10패치 시리즈는 남은 __attribute__((nonnull)) 사용을 __nonnull_args()로 교체해 nonnull 주석을 한곳에 모읍니다. Andrew Morton은 linux-hardening에서 표준 절차로 시리즈 전체를 mm.git에 가져가겠다고 답했습니다.\n\n영향: 커널 전역 nonnull·guard hardening 정책을 일관되게 적용하는 기반 작업으로, clang/llvm CI와 hardening 메인테이너 추적 대상입니다. 개별 패치의 subsystem 트리 머지 순서는 아직 확정되지 않았습니다.\n\n> This series replaces the remaining open-coded __attribute__((nonnull)) users with __nonnull_args() to standardize nonnull attribute usage across the tree.\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/10/28/6)\n\n**mm/slab: Support disabling SLAB_BUCKETS at boot**\n\nChris Down v2 시리즈 3/6은 CONFIG_SLAB_BUCKETS=y 빌드에서 slab_buckets= early 파라미터로 부트 시 SLAB_BUCKETS를 끌 수 있게 합니다. user 크기·내용을 갖는 할당(memdup_user, msg_msg 등)용 별도 kmalloc cache 비용을 런타임에 조절합니다.\n\n영향: 빌드 타임만 선택 가능했던 slab bucket hardening을 단일 커널 이미지에서 부트 정책으로 나눌 수 있어 fleet hardening·mm/slub 설계에 직접 해당합니다.\n\n> Add a slab_buckets= early parameter, enabled by default on kernels built with CONFIG_SLAB_BUCKETS=y, so that it can be turned off at boot.\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/10/29/11)\n\n**drm/gem: Switch to __nonnull_args() macro**\n\ntreewide 07/10은 drm_gem_object_put 경로의 nonnull 속성을 __nonnull_args()로 바꿉니다. Thomas Zimmermann이 compiler_attributes.h 포함 필요 여부를 물었고, Miguel Ojeda·Andy Shevchenko는 대개 types.h 경유로 충분하니 types.h 포함을 확인하라고 답했습니다.\n\n영향: 공용 drm/gem 헤더에서 hardening 매크로를 쓸 때 include 그래프를 잘못 짚으면 드라이버 빌드가 깨질 수 있어 GPU 드라이버·hardening CI에 관련 있습니다.\n\n> Replace __attribute__((nonnull)) with __nonnull_args() to standardize nonnull attribute usage across the tree\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/10/28/10)\n\n**drm/i915: switch to __nonnull_args() macro**\n\ntreewide 05/10은 drm/i915 gem·request wait 헬퍼의 nonnull 속성을 __nonnull_args()로 표준화합니다. Andi Shyti Reviewed-by 뒤 Jani Nikula가 drm-intel-next에 패치를 push했다고 linux-hardening에 알렸습니다.\n\n영향: i915 트리에 먼저 들어가면 Intel GPU 스택에서 nonnull hardening이 실제 빌드·CI에 반영되는 속도가 빨라집니다. lore Jani 답장은 수집 시점 excerpt로 확인했으며 openwall 미러에는 동일 문구가 아직 없을 수 있습니다.\n\n> Replace __attribute__((nonnull)) with __nonnull_args() to standardize nonnull attribute usage across the tree and keep the attribute's quirks in one place\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/10/28/11)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ChangeLog Linux 7.2.13",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.13",
+      "note": "changelog"
+    },
+    {
+      "title": "linux-hardening treewide __nonnull_args cover",
+      "url": "https://lists.openwall.net/linux-hardening/2026/10/28/6",
+      "note": "thread"
+    },
+    {
+      "title": "Andrew Morton mm.git 수렴 답장",
+      "url": "https://lists.openwall.net/linux-hardening/2026/10/29/15",
+      "note": "thread"
+    },
+    {
+      "title": "mm/slab slab_buckets early parameter",
+      "url": "https://lists.openwall.net/linux-hardening/2026/10/29/11",
+      "note": "thread"
+    },
+    {
+      "title": "seq_buf overflowed 플래그 패치",
+      "url": "https://lists.openwall.net/linux-hardening/2026/10/29/7",
+      "note": "thread"
+    },
+    {
+      "title": "Steven Rostedt seq_buf_putmem 논의",
+      "url": "https://lore.kernel.org/linux-hardening/20261029101838.7c34a2f2@gandalf.local.home/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/gem __nonnull_args 07/10",
+      "url": "https://lists.openwall.net/linux-hardening/2026/10/28/10",
+      "note": "thread"
+    },
+    {
+      "title": "Andy Shevchenko types.h 포함 답장",
+      "url": "https://lists.openwall.net/linux-hardening/2026/10/29/25",
+      "note": "thread"
+    },
+    {
+      "title": "drm/i915 __nonnull_args 05/10",
+      "url": "https://lists.openwall.net/linux-hardening/2026/10/28/11",
+      "note": "thread"
+    },
+    {
+      "title": "Jani Nikula drm-intel-next push 알림",
+      "url": "https://lore.kernel.org/linux-hardening/b3045bc3ae77ef78a1f479448a5dc780d89bf38d@intel.com/",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog Linux 6.18.59",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.18.59",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog Linux 6.12.114",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.12.114",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog Linux 6.6.160",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.6.160",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-29T18:21:48.983Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

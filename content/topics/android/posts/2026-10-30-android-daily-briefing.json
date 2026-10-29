@@ -1,0 +1,113 @@
+{
+  "id": "2026-10-30-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-10-30 pKVM·부트·NVMe — Android 커널",
+  "headline": "pKVM IOMMU 음수 domain type 차단, init CLONE_FS 복구, NVMe pci_dev_wait 회귀 수정 등 ACK 회귀·보안 패치가 이어집니다.",
+  "date": "2026-10-30",
+  "summary": "Android Common Kernel에서 pKVM arm-smmu-v3 도메인 검증 보강과 init 부트·NVMe PCI 회귀 완화가 핵심입니다. GKI defconfig KUnit 옵션과 pci-v7.3-fixes-6 머지는 upstream 동기화 맥락에서 확인이 필요합니다.",
+  "tags": [
+    "안드로이드",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "pKVM arm-smmu-v3 음수 domain type 거부",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "Android 16 / 6.12 ACK의 pKVM·IOMMU 스택 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/2231183cf51f939fd2410221c8f862cb419a7c09",
+      "if": "pKVM IOMMU 도메인 할당 경로를 검증한다면",
+      "do": "음수 domain type이 MAX 검사만으로 통과하지 않도록 반영된 커밋을 android16-6.12 트리에 포함했는지 확인하세요",
+      "verify": "링크된 커밋에서 smmu_alloc_domain() 검증 범위와 arm-smmu-v3-kvm 변경을 대조하세요"
+    },
+    {
+      "title": "init pid 1 CLONE_FS 복구",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "ACK mainline 기반 Android 부트·init 통합 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/d82b1e9acccf66dcebefedad2635d28e1d63d895",
+      "if": "mount namespace unshare 이후 펌웨어 로딩 실패가 의심된다면",
+      "do": "kernel_fork()로 pid 1 생성 시 CLONE_FS가 다시 사용되는지 mainline ACK 빌드에서 부트·firmware 로딩을 재검증하세요",
+      "verify": "커밋 설명과 init/main.c 변경을 원문에서 확인하고, upstream fs_struct 분리 대신 영구 해결 일정은 커밋에 없으므로 별도 로드맵은 확인하지 마세요"
+    },
+    {
+      "title": "NVMe pci_dev_wait() ~0 ready 오판 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "ACK에 NVMe·PCIe 스토리지를 탑재하는 SoC/플랫폼 벤더",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/e8df1d194c39b7a5159d570798941851f70a8668",
+      "if": "Intel·Samsung NVMe에서 probe 또는 복구 실패가 보인다면",
+      "do": "RRS SV 사용 시 Vendor ID ~0을 ready로 보지 않도록 한 pci_dev_wait() 수정이 탑재 트리에 있는지 확인하세요",
+      "verify": "원문 인용에 Intel [8086:0a54]·Samsung [144d:a80c] NVMe 사례가 명시되어 있으니 해당 하드웨어로 재현 테스트하세요"
+    },
+    {
+      "title": "cgroup kmi_ext_info 할당 error path",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "ACK android16-6.12 빌드·cgroup/BPF를 쓰는 GKI 벤더",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/7d7af8eda242d2f91457a5973fbb3b8f8784e22e",
+      "if": "cgroup_create() 경로에서 BPF/cgroup 상태 누수나 할당 실패 처리를 점검한다면",
+      "do": "kmi_ext_info를 BPF 상속 전에 할당하고 실패 시 상속 BPF를 정리하는 패치가 android16-6.12에 반영됐는지 확인하세요",
+      "verify": "커밋 메시지의 error code·cleanup 누락 수정 설명과 diff를 대조하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ANDROID: iommu/arm-smmu-v3-kvm: Reject negative domain types**\n\npkvm arm-smmu-v3의 smmu_alloc_domain()이 음수 domain type도 거부하도록 검증 범위를 보강합니다.\n\n영향: 잘못된 domain type이 드라이버 내부에 남는 경로를 차단해 pKVM IOMMU 도메인 할당의 일관성과 격리 안전성을 높입니다.\n\n> smmu_alloc_domain() checks the signed domain type only against KVM_ARM_SMMU_DOMAIN_MAX, so a negative type is accepted and leaves the domain with a type the rest of the driver handles inconsistently.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/2231183cf51f939fd2410221c8f862cb419a7c09)\n\n**ANDROID: init: spawn pid 1 with CLONE_FS**\n\nkernel_fork()로 pid 1을 만들 때 CLONE_FS 플래그를 다시 사용하도록 init/main.c를 되돌립니다.\n\n영향: upstream fs_struct 분리 이후 Android init의 mount namespace unshare가 kworker의 루트 FS 접근을 끊어 펌웨어 로딩이 깨지는 부트 회귀를 완화합니다. upstream fs_struct 분리(14adbd5341aa) 대신 채택할 영구 해결안 일정은 커밋에 없습니다.\n\n> When Android init then unshares its mount namespace, kworkers lose access to the root filesystem, which breaks firmware loading.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/d82b1e9acccf66dcebefedad2635d28e1d63d895)\n\n**PCI: Don't treat ~0 as ready in pci_dev_wait() with RRS SV**\n\nRRS Software Visibility 사용 시 Vendor ID 읽기가 ~0일 때도 기기 준비 완료로 간주하지 않도록 pci_dev_wait() 대기 조건을 수정합니다.\n\n영향: Intel·Samsung NVMe 등에서 조기 ready 판정으로 probe/복구가 실패하는 스토리지 회귀를 완화합니다.\n\n> This was seen with Intel [8086:0a54] and Samsung [144d:a80c] NVMe SSDs.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/e8df1d194c39b7a5159d570798941851f70a8668)\n\n**ANDROID: cgroup: Fix kmi_ext_info alloc error path**\n\ncgroup_create()에서 kmi_ext_info 할당을 BPF 상태 상속 전으로 옮기고, 할당 실패 시 상속된 BPF 상태를 정리·해제하도록 error path를 수정했습니다.\n\n영향: 할당 실패 시 에러 코드 미설정과 BPF/cgroup 상태 누수를 막아 Android cgroup(KMI 확장) 생성 경로의 안정성을 회복합니다.\n\n> cgroup_create does not set an error code or clean up inherited BPF state when kmi_ext_info allocation fails. Allocate kmi_ext_info before inheriting BPF state and free it on the error path.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/7d7af8eda242d2f91457a5973fbb3b8f8784e22e)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**ANDROID: gki_defconfig: enable REFCOUNT_INTERRUPT_KUNIT_TEST**\n\narm64·x86 GKI defconfig에 CONFIG_REFCOUNT_INTERRUPT_KUNIT_TEST=y를 추가해 upstream에서 분리된 KUnit 옵션을 다시 켭니다.\n\n영향: refcount_interrupt KUnit 모듈이 ACK CI/회귀 테스트에 계속 포함되도록 빌드 설정을 upstream Kconfig 변화에 맞춥니다. 원문 인용 검증이 완료되지 않았으므로 커밋 diff에서 Kconfig 항목 추가 여부를 직접 확인하세요.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/83c0e0cc2b172d5dde4d7d7f6259edd30e8748b3)\n\n**Merge tag 'pci-v7.3-fixes-6' of git://git.kernel.org/pub/scm/linux/kernel/git/pci/pci**\n\nACK mainline에 pci-v7.3-fixes-6 태그를 머지해 Samsung NVMe Immediate Readiness quirk와 pci_dev_wait() RRS SV 수정을 포함합니다.\n\n영향: 모바일·데스크톱 Android에서 NVMe/VFIO PCI 경로 회귀를 줄이기 위해 upstream PCI fix batch를 ACK에 동기화합니다. 머지 설명 인용은 검증되지 않았으므로 포함 패치 목록은 머지 커밋과 하위 변경을 원문에서 확인하세요.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/4766082b791b515953d87f7a24c2ea857e6c10b0)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ANDROID: iommu/arm-smmu-v3-kvm: Reject negative domain types",
+      "url": "https://android.googlesource.com/kernel/common/+/2231183cf51f939fd2410221c8f862cb419a7c09",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: init: spawn pid 1 with CLONE_FS",
+      "url": "https://android.googlesource.com/kernel/common/+/d82b1e9acccf66dcebefedad2635d28e1d63d895",
+      "note": "commit"
+    },
+    {
+      "title": "PCI: Don't treat ~0 as ready in pci_dev_wait() with RRS SV",
+      "url": "https://android.googlesource.com/kernel/common/+/e8df1d194c39b7a5159d570798941851f70a8668",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: cgroup: Fix kmi_ext_info alloc error path",
+      "url": "https://android.googlesource.com/kernel/common/+/7d7af8eda242d2f91457a5973fbb3b8f8784e22e",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: gki_defconfig: enable REFCOUNT_INTERRUPT_KUNIT_TEST",
+      "url": "https://android.googlesource.com/kernel/common/+/83c0e0cc2b172d5dde4d7d7f6259edd30e8748b3",
+      "note": "commit"
+    },
+    {
+      "title": "Merge tag 'pci-v7.3-fixes-6'",
+      "url": "https://android.googlesource.com/kernel/common/+/4766082b791b515953d87f7a24c2ea857e6c10b0",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-29T18:05:04.965Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/android-newsletter-from-dossier-ko.md"
+  }
+}

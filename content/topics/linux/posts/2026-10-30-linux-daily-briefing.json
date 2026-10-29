@@ -1,0 +1,133 @@
+{
+  "id": "2026-10-30-linux-daily-briefing",
+  "topic": "linux",
+  "title": "2026-10-30 memcg·btrfs 보안 — 리눅스 개발",
+  "headline": "컨테이너 memory.max를 우회하는 AF_PACKET fanout 할당 이슈와 btrfs 마운트 패닉 수정안이 메일링 리스트에 올라왔고 linux-next 스냅샷이 갱신됐습니다.",
+  "date": "2026-10-30",
+  "summary": "net/packet fanout 그룹이 memcg에 계상되지 않아 cgroup 한도 밖 대량 커널 메모리 사용이 가능하다는 수정안이 논의 중입니다. 같은 날 kernel.org에 next-20261029 linux-next가 등록되어 7.4 머지 전 통합 트리 기준점이 한 단계 앞섰습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "AF_PACKET fanout memcg 미계상",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "cgroup v2·컨테이너 런타임 담당자, net/packet·AF_PACKET 사용자",
+      "verifyLink": "https://lore.kernel.org/lkml/CAASqGyZ-9hqZGWNJShxnrSiXDO==51SVsQW_x_mk993y1pNO8A@mail.gmail.com/",
+      "if": "cgroup v2에서 CAP_NET_RAW·AF_PACKET을 쓰는 경우",
+      "do": "해당 스레드와 패치 v2 제출 여부를 추적하세요",
+      "verify": "lore.kernel.org 원문 스레드에서 재현 수치와 패치 diff를 확인하세요"
+    },
+    {
+      "title": "btrfs 0 stripe 슈퍼블록",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "btrfs 사용자·배포 담당자, stable 백포트 메인테이너",
+      "verifyLink": "https://lore.kernel.org/lkml/179328314071.648427.12527832319954042748@gmail.com/",
+      "if": "비신뢰 btrfs 이미지 마운트·stable 백포트를 다루는 경우",
+      "do": "마운트 전 검증 순서 수정안과 머지 여부를 확인하세요",
+      "verify": "lore.kernel.org 스레드와 Fixes 커밋 참조를 확인하세요"
+    },
+    {
+      "title": "linux-next next-20261029",
+      "priority": "중",
+      "impactType": "release",
+      "affectedAudience": "linux-next 추적 개발자, 서브시스템 메인테이너, 커널 CI 담당자",
+      "verifyLink": "https://www.kernel.org/releases.json",
+      "if": "linux-next 기준으로 서브시스템 통합을 보는 경우",
+      "do": "releases.json과 태그 커밋으로 스냅샷 날짜를 맞추세요",
+      "verify": "kernel.org releases.json과 googlesource 태그 로그를 확인하세요"
+    },
+    {
+      "title": "Linux 7.2.13 stable",
+      "priority": "중",
+      "impactType": "backport",
+      "affectedAudience": "stable·enterprise 커널 유지보수자, CIFS/NTFS·GPU·sched_ext 사용자",
+      "verifyLink": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.13",
+      "if": "7.2.x stable을 프로덕션에 쓰는 경우",
+      "do": "231건 백포ort 중 SMB·스케줄러·GPU 항목을 배포 계획에 반영하세요",
+      "verify": "ChangeLog-7.2.13에서 해당 서브시스템 줄을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux next-20261029 linux-next**\n\n2026-10-29에 kernel.org releases.json에 next-20261029가 linux-next로 등록되었고, Mark Brown이 a39c950 커밋으로 해당 날짜용 linux-next 파일 태그를 달았습니다.\n\n영향: 7.4 머지 윈도 전 서브시스템 통합·충돌·빌드 회귀를 추적하는 벤치마크 트리 기준점이 갱신됩니다.\n\n> \"moniker\": \"linux-next\",\n \"version\": \"next-20261029\",\n \"released\": {\n \"isodate\": \"2026-10-29\"\n }\n\n[원문 확인](https://www.kernel.org/releases.json)\n\n**Linux 7.3 mainline**\n\n어제 다룬 7.3 메인라인(2026-10-18 태그)은 이번 수집에서 추가 릴리스·로드맵 변화가 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**net/packet: charge fanout groups to the memory cgroup**\n\nPACKET_FANOUT 그룹 할당(fanout_add)이 memcg에 계상되지 않아 memory.max 한도를 우회할 수 있다는 패치가 제출됐고, GFP_KERNEL_ACCOUNT로 바꾸면 동일 재현에서 cgroup OOM으로 제한됩니다. v2에서 net/packet 전체 할당을 한 패치로 다루겠다는 응답이 있으나, v1은 diff 손상으로 큐에 그대로 머지되지 않았으며 v2 제출·머지 여부는 확인하지 못했습니다.\n\n영향: 컨테이너 환경에서 CAP_NET_RAW 프로세스가 노드 OOM을 유발할 수 있어 memcg 계상 누락 추적이 필요합니다.\n\n> In a cgroup with memory.max set to 16M, 256 sockets each creating a group with max_num_members = 65536 took 264 MB of system memory while memory.current grew by 380 KB.\n\n[원문 확인](https://lore.kernel.org/lkml/CAASqGyZ-9hqZGWNJShxnrSiXDO==51SVsQW_x_mk993y1pNO8A@mail.gmail.com/)\n\n**btrfs: reject zero num_stripes in the system chunk array**\n\nvalidate_sys_chunk_array()가 num_stripes==0인 시스템 청크를 btrfs_chunk_item_size() 호출 전에 거부하지 않아 조작된 슈퍼블록 마운트 시 kernel BUG가 납니다. 패치는 0 stripe를 -EUCLEAN으로 먼저 거부하며 Fixes 2a9bb78cfd36 회귀입니다. linux-next·stable 머지 여부는 확인하지 못했습니다.\n\n영향: 악의적·손상된 btrfs 이미지가 마운트 경로에서 커널 패닉을 유발할 수 있습니다.\n\n> Reject zero stripes in validate_sys_chunk_array() before calling btrfs_chunk_item_size(), so the crafted superblock is rejected with -EUCLEAN before the assertion is evaluated.\n\n[원문 확인](https://lore.kernel.org/lkml/179328314071.648427.12527832319954042748@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Linux 7.2.13 stable**\n\nGreg Kroah-Hartman이 2026-10-26에 Linux 7.2.13 stable을 릴리스했으며 ChangeLog에는 릴리스 커밋 외 231건의 백포ort가 있습니다.\n\n영향: 7.2.x stable 환경에 SMB/NTFS·sched_ext·workqueue·amdgpu·i915·CIFS heap overflow 등 수정이 포함됩니다.\n\n> smb: client: fix heap overflow in cifs_do_set_acl()\n    smb: client: fix data corruption with concurrent writes and O_TRUNC\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.13)\n\n**Linux 6.18.59 longterm**\n\n2026-10-26 longterm 6.18.59는 이미 다룬 항목으로, 이번 수집에서 ChangeLog 외 추가 진척은 없습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "Qualcomm IPA(modem) 전용 드라이버 probe 경로 double-free 수정 후보는 일반 서버·데스크톱 배포 범위 밖이라 본문에서 제외했습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ChangeLog-7.3",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.3",
+      "note": "changelog"
+    },
+    {
+      "title": "LWN Linux 7.3 summary",
+      "url": "https://lwn.net/Articles/1101143/",
+      "note": "article"
+    },
+    {
+      "title": "ChangeLog-7.2.13",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.13",
+      "note": "changelog"
+    },
+    {
+      "title": "kernel.org releases.json",
+      "url": "https://www.kernel.org/releases.json",
+      "note": "changelog"
+    },
+    {
+      "title": "linux-next tag next-20261029 log",
+      "url": "https://kernel.googlesource.com/pub/scm/linux/kernel/git/next/linux-next/+log/refs/tags/next-20261029?n=1",
+      "note": "commit"
+    },
+    {
+      "title": "net/packet fanout memcg thread",
+      "url": "https://lore.kernel.org/lkml/CAASqGyZ-9hqZGWNJShxnrSiXDO==51SVsQW_x_mk993y1pNO8A@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "net/packet v2 response thread",
+      "url": "https://lore.kernel.org/lkml/CAASqGyYuJCObsoPsifvbksJqjtyx4sPZKNzCb4eo8HG_CjW+=A@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-6.18.59",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.18.59",
+      "note": "changelog"
+    },
+    {
+      "title": "btrfs zero stripes patch thread",
+      "url": "https://lore.kernel.org/lkml/179328314071.648427.12527832319954042748@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "btrfs review by Filipe Manana",
+      "url": "https://lore.kernel.org/lkml/CAL3q7H6tz-YXxtTk3MVm7cLAQh1coBAkcF7KkH+GUwZnznnFrQ@mail.gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-29T18:03:33.529Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-newsletter-from-dossier-ko.md"
+  }
+}

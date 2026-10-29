@@ -1,0 +1,128 @@
+{
+  "id": "2026-10-30-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-10-30 PM stub·PSR 회귀 — Linux GPU·AI",
+  "headline": "CONFIG_PM=n에서 GPU 드라이버 runtime 오동작을 고치는 PM stub 수정과 amdgpu PSR·nouveau PWM 회귀 패치가 dri-devel에 올라왔습니다.",
+  "date": "2026-10-30",
+  "summary": "Intel Xe Nova Lake page reclaim WA와 Qualcomm MDSS DT 리셋 시리즈 등 bring-up·runtime 패치가 이어졌습니다. 회귀 수정은 Fixes 커밋과 재현 시나리오가 패치 본문에 명시돼 있습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "drm/amd/display: modeset 전 모든 스트림 self-refresh 해제",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "drm/amd/display·PSR/Replay·DMUB 담당자",
+      "verifyLink": "https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg648013.html",
+      "if": "eDP PSR 유지 중 HDMI 분리·modeset 시 DMUB command queue 오류로 eDP가 GPU reset까지 freeze되는 Cezanne(DCN 2.1) 경로를 다루신다면",
+      "do": "power module(3c108046e1d6) 이후 commit CRTC만 PSR을 끄던 동작과 Fixes 대상 커밋·DMUB firmware 상호작용을 패치 본문 기준으로 검토하세요",
+      "verify": "Cezanne ROG Flow X13 재현 외 DMUB/DCN 조합 추가 보고는 확인하지 않았으므로, 동일 증상이면 원문 스레드와 Fixes 커밋을 대조하세요"
+    },
+    {
+      "title": "PM: !CONFIG_PM에서 pm_runtime_get_if_active() stub이 1 반환",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "CONFIG_PM=n 빌드를 쓰는 drm/xe·i915·msm 등 GPU/가속 드라이버 담당자",
+      "verifyLink": "https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg648001.html",
+      "if": "distro minimal config나 CI에서 PM 비활성 커널로 xe·i915 등을 빌드한다면",
+      "do": "ret>0/ret==1 검사와 xe_pm.c 호출부가 active로 취급되는지 패치 설명(Pattern C)대로 영향 범위를 점검하세요",
+      "verify": "코어 PM 변경의 linux-pm@ 리뷰·머지 경로는 dossier에서 확인하지 않았으므로, 머지 전 원문과 리뷰 채널을 확인하세요"
+    },
+    {
+      "title": "drm/nouveau/therm: fan PWM duty readback에서 update 비트 마스크",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "drm/nouveau therm·fan PWM 담당자",
+      "verifyLink": "https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg648017.html",
+      "if": "nv50/gf119 PWM 팬 duty 경로에서 열·소음 제어 이상을 추적 중이라면",
+      "do": "Fixes(cb9fa62671ac) 이후 오래된 회귀인지와 백포트 필요성을 패치 본문의 wrap 재현 설명과 함께 판단하세요",
+      "verify": "duty readback 시 bit 31 sticky로 0% wrap되는 인용은 원문 스레드에서 다시 확인하세요"
+    },
+    {
+      "title": "drm/xe: Nova Lake(3510) WA 14028250015",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "drm/xe·Intel Nova Lake GuC/page reclaim 담당자",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/dri-devel/20261029181039.598756-2-alan.previn.teres.alexis@intel.com/raw",
+      "if": "Nova Lake에서 page reclaim HW assist와 GuC 70.78+ 조건을 bring-up 중이라면",
+      "do": "PRL assist와 이 WA의 상호작용을 xe_wa_oob.rules(GRAPHICS_VERSION 3510) 추가 내용과 함께 추적하세요",
+      "verify": "drm/xe-next 머지·selftest 일정은 확인하지 않았으므로, 일정은 원문 제출 상태를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm/nouveau/therm: mask the update bit when reading back the fan PWM duty**\n\nnv50/gf119 fan PWM duty 읽기 시 0xe118 bit 31(update)이 sticky로 읽히면 duty가 0%로 wrap되어 fan 제어가 3%씩 재램핑되는 버그를, readback에서 update 비트를 마스크해 수정합니다.\n\n영향: NVIDIA GPU PWM 팬 경로에서 열·소음 제어가 잘못된 duty로 동작할 수 있어, nouveau therm/PM 담당자는 Fixes 커밋 이후 오래된 회귀인지 백포트 필요성을 봐야 합니다.\n\n> duty * 100 wraps around in u32 (0x80000000 * 100 == 0 mod 2^32): the fan speed reads as 0%.\n\n[원문 확인](https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg648017.html)\n\n**drm/amd/display: Take every stream out of self-refresh before a modeset**\n\npower module 리팩터(3c108046e1d6) 이후 commit CRTC만 PSR/replay를 끄던 동작을 보완해, modeset 전 mod_power가 추적하는 모든 스트림에서 psr/replay pause 이벤트를 올리고 self-refresh 종료를 기다립니다.\n\n영향: eDP PSR 유지 채 HDMI 분리·modeset 시 DMUB command queue 오류로 eDP가 GPU reset까지 freeze되는 Cezanne(DCN 2.1) 회귀를 막습니다.\n\n> Error queueing DMUB command: status=2\n>\n> The eDP then stays frozen until a GPU reset\n\n[원문 확인](https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg648013.html)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/msm/mdss: reset all MDSS block resets described in DT**\n\nRFC에서 거부됐던 dispcc 쪽 전체 MDSS 리셋 대신, DT에 나열된 MDSS 블록 리셋(코어·INT2·RSC)을 msm_mdss_reset()이 모두 assert하도록 하는 v2 3패치 시리즈입니다. SM8750 dtsi·binding 예시만 갱신하고 minItems=1로 기존 단일 리셋 DT는 그대로 통과합니다.\n\n영향: 부트로더가 디스플레이를 켠 채 넘긴 보드에서 첫 DPMS 시 command DMA 타임아웃·패널 미기동 이슈를 겨냥하므로, SM8750·동일 3-reset SoC 담당자는 리셋 순서와 하드웨어 미검증 상태를 리뷰해야 합니다(작성자는 아직 하드웨어에서 돌리지 않았고, dispcc PLL 프로그래밍 이후 리셋 순서 충분 여부는 리뷰 요청 상태입니다).\n\n> This version therefore leaves the clock driver completely alone and moves the resets to the display side, where they already live:\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/20261029123238.29877-1-xiaqinghuan@mail.ustc.edu.cn/raw)\n\n**drm/xe: Add support for WA 14028250015**\n\nNova Lake(graphics version 3510)에서 page reclaim HW assist 사용 시 GuC KLV로 WA 14028250015를 켜, 오류로 끝난 page reclaim 요청이 pending으로 남지 않고 GuC가 완료하도록 합니다(GuC 70.78+ 조건).\n\n영향: Xe page reclaim·TLB/PPC flush 경로는 Nova Lake bring-up과 GuC FW 버전에 민감합니다.\n\n> It makes the GuC complete page reclaim requests that end in an error, instead of leaving them pending. This WA only applies to Nova Lake (graphics version 3510).\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/20261029181039.598756-2-alan.previn.teres.alexis@intel.com/raw)\n\n**PM: runtime: change stub pm_runtime_get_if_active() return 1 when !CONFIG_PM**\n\n!CONFIG_PM 빌드에서 pm_runtime_get_if_active() stub이 -EINVAL 대신 1을 반환해, pm_runtime_get()·pm_runtime_active()와 같이 장치를 active로 취급합니다.\n\n영향: ret>0/ret==1 검사를 쓰는 drm/xe·i915·ivpu 등 GPU 스택이 PM 비활성 커널에서 오류 경로·WARN·USB offload -EBUSY에 빠지던 문제를 고칩니다.\n\n> When CONFIG_PM is not enabled, all devices runtime PM state should be treated as active.\n\n[원문 확인](https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg648001.html)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "medium",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/msm/mdss MDSS block resets (cover letter)",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/20261029123238.29877-1-xiaqinghuan@mail.ustc.edu.cn/raw",
+      "note": "thread"
+    },
+    {
+      "title": "drm/msm/mdss msm_mdss_reset() DT resets",
+      "url": "https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg648018.html",
+      "note": "thread"
+    },
+    {
+      "title": "drm/nouveau/therm fan PWM duty readback",
+      "url": "https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg648017.html",
+      "note": "thread"
+    },
+    {
+      "title": "drm/nouveau/therm Fixes reference",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/20261029130012.21738-1-xnderv@yandex.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "drm/xe WA 14028250015",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/20261029181039.598756-2-alan.previn.teres.alexis@intel.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "PM pm_runtime_get_if_active stub (!CONFIG_PM)",
+      "url": "https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg648001.html",
+      "note": "thread"
+    },
+    {
+      "title": "PM stub drm/xe caller analysis",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/20261029163044.3062958-1-Frank.Li@oss.nxp.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "drm/amd/display self-refresh before modeset",
+      "url": "https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg648013.html",
+      "note": "thread"
+    },
+    {
+      "title": "drm/amd/display Fixes power module",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/20261029165420.2255749-1-hugo@hsal.es/raw",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-29T18:33:38.026Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
