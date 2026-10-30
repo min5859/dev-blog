@@ -1,0 +1,93 @@
+{
+  "id": "2026-10-31-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-10-31 btrfs RT 라이브락 — Perf/RT 렌즈",
+  "headline": "btrfs wait_for_commit() PREEMPT_RT 라이브락 수정과 io_uring NAPI UAF 패치 논쟁이 RT 스토리지·io_uring 경로 점검을 촉발합니다.",
+  "date": "2026-10-31",
+  "summary": "Daniel Vacek 패치는 PREEMPT_RT에서 trans_lock이 rt_mutex일 때 RR sync()가 trans_list 정리 순서 때문에 wait_for_commit() 라이브락에 빠지는 문제를 transaction.c·disk-io.c 순서 변경으로 고칩니다. Anvik Loitongbam io_uring NAPI list_for_each_entry_safe 패치는 PREEMPT_RT·kfree_rcu 조합 UAF를 주장하지만 Jens Axboe는 RT spin_lock이 rcu_read_lock()을 잡아 불필요하다고 답했습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "btrfs: fix a livelock in wait_for_commit() on PREEMPT_RT",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "PREEMPT_RT·btrfs·스토리지 스택 유지보수자, RR 실시간 태스크와 sync()를 함께 쓰는 배포 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20261030153617.329733-1-neelx@suse.com/",
+      "if": "PREEMPT_RT 위 btrfs에서 SCHED_RR 태스크가 sync()를 반복하는 워크로드를 운영한다면,",
+      "do": "Fixes 5fd76bf31ccfe 이후 stable 5.15+ 백포트 CC와 Peter Naulls 재현 스레드를 함께 추적하세요.",
+      "verify": "cover의 trans_list 선 제거·COMPLETED 전환 순서와 linux-rt-devel 원문 diff를 대조하세요."
+    },
+    {
+      "title": "io_uring/napi: fix list use-after-free on PREEMPT_RT",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "PREEMPT_RT·io_uring·NAPI 경로 유지보수자",
+      "verifyLink": "https://patchew.org/linux/20261029102244.141621-1-permissiontogallop@gmail.com/",
+      "if": "PREEMPT_RT에서 io_uring NAPI 리스트 해제 경로를 유지보수한다면,",
+      "do": "제보자 RT 빌드 재현 결과와 maintainer 반박을 병행해 패치 채택·cleanup-only 여부를 확인하세요.",
+      "verify": "Patchew 스레드와 Jens Axboe 답장에서 napi_lock·kfree_rcu·RCU 해석을 원문으로 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**io_uring/napi: fix list use-after-free on PREEMPT_RT**\n\nAnvik Loitongbam 패치는 io_uring NAPI 리스트 해제 루프를 list_for_each_entry_safe로 바꾸며, PREEMPT_RT에서 spinlock_t가 rtmutex라 kfree_rcu()와 RCU grace period가 루프 중 iterator를 깨뜨릴 수 있다고 주장합니다.\n\n영향: PREEMPT_RT에서 spin_lock이 RCU read-side critical section인지에 대한 해석이 갈리므로, io_uring NAPI·kfree_rcu·RT spinlock 조합을 쓰는 팀은 maintainer 반박과 패치 채택 여부를 같이 봐야 합니다.\n\n> On PREEMPT_RT, spinlock_t is an rtmutex and the task can be preempted while holding ctx->napi_lock.\n\n[원문 확인](https://patchew.org/linux/20261029102244.141621-1-permissiontogallop@gmail.com/)\n\nJens Axboe는 RT spin_lock이 rcu_read_lock()을 잡아 napi_lock 해제 전까지 kfree_rcu 콜백이 돌 수 없다며 패치가 불필요하다고 답합니다.\n\n> IOW, I think this patch is unnecessary - there's no bug there. The list safe change could be done as a cleanup, but it's not a fix.\n\n[원문 확인](https://lore.jethome.com/lkml/502f31ed-dd70-469c-b433-577ccee36c3f@kernel.dk/)\n\nRT spinlock 구현 문서는 rtmutex 구간 전체에 rcu_read_lock()을 취한다고 설명합니다.\n\n> The RT substitutions explicitly disable migration and take rcu_read_lock() across the lock held section.\n\n[원문 확인](https://git.yoctoproject.org/linux-yocto-dev/plain/kernel/locking/spinlock_rt.c)\n\n제보자 RT 빌드 UAF 재현 실패 이유·추가 테스트 계획과 list_for_each_entry_safe만의 cleanup upstream 반영 여부는 확인이 필요합니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**btrfs: fix a livelock in wait_for_commit() on PREEMPT_RT**\n\nDaniel Vacek 패치는 PREEMPT_RT에서 fs_info::trans_lock이 rt_mutex가 된 뒤 RR sync() 작업이 trans_list에서 완료 트랜잭션을 내리지 못해 wait_for_commit()이 도는 라이브락을, TRANS_STATE_COMPLETED로 바꾸기 전에 trans_list에서 먼저 제거하도록 transaction.c·disk-io.c 정리 순서를 바꿉니다.\n\n영향: btrfs 위 PREEMPT_RT·SCHED_RR 워크로드는 sync() 기아로 파일시스템이 멈춘 것처럼 보일 수 있어, Fixes 5fd76bf31ccfe 이후 stable 5.15+ 백포트와 Peter Naulls 재현 스레드를 함께 추적해야 합니다.\n\n> running multiple RR tasks doing sync() on fully preemptible kernel may starve other/normal sync() tasks due to fs_info::trans_lock turned into rt_mutex.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-rt-devel/20261030153617.329733-1-neelx@suse.com/raw)\n\n> We simply delist the transactions before changing them to completed state. That breaks the loop condition.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20261030153617.329733-1-neelx@suse.com/)\n\n패치는 Fixes 5fd76bf31ccfe(relocation crash 조기 return 수정)에서 도입된 트랜잭션 정리 순서와 연관됩니다.\n\n> btrfs: fix relocation crash due to premature return from btrfs_commit_transaction()\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=5fd76bf31ccfe)\n\nlinux-btrfs 원본 Peter Naulls 보고 스레드의 최종 maintainer 반응과 stable 큐에 CC된 5.15+ 백포트 일정은 확인이 필요합니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "btrfs PREEMPT_RT livelock — Daniel Vacek cover (raw)",
+      "url": "https://lore-kernel.gnuweeb.org/linux-rt-devel/20261030153617.329733-1-neelx@suse.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "btrfs PREEMPT_RT livelock — Daniel Vacek thread",
+      "url": "https://lore.kernel.org/linux-rt-devel/20261030153617.329733-1-neelx@suse.com/",
+      "note": "thread"
+    },
+    {
+      "title": "btrfs relocation crash fix 5fd76bf31ccfe",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=5fd76bf31ccfe",
+      "note": "commit"
+    },
+    {
+      "title": "io_uring/napi PREEMPT_RT — Anvik Loitongbam Patchew",
+      "url": "https://patchew.org/linux/20261029102244.141621-1-permissiontogallop@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "io_uring/napi — Jens Axboe maintainer reply",
+      "url": "https://lore.jethome.com/lkml/502f31ed-dd70-469c-b433-577ccee36c3f@kernel.dk/",
+      "note": "thread"
+    },
+    {
+      "title": "RT spinlock implementation spinlock_rt.c",
+      "url": "https://git.yoctoproject.org/linux-yocto-dev/plain/kernel/locking/spinlock_rt.c",
+      "note": "article"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-30T18:27:21.623Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
