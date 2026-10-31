@@ -1,0 +1,130 @@
+{
+  "id": "2026-11-01-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-11-01 i915 MST·Adreno TS — GPU·AI",
+  "headline": "i915 MST ACT 3초 대기 회피와 Adreno monotonic timestamp v2가 dri-devel에서 동시에 논의됐습니다.",
+  "date": "2026-11-01",
+  "summary": "MTL+Thunderbolt 4 도크 뒤 HPD glitch 시 i915가 topology 밖 connector에서 ACT를 기다리며 검은 화면이 나는 경로를 고치는 패치와, power collapse 뒤 GPU timestamp 역행을 막는 msm 시리즈가 올라왔습니다. drm core MST payload bool 반환과 atomic panel 시리즈 land 일정도 함께 추적할 가치가 있습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "drm",
+    "GPU"
+  ],
+  "highlights": [
+    {
+      "title": "i915 dp_mst: upstream HPD drop 뒤 3초 ACT 타임아웃 회피",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "drm/i915 display·DP MST·Thunderbolt dock topology 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/dri-devel/20261031154456.465469-1-xiaolu.xie@intel.com/raw",
+      "if": "MTL+Thunderbolt 4 dock 뒤 TV 전원 등으로 HPD가 잠깐 끊기는 환경에서 display를 다룬다면",
+      "do": "머지 전까지 유사 glitch 시 약 5초 검은 화면과 ACT 타임아웃 로그 가능성을 두고 패치·work item 17741 진행을 추적하세요",
+      "verify": "커버레터 로그 분석과 Intel i915 GitLab work item 원문을 확인하세요"
+    },
+    {
+      "title": "drm/msm/adreno: power collapse 후 timestamp monotonic 유지",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "drm/msm·Adreno timestamp·Mesa freedreno/Vulkan/OpenCL 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/dri-devel/20261031-b4-adreno-timestamp-v2-0-0836856b228f@oss.qualcomm.com/raw",
+      "if": "runtime suspend 뒤 GL/Vulkan/OpenCL 타이머·profiling·CTS를 검증한다면",
+      "do": "커널 v2 시리즈와 Mesa MR 45806 userspace offset 경로를 함께 맞추세요",
+      "verify": "커버레터의 suspend 역행 설명과 Mesa MR 45806을 확인하세요"
+    },
+    {
+      "title": "drm/dp_mst: drm_dp_remove_payload_part1() bool 반환",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "drm/dp_mst core·MST payload/ACT 경로를 쓰는 GPU display driver 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/dri-devel/sashiko-outbox-192030@kernel.org/raw",
+      "if": "MST payload 제거·ACT wait 조건을 driver에서 다룬다면",
+      "do": "send_remove 판정과 실제 remote write 불일치 가능성을 염두에 두고 maintainer follow-up 여부를 확인하세요",
+      "verify": "Sashiko Medium 코멘트와 패치의 bool semantics 원문을 확인하세요"
+    },
+    {
+      "title": "drm/panel: atomic state 시리즈 분할 land",
+      "priority": "중",
+      "impactType": "project",
+      "affectedAudience": "drm/panel·drm_bridge·embedded DSI/panel driver 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/dri-devel/py3tch5wmx4g2zjpebzbgtpwji4ci3vk5obeuy44fbi4vw2em2@gpjmxyvwpimn/raw",
+      "if": "mode-dependent panel·bridge opt-in API를 integrator 관점에서 추적한다면",
+      "do": "patch 14 ack·Luca 테스트와 patches 15+ repost 일정을 메일링 리스트에서 확인하세요",
+      "verify": "Oct 31 스레드와 시리즈 rationale 스레드 원문을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/i915/dp_mst: Avoid the 3 s ACT timeouts after the upstream HPD drops**\n\n2패치 시리즈는 upstream HPD가 잠깐 끊긴 뒤 MST topology가 재구성될 때 i915가 이미 topology 밖인 connector에 link retrain·payload ACT를 기다려 3초씩 두 번 타임아웃하는 경로를 고칩니다. drm core에서 drm_dp_remove_payload_part1()의 bool 반환을 쓰고, disconnected MST stream에서는 retrain과 ACT wait를 건너뜁니다.\n\n영향: MTL+Thunderbolt 4 dock 뒤 TV 전원 시 약 5초 검은 화면과 \"Failed to get ACT after 3000 ms\"가 재현됐으므로, 머지 전까지 유사 HPD glitch 시 UX 지연을 예상해야 합니다. 작성자는 리포터 하드웨어에서 아직 직접 테스트하지 않았다고 명시했으며, patch 1의 drm-misc-next 분리·upstream 일정은 확인되지 않았습니다.\n\n> drm_dp_remove_payload_part1() prints \"not in topology, not sending remove\", and the disable waits another 3 s for an ACT.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/20261031154456.465469-1-xiaolu.xie@intel.com/raw)\n\n**drm/msm/adreno: keep the GPU timestamp monotonic across power collapse**\n\nv2 4패치 시리즈는 runtime suspend마다 GPU always-on counter가 리셋되는 a5xx/a6xx 및 a750 이전 GMU Adreno에서 CLOCK_MONOTONIC 기반 offset과 GPU-readable vdso page를 두고 MSM_PARAM_TIMESTAMP_MONOTONIC을 추가합니다. MSM_PARAM_TIMESTAMP는 GPU가 쓰는 raw counter 그대로 둡니다.\n\n영향: GL_TIMESTAMP·Vulkan calibrated timestamp·OpenCL device timer가 suspend 뒤 역행하면 profiling·sync·CTS가 깨지므로, freedreno/Mesa 스택은 커널 MR과 Mesa MR 45806을 함께 맞춰야 합니다. v2는 vdso page·MSM_PARAM_VDSO_IOVA를 patch 1/4로 분리했으며, Sashiko가 msm_gpu_init fail path에서 double put 가능성을 지적했습니다.\n\n> GL_TIMESTAMP, Vulkan calibrated timestamps and clGetDeviceAndHostTimer() go backwards after every runtime suspend.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/20261031-b4-adreno-timestamp-v2-0-0836856b228f@oss.qualcomm.com/raw)\n\n**drm/msm: share a page of kernel state with the GPU**\n\nadreno timestamp v2 1/4는 PAGE_SIZE read-only GPU vdso page를 msm_gem으로 할당하고 command stream이 읽을 kernel state(타imestamp offset 등)를 담으며 IOVA를 MSM_PARAM_VDSO_IOVA로 노출합니다.\n\n영향: GPU가 offset page를 읽어 userspace와 동일한 monotonic 보정을 할 수 있게 하는 기반이지만, Sashiko는 msm_gpu_init() 실패 시 vdso/memptrs BO에 대한 double msm_gem_kernel_put·UAF 가능성을 High로 올려 msm PM/init 리뷰가 필요합니다. Sashiko 지적에 대한 수정 패치·응답은 이 dossier 시점에 확인하지 못했습니다.\n\n> Can this cause a double put and use-after-free on gpu->vdso_bo and gpu->memptrs_bo if msm_gpu_init() fails after allocating them?\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/sashiko-outbox-192041@kernel.org/raw)\n\n**drm/i915/display: Add quirk for interlane align bit on CH7511**\n\nv4는 Chrontel CH7511 DP bridge가 training pattern disable 시 link status bit를 잘못 지워 endless retrain loop가 나는 문제에 QUIRK_IGNORE_INTERLANE_ALIGN_BIT로 intel_dp_needs_link_retrain()에서 lane/interlane align bit를 강제합니다.\n\n영향: CH7511 bridge를 쓰는 eDP/DP 출력에서 link training이 끝나지 않으면 display가 죽은 채로 남을 수 있어, quirk 이름·mask 초기화(Sashiko Medium)와 v4가 interlane만이 아닌 전체 8b/10b status를 synthesize하는 설계를 봐야 합니다. intel_init_dpcd_quirks()가 quirks.mask를 clear하지 않는다는 지적에 대한 수정 여부는 확인되지 않았습니다.\n\n> forces the per-lane and interlane alignment link status bits in intel_dp_needs_link_retrain() to prevent an endless retraining loop.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/sashiko-outbox-192081@kernel.org/raw)\n\n**drm/dp_mst: Return whether drm_dp_remove_payload_part1() removed the payload**\n\ndrm core 패치는 drm_dp_remove_payload_part1()을 bool 반환으로 바꿔 branch에 removal sideband/DPCD write가 실제로 나갔을 때만 ACT generate·wait가 필요함을 호출자에 알립니다. i915 MST ACT 회피 시리즈의 patch 1/2와 동일 선행 변경입니다.\n\n영향: amdgpu·i915 등 모든 MST driver가 ACT wait를 조건부로 건너뛸 수 있는 공통 API이므로, Sashiko가 지적한 send_remove 판정과 실제 remote/DFP payload table write 불일치 가능성을 리뷰해야 합니다. bool semantics와 실제 write 조건을 맞추는 follow-up 필요 여부는 maintainer 응답이 없습니다.\n\n> %false if the port is not in the topology anymore, so nothing was sent to the branch devices and there is no ACT to generate or wait for.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/sashiko-outbox-192030@kernel.org/raw)"
+    },
+    {
+      "heading": "기타",
+      "body": "**drm/panel: let the panels use the atomic state**\n\nDmitry Baryshkov가 Luca Ceresoli 리뷰에 답해 35패치 atomic panel 시리즈를 더 작은 묶음으로 나눠 land할 계획이며, Luca는 patch 14 전후를 다음 주 테스트·리뷰 후 apply 가능으로 봅니다. Dmitry는 patch 14 ack를 요청했습니다.\n\n영향: panel이 atomic commit state 없이 prepare/enable만 받는 구조는 NT35950 같은 mode-dependent panel에서 race·mode reject 불가를 낳으므로, patch 14 ack·15+ repost 일정과 bridge_funcs opt-in API를 함께 추적해야 합니다. patch 14 내용과 Luca의 ack·테스트 결과는 아직 공개되지 않았으며, Gmail 수신자 제한으로 시리즈 분할 repost 중이라 전체 merge 순서는 유동적입니다.\n\n> The panel is the only element of the display pipeline which never sees the atomic commit.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/20261026-drm-panel-funcs-v1-0-5e3070a3478f@oss.qualcomm.com/raw)\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/py3tch5wmx4g2zjpebzbgtpwji4ci3vk5obeuy44fbi4vw2em2@gpjmxyvwpimn/raw)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "i915 dp_mst ACT timeout — 커버레터",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/20261031154456.465469-1-xiaolu.xie@intel.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "Intel i915 work item 17741",
+      "url": "https://gitlab.freedesktop.org/drm/i915/kernel/-/work_items/17741",
+      "note": "article"
+    },
+    {
+      "title": "Adreno timestamp monotonic v2 — 커버레터",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/20261031-b4-adreno-timestamp-v2-0-0836856b228f@oss.qualcomm.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "Mesa MR 45806",
+      "url": "https://gitlab.freedesktop.org/mesa/mesa/-/merge_requests/45806",
+      "note": "article"
+    },
+    {
+      "title": "msm GPU vdso page — 패치 스레드",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/sashiko-outbox-192041@kernel.org/raw",
+      "note": "thread"
+    },
+    {
+      "title": "i915 CH7511 interlane quirk",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/sashiko-outbox-192081@kernel.org/raw",
+      "note": "thread"
+    },
+    {
+      "title": "drm_dp_remove_payload_part1 bool",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/sashiko-outbox-192030@kernel.org/raw",
+      "note": "thread"
+    },
+    {
+      "title": "drm/panel atomic funcs — 시리즈 rationale",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/20261026-drm-panel-funcs-v1-0-5e3070a3478f@oss.qualcomm.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "drm/panel atomic — Oct 31 리뷰 스레드",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/py3tch5wmx4g2zjpebzbgtpwji4ci3vk5obeuy44fbi4vw2em2@gpjmxyvwpimn/raw",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-31T18:28:43.466Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,132 @@
+{
+  "id": "2026-11-01-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-11-01 KCOV 스케줄 가드 — PREEMPT RT",
+  "headline": "Karl Mehltretter KCOV 시리즈가 __schedule()에 pause 가드를 두고 Morton의 CONFIG_KCOV 매크로 요구에 v5 수정을 약속했습니다.",
+  "date": "2026-11-01",
+  "summary": "스케줄러 코어에 KCOV pause가 들어가면 PREEMPT_RT·syzkaller triage 노이즈를 줄일 수 있습니다. btrfs wait_for_commit 라이브락 수정과 io_uring NAPI 리스트 논쟁은 linux-rt-devel에서 계속 추적 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "PREEMPT_RT",
+    "btrfs",
+    "io_uring",
+    "KCOV"
+  ],
+  "highlights": [
+    {
+      "title": "sched/core: Pause KCOV in __schedule()",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "PREEMPT_RT·KCOV·syzkaller·스케줄러 유지보수자",
+      "verifyLink": "https://lore.landau.one/lkml/20261005185803.39170-1-kmehltretter@gmail.com/raw",
+      "if": "PREEMPT_RT에서 syzkaller triage 비율이 스케줄러 커버리지 노이즈로 높다면",
+      "do": "KCOV pause 시리즈 v5 재게시와 CONFIG_KCOV 매크로 처리가 반영됐는지 메일링 리스트를 따라가세요",
+      "verify": "cover letter의 Pi 400 triage 수치와 Morton·Karl 스레드에서 매크로·v5 약속을 원문으로 확인하세요"
+    },
+    {
+      "title": "btrfs: fix a livelock in wait_for_commit() on PREEMPT_RT",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "PREEMPT_RT·btrfs·스토리지 스택 유지보수자",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/linux-rt-devel/20261030153617.329733-1-neelx@suse.com/raw",
+      "if": "SCHED_RR 다중 sync() 환경에서 btrfs가 멈춘 것처럼 보인다면",
+      "do": "completed 전 trans_list delist 수정과 Fixes 5fd76bf31ccfe 맥락을 패치 스레드와 Peter Naulls 재현 스레드에서 함께 검토하세요",
+      "verify": "trans_lock rt_mutex 우선순위 경쟁 설명과 delist로 루프를 끊는다는 인용을 lore 원문에서 확인하세요"
+    },
+    {
+      "title": "io_uring/napi: fix list use-after-free on PREEMPT_RT",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "PREEMPT_RT·io_uring·NAPI 경로 유지보수자",
+      "verifyLink": "https://lore.jethome.com/lkml/502f31ed-dd70-469c-b433-577ccee36c3f@kernel.dk/raw",
+      "if": "PREEMPT_RT에서 io_uring NAPI 리스트 순회와 RCU 지연 free를 다룬다면",
+      "do": "Jens Axboe의 불필요 판단과 list_for_each_entry_safe 변경이 fix인지 cleanup인지 스레드를 비교하세요",
+      "verify": "RT에서 napi_lock 보유 중 선점 가능성 주장과 maintainer 답변을 각각 linked thread에서 확인하세요"
+    },
+    {
+      "title": "KCOV guard: non-KCOV 빌드 오버헤드",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "PREEMPT_RT·KCOV·syzkaller·스케줄러 유지보수자",
+      "verifyLink": "https://lore.landau.one/lkml/20261030142354.bbc5e7f26fbfb6a8eee21290@linux-foundation.org/raw",
+      "if": "production 커널에 CONFIG_KCOV=n인데 scheduler guard 코드가 남는지 우려된다면",
+      "do": "Andrew Morton이 요구한 매크로 처리와 Karl의 v5 수정 계획이 머지 전에 충족되는지 확인하세요",
+      "verify": "Morton 스레드의 macro magic 인용과 Karl의 #ifdef CONFIG_KCOV oversight 답을 원문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**io_uring/napi: fix list use-after-free on PREEMPT_RT**\n\nAnvik Loitongbam 패치는 io_uring NAPI 리스트 순회를 list_for_each_entry_safe로 바꾸며, PREEMPT_RT에서 napi_lock(rtmutex) 보유 중 선점·RCU grace period와 kfree_rcu()가 iterator를 깨뜨릴 수 있다고 설명합니다.\n\n영향: io_uring NAPI는 RT spinlock·RCU·지연 free 조합을 쓰므로 maintainer가 버그를 부인하는지와 safe-list 채택 여부를 같이 추적해야 합니다. upstream이 fix vs cleanup 중 어느 쪽으로 받을지는 확인이 필요합니다.\n\n> On PREEMPT_RT, spinlock_t is an rtmutex and the task can be preempted while holding ctx->napi_lock.\n\n[원문 확인](https://lore.landau.one/lkml/20261029102244.141621-1-permissiontogallop@gmail.com/raw)\n\n**Maintainer 응답**\n\nJens Axboe는 RT spin_lock이 rcu_read_lock()을 잡아 패치가 불필요하다고 답했고, list safe 변경은 cleanup일 뿐 fix가 아니라고 밝혔습니다.\n\n영향: 제보자가 RT 빌드에서 UAF 재현에 실패한 이유는 아직 단정하기 어렵습니다.\n\n> IOW, I think this patch is unnecessary - there's no bug there. The list safe change could be done as a cleanup, but it's not a fix.\n\n[원문 확인](https://lore.jethome.com/lkml/502f31ed-dd70-469c-b433-577ccee36c3f@kernel.dk/raw)\n\n> io_uring/napi: fix io_napi_entry RCU accesses\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=45b3941d09d1)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**sched/core: Pause KCOV in __schedule()**\n\nKarl Mehltretter KCOV 시리즈는 __schedule()에 kcov_pause 가드를 두어 instrumented callee 커버리지가 current에 새지 않게 하며, Andrew Morton은 CONFIG_KCOV=n에서 코드가 사라지도록 매크로 처리를 요구했고 Karl은 v5에서 수정하겠다고 답했습니다.\n\n영향: PREEMPT_RT·syzkaller에서 스케줄러 노이즈가 triage를 키우므로 core scheduler에 guard가 들어가도 production 빌드 오버헤드 없이 유지되는지가 머지 관건입니다. v5 시리즈 전체 재게시 시점은 확인이 필요합니다.\n\n> During preemption and schedule() calls, these callees can add nondeterministic scheduler coverage to current.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/10/05/1751)\n\n> A bit of macro magic can trivially make all this go away for non-KCOV kernels.\n\n[원문 확인](https://lore.landau.one/lkml/20261030142354.bbc5e7f26fbfb6a8eee21290@linux-foundation.org/raw)\n\n> Good point. Leaving the guard outside #ifdef CONFIG_KCOV was an oversight in v2. I will fix this and the hrtimer wrapper in v5.\n\n[원문 확인](https://lore.landau.one/lkml/auXoWFzEuirP2IuC@gmail.com/raw)\n\n> On a Raspberry Pi 400 with PREEMPT_RT, triage dropped from 26-34% of all executions to 10%\n\n[원문 확인](https://lore.landau.one/lkml/20261005185803.39170-1-kmehltretter@gmail.com/raw)\n\n**btrfs: fix a livelock in wait_for_commit() on PREEMPT_RT**\n\nDaniel Vacek 패치는 PREEMPT_RT에서 trans_lock이 rt_mutex가 된 환경에서 RR sync()가 완료 트랜잭션을 trans_list에서 내리지 못해 wait_for_commit()이 도는 라이브락을, TRANS_STATE_COMPLETED 전에 trans_list에서 먼저 제거하도록 commit 경로 순서를 바꿉니다.\n\n영향: btrfs·PREEMPT_RT·SCHED_RR에서 sync() 기아는 파일시스템이 멈춘 것처럼 보이므로 Fixes 5fd76bf31ccfe 이후 백포트와 Peter Naulls 재현 스레드를 함께 봐야 합니다. linux-btrfs 원본 보고 스레드 maintainer 반응과 stable 큐 백포트 일정은 확인이 필요합니다.\n\n> Peter reported [1] that running multiple RR tasks doing sync() on fully preemptible kernel may starve other/normal sync() tasks due to fs_info::trans_lock turned into rt_mutex.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-rt-devel/20261030153617.329733-1-neelx@suse.com/raw)\n\n> We simply delist the transactions before changing them to completed state. That breaks the loop condition.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-rt-devel/20261030153617.329733-1-neelx@suse.com/raw)\n\n> btrfs: fix relocation crash due to premature return from btrfs_commit_transaction()\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=5fd76bf31ccfe)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "btrfs PREEMPT_RT wait_for_commit livelock (linux-rt-devel)",
+      "url": "https://lore-kernel.gnuweeb.org/linux-rt-devel/20261030153617.329733-1-neelx@suse.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "btrfs: fix relocation crash due to premature return",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=5fd76bf31ccfe",
+      "note": "commit"
+    },
+    {
+      "title": "io_uring/napi PREEMPT_RT list patch (LKML)",
+      "url": "https://lore.landau.one/lkml/20261029102244.141621-1-permissiontogallop@gmail.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "Jens Axboe: io_uring NAPI patch unnecessary",
+      "url": "https://lore.jethome.com/lkml/502f31ed-dd70-469c-b433-577ccee36c3f@kernel.dk/raw",
+      "note": "thread"
+    },
+    {
+      "title": "io_uring/napi: fix io_napi_entry RCU accesses",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=45b3941d09d1",
+      "note": "commit"
+    },
+    {
+      "title": "KCOV __schedule() nondeterministic coverage",
+      "url": "https://lists.openwall.net/linux-kernel/2026/10/05/1751",
+      "note": "thread"
+    },
+    {
+      "title": "Andrew Morton: CONFIG_KCOV macro magic",
+      "url": "https://lore.landau.one/lkml/20261030142354.bbc5e7f26fbfb6a8eee21290@linux-foundation.org/raw",
+      "note": "thread"
+    },
+    {
+      "title": "Karl Mehltretter: v5 CONFIG_KCOV fix",
+      "url": "https://lore.landau.one/lkml/auXoWFzEuirP2IuC@gmail.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "KCOV series cover: PREEMPT_RT triage on Pi 400",
+      "url": "https://lore.landau.one/lkml/20261005185803.39170-1-kmehltretter@gmail.com/raw",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-31T18:23:59.323Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

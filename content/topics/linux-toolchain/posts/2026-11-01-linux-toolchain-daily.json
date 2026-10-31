@@ -1,0 +1,118 @@
+{
+  "id": "2026-11-01-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-11-01 BPF ABBA 락 순환 — 툴체인 렌즈",
+  "headline": "BPF CO-RE cand_cache 락 순환 후보 수정 제안과 Rust atomic·time API, clang 0day 경고가 mailing list에 올라왔습니다.",
+  "date": "2026-11-01",
+  "summary": "Ihor Solodrai 제안은 vmlinux BTF 파싱 순서를 바꿔 PROVE_LOCKING이 잡는 ABBA 데드락 후보를 제거합니다. Rust for Linux 쪽에서는 BinderStats atomic lowering, Delta v5 stable 분리, 초 단위 Instant 설계가 이어지고 TH1520 DSI probe에서 clang -Wuninitialized가 보고되었습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "bpf: vmlinux BTF 파싱과 cand_cache_mutex 순서",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "BPF CO-RE·BTF 유지보수 및 lockdep/PROVE_LOCKING 검증 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/linux-kbuild/20261031130959.23472-8-wanjay@amazon.com/raw",
+      "if": "CO-RE BPF 로드 후 BTF 모듈 rmmod 경로에서 lockdep 검증을 돌리고 있다면",
+      "do": "Jay Wang bpf-next 07/13 시리즈와 Ihor Solodrai 제안 전체를 함께 읽고 mutex 잡기 전 peek 파싱 변경을 추적하세요",
+      "verify": "PROVE_LOCKING 재현 시퀀스와 ABBA 순환이 패치 설명과 일치하는지 원문 스레드를 확인하세요"
+    },
+    {
+      "title": "rust_binder: BinderStats에서 Atomic::add",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "Rust for Linux 드라이버 작성자 및 rust_binder/Android binder 통계 경로 리뷰어",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/rust-for-linux/20261031150909.3807811-1-jenhaochen@google.com/raw",
+      "if": "rust_binder 통계 inc_bc/inc_br 경로나 유사 fetch_add 카운터를 리뷰한다면",
+      "do": "반환값이 필요 없는 증가는 add(Relaxed) 패턴으로 atomic_add lowering 여부를 비교해 보세요",
+      "verify": "Jenhao Chen v2의 stats.rs 변경과 Reviewed-by 라인을 lore 원문에서 확인하세요"
+    },
+    {
+      "title": "rust: time Delta v5와 stable 후보 분리",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust for Linux time API 사용자 및 timekeeping-next/rust-next 리베이스 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/rust-for-linux/20261031103206.24051-1-chenhan0017.work@gmail.com/raw",
+      "if": "Rust kernel time::Delta 나눗셈·나머지 또는 math 모듈 머지 순서를 맞추고 있다면",
+      "do": "패치 1·2 stable 후보 쌍과 패치 3 math( stable 비대상)을 구분해 리베이스 계획에 반영하세요",
+      "verify": "v5가 v4 대비 실행 코드·공개 API 변경이 없다는 선언과 SAFETY 주석만 바뀐 부분을 원문에서 확인하세요"
+    },
+    {
+      "title": "drm/bridge TH1520: clang -Wuninitialized",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "clang 커널 빌드·0day CI 추적자 및 drm/bridge 패치 작성자",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/llvm/202610311004.6oZFiXBi-lkp@intel.com/raw",
+      "if": "clang W=1 randconfig CI나 drm/bridge 패치를 추적한다면",
+      "do": "th1520_dw_mipi_dsi_probe의 ret 초기화 수정이 별도 커밋인지 v2에 포함되는지 작성자 응답을 기다리세요",
+      "verify": "kernel test robot이 보고한 probe 445행 경고와 arm64 randconfig·clang 24.0.0git 빌드 로그를 원문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**bpf: parse the vmlinux BTF before taking cand_cache_mutex**\n\nIhor Solodrai 제안(Jay Wang bpf-next 07/13)은 cand_cache_mutex를 잡기 전에 vmlinux BTF를 파싱하고 bpf_core_find_cands()는 bpf_peek_btf_vmlinux()만 쓰게 해 ABBA 데드락 후보를 제거합니다.\n\n영향: CO-RE BPF 로드 후 BTF 모듈 rmmod 시 PROVE_LOCKING이 cand_cache_mutex와 btf_module_mutex 순환을 잡을 수 있어 BPF/BTF·락 검증 담당자는 시리즈 전체를 봐야 합니다.\n\n> That would be an ABBA deadlock:\n>   cand_cache_mutex -> btf_vmlinux_lock -> btf_module_mutex\n>   btf_module_mutex -> cand_cache_mutex\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-kbuild/20261031130959.23472-8-wanjay@amazon.com/raw)\n\n동작 변경 없이 파싱 시점만 mutex 앞으로 옮긴다는 설명도 같은 스레드에 있습니다.\n\n> No functional change: the BTF is parsed at the same points, just before the mutex is taken\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-kbuild/20261031130959.23472-8-wanjay@amazon.com/raw)\n\nTODO-NEEDS-IHOR Signed-off-by 및 peek 경로 오류 전달(-EINVAL 대신 fetch 오류) 반영 여부, bpf-next 13패치 시리즈 머지 일정은 확인이 필요합니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**rust_binder: use Atomic::add() in BinderStats**\n\nJenhao Chen v2는 rust_binder BinderStats::inc_bc/inc_br에서 사용하지 않는 반환값 때문에 fetch_add 대신 add(Relaxed)를 쓰도록 바꿔 atomic_add()로 lowering되게 합니다.\n\n영향: Rust 커널 코드에서 Atomic API 선택이 arm64 LSE·x86에서 value-returning RMW와 더 가벼운 non-returning 증가 사이 codegen을 갈라 Binder 같은 고빈도 경로 성능에 영향을 주므로 Rust for Linux·Android binder 추적자가 패턴을 알아두어야 합니다.\n\n> Switch BinderStats::inc_bc() and BinderStats::inc_br() from fetch_add(1, Relaxed) to add(1, Relaxed) so they lower to atomic_add()\n\n[원문 확인](https://lore-kernel.gnuweeb.org/rust-for-linux/20261031150909.3807811-1-jenhaochen@google.com/raw)\n\nrust-for-linux/android binder 트리 머지 시점과 다른 Rust 통계 경로의 fetch_add→add 정리 필요 여부는 확인이 필요합니다.\n\n**rust: time: fix Delta arithmetic and add math helpers**\n\nchenhan v5는 v4 대비 실행 코드·공개 API·패닉 조건 변경 없이 SAFETY 주석만 Andreas Hindborg 리뷰에 맞추고, 패치 1·2를 stable 후보 쌍으로, 패치 3 math 모듈은 별도·stable 비대상으로 둡니다.\n\n영향: Rust kernel time::Delta 나눗셈/나머지 의미와 arch별 동작은 timekeeping-next·rust-next 양쪽에 걸친 toolchain 표면이라 패치 3과 Tomonori PWM math.rs 시리즈 충돌도 머지 순서에 영향을 줍니다.\n\n> There are no changes to executable code, public APIs or panic conditions relative to v4.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/rust-for-linux/20261031103206.24051-1-chenhan0017.work@gmail.com/raw)\n\n> Patches 1 and 2 form the stable candidate pair: the parameter rename is a prerequisite for the behavior fix.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/rust-for-linux/20261031103206.24051-1-chenhan0017.work@gmail.com/raw)\n\n**rust: time: seconds based Instant**\n\nFUJITA Tomonori v1 2패치는 Instant에 단위 type parameter를 도입한 뒤 Sec 단위 Instant<C, Sec>와 ClockId::ktime_get_seconds()·as_secs()만 제공합니다(Delta<Sec> 없음).\n\n영향: 초 단위 wall-clock Instant는 Mike의 ktime_get_real_seconds() free function 대안으로 rust/kernel/time.rs API 형태를 정하므로 Rust time 추상화를 쓰는 드라이버 작성자가 설계 방향을 따라가야 합니다.\n\n> Andreas and Boqun preferred a seconds based `Instant` instead. This series does that.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/rust-for-linux/20261031003334.4161188-1-tomo@flapping.org/raw)\n\n> `Instant<C, Sec>` has only `now()` and `as_secs()`; there is no `Delta<Sec>`.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/rust-for-linux/20261031003334.4161188-1-tomo@flapping.org/raw)\n\n**drm/bridge: TH1520 DW MIPI DSI — clang -Wuninitialized on probe**\n\nkernel test robot이 Linux 7.3 base(c03c1a14507d) 위 TH1520 DW MIPI DSI 드라이버 패치를 arm64 randconfig·clang 24.0.0git W=1 빌드에서 th1520_dw_mipi_dsi_probe의 미초기화 ret 사용 경고를 보고했습니다.\n\n영향: llvm@ 리스트의 0day robot 보고는 clang으로 커널 randconfig를 돌리는 toolchain·CI 담당자에게 새 경고 회귀 신호이며 패치 작성자는 Reported-by/Closes 태그로 추적할 수 있습니다.\n\n> >> drivers/gpu/drm/bridge/th1520-dw-mipi-dsi.c:445:22: warning: variable 'ret' is uninitialized when used here [-Wuninitialized]\n\n[원문 확인](https://lore-kernel.gnuweeb.org/llvm/202610311004.6oZFiXBi-lkp@intel.com/raw)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "rust_binder Atomic::add — lore raw",
+      "url": "https://lore-kernel.gnuweeb.org/rust-for-linux/20261031150909.3807811-1-jenhaochen@google.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "rust_binder Atomic::add — lore.kernel.org",
+      "url": "https://lore.kernel.org/rust-for-linux/20261031150909.3807811-1-jenhaochen@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf vmlinux BTF before cand_cache_mutex — lore raw",
+      "url": "https://lore-kernel.gnuweeb.org/linux-kbuild/20261031130959.23472-8-wanjay@amazon.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "rust time Delta v5 — lore raw",
+      "url": "https://lore-kernel.gnuweeb.org/rust-for-linux/20261031103206.24051-1-chenhan0017.work@gmail.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "rust seconds based Instant — lore raw",
+      "url": "https://lore-kernel.gnuweeb.org/rust-for-linux/20261031003334.4161188-1-tomo@flapping.org/raw",
+      "note": "thread"
+    },
+    {
+      "title": "TH1520 clang -Wuninitialized — lore raw",
+      "url": "https://lore-kernel.gnuweeb.org/llvm/202610311004.6oZFiXBi-lkp@intel.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "TH1520 clang build — lore.kernel.org",
+      "url": "https://lore.kernel.org/llvm/202610311004.6oZFiXBi-lkp@intel.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-31T18:18:00.932Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

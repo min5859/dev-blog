@@ -1,0 +1,141 @@
+{
+  "id": "2026-11-01-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-11-01 RISC-V FP·IOMMU — 아키·플랫폼",
+  "headline": "RISC-V는 IOMMU dirty tracking·rt_sigreturn FP 회귀·special PTE icache와 Zaamo-off 빌드 이슈가 겹치고, Qualcomm MSM은 IOMMU TLB·identity domain 패치가 올라왔습니다.",
+  "date": "2026-11-01",
+  "summary": "10월 31일 전후 메일링 리스트에는 RISC-V IOMMU 2단계 dirty tracking, signal 복귀 FP 상태 버그, executable special PTE oops 수정, TH1520 MIPI DSI 드라이버, Zaamo 비활성 LR/SC atomic 빌드가 집중됐습니다. arm64 쪽에는 Qualcomm GPU·display용 qcom IOMMU 회귀 수정 3패치가 drm/msm DMA-address 시리즈 선행 머지를 전제로 리뷰 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "RISC-V",
+    "ARM",
+    "플랫폼"
+  ],
+  "highlights": [
+    {
+      "title": "iommu/riscv: 2단계 도메인 하드웨어 dirty tracking",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "RISC-V IOMMU·iommufd·KVM/VFIO pass-through 유지보수 담당",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/102566.html",
+      "if": "KVM/VFIO 중첩 pass-through에서 live migration용 dirty bitmap을 RISC-V iommufd로 연결할 계획이라면",
+      "do": "Fangyu Yu v6의 AMO_HWAD·GADE·iohgatp PTE D 갱신과 IOMMU_HWPT_SET/GET_DIRTY_TRACKING 연동을 리뷰하고, 선행 iommu irqbypass·GADE/GVMA flush 변경과의 정합을 추적하세요",
+      "verify": "cover letter에 적힌 선행 시리즈 mainline 반영 시점과 end-to-end dirty bitmap 회귀 테스트 추가 일정은 아직 확인이 필요합니다"
+    },
+    {
+      "title": "riscv: rt_sigreturn() FP 상태 복원 회귀",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "RISC-V arch/signal·FP state 및 selftests/riscv/sigreturn 담당",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/102576.html",
+      "if": "userfaultfd 또는 선점으로 signal frame FP 복사 중 sleep이 발생하는 워크로드를 다룬다면",
+      "do": "Nickolai Zeldovich v2의 FS Clean 표시·__fstate_clean() 전후 preempt_disable()과 userfaultfd selftest(fp_restore.c)를 로컬에서 재현·검증하세요",
+      "verify": "mainline 머지 여부는 아직 확인이 필요하며, Guobin Zhang status RMW v2와의 독립 적용·selftests/riscv/sigreturn CI 포함도 함께 확인하세요"
+    },
+    {
+      "title": "riscv: special PTE에서 icache flush 생략",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "RISC-V arch/mm·device mmap(/dev/mem, remap_pfn_range) bring-up 담당",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/101665.html",
+      "if": "executable /dev/mem·PCI BAR·VFIO mmap으로 v4.15 이후 kernel panic이나 init hang을 겪었다면",
+      "do": "present+executable special PTE에서 flush_icache_pte()를 건너뛰는 v1 패치를 백포트 후보로 두고, Karl Mehltretter의 QEMU virt 0x200000 매핑 시나리오로 검증하세요",
+      "verify": "리뷰·머지 일정과 RAM-backed VM_PFNMAP executable 매핑의 I$/D$ flush 책임 문서화는 확인이 필요합니다"
+    },
+    {
+      "title": "iommu: qcom MSM GPU·display DMA-address 매핑 수정",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "Qualcomm MSM IOMMU·drm/msm MDP5/Adreno 플랫폼 유지보수 담당",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-October/1192542.html",
+      "if": "db410c·db820c·sda660 등 MDP5/Adreno 보드에서 GPU reset·hang을 추적 중이라면",
+      "do": "Dmitry Baryshkov 3패치의 flush_iotlb_all TLB invalidate·identity default domain을 drm/msm dma_map_sgtable() 시리즈보다 먼저 land하는지 머지 순서를 확인하세요",
+      "verify": "Robin Clark의 msm_iommu.c def_domain_type 필요 여부와 drm/msm [1]과의 정확한 머지 순서는 확인이 필요합니다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**riscv: signal: fix the FP state restore in rt_sigreturn()**\n\nNickolai Zeldovich v2(10/31)는 rt_sigreturn()이 signal frame FP 이미지를 복사하는 동안 선점·page fault로 sleep할 때 handler FP 레지스터가 interrupted context에 남던 버그를, 복사 전 FS를 Clean으로 표시하고 __fstate_clean() 주변 preempt_disable()로 고칩니다. userfaultfd selftest(fp_restore.c)를 추가합니다.\n\n영향: RISC-V userland FP·signal 경로 담당은 v4.15 이후 sporadic FP corruption과 userfaultfd로 100% 재현되는 회귀가 v2+Guobin Zhang status RMW v2와 독립 적용되는지, selftests/riscv/sigreturn CI 포함 여부를 확인해야 합니다.\n\n> If rt_sigreturn() is preempted or sleeps on a page fault while it copies the FP registers from the signal frame, the interrupted code resumes with the signal handler's FP registers.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-October/102576.html)\n\n**iommu: qcom: Fix the MSM GPU and display with DMA-address based mappings**\n\nDmitry Baryshkov 3패치(10/30–31)는 qcom_iommu flush_iotlb_all이 TLB를 invalidate하지 않던 문제를 고치고, drm/msm가 dma_map_sgtable() 물리 주소를 GPU/MDP page table에 쓰는 전제에 맞게 qcom,adreno·qcom,mdp5에 identity default domain을 부여하며 arm-smmu-qcom에 qcom,mdp5·msm8996 def_domain_type를 추가합니다. Robin Clark는 msm_iommu.c에도 def_domain_type가 필요한지 후속 질문을 올렸습니다.\n\n영향: Qualcomm MDP5/db410c·db820c·sda660 등 레거시 MSM 보드 담당은 Robin Clark drm/msm DMA-address 시리즈 머지 전에 TLB flush·identity domain 패치가 land하는지, GPU reset/hang 재현 여부를 추적해야 합니다.\n\n> On MDP5 platforms it is the MDP5 device, which ends up with iommu-dma: the GPU then fails to start on db410c and sda660 and resets db820c.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-arm-kernel/2026-October/1192542.html)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**iommu/riscv: Add hardware dirty tracking for second-stage domains**\n\nFangyu Yu v6(10/31)은 RISC-V IOMMU AMO_HWAD·GADE로 2단계(iohgatp) PTE D 비트를 DMA 쓰기 시 하드웨어가 갱신하게 하고, generic_pt dirty hook과 iommufd(IOMMU_HWPT_SET/GET_DIRTY_TRACKING, IOMMU_CAP_DIRTY_TRACKING)에 연결합니다. KVM/VFIO 중첩 pass-through용 2단계 도메인만 대상입니다.\n\n영향: RISC-V에서 nested VFIO·iommufd로 live migration/dirty tracking을 준비하는 담당은 v6 리베이스·GADE/GVMA flush 변경이 리뷰·선행 iommu irqbypass 의존성과 맞는지 추적해야 합니다.\n\n> This series wires that capability up to the iommufd dirty-tracking interface (IOMMU_HWPT_SET_DIRTY_TRACKING / IOMMU_HWPT_GET_DIRTY_BITMAP) and reports IOMMU_CAP_DIRTY_TRACKING.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-October/102566.html)\n\n**riscv: mm: Skip the icache flush for special PTEs**\n\nNickolai Zeldovich v1은 present+executable special PTE(remap_pfn_range 등)에 대해 flush_icache_pte()를 건너뛰어 pte_page()가 struct page 없이 vmemmap/FLATMEM 밖을 dereference하며 oops하던 경로를 고칩니다. Karl Mehltretter(10/31)는 QEMU virt에서 executable /dev/mem 0x200000 매핑으로 동일 oops를 재현했고 패치 적용 시 SIGSEGV로 사용자 fault만 발생함을 Tested-by로 보고했습니다.\n\n영향: /dev/mem·PCI BAR·VFIO mmap 등 executable device mapping을 쓰는 RISC-V 플랫폼·bring-up 담당은 v4.15부터의 kernel panic과 init hang을 피하려면 이 한 줄 조건 변경을 백포트·검증 대상으로 둬야 합니다.\n\n> Skip the flush for special PTEs, as arm64 does since commit 71fdb6bf61bf (\"arm64: Do not synchronise I and D caches for special ptes\").\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-October/101665.html)\n\n**drm/bridge: add TH1520 DesignWare MIPI DSI host controller**\n\nIcenowy Zheng TH1520 DW MIPI DSI glue(10/30)에 대해 0-day CI(10/31)가 arm64 randconfig에서 th1520_dw_mipi_dsi_probe()의 미초기화 ret를 W=1 경고로 보고했습니다. 시리즈는 Rockchip에서 PHY write를 common dw-mipi-dsi로 옮기고 Lichee Console 4A 패널 bring-up을 주장합니다.\n\n영향: TH1520 RISC-V display bring-up 담당은 드라이버 리뷰와 함께 probe 오류 경로의 trivial ret 초기화 fix가 v1에 반영되는지, PHY_STOP_WAIT_TIME/headroom 논의 결과를 따라야 합니다.\n\n> Tested on a Lichee Console 4A (with a Mingjun MJ070BI30IA2 panel) with further pending DT patches.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/10/30/580)\n\n**riscv: build kernel atomics from LR/SC when Zaamo is disabled**\n\nVladimir Kondratiev v3는 Zaamo 없이 Zalrsc만 있는 hart(MIPS P8700/EyeQ7h)용 CONFIG_RISCV_ISA_ZAAMO 끄기 시 커널 atomic을 LR/SC로 생성하고 -march에 _zalrsc를 씁니다. 0-day(10/31) randconfig는 GCC 8.5에서 -march=rv64im_zalrsc의 unsupported _zalrsc로 빌드가 깨진다고 보고했습니다.\n\n영향: Zalrsc-only RISC-V SoC·toolchain 담당은 NONPORTABLE Zaamo-off 빌드가 구 GCC randconfig에서 실패하는지, EyeQ7h 제품 경로의 atomic 성능(AMO SBI ~600 vs LR/SC ~40 cycles) 이득과 userspace -march 정합을 함께 검토해야 합니다.\n\n> cc1: error: -march=rv64im_zalrsc: unsupported ISA substring '_zalrsc'\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-October/102558.html)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "iommu/riscv dirty tracking v6 cover",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/102566.html",
+      "note": "thread"
+    },
+    {
+      "title": "riscv rt_sigreturn FP fix v2 cover",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/102576.html",
+      "note": "thread"
+    },
+    {
+      "title": "riscv rt_sigreturn FP fix patch 1/2",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/102577.html",
+      "note": "thread"
+    },
+    {
+      "title": "riscv mm skip icache flush special PTE v1",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/101665.html",
+      "note": "thread"
+    },
+    {
+      "title": "QEMU virt /dev/mem special PTE Tested-by",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/102581.html",
+      "note": "thread"
+    },
+    {
+      "title": "qcom IOMMU MSM GPU display fix cover",
+      "url": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-October/1192542.html",
+      "note": "thread"
+    },
+    {
+      "title": "qcom_iommu_flush_iotlb_all patch 1/3",
+      "url": "https://patchew.org/linux/20261031-msm-smmu-identity-v1-0-a2a70580eebd@oss.qualcomm.com/20261031-msm-smmu-identity-v1-1-a2a70580eebd@oss.qualcomm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "TH1520 DW MIPI DSI glue cover",
+      "url": "https://lists.openwall.net/linux-kernel/2026/10/30/580",
+      "note": "thread"
+    },
+    {
+      "title": "TH1520 probe uninitialized ret 0-day",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/102559.html",
+      "note": "thread"
+    },
+    {
+      "title": "RISC-V LR/SC atomics when Zaamo off v3",
+      "url": "https://patchew.org/linux/20261026-lrsc-only-v3-0-ec29c8190fb1@mobileye.com/",
+      "note": "thread"
+    },
+    {
+      "title": "GCC 8.5 _zalrsc randconfig 0-day",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/102558.html",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-31T18:27:02.262Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

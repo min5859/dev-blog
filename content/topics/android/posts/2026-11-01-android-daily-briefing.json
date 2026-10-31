@@ -1,0 +1,108 @@
+{
+  "id": "2026-11-01-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-11-01 부트·wrapfd 회귀 — Android 커널",
+  "headline": "init pid 1 CLONE_FS 임시 복원, wrapfd deadlock·selftest 정리, PCI NVMe fix 머지 등 ACK 변경이 이어집니다.",
+  "date": "2026-11-01",
+  "summary": "mount namespace unshare 이후 firmware 로딩 회귀를 막기 위해 init이 pid 1을 CLONE_FS와 함께 spawn하도록 되돌렸습니다. android16-6.12에서는 wrapfd deadlock과 selftest 로그 노이즈를 줄였고, mainline에는 pci-v7.3-fixes-6 머지가 반영됐습니다.",
+  "tags": [
+    "안드로이드",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "init pid 1 CLONE_FS 임시 복원",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Android init/부트·ACK 통합 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/d82b1e9acccf66dcebefedad2635d28e1d63d895",
+      "if": "unshare 이후 kworker가 root 파일시스템에 접근하지 못해 firmware 로딩이 실패하면",
+      "do": "ACK mainline에 해당 revert·완화 커밋이 포함됐는지와 부트 로그를 대조해 triage하세요",
+      "verify": "커밋 원문에서 CLONE_FS 복원이 임시 완화임을 확인하고, upstream-side 영구 해결 일정은 별도로 추적하세요"
+    },
+    {
+      "title": "wrapfd Wrap::drop() deadlock 방지",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "wrapfd 사용자·android16-6.12 ACK integrator",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/9fc983f11b6a3919be2befe49c83872ba1a21574",
+      "if": "wrapfd selftest나 도구에서 lock 보유 중 drop() 경로로 hang이 재현되면",
+      "do": "android16-6.12 브랜치에 해당 fix 커밋을 cherry-pick·머지했는지 확인하세요",
+      "verify": "원문에서 drop() 재진입 lock 제거와 release() 정리 변경을 확인하세요"
+    },
+    {
+      "title": "pci-v7.3-fixes-6 ACK mainline 머지",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "ACK mainline 머지·PCI/NVMe 스토리지 검증",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/4766082b791b515953d87f7a24c2ea857e6c10b0",
+      "if": "Samsung 990 계열 NVMe 또는 VFIO/PCI passthrough에서 부트·resume 이상이 있으면",
+      "do": "mainline 트리에 pci-v7.3-fixes-6 머지 커밋이 들어왔는지 빌드 manifest와 대조하세요",
+      "verify": "머지 설명의 Immediate Readiness·pci_dev_wait() 관련 fix 항목을 원문에서 확인하세요"
+    },
+    {
+      "title": "wrapfd selftest fork 경로 mincore() 검증",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "android16-6.12 ACK selftest·wrapfd 유지보수",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/8376bfc68e6fb64410c3c810278f1e881cad321b",
+      "if": "wrapfd selftest 실행 후 커널 로그에 불필요한 error noise가 남으면",
+      "do": "mincore() 기반 검증 커밋이 selftest 트리에 반영됐는지 확인하고 CI 로그를 비교하세요",
+      "verify": "원문에서 SIGSEGV 대신 mincore() 사용 변경을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ANDROID: init: spawn pid 1 with CLONE_FS**\n\n14adbd5341aa 이후 pid 1 CLONE_FS spawn 제거와 Android init mount namespace unshare 조합에서 firmware 로딩 등 부트 회귀가 있어, 영구 fix 전까지 CLONE_FS spawn을 임시로 되돌렸습니다.\n\n영향: kworker가 root 파일시스템 접근을 잃는 경로를 완화해 ACK 통합·부트 검증 담당자가 당장 이미지를 막는 회귀를 줄일 수 있습니다.\n\n> When Android init then unshares its mount namespace, kworkers lose access to the root filesystem, which breaks firmware loading. Let's temporarily bring back the CLONE_FS flag.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/d82b1e9acccf66dcebefedad2635d28e1d63d895)\n\n**ANDROID: wrapfd: Prevent deadlock on Wrap::drop()**\n\nWrap::drop()에서 내부 state lock 재획득 경로를 제거하고 release()에서 raw file pointer만 정리하도록 바꿨습니다.\n\n영향: lock 보유 상태에서 drop() 재진입 시 hang 가능성을 줄여 wrapfd selftest·도구 안정성에 직접 연결됩니다.\n\n> In certain unlikely error scenarios Wrap::drop would attempt to acquire the internal state lock with the lock already held by calling code and thus deadlock.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/9fc983f11b6a3919be2befe49c83872ba1a21574)\n\n**Merge tag 'pci-v7.3-fixes-6' …**\n\nACK mainline에 pci-v7.3-fixes-6를 머지해 Samsung 990 PRO/EVO Plus NVMe Immediate Readiness 오동작, pci_dev_wait()의 ~0 ready 처리 회귀, v7.2 unrelated delay 제거로 인한 post-FLR restore 실패 등 PCI/NVMe fix를 가져왔습니다.\n\n영향: 해당 NVMe나 VFIO/PCI passthrough를 쓰는 개발 보드·데스크톱 class 이미지에서 부트·resume 회귀 완화에 도움이 됩니다.\n\n> Ignore Immediate Readiness on Samsung 990 PRO and 990 EVO Plus NVMe, which falsely advertise it; removal of unrelated delays in v7.2 caused post-FLR state restoration to fail.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/4766082b791b515953d87f7a24c2ea857e6c10b0)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**ANDROID: gki_defconfig: enable REFCOUNT_INTERRUPT_KUNIT_TEST**\n\nGKI gki_defconfig에 CONFIG_REFCOUNT_INTERRUPT_KUNIT_TEST=y를 추가해 upstream에서 분리된 refcount interrupt KUnit 테스트 모듈을 ACK 빌드에서 다시 켭니다.\n\n영향: upstream 26f6b6357b1b 이후 별도 Kconfig가 필요해 defconfig를 맞추지 않으면 GKI CI에서 refcount_interrupt_test.ko가 빠질 수 있습니다.\n\n> However, upstream commit 26f6b6357b1b (\"irq: Make refcount_interrupt kunit test selectable\") created a separate kconfig to select it: CONFIG_REFCOUNT_INTERRUPT_KUNIT_TEST. Enable it.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/83c0e0cc2b172d5dde4d7d7f6259edd30e8748b3)\n\n**ANDROID: selftests: wrapfd: Use mincore() to detect if a mapping is present**\n\nwrapfd selftest fork() 경로에서 VMA 미복사 검증을 SIGSEGV 대신 mincore()로 바꿨습니다.\n\n영향: 기능은 동일하면서 CI/로컬 selftest 시 kernel error noise가 줄어 wrapfd 회귀 triage가 쉬워집니다.\n\n> While functional, it has the unfortunate side-effect of producing a not so pretty error message in the kernel logs. So, instead of relying on the process dying via a segfault, use mincore() instead.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/8376bfc68e6fb64410c3c810278f1e881cad321b)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ANDROID: gki_defconfig: enable REFCOUNT_INTERRUPT_KUNIT_TEST",
+      "url": "https://android.googlesource.com/kernel/common/+/83c0e0cc2b172d5dde4d7d7f6259edd30e8748b3",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: init: spawn pid 1 with CLONE_FS",
+      "url": "https://android.googlesource.com/kernel/common/+/d82b1e9acccf66dcebefedad2635d28e1d63d895",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: selftests: wrapfd: Use mincore() to detect if a mapping is present",
+      "url": "https://android.googlesource.com/kernel/common/+/8376bfc68e6fb64410c3c810278f1e881cad321b",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: wrapfd: Prevent deadlock on Wrap::drop()",
+      "url": "https://android.googlesource.com/kernel/common/+/9fc983f11b6a3919be2befe49c83872ba1a21574",
+      "note": "commit"
+    },
+    {
+      "title": "Merge tag 'pci-v7.3-fixes-6' of git://git.kernel.org/pub/scm/linux/kernel/git/pci/pci",
+      "url": "https://android.googlesource.com/kernel/common/+/4766082b791b515953d87f7a24c2ea857e6c10b0",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-10-31T18:03:08.003Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/android-newsletter-from-dossier-ko.md"
+  }
+}
