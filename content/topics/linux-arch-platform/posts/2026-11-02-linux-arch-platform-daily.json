@@ -1,0 +1,116 @@
+{
+  "id": "2026-11-02-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-11-02 x86·arm64 회귀 — Arch·Platform",
+  "headline": "x86 syscall -1L ptrace 회귀 V2와 arm64 /dev/mem overflow 보안 수정이 linux-riscv·arm-kernel 리스트에 올라왔고, RISC-V는 FU740 CLINT·Zalrsc-only v4가 이어진다.",
+  "date": "2026-11-02",
+  "summary": "Thomas Gleixner의 x86 entry V2는 syscall 번호 -1L 중단 시 tracer 반환값이 -ENOSYS로 덮이던 회귀를 32/64비트에서 복원한다. Zhao Gongyi의 arm64 패치는 valid_mmap_phys_addr_range() overflow로 syzkaller가 유발하던 kernel panic 경로를 막는다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "RISC-V",
+    "arm64",
+    "x86"
+  ],
+  "highlights": [
+    {
+      "title": "x86/entry: ptrace syscall -1L 회귀 복원",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "x86/entry·ptrace·stable 백포트 추적 담당",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/102590.html",
+      "if": "strace/gdb·PREEMPT_RT tracer가 syscall -1 abort 경로를 쓰면",
+      "do": "V2의 32비트 -1UL 검사 반영과 ENOSYS 덮어쓰기 회귀 여부를 selftest·리뷰 스레드에서 확인하세요",
+      "verify": "mainline·stable 반영 시점은 아직 확인이 필요합니다"
+    },
+    {
+      "title": "arm64: /dev/mem mmap overflow 검증",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "arm64 arch/mm·/dev/mem·syzkaller·stable 백포트 담당",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-November/1192775.html",
+      "if": "물리 mmap 검증과 syzkaller FUSE 1:1 재현을 추적하면",
+      "do": "inclusive 길이 비교 패치와 QEMU LPA2 결과, stable Cc 백포트 필요성을 함께 검토하세요",
+      "verify": "stable 브랜치 백포트 일정과 유사 overflow 경로는 확인이 필요합니다"
+    },
+    {
+      "title": "riscv: FU740 CLINT devicetree 추가",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "SiFive FU740 RISC-V 플랫폼·devicetree 유지보수 담당",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/102588.html",
+      "if": "HiFive Unmatched bring-up을 담당하면",
+      "do": "fu740-c000.dtsi CLINT 노드와 sifive,clint 바인딩 리뷰 후 보드 부팅으로 타이머·IPI 경로를 검증하세요",
+      "verify": "머지 후 Unmatched에서 OpenSBI 대비 CLINT 주소·인터럽트 라우팅 회귀 여부는 확인이 필요합니다"
+    },
+    {
+      "title": "riscv: Zalrsc-only(Zaamo 없음) v4",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "RISC-V arch/atomic·Mobileye EyeQ7h/MIPS P8700 플랫폼 빌드 담당",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/102584.html",
+      "if": "Zaamo 없이 Zalrsc만 있는 hart용 NONPORTABLE 빌드를 검토하면",
+      "do": "GCC 15.1 _zalrsc 가드, LR/SC 대 SBI AMO 에뮬 이득, userspace -march 정합을 v4 커버 기준으로 점검하세요",
+      "verify": "구 GCC randconfig·BPF AMO 미지원 정책은 추정 수준으로 확인이 필요합니다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**x86/entry: Fix ptrace regression**\n\nThomas Gleixner V2(11/1)는 x86 syscall entry 재작업 이후 syscall 번호 -1L로 syscall을 중단할 때 tracer가 바꾼 반환값을 유지하던 관행이, 잘못된 번호를 -ENOSYS로 덮어쓰며 깨진 회귀를 32/64비트 경로에서 복원한다. Fixes 1b1f3b3e1b39이며 stable Cc가 붙었다.\n\n영향: x86 entry·ptrace 담당은 strace/gdb·PREEMPT_RT 계열 tracer가 syscall -1 abort 경로에서 ENOSYS로 덮이는지, V2의 32비트 -1UL 검사가 리뷰에 반영됐는지 확인해야 한다.\n\n> The recent rework of the syscall entry code missed the historical detail of the abuse of syscall number -1L to abort a syscall and keep modifications by tracers to the return value\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-November/102590.html)\n\n**riscv: signal: fix the FP state restore in rt_sigreturn()**\n\nNickolai Zeldovich v2(10/31)는 rt_sigreturn()이 signal frame FP 레지스터 복사 중 선점·page fault로 sleep할 때 interrupted context에 handler FP가 남던 버그를, 복사 전 FP state를 clean으로 표시하고 __fstate_clean() 주변 preempt_disable()로 고친다. userfaultfd selftest(fp_restore.c)를 추가한다.\n\n영향: RISC-V signal·FP 경로 담당은 master에서 10/10 재현되는 userfaultfd selftest 실패와 preempt=none/lazy 환경에서의 sporadic FP corruption 위험을 패치·Guobin Zhang status RMW v2와의 적용 순서 관점에서 확인해야 한다.\n\n> If rt_sigreturn() is preempted or sleeps on a page fault while it copies the FP registers from the signal frame, the interrupted code resumes with the signal handler's FP registers.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-October/102576.html)\n\n**arm64: mm: validate /dev/mem mmap ranges without overflow**\n\nZhao Gongyi(11/1)는 valid_mmap_phys_addr_range()에서 PFN+size 합산 overflow로 PHYS_MASK 검사를 통과해 remap_pfn_range()까지 가던 syzkaller 경로를 막고, PHYS_MASK 끝까지의 정당한 mmap도 허용하도록 inclusive 길이 비교로 고친다. Fixes 1d18c47c735e, stable Cc.\n\n영향: arm64 /dev/mem·물리 mmap 검증 담당은 overflow mmap 뒤 openat(NULL)로 kernel panic(ESR 0x96000010)이 나던 syzkaller 클래스 버그와 stable 백포트 필요성을 QEMU LPA2 테스트 결과와 함께 추적해야 한다.\n\n> valid_mmap_phys_addr_range() checks the exclusive end by adding the mapping size to the starting address. For this offset, the sum wraps to zero and passes the PHYS_MASK test\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-arm-kernel/2026-November/1192775.html)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**iommu/riscv: Add hardware dirty tracking for second-stage domains**\n\nFangyu Yu v6(10/31)은 선행 패치를 시리즈에 포함했고 mainline 390febb5805d 기준으로 리베이스했다. AMO_HWAD·GADE로 2단계(iohgatp) PTE D 비트를 DMA 쓰기 시 하드웨어가 갱신하게 하고, generic_pt dirty hook과 iommufd(IOMMU_HWPT_SET/GET_DIRTY_TRACKING, IOMMU_CAP_DIRTY_TRACKING)에 연결한다.\n\n영향: RISC-V nested VFIO·iommufd dirty tracking 담당은 2단계 도메인 전용 범위, GADE/GVMA flush 변경, 아직 mainline이 아닌 선행 시리즈 의존성을 함께 추적해야 한다.\n\n> This series wires that capability up to the iommufd dirty-tracking interface (IOMMU_HWPT_SET_DIRTY_TRACKING / IOMMU_HWPT_GET_DIRTY_BITMAP) and reports IOMMU_CAP_DIRTY_TRACKING.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-October/102566.html)\n\n**riscv: dts: sifive: Add the missing FU740 CLINT**\n\nHan Gao 2패치(11/1)는 coreboot/U-Boot·OpenSBI에 이미 있는 FU740 CLINT를 Linux fu740-c000.dtsi에 추가하고 sifive,clint 바인딩에 FU740 compatible를 문서화한다.\n\n영향: HiFive Unmatched(FU740) bring-up 담당은 CLINT 노드 누락으로 타이머·IPI 경로가 펌웨어와 어긋날 수 있으므로 DT·바인딩 리뷰와 보드 부팅 검증을 확인해야 한다.\n\n> coreboot and U-Boot already describe the FU740 CLINT for OpenSBI. Add the missing node to the Linux device tree and document its compatible.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-November/102588.html)\n\n**riscv: support CPUs with Zalrsc but not Zaamo**\n\nVladimir Kondratiev v4(11/1)는 Zaamo 없이 Zalrsc만 있는 hart(MIPS P8700/EyeQ7h)용 NONPORTABLE Zaamo-off 빌드에서 커널 atomic·bitops·futex 경로를 LR/SC로 생성하고, GCC 15.1 이상에서만 _zalrsc -march로 Zaamo를 끌 수 있게 한다. 기본 설정은 기존과 동일하게 \"a\"를 유지한다.\n\n영향: Zalrsc-only SoC·EyeQ7h ADAS 플랫폼 담당은 SBI AMO 에뮬(~600 cycles) 대비 LR/SC(~40 cycles) 이득, userspace -march 정합, BPF AMO 미지원 제약을 v4의 컴파일러 가드와 함께 검토해야 한다.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-November/102584.html)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "x86/entry: Fix ptrace regression",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/102590.html",
+      "note": "thread"
+    },
+    {
+      "title": "iommu/riscv: Add hardware dirty tracking for second-stage domains",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/102566.html",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: dts: sifive: Add the missing FU740 CLINT",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/102588.html",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: support CPUs with Zalrsc but not Zaamo",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/102584.html",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: signal: fix the FP state restore in rt_sigreturn()",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/102576.html",
+      "note": "thread"
+    },
+    {
+      "title": "arm64: mm: validate /dev/mem mmap ranges without overflow",
+      "url": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-November/1192775.html",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-01T18:26:31.114Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

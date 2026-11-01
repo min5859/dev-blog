@@ -1,0 +1,128 @@
+{
+  "id": "2026-11-02-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-11-02 Rockchip DSI 회귀 — GPU·AI",
+  "headline": "Rockchip non-burst DSI HLINE 회귀 수정안, Adreno VM_BIND·IFPC 정리, Furiosa NPU fdinfo per-core 통계가 dri-devel에 올라왔습니다.",
+  "date": "2026-11-02",
+  "summary": "dw-mipi-dsi v2는 pixel clock 기반 lbcc 변경 이후 GPD XD 등에서 page-flip 깨짐을 glue 쪽 HSA/HBP/HLINE 계산으로 되돌립니다. msm 쪽은 VM_BIND 범위 검증·submit 경로와 IFPC refcount 분리가 논의 중이며, accel/rocket v2는 drm-engine-npu per-core 사용 시간을 fdinfo로 노출합니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "Rockchip 단일 DSI non-burst HLINE 회귀",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "drm/bridge dw-mipi-dsi·Rockchip DSI glue·embedded MIPI panel integrator",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/dri-devel/20261101143031.880389-1-romain.tisserand@gmail.com/raw",
+      "if": "RK3288 GPD XD처럼 Rockchip+Synopsys DSI non-burst 보드에서 mainline lbcc(ac87d23694f4) 이후 page-flip 시 화면이 깨진다면",
+      "do": "Fixes ac87d23694f4와 v2의 get_hcomponent_lbcc() glue 경로를 리뷰·테스트하고, dual-DSI는 작성자 미검증이므로 별도 확인을 계획하세요",
+      "verify": "커버레터 재현 수치와 패치 diff를 lore 원문에서 대조하세요"
+    },
+    {
+      "title": "drm/msm VM_BIND overflow·legacy submit 차단",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "drm/msm gem·VM_BIND·Adreno userspace(IOMMU BO mapping) 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/dri-devel/20261101174911.25184-1-robin.clark@oss.qualcomm.com/raw",
+      "if": "VM_BIND 컨텍스트에서 GEM submit 또는 vm_bind_job_lookup_ops 범위 검증을 다룬다면",
+      "do": "size_add() 기반 range 검증과 VM_BIND에서 nr_bos BO 테이블 거부 패치를 리뷰하고, 32-bit size_t truncation 지적(Sashiko)에 대한 follow-up 여부를 확인하세요",
+      "verify": "0/2 시리즈 원문과 sashiko-outbox-192555 스레드를 함께 읽으세요"
+    },
+    {
+      "title": "IFPC disable와 sysprof refcount 분리",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "drm/msm Adreno GMU·IFPC·debugfs gpu state capture 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/dri-devel/20261101174631.23637-1-robin.clark@oss.qualcomm.com/raw",
+      "if": "a6xx GMU IFPC·debugfs GPU state dump·profiling이 동시에 IFPC off를 요청하는 경로를 유지한다면",
+      "do": "전용 ifpc_disable refcount 4패치 시리즈를 검토하고, Sashiko High(lock ordering·unlocked read·a8xx) 지적에 대한 작성자 응답이 있는지 머지 전에 확인하세요",
+      "verify": "커버레터와 sashiko-outbox-192551 리뷰 항목을 원문에서 대조하세요"
+    },
+    {
+      "title": "Furiosa Rocket NPU fdinfo per-core 엔진 사용량",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "accel/rocket driver·NPU userspace runtime·DRM fdinfo 소비자",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/dri-devel/20261101152723.1430312-1-sidong.yang@furiosa.ai/raw",
+      "if": "NPU multi-core utilization을 userspace에서 측정·튜닝해야 한다면",
+      "do": "drm-engine-npu<n>(ns)와 drm_show_memory_stats() 설계가 rdev->max_cores(6eff1d69dae8)와 맞는지 v2를 리뷰하고, drm-misc-next 반영 일정은 확인 필요로 두세요",
+      "verify": "v2 커버레터 인용과 6eff1d69dae8 커밋 메시지를 kernel.org에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm/bridge: dw-mipi-dsi: let the glue compute the hcomponent lbcc**\n\nv2는 ac87d23694f4 이후 pixel clock 기반 lbcc 계산이 Rockchip 단일 DSI non-burst에서 HLINE을 짧게 잡아 page-flip 시 화면이 깨지는 회귀를 고치며, dw_mipi_dsi_plat_data에 선택적 get_hcomponent_lbcc()를 두고 Rockchip glue가 레인 rate로 HSA/HBP/HLINE을 계산합니다.\n\n영향: RK3288 GPD XD 등 Rockchip+Synopsys DSI 조합은 mainline lbcc 변경의 직접 영향권이므로, display glue 유지보수 담당은 Fixes 대상 커밋과 dual-DSI(미검증) 예외를 함께 추적해야 합니다.\n\n> HLINE was 561 lane byte clocks (10.0 us) for a 12.55 us line, and the panel shows garbage as soon as a client page-flips.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/20261101143031.880389-1-romain.tisserand@gmail.com/raw)\n\n**drm/msm/gem: A couple VM_BIND fixes**\n\n2패치 시리즈는 vm_bind_job_lookup_ops()에서 op->range+op->obj_offset 합산을 size_add()로 바꿔 obj->size 대비 범위 검증 overflow를 막고, VM_BIND 컨텍스트의 GEM submit 경로에서 nr_bos BO 테이블 전달을 거부합니다.\n\n영향: Qualcomm Adreno VM_BIND userspace·커널 경계에서 잘못된 범위나 legacy submit 형식이 통과하면 메모리 corruption 위험이 있어, drm/msm gem/VM_BIND 리뷰어는 Sashiko가 지적한 32-bit size_add truncation 가능성까지 봐야 합니다.\n\n> Fix possible overflow in range check, and disallow passing BOs table to GEM_SUBMIT for VM_BIND contexts.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/20261101174911.25184-1-robin.clark@oss.qualcomm.com/raw)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/msm: Decouple IFPC disable and sysprof**\n\n4패치 시리즈는 IFPC(Idle Frame Power Collapse) 억제를 sysprof refcount와 분리해 msm_gpu에 전용 ifpc_disable refcount를 두고, debugfs GPU state dump 등 여러 스레드가 동시에 IFPC off를 요청해도 서로 덮어쓰지 않게 합니다. gen8 state capture 시리즈에서 독립 추출된 변경입니다.\n\n영향: Adreno a6xx GMU IFPC·perfcounter OOB vote는 profiling·debug snapshot·전력 절감이 겹치는 경로라, msm/adreno maintainers는 Sashiko High(lock ordering·unlocked refcount read·a8xx 누락) 지적이 해소되는지 머지 전에 확인해야 합니다.\n\n> Convert IFPC-disable into it's own refcnt so that multiple threads can request IFPC to be disabled without stomping on each other.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/20261101174631.23637-1-robin.clark@oss.qualcomm.com/raw)\n\n**accel/rocket: Report per-core engine usage through fdinfo**\n\nv2는 Furiosa Rocket NPU에서 클라ient별 fdinfo에 drm-engine-npu<n> per-core 점유 시간(ns)과 drm_show_memory_stats() BO 통계를 노출합니다. rdev->max_cores 크기의 refcounted 카운터로 job이 file보다 오래 살아도 안전하게 집계합니다.\n\n영향: NPU multi-core utilization을 userspace가 측정·스케줄링 튜닝할 수 있는 관측 API이므로, accel/rocket·AI runtime(Teflon 등) 담당은 fdinfo 필드 의미와 max_cores 의존(6eff1d69dae8)을 맞춰야 합니다.\n\n> Implement the DRM usage stats: account the time each job occupies a core and report it per client as drm-engine-npu<n>\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/20261101152723.1430312-1-sidong.yang@furiosa.ai/raw)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "dw-mipi-dsi Rockchip lbcc v2 커버레터",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/20261101143031.880389-1-romain.tisserand@gmail.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "ac87d23694f4 — Use pixel clock rate to calculate lbcc",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=ac87d23694f4",
+      "note": "commit"
+    },
+    {
+      "title": "93e82bb4de01 — Fix hcomponent lbcc for burst mode",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=93e82bb4de01",
+      "note": "commit"
+    },
+    {
+      "title": "drm/msm VM_BIND fixes 0/2",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/20261101174911.25184-1-robin.clark@oss.qualcomm.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "Sashiko — VM_BIND size_add 32-bit truncation",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/sashiko-outbox-192555@kernel.org/raw",
+      "note": "thread"
+    },
+    {
+      "title": "drm/msm IFPC disable decouple 0/4",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/20261101174631.23637-1-robin.clark@oss.qualcomm.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "Sashiko — IFPC refcount series review",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/sashiko-outbox-192551@kernel.org/raw",
+      "note": "thread"
+    },
+    {
+      "title": "accel/rocket fdinfo v2",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/20261101152723.1430312-1-sidong.yang@furiosa.ai/raw",
+      "note": "thread"
+    },
+    {
+      "title": "6eff1d69dae8 — max_cores core slot search",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=6eff1d69dae8",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-01T18:28:00.975Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
