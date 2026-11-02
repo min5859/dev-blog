@@ -1,0 +1,126 @@
+{
+  "id": "2026-11-03-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-11-03 x86 ptrace·IOMMU — Arch·Platform",
+  "headline": "x86 syscall -1L ptrace 회귀 V2와 RISC-V IOMMU dirty attach 검증 공백이 리스트에 올라왔고, KASAN vmap·KGDB·RK3568 DT·CVA6 Genesys 2가 이어진다.",
+  "date": "2026-11-03",
+  "summary": "Thomas Gleixner V2는 syscall entry 재작업 뒤 tracer 반환값을 -ENOSYS로 덮던 x86 ptrace 회귀를 32/64비트에서 복원한다. Jason Hu 리뷰는 AMO_HWAD 없는 IOMMU에 dirty 도메인 attach가 조용히 성공할 수 있는 v6 gap을 짚었고 Fangyu Yu가 v7 attach 시 재검증을 예고했다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "x86",
+    "RISC-V",
+    "arm64"
+  ],
+  "highlights": [
+    {
+      "title": "x86/entry: ptrace syscall -1L 회귀 복원",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "x86/entry·ptrace·stable 백포트 추적 담당",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/102590.html",
+      "if": "strace/gdb·PREEMPT_RT tracer가 invalid syscall과 -1 abort 경로를 쓰면",
+      "do": "V2 diff·stable Cc와 Sebastian Siewior Tested-by가 반영된 ia32 중괄호 수정 여부를 리뷰 스레드에서 확인하세요",
+      "verify": "mainline·stable 반영 시점과 64비트 경로 최종 diff 일치 여부는 확인이 필요합니다"
+    },
+    {
+      "title": "iommu/riscv: dirty tracking AMO_HWAD 검증 공백",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "RISC-V IOMMU·iommufd·VFIO pass-through 유지보수 담당",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/102691.html",
+      "if": "nested KVM·iommufd dirty tracking을 v6 기준으로 준비하면",
+      "do": "attach 시점 AMO_HWAD capability 재검증이 들어간 v7 공개 전까지 v6 그대로 배포하지 말고 리뷰 스레드를 따라가세요",
+      "verify": "v7 거부 패치 공개 시점과 mainline v6 머지 순서는 확인이 필요합니다"
+    },
+    {
+      "title": "riscv: mm: KASAN shadow와 flush_cache_vmap",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "RISC-V mm/KASAN·defconfig CI 유지보수 담당",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/102693.html",
+      "if": "KASAN·vmalloc 경로를 켠 Orange Pi RV2 등 CI를 돌리면",
+      "do": "kasan_populate_vmalloc() shadow 구간이 flush_cache_vmap() 범위에 포함되는 패치(Fixes 503638e0babf) 머지 후 간헐 panic 회귀를 추적하세요",
+      "verify": "mainline 머지 후 KernelCI Orange Pi RV2 스케줄 회귀 여부는 확인이 필요합니다"
+    },
+    {
+      "title": "riscv: kgdb local_irq_restore 누락 경로",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "RISC-V arch/kgdb·JTAG 디버그 유지보수 담당",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/102709.html",
+      "if": "kgdb_handle_exception()이 NOTIFY_DONE으로 빠지는 bring-up을 담당하면",
+      "do": "RESEND diff에서 kgdb_riscv_handle() 분리로 save/restore 사이에서만 예외를 처리하는지 리뷰·머지를 확인하세요",
+      "verify": "RESEND 외 기능 변경 여부와 mainline 머지 일정은 확인이 필요합니다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**x86/entry: Fix ptrace regression**\n\nThomas Gleixner V2는 syscall entry 재작업 이후 syscall 번호 -1L로 중단할 때 tracer가 바꾼 반환값을 -ENOSYS로 덮던 회귀를 32/64비트 경로에서 복원하며, Sebastian Siewior가 ia32 경로 중괄호 컴파일 오류를 짚고 Tested-by를 제출했다.\n\n영향: x86 entry·ptrace·PREEMPT_RT 계열을 추적하는 담당은 strace/gdb가 invalid syscall과 -1 abort 경로에서 ENOSYS 덮어쓰기 없이 동작하는지 V2 리뷰·stable Cc를 확인해야 한다.\n\n> The recent rework of the syscall entry code missed the historical detail of the abuse of syscall number -1L to abort a syscall and keep modifications by tracers to the return value\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-November/102590.html)\n\n**riscv: mm: Add KASAN shadow mapping to flush_cache_vmap()**\n\nAli Tariq 패치는 kasan_populate_vmalloc() shadow 범위가 flush_cache_vmap() 플래그 대상에서 빠져 sfence.vma 없이 KASAN shadow 쓰기가 크래시하던 문제를 cacheflush.h에 shadow 구간을 포함해 고친다. Fixes 503638e0babf.\n\n영향: RISC-V KASAN·vmalloc 경로를 켠 defconfig·CI(Orange Pi RV2 등) 담당은 vmap shadow hotplug 이후 부팅 간헐 panic이 이 한 줄 범위 수정으로 해소되는지 추적해야 한다.\n\n> kasan_populate_vmalloc() maps new shadow pages and calls flush_cache_vmap() on the shadow range, so no flag gets set.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-November/102693.html)\n\n**iommu/riscv: Add dirty tracking support for second-stage domains**\n\nJason Hu 리뷰는 v6가 AMO_HWAD를 가진 IOMMU에서만 dirty_ops를 설정해, AMO_HWAD 없는 인스턴스에 dirty 도메인 attach가 조용히 성공할 수 있다고 지적했고 Fangyu Yu가 attach 시 capability 재검증을 v7에 넣겠다고 답했다.\n\n영향: RISC-V nested KVM·iommufd dirty tracking을 준비하는 담당은 Intel/AMD처럼 attach 시점 AMO_HWAD 검증이 들어가기 전 v6 시리즈를 그대로 쓰면 게스트 page fault 위험이 있다.\n\n> attaching a dirty-tracking domain to a device behind an instance without AMO_HWAD would silently succeed. I'll fix this in the next version.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-November/102691.html)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**riscv: kgdb: Fix potential missing local_irq_restore() call**\n\nClément Léger RESEND 패치는 kgdb_handle_exception()이 NOTIFY_DONE으로 빠질 때 local_irq_restore() 없이 IRQ가 꺼진 채 남던 경로를 kgdb_riscv_handle()로 분리해 save/restore 사이에서만 처리하도록 고친다.\n\n영향: RISC-V KGDB·디버그 notifier를 쓰는 보드 bring-up 담당은 예외 처리 실패 시 IRQ가 영구 비활성화되는 dead path가 없는지 RESEND diff 리뷰·머지를 따라가야 한다.\n\n> If kgdb_handle_exception() returns an error, local irqs are not reenabled. Fix this by factoring out the kgdb exception handling to a function\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-November/102709.html)\n\n**arm64: dts: rockchip: fix GMAC clocks and USB OTG power on RK3568 boards**\n\nCoia Prant v3(6패치)는 여러 RK3568 보드 GMAC assigned-clocks에 CLK_MACx_2TOP 부모를 명시하고, Photonicat에서 배터리 시 USB 5V_OUT·boost regulator 트리와 M.2 modem vcc3v4_rf 공급 토폴로지를 schematic에 맞게 수정한다.\n\n영향: RK3568 커뮤니티 보드·Photonicat bring-up 담당은 부트로더가 남긴 GMAC 클럭·배터리 USB host·셀룰러 모듈 전원 DT가 v3 regulator 모델과 일치하는지 검증해야 한다.\n\n> Add the vbat, 5v_boost, and 5v_out regulator nodes to model the OR-ed power path from the schematic, restoring USB host functionality on battery.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-arm-kernel/2026-November/1193372.html)\n\n**riscv: add OpenHW Group CVA6 APU on Digilent Genesys 2**\n\nMarouene Boubakri 8패치 시리즈는 OpenHW CVA6 APU(v5.3.0 FPGA)용 바인딩·ARCH_OPENHWGROUP Kconfig·cv32/cv64 Genesys 2 DT·defconfig를 추가하며 cv64는 U-Boot 2026.10으로 부팅 검증했다.\n\n영향: CVA6 FPGA·OpenHW 플랫폼을 추적하는 RISC-V 담당은 upstream DT/바인딩 범위와 아직 DT에 넣지 않은 Ethernet·PULP timer gap을 시리즈 리뷰로 확인해야 한다.\n\n> This series adds support for the OpenHW Group CVA6 APU, the FPGA SoC built around the CVA6 core (https://github.com/openhwgroup/cva6, corev_apu/fpga, release v5.3.0), running on the Digilent Genesys 2\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-November/102694.html)\n\n**arm64: dts: imx8qm-ss-conn: add usbotg3 iommu information**\n\nFrank Li가 usbotg3_cdns3에 power-domains(IMX_SC_R_USB_2)를 iommus와 함께 넣어 of_iommu_configure()가 동작하게 하자는 DT 수정을 제안했고, Emanuele Ghidoli가 Apalis iMX8QM/QP에서 SuperSpeed 열거·SMMU fault 해소를 확인했다.\n\n영향: i.MX8QM/QP 모듈·Dev board USB3 담당은 iommus만으로는 platform DMA/IOMMU probe가 스킵되는 문제와 QXP/DXL 무SMMU 보드에 속성을 넣지 않을 imx8qm 전용 배치를 v2 패치에서 확인해야 한다.\n\n> this works. xHCI comes up fine and SuperSpeed devices enumerate again, with no Host System Error and no SMMU faults.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-arm-kernel/2026-November/1193366.html)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "x86/entry: Fix ptrace regression (V2)",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/102590.html",
+      "note": "thread"
+    },
+    {
+      "title": "x86/entry V2 ia32 compile fix (Sebastian Siewior)",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/102713.html",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: kgdb local_irq_restore RESEND",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/102709.html",
+      "note": "thread"
+    },
+    {
+      "title": "arm64: RK3568 GMAC·Photonicat USB v3",
+      "url": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-November/1193372.html",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: OpenHW CVA6 on Genesys 2",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/102694.html",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: KASAN shadow flush_cache_vmap",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/102693.html",
+      "note": "thread"
+    },
+    {
+      "title": "arm64: imx8qm usbotg3 iommu·power-domains",
+      "url": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-November/1193366.html",
+      "note": "thread"
+    },
+    {
+      "title": "iommu/riscv: dirty tracking v6 review",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/102691.html",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-02T18:31:50.293Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

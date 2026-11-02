@@ -1,0 +1,158 @@
+{
+  "id": "2026-11-03-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-11-03 7.2.15 EOL·regmap — 커널 보안",
+  "headline": "7.2.y 최종 stable과 regmap bounds 강화, LTS bonding UAF·leds 회귀 수정이 한 주기에 겹칩니다.",
+  "date": "2026-11-03",
+  "summary": "Greg Kroah-Hartman이 Linux 7.2.15를 7.2.y 마지막 릴리스로 선언했고, regmap access table에 __counted_by_ptr()이 for-7.5에 들어갔습니다. 5.10·5.15 LTS 롤업과 ktd202x 패치는 운영 경로에서 조기 검토할 신호입니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "regmap access table bounds 검사 강화",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "regmap 서브시스템 maintainer, CONFIG_FORTIFY/UBSAN hardening 빌드 담당자",
+      "verifyLink": "https://lists.openwall.net/linux-hardening/2026/11/02/16",
+      "if": "CONFIG_UBSAN_BOUNDS·FORTIFY_SOURCE로 regmap을 쓰는 드라이버를 빌드한다면",
+      "do": "broonie/regmap for-7.5 트리 반영 시점과 하위 드라이버 회귀를 추적하세요",
+      "verify": "hardening 스레드와 Mark Brown의 for-7.5 적용 공지를 원문에서 확인하세요"
+    },
+    {
+      "title": "Linux 7.2.15 stable · 7.2.y EOL",
+      "priority": "상",
+      "impactType": "release",
+      "affectedAudience": "7.2.y stable 배포 담당자, ksmbd·CIFS/RDMA 운영자, netfilter/OVS zerocopy 경로 담당자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/01/439",
+      "if": "아직 7.2.y 커널에 머물러 있다면",
+      "do": "7.3.y로 이전 계획을 확정하고 ksmbd·SMB Direct·zerocopy 관련 12건 백포트를 우선 검토하세요",
+      "verify": "Greg Kroah-Hartman EOL 공지와 ChangeLog-7.2.15를 대조해 확인하세요"
+    },
+    {
+      "title": "net: bonding bond_xmit_broadcast UAF (5.10·5.15 LTS)",
+      "priority": "상",
+      "impactType": "backport",
+      "affectedAudience": "5.10.y LTS 배포·CIP maintainer, 네트워크 스택(back bonding/nftables) 운영자",
+      "verifyLink": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.273",
+      "if": "bonding 브로드캐스트 전송 경로를 쓰는 LTS 배포를 유지한다면",
+      "do": "5.10.273·5.15.224 vendor rebuild 또는 cherry-pick 계획에 해당 수정 포함 여부를 점검하세요",
+      "verify": "ChangeLog-5.10.273·5.15.224의 bond_xmit_broadcast 항목과 배포판 advisory를 확인하세요"
+    },
+    {
+      "title": "leds: ktd202x ET6326·버그 수정",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "leds 서브시스템 maintainer, GL-SFT1200·MIPS/OpenWrt 보드 포터",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/02/114",
+      "if": "KTD202x 계열 또는 GL-SFT1200 보드에서 LED blink·flash를 다룬다면",
+      "do": "10패치 시리즈의 32비트 blink·OOB·divide-by-zero 수정과 ET6326 binding을 upstream 기준으로 맞추세요",
+      "verify": "cover letter와 OpenWrt·6.18.55 테스트 기술 스레드를 원문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.2.15 stable · EOL**\n\n2026-11-01 Linux 7.2.15 stable이 공개되었고 Greg Kroah-Hartman은 7.2.y 최종 릴리스·EOL을 선언했다. 12건 백포트에는 ksmbd 협상 레이스 수정, SMB Direct 리스너/accept 정리 3건, net/skbuff zerocopy 공유 frag 플래그 전파, Bluetooth RPA 등이 포함된다.\n\n영향: 7.2.y 사용자는 더 이상 stable 수정을 받지 못하므로 7.3.y로 옮겨야 한다. ksmbd·SMB Direct·zerocopy 경로를 쓰는 네트워크·스토리지 운영은 이번 포인트 릴리스 백포트를 우선 검토할 가치가 있다.\n\n> Note, this is the LAST 7.2.y kernel release.  After this one the 7.2.y kernel tree is end-of-life.  Please move to 7.3.y at this time.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/01/439)\n\nZDI-CAN-33549(SMB Direct underflow)가 7.2.15에 포함됐는지는 ChangeLog만으로는 단정하지 않았으므로, 필요 시 ChangeLog-7.2.15에서 별도로 확인하세요.\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.15)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**regmap: Annotate regmap_access_table members with __counted_by_ptr()**\n\nThorsten Blum 패치가 regmap_access_table의 yes_ranges/no_ranges에 __counted_by_ptr()을 붙여 UBSAN bounds·FORTIFY_SOURCE 검사를 강화한다. Mark Brown이 2026-11-02 broonie/regmap for-7.5 트리에 적용했다.\n\n영향: regmap access table을 쓰는 수백 드라이버가 hardening 빌드에서 bounds 위반을 더 일찍 잡을 수 있다. regmap API 소비자·distro hardening 설정 팀은 linux-next/7.5 merge를 주시해야 한다.\n\n> Add __counted_by_ptr() to regmap_access_table::yes_ranges and\nregmap_access_table::no_ranges to improve access bounds checking via\nCONFIG_UBSAN_BOUNDS and CONFIG_FORTIFY_SOURCE.\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/11/02/16)\n\n**leds: ktd202x: Add Etek ET6326, hardware breathing and fixes**\n\nJoseph Telaak가 10패치 시리즈로 KTD202x 드라이버의 32비트 blink·OOB·divide-by-zero 버그 4건을 고치고, GL.iNet GL-SFT1200용 ET6326 지원·hw_pattern breathing·led-max-microamp·다중 LED flash 타이밍 분리를 추가했다.\n\n영향: ET6326은 KTD2026 fallback으로 동작하지만 flash 주기 인코딩이 달라 잘못된 blink가 난다. 라우터·OpenWrt 보드와 leds 트리거 사용자는 upstream 드라이버·DT binding이 필요하다.\n\n> a blink shorter than 256 ms became a 16 s blink on 32 bit\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/02/114)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Linux 7.3.1 stable**\n\n2026-10-30 Linux 7.3.1 stable이 공개되었고 ChangeLog에는 39건 백포트가 있다. io_uring(poll/net/waitid), coredump·signal·pid namespace, keys/trusted keys, tracing/ftrace 등이 주요 영역이다.\n\n영향: 7.3.x 첫 point stable로 io_uring·코어덤프·키링 회귀 수정을 받아야 한다. io_uring/net recv 버퍼 길이 제한 같은 네트워크 경로 수정도 포함된다.\n\n> I'm announcing the release of the 7.3.1 kernel.\n\nAll users of the 7.3 kernel series must upgrade.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/10/30/1519)\n\n**Linux 5.10.273 · 5.15.224 longterm**\n\n2026-10-30 각 longterm stable이 공개되었고 ChangeLog에는 5.10.273에 516건, 5.15.224에 571건 백포트가 있다. signal/keys/tracing 외 bonding bond_xmit_broadcast UAF, nf_tables set element count, fq_codel, Bluetooth L2CAP, 5.15에는 io-wq·ksmbd FS info 초기화 등이 포함된다.\n\n영향: LTS 배포는 vendor cherry-pick 또는 rebuild로 묶음을 받아야 하며, 516·571건 전체와 배포판별 실제 포함 집합은 vendor advisory 확인이 필요하다.\n\n> net: bonding: fix use-after-free in bond_xmit_broadcast()\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.273)\n\n**media: qcom: camss: CAMSS Offline Processing Engine support**\n\nLoic Poulain이 v12(2026-11-02)로 Qualcomm CAMSS OPE 드라이버 시리즈를 재게시했다. 메모리 간 Bayer→YUV ISP를 V4L2 노드로 노출하며 Agatti·Arduino UNO-Q 계열을 겨냥한다.\n\n영향: Qualcomm 플랫폼에서 raw 캡처 너머 하드웨어 ISP 처리의 첫 upstream 단계다. v12 이후 maintainer ACK·linux-media 트리 반영 시점은 이 수집에서 확인하지 못했다.\n\n> The OPE sits outside the live capture pipeline. It operates on frames\nfetched from system memory and writes processed results back to memory.\n\n[원문 확인](https://lore.jethome.com/lkml/20261102-camss-isp-ope-v12-0-702254689feb@oss.qualcomm.com/)\n\n**Add Amlogic A9 I3C support**\n\nJunyi Zhao가 v2(2026-11-02)로 Silvaco SVC I3C 마스터에 Amlogic A9 EE·AO 변형 clock/quirk를 추가하고 DT binding을 갱신했다.\n\n영향: A9 SoC에서 I3C 버스 bring-up은 vanilla Silvaco clock 모델과 달라 glue 없이는 probe 실패한다.\n\n> the EE-domain controller (amlogic,a9-i3c) takes two clocks, \"pclk\" and \"fast_clk\",\nwhile the AO-domain controller (amlogic,a9-ao-i3c) exposes only\n\"pclk\"\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/11/02/15)\n\n**wifi: brcmfmac: Add BCM4388 support**\n\nMichael Reeves 13패치 시리즈가 brcmfmac에 BCM4388용 signed PCIe 펌웨어·mailbox transport 등을 추가한다. Arend van Spriel이 2026-11-01 테스트에서 회귀 없음을 보고했다.\n\n영향: Apple M3 등 BCM4388 장비는 upstream brcmfmac 지원이 필요하나, Apple PCIe/DT 및 port-authorization 패치 없이 동일 하드웨어 bring-up이 가능한지는 시리즈 본문대로 별도 패치가 필요할 수 있다.\n\n> Finally got some time to get this series tested on my setup. The patches\ngenerally look good. So far no regressions observed.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/01/815)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "7.2.15 EOL 공지 (Greg Kroah-Hartman)",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/01/439",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-7.2.15",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.15",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-7.3.1",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.3.1",
+      "note": "changelog"
+    },
+    {
+      "title": "7.3.1 stable 공지",
+      "url": "https://lists.openwall.net/linux-kernel/2026/10/30/1519",
+      "note": "thread"
+    },
+    {
+      "title": "ktd202x ET6326 cover",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/02/114",
+      "note": "thread"
+    },
+    {
+      "title": "ktd202x GL-SFT1200 테스트",
+      "url": "https://lists.openwall.net/linux-hardening/2026/11/02/7",
+      "note": "thread"
+    },
+    {
+      "title": "CAMSS OPE v12 cover",
+      "url": "https://lore.jethome.com/lkml/20261102-camss-isp-ope-v12-0-702254689feb@oss.qualcomm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Amlogic A9 I3C v2 cover",
+      "url": "https://lists.openwall.net/linux-hardening/2026/11/02/15",
+      "note": "thread"
+    },
+    {
+      "title": "A9 I3C BY401 검증 (patchew)",
+      "url": "https://patchew.org/linux/20261102-a9._5Fi3c-v2-0-0c474bfccffa@amlogic.com/",
+      "note": "thread"
+    },
+    {
+      "title": "brcmfmac BCM4388 cover",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/25/1147",
+      "note": "thread"
+    },
+    {
+      "title": "brcmfmac BCM4388 maintainer 테스트",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/01/815",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-5.10.273",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.273",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-5.15.224",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.224",
+      "note": "changelog"
+    },
+    {
+      "title": "regmap __counted_by_ptr 패치",
+      "url": "https://lists.openwall.net/linux-hardening/2026/11/02/16",
+      "note": "thread"
+    },
+    {
+      "title": "regmap for-7.5 적용",
+      "url": "https://lists.openwall.net/linux-hardening/2026/11/02/18",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-02T18:17:29.131Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

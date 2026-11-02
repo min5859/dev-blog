@@ -1,0 +1,133 @@
+{
+  "id": "2026-11-03-linux-distro-stable-daily",
+  "topic": "linux-distro-stable",
+  "title": "2026-11-03 NBCON panic flush — Distro Stable",
+  "headline": "stable@에서 NBCON netconsole panic·kdump 로그 유실 회귀 수정과 mm·NVMe·virtio-net 보안 백포트 후보가 동시에 논의 중입니다.",
+  "date": "2026-11-03",
+  "summary": "Breno Leitao 시리즈가 vpanic·__crash_kexec() 경로에 unsafe 콘sole flush를 넣어 panic_timeout 재부팅 시 netconsole 유실을 막는 방향으로 stable@ 리뷰가 이어집니다. filemap fault-around·NVMe cdev 이중 put·virtio_net ethtool stats 검증 등 LTS 백포트 검토 항목도 lore에 올라와 있습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "panic: flush unsafe consoles before reboot and kdump",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "netconsole·kdump·printk/NBCON 유지보수자, 원격 panic 수집 파이프라인 운영자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/10/30/2244",
+      "if": "BMC 없이 netconsole으로 panic·kdump 로그를 모으는 CI·랩 환경을 운영한다면",
+      "do": "NBCON 전환 이후 stable@에 제출된 flush 시리즈와 printk maintainers 논의를 따라가며 백포트 계획을 세우세요",
+      "verify": "Ryan Roberts RFC와 Breno 패치 스레드에서 panic_timeout!=0일 때 로그가 빠지는 경로 설명을 원문으로 확인하세요"
+    },
+    {
+      "title": "mm/filemap: stop fault-around when the walk steps back",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "mm/filemap·xarray maintainer, KASAN/syzbot 회귀 추적자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/10/31/231",
+      "if": "파일 매핑 fault-around와 page cache·xarray split이 겹치는 워크로드를 LTS에 유지한다면",
+      "do": "Jose Fernandez v2의 xas.xa_index 역행 시 중단 로직을 우선순위에 두고 stable cherry-pick 여부를 판단하세요",
+      "verify": "KASAN UAF 재현 설명이 담긴 v2 스레드 본문을 열어 diff와 함께 검토하세요"
+    },
+    {
+      "title": "nvme: Do not drop the cdev reference twice when cdev_device_add() fails",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "linux-nvme maintainer, NVMe multipath·char dev 경로 운영자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/02/1004",
+      "if": "NVMe multipath·/dev/ng* char dev teardown과 컨트롤러 삭제 경로를 stable 트리에 백포트한다면",
+      "do": "cdev_device_add() 실패 시 이중 put을 막는 Yuqiang Sun v2와 John Garry Reviewed-by 회신을 추적하세요",
+      "verify": "KASAN slab-use-after-free 스택이 기록된 동일 스레드에서 refcount underflow 재현 조건을 확인하세요"
+    },
+    {
+      "title": "virtio_net: reject stats replies for queues outside the request",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "virtio-net·vhost maintainer, VM ethtool 모니터링 운영자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/10/22/1921",
+      "if": "게스트에서 ethtool -S로 virtio-net per-queue 통계를 수집한다면",
+      "do": "vq_index 범위 검증 패치와 Paolo Abeni의 ethtool -L 관련 리뷰 코멘트를 stable Cc 여부와 함께 확인하세요",
+      "verify": "배열 past-end 쓰기 재현 설명이 있는 netdev 스레드 원문을 읽으세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**panic: flush unsafe consoles before reboot and kdump**\n\nNBCON 전환 이후 panic reboot·kdump 경로에서 netconsole(CON_NBCON_ATOMIC_UNSAFE) 로그가 유실되는 회귀를 고치는 Breno Leitao 시리즈가 2026-11-02 stable@에 제출되었고 printk maintainers 리뷰가 진행 중입니다.\n\n영향: BMC 없이 netconsole으로 panic/kdump 로그를 수집하는 환경에서는 NBCON 회귀가 가시성·사후 분석 실패로 직결되며, stable 백포트 여부와 flush 시점(TDX guest 등)은 아직 논의 중입니다.\n\n> So if the system was configured to reboot on panic, netconsole would never receive the panic logs.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/09/15/1233)\n\n> Add nbcon_atomic_unsafe_only_flush(), which flushes only the\n    CON_NBCON_ATOMIC_UNSAFE consoles and allows unsafe takeovers on them.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/10/30/2244)\n\n> Stopping the CPUs earlier would change the existing behavior.\nAnd we would need to discuss this with crashdump maintainers.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/02/1144)\n\nPetr Mladek가 제안한 printk() 경로 compromise와 Breno 시리즈 중 어느 쪽이 merge될지는 확인이 필요합니다.\n\n**mm/filemap: stop fault-around when the walk steps back**\n\nJose Fernandez v2는 filemap_map_pages() fault-around 루프에서 xas_find()가 인덱스를 뒤로 걸을 때 vmf->pte가 잠근 page table 밖으로 나가 KASAN UAF·OOB 쓰기가 날 수 있는 경로를 끊으며 stable@ Cc가 붙어 있습니다.\n\n영향: 파일 매핑 fault-around는 일반 워크로드에서 자주 타며, page cache walk와 xarray split이 겹치면 page table UAF가 날 수 있어 LTS 백포트 후보로 우선순위를 매겨야 합니다.\n\n> filemap_map_pages() can dereference a PTE pointer outside the page table\nit locked. KASAN has reported this as a use-after-free read [1].\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/10/31/231)\n\n**nvme: Do not drop the cdev reference twice when cdev_device_add() fails**\n\nYuqiang Sun v2는 cdev_device_add() 실패 시 nvme_cdev_rel()과 caller가 namespace/head 참조를 이중으로 put해 KASAN slab UAF·refcount underflow가 나는 경로를 고치며 참조는 nvme_cdev_add() 직전에만 잡고 nvme_is_ns_cdev()로 공유합니다.\n\n영향: NVMe multipath·/dev/ng* char dev teardown은 컨트롤러 삭제·sysfs 경로에서 자주 실행되며 allocation 실패 주입 시 UAF가 재현됩니다.\n\n> But when cdev_device_add()\nfails, nvme_cdev_add() has already put the device, and nvme_cdev_rel()\nhas already dropped that reference: the caller drops it a second time.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/02/1004)\n\n**platform/x86: toshiba_acpi: validate ACPI object type in tci_raw()**\n\nTristan Madani stable 제출(2026-11-02)은 tci_raw()에 ACPI_TYPE_PACKAGE·원소 ACPI_TYPE_INTEGER 검사와 AE_TYPE 반환을 추가해 union alias 경로를 줄입니다.\n\n영향: toshiba_acpi는 SCI/HCI/LED·무선 등 다수 sysfs 경로가 tci_raw()를 거치므로 platform hardening은 노트북 fleet 보안과 맞닿습니다. stable@ lore 본문은 수집 시 직접 열지 못해 패치 설명은 메타데이터와 mainline 코드 대조에 기반합니다.\n\n> If firmware returns a different type,\nthe package union members alias onto unrelated data.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/10/29/1266)\n\n**virtio_net: reject stats replies for queues outside the request**\n\nLianjie Wang 패치는 __virtnet_get_hw_stats()에서 device stats reply의 vq_index를 검증하지 않아 ethtool -S 배열 밖 쓰기가 가능했던 문제를 범위 밖 레코드 -EINVAL 거부로 고치며 stable Cc가 있습니다.\n\n영향: 악의적·결함 virtio-net backend는 게스트 ethtool -S 경로에서 OOB 쓰기를 유발할 수 있습니다. 2026-11-02 stable@에서 v2·merge 상태는 netdev 리스트 본문만으로는 확인하지 않았습니다.\n\n> Fix this by rejecting the reply when the vq_index of a record lies\noutside the range of queues the request asked about.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/10/22/1921)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Ryan Roberts: netconsole panic 로그 유실 RFC",
+      "url": "https://lists.openwall.net/linux-kernel/2026/09/15/1233",
+      "note": "thread"
+    },
+    {
+      "title": "Breno Leitao: nbcon_atomic_unsafe_only_flush 제안",
+      "url": "https://lists.openwall.net/linux-kernel/2026/10/30/2244",
+      "note": "thread"
+    },
+    {
+      "title": "Petr Mladek: flush 시점·crash CPU 정지 논의",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/02/1144",
+      "note": "thread"
+    },
+    {
+      "title": "Jose Fernandez: filemap fault-around v2",
+      "url": "https://lists.openwall.net/linux-kernel/2026/10/31/231",
+      "note": "thread"
+    },
+    {
+      "title": "Yuqiang Sun: NVMe cdev 이중 put 수정 v2",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/02/1004",
+      "note": "thread"
+    },
+    {
+      "title": "John Garry Reviewed-by: nvme_is_ns_cdev",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/02/878",
+      "note": "thread"
+    },
+    {
+      "title": "ACPI package union alias hardening 사례",
+      "url": "https://lists.openwall.net/linux-kernel/2026/10/29/1266",
+      "note": "thread"
+    },
+    {
+      "title": "torvalds/linux toshiba_acpi.c mainline",
+      "url": "https://raw.githubusercontent.com/torvalds/linux/master/drivers/platform/x86/toshiba_acpi.c",
+      "note": "article"
+    },
+    {
+      "title": "Lianjie Wang: virtio_net stats vq_index 검증",
+      "url": "https://lists.openwall.net/linux-kernel/2026/10/22/1921",
+      "note": "thread"
+    },
+    {
+      "title": "Paolo Abeni: ethtool -L 후 vq 검증 리뷰",
+      "url": "https://lists.openwall.net/linux-kernel/2026/10/27/1745",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-02T18:26:33.891Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

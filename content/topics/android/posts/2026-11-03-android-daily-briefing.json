@@ -1,0 +1,113 @@
+{
+  "id": "2026-11-03-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-11-03 ashmem·Landlock — Android 커널",
+  "headline": "Rust ashmem GET_PIN_STATUS 회귀 수정, init CLONE_FS 임시 완화, Landlock 백포트, PCI NVMe 회귀 머지가 ACK에 반영됐습니다.",
+  "date": "2026-11-03",
+  "summary": "android-mainline과 android16-6.12 ACK에 ashmem ioctl, 부트 fs 공유, Landlock, PCI/NVMe 수정이 들어왔습니다. GKI defconfig는 refcount-interrupt KUnit 선택을 upstream과 맞췄습니다.",
+  "tags": [
+    "안드로이드",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "Landlock: 열린 fd negative dentry 검사 제거(백포트)",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "Android 16 ACK(6.12) 백포트·Landlock/샌드박스 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/b74f3fb6707b3e2475b4aa5f9b8affe35a4cd060",
+      "if": "Android 16 LTS ACK(6.12)에서 Landlock ruleset·경로 바인딩을 검증 중이라면",
+      "do": "upstream d1832e648d2be564e4b5e3537f94d0f33156590dc cherry-pick 반영 여부와 Bug 558655051 관련 동작을 재테스트하세요",
+      "verify": "ACK 백포트 커밋과 upstream syscalls.c 변경 원문을 대조해 확인하세요"
+    },
+    {
+      "title": "ashmem: GET_PIN_STATUS ioctl 버퍼 크기 회귀 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "ACK·GKI 빌드 담당, ashmem/메모리 공유를 쓰는 프레임워크·네이티브 개발자",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/cc1c7ff323bdef240dc430508616414a9d65a91a",
+      "if": "GET_PIN_STATUS가 -EFAULT로 실패하거나 ashmem_rust 마이그레이션 경로를 타는 빌드라면",
+      "do": "Rust ashmem 드라이버 패치 포함 커널로 pin/unpin 상태 조회 ioctl을 다시 실행해 보세요",
+      "verify": "커밋 메시지의 Bug 578613029·_IO() zero size 설명과 원문을 확인하세요"
+    },
+    {
+      "title": "init: pid 1 spawn에 CLONE_FS 복원(임시 완화)",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "ACK 부트·initramfs·펌웨어 로딩 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/d82b1e9acccf66dcebefedad2635d28e1d63d895",
+      "if": "mount namespace unshare 이후 kworker 펌웨어 로딩 실패(Bug 569148115)를 추적 중이라면",
+      "do": "CLONE_FS 복원 커밋이 integrator 트리에 포함됐는지와 부트 로그를 함께 점검하세요",
+      "verify": "영구 fix 일정과 hack 제거 조건은 ACK 공지 추가 확인이 필요합니다"
+    },
+    {
+      "title": "PCI: pci-v7.3-fixes-6 머지(NVMe readiness 회귀)",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "ACK 머지 담당, NVMe/PCIe 스토리지·가상화 테스트 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/4766082b791b515953d87f7a24c2ea857e6c10b0",
+      "if": "Samsung 990 PRO/EVO Plus 또는 Intel NVMe·VFIO passthrough ACK 테스트를 돌리고 있다면",
+      "do": "pci_dev_wait() ~0 ready 처리 및 Immediate Readiness 우회가 포함된 머지 이후 초기화·FLR 시나리오를 재검증하세요",
+      "verify": "머지 커밋 원문에서 인용 문구는 저장소 검증 전이므로 메시지 본문을 직접 읽어 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ANDROID: ashmem: Read the pin argument for GET_PIN_STATUS**\n\nASHMEM_GET_PIN_STATUS는 _IO() 매크로로 정의되어 userspace ioctl 버퍼 크기가 0이 되었고, Rust ashmem 드라이버가 C 드라이버처럼 struct ashmem_pin 크기를 읽도록 수정했습니다.\n\n영향: GET_PIN_STATUS ioctl이 항상 -EFAULT로 실패하던 회귀(Bug 578613029)를 고쳐 pin/unpin 상태 조회와 ashmem_rust 마이그레이션 경로에 영향을 줍니다.\n\n> ASHMEM_GET_PIN_STATUS is defined with _IO(), so _IOC_SIZE() is zero for it, and the reader that ioctl() builds from it cannot hold a struct ashmem_pin.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/cc1c7ff323bdef240dc430508616414a9d65a91a)\n\n**ANDROID: init: spawn pid 1 with CLONE_FS**\n\nkernel_init이 pid 1(init)을 다시 CLONE_FS로 spawn하도록 되돌려, init이 mount namespace를 unshare한 뒤에도 kworker가 root 파일시스템에 접근할 수 있게 했습니다.\n\n영향: fs 공유 회귀(14adbd5341aa)로 펌웨어 로딩 등 kworker 기반 작업이 깨지던 부트 이슈(Bug 569148115)에 대한 임시 완화이며, 영구 fix 전까지 ACK integrator가 알아야 합니다.\n\n> When Android init then unshares its mount namespace, kworkers lose access to the root filesystem, which breaks firmware loading.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/d82b1e9acccf66dcebefedad2635d28e1d63d895)\n\n**BACKPORT: landlock: opened file never has a negative dentry**\n\nandroid16-6.12 ACK에 upstream d1832e648d2be564e4b5e3537f94d0f33156590dc를 cherry-pick하여 Landlock get_path_from_fd()에서 열린 fd에 불가능한 d_is_negative() 검사 한 줄을 제거했습니다.\n\n영향: 불필요한 -EBADFD 경로를 없애 Landlock ruleset/경로 바인딩 동작을 upstream과 맞추며, Android 16 LTS ACK 보안 스택 동기화에 해당합니다(Bug 558655051).\n\n> BACKPORT: landlock: opened file never has a negative dentry ... Bug: 558655051 (cherry picked from commit d1832e648d2be564e4b5e3537f94d0f33156590dc)\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/b74f3fb6707b3e2475b4aa5f9b8affe35a4cd060)\n\n[upstream 원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=d1832e648d2be564e4b5e3537f94d0f33156590dc)\n\n**Merge tag 'pci-v7.3-fixes-6' of git://git.kernel.org/pub/scm/linux/kernel/git/pci/pci**\n\nACK android-mainline에 pci-v7.3-fixes-6를 머지하여 Samsung 990 PRO/990 EVO Plus NVMe Immediate Readiness 오동작 우회와 pci_dev_wait()에서 ~0 응답을 ready로 보던 RRS SV 회귀를 수정합니다.\n\n영향: NVMe 초기화·FLR 복구 실패는 VFIO passthrough와 Intel/Samsung SSD에서 관측된 스토리지 회귀로, NVMe를 쓰는 Android form factor·개발 보드 ACK integrator에 영향할 수 있습니다.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/4766082b791b515953d87f7a24c2ea857e6c10b0)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**ANDROID: gki_defconfig: enable REFCOUNT_INTERRUPT_KUNIT_TEST**\n\nGKI defconfig에 CONFIG_REFCOUNT_INTERRUPT_KUNIT_TEST=y를 켜 upstream에서 Kconfig로 분리된 refcount_interrupt KUnit 모듈 선택을 ACK 빌드와 맞춘 것으로 보입니다.\n\n영향: GKI 빌드에서 계속 포함되던 refcount_interrupt KUnit 테스트가 upstream Kconfig 변경 후 명시적으로 켜지지 않을 수 있어, CI/품질 게이트에서 refcount-interrupt 회귀 탐지가 유지됩니다.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/83c0e0cc2b172d5dde4d7d7f6259edd30e8748b3)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ANDROID: ashmem: Read the pin argument for GET_PIN_STATUS",
+      "url": "https://android.googlesource.com/kernel/common/+/cc1c7ff323bdef240dc430508616414a9d65a91a",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: gki_defconfig: enable REFCOUNT_INTERRUPT_KUNIT_TEST",
+      "url": "https://android.googlesource.com/kernel/common/+/83c0e0cc2b172d5dde4d7d7f6259edd30e8748b3",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: init: spawn pid 1 with CLONE_FS",
+      "url": "https://android.googlesource.com/kernel/common/+/d82b1e9acccf66dcebefedad2635d28e1d63d895",
+      "note": "commit"
+    },
+    {
+      "title": "BACKPORT: landlock: opened file never has a negative dentry",
+      "url": "https://android.googlesource.com/kernel/common/+/b74f3fb6707b3e2475b4aa5f9b8affe35a4cd060",
+      "note": "commit"
+    },
+    {
+      "title": "landlock: opened file never has a negative dentry (upstream)",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=d1832e648d2be564e4b5e3537f94d0f33156590dc",
+      "note": "commit"
+    },
+    {
+      "title": "Merge tag 'pci-v7.3-fixes-6'",
+      "url": "https://android.googlesource.com/kernel/common/+/4766082b791b515953d87f7a24c2ea857e6c10b0",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-02T18:04:19.493Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/android-newsletter-from-dossier-ko.md"
+  }
+}

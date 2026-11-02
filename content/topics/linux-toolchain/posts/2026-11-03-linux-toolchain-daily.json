@@ -1,0 +1,123 @@
+{
+  "id": "2026-11-03-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-11-03 GSP·kallsyms — Linux 툴체인",
+  "headline": "Nova GSP cmdq 폴링 지연 단축, kallsyms file:line, bpftool LLVM 선택적 로드 등 빌드·Rust GPU 패치가 rust-for-linux·kbuild·llvm 리스트에 올라왔습니다.",
+  "date": "2026-11-03",
+  "summary": "Rust nova-core GSP cmdq는 대기 경로와 msgq v2 ring 계산을 v2 시리즈로 정리했고, kbuild 쪽은 스택 트레이스 lineinfo와 tools_build selftest·descend 정리가 이어집니다. bpftool은 libLLVM을 dlopen으로 JIT disasm 시에만 쓰도록 v4가 제안됩니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "Nova GSP wait_for_msg 폴링 간격",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "Rust for Linux nova/GSP 드라이버 리뷰어 및 NVIDIA open GPU 스택 추적자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20261102-cmdq_wait_msg_timeout-v2-1-50bc4534b659@nvidia.com/",
+      "if": "Rust nova-core에서 GSP 명령 완료 대기 지연이 스케줄링·GPU 응답성과 맞물린다면",
+      "do": "v2에서 1ms→1µs sleep 변경을 기준으로 in-tree Rust GPU 드라이버 성능 리뷰를 진행하세요",
+      "verify": "lore 원문 스레드에서 v2 타이밍 설명과 rust-for-linux 머지 시점은 확인하세요"
+    },
+    {
+      "title": "kallsyms에 소스 file:line 내장",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "kbuild·kselftest CI 담당, 커널 디버깅/백트레이스 소비자",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20261102111455.919102-2-sashal@kernel.org/",
+      "if": "배포 커널 oops에서 decode_stacktrace.sh 없이 소스 위치가 필요하다면",
+      "do": "Sasha Levin v10(모듈·압축·KUnit 포함)과 libdw-dev 의존·이미지 크기 trade-off를 distro/CI defconfig 기준으로 함께 검토하세요",
+      "verify": "gen_lineinfo·cover 스레드 링크로 v10 linux-kbuild 머지 일정과 delta 압축 후 .rodata 크기는 확인하세요"
+    },
+    {
+      "title": "bpftool LLVM 런타임 선택 의존",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "BPF/bpftool 패키징·CI 담당, llvm@ 빌드 깨짐 추적자",
+      "verifyLink": "https://lore.kernel.org/llvm/20261102-bpftool-plugin-v4-0-5a853e973db9@gmail.com/",
+      "if": "Fedora 등에서 bpftool 패키징 시 LLVM(~140MiB) 링크가 부담이라면",
+      "do": "v4의 dlopen() JIT disasm 경로와 SKIP_LLVM·static LLVM selftest 케이스를 CI에서 재검증하세요",
+      "verify": "bpf-next 머지 일정과 static libLLVM 링크 조건은 원문에서 재확인하세요"
+    },
+    {
+      "title": "msgq v2 cmdq ring slice 계산",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "Rust for Linux nova/GSP cmdq 유지보수자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20261102-r000-cmdq-prep-v2-4-c2c2b69bdec0@nvidia.com/",
+      "if": "펌웨어 세대(msgq v0→v2)마다 MMIO 큐 추상화가 달라진다면",
+      "do": "슬롯 count/slot 기반 helper 중심 모델이 이후 v2 전용 코드의 터치 지점인지 패치 4/5 리뷰를 따라가세요",
+      "verify": "r000 v2 시리즈 머지 순서와 추가 unsafe 검토 필요 여부는 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**gpu: nova-core: gsp: cmdq: reduce sleep delta in wait_for_msg**\n\nNova GSP cmdq의 `wait_for_msg`가 큐에 메시지가 없을 때 1ms씩 잠자던 폴링 간격을 1µs로 줄여 Nouveau·OpenRM 수준의 지연에 가깝게 맞춘 v2 패치다.\n\n영향: Rust nova-core에서 GSP 명령 완료 대기 경로의 폴링 지연이 커널 스케줄링·GPU 응답성에 직접 영향을 주므로, in-tree Rust GPU 드라이버 성능 패턴을 추적하는 독자는 v2 타이밍 변경을 기준으로 삼아야 한다.\n\n> Reduce the sleep time to 1 microsecond. This effectively makes `fsleep` busy-loop with a call to `cpu_relax` afterwards, keeping latency to a minimum.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20261102-cmdq_wait_msg_timeout-v2-1-50bc4534b659@nvidia.com/)\n\n**gpu: nova-core: gsp: cmdq: compute the queue regions from a count and a slot**\n\nmsgq v2(r000 펌웨어)의 BAR0 free-running counter 모델에 맞게 read/write 포인터 분기 대신 슬롯 수·시작 슬롯으로 ring slice를 계산하도록 cmdq를 리팩터했으며, I/O projection으로 unsafe 범위를 줄인 v2 4/5 패치다.\n\n영향: Rust 커널 드라이버에서 MMIO 큐 추상화·SAFETY 주석 설계가 펌웨어 세대(msgq v0→v2)마다 달라지므로, nova cmdq API를 따라가는 Rust for Linux 독자는 이 helper 중심 모델이 이후 v2 전용 코드의 유일한 터치 지점이 된다는 점을 알아두어야 한다.\n\n> Instead, compute the number of slots available to the driver and the slot they start at, and derive the slices from that.\n\n> No functional change intended.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20261102-r000-cmdq-prep-v2-4-c2c2b69bdec0@nvidia.com/)\n\n**kallsyms: embed source file:line info in kernel stack traces**\n\nSasha Levin v10(4패치)의 1/4는 CONFIG_KALLSYMS_LINEINFO와 호스트 툴 scripts/gen_lineinfo(libdw/elfutils)로 vmlinux에 주소→file:line 테이블을 .rodata에 넣고, panic-safe하게 스택 프레임 뒤에 (file:line)을 붙인다.\n\n영향: 커널 빌드에 libdw-dev 의존성과 이미지 크기 trade-off가 생기지만, 배포 커널 oops에서 decode_stacktrace.sh 없이 소스 위치를 바로 볼 수 있어 kbuild·디버깅 워크플로를 바꾸므로 distro/CI 빌드 담당자가 v10 시리즈(모듈·압축·KUnit 포함)를 함께 봐야 한다.\n\n> At build time, a new host tool (scripts/gen_lineinfo) reads DWARF .debug_line from vmlinux using libdw (elfutils), extracts all address-to-file:line mappings\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20261102111455.919102-2-sashal@kernel.org/)\n\n**tools: build kernel selftests in tools_build**\n\nSasha Levin v3 시리즈 5/7은 tools_build/Kconfig에 libc만으로 빌드 가능한 kselftest 디렉터리별 항목을 넣고, kselftest-all과 동일한 방식으로 병렬 빌드·FORCE_TARGETS·kselftest_deps.sh 의존성 진단을 tools 빌드에 통합한다.\n\n영향: make tools_build 경로에서 selftest를 미리 컴파일할 수 있게 되면 배포·개발자 CI가 커널 UAPI 헤더와 selftest를 한 번에 검증하기 쉬워지므로, kbuild/tools 메뉴를 쓰는 팀은 v3에서 어떤 selftest가 포함·제외되는지(BTF·sanitizer 필요 항목 제외)를 확인해야 한다.\n\n영향 설명은 dossier 기준이며, 해당 스레드 인용문은 검증되지 않았으므로 세부 Kconfig·FORCE_TARGETS 동작은 lore 원문에서 직접 확인하세요.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20261102021253.2545235-6-sashal@kernel.org/)\n\n**tools/build: Deduplicate the descend commands**\n\nThomas Weißschuh 3패치 시리즈 1/3은 tools/scripts/Makefile.include에서 verbose/non-verbose descend 정의를 QUIET 명령과 같은 형태로 합쳐 echo DESCEND만 남는 중복을 제거한다.\n\n영향: tools/ 빌드가 kbuild와 달리 DESCEND 스팸을 내는 문제를 맞추는 후속 패치의 전제이므로, kbuild/Makefile.include 변경을 리베이스하는 toolchain 담당자는 이 리팩터가 먼저 land하는지 보며 충돌을 줄일 수 있다.\n\n> The verbose and non-verbose variants of the descend command are nearly identical. Only the 'echo DESCEND' is different.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20261102-kbuild-descend-spam-v1-1-caff4f840cb7@weissschuh.net/)\n\n**bpftool: Make the LLVM disassembler an optional runtime dependency**\n\nMark Korenberg v4(2패치)는 bpftool이 libLLVM(~140MiB)에 항상 링크되던 구조를 버리고 `prog dump jited` 시에만 dlopen()으로 libLLVM.so를 로드하게 하며, 패치 1은 LLVMDisasmDispose() 누수 수정을 분리한다.\n\n영향: Fedora 등에서 bpftool 패키징 시 LLVM을 optional로 둘 수 있어 BPF 디버깅 툴체인·distro 빌d 의존 그래프가 바뀌므로, llvm@·bpf-next 추적자와 selftests bpftool 경로를 쓰는 CI는 SKIP_LLVM·static LLVM 케이스를 v4에서 재검증해야 한다.\n\n> With this series, bpftool is no longer linked with libLLVM.so but loads it with dlopen() when it needs to disassemble JITed programs, so that distributions can make it optional.\n\n> Drop the plugin, load libLLVM.so with dlopen() instead, as suggested by Alexei.\n\n[원문 확인](https://lore.kernel.org/llvm/20261102-bpftool-plugin-v4-0-5a853e973db9@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "gpu: nova-core: gsp: cmdq: reduce sleep delta in wait_for_msg",
+      "url": "https://lore.kernel.org/rust-for-linux/20261102-cmdq_wait_msg_timeout-v2-1-50bc4534b659@nvidia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "gpu: nova-core: gsp: cmdq: compute the queue regions from a count and a slot",
+      "url": "https://lore.kernel.org/rust-for-linux/20261102-r000-cmdq-prep-v2-4-c2c2b69bdec0@nvidia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "kallsyms: embed source file:line info (patch 1/4)",
+      "url": "https://lore.kernel.org/linux-kbuild/20261102111455.919102-2-sashal@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "kallsyms lineinfo v10 series cover",
+      "url": "https://lore.kernel.org/linux-kbuild/20261102111455.919102-1-sashal@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "tools: build kernel selftests in tools_build",
+      "url": "https://lore.kernel.org/linux-kbuild/20261102021253.2545235-6-sashal@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "tools/build: Deduplicate the descend commands (1/3)",
+      "url": "https://lore.kernel.org/linux-kbuild/20261102-kbuild-descend-spam-v1-1-caff4f840cb7@weissschuh.net/",
+      "note": "thread"
+    },
+    {
+      "title": "kbuild descend spam series cover",
+      "url": "https://lore.kernel.org/linux-kbuild/20261102-kbuild-descend-spam-v1-0-caff4f840cb7@weissschuh.net/",
+      "note": "thread"
+    },
+    {
+      "title": "bpftool: Make the LLVM disassembler an optional runtime dependency v4",
+      "url": "https://lore.kernel.org/llvm/20261102-bpftool-plugin-v4-0-5a853e973db9@gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-02T18:23:29.034Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
