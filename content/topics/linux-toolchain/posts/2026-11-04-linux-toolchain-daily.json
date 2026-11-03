@@ -1,0 +1,117 @@
+{
+  "id": "2026-11-04-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-11-04 커버리지 통합 — Linux 툴체인",
+  "headline": "Sasha Levin v2가 gcov·KCOV·Clang source-based coverage를 kernel/coverage/로 묶고, Rust·bpftool·문서·selftest 쪽 툴체인 패치가 lore에 올라왔습니다.",
+  "date": "2026-11-04",
+  "summary": "kbuild 쪽은 통합 coverage 프레임워크와 커널 최소화 가이드가 제안됐고, Rust for Linux는 XArray lockdep과 Greybus v5가 이어집니다. bpftool LLVM disasm 누수 수정과 Clang selftest 경고 정리도 toolchain CI 추적 대상입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "툴체인",
+    "kbuild",
+    "Rust",
+    "LLVM"
+  ],
+  "highlights": [
+    {
+      "title": "통합 coverage 프레임워크와 Clang MC/DC",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "kbuild·Clang 커버리지·KCOV/gcov 유지보수자, 커널 CI coverage 설정 담당",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20261103015238.3780910-1-sashal@kernel.org/",
+      "if": "CI나 안전성 검증에서 gcov·KCOV·Clang coverage를 쓰고 있다면",
+      "do": "v2 20패치 시리즈의 CONFIG·debugfs(/sys/kernel/debug/coverage/)·COVERAGE_PROFILE 이름 변경을 lore 스레드 기준으로 추적하세요",
+      "verify": "머지 일정과 GCOV_KERNEL/KCOV에서 COVERAGE_*로의 마이그레이션 동작은 upstream 확인이 필요합니다"
+    },
+    {
+      "title": "Rust XArray lockdep false positive 수정 v3",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust for Linux xarray·lockdep 리뷰어, Rust 커널 바인딩 설계자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20261103-xarray-lockdep-fix-v3-1-e188bec82003@kernel.org/",
+      "if": "Rust 바인딩에서 XArray를 쓰며 lockdep 리포트를 해석한다면",
+      "do": "xa_init_flags_with_key·new_xarray!·XArray::new(name, LockClassKey) 패턴으로 v3 API 변경을 따라가세요",
+      "verify": "Fixes 210b81578efbe 시리즈와의 land 순서 및 기존 호출부 일괄 전환 계획은 스레드에서 확인하세요"
+    },
+    {
+      "title": "bpftool LLVM disassembler context 누수 수정",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "bpftool·BPF JIT 디버깅 담당, LLVM userspace 링크 maintainer",
+      "verifyLink": "https://lore.kernel.org/llvm/20261103-bpftool-plugin-v5-1-683e08a25df0@gmail.com/",
+      "if": "bpftool JIT disasm을 반복 실행해 RSS가 커진다면",
+      "do": "bpf-next v5 1/3에서 LLVMDisasmDispose() 사용 수정(Fixes eb9d1acf634b) land를 추적하세요",
+      "verify": "v5 시리즈 전체 머지 일정은 아직 확인이 필요합니다"
+    },
+    {
+      "title": "커널 최소화 admin-guide와 kernel-sloc",
+      "priority": "중",
+      "impactType": "project",
+      "affectedAudience": "kbuild·embedded 커널 integrator, kcov/selftest 문서 소비자",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20261103150845.13008-1-matthew.l.weber@gmail.com/",
+      "if": "embedded·안전성 워크로드용 최소 커널 빌드 파이프라인을 맡고 있다면",
+      "do": "workload 기반 가이드와 compile_commands.json 또는 vmlinux DWARF line table 기반 kernel-sloc 스크립트를 lore 시리즈와 GitHub PR #1 리뷰와 함께 보세요",
+      "verify": "linux-doc/linux-kbuild 머지 일정과 rendered draft 차이는 upstream에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Unify code coverage and add Clang source-based coverage with MC/DC**\n\nSasha Levin v2 20패치 시리즈는 gcov·KCOV·Clang source-based coverage를 kernel/coverage/ 단일 프레임워크로 재구성하고, 통합 Kconfig·debugfs·COVERAGE_PROFILE 빌드 경로 위에 Clang source-based coverage와 MC/DC 백엔드를 추가합니다.\n\n영향: noinstr 준비와 세 번째 독립 coverage 스택 회피가 한 번에 정리되므로, Clang/gcov/KCOV를 CI·안전성 검증에 쓰는 toolchain 담당자는 CONFIG·debugfs·플래그 이름 마이그레이션을 v2 기준으로 추적해야 합니다.\n\n> This series first restructures the existing coverage support into one framework, then adds source-based coverage and MC/DC as part of it.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20261103015238.3780910-1-sashal@kernel.org/)\n\n**rust: xarray: fix false positive lockdep warnings**\n\nAndreas Hindborg v3는 C `xa_init_flags()`가 컴파일 단위당 하나의 lock_class_key만 만들어 Rust XArray 바인딩에서 모든 인스턴스가 같은 클래스로 묶이는 문제를 `xa_init_flags_with_key()`·`new_xarray!`·`XArray::new(name, LockClassKey)` 패턴으로 고칩니다.\n\n영향: lockdep false positive는 실제 lock-order 버그와 구분하기 어려우므로, init_with_key 패턴을 쓰는 서브시스템은 v3 API/매크로 변경을 따라가며 lockdep 리포트 해석 기준을 맞춰야 합니다.\n\n> When used through the Rust binding helper, every Rust `XArray` instance ends up sharing that single key. Lockdep then sees concurrent locking of distinct Rust `XArray`s as recursive locking on the sam\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20261103-xarray-lockdep-fix-v3-1-e188bec82003@kernel.org/)\n\n**bpftool: Fix disposal of the LLVM disassembler context**\n\nMark Korenberg bpf-next v5 1/3은 bpftool JIT disassembler teardown에서 `LLVMDisposeMessage()` 대신 `LLVMDisasmDispose()`를 써 LLVM disassembler context가 함수당 약 28 KiB씩 새지 않게 합니다.\n\n영향: bpftool이 LLVM을 기본 JIT disasm 백엔드로 쓰는 환경에서 반복 disasm 시 RSS가 누적되므로, LLVM-linked userspace toolchain을 패키징하는 팀은 Fixes eb9d1acf634b 회귀 수정 land를 추적해야 합니다.\n\n> destroy_context() frees the disassembler context with LLVMDisposeMessage(), which is a plain free() meant for strings returned by LLVM. The context is therefore never destroyed, leaking about 28 KiB p\n\n[원문 확인](https://lore.kernel.org/llvm/20261103-bpftool-plugin-v5-1-683e08a25df0@gmail.com/)\n\n**Documentation: Add kernel minimization guide**\n\nMatthew Weber 4패치 시리즈는 admin-guide에 workload 기반 커널 최소화 가이드·kernel-sloc 스크립트(compile_commands.json 또는 vmlinux DWARF line table)를 추가하고 kcov 문서 예제를 보강합니다.\n\n영향: Kconfig 반복과 SLOC 측정이 표준화되면 kbuild 산출물을 toolchain/CI가 어떻게 소비하는지가 문서화되므로, 최소 커널 빌드 파이프라인 담당자는 upstream 가이드와 GitHub PR #1 리뷰를 함께 봐야 합니다.\n\n> This series adds documentation and a script for measuring source lines of code (SLOC) in kernel builds, supporting developers and system integrators who need to trim a Linux kernel.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20261103150845.13008-1-matthew.l.weber@gmail.com/)\n\n**Add Greybus Sotfsvc and UART Node drivers**\n\nAyush Singh v5 9패치는 UART 등 transport에서 SVC를 커널 내 gb-softsvc로 공유 에뮬레이션하고, Rust gb-uart-node·프로토콜 추상화와 Greybus core C export 준비를 담습니다.\n\n영향: in-tree Rust host driver 확장을 추적하는 독자는 v5의 최소 API surface와 BeagleConnect/Zephyr 테스트 맥락을 기준으로 바인딩·trait 설계 패턴을 삼아야 합니다.\n\n> This series moves the emulation into the kernel and makes it shared. This was discussed in a prior RFC as well [2], but to keep things short, removing the need for an external SVC greatly simplifies t\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20261103-gb-uart-transport-v5-0-f8e326d6561f@beagleboard.org/)\n\n**selftests: netfilter: nf_queue: drop the no-op loop initializer**\n\nSasha Levin nf-next 패치는 netfilter nf_queue selftest의 for-loop 초기화에서 unused expression을 없애 Clang [-Wunused-value] 경고를 제거합니다(KernelCI clang 빌드에서 관측된 것으로 보고됨).\n\n영향: selftests가 Clang CI에서 경고 없이 빌드되는지는 toolchain 회귀 감지에 쓰이므로, 기능 변경이 아닌 Wunused-value hygiene 패치임을 구분해 cherry-pick·backport 판단을 해야 합니다.\n\n> nf_queue.c:354:10: warning: expression result unused [-Wunused-value]\n\nLeave the initializer empty.\n\n[원문 확인](https://lore.kernel.org/llvm/20261103165419.687806-5-sashal@kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "high",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Unify code coverage and add Clang source-based coverage with MC/DC",
+      "url": "https://lore.kernel.org/linux-kbuild/20261103015238.3780910-1-sashal@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: xarray: fix false positive lockdep warnings",
+      "url": "https://lore.kernel.org/rust-for-linux/20261103-xarray-lockdep-fix-v3-1-e188bec82003@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "bpftool: Fix disposal of the LLVM disassembler context",
+      "url": "https://lore.kernel.org/llvm/20261103-bpftool-plugin-v5-1-683e08a25df0@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Documentation: Add kernel minimization guide",
+      "url": "https://lore.kernel.org/linux-kbuild/20261103150845.13008-1-matthew.l.weber@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Add Greybus Sotfsvc and UART Node drivers",
+      "url": "https://lore.kernel.org/rust-for-linux/20261103-gb-uart-transport-v5-0-f8e326d6561f@beagleboard.org/",
+      "note": "thread"
+    },
+    {
+      "title": "selftests: netfilter: nf_queue: drop the no-op loop initializer",
+      "url": "https://lore.kernel.org/llvm/20261103165419.687806-5-sashal@kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-03T18:27:40.267Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

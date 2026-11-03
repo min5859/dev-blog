@@ -1,0 +1,135 @@
+{
+  "id": "2026-11-04-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-11-04 vblank·GEM 보안 — GPU·AI",
+  "headline": "drm/vblank 타이머 순서 논쟁, Renesas DSI usable mode 확대, Apple Navi UCLK defer·5K 충돌, sched run-queue, GEM CHANGE_HANDLE 재활성화 검토가 dri-devel에서 겹칩니다.",
+  "date": "2026-11-04",
+  "summary": "Nov 3 dri-devel에서는 소프트 vblank·-EDEADLK 재시도와 drm_vblank_off() 대기 설계가 대립하고, Renesas RZ/V2H(P) MIPI DSI PLL 공동 검색 패치가 modetest usable mode를 늘립니다. Apple Navi UCLK DPM defer, drm/sched priority run-queue, GEM CHANGE_HANDLE Sashiko 지적도 함께 추적할 가치가 있습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "GPU",
+    "drm"
+  ],
+  "highlights": [
+    {
+      "title": "drm/vblank: enable_vblank() vs drm_vblank_off() 대기",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "drm/vblank helper·VKMS·소프트웨어 vblank 타이머 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/auoVxgQ0D1-6QEDD@intel.com/",
+      "if": "VKMS·legacy DRM에서 hrtimer ordering·mode-set 타이밍 회귀 가능성이 있다면",
+      "do": "Thomas의 drm_vblank_off() timer stop 대기 시리즈와 Ville의 hrtimer 재큐 설계를 lore·syzbot 패치와 함께 비교 추적하세요",
+      "verify": "dri-devel 스레드와 syzbot 패치에서 -EDEADLK 재시도 경로를 원문으로 확인하세요"
+    },
+    {
+      "title": "clk/drm renesas: RZ/V2H(P) MIPI DSI PLL 공동 검색",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "Renesas RZ/V2H(P)/V2N clk·drm/renesas DSI·display mode validation 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20261103172057.617203-1-prabhakar.mahadev-lad.rj@bp.renesas.com/",
+      "if": "RZ/V2H EVK·ADV7535에서 modetest mode 집합이 바뀌면",
+      "do": "4패치 시리즈 land 전후 modetest -c usable mode(21→27 등)를 EVK에서 재측정하세요",
+      "verify": "커버레터의 CPG·DSI PLL 순차 검증 문제 설명과 modetest 인용을 lore에서 확인하세요"
+    },
+    {
+      "title": "drm/gem: CHANGE_HANDLE 재활성화와 signed int truncation",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "drm/gem·PRIME·amdgpu CRIU/dmabuf userspace 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/sashiko-outbox-195705@kernel.org/",
+      "if": "CRIU·dmabuf handle 재할당 UAPI를 쓰거나 큰 new_handle 값을 넣는 userspace가 있다면",
+      "do": "David Francis 패치에 Sashiko High/Medium 코멘트 반영 여부와 mainline INT_MAX 검사 commit과의 차이를 diff로 확인하세요",
+      "verify": "Sashiko outbox와 torvalds commit 12f15d52d38a 원문을 대조하세요"
+    },
+    {
+      "title": "drm/amd/pm: Apple Navi UCLK DPM defer",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "drm/amd/pm·Apple Mac amdgpu·t2linux 커뮤니티 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/1a4eb0fb-adbe-4884-8f37-b5ffa6782b84@linux.dev/",
+      "if": "MacBookPro16,1 또는 t2linux 5K 패치와 upstream defer를 함께 쓰는 경우",
+      "do": "Alex v5 late_init defer만 머지하기 전에 Aditya Nacked-by·Atharva UCLK 미초기화 주장을 해당 스레드에서 재현 검증하세요",
+      "verify": "Aditya 스레드와 Atharva 5K 비호환 답장, t2linux 7003 패치 링크를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm/vblank: Restart enabling vblank timer on possible deadlock**\n\nNov 3 dri-devel에서 Thomas Zimmermann은 Ville Syrjälä가 제안한 enable_vblank() 타이머 재시작 대신 drm_vblank_off()에서 vblank hrtimer가 완전히 멈출 때까지 기다려 mode 간 interval leak을 막는 패치 시리즈를 곧 보낼 것이라 답했고, Ville은 running timer가 있어도 hrtimer가 old entry를 제거한 뒤 새 expire로 재삽입하므로 reordering 우려는 과하다고 반박했다.\n\n영향: 소프트 vblank·-EDEADLK 재시도 데드락 회피 논의가 진행되는 동안 cancel/start 순서를 바꾸면 VKMS·legacy DRM의 hrtimer ordering·mode-set 타이밍 회귀가 날 수 있어 drm/vblank helper 사용자는 두 설계안을 함께 추적해야 한다.\n\n> I'll soon send out a series implementing this idea.\n\n[원문 확인](https://lore.kernel.org/dri-devel/auoVxgQ0D1-6QEDD@intel.com/)\n\n**관련 enable_vblank() -EDEADLK 경로**\n\nReturn -EDEADLK when trying to cancel a running hrtimer as part of enable_vblank(). Reacquire vblank_time_lock and try again.\n\n[원문 확인](https://ci.syzbot.org/patches/ebf3779b-c8ae-47a6-bd3d-594f7779788f)\n\nThomas의 drm_vblank_off() 대기 시리즈 diff·머지 일정은 이 환경에서 lore.kernel.org 403으로 직접 확인하지 못했습니다.\n\n**drm/gem: Fix and enable CHANGE_HANDLE**\n\nDavid Francis 제안 패치는 DRM_IOCTL_GEM_CHANGE_HANDLE을 코어 ioctl 테이블에 다시 켜고 new_handle 0·동일 handle 거부 및 idr_preload()를 추가하는데, Sashiko는 __u32 new_handle을 signed int에 먼저 대입해 0x80000000 이상 값이 INT_MAX 검사를 우회하고 idr_alloc() WARN을 재도입할 수 있다고 지적한다.\n\n영향: amdgpu CRIU·dmabuf handle 재할당 UAPI를 다시 열면 userspace가 큰 handle 값을 넣었을 때 커널 WARN·PRIME bookkeeping 오류가 security·stable 백포트 이슈가 될 수 있어 drm/gem·PRIME 담당은 Sashiko High/Medium 코멘트 반영 여부를 봐야 한다.\n\n> [High] drm/gem: signed int truncation in drm_gem_change_handle_ioctl()\n\n[원문 확인](https://lore.kernel.org/dri-devel/sashiko-outbox-195705@kernel.org/)\n\n> re-enables DRM_IOCTL_GEM_CHANGE_HANDLE in the core DRM ioctl table.\n\n[원문 확인](https://lore.kernel.org/dri-devel/sashiko-outbox-195705@kernel.org/)\n\n> Do not allow userspace to trigger kernel warnings in drm_gem_change_handle_ioctl()\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=12f15d52d38a)\n\n이메일에 인용된 commit 69ca138819f0의 torvalds mainline 반영 여부는 cgit에서 bad reference로 확인되지 않았습니다. Sashiko가 지적한 PRIME 경로 Medium 이슈의 수정 패치 v2 게시 여부는 미확인입니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**clk/drm: renesas: Improve RZ/V2H(P) MIPI DSI PLL parameter selection**\n\nLad Prabhakar 4패치 시리즈는 RZ/V2H(P)/V2N에서 CPG PLLDSI divider와 DSI PLL HS clock(0.5 Hz 이내) 제약을 순차가 아닌 공동 검색으로 맞추고, 검증된 divider 파라미터를 .determine_rate()가 재사용하도록 clk·DSI 드라이버를 연동한다.\n\n영향: 임베디드 Renesas MIPI DSI→HDMI 경로에서 CPG와 DSI PLL을 따로 고르면 modetest가 거짓 mode reject를 내거나 런타임에 다른 divider가 선택될 수 있어, RZ/V2H EVK·ADV7535 조합 사용자는 usable mode 집합 변화를 봐야 한다.\n\n> A display mode is usable only if a single set of CPG parameters satisfies both the CPG and the DSI PLL constraints, but the two were checked one after the other instead of together.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20261103172057.617203-1-prabhakar.mahadev-lad.rj@bp.renesas.com/)\n\n> \"modetest -c\" on [RZ/V2H EVK] (DSI -> ADV7535 -> HDMI, 4 lanes, [monitor]) lists 27 modes instead of 21.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20261103172057.617203-1-prabhakar.mahadev-lad.rj@bp.renesas.com/)\n\n패치 시리즈 mainline·stable 반영 시점은 확인하지 못했습니다.\n\n**drm/amd/pm: defer UCLK DPM on selected Apple Navi GPUs**\n\nAlex Deucher v5는 Windows 팀 피드백을 근거로 일부 Apple Navi Mac에서 UCLK DPM enable을 late_init까지 미루는 반면, Aditya Garg는 MacBookPro16,1에서 v5가 문제를 해결하지 못했다며 Nacked-by를 달았고 Atharva Tiwari는 t2linux 5K 패치와 함께 쓰면 UCLK이 아예 초기화되지 않는다고 주장한다.\n\n영향: Linux on Apple T2/Navi 머신의 전력·클럭 bring-up은 iMac 5K·simpledrm·SMU 초기화 순서와 얽혀 있어, upstream에 단일 defer 패치만 넣으면 5K·하이브리드 그래픽 목표와 충돌할 수 있다.\n\n> I own a MacBookPro16,1 and the v5 send doesn't work at all to fix it for me.\n\n[원문 확인](https://lore.kernel.org/dri-devel/1a4eb0fb-adbe-4884-8f37-b5ffa6782b84@linux.dev/)\n\n> the patch in v5 (https://lore.kernel.org/all/20261103143014.522592-1-alexander.deucher@amd.com/T/#u) doesn't solve what is claims to.\n\n[원문 확인](https://lore.kernel.org/all/20261103143014.522592-1-alexander.deucher@amd.com/)\n\n> Also, i've tested this patch with the 5K patch, the UCLK then just never gets initialized, so this patch is literally incompatible with 5K.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20261103160553.1431-1-atharvatiwarilinuxdev@gmail.com/)\n\n> Subject: [PATCH] amdgpu: add support for 5K\n\n[원문 확인](https://github.com/t2linux/linux-t2-patches/blob/main/7003-amdgpu-add-support-for-5K.patch)\n\nAlex v5 패치 diff 전문·머지 가능성은 lore 403으로 확인하지 못했습니다. Windows 팀과 Apple logicboard UCLK 정책 관계에 대한 Alex 추가 설명은 아직 follow-up만 있습니다.\n\n**drm/sched: Adjust run-queue when changing priority at runtime**\n\nTvrtko Ursulin은 drm/sched FAIR·FIFO/RR 전환기에 runtime priority 변경 시 run-queue를 entity rq_priority에 맞게 조정하는 수정을 CFS 완료까지 미루지 않겠다고 답했으며, FAIR에서는 priority≠rq_priority, FIFO/RR에서는 둘이 같다고 설계를 정리했다.\n\n영향: amdgpu SDMA 등에서 DRM_IOCTL_AMDGPU_SCHED priority override를 쓰는 userspace가 있으면 run-queue 불일치가 실제 스케줄링 버그·sashiko 정적 분석 경고로 이어질 수 있어 drm/sched·amdgpu KFD/SDMA 담당은 패치 land 전 동작을 검증해야 한다.\n\n> I'd like to get the fixes in so I can mentally focus on the continuation of the bigger story.\n\n[원문 확인](https://lore.kernel.org/dri-devel/dd6e0f86-67e8-40c0-bf8a-1948623d0646@igalia.com/)\n\n> Until then, it is FAIR where priority != rq_priority (because everything is in the single run queue), and FIFO and RR where priority == rq_priority.\n\n[원문 확인](https://lore.kernel.org/dri-devel/dd6e0f86-67e8-40c0-bf8a-1948623d0646@igalia.com/)\n\n2패치 시리즈 본문 diff·Reviewed-by 상태는 lore 403으로 확인하지 못했습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/vblank timer restart thread (Thomas Zimmermann)",
+      "url": "https://lore.kernel.org/dri-devel/auoVxgQ0D1-6QEDD@intel.com/",
+      "note": "thread"
+    },
+    {
+      "title": "syzbot enable_vblank -EDEADLK patch",
+      "url": "https://ci.syzbot.org/patches/ebf3779b-c8ae-47a6-bd3d-594f7779788f",
+      "note": "thread"
+    },
+    {
+      "title": "Renesas RZ/V2H(P) MIPI DSI PLL 4-patch series",
+      "url": "https://lore.kernel.org/dri-devel/20261103172057.617203-1-prabhakar.mahadev-lad.rj@bp.renesas.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Aditya Garg Nacked-by on Alex UCLK defer v5",
+      "url": "https://lore.kernel.org/dri-devel/1a4eb0fb-adbe-4884-8f37-b5ffa6782b84@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "Alex Deucher UCLK DPM defer v5",
+      "url": "https://lore.kernel.org/all/20261103143014.522592-1-alexander.deucher@amd.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Atharva Tiwari 5K patch incompatibility",
+      "url": "https://lore.kernel.org/dri-devel/20261103160553.1431-1-atharvatiwarilinuxdev@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "t2linux amdgpu 5K support patch",
+      "url": "https://github.com/t2linux/linux-t2-patches/blob/main/7003-amdgpu-add-support-for-5K.patch",
+      "note": "article"
+    },
+    {
+      "title": "Tvrtko Ursulin drm/sched run-queue priority",
+      "url": "https://lore.kernel.org/dri-devel/dd6e0f86-67e8-40c0-bf8a-1948623d0646@igalia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Sashiko review drm/gem CHANGE_HANDLE",
+      "url": "https://lore.kernel.org/dri-devel/sashiko-outbox-195705@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "mainline drm_gem_change_handle_ioctl INT_MAX guard",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=12f15d52d38a",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-03T18:41:01.035Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

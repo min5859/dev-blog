@@ -1,0 +1,148 @@
+{
+  "id": "2026-11-04-linux-distro-stable-daily",
+  "topic": "linux-distro-stable",
+  "title": "2026-11-04 Stable 백포트·EOL — 배포판 Stable",
+  "headline": "7.2.y 최종 EOL과 LTS rollup 위에 Zen6 SRSO·arm64 suspend·btrfs·netfs stable 백포트가 stable@에 올라왔습니다.",
+  "date": "2026-11-04",
+  "summary": "Linux 7.2.15가 7.2.y 마지막 stable로 EOL이 선언되었고, arm64 SME suspend·AMD Zen6 SRSO·btrfs fast fsync 등 회귀·보안 백포트가 큐에 제출되었습니다. 5.10.273·5.15.224·7.3.1 대규모 rollup은 vendor advisory와 대조가 필요합니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "x86/bugs: Zen6 SRSO 완화 경로 조정",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "x86/AMD mitigations maintainer, distro security advisory 작성자",
+      "verifyLink": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=ae1d2082d93bc04604dc08e9b7f9cdba5e0c28e6",
+      "if": "Zen6 호스트·게스트에서 /sys/devices/system/cpu/vulnerabilities의 SRSO 문구와 실제 완화 경로가 바뀌었다면",
+      "do": "배포판 보안 공지와 벤치마크 회귀 분석에 SRSO_MITIGATION_USER_IBPB 보고를 반영하세요",
+      "verify": "stable@ 제출 스레드와 upstream 커밋 ae1d2082d93b 원문을 확인하세요"
+    },
+    {
+      "title": "arm64 suspend: TPIDR2_EL0 저장·복원",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "arm64 suspend·SME maintainer, 6.x/7.x stable·LTS cherry-pick 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/03/3181",
+      "if": "FEAT_SME 환경에서 suspend-to-RAM·hibernation 후 userspace SME ABI가 깨질 수 있다면",
+      "do": "ARM64 SME를 쓰는 stable·Android 계열 트리에서 v2 stable 백포트 우선순위를 올리세요",
+      "verify": "stable merge 브랜치·태그는 kernel.org stable log까지 추적하지 않았으니 changelog·태그를 확인하세요"
+    },
+    {
+      "title": "btrfs: fast fsync ordered extent 대기",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "btrfs maintainer, btrfs root를 쓰는 distro stable maintainer",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/03/2867",
+      "if": "btrfs fast fsync와 COW write 실패가 겹치는 워크로드를 운영한다면",
+      "do": "LTS·stable 배포에서 v2 stable 패치 백포트를 우선 검토하세요",
+      "verify": "6.10+ 대상 CC와 stable@ 스레드 원문을 확인하세요"
+    },
+    {
+      "title": "iio trigger: concurrent sysfs UAF",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "iio maintainer, 센서/DAQ 스택을 stable 커널로 배포하는 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/02/256",
+      "if": "IIO trigger sysfs를 동시에 쓰는 테스트·자동화·산업 센서 스택을 쓴다면",
+      "do": "v2 stable 패치가 포함된 stable 이미지로 갱신 계획을 세우세요",
+      "verify": "KASAN 재현 스레드와 stable 토론 원문을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.2.15 stable · EOL**\n\n2026-11-01 Linux 7.2.15 stable이 공개되었고 Greg Kroah-Hartman은 7.2.y 최종 릴리스·EOL을 선언했다. ChangeLog에는 12건 백포트(ksmbd 협상 레이스, SMB Direct 소켓 정리, net/skbuff zerocopy 공유 frag, fork/exec/io_uring 코어덤프 경로 등)가 있다.\n\n영향: 7.2.y 사용자는 더 이상 stable 수정을 받지 못하므로 7.3.y로 옮겨야 한다. 파일 서버·네트워크 스택을 쓰는 배포는 마지막 7.2.y 포인트 릴리스를 우선 검토할 가치가 있다.\n\n> Note, this is the LAST 7.2.y kernel release.  After this one the 7.2.y kernel tree is end-of-life.  Please move to 7.3.y at this time.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/01/439)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**arm64: suspend: Save and restore TPIDR2_EL0 across CPU suspend**\n\nWei Wang v2 stable 백포트는 FEAT_SME 시스템에서 cpu_do_suspend()/cpu_do_resume()이 TPIDR2_EL0(ZA lazy-save 포인터)를 TPIDR_EL0와 함께 저장·복원하도록 한다. warm reset 후 UNKNOWN이 되는 레지스터를 suspend 경로에서 보존한다.\n\n영향: suspend-to-RAM/hibernation 후 userspace SME ABI 상태가 깨지면 fork/clone 등에서 SEGV 회귀가 날 수 있어, ARM64 SME를 쓰는 배포·Android 계열 stable 트리는 백포트 우선순위를 높여야 한다.\n\n> Its value is UNKNOWN after a warm reset, so the task that initiates suspend can return to userspace with a corrupted TPIDR2_EL0.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/03/3181)\n\n**x86/bugs: Adapt SRSO mitigation to Zen6**\n\nAMD stable 백포트는 Zen6 BTB context isolation 때문에 SafeRET 완화가 불필요한 경우 Spectre v2 user IBPB 설정만으로 user/user·guest/guest 벡터를 처리하고, 새 mitigation 문자열(SRSO_MITIGATION_USER_IBPB)로 보고한다.\n\n영향: Zen6 호스트·게스트의 /sys/devices/system/cpu/vulnerabilities 출력과 실제 완화 경로가 달라지므로, 배포판 보안 공지·벤치마크 회귀 분석 시 SRSO 문자열 변경을 반영해야 한다.\n\n> Zen6 has BTB protection which isolates the different contexts\n(user/kernel, guest/host) from one another. This makes the SafeRET\nmitigation there unnecessary\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=ae1d2082d93bc04604dc08e9b7f9cdba5e0c28e6)\n\nstable 큐 merge 여부와 대상 stable 브랜치(패치 제목의 6.18 등)는 changelog까지 확인하지 않았다.\n\n**netfs: preserve prepare_write errno on reissue**\n\nnetfs stable 시리즈(16패치 중 02/16)는 prepare_write 실패 errno를 reissue 시 0으로 지워 writeback 실패가 mapping_set_error()에 전달되지 않던 회귀(82e8885bd763)를 고친다. NETFS_SREQ_FAILED가 이미 설정된 경우 error 클리어를 건너뛴다.\n\n영향: CIFS·AFS 등 netfs 기반 원격/캐시 파일시스템에서 조용한 writeback 실패는 데이터 무결성 사고로 이어질 수 있어 stable 백포트 추적이 필요하다.\n\n> mapping_set_error(), which ignores 0, so writeback failure is silent.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/02/2272)\n\n**btrfs: wait for ordered extent IO in fast fsync**\n\nJosef Bacik v2 stable 패치는 fast fsync가 COW write 실패 후 ordered extent 완료 전에 로그하면 replay 시 미기록 extent가 노출되는 race를 고치기 위해 BTRFS_ORDERED_IO_DONE 대기로 전환한다. CC stable@vger.kernel.org # 6.10+.\n\n영향: btrfs fast fsync를 쓰는 워크로드에서 write 오류와 fsync가 겹치면 로그 replay 후 데이터 손실·손상 가능성이 있어 LTS/stable 배포는 백포트를 우선 검토해야 한다.\n\n> Logging them puts unwritten extents in place of the data that was there before when the log is replayed.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/03/2867)\n\n**iio: trigger: fix use-after-free in current_trigger_store() on concurrent writers**\n\nYu Zhang v2 stable 패치는 current_trigger_store()가 mlock을 일부 구간만 잡아 concurrent sysfs 쓰기에서 trigger refcount UAF·KASAN slab-use-after-free가 나는 경로를 전체 swap 구간까지 mlock으로 직렬화한다.\n\n영향: IIO trigger sysfs를 동시에 건드리는 테스트·자동화·산업 센서 스택에서 stable 백포트 없이는 use-after-free로 커널 패닉 위험이 있다.\n\n> BUG: KASAN: slab-use-after-free in current_trigger_store+0x168/0x4b0\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/02/256)\n\n**bnxt_en: Take RTNL before netif_close() when aborting FW reset**\n\nBryan Cochrane v2 stable 패치는 bnxt_fw_reset() abort 경로에서 netif_close() 호출 전 RTNL을 잡아 004b5008016a 이후 RTNL 없이 close해 __dev_close_many() assertion·notifier cascade가 나던 회귀를 고친다. Michael Chan이 stable 스레드에서 승인했다.\n\n영향: BCM57504 등 Broadcom NIC에서 FW reset 실패 abort 시 RTNL WARN와 네트워크 notifier 연쇄가 관측됐으므로, bnxt_en stable/enterprise 이미지는 백포트를 우선 적용해야 한다.\n\n> RTNL: assertion failed at net/core/dev.c (1740)\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/03/479)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Linux 7.3.1 stable**\n\n2026-10-30 Linux 7.3.1 stable이 공개되었고 ChangeLog에는 39건 백포트가 있다. io_uring, coredump·signal, keys/keyring, tracing/ftrace 등이 주요 영역이다.\n\n영향: 7.3.x 첫 point stable로 io_uring·코어덤프·키ring 회귀 수정을 받아야 한다. keyring 인덱스가 커널 주소에 의존하던 문제 수정은 보안·재현성에 영향이 크다.\n\n> I'm announcing the release of the 7.3.1 kernel.\n\nAll users of the 7.3 kernel series must upgrade.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/10/30/1519)\n\n**Linux 5.10.273 longterm**\n\n2026-10-30 Linux 5.10.273 longterm stable이 공개되었고 ChangeLog에는 516건 백포트가 있다. signal/keys/tracing, bonding UAF, nf_tables, dm-integrity 등 범용 수정이 대량으로 포함된다.\n\n영향: 5.10 LTS는 여전히 산업·임베디드 배포의 기준이므로 대규모 rollup을 vendor advisory와 대조해야 한다. bonding·keys·nf_tables 수정은 네트워크·보안 영향이 크다.\n\n> net: bonding: fix use-after-free in bond_xmit_broadcast()\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.273)\n\n516건 전체와 배포판 cherry-pick 상태는 vendor advisory 확인이 필요하다.\n\n**Linux 5.15.224 longterm**\n\n2026-10-30 Linux 5.15.224 longterm stable이 공개되었고 ChangeLog에는 571건 백포트가 있다. 5.10.273과 겹치는 signal/keys/tracing·bonding·nf_tables 외 io-wq·ksmbd FS info 초기화 등이 추가된다.\n\n영향: 5.15 LTS는 널리 쓰이므로 대규모 stable rollup 추적이 필요하다. ksmbd·io-wq 변경은 파일 서버·비동기 I/O 워크로드 안정성과 연결된다.\n\n> ksmbd: fill in FileSysIdentifier in FS_POSIX_INFORMATION\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.224)\n\n571건 전체와 배포판별 포함 집합은 이 dossier에서 매핑하지 않았다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Greg Kroah-Hartman 7.2.15 EOL 공지",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/01/439",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-7.2.15",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.15",
+      "note": "changelog"
+    },
+    {
+      "title": "Greg Kroah-Hartman 7.3.1 stable 공지",
+      "url": "https://lists.openwall.net/linux-kernel/2026/10/30/1519",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-7.3.1",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.3.1",
+      "note": "changelog"
+    },
+    {
+      "title": "arm64 suspend TPIDR2 v2 stable",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/03/3181",
+      "note": "thread"
+    },
+    {
+      "title": "x86 SRSO Zen6 upstream",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=ae1d2082d93bc04604dc08e9b7f9cdba5e0c28e6",
+      "note": "commit"
+    },
+    {
+      "title": "x86 SRSO stable@ 제출",
+      "url": "https://lore.kernel.org/stable/20261103182143.27403-1-sshaiju.lkml@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "netfs prepare_write errno",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/02/2272",
+      "note": "thread"
+    },
+    {
+      "title": "btrfs fast fsync ordered extent",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/03/2867",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-5.10.273",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.273",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-5.15.224",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.224",
+      "note": "changelog"
+    },
+    {
+      "title": "iio trigger concurrent sysfs UAF",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/02/256",
+      "note": "thread"
+    },
+    {
+      "title": "bnxt_en RTNL before netif_close",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/03/479",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-03T18:32:41.920Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

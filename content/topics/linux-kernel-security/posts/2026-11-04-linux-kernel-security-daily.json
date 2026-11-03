@@ -1,0 +1,123 @@
+{
+  "id": "2026-11-04-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-11-04 mseal 부트 정책 — 커널 보안",
+  "headline": "시스템 매핑 mseal을 부트 파라미터로 선택 가능하게 하는 v2 시리즈와 randstruct seed·libceph bounds hardening이 linux-hardening에 올라왔습니다.",
+  "date": "2026-11-04",
+  "summary": "Chris Down의 mseal sysmap v2는 no_mseal_sys_mappings로 봉인 정책을 부트 시점에 두고, Hamdy Abou El Anein·Thorsten Blum 패치는 randstruct seed 생성과 libceph CRUSH bounds 검사를 강화합니다. 7.2.y EOL과 LTS·7.3.y stable rollup은 배포 이전 경로를 다시 점검할 신호입니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "mseal sysmap: 부트 시점 시스템 매핑 봉인 선택",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "mm/mseal·selftests/mm maintainer, distro hardening·CRI/checkpoint 운영자",
+      "verifyLink": "https://lists.openwall.net/linux-hardening/2026/11/03/25",
+      "if": "vDSO·uprobe 봉인과 CRI/checkpoint·Meta/Reverie unseal 요구가 한 커널 빌드에서 충돌한다면",
+      "do": "no_mseal_sys_mappings 부트 정책과 __install_special_mapping() 문서화가 포함된 v2 8패치 시리즈를 추적하세요",
+      "verify": "mm 트리 merge 시점과 Lorenzo/Jeff 리뷰 반영 여부는 원문 스레드에서 확인하세요"
+    },
+    {
+      "title": "randstruct: 명령 실패 시 seed 생성 중단",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "kbuild·gcc-plugins/randstruct maintainer, CONFIG_RANDSTRUCT distro 빌드 담당",
+      "verifyLink": "https://lore.kernel.org/linux-hardening/20261103164204.129671-1-info@daylightlinux.ch/",
+      "if": "CONFIG_RANDSTRUCT 빌드 파이프라인에서 od·sha256sum 실패가 숨겨질 수 있다면",
+      "do": "gen-randstruct-seed.sh errexit와 출력 수집 순서 수정 패치를 빌드 회귀 테스트에 포함할지 검토하세요",
+      "verify": "linux-hardening 외 maintainer ACK·scripts 트리 반영 시점은 리스트에서 확인하세요"
+    },
+    {
+      "title": "libceph: crush_rule::steps에 __counted_by()",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "ceph/libceph maintainer, CONFIG_FORTIFY/UBSAN hardening 빌드 담당",
+      "verifyLink": "https://lists.openwall.net/linux-hardening/2026/11/03/30",
+      "if": "FORTIFY_SOURCE·CONFIG_UBSAN_BOUNDS로 libceph 경로 bounds를 강화한다면",
+      "do": "crush_rule::steps에 __counted_by(len)을 붙인 단일 패치 merge 여부를 따라가세요",
+      "verify": "패치 스레드와 ceph 트리 반영 상태를 원문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.2.15 stable · EOL**\n\n2026-11-01 Linux 7.2.15 stable이 공개되었고 Greg Kroah-Hartman은 7.2.y 최종 릴리스·EOL을 선언했습니다. 12건 백포트에는 skb_zerocopy 공유 frag 마커 누락, ksmbd 협상 레이스, SMB Direct 소켓 정리 등이 포함됩니다.\n\n영향: 7.2.y는 더 이 stable 수정을 받지 않으므로 7.3.y로 옮겨야 합니다.\n\n> Note, this is the LAST 7.2.y kernel release.  After this one the 7.2.y kernel tree is end-of-life.  Please move to 7.3.y at this time.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/01/439)\n\n**Linux 7.3.1 stable**\n\n2026-10-30 Linux 7.3.1 stable이 공개되었고 ChangeLog에는 39건 백포트가 있습니다.\n\n영향: 7.3.x 첫 point stable로 io_uring·코어덤프·키링 회귀 수정을 받아야 합니다.\n\n> I'm announcing the release of the 7.3.1 kernel.\n\nAll users of the 7.3 kernel series must upgrade.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/10/30/1519)\n\n**Linux 5.10.273 longterm**\n\n2026-10-30 Linux 5.10.273 longterm stable이 공개되었고 ChangeLog에는 516건 백포트가 있습니다.\n\n영향: 5.10 LTS 배포는 vendor rebuild로 대량 백포트를 받아야 합니다.\n\n> Linux 5.10.273\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.273)\n\n**Linux 5.15.224 longterm**\n\n2026-10-30 Linux 5.15.224 longterm stable이 공개되었고 ChangeLog에는 571건 백포ort가 있습니다.\n\n영향: 5.15 LTS는 대규모 stable rollup 추적이 필요합니다.\n\n> Linux 5.15.224\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.224)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**mseal sysmap: Choose system mapping sealing at boot**\n\nChris Down v2 8패치 시리즈가 시스템 매핑 mseal을 빌드 전용이 아니라 부트 파라미터 no_mseal_sys_mappings로 끌 수 있게 하고, __install_special_mapping()에서 봉인·selftests/mm 이전·Meta/Reverie 같은 unseal 필요 워크로드 문서화를 포함합니다.\n\n영향: vDSO·uprobe 등 시스템 매핑 봉인은 exploit surface를 줄이지만 CRI/checkpoint 도구와 충돌할 수 있어 부트 정책 조정 가능 여부를 추적해야 합니다.\n\n> System mapping sealing is currently a build time choice. Hosts which want it and hosts which need to move or unmap these mappings therefore need separate kernels, which is not ideal.\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/11/03/25)\n\n> So, to improve this, let's add no_mseal_sys_mappings. That way one kernel build can serve both sealed and unsealed hosts.\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/11/03/31)\n\n**libceph: Annotate crush_rule::steps with __counted_by()**\n\nThorsten Blum 단일 패치가 crush_rule::steps에 __counted_by(len)을 붙여 FORTIFY_SOURCE·CONFIG_UBSAN_BOUNDS가 CRUSH rule step 배열 접근을 더 엄격히 검사하게 합니다.\n\n영향: Ceph 클라이언트(libceph) 경로의 bounds 오류는 커널 메모리 corruption으로 이어질 수 있습니다.\n\n> Add __counted_by() to crush_rule::steps to improve access bounds checking via CONFIG_UBSAN_BOUNDS and CONFIG_FORTIFY_SOURCE.\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/11/03/30)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**randstruct: stop seed generation when a command fails**\n\nHamdy Abou El Anein 패치가 scripts/gen-randstruct-seed.sh에 errexit를 켜고 od·sha256sum 출력을 먼저 수집한 뒤 쓰기 실패 시 종료하도록 해, 파이프라인 오류로 빈 randstruct seed·해시 헤더가 생성되던 문제를 막습니다.\n\n영향: CONFIG_RANDSTRUCT 빌드에서 잘못된 seed는 구조체 레이아웃 난수화가 무력화될 수 있습니다.\n\n> The pipeline ending in tr hides an od failure, allowing an empty seed and its hash to be written successfully. Similarly, cut masks a failed sha256sum, and a failed seed-file write does not stop heade\n\n[원문 확인](https://lore.kernel.org/linux-hardening/20261103164204.129671-1-info@daylightlinux.ch/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "mseal sysmap v2 cover",
+      "url": "https://lists.openwall.net/linux-hardening/2026/11/03/25",
+      "note": "thread"
+    },
+    {
+      "title": "no_mseal_sys_mappings 패치",
+      "url": "https://lists.openwall.net/linux-hardening/2026/11/03/31",
+      "note": "thread"
+    },
+    {
+      "title": "randstruct seed generation fix",
+      "url": "https://lore.kernel.org/linux-hardening/20261103164204.129671-1-info@daylightlinux.ch/",
+      "note": "thread"
+    },
+    {
+      "title": "libceph crush_rule __counted_by",
+      "url": "https://lists.openwall.net/linux-hardening/2026/11/03/30",
+      "note": "thread"
+    },
+    {
+      "title": "Linux 7.2.15 stable announcement",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/01/439",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-7.2.15",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.15",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 7.3.1 stable announcement",
+      "url": "https://lists.openwall.net/linux-kernel/2026/10/30/1519",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-7.3.1",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.3.1",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-5.10.273",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.273",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-5.15.224",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.224",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-03T18:26:00.423Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
