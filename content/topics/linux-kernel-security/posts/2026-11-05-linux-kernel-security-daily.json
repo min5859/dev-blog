@@ -1,0 +1,88 @@
+{
+  "id": "2026-11-05-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-11-05 seq_buf·BTI veneer — 커널 보안",
+  "headline": "linux-hardening에 seq_buf terminate overflow 표시, arm64 모듈 BTI veneer, siano strlcat 제거 준비 패치가 올라왔습니다.",
+  "date": "2026-11-05",
+  "summary": "Kees Cook seq_buf v3는 버퍼가 꽉 찬 뒤 terminate 시 마지막 바이트 손실을 overflow로 표시하고, Ard Biesheuvel arm64 v2는 모듈 로더가 cross-section BTI veneer를 삽입합니다. Mariia Nikitash siano 패치는 deprecated strlcat()을 snprintf()로 바꿉니다. 7.2.y EOL·LTS·7.3.y stable rollup은 전일과 동일하며 추가 진척은 이번 수집에서 확인하지 못했습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "seq_buf: terminate 시 overflow 미표시 버그 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "seq_buf·tracing·procfs 출력 경로 유지보수자, 커널 hardening 추적자",
+      "verifyLink": "https://lists.openwall.net/linux-hardening/2026/11/04/6",
+      "if": "tracing·procfs 등 seq_buf 출력에서 버퍼가 정확히 가득 찬 뒤 terminate가 호출된다면",
+      "do": "Kees Cook v3 패치의 seq_buf_set_overflow() 처리와 KUnit 테스트 범위를 merge 논의와 함께 추적하세요",
+      "verify": "terminate 뒤 호출자 overflow 검사 의무와 lib/seq_buf 트리 merge 시점은 maintainer 합의·원문 스레드에서 확인하세요"
+    },
+    {
+      "title": "arm64: 모듈 cross-section BTI veneer",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "arm64 BTI·모듈 로더 maintainer, distro hardened arm64 빌드 담당",
+      "verifyLink": "https://lists.openwall.net/linux-hardening/2026/11/04/11",
+      "if": "BTI가 켜진 arm64에서 정적 링크되지 않은 커널 모듈을 배포한다면",
+      "do": "Ard Biesheuvel v2의 모듈 로더 BTI veneer 삽입과 HAVE_LIVE_PATCH·ARM64_BTI_KERNEL 조정을 백포트 가능성과 함께 따라가세요",
+      "verify": "arm64 maintainer merge·stable 백포트 일정은 이번 dossier에서 확인하지 못했으므로 리스트 회신을 계속 확인하세요"
+    },
+    {
+      "title": "media siano: strlcat()을 snprintf()로 전환",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "media/siano 드라이버 maintainer, KSPP strlcat 제거 작업 추적자",
+      "verifyLink": "https://lists.openwall.net/linux-hardening/2026/11/04/13",
+      "if": "KSPP hardening 빌드에서 deprecated strlcat() 제거 일정을 맞춘다면",
+      "do": "sms_ir_init()의 snprintf() 전환 패치와 동일 truncation 동작 유지 여부를 media 트리 반영과 함께 검토하세요",
+      "verify": "strlcat API 제거 후속 일정은 linux-hardening 스레드와 KSPP 이슈 링크를 원문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**seq_buf: Mark a seq_buf overflowed when terminating it loses a byte**\n\nKees Cook v3 패치가 버퍼가 정확히 가득 찬 뒤 __seq_buf_terminate()가 마지막 데이터 바이트를 NUL로 덮을 때 seq_buf_set_overflow()로 overflow를 표시하고, KUnit 테스트로 seq_buf_str/strlen/terminate·seq_buf_pop 동작을 검증합니다.\n\n영향: overflow 플래그 없이 마지막 바이트가 조용히 잘리면 tracing·procfs 등 seq_buf 출력 경로의 무결성을 신뢰하기 어렵습니다.\n\n> When there is no room after the data for a NUL, __seq_buf_terminate()\nwrites the NUL over the last byte of the buffer.\n\n> Mark the seq_buf overflowed in that case with seq_buf_set_overflow().\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/11/04/6)\n\n**arm64: Implement support for BTI veneers**\n\nArd Biesheuvel v2 시리즈가 arm64 모듈 로더에서 cross-section 호출에 BTI veneer를 삽입하고, HAVE_LIVE_PATCH가 !ARM64_BTI_KERNEL에 의존하도록 조정합니다(테스트용 DONOTMERGE 모듈 포함).\n\n영향: 정적 링크되지 않은 커널 모듈은 툴체인이 생략한 BTI landing pad를 스스로 보완하지 않으면 Branch Target Identification 보호가 구멍 납니다.\n\n> Modules are partially linked objects, and so there is no static linker\nthat can do this for us. Instead, the module loader must see to this.\n\n> arm64: module: Emit BTI veneers for cross-section calls\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/11/04/11)\n\n**media: siano: Replace strlcat() with snprintf() in sms_ir_init()**\n\nMariia Nikitash 패치가 sms_ir_init()의 strscpy/strlcat 조합을 snprintf() 한 번으로 바꿔 deprecated strlcat() 제거(KSPP) 준비에 맞추며, 동일 크기 버퍼·미사용 반환값으로 기존 truncation 동작을 유지합니다.\n\n영향: strlcat() 축소는 bounds-safe 문자열 API 정리의 일부이며, media·KSPP hardening 빌드를 추적하는 팀은 siano 경로 변경과 후속 strlcat 제거 일정을 함께 봐야 합니다.\n\n> In preparation for removing the deprecated strlcat() API[1],\nreplace the strscpy() and strlcat() calls with a single snprintf()\ncall to construct the IR device path.\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/11/04/13)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "seq_buf terminate overflow v3",
+      "url": "https://lists.openwall.net/linux-hardening/2026/11/04/6",
+      "note": "thread"
+    },
+    {
+      "title": "arm64 BTI veneers v2",
+      "url": "https://lists.openwall.net/linux-hardening/2026/11/04/11",
+      "note": "thread"
+    },
+    {
+      "title": "siano sms_ir_init snprintf",
+      "url": "https://lists.openwall.net/linux-hardening/2026/11/04/13",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-04T18:23:34.224Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

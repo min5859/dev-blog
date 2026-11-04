@@ -1,0 +1,108 @@
+{
+  "id": "2026-11-05-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-11-05 MSM IFPC refcnt — GPU·AI",
+  "headline": "Qualcomm MSM IFPC refcnt 분리 v5, Imagination heap query UAPI, Intel IVPU SSID 128 상한, perfcntr resume 리뷰 이슈가 dri-devel에 올라왔습니다.",
+  "date": "2026-11-05",
+  "summary": "Rob Clark v5는 IFPC disable를 독립 refcnt로 분리하고 perfcntr resume 타이밍을 조정합니다. Imagination·IVPU UAPI 정합과 MSM runtime PM 리뷰 지적도 함께 추적할 가치가 있습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "drm/msm: Decouple IFPC disable and sysprof",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "drm/msm·Adreno GMU·freedreno 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20261104175931.28475-1-robin.clark@oss.qualcomm.com/",
+      "if": "Adreno/MSM에서 suspend·resume·sysprof·debugfs dump 시 fw 상태나 perfcntr 타이밍 이상이 보이면",
+      "do": "v5의 lock·runpm 순서와 hw_init 연동을 mainline land 전에 재현·검증하세요",
+      "verify": "커버레터에서 IFPC refcnt 분리·state capture 추출·sel_worker·runpm ordering 수정 설명을 원문으로 확인하세요"
+    },
+    {
+      "title": "drm/msm: Resume perfcntrs after hw_init (리뷰)",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "drm/msm perfcntr·runtime PM·Qualcomm bring-up 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/sashiko-outbox-197814@kernel.org/",
+      "if": "MSM perfcntr stream과 runtime resume(MSM_PARAM_TIMESTAMP·SYSprof)를 동시에 쓰는 bring-up 환경이면",
+      "do": "needs_hw_init early return 경로에서 runtime PM usage ref 누수 가능성을 v5 land 전에 break vs return 수정 여부까지 확인하세요",
+      "verify": "Sashiko 리뷰의 scoped_guard 내부 return과 pm_runtime_put_autosuspend 미호출 분석을 원문으로 대조하세요"
+    },
+    {
+      "title": "drm/imagination: improve UAPI heap and static areas query ioctls",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "drm/imagination·Mesa PVR userspace·PowerVR KMD UAPI 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20261104-ioctl-query-count-stride-fixes-v1-0-2bf86dd7cf29@imgtec.com/",
+      "if": "distro에서 구 Mesa(MR 44456 이전)와 신규 필드 확장 Mesa를 혼용하면",
+      "do": "heap·static area query ioctl의 legacy(minimum) vs current(maximum) stride·count clamp 동작을 userspace 테스트로 추적하세요",
+      "verify": "커버레터의 legacy vs current stride/count 패턴 설명과 패치 1의 stride 고정 의도를 원문으로 확인하세요"
+    },
+    {
+      "title": "accel/ivpu: Limit SSIDs to 128 on all generations",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "accel/ivpu·Intel NPU KMD·IVPU userspace 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20261104182515.3198239-1-karol.wachowski@linux.intel.com/",
+      "if": "IVPU multi-tenant·MMU context limit 회귀 테스트를 돌리면",
+      "do": "CD table 128·user SSID 2–127 정렬에 따른 root 126·non-root 64 context 한도 변화를 워크로드에 반영하세요",
+      "verify": "v2 커밋 메시지의 bounds fix와 모든 세대 동일 한limit 적용 근거를 원문으로 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm/msm: Resume perfcntrs after hw_init**\n\nSashiko AI 리뷰는 v5 2/6 패치가 sel_worker()에서 gpu->needs_hw_init일 때 scoped_guard 내부 return으로 pm_runtime_put_autosuspend()에 도달하지 못해 runtime PM usage ref가 새는 High 이슈를 지적한다.\n\n영향: MSM perfcntr stream과 runtime resume(MSM_PARAM_TIMESTAMP·SYSprof) 순서가 겹치면 GPU가 영구적으로 runtime suspend되지 않을 수 있어 Qualcomm 타겟 전력·열 관리와 perfcntr 디버깅 경로를 쓰는 팀은 break vs return 수정 여부를 v5 land 전 확인해야 한다.\n\n> returning from inside scoped_guard releases gpu->lock via cleanup but exits sel_worker() without calling pm_runtime_put_autosuspend(&gpu->pdev->dev)\n\n[원문 확인](https://lore.kernel.org/dri-devel/sashiko-outbox-197814@kernel.org/)\n\nv5 커버레터의 sel_worker deadlock 수정이 동일 경로를 고쳤는지, Rob Clark 공식 답변은 확인 필요합니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/msm: Decouple IFPC disable and sysprof**\n\nRob Clark v5 6패치 시리즈는 IFPC disable를 독립 refcnt로 분리해 sysprof·debugfs GPU state dump·다중 스레드가 서로 IFPC 설정을 덮어쓰지 않게 하고, perfcntr resume를 hw_init 이후로 옮기며 gen8 state capture 시리즈에서 IFPC 관련 부분만 추출해 재제출한다.\n\n영향: Qualcomm Adreno/MSM에서 IFPC·GMU OOB·runtime PM·perfcntr 경로가 얽혀 suspend/resume·sysprof·debugfs dump 시 fw 상태가 깨지거나 카운터 수집 타이밍이 어긋날 수 있어 freedreno·android MSM 유지보수 담당은 v5의 lock/runpm 순서와 hw_init 연동을 land 전 검증해야 한다.\n\n> Convert IFPC-disable into it's own refcnt so that multiple threads can request IFPC to be disabled without stomping on each other.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20261104175931.28475-1-robin.clark@oss.qualcomm.com/)\n\nmainline·drm-misc-next 머지 일정과 maintainer ACK 상태는 follow-up에서 확인하지 못했습니다.\n\n**drm/imagination: improve UAPI heap and static areas query ioctls**\n\nLuigi Santivetti 2패치 시리즈는 DRM_PVR heap·static data areas query ioctl이 stride·count를 legacy(minimum)과 current(maximum)로 구분해 반환하도록 pvr_drm UAPI·드라이버를 바꿔, 구 Mesa(MR 44456 이전)와 신규 필드 확장을 동시에 안전하게 한다.\n\n영향: Imagination PowerVR KMD UAPI를 늘리는 동안 구 userspace가 잘못된 stride/count로 ioctl 버퍼를 잡으면 힙·static area 정보 query가 깨질 수 있어 Mesa PVR 백엔드·distro 구/신 Mesa 혼용 환경은 clamp 동작을 추적해야 한다.\n\n> introducing a distinction between a legacy (or minimum) and a current (or maximum) value for both the stride and the count that is returned to userspace.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20261104-ioctl-query-count-stride-fixes-v1-0-2bf86dd7cf29@imgtec.com/)\n\n**accel/ivpu: Limit SSIDs to 128 on all generations**\n\nKarol Wachowski v2는 Intel IVPU KMD의 CD table·SSID 상한을 하드웨어가 지원하는 128에 맞추고 user SSID 범위를 2–127로 정렬하며 CD table 대비 off-by-one bounds check를 고친다.\n\n영향: 세대별 SSID 한도와 KMD 설정(256 CD entry·SSID 130 허용) 불일치는 MMU·context limit 테스트와 multi-tenant 워크로드에서 경계 버그·과도한 context 허용으로 이어질 수 있어 accel/ivpu·OpenVINO/NPU userspace 담당은 root 126·non-root 64 context 한도 변화를 봐야 한다.\n\n> Limit the CD table to 128 entries and the user SSID range to 2-127, so root can create 126 contexts and non-root users 64.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20261104182515.3198239-1-karol.wachowski@linux.intel.com/)\n\nv1 대비 v2 maintainer 반영·머지 타임라인은 follow-up에서 확인하지 못했습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "**dropped: fsl-ldb panel cleanup**\n\nfsl-ldb는 panel 명명·device_node cleanup 정리만 있고 기능 변경이 없으며 Luca Ceresoli가 drm-misc-next 적용 불가로 rebase 재송을 요청한 land 전 유지보수 패치로 dossier에서 후보에서 제외되었습니다."
+    }
+  ],
+  "confidence": {
+    "level": "high",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. perfcntr runtime PM 리뷰는 confidence medium 항목이므로 land 전 원문 재확인이 필요합니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/msm IFPC decouple v5 커버레터",
+      "url": "https://lore.kernel.org/dri-devel/20261104175931.28475-1-robin.clark@oss.qualcomm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/imagination ioctl query stride v1-0",
+      "url": "https://lore.kernel.org/dri-devel/20261104-ioctl-query-count-stride-fixes-v1-0-2bf86dd7cf29@imgtec.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/imagination ioctl query stride v1-1",
+      "url": "https://lore.kernel.org/dri-devel/20261104-ioctl-query-count-stride-fixes-v1-1-2bf86dd7cf29@imgtec.com/",
+      "note": "thread"
+    },
+    {
+      "title": "accel/ivpu SSID 128 limit v2",
+      "url": "https://lore.kernel.org/dri-devel/20261104182515.3198239-1-karol.wachowski@linux.intel.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/msm perfcntr hw_init 리뷰 (Sashiko)",
+      "url": "https://lore.kernel.org/dri-devel/sashiko-outbox-197814@kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-04T18:40:50.215Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

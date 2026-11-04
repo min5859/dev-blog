@@ -1,0 +1,93 @@
+{
+  "id": "2026-11-05-ai-coding-agents-daily",
+  "topic": "ai-coding-agents",
+  "title": "2026-11-05 BYOK·CLI 패치 — AI 코딩 에이전트",
+  "headline": "Copilot 사용량 API가 BYOK·엔터프라이즈 커스텀 모델을 분리 노출하고, Claude Code v2.1.318이 인증·설정 회귀를 다수 수정했습니다.",
+  "date": "2026-11-05",
+  "summary": "GitHub Copilot usage metrics API가 로컬 BYOK와 커스텀 엔터프라이즈 모델 사용량을 호스팅 모델과 구분해 리포트합니다. Claude Code는 로그인 만료 표시·공유 홈 설정·IDE 터미널 확장 설치 정책 등을 2.1.318에서 정리했습니다.",
+  "tags": [
+    "AI",
+    "코딩에이전트"
+  ],
+  "highlights": [
+    {
+      "title": "Copilot usage API BYOK·커스텀 모델 분리",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "Copilot Enterprise/Organization 메트릭·과금 거버넌스 담당",
+      "verifyLink": "https://github.blog/changelog/2026-11-03-byok-and-enterprise-custom-models-in-the-copilot-usage-api",
+      "if": "조직에서 BYOK·프록시·로컬 모델과 Copilot 호스팅 모델을 한 API로 과금·정책 감사해야 한다면",
+      "do": "1일·28일 조직/엔터프라이즈 리포트의 used_local_byok, totals_by_local_byok, is_custom_enterprise_model 필드를 대시보드에 반영하세요",
+      "verify": "로컬 BYOK는 클라이언트 텔레메트리 의존으로 과소 집계될 수 있으니, 사내 감사 기준에 맞는지 샘플 기간으로 대조 확인하세요"
+    },
+    {
+      "title": "Claude Code v2.1.318",
+      "priority": "상",
+      "impactType": "release",
+      "affectedAudience": "Claude Code CLI/SDK·Remote Control·클라우드 세션 운영자",
+      "verifyLink": "https://github.com/anthropics/claude-code/releases/tag/v2.1.318",
+      "if": "헤드리스·SDK·셀프호스트 러너·클라우드 세션에서 인증 만료·설정 저장·업데이트 후 프로세스 생존을 운영 SLA에 묶어 두었다면",
+      "do": "스테이징에서 loginExpiresAt·credential_expires_at 노출과 공유 네트워크 홈의 ~/.claude.json·MCP 설정 저장, --continue·managed daemon ENOENT 수정을 회귀 테스트하세요",
+      "verify": "IDE 터미널 기동 시 IDE 확장 자동 설치가 중단됐는지 확인하고, 필요하면 외부 터미널의 /ide 또는 에디터 확장 뷰로 설치 경로를 바꾸세요"
+    },
+    {
+      "title": "Codex CLI 기본 managed 데몬",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "Codex CLI/Codex App Server 도입·보안 검토 담당",
+      "verifyLink": "https://github.com/openai/codex/issues/48195",
+      "if": "Codex CLI를 서버·CI·개발자 워크스테이션에 npm으로 배포하고 패키지 거버넌스·프록시 정책을 적용 중이라면",
+      "do": "interactive 세션 기본 동작(0.157.0 이후 persistent app-server, ~/.codex/packages 복사·hourly updater)이 허용 목록과 맞는지 재점검하고, 필요 시 daemon_auto_start 비활성화 등 조직 정책을 문서화하세요",
+      "verify": "2026-10-13 기준 이슈가 열린 상태이므로 OpenAI의 기본값 변경 계획과 daemon stop 후 pid-update-loop 잔존 여부는 원문 이슈에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**v2.1.318**\n\n2026-11-04 릴리스로 로그인 만료(loginExpiresAt/credential_expires_at), 공유 네트워크 홈에서 ~/.claude.json·MCP 설정 저장 실패, 멀티 터미널 로그인 충돌, --continue 회귀(2.1.314), managed daemon/spawn ENOENT 등 다수 버그 수정과 IDE 터미널에서 IDE 확장 자동 설치 중단 등 동작 변경이 포함됩니다.\n\n영향: 헤드리스·SDK·셀프호스트 러너·클라우드 세션을 쓰는 팀은 인증·설정 내구성·업데이트 후 프로세스 생존 이슈가 가용성과 보안 경계에 영향을 주므로 업그레이드 전후 검증이 필요합니다.\n\n> Added the date a stored claude.ai sign-in ends to claude auth status (loginExpiresAt) and to claude -p JSON results (credential_expires_at)\n\n> Changed Claude Code to no longer install or update the IDE extension when started in an IDE terminal; use /ide from an outside terminal or your editor's extensions view.\n\n[원문 확인](https://github.com/anthropics/claude-code/releases/tag/v2.1.318)\n\ndeniedMcpServers URL 매칭 확대 등 정책 변경이 기존 MCP allowlist와 충돌하는지는 확인 필요합니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**Codex CLI installs a persistent, self-updating background daemon by default**\n\nCodex CLI 0.157.0부터 eligible interactive 세션이 기본으로 managed app-server 데몬을 띄우고, ~/.codex/packages에 복사본을 두며 hourly updater로 백엔드를 갱신·재시작할 수 있어 CLI npm 설치본과 런타임 실행 정체가 분리됩니다. 어제도 다룬 주제로, 신규 공식 기본값 변경 공지는 dossier에 없습니다.\n\n영향: 코딩 에이전트 CLI를 인프라로 볼 때 기본 지속 프로세스·자체 업데이트·첫 세션 환경 상속은 보안 검토·패키지 거버넌스·프록시 정책 위반 가능성을 키웁니다.\n\n> Since 0.157.0, just opening an interactive codex session: Starts a persistent background daemon (codex app-server --managed-daemon).\n\n[원문 확인](https://github.com/openai/codex/issues/48195)\n\nOpenAI가 CLI 기본값을 opt-in으로 바꿀 계획인지, codex app-server daemon stop 후 pid-update-loop가 남는 버그 수정 여부는 확인 필요합니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**BYOK and enterprise custom models in the Copilot usage API**\n\nCopilot usage metrics API가 로컬 BYOK(used_local_byok, totals_by_local_byok, DAU/WAU/MAU)와 엔터프라이즈 커스텀 모델(is_custom_enterprise_model) 사용량을 Copilot 호스팅 모델과 분리해 1일·28일 조직/엔터프라이즈 리포트에 노출합니다.\n\n영향: BYOK·프록시·로컬 모델(Ollama 등)을 쓰는 팀이 Copilot 정책·비용을 한 API 뷰로 거버넌스할 수 있어, 에이전트 도입 시 과금 주체를 구분하는 데 직접적입니다.\n\n> The Copilot usage metrics API now shows bring your own key (BYOK) usage across GitHub Copilot, so you can separate it from Copilot-hosted model usage.\n\n[원문 확인](https://github.blog/changelog/2026-11-03-byok-and-enterprise-custom-models-in-the-copilot-usage-api)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요. 본 브리핑의 설명은 GitHub 릴리스 노트·공식 블로그·Hacker News 신호에서 AI가 요약한 것입니다. 구체 명령어·플래그·옵션은 도입 전 반드시 원문으로 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "BYOK and enterprise custom models in the Copilot usage API",
+      "url": "https://github.blog/changelog/2026-11-03-byok-and-enterprise-custom-models-in-the-copilot-usage-api",
+      "note": "changelog"
+    },
+    {
+      "title": "Claude Code release v2.1.318",
+      "url": "https://github.com/anthropics/claude-code/releases/tag/v2.1.318",
+      "note": "changelog"
+    },
+    {
+      "title": "Codex CLI default managed daemon (issue)",
+      "url": "https://github.com/openai/codex/issues/48195",
+      "note": "thread"
+    },
+    {
+      "title": "HN discussion on Codex daemon",
+      "url": "https://news.ycombinator.com/item?id=50060694",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-04T18:16:45.180Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/ai-coding-agents-newsletter-from-dossier-ko.md"
+  }
+}

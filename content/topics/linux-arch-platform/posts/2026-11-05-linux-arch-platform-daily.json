@@ -1,0 +1,143 @@
+{
+  "id": "2026-11-05-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-11-05 SDEI·GICv5 회귀 — 아키·플랫폼",
+  "headline": "arm64 SDEI·GICv5 회귀 수정과 RISC-V CBQRI resctrl·CSR 공통 API 등 아키·플랫폼 패치가 리스트에 올라왔습니다.",
+  "date": "2026-11-05",
+  "summary": "Meta의 arm64 SDEI 시리즈와 Arm GICv5 SPI 거부 패치는 KPTI·firmware 연동에서 보이던 hang·NULL 역참조를 막는 쪽입니다. RISC-V는 CBQRI resctrl v10, CSR helper v7, Milk-V Duo 이더넷 DTB, tools/mm hwpoison-panic 리뷰까지 이어집니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "arm64: sdei: Handle exceptions taken inside the event handler",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "arm64 SDEI·KPTI·firmware 통합 maintainer",
+      "verifyLink": "https://patchew.org/linux/20261104180936.2981070-1-kas@kernel.org/",
+      "if": "KPTI on arm64에서 SDEI NMI backtrace(sysrq-l) 등 이벤트 핸들러 안 동기 예외로 trampoline에 CPU가 갇히거나 RCU stall이 보이면,",
+      "do": "Kiryl Shutsemau 2패치(커널 vectors 실행·예외 레지스터 저장·복원) 머지·stable/backport 일정을 arm64 maintainer 쪽에서 확인하세요.",
+      "verify": "Patchew·lore cover의 v7.4-rc1 QEMU·arm64 하드웨어 재현 설명과 패치 diff를 대조하세요."
+    },
+    {
+      "title": "irqchip/gic-v5: Reject SPIs not backed by an IRS",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "GICv5·arm64 IRQ/firmware 통합 maintainer",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20261104-host_gicv5_fixes-v2-1-e47ad20ea3c8@arm.com/",
+      "if": "multi-IRS GICv5 플랫폼 bring-up 중 firmware가 IRS 없는 global SPI gap을 등록해 부팅 중 NULL deref가 나면,",
+      "do": "Sascha Bischoff v2 host driver 시리즈(미백 SPI IRQ 할당 거부·broken firmware 경고) 반영을 irqchip/gic-v5 트래킹에서 따라가세요.",
+      "verify": "lore 패치 본문의 gap SPI·거부 처리 설명과 Fixes: 5cb1b6dab2def 인용을 원문에서 확인하세요."
+    },
+    {
+      "title": "riscv: Add initial CBQRI resctrl support",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "RISC-V CBQRI·resctrl·DT platform driver maintainer",
+      "verifyLink": "https://patchew.org/linux/20261104-dfustini-atl-sc-cbqri-dt-v10-0-1636a003a3c0@kernel.org/",
+      "if": "RISC-V에서 cache QoS·resctrl enablement를 QEMU virt 또는 Tenstorrent Ascalon 등으로 검증 중이면,",
+      "do": "Drew Fustini v10의 L2/L3 CBM만 resctrl schemata에 묶인 제한과 Tony Luck AET hook 시리즈와의 landing 순서를 리뷰 스레드에서 확인하세요.",
+      "verify": "cover self-test(mount resctrl·schemata)와 bandwidth·cc_cunits 미구현 명시를 Pipermail v10 본문과 맞춰 보세요."
+    },
+    {
+      "title": "Common csr_read_num() and csr_write_num() for RISC-V",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "RISC-V arch·PMU·ACPI CPPC driver maintainer",
+      "verifyLink": "https://patchew.org/linux/20261104161512.883885-1-anup.patel@oss.qualcomm.com/",
+      "if": "동적 CSR 번호로 PMU·ACPI CPPC 등 RISC-V platform driver를 유지보수 중이면,",
+      "do": "Anup Patel v7 merge 후 새 CSR 접근은 arch/riscv csr_read_num·csr_write_num(out_err 필수)로 맞추고 linux-riscv 머지 일정을 확인하세요.",
+      "verify": "cover의 PMU·CPPC 동기와 v7 changelog의 Linux-7.4-rc1 rebase 문구를 lore 스레드에서 대조하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**arm64: sdei: Handle exceptions taken inside the event handler**\n\nKiryl Shutsemau(Meta) 2패치는 SDEI 이벤트 핸들러 내부 동기 예외가 ELR/SPSR/ESR/FAR를 덮어 KPTI trampoline에서 CPU hang·user SIGILL·kernel oops를 일으키던 문제를, 핸들러를 kernel vectors에서 실행하고 예외 레지스터를 저장·복원해 고칩니다. SDEI NMI backtrace(sysrq-l) 경로에서 v7.4-rc1 QEMU·arm64 하드웨어로 재현·검증했습니다.\n\n영향: firmware SDEI·KPTI arm64 서버/플랫폼은 NMI backtrace·kprobe 경로가 일상적으로 핸들러 안 예외를 유발하므로, 이 시리즈 없이 RCU stall과 잘못된 fault 컨텍스트를 볼 수 있습니다. arm64 maintainer merge·stable/backport 대상은 확인 필요합니다.\n\n> v7.4-rc1, KPTI on: CPUs stuck in the trampoline vectors, RCU stalls.\n\n[원문 확인](https://patchew.org/linux/20261104180936.2981070-1-kas@kernel.org/)\n\n**irqchip/gic-v5: Reject SPIs not backed by an IRS**\n\nSascha Bischoff v2 01/10은 multi-IRS GICv5에서 global SPI 범위 gap(IRS 미배치) IRQ 할당 시 chip_data null dereference를, chip_data 없는 SPI 요청을 거부하고 broken firmware 경고를 내는 방식으로 막습니다. Fixes: 5cb1b6dab2def(GICv5 IRS/SPI support)를 인용합니다.\n\n영향: GICv5 기반 arm64/Neoverse bring-up에서 firmware가 존재하지 않는 SPI를 등록하면 부팅 중 NULL deref로 죽을 수 있어 host driver fix v2 머지를 추적해야 합니다. Fixes 커밋이 배포 중 v7.4-rc1 이미지에 포함됐는지는 확인 필요합니다.\n\n> In the current incarnation, this results in dereferencing a null pointer.\n\nReject cases where the firmware attempts to use those SPIs during IRQ allocation\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20261104-host_gicv5_fixes-v2-1-e47ad20ea3c8@arm.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**tools/mm: add hwpoison-panic tool**\n\nBreno Leitao v3 hwpoison-panic 도구에 David Hildenbrand이 리뷰를 마치고 upstream 아직 아님을 확인한 뒤 merge 준비가 됐다고 답했고, David는 유용하다며 Andrew Morton이 가져갈지 묻습니다. 도구는 vm.panic_on_unrecoverable_memory_failure를 켠 뒤 rodata·slab·pgtable 커널 페이지에 hard_offline_page로 hwpoison을 주입해 의도적 패닉을 검증합니다.\n\n영향: memory failure·panic_on_unrecoverable 정책은 arch 공통 MM 경로와 연관되며, CI 대신 tools/mm 수동 VM 테스트로만 검증하던 gap을 메우려는 신호라 Andrew 쪽 mm 트리 반영 시점은 확인 필요합니다.\n\n> Agreed, nothing jumped at me and this is useful.\n\n@Andrew will you pick this up?\n\n[원문 확인](https://lore.kernel.org/linux-riscv/c37d96d6-49af-4319-8ac5-2afd3ae8492a@kernel.org/)\n\n**riscv: dts: sophgo: add Milk-V Duo ethernet DTB**\n\nHiago De Franco v2 2/2는 공유 cv18xx-eth.dtbo 오버레이를 Milk-V Duo(CV1800B) 베이스 DTB에 적용하는 cv1800b-milkv-duo-eth.dtb를 sophgo Makefile에 추가해 Ethernet IO 보드에서 gmac0·내부 PHY MDIO mux를 켭니다.\n\n영향: Sophgo CV1800B·Milk-V Duo enablement 팀은 256M 변형과 동일한 이더넷 DT 패턴이 표준 Duo에도 들어오는지 확인해야 하며, v2 1/2 generic overlay 리팩터와 함께 머지를 봐야 합니다. v2 시리즈 merge 일정은 확인 필요합니다.\n\n> Add a DTB that applies the shared cv18xx-eth.dtbo overlay to the Milk-V Duo (CV1800B) base DTB. This enables gmac0 and the internal PHY MDIO mux\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20261104-milkv-duo-eth-overlay-v2-2-e3d2d39cf229@baylibre.com/)\n\n**riscv: Add initial CBQRI resctrl support**\n\nDrew Fustini v10(6패치)는 RISC-V CBQRI capacity controller를 resctrl L2/L3 CBM 스키마와 DT 플랫폼 드라이버로 묶고, v7.3 Ssqosid(srmcfg) 위에 Tenstorrent Ascalon·QEMU riscv.cbqri.capacity 디바이스로 cache allocation을 검증했습니다. bandwidth·cc_cunits는 아직 resctrl 스키마 밖입니다.\n\n영향: RISC-V 서버·AI 가속 보드에서 cache QoS/resctrl enablement 팀은 CBQRI가 arch/riscv+resctrl 공통 경로로 들어오는 첫 통합이라 QEMU virt와 실칩 테스트 방법·schemata 제한을 미리 알아야 합니다.\n\n> Note that this series only implements support for resctrl L2 and L3 cache resources using CBQRI capacity allocation control.\n\n[원문 확인](http://lists.infradead.org/pipermail/linux-riscv/2026-November/102939.html)\n\n**Common csr_read_num() and csr_write_num() for RISC-V**\n\nAnup Patel v7은 arch/riscv/kernel/csr.c에 CSR 번호 기반 csr_read_num()/csr_write_num()을 추가하고 RISC-V PMU·ACPI CPPC가 중복 sanity check 없이 이 API를 쓰도록 정리합니다. v7은 Linux-7.4-rc1 기준이며 out_err 인자는 mandatory입니다.\n\n영향: 동적 CSR 번호가 필요한 RISC-V platform driver는 arch 공통 helper 없이 각자 inline access를 유지해 drift가 나므로, v7 merge 후 새 CSR 접근 코드를 이 API에 맞출 필요가 있습니다.\n\n> Some of the RISC-V drivers (such as RISC-V PMU and ACPI CPPC) need to access CSR based on CSR number discovered from somewhere.\n\n[원문 확인](https://patchew.org/linux/20261104161512.883885-1-anup.patel@oss.qualcomm.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "high",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "tools/mm hwpoison-panic — David Hildenbrand 리뷰",
+      "url": "https://lore.kernel.org/linux-riscv/c37d96d6-49af-4319-8ac5-2afd3ae8492a@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "tools/mm hwpoison-panic v3 cover",
+      "url": "http://lists.infradead.org/pipermail/linux-riscv/2026-November/102926.html",
+      "note": "thread"
+    },
+    {
+      "title": "Milk-V Duo ethernet DTB v2 2/2",
+      "url": "https://lore.kernel.org/linux-riscv/20261104-milkv-duo-eth-overlay-v2-2-e3d2d39cf229@baylibre.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Milk-V Duo eth Makefile diff",
+      "url": "http://lists.infradead.org/pipermail/linux-riscv/2026-November/102930.html",
+      "note": "thread"
+    },
+    {
+      "title": "arm64 SDEI exceptions — Patchew",
+      "url": "https://patchew.org/linux/20261104180936.2981070-1-kas@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "arm64 SDEI exceptions — lore",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20261104180936.2981070-1-kas@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "RISC-V CBQRI resctrl v10 — Patchew",
+      "url": "https://patchew.org/linux/20261104-dfustini-atl-sc-cbqri-dt-v10-0-1636a003a3c0@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "RISC-V CBQRI resctrl v10 — Pipermail",
+      "url": "http://lists.infradead.org/pipermail/linux-riscv/2026-November/102939.html",
+      "note": "thread"
+    },
+    {
+      "title": "GICv5 reject gap SPIs",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20261104-host_gicv5_fixes-v2-1-e47ad20ea3c8@arm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "GICv5 Fixes tag — Pipermail",
+      "url": "http://lists.infradead.org/pipermail/linux-arm-kernel/2026-November/1193219.html",
+      "note": "thread"
+    },
+    {
+      "title": "RISC-V csr_read_num/write_num v7 — Patchew",
+      "url": "https://patchew.org/linux/20261104161512.883885-1-anup.patel@oss.qualcomm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "RISC-V csr_read_num/write_num v7 — lore",
+      "url": "https://lore.kernel.org/linux-riscv/20261104161512.883885-1-anup.patel@oss.qualcomm.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-04T18:38:43.447Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
