@@ -1,0 +1,118 @@
+{
+  "id": "2026-11-06-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-11-06 FUSE·UFS·F2FS — Android 커널",
+  "headline": "android16-6.12에 FUSE-BPF kselftest·F2FS dma_buf·UFS UIC 검증이 추가·수정되고 mainline ACK에 close_range VFS merge가 반영됐습니다.",
+  "date": "2026-11-06",
+  "summary": "ACK android16-6.12에 FUSE-BPF epoch·casefold 회귀 kselftest와 이식형 BPF 로더 selftest, F2FS_IOC_LOAD_DMABUF, UFS BSG UIC result 바이트 거부, desktop GKI Panthor 심볼 갱신이 들어갔습니다. android-mainline에는 vfs 7.4-rc1 close_range 태그 merge로 close_range/dup_fd 동작 확장이 ACK 베이스에 맞춰졌습니다.",
+  "tags": [
+    "안드로이드",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "UFS BSG UIC non-zero result 바이트 거부",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "UFS/스토리지 드라이버·ACK android16-6.12 채택",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/a02a58da719eed1fdf9348597017c09bb37ec811",
+      "if": "android16-6.12 ACK에서 UFS BSG UIC ioctl 경로를 테스트·통합한다면",
+      "do": "syzkaller로 보고된 b/577619170 수정 커밋 포함 여부와 사용자 argument2 result 바이트가 0이 아닐 때 -EINVAL 거부 동작을 검증하세요",
+      "verify": "ufshcd_dispatch_uic_cmd() WARN_ON_ONCE 및 결과 왜곡이 재현되지 않는지 커밋 diff와 스레드를 대조하세요"
+    },
+    {
+      "title": "FUSE-BPF epoch invalidation·F2FS casefold kselftest",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "ACK android16-6.12 통합·QA, fuse-bpf/F2FS 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/b799b99bc9a4e92d6e5149d98de5d08ea9901f7e",
+      "if": "FUSE-BPF와 Android F2FS casefold 조합 회귀(b/498773402)를 ACK CI에서 잡아야 한다면",
+      "do": "fuse_bpf_android_test의 epoch_invalidation·android_f2fs_casefold 시나리오를 릴리스 전 kselftest 게이트에 포함하세요",
+      "verify": "FUSE_NOTIFY_INC_EPOCH dentry 무효화 및 epoch 이후 live backed file dentry 회귀 가드가 커밋 인용과 일치하는지 확인하세요"
+    },
+    {
+      "title": "F2FS_IOC_LOAD_DMABUF direct I/O ioctl",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "F2FS/스토리지 플랫폼, ML inference 스택, android16-6.12 ACK",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/4f89cba389563d156f55da6d344d5d9a16055d33",
+      "if": "대용량 파일을 page cache·CPU copy 없이 dma_buf로 적재하는 경로(b/574205981)를 설계한다면",
+      "do": "정렬·hole·blk-crypto fallback·async 청크 depth 제한이 커밋 설명과 맞는지 userspace·HAL 연동 전에 ioctl 계약을 검토하세요",
+      "verify": "storage DMA가 버퍼에 직접 쓰는 direct I/O ioctl 동작과 upstream ioctl 번호 충돌 회피(0x80부터)를 원문에서 확인하세요"
+    },
+    {
+      "title": "vfs 7.4-rc1 close_range 태그 merge",
+      "priority": "중",
+      "impactType": "release",
+      "affectedAudience": "android-mainline ACK 통합, libc/frameworks native",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/4effd80841b3c26ab33e30409e810b35a0dc0385",
+      "if": "Bionic/init 등 native가 close_range 새 플래그에 의존할 수 있다면",
+      "do": "ACK mainline에 CLOSE_RANGE_EXCEPT·CLOSE_RANGE_CLOEXEC_ONLY 및 dup_fd 변경이 merge됐는지 integrator 베이스를 추적하세요",
+      "verify": "close_range()가 [fd,max_fd] 밖 fd를 대상으로 동작하는 CLOSE_RANGE_EXCEPT 설명과 selftest 범위를 merge 커밋에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Merge tag 'vfs-7.4-rc1.close_range'**\n\nandroid-mainline ACK에 vfs 7.4-rc1 close_range 태그가 merge되어 CLOSE_RANGE_EXCEPT·CLOSE_RANGE_CLOEXEC_ONLY 등 close_range/dup_fd 동작 확장과 selftest가 들어왔습니다.\n\n영향: Bionic/init 등 userspace가 새 close_range 플래그에 의존할 때 mainline ACK 베이스와 upstream 7.4 VFS 동작이 맞춰져 spawn/exec·fd 테이블 관리 회귀를 줄입니다. Android userspace가 새 플래그를 이미 쓰는지, android16-6.12 브랜치 동기 시점은 확인이 필요합니다.\n\n> CLOSE_RANGE_EXCEPT makes close_range() operate on all file descriptors outside of [fd, max_fd] instead of the ones inside.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/4effd80841b3c26ab33e30409e810b35a0dc0385)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**FROMGIT: scsi: ufs: bsg: Reject UIC commands with a non-zero result byte**\n\nufs_bsg_request()가 사용자 UIC argument2의 result 바이트(호스트만 기록)를 그대로 넘기면 WARN_ON_ONCE·결과 왜곡이 발생하므로, result 바이트가 0이 아니면 -EINVAL으로 거부합니다.\n\n영향: syzkaller로 발견된 UFS BSG UIC 경로 버그(b/577619170) 수정으로 스토리지 ioctl 남용·커널 경고를 줄이며 stable 후보로 upstream에 Cc되었습니다.\n\n> A non-zero value triggers the WARN_ON_ONCE() in ufshcd_dispatch_uic_cmd() and corrupts the reported result. Found by syzkaller.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/a02a58da719eed1fdf9348597017c09bb37ec811)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**ANDROID: fuse-bpf: selftests: Add epoch invalidation and casefold tests**\n\nandroid16-6.12 ACK에 FUSE-BPF kselftest(fuse_bpf_android_test)가 추가되어 FUSE_NOTIFY_INC_EPOCH 기반 dentry 무효화·epoch 이후 회귀 검증과 F2FS casefold 통합 시나리오, stale tmpdir 시그널 정리를 포함합니다.\n\n영향: FUSE-BPF·Android F2FS(casefold) 조합의 캐시 무효화 버그(b/498773402)를 CI/kselftest로 재현·고정할 수 있어 ACK 릴리스 전 회귀 탐지에 직접 기여합니다.\n\n> epoch_invalidation: FUSE_NOTIFY_INC_EPOCH cached dentry invalidation and post-epoch live backed file dentry regression guard (b/498773402)\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/b799b99bc9a4e92d6e5149d98de5d08ea9901f7e)\n\n**ANDROID: fuse-bpf: selftests: Add portable BPF loader and verifier test**\n\nlibelf/llc/prebuilt BPF object 없이 raw bpf_insn·__NR_bpf로 프로그램을 올리는 fuse_bpf_android_test 하네스와 sysfs fuse_bpf feature·verifier 접근 검증 게이트 테스트를 추가합니다.\n\n영향: Android CI/디바이스에서 FUSE-BPF selftest를 이식 가능하게 실행해 feature gate(b/579943851)와 verifier 회귀를 조기에 잡을 수 있습니다.\n\n> Add an Android-portable kselftest_harness binary (fuse_bpf_android_test) with zero libelf, llc, or prebuilt BPF object dependencies.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/d7a40a6faba34b54fb5b744aacb069cfa9fdc2f8)\n\n**ANDROID: f2fs: add F2FS_IOC_LOAD_DMABUF**\n\nF2FS에 파일 구간을 dma_buf로 direct I/O(스토리지 DMA) 읽기하는 F2FS_IOC_LOAD_DMABUF ioctl을 추가하며, 정렬·hole·blk-crypto fallback·최대 32 depth async 청크 처리를 커밋 메시지대로 구현합니다.\n\n영향: ML 모델 등 대용량 파일을 page cache·CPU copy 없이 dma_buf로 적재(b/574205981)해 성능·전력에 유리한 Android 전용 경로로, userspace·HAL 연동 설계에 영향을 줍니다. wrapfd 대비 임시 솔루션인 만큼 upstream화 또는 userspace API 안정화 일정은 확인이 필요합니다.\n\n> Add an ioctl that reads a file range into a dma_buf with direct I/O, so that the storage DMA writes the buffer.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/4f89cba389563d156f55da6d344d5d9a16055d33)\n\n**ANDROID: Update symbol list for desktop**\n\ndesktop GKI ABI symbol list에 drm/panthor용 enable_work·disable_work 두 함수 심볼이 추가됩니다.\n\n영향: Android desktop(GKI) 빌드에서 Panthor DRM 모듈이 export하는 workqueue helper가 ABI allowlist에 반영되어 모듈 로드·compliance 검사 실패를 방지합니다.\n\n> Add enable_work/disable_work for drm/panthor. 2 function symbol(s) added\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/77b1657d54d099f157afcbd1a5cd5c322de3ac81)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "medium",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ANDROID: fuse-bpf: selftests: Add epoch invalidation and casefold tests",
+      "url": "https://android.googlesource.com/kernel/common/+/b799b99bc9a4e92d6e5149d98de5d08ea9901f7e",
+      "note": "commit"
+    },
+    {
+      "title": "FROMGIT: scsi: ufs: bsg: Reject UIC commands with a non-zero result byte",
+      "url": "https://android.googlesource.com/kernel/common/+/a02a58da719eed1fdf9348597017c09bb37ec811",
+      "note": "commit"
+    },
+    {
+      "title": "Reject UIC commands that have the result byte set with -EINVAL (patch thread)",
+      "url": "https://patch.msgid.link/20261015001855.3450573-5-stanleyjhu@google.com",
+      "note": "thread"
+    },
+    {
+      "title": "ANDROID: fuse-bpf: selftests: Add portable BPF loader and verifier test",
+      "url": "https://android.googlesource.com/kernel/common/+/d7a40a6faba34b54fb5b744aacb069cfa9fdc2f8",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: Update symbol list for desktop",
+      "url": "https://android.googlesource.com/kernel/common/+/77b1657d54d099f157afcbd1a5cd5c322de3ac81",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: f2fs: add F2FS_IOC_LOAD_DMABUF",
+      "url": "https://android.googlesource.com/kernel/common/+/4f89cba389563d156f55da6d344d5d9a16055d33",
+      "note": "commit"
+    },
+    {
+      "title": "Merge tag 'vfs-7.4-rc1.close_range' of git://git.kernel.org/pub/scm/linux/kernel/git/vfs/vfs",
+      "url": "https://android.googlesource.com/kernel/common/+/4effd80841b3c26ab33e30409e810b35a0dc0385",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-05T18:05:48.202Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/android-newsletter-from-dossier-ko.md"
+  }
+}

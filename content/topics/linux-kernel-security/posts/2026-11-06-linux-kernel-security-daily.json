@@ -1,0 +1,133 @@
+{
+  "id": "2026-11-06-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-11-06 strprefix v2 — 커널 보안",
+  "headline": "linux-hardening에 strprefix() v2가 올라와 str_has_prefix() 한계와 fwnode_name_eq() 빈 prefix 오판을 고칩니다.",
+  "date": "2026-11-06",
+  "summary": "Alejandro Colomar v2 2패치는 포인터 기반 strprefix() 도입·str_has_prefix() deprecated·KUnit 테스트와 fwnode_name_eq() 수정을 담습니다. 7.2.15 EOL·7.3.1·5.10.273·5.15.224 stable rollup은 전일과 동일하며 lib·driver-core merge·백포트 일정은 아직 확인되지 않았습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "strprefix() v2와 fwnode_name_eq() 수정",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "lib/string·device property·fwnode API 유지보수자, KSPP bounds-safe 문자열 API 정리 추적자",
+      "verifyLink": "https://lists.openwall.net/linux-hardening/2026/11/05/37",
+      "if": "driver core·fwnode 이름 매칭이나 str_has_prefix() 반환값으로 빈 prefix와 불일치를 구분한다면",
+      "do": "v2 cover·1/2·2/2와 KUnit string_test_strprefix 범위를 linux-hardening 리뷰와 함께 추적하세요",
+      "verify": "lib·driver-core 트리 merge·stable 백포트와 str_has_prefix() 잔여 치환 일정은 dossier에서 확인하지 못했으므로 maintainer 회신을 확인하세요"
+    },
+    {
+      "title": "Linux 7.2.15 stable · 7.2.y EOL",
+      "priority": "중",
+      "impactType": "release",
+      "affectedAudience": "7.2.y stable 배포 담당, net zerocopy·ksmbd/SMB Direct 운영자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/01/439",
+      "if": "아직 7.2.y 커널을 운영 중이라면",
+      "do": "Greg Kroah-Hartman 안내대로 7.3.y로 이전하고 ChangeLog 7.2.15의 12건 백포트(zerocopy·ksmbd·SMB Direct 등) 포함 여부를 배포에 반영하세요",
+      "verify": "마지막 7.2.y 포인트의 skb_zerocopy·page cache 쓰기 가능 이슈는 ChangeLog-7.2.15 원문에서 확인하세요"
+    },
+    {
+      "title": "Linux 7.3.1 stable",
+      "priority": "중",
+      "impactType": "backport",
+      "affectedAudience": "7.3.y stable 배포 담당, io_uring·keys·tracing maintainer",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/10/30/1519",
+      "if": "7.3.x 첫 point stable을 hardening 배포에 맞춘다면",
+      "do": "39건 백포트 중 io_uring·asymmetric_keys trust key·tracing/syscalls copy_from_user 수정을 우선 검토하세요",
+      "verify": "전체 백포트 목록은 ChangeLog-7.3.1에서 확인하세요"
+    },
+    {
+      "title": "Linux 5.10.273 longterm",
+      "priority": "하",
+      "impactType": "backport",
+      "affectedAudience": "5.10.y LTS 배포·CIP maintainer, 네트워크·drm/i915 운영자",
+      "verifyLink": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.273",
+      "if": "5.10 LTS를 vendor rebuild로 유지한다면",
+      "do": "516건 rollup 중 bonding bond_xmit_broadcast UAF·i915 DMC 펌웨어 파싱 강화 등을 advisory와 대조하세요",
+      "verify": "516건 전체와 배포판별 실제 포함 커밋 집합은 vendor advisory 확인이 필요합니다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.2.15 stable · EOL**\n\n2026-11-01 Linux 7.2.15 stable이 공개되었고 7.2.y 최종 릴리스·EOL이 선언되었습니다. ChangeLog 12건 백포트에는 skb_zerocopy() SKBFL_SHARED_FRAG 미전파, ksmbd 협상 레이스, SMB Direct 소켓 정리 등이 포함됩니다.\n\n영향: 7.2.y는 더 이상 stable 수정을 받지 않으므로 7.3.y로 옮겨야 하며, zerocopy·ksmbd·SMB Direct를 쓰는 배포는 마지막 7.2.y 포인트 보안·안정성 백포트를 검토해야 합니다.\n\n> Note, this is the LAST 7.2.y kernel release.  After this one the 7.2.y kernel\ntree is end-of-life.  Please move to 7.3.y at this time.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/01/439)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Add strprefix() and fix a bug with it**\n\nAlejandro Colomar v2 2패치 시리즈가 포인터 기반 strprefix()를 추가하고 str_has_prefix()를 deprecated 처리하며 KUnit string_test_strprefix 테스트를 넣습니다. 2/2는 fwnode_name_eq()가 빈 prefix와 불일치를 str_has_prefix()로 구분하지 못해 잘못 true를 반환하던 문제를 strprefix()로 고칩니다.\n\n영향: 길이 0을 ‘불일치’와 공유하는 str_has_prefix()는 driver core·fwnode 이름 매칭에서 false positive를 낼 수 있어 hardening·driver-core 추적자는 신 API 도입과 fwnode_name_eq() 수정의 merge·백포트 경로를 봐야 합니다.\n\n> str_has_prefix() is based on sizes and lengths, which means it must\noverload the valid length 0 to mean not found.\n\n> As Bartosz reported, str_has_prefix() has a bug: it can't differentiate\nbetween an empty prefix matching an empty string from a non-matching\nprefix.\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/11/05/34)\n\n**Linux 7.3.1 stable**\n\n2026-10-30 Linux 7.3.1 stable이 공개되었고 ChangeLog에는 39건 백포트가 있습니다. io_uring(poll/net/waitid), coredump·signal·pid namespace, asymmetric_keys·keys/trusted keys, tracing/syscalls copy_from_user 등이 주요 영역입니다.\n\n영향: 7.3.x 첫 point stable로 io_uring·코어덤프·키링 회귀 수정을 받아야 하며 asymmetric_keys trust key 거부와 syscall tracing의 copy_from_user 수정은 hardening 배포에 직접적입니다.\n\n> I'm announcing the release of the 7.3.1 kernel.\n\nAll users of the 7.3 kernel series must upgrade.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/10/30/1519)\n\n**Linux 5.10.273 longterm**\n\n2026-10-30 Linux 5.10.273 longterm stable이 공개되었고 ChangeLog에는 516건 백포트가 있습니다. signal/keys/tracing 외 bonding bond_xmit_broadcast UAF, nf_tables set element count, fq_codel, Bluetooth L2CAP, drm/i915 DMC 펌웨어 파싱 강화 등이 포함됩니다.\n\n영향: 5.10 LTS를 쓰는 엔터프라이즈·임베디드 배포는 대량 백포트를 vendor rebuild로 받아야 하며 bonding UAF·i915 DMC 파싱 hardening은 보안·안정성 운영에 중요합니다.\n\n> net: bonding: fix use-after-free in bond_xmit_broadcast()\n\n> drm/i915/dmc: Harden DMC firmware payload parsing\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.273)\n\n**Linux 5.15.224 longterm**\n\n2026-10-30 Linux 5.15.224 longterm stable이 공개되었고 ChangeLog에는 571건 백포트가 있습니다. 5.10.273과 겹치는 signal/keys/tracing·bonding·nf_tables 외 io-wq exit ordering, ksmbd FS info 버퍼 초기화 등이 추가됩니다.\n\n영향: 5.15 LTS는 여전히 널리 쓰이므로 대규모 stable rollup을 추적해야 하며 io-wq·ksmbd 정보 누출/초기화 수정은 파일 서버·가상화 워크load와 연결됩니다.\n\n> ksmbd: zero the FS_OBJECT_ID_INFORMATION buffer before filling it in\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.224)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "strprefix v2 cover",
+      "url": "https://lists.openwall.net/linux-hardening/2026/11/05/37",
+      "note": "thread"
+    },
+    {
+      "title": "strprefix v2 1/2",
+      "url": "https://lists.openwall.net/linux-hardening/2026/11/05/34",
+      "note": "thread"
+    },
+    {
+      "title": "strprefix v2 2/2 fwnode_name_eq",
+      "url": "https://lists.openwall.net/linux-hardening/2026/11/05/36",
+      "note": "thread"
+    },
+    {
+      "title": "str_has_prefix empty-prefix 지적",
+      "url": "https://lists.openwall.net/linux-hardening/2026/11/05/19",
+      "note": "thread"
+    },
+    {
+      "title": "Linux 7.2.15 EOL 공지",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/01/439",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-7.2.15",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.15",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 7.3.1 stable 공지",
+      "url": "https://lists.openwall.net/linux-kernel/2026/10/30/1519",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-7.3.1",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.3.1",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-5.10.273",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.273",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-5.15.224",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.224",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-05T18:28:05.081Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

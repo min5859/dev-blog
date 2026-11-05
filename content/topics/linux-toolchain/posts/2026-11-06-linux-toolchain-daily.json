@@ -1,0 +1,118 @@
+{
+  "id": "2026-11-06-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-11-06 x86 syscall RFC — 리눅스 툴체인",
+  "headline": "Spectre 완화가 꺼진 x86에서 sys_call_table 복귀 논의와 Clang allmodconfig CI 오류, Rust API 확장이 llvm·rust-for-linux 스레드에 겹칩니다.",
+  "date": "2026-11-06",
+  "summary": "Peter Zijlstra가 kCFI landing pad 비용을 두고 Linus의 computed jump syscall안과 sys_call_table 간접 호출 복귀를 RFC에서 비교합니다. kernel test robot은 loongarch·s390 Clang W=1 빌드에서 vmemmap·geni-se 헤더 오류를 보고했고, Andreas Hindborg v3는 HrTimer·ring buffer·impl_flags API를 이어갑니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "x86 syscall: Spectre v2·BHI off일 때 sys_call_table 복귀 논의",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "x86 entry·완화(kCFI/IBT) maintainer, Clang 기반 커널 빌드 담당",
+      "verifyLink": "https://lore.kernel.org/llvm/20261105105621.GN1813469@noisy.programming.kicks-ass.net/raw",
+      "if": "x86_64 entry에서 -fno-jump-table·kCFI/FineIBT 조합과 syscall fast path를 함께 추적한다면",
+      "do": "RFC 스레드에서 kCFI landing pad(항목당 약 32바이트)·ENDBR 요구와 array_index_nospec 포함 sys_call_table 간접 호출안을 비교해 보세요",
+      "verify": "Peter Zijlstra·Linus 원문 스레드에서 computed jump와 sys_call_table 유지안의 trade-off를 확인하세요"
+    },
+    {
+      "title": "powerpc vmemmap 정리 후 loongarch clang 19 allmodconfig 회귀",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "mm/vmemmap 공통 코드 maintainer, loongarch·powerpc Clang CI 담당",
+      "verifyLink": "https://lore.kernel.org/llvm/202611052055.TcIXFI7V-lkp@intel.com/raw",
+      "if": "공통 mm 헤더 변경이 ClangBuiltLinux loongarch allmodconfig에 영향을 줄 수 있다면",
+      "do": "Muchun Song v2 2/5의 powerpc vmemmap_can_optimize() 제거와 robot이 보고한 vmemmap_optimizable_order 미선언 오류를 한 묶음으로 follow-up 범위를 잡으세요",
+      "verify": "0day-ci reproduce 스크립트와 lore 보고로 clang 19 W=1 재현 절차를 확인하세요"
+    },
+    {
+      "title": "rust: HrTimer active()로 hrtimer_active() 래핑",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust for Linux 타이머·동기화 코드 작성자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20261105-hrtimer-active-v3-1-52636808ccda@kernel.org/",
+      "if": "Rust에서 타이머 started·running 상태를 node.expires 직접 읽기 대신 조회한다면",
+      "do": "v3 active()가 seqcount 재시도·READ_ONCE(timer->base)로 동시 start와 레이스하지 않는다는 문서화에 맞춰 코드를 맞추세요",
+      "verify": "리뷰 스레드에서 cancel-on-other-CPU 문서화·v7.4-rc1 merge 일정은 아직 확인이 필요합니다"
+    },
+    {
+      "title": "i3c QCOM geni-se.h에서 Clang W=1 implicit declaration",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "Qualcomm geni 헤더 maintainer, I3C·clang allmodconfig CI 담당",
+      "verifyLink": "https://lore.kernel.org/llvm/202611052242.iJ7HMqUH-lkp@intel.com/raw",
+      "if": "geni-se.h를 쓰는 드라이버가 s390 allmodconfig clang 24 CI에 걸린다면",
+      "do": "readl_relaxed·writel·writel_relaxed 미선언 오류가 드라이ver include인지 헤더 include인지 분리해 fixup 방향을 정하세요",
+      "verify": "robot이 i3c/next와 linus/master v7.4-rc1 next-20261030 양쪽 ERROR를 적었는지 원문을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**x86/syscall: Dispatch via sys_call_table when Spectre v2 and BHI are off**\n\nPeter Zijlstra가 Linus가 제안한 computed jump syscall 디스패치안을 이어 받아 kCFI landing pad(항목당 약 32바이트) 비용과 ENDBR 요구를 짚고, Spectre v2·BHI가 꺼진 환경에서 다시 sys_call_table 간접 호출(array_index_nospec 포함)로 돌아갈지 RFC 스레드에서 논의합니다.\n\n영향: x86_64 entry의 -fno-jump-table·kCFI/FineIBT 빌드 조합과 syscall fast path 트레이드오프는 ClangBuiltLinux·llvm 리스트 독자가 entry 코드 생성과 완화 옵션 변화를 함께 추적해야 하는 지점입니다.\n\n> At which point one has to ask the obvious question on whether this is actually better than just keeping the sys_call_table and syscall functions as is.\n\n[원문 확인](https://lore.kernel.org/llvm/20261105105621.GN1813469@noisy.programming.kicks-ass.net/raw)\n\n**powerpc/mm: drop powerpc vmemmap_can_optimize()**\n\nMuchun Song v2 2/5에서 powerpc 전용 vmemmap_can_optimize()를 제거하는 변경 위에 kernel test robot이 loongarch allmodconfig·clang 19·W=1 빌드에서 include/linux/vmemmap-optimization.h의 vmemmap_optimizable_order 암시 선언·vmemmap 식별자 오류를 보고했습니다.\n\n영향: 아키별 vmemmap hook 정리가 generic 헤더 순서·inline 정의와 맞물릴 때 clang -Werror CI(특히 loongarch allmodconfig)가 깨지므로, 공통 mm 헤더와 ClangBuiltLinux 매트릭스를 보는 toolchain 독자는 후속 fixup 범위를 봐야 합니다.\n\n> include/linux/vmemmap-optimization.h:62:9: error: call to undeclared function 'vmemmap_optimizable_order'; ISO C99 and later do not support implicit function declarations\n\n[원문 확인](https://lore.kernel.org/llvm/202611052055.TcIXFI7V-lkp@intel.com/raw)\n\n**rust: hrtimer: add active() method to query timer state**\n\nAndreas Hindborg v3는 Rust HrTimer에 C의 hrtimer_active()를 감싼 active() 메서드를 추가하고, node.expires 직접 읽기와 달리 seqcount 재시도·READ_ONCE(timer->base)로 동시 start와 레이스하지 않는다고 문서화합니다.\n\n영향: Rust 커널 코드가 타이머 상태를 조회할 때 안전한 공식 API 표면이 늘어나므로, hrtimer Rust 바인딩 사용자는 C와 동일한 스냅샷 의미·직렬화 요구를 v3 기준으로 맞춰야 합니다.\n\n> Add an `active()` method to HrTimer that returns true if the timer is in the started or running states. This wraps the kernel's hrtimer_active() function.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20261105-hrtimer-active-v3-1-52636808ccda@kernel.org/)\n\n**rust: add a ring buffer implementation**\n\nAndreas Hindborg v3는 고정 용량 FIFO ring buffer Rust 모듈을 추가하고 head/tail 원형 버퍼로 push·pop O(1) 동작, wrap-around·단일 슬롯 등 엣지 케이스 테스트를 포함합니다.\n\n영향: 커널 Rust 표준 자료구조가 늘면 드라이버·서브시스템이 ad-hoc 큐 대신 공유 구현을 쓸 수 있어, Rust for Linux 사용자는 API·테스트 범위를 land 전에 검토해야 합니다.\n\n> Add a fixed-capacity FIFO ring buffer. The implementation uses a circular buffer with head and tail pointers, providing constant-time push and pop operations.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20261105-ringbuffer-v3-1-b5d74efa8dc6@kernel.org/)\n\n**rust: impl_flags: add convenience functions**\n\nAndreas Hindborg v3 0/2는 impl_flags! 모듈에 C 구조체·Rust 간 플래그 변환 편의 함수(Into/TryFrom·연산자)를 추가하고, drivers/gpu/drm/tyr의 수동 TryFrom<VmMapFlags>를 제거해 E0119 충돌을 없앱니다.\n\n영향: 매크로가 생성하는 플래그 타입 API가 넓어지면 Rust 드라이버의 C FFI 코드가 일괄 마이그레이션 대상이 되므로, impl_flags!·block layer 바인딩 사용자는 v3의 변환 패턴과 중복 impl 제거 범위를 따라야 합니다.\n\n> Add a few convenience functions that makes it easier to work with the `impl_flags` module and C APIs.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20261105-impl-flags-additions-v3-0-5b17c01c2b15@kernel.org/)\n\n**i3c: master: Add Qualcomm I3C controller driver**\n\nMukesh Kumar v7 2/3 Qualcomm I3C master 드라이ver 시리즈에 대해 kernel test robot이 s390 allmodconfig·clang 24 git·W=1에서 drivers/i3c/master/i3c-qcom-geni.c가 끌어오는 include/linux/soc/qcom/geni-se.h의 readl_relaxed/writel/writel_relaxed 미선언 오류를 보고했습니다.\n\n영향: 공유 QCOM geni 헤더가 MMIO helper include 없이 clang -Werror allmodconfig에서 깨지면 I3C 트리뿐 아니라 geni 사용자 전반의 toolchain CI 신호가 되므로, 헤더·include 정리와 clang 빌드 매트릭스를 추적해야 합니다.\n\n> include/linux/soc/qcom/geni-se.h:378:8: error: call to undeclared function 'readl_relaxed'; ISO C99 and later do not support implicit function declarations\n\n[원문 확인](https://lore.kernel.org/llvm/202611052242.iJ7HMqUH-lkp@intel.com/raw)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "high",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "x86 syscall sys_call_table RFC (llvm list)",
+      "url": "https://lore.kernel.org/llvm/20261105105621.GN1813469@noisy.programming.kicks-ass.net/raw",
+      "note": "thread"
+    },
+    {
+      "title": "loongarch vmemmap_optimizable_order clang 19 빌드 보고",
+      "url": "https://lore.kernel.org/llvm/202611052055.TcIXFI7V-lkp@intel.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "0day-ci reproduce (vmemmap)",
+      "url": "https://download.01.org/0day-ci/archive/20261105/202611052055.TcIXFI7V-lkp@intel.com/reproduce",
+      "note": "changelog"
+    },
+    {
+      "title": "rust hrtimer active() v3",
+      "url": "https://lore.kernel.org/rust-for-linux/20261105-hrtimer-active-v3-1-52636808ccda@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "rust ring buffer v3",
+      "url": "https://lore.kernel.org/rust-for-linux/20261105-ringbuffer-v3-1-b5d74efa8dc6@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "rust impl_flags convenience v3",
+      "url": "https://lore.kernel.org/rust-for-linux/20261105-impl-flags-additions-v3-0-5b17c01c2b15@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "s390 i3c-qcom geni-se clang 24 빌드 보고",
+      "url": "https://lore.kernel.org/llvm/202611052242.iJ7HMqUH-lkp@intel.com/raw",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-05T18:30:58.679Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

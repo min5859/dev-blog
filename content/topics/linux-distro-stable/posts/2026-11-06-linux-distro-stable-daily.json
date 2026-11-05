@@ -1,0 +1,150 @@
+{
+  "id": "2026-11-06-linux-distro-stable-daily",
+  "topic": "linux-distro-stable",
+  "title": "2026-11-06 XFS·SMB stable — Distro Stable",
+  "headline": "stable 큐에 XFS scrub 경계 강화와 CIFS 클라이언트 보안 백포트가 몰리고, AMD PROM21 xHCI S3 회귀 수정이 제출됐습니다.",
+  "date": "2026-11-06",
+  "summary": "이번 수집은 kernel.org point 릴리스보다 stable@ 백포트 제출이 중심입니다. XFS scrub·repair와 SMB 클라이언트 쪽 bounds 검증 강화가 배포 rebuild·보안 triage 우선순위에 직접 연결됩니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "stable",
+    "배포"
+  ],
+  "highlights": [
+    {
+      "title": "XFS scrub dirent 경계 검사",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "XFS scrub/repair maintainer, XFS를 쓰는 LTS·stable 배포 담당",
+      "verifyLink": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=5d470234d04dae6fe2ca2cf4b9ef277b78c7e05a",
+      "if": "손상된 XFS 이미지에서 scrub·repair를 돌리는 stable·LTS 이미지를 유지한다면",
+      "do": "dirent bounds 백포트가 포함된 커널 빌드로 일정을 맞추고, 6.6-stable 등 자동 적용 실패 트리는 수동 backport 제출을 검토하세요",
+      "verify": "upstream 커밋과 stable@ 스레드에서 패치 적용 범위를 확인하세요"
+    },
+    {
+      "title": "SMB3 fiemap wild read·oops",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "CIFS/SMB3 client maintainer, 백업·스토리지 도구가 fiemap을 쓰는 배포",
+      "verifyLink": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=f5baa17a0f316c235d61623ac8e8fb32c2b3c0cc",
+      "if": "FS_IOC_FIEMAP 경로로 SMB2/CIFS 마운트를 운영한다면",
+      "do": "f5baa17a0f316 백포트를 stable 큐·vendor kernel에 반영하고, 5.10.y 등 cherry-pick 실패 브랜치는 별도 PATCH를 제출하세요",
+      "verify": "커밋 재현 조건과 stable@ 백포트 스레드를 대조하세요"
+    },
+    {
+      "title": "CIFS POSIX lock 응답 길이 검증",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "CIFS client maintainer, SMB/CIFS 마운트를 쓰는 enterprise 배포",
+      "verifyLink": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=8fc9af68c57156ff64769f30e831553cd03b3000",
+      "if": "악성 SMB 서버에 노출될 수 있는 CIFS POSIX lock 경로를 허용한다면",
+      "do": "8fc9af68c571 stable 백포트를 우선 반영하고, 6.6.y 등 conflict 트리는 gregkh 안내대로 수동 backport를 준비하세요",
+      "verify": "upstream 커밋 인용문과 lore stable 스레드의 smbCalcSize() 변경을 확인하세요"
+    },
+    {
+      "title": "AMD PROM21 xHCI S3 resume",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "USB/xHCI maintainer, 노트북·데스크톱 stable 배포 담당(S3/S4 경로)",
+      "verifyLink": "https://lore.kernel.org/stable/20261105175106.241182-4-mathias.nyman@linux.intel.com/",
+      "if": "1022:43fc PROM21에서 S3 resume마다 USB·Bluetooth가 끊긴다면",
+      "do": "OS Owned를 항상 assert하는 pci-quirks 백포트 시리즈를 distro stable 후보에 올리세요",
+      "verify": "stable@ 스레드에서 USBSTS 0x401 증상과 handoff 변경 문구를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**xfs: improve dirent bounds checking in scrub and repair**\n\nupstream 5d470234d04d는 XFS scrub/repair가 디렉터리 블록 dirent를 검사·salvage할 때 경계 검사를 강화하고, stable@ 백포트는 구버전 트리에 검사를 인라인했다.\n\n영향: 손상된 XFS 이미지에서 dirent 경계를 넘어 읽을 수 있는 경로를 막아 stable 백포트·배포 rebuild 일정에 반영해야 하며, 6.6.y 등에서는 자동 적용이 실패해 수동 backport가 필요하다.\n\n> LOLLM complains that we don't do enough bounds checking of the directory entries in directory blocks when we're looking for errors or trying to salvage entries.\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=5d470234d04dae6fe2ca2cf4b9ef277b78c7e05a)\n\n**xfs: check for buffer overruns when examining local/remote xattr entries**\n\nupstream 91c41f9524906는 xattr scrub/repair가 로컬·remote xattr 엔트리 검사 시 버퍼 끝을 넘어 walk할 수 있는 경우를 막도록 bounds checking을 강화했다.\n\n영향: 손상·악성 xattr 레이아웃에서 scrub 경로의 OOB read/write를 줄여 XFS 볼륨 점검·복구 도구를 쓰는 배포의 커널 업데이트 우선순위에 영향을 준다.\n\n> LOLLM noticed that the xattr scrub and repair code can walk off the end of the buffer if the xattr entry record starts so close to the end of the buffer\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=91c41f9524906a8ebd2ae68c98a07b4bd5255ddb)\n\n**usb: pci-quirks: always assert xHCI OS ownership**\n\nquirk_usb_handoff_xhci()가 표준 xHCI handoff 경로에서 항상 OS Owned를 assert·유지하도록 바꾼 stable 백포트이며, timeout fallback이 OS Owned까지 지울 수 있던 문제도 함께 다룬다.\n\n영향: AMD PROM21(1022:43fc) 등에서 S3 resume마다 xHCI restore 실패·HC reset으로 Bluetooth/USB가 끊기는 회귀를 distro stable 큐에 올릴 때 검토 대상이다. mainline merge 커밋 ID·포함 stable 브랜치는 ChangeLog 확인 전까지 확인이 필요하다.\n\n> On an AMD PROM21 xHCI controller (1022:43fc), this caused every S3 resume to terminate Controller Restore State with USBSTS 0x401.\n\n[원문 확인](https://lore.kernel.org/stable/20261105175106.241182-4-mathias.nyman@linux.intel.com/)\n\n**smb: client: fix OOB read in the SMB_FIND_FILE_UNIX name scan**\n\nupstream fa0c2f0829469는 cifs_fill_dirent_unix()가 SMB_FIND_FILE_UNIX 이름 길이를 NUL까지 스캔할 때 응답 버퍼 끝을 넘어 slab OOB read가 날 수 있는 경로를 수정한다. SMB1 Unix extensions(vers=1.0) 경로에 한정된다.\n\n영향: 레거시 SMB1 마운트 환경에서 악성 서버 응답으로 readdir 시 커널 메모리 OOB read가 가능해 stable 백포트·보안 advisory 작성에 포함될 수 있다. 6.18.y 자동 적용 실패는 다른 LTS 브랜치별 conflict 해결 backport가 필요하다.\n\n> BUG: KASAN: slab-out-of-bounds in cifs_save_resume_key.isra.0+0x75c/0x7f0\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=fa0c2f082946917c3f07d2475c8ce73a8c96d0e2)\n\n**smb: client: bound POSIX lock data area by response length**\n\nupstream 8fc9af68c571은 CIFSSMBPosixLock()이 TRANS2 응답의 DataOffset/DataCount를 응답 길이 안으로 검증하지 않던 문제를 smbCalcSize() 기반으로 차단한다.\n\n영향: 악성 SMB 서버가 POSIX lock 응답을 조작해 커널 스택/힙 바이트를 사용자 공간에 누출할 수 있는 경로라 stable 백포트 우선순위가 높다.\n\n> A server can therefore make the client read a cifs_posix_lock beyond the response buffer and return those kernel bytes through F_GETLK.\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=8fc9af68c57156ff64769f30e831553cd03b3000)\n\n**smb: client: fix fiemap wild read on empty truncated response**\n\nupstream f5baa17a0f316은 smb3_fiemap()이 STATUS_BUFFER_OVERFLOW·OutputCount==0 응답에서 num==0인 채 out_data[num-1]을 읽어 NULL 앞 16바이트 wild read 및 oops가 날 수 있는 루프를 막는다.\n\n영향: 악성 SMB2 서버로 FS_IOC_FIEMAP 호출 시 커널 panic 가능 경로가 커밋에 명시되어 stable backport·distro CVE triage에 해당한다.\n\n> with num == 0, reading 16 bytes before NULL.\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=f5baa17a0f316c235d61623ac8e8fb32c2b3c0cc)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "high",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "XFS dirent scrub/repair bounds (upstream)",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=5d470234d04dae6fe2ca2cf4b9ef277b78c7e05a",
+      "note": "commit"
+    },
+    {
+      "title": "XFS dirent stable@ backport",
+      "url": "https://lore.kernel.org/stable/20261105175826.2184495-1-sashal@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "6.6-stable dirent backport 수동 안내",
+      "url": "https://lore.kernel.org/stable/2026110439-headpiece-prodigy-6c27@gregkh/",
+      "note": "thread"
+    },
+    {
+      "title": "XFS xattr bounds (upstream)",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=91c41f9524906a8ebd2ae68c98a07b4bd5255ddb",
+      "note": "commit"
+    },
+    {
+      "title": "XFS xattr stable@ backport",
+      "url": "https://lore.kernel.org/stable/20261105175826.2184176-1-sashal@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "6.6-stable xattr cherry-pick 실패",
+      "url": "https://lore.kernel.org/stable/2026110428-companion-surround-cdb4@gregkh/",
+      "note": "thread"
+    },
+    {
+      "title": "xHCI OS ownership stable@ backport",
+      "url": "https://lore.kernel.org/stable/20261105175106.241182-4-mathias.nyman@linux.intel.com/",
+      "note": "thread"
+    },
+    {
+      "title": "SMB FIND_FILE_UNIX OOB (upstream)",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=fa0c2f082946917c3f07d2475c8ce73a8c96d0e2",
+      "note": "commit"
+    },
+    {
+      "title": "SMB FIND_FILE_UNIX stable@ backport",
+      "url": "https://lore.kernel.org/stable/20261105181324.2260289-1-sashal@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "SMB POSIX lock bounds (upstream)",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=8fc9af68c57156ff64769f30e831553cd03b3000",
+      "note": "commit"
+    },
+    {
+      "title": "SMB POSIX lock stable@ backport",
+      "url": "https://lore.kernel.org/stable/20261105181323.2270186-1-sashal@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "SMB fiemap wild read (upstream)",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=f5baa17a0f316c235d61623ac8e8fb32c2b3c0cc",
+      "note": "commit"
+    },
+    {
+      "title": "SMB fiemap stable@ backport",
+      "url": "https://lore.kernel.org/stable/20261105175002.2263115-1-sashal@kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-05T18:35:15.702Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
