@@ -1,0 +1,88 @@
+{
+  "id": "2026-11-07-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-11-07 서스펜드 TPIDR2·dma-heap — Android 커널",
+  "headline": "ACK에 arm64 서스펜드에서 SME용 TPIDR2_EL0 저장·복원이 들어가고, dma-heap 할당 ioctl에서 fd 조기 노출을 막는 머지가 반영됐으며 AFFS 보안 관련 upstream 소규모 수정도 들어온 것으로 보입니다.",
+  "date": "2026-11-07",
+  "summary": "이번 수집에서는 arm64 전원 경로와 dma-heap ioctl, AFFS 포워드 이식이 새로 포착됐습니다. 다수 항목은 이전에 다뤘던 변경이라 본문에서는 이번에 처음 등장한 사안 위주로 정리했습니다.",
+  "tags": [
+    "안드로이드",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "arm64 서스펜드에서 TPIDR2_EL0 저장·복원",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "ARM64 SoC·전원 관리 담당, ACK android16-6.12 사용자",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/08008f77e8925306287ffadfb7ad349a7bad29cb",
+      "if": "SME가 있는 arm64에서 서스펜드·재개 경로를 담당한다면",
+      "do": "이 커밋이 포함됐는지와 전원 시나리오 테스트 범위를 점검하세요",
+      "verify": "커밋 본문 인용과 SoC별 서스펜드 검증 로그를 대조해 보세요"
+    },
+    {
+      "title": "dma-heap ioctl에서 fd 조기 노출 방지 유지",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "DRM·dma-buf/dma-heap 담당, Android 그래픽 스택",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/718136b3ae37acbdcda64dc8e373b26cb5082ca1",
+      "if": "dma-heap 할당 ioctl 경로를 유지보수하거나 회귀를 의심한다면",
+      "do": "충돌 해결로 선택된 dma_heap_ioctl_allocate 동작을 기준으로 리뷰하세요",
+      "verify": "머지 설명에 인용된 upstream 커밋과 할당·fd 전달 경로를 함께 확인하세요"
+    },
+    {
+      "title": "upstream AFFS 보안 관련 소규모 수정 동기화",
+      "priority": "하",
+      "impactType": "security",
+      "affectedAudience": "ACK 메인라인 동기화 담당, 레거시 FS 사용자",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/2f31dddb243cf9f457af60f0124abea6a65d5e2c",
+      "if": "제품에서 AFFS 마운트 노출 가능성을 평가 중이라면",
+      "do": "실제 사용 여부와 패치 우선순위를 확인 필요로 표시한 채 검토하세요",
+      "verify": "인용문과 태그 설명만 근거로 삼고 원문 머지 메시지를 직접 열어 교차 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**FROMGIT: arm64: suspend: Save and restore TPIDR2_EL0 across CPU suspend**\n\nSME가 있는 시스템에서 cpu_do_suspend·resume 경로에 EL0 레지스터 TPIDR2_EL0 저장·복원을 추가했다.\n\n영향: 웜 리셋 뒤 값이 불확실해 사용자 공간으로 손상된 TPIDR2_EL0가 돌아갈 수 있어 SME 사용 태스크 안정성과 직결된다.\n\n> TPIDR2_EL0 is a live EL0 register on systems with SME... Its value is UNKNOWN after a warm reset, so the task that initiates suspend can return to userspace with a corrupted TPIDR2_EL0.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/08008f77e8925306287ffadfb7ad349a7bad29cb)\n\n**Merge 654ae5d73c05 (drm-fixes 머지) into android-mainline**\n\ndrm 고정분 머지 과정에서 drivers/dma-buf/dma-heap.c 충돌을 풀면서 copy_to_user 성공 전에 fd가 노출되지 않도록 upstream dma_heap_ioctl_allocate 쪽 변경을 택했다.\n\n영향: dma-heap 할당 ioctl에서 유저 공간 fd 조기 노출 가능성을 줄여 잘못된 fd 사용·레이스 위험을 낮춘다.\n\n> Keep the downstream dma_heap_*() helpers but take upstream's dma_heap_ioctl_allocate() from commit 30d0aff2c65a (\"dma-buf: dma-heap: don't publish fd before copy_to_user() succeeds\")\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/718136b3ae37acbdcda64dc8e373b26cb5082ca1)\n\n**Merge tag 'affs-for-7.4' of git://git.kernel.org/... into android-mainline**\n\nupstream affs-for-7.4 태그를 머지해 AFFS에서 블록 검증·해시 잠금·dentry 인스턴스화 등과 관련된 수정 묶음을 android-mainline에 반영한 것으로, 머지 설명에 따르면 보안 스캐너 관심도 언급된다. 다만 인용 검증이 실패했고 신뢰도는 낮아 단정은 피하고, Android 제품에서 AFFS 마운트 노출 여부는 확인 필요다.\n\n영향: 단말에서 AFFS를 거의 쓰지 않으면 체감 영향은 제한적일 수 있으나, 레거시 마운트 환경에서는 관련 패치 의미를 재평가해야 한다.\n\n> \"AFFS has attracted the AI security scanners...\" * tag ... affs: validate blocks before freeing them ... affs: split hash-lock subclass ... affs: don't instantiate dentry if affs_insert_hash failed\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/2f31dddb243cf9f457af60f0124abea6a65d5e2c)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "FROMGIT: arm64: suspend: Save and restore TPIDR2_EL0 across CPU suspend",
+      "url": "https://android.googlesource.com/kernel/common/+/08008f77e8925306287ffadfb7ad349a7bad29cb",
+      "note": "commit"
+    },
+    {
+      "title": "Merge 654ae5d73c05 (drm-fixes) into android-mainline",
+      "url": "https://android.googlesource.com/kernel/common/+/718136b3ae37acbdcda64dc8e373b26cb5082ca1",
+      "note": "commit"
+    },
+    {
+      "title": "Merge tag 'affs-for-7.4' of git://git.kernel.org/...",
+      "url": "https://android.googlesource.com/kernel/common/+/2f31dddb243cf9f457af60f0124abea6a65d5e2c",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-06T18:04:44.059Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/android-newsletter-from-dossier-ko.md"
+  }
+}

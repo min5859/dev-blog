@@ -1,0 +1,128 @@
+{
+  "id": "2026-11-07-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-11-07 S32G STM 타이머 수정 — 리눅스 퍼포먼스·RT 렌즈",
+  "headline": "S32G에서 보이던 STM 클록이벤트 락업을 줄이는 시리즈, RISC-V BPF private stack, RT 그룹 스케줄 옵션 폐기 논의, sched_ext 정리·PSP 스크럽·kconfig 검사기까지 메일링 리스트에 모였다.",
+  "date": "2026-11-07",
+  "summary": "이번 수집은 PREEMPT_RT와 BPF·스케줄·네트워크·빌드 도구 쪽에서 제안·리뷰가 겹친 날이다. 아래 원문 링크로 각 스레드를 직접 확인하는 것이 안전하다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "NXP STM 클록이벤트 락업 완화",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "PREEMPT_RT·클록소스/클록이벤트 드라이버를 다루는 커널 유지보수자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/05/1175",
+      "if": "S32G에서 PREEMPT_RT 커널과 STM 타이머 경로를 맡고 있다면",
+      "do": "이번 시리즈가 다루는 클록이벤트 수정 범위를 일정에 넣고 회귀 테스트를 준비하세요",
+      "verify": "아래 인용문과 설명이 본문에 어떻게 대응하는지 openwall 스레드 원문을 열어 대조해 보세요"
+    },
+    {
+      "title": "CONFIG_RT_GROUP_SCHED 제거 논의",
+      "priority": "중",
+      "impactType": "project",
+      "affectedAudience": "PREEMPT_RT·cgroup CPU 대역폭 정책을 다루는 스케줄러 유지보수자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/06/1537",
+      "if": "cgroup 버전1 RT 그룹 스케줄 설정이나 배포 기본값에 의존한다면",
+      "do": "즉시 삭제와 단계적 폐기·BROKEN 표시 중 어디로 갈지 스레드를 계속 추적하세요",
+      "verify": "Sebastian 질문과 앞선 논의 인용이 맞물리는지 해당 스레드 전체를 읽어 확인하세요"
+    },
+    {
+      "title": "커널 설정 검사기(kconfig-checker) 도입",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "PREEMPT_RT 커널 패키징·빌드 CI를 담당하는 엔지니어",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/06/1057",
+      "if": "PREEMPT_RT용 커널 패키지나 CI에서 .config 검증을 자동화하려면",
+      "do": "make checkconfig와 YAML 규칙 예시를 팀 흐름에 맞게 검토해 도입 여부를 정하세요",
+      "verify": "도구 개요 문장이 실제 시리즈 구성과 일치하는지 커버 레터 원문을 확인하세요"
+    },
+    {
+      "title": "RV64 BPF private stack 지원 제안",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "RISC-V BPF JIT·selftests를 유지보수하는 엔지니어",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/04/1213",
+      "if": "RISC-V에서 struct_ops·스케줄 관련 BPF를 로드해야 한다면",
+      "do": "verifier와 JIT 보고 조건이 어떻게 맞춰지는지 재제출 버전을 lore에서 추적하세요",
+      "verify": "인용된 커버 레터 설명을 최신 스레드와 함께 읽고 변경점을 직접 검증하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Fix NXP STM clockevent bugs causing lockups**\n\nNXP S32G STM 타이머 클록이벤트에 max·overshoot·채널 무장 순서를 손봐, 매치 미스 시 ~32초짜리 카운터 랩 대기로 이어지는 소프트 락업을 피하도록 합니다.\n\n영향: PREEMPT_RT에서 타이머 프로그래밍이 지연될 때 clockevents 코어가 -ETIME 재시도로 퇴화하도록 바뀌어 RT 워크로드의 타이머·스케줄링 안정성에 직접적입니다.\n\n> This series fixes three bugs in the NXP STM clocksource driver that can\ncause soft lockups and missed timer events, particularly visible on\nPREEMPT_RT kernels running on S32G platforms.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/05/1175)\n\n**riscv: bpf: Add BPF private stack support**\n\nRV64 BPF JIT에 private stack을 지원해 verifier가 요구하는 bpf_jit_supports_private_stack() 경로를 충족시키고, RISC-V 전용으로 FP·tail call·per-CPU 베이스 로딩을 조정하는 패치 시리즈가 제안되었다.\n\n영향: struct_ops/sched_ext 등이 private stack을 요구하는데 현재 riscv64 JIT가 거부해 로드가 막히므로, 병합 시 RISC-V에서 BPF·sched_ext 생태가 다른 아키텍처와 동등해진다.\n\n> This series adds private-stack support to the RV64 BPF JIT.\n\nThe verifier rejects a struct_ops program that requests a private stack\nwith -EACCES when the JIT does not report\nbpf_jit_supports_private_\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/04/1213)\n\n> > a nit, let move it with the PRIV_STACK_GUARD_SZ macro.\n\nWill fix it in the next version.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/06/1547)\n\n**net: psp: preserve SKB_EXT_PSP across packet scrubbing**\n\nskb_scrub_packet()가 skb_ext_reset()으로 SKB_EXT_PSP까지 지우던 경로에 skb_ext_scrub()를 두어 PSP 메타데이터를 보존하고, 자체 테스트는 양방향 데이터 전송을 다루도록 확장하는 net v2 시리즈가 정리되어 있다.\n\n영향: netkit·리다이렉트 등으로 패킷을 스크럽할 때 PSP 확장이 사라지면 소켓 계층 정책 검사가 TCP 데이터를 드롭하므로, 가상 연계·크로스 netns PSP 배포에 영향을 준다.\n\n> When a virtual interface such as netkit is associated with a PSP device\nin another network namespace via PSP_CMD_DEV_ASSOC, incoming PSP packets\ndecapsulated on the physical device lose their SKB_EXT_\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/10/30/327)\n\n> Yea, makes sense. Removing this in the next version.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/06/33)\n\n**sched: Remove CONFIG_RT_GROUP_SCHED**\n\nCONFIG_RT_GROUP_SCHED 제거 패치에 대해 Tejun은 단계적 폐기(deprecated→BROKEN)를 제안했고, 이어진 스레드에서 Sebastian은 사용자 의존성 확인 없이 바로 지울지, BROKEN 표시 등으로 갈지 질문한다.\n\n영향: cgroup v1 RT 그룹 스케줄링 옵션을 쓰는 소수 환경이라도 남아 있다면 커널·배포판 설정·문서 정책이 크게 바뀌므로 RT·cgroup 트랙킹에 중요하다. 머지 방향은 아직 스레드만으로는 확인 필요하다.\n\n> despite that statement, no removal, depends on broken, anything? Just\nkeep everything as-is?\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/06/1537)\n\n**sched_ext: Reset task fields on exit of an SCX_TASK_READY task**\n\nRahad Bhuiya는 __scx_disable_and_exit_task()의 SCX_TASK_READY 분기에서 scx_reset_task_fields()를 호출해 태스크가 스케줄러 통제를 벗어날 때 필드가 비워지게 하자고 한 줄 패치를 보냈다.\n\n영향: READY 상태에서 남은 dsq_vtime 등이 이후 cgroup/서브스케줄 이동 뒤 SCHED_NORMAL 전환 시 다음 스케줄러 enable 경로에 stale 값을 넘길 수 있어 sched_ext 일관성에 관련된다. Tejun 리뷰에 따라 설명·Fixes 조정과 sched_ext 트리로의 재제출이 필요하다는 점은 확인이 필요하다.\n\n> Call scx_reset_task_fields() in the SCX_TASK_READY case of\n__scx_disable_and_exit_task() to ensure consistent cleanup across all exit\npaths.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/06/2216)\n\n> Can you rewrite the description around that case?\n\na298fd5f4ee8 didn't change the READY case.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/06/2860)\n\n**tools: Introduce a kernel configuration checker**\n\nAhmed S. Darwish가 tools/kconfig-checker와 preempt_rt 규칙, make checkconfig, YAML 오버레이까지 포함한 10패치 시리즈를 제안하고 사용 예와 목표(배포판·systemd 등)를 적었다.\n\n영향: PREEMPT_RT 빌드 검증을 자동화하면 팀·CI가 문서화된 RT 권고와 실제 .config를 일관되게 맞출 수 있어 운영 RT 커널 품질에 직결된다.\n\n> This series adds kconfig-checker: a Python tool that checks the kernel\n.config against a set of YAML rules and reports all issues by severity.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/06/1057)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "[PATCH v3 0/3] NXP STM clocksource/clockevent 시리즈",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/05/1175",
+      "note": "thread"
+    },
+    {
+      "title": "RV64 BPF private stack 커버 레터",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/04/1213",
+      "note": "thread"
+    },
+    {
+      "title": "BPF private stack 매크로 위치 리뷰 답변",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/06/1547",
+      "note": "thread"
+    },
+    {
+      "title": "PSP SKB 확장 보존 v2 커버",
+      "url": "https://lists.openwall.net/linux-kernel/2026/10/30/327",
+      "note": "thread"
+    },
+    {
+      "title": "PSP 스크럽 skb->decrypted 후속 답변",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/06/33",
+      "note": "thread"
+    },
+    {
+      "title": "CONFIG_RT_GROUP_SCHED 제거 논의",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/06/1537",
+      "note": "thread"
+    },
+    {
+      "title": "sched_ext READY 종료 시 필드 리셋 패치",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/06/2216",
+      "note": "thread"
+    },
+    {
+      "title": "sched_ext 패치 설명·Fixes 리뷰 요청",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/06/2860",
+      "note": "thread"
+    },
+    {
+      "title": "kconfig-checker 도입 커버 레터",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/06/1057",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-06T18:33:59.714Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,113 @@
+{
+  "id": "2026-11-07-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-11-07 PREEMPT_RT 검사 규칙 — 리눅스 툴체인",
+  "headline": "kconfig-checker에 PREEMPT_RT 규칙이 추가되고, LZ4 상류 연동·kallsyms 줄 정보·모듈 블랙리스트·JobQueue 논의가 함께 이어집니다.",
+  "date": "2026-11-07",
+  "summary": "이번 수집에서는 PREEMPT_RT .config 기계 검사, 인커널 LZ4 상류 연동, 스택 트레이스에 소스 줄 표시, 내장 모듈까지 module_blacklist 적용 등이 두드러집니다. Rust DRM JobQueue와 Panthor 리뷰 반응은 설계·bring-up 측면에서 계속 주목할 만합니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "kconfig-checker: PREEMPT_RT 구성 규칙 도입",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "실시간(PREEMPT_RT) 커널을 빌드·배포하는 유지보수자, kbuild/도구 체인 담당",
+      "verifyLink": "https://patchew.org/linux/20261106091922.7560-1-darwi@linutronix.de/20261106091922.7560-3-darwi@linutronix.de/",
+      "if": "PREEMPT_RT 커널을 패키징하거나 CI에서 .config 일관성을 맞춰야 한다면",
+      "do": "문서와 동일한 규칙을 kconfig-checker로 기계 검사하도록 적용 경로를 검토하세요",
+      "verify": "패치 스레드와 Documentation/core-api/real-time/kernel-configuration.rst 내용을 함께 대조하세요"
+    },
+    {
+      "title": "kallsyms: 스택 트레이스에 소스 파일·줄 정보",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "커널 디버깅·크래시 분석·kbuild/심볼 인프라를 다루는 엔지니어",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/06/1959",
+      "if": "필드 크래시 보고에 vmlinux가 없어 상징만으로는 재현이 어렵다면",
+      "do": "CONFIG_KALLSYMS_LINEINFO 옵션과 스택 출력 형태를 빌드·배포 정책에 반영할지 검토하세요",
+      "verify": "v11 시리즈 커버 레터 인용 구간이 제시하는 동작을 원문에서 확인하세요"
+    },
+    {
+      "title": "lib/lz4: 포크 대신 상류 소스 벤더링",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "lib/lz4·압축·스토리지/부트 경로를 다루는 커널·배포판 유지보수자",
+      "verifyLink": "https://patchew.org/linux/20261106-lz4-vendor-upstream-v2-0-ee04c3f0d7dc@samsung.com/",
+      "if": "압축·zram·부트 프리 압축 경로의 결함·유지보수 부담을 줄이려면",
+      "do": "v2 시리즈의 벤더링·래핑 접근과 남은 결함 언급을 보안·안정성 관점에서 검토하세요",
+      "verify": "시리즈 소개 인용에 나온 포크 동기화 시점을 원문 스레드에서 확인하세요"
+    },
+    {
+      "title": "module_blacklist를 내장 모듈 초기화까지 확장",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "부트 파라미터·모듈 로딩·내장 드라이버를 관리하는 커널·시스템 관리자 및 모듈 서브시스템 유지보수자",
+      "verifyLink": "https://patchew.org/linux/20261106164521.116168-1-atomlin@atomlin.com/",
+      "if": "재난 복구나 문제 드라이버 우회에 module_blacklist를 쓰지만 내장과 동작이 달랐다면",
+      "do": "v14 시리즈가 제안하는 부트 초기 메타데이터 매핑을 운영 문서와 대조하세요",
+      "verify": "커버 레터 인용이 말하는 현재 동작 차이를 원문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**lib/lz4: 포크 대신 상류 LZ4 벤더링**\n\n[PATCH v2 00/15]는 인커널 LZ4 포크를 유지보수하기 어렵다는 점을 들어 상류 소스를 통째로 넣고 빌드 시 래핑하며, 포크에 남은 결함(예: 경계 검사 부족)을 줄이려는 대규모 리베이스 계열 변경입니다.\n\n영향: 압축·zram·부트 프리 압축 등 광범위 사용자에 영향을 주며, 잘못된 입력 처리는 보안·안정성 측면에서 중요합니다.\n\n> The in-kernel LZ4 is a fork. The decompressor was last synced with\nupstream v1.8.3 in 2018 and the compressor with v1.7.3 in 2017, both by\nhand.\n\n[원문 확인](https://patchew.org/linux/20261106-lz4-vendor-upstream-v2-0-ee04c3f0d7dc@samsung.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**kconfig-checker: PREEMPT_RT 구성 규칙 도입**\n\nkconfig-checker용 PREEMPT_RT 규칙 YAML(preempt_rt.yml)을 새로 넣어, 문서화된 RT 권장 .config 정책과 동일한 내용을 도구로 기계 검사할 수 있게 합니다.\n\n영향: PREEMPT_RT·배포판 패키징·CI에서 .config 요구사항을 일관되게 검증해 설정 드리프트와 현장 장애 분석 비용을 줄일 수 있습니다.\n\n> Introduce a kconfig-checker PREEMPT_RT rules file, matching what is at\nDocumentation/core-api/real-time/kernel-configuration.rst.\n\nThis will allow the tool to mechanically check the kernel's .config a\n\n[원문 확인](https://patchew.org/linux/20261106091922.7560-1-darwi@linutronix.de/20261106091922.7560-3-darwi@linutronix.de/)\n\n**kallsyms: 커널 스택 트레이스에 소스 파일·줄 정보**\n\nCONFIG_KALLSYMS_LINEINFO로 커널 이미지에 주소→소스 위치 테이블을 넣어, 런타임 스택 트레이스에 파일:줄을 곧바로 붙이고(모듈·압축·KUnit은 형제 패치로 확장) 버그 리포트에 vmlinux가 없을 때도 진단 가치를 높입니다.\n\n영향: 필드/Crash 보고의 상징+오프셋만으로는 재현이 어려울 때가 많아, 옵션으로도 의미 있는 추적 가능성을 제공합니다.\n\n> CONFIG_KALLSYMS_LINEINFO embeds a compact address-to-line lookup table in\nthe kernel image so stack traces print source locations directly, without\ndecode_stacktrace.sh or a vmlinux with debug info at\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/06/1959)\n\n**module_blacklist를 내장 모듈 초기화까지**\n\n[PATCH v14 0/3]는 module_blacklist=/module_denylist=가 내장(=y) 모듈 초기화에도 적용되도록 부트 초기 메타데이터로 매핑해, 기존처럼 조용히 무시되지 않게 하자는 시리즈입니다.\n\n영향: 재난 복구나 문제 드라이버 우회 시 문서화된 인터페이스가 빌드 형태에 따라 달라지면 운영·지원이 어려워집니다.\n\n> This patch series extends the module_blacklist= command-line parameter (and\nits modern alias module_denylist=) to intercept built-in modules during\nearly boot. Currently, when a driver is compiled sta\n\n[원문 확인](https://patchew.org/linux/20261106164521.116168-1-atomlin@atomlin.com/)\n\n**rust: drm JobQueue 설계 논의**\n\nRust DRM JobQueue 계열 패치가 계속 진화하며, 이웃 JobQueue가 오류로 종료될 때 콜백·펜스 시그널 처리·드라이버 정리(JobQueueOps::kill 등) 설계를 두고 논의 중입니다.\n\n영향: 펌웨어 스케줄링 GPU 드라이버와 Rust for Linux를 맞춰 가는 핵심 추상화라, 잘못된 펜스/작업 종료 시나리오가 사용자 공간·커널 안정성에 직결됩니다.\n\n> tl;dr: If JQ1 has dependencies on JQ2, and JQ2 dies, then we also need\nto inform JQ1 somehow and act accordingly (teardown).\n\n[원문 확인](https://patchew.org/linux/20261103153138.1087330-2-phasta@kernel.org/)\n\n**drm/panthor: CIX Sky1 지원 리뷰 반응**\n\nCIX Sky1 Panthor 지원 패치에 대한 리뷰 응답에서 reset 획득 방식을 devm_reset_control_get_optional_exclusive() 무조건 사용 등으로 조정하고 v2에 넣겠다고 합니다.\n\n영향: 특정 SoC에서 GPU 리셋/전원 시퀀스가 잘못되면 부팅·렌더 이슈로 이어지므로, 장치 트리 검증과 조합한 reset API 사용은 통합 시 안정성에 직접적입니다.\n\n> Thanks for the review. I have switched to\ndevm_reset_control_get_optional_exclusive() unconditionally.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/06/1911)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "kconfig-checker PREEMPT_RT 규칙 패치 스레드",
+      "url": "https://patchew.org/linux/20261106091922.7560-1-darwi@linutronix.de/20261106091922.7560-3-darwi@linutronix.de/",
+      "note": "thread"
+    },
+    {
+      "title": "Rust DRM JobQueue RFC v7 커버",
+      "url": "https://patchew.org/linux/20261103153138.1087330-2-phasta@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "kallsyms LINEINFO v11 시리즈",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/06/1959",
+      "note": "thread"
+    },
+    {
+      "title": "lib/lz4 상류 벤더링 v2 시리즈",
+      "url": "https://patchew.org/linux/20261106-lz4-vendor-upstream-v2-0-ee04c3f0d7dc@samsung.com/",
+      "note": "thread"
+    },
+    {
+      "title": "module_blacklist 내장 모듈 확장 v14",
+      "url": "https://patchew.org/linux/20261106164521.116168-1-atomlin@atomlin.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/panthor CIX Sky1 리뷰 응답",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/06/1911",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-06T18:24:15.050Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
