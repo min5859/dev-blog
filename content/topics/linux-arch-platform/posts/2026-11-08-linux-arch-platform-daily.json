@@ -1,0 +1,133 @@
+{
+  "id": "2026-11-08-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-11-08 Bao I/O 디스패처 — Arch·Platform",
+  "headline": "Bao VirtIO I/O 디스패처 후보와 RV64 thread_info·SSTC·find_zero 성능 패치가 한꺼번에 올라왔다.",
+  "date": "2026-11-08",
+  "summary": "Bao 하이퍼바이저 v5 I/O 디스패처가 VirtIO 백엔드 VM 경로를 Remote I/O와 userspace VMM으로 잇는 메인라인 후보로 제출됐다. RV64 쪽은 thread_info 축소, SSTC 타이머 분기 정리, word-at-a-time find_zero() 최적화가 이어졌다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "virt: bao: add I/O dispatcher driver",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "Bao·VirtIO 백엔드 VM 및 RISC-V/arm64 가상화·드라이버 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/c900781e2f68a7dc4e262cbb856dd3eee354974f.1794038390.git.jpeixoto@osyx.tech/",
+      "if": "Bao 백엔드 VM이 VirtIO 디바이스 모델을 userspace에서 돌리는 구성이면",
+      "do": "CREATE_DM 권한·lockdown·공유 메모리 겹침 검사와 PLIC·SBI 경로 제약을 패치 원문 기준으로 맞춰 보세요",
+      "verify": "lore 스레드와 v5 커버레터에서 Remote I/O·BAO_IOCTL_CREATE_DM 동작을 확인하세요"
+    },
+    {
+      "title": "riscv: make thread_info smaller for RV64",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "RV64 커널·스케줄러·entry.S·thread_info 오프셋을 다루는 아키텍처 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/07/1024",
+      "if": "!SHADOW_CALL_STACK·!RISCV_USER_CFI RV64 보드를 다루면",
+      "do": "thread_info 72→64바이트 레이아웃 변경이 asm·스케줄 경로에 미치는지 리뷰 포인트를 짚으세요",
+      "verify": "RESEND 패치와 Patchwork 시리즈 1204913에서 cpu 필드 이동 내용을 확인하세요"
+    },
+    {
+      "title": "clocksource/timer-riscv: use riscv_has_extension_likely",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "RISC-V 클럭소스·tick·SSTC 확장을 추적하는 아키텍처·드라이버 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/07/1020",
+      "if": "SSTC 타이머 fast path와 static branch 오버헤드를 줄이는 작업을 추적하면",
+      "do": "riscv_has_extension_likely 기반 분기로 바뀐 clock event 경로를 보드 설정에 맞게 검토하세요",
+      "verify": "SSTC 미지원 하드웨어에서 rating(450) 동작이 기대와 같은지 보드별로 확인하세요"
+    },
+    {
+      "title": "riscv: word-at-a-time: improve find_zero()",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "RISC-V word-at-a-time·Zbb·문자열 처리 성능을 보는 아키텍처 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/07/1012",
+      "if": "Zbb·RV32·RV64 조합에서 strstr 핫 경로를 튜닝 중이면",
+      "do": "generic fallback과 ctz 기반 경로가 CONFIG·HW 조합별로 맞는지 벤치·회귀 범위를 정하세요",
+      "verify": "저자가 QEMU 위주 검증임을 감안해 Zbb 실제 하드웨어 수치는 별도로 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**virt: bao: add I/O dispatcher driver**\n\nBao 하이퍼바이저 v5 시리즈 I/O 디스패처 패치로, 백엔드 VM이 VirtIO 백엔드를 userspace VMM(/dev/bao, BAO_IOCTL_CREATE_DM)으로 구동하며 프론트엔드 게스트 I/O를 Remote I/O로 중계한다.\n\n영향: RISC-V·arm64 정적 분할 임베디드 가상화에서 VirtIO 백엔드 통합 경로가 메인라인 후보로 올라왔고, PLIC·공유 메모리·실험적 SBI 확장까지 아키텍처별 제약이 드라이버 설계에 묶인다. RISC-V 백엔드의 실험적 SBI 확장(BAO_SBI_EXT_ID) 의존과 IMP-ID 할당 전 merge 정책, Remote I/O 하이퍼콜의 SBI chapter-3 레지스터 규칙 ABI 합의는 확인이 필요하다.\n\n> Add the Bao I/O dispatcher, used by backend VMs to service I/O on behalf\nof frontend guests. It bridges Bao's Remote I/O mechanism to userspace\nVirtIO backend device models.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/c900781e2f68a7dc4e262cbb856dd3eee354974f.1794038390.git.jpeixoto@osyx.tech/)\n\n**riscv: make thread_info smaller for RV64**\n\nRV64에서 struct thread_info의 cpu 필드를 preempt_count 옆으로 옮겨 패딩을 없애, !SHADOW_CALL_STACK·!RISCV_USER_CFI 구성에서 크기가 72→64바이트로 줄어든다.\n\n영향: 스레드 메타데이터가 캐시라인에 더 잘 맞아 컨텍스트 스위치·스택 부담이 줄고, 최근 thread_info 레이아웃 최적화 흐름과 맞물린다. SHADOW_CALL_STACK 또는 RISCV_USER_CFI 활성 시 크기 이득·asm 오프셋·BPF JIT 등 간접 소비자 영향은 추가 확인이 필요하다.\n\n> On RV64 platforms, the thread_info structure is non-necessary bigger\ndue to padding. Move the \"cpu\" member to \"preempt_count\" to remove\nthe padding.\n\nwhen !SHADOW_CALL_STACK and !RISCV_USER_CFI\nBefore\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/07/1024)\n\n**clocksource/timer-riscv: use riscv_has_extension_likely**\n\ntimer-riscv가 SSTC 지원 여부를 probe 시 static branch 대신 riscv_has_extension_likely(RISCV_ISA_EXT_SSTC)로 판별해 클럭 이벤트 경로와 등급 설정을 단순화한다.\n\n영향: SSTC fast path 정리와 함께 __jump_table에 남는 static branch 메타데이터 낭비를 피하고, 확장 확정 후 분기 비용을 줄인다. SSTC 미지원 하드웨어에서 alternatives 경로와 클럭 이벤트 rating(450) 회귀 여부는 보드별 확인이 필요하다.\n\n> Instead of static branch, use riscv_has_extension_likely() to check\nwhether SSTC is supported or not. For one thing, this is straight\nforward, no need to add and enable/disable a static branch during\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/07/1020)\n\n**riscv: word-at-a-time: improve find_zero()**\n\nRESEND v5 3패치 시리즈가 RISC-V word-at-a-time find_zero()를 ZBB 미설정·RV32·Zbb HW 조합별로 분기해 generic 경로로 되돌리거나 ctz 기반 최적화를 적용한다.\n\n영향: strstr 등 핫 경로에서 find_zero() 명령 수를 크게 줄여(최대 33→8, Zbb RV64에서 7→3) 문자열 처리 마이크로벤치 개선이 기대된다. Zbb 실제 하드웨어 성능 수치는 QEMU 위주 검증으로 저자가 명시했으며, CONFIG·toolchain·런타임 조합별 회귀 테스트 범위는 확인이 필요하다.\n\n> So this series tries to improve find_zero() by falling back to generic\nword-at-a-time implementaion where necessary. We dramatically reduce\nthe instructions of find_zero() from 33 to 8! Also testing w\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/07/1012)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "virt: bao: add I/O dispatcher driver",
+      "url": "https://lore.kernel.org/linux-riscv/c900781e2f68a7dc4e262cbb856dd3eee354974f.1794038390.git.jpeixoto@osyx.tech/",
+      "note": "thread"
+    },
+    {
+      "title": "Bao v5 cover letter",
+      "url": "https://patchwork.kernel.org/project/linux-riscv/cover/cover.1794038390.git.jpeixoto@osyx.tech/",
+      "note": "changelog"
+    },
+    {
+      "title": "riscv: make thread_info smaller for RV64",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/07/1024",
+      "note": "thread"
+    },
+    {
+      "title": "thread_info RV64 series",
+      "url": "https://patchwork.kernel.org/series/1204913/",
+      "note": "changelog"
+    },
+    {
+      "title": "clocksource/timer-riscv: use riscv_has_extension_likely",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/07/1020",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: word-at-a-time: improve find_zero()",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/07/1012",
+      "note": "thread"
+    },
+    {
+      "title": "arm64: dts: imx8mp-phyboard-pollux: updates",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/06/2127",
+      "note": "thread"
+    },
+    {
+      "title": "imx8mp phyboard pollux series",
+      "url": "https://patchwork.kernel.org/series/1204231/",
+      "note": "changelog"
+    },
+    {
+      "title": "soc: starfive: Add jh7110-hdmi-subsystem driver",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/06/2159",
+      "note": "thread"
+    },
+    {
+      "title": "JH7110 display v7 series",
+      "url": "https://patchew.org/linux/20261106-jh7110-clean-send-v7-0-68f7ea9913db@samsung.com/20261106-jh7110-clean-send-v7-2-68f7ea9913db@samsung.com/",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-07T18:33:41.518Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

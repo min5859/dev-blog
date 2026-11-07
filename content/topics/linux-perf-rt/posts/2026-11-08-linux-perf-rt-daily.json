@@ -1,0 +1,113 @@
+{
+  "id": "2026-11-08-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-11-08 rtmutex PI 회귀 — Perf·RT",
+  "headline": "rtmutex 스핀 경로 수정과 BPF sockmap·루프 검증 보완, KCOV pause로 PREEMPT_RT 퍼징 신호가 정리됩니다.",
+  "date": "2026-11-08",
+  "summary": "PI futex·PREEMPT_RT ww_mutex에서 1ms 대기가 최대 1.4s로 늘어나던 rtmutex 스핀 회귀에 대한 수정 패치가 올라왔습니다. 같은 날 BPF iterator·verifier와 KCOV 쪽 패치는 RT 트리 CI·퍼징 품질을 바로잡는 방향입니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "rtmutex: waiter 깨어난 뒤 owner 스핀 중단",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "rt_mutex·PI futex·PREEMPT_RT ww_mutex를 다루는 locking/RT 유지보수자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/07/5",
+      "if": "PI futex나 PREEMPT_RT ww_mutex에서 1ms timed lock 지연이나 wound 누락을 재현 중이라면,",
+      "do": "Fixes 992caf7f1724를 명시한 스레드와 벤치 결과를 읽고 워크로드에 맞게 재측정합니다.",
+      "verify": "mainline·stable 백포트 일정은 추가 스레드 추적이 필요하므로 lore 후속을 확인합니다."
+    },
+    {
+      "title": "sockmap: iter-context 갱신을 sockmap iterator로 제한",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "sockmap·BPF iterator·네트워킹 BPF를 유지보수하는 엔지니어",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/bpf/20261107-sockmap-update-limit-iter-v3-0-7c0bad1ad036@rbox.co/",
+      "if": "BPF_TRACE_ITER로 sockmap을 갱신하는 프로그램이나 PSP 계열 운영 스크립트를 유지한다면,",
+      "do": "v3 시리즈의 PTR_TRUSTED·bpf_sock_destroy() 호출 제한과 verifier의 may_update_sockmap() 조건을 대조합니다.",
+      "verify": "iter/sockmap 맥락의 bpf_sock_destroy()와 RCU 보호만으로 충분한지 netdev/BPF 리뷰 논의를 따라갑니다."
+    },
+    {
+      "title": "BPF verifier: 루프 내 load 후 사용 값에 short walk",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "BPF verifier·selftests를 추적하는 엔지니어",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/bpf/20261107175819.3707050-1-alexei.starovoitov@gmail.com/",
+      "if": "kptr·rodata 오프셋 루프에서 프로그램이 잘못 거부되거나 libarena insn 비용이 튄다면,",
+      "do": "bpf_compute_loop_iters() fresh_regs 조정과 bpf_flow_is_needed() 검사가 포함된 패치를 로컬 트리에 적용해 재검증합니다.",
+      "verify": "기존에 통과하던 selftest와 실패하던 케이스가 스레드 인용 예시와 일치하는지 확인합니다."
+    },
+    {
+      "title": "kcov: 타이머·스케줄러 노이즈 억제",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "KCOV·syzkaller·PREEMPT_RT 퍼징을 운영하는 엔지니어",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/07/920",
+      "if": "PREEMPT_RT에서 syzkaller triage 비중이 높거나 corpus 성장이 느리다면,",
+      "do": "KCOV_PAUSED·kcov_pause_scope()가 deferred hrtimer rearm·__schedule() 등에 걸린 v5 시리즈를 검토합니다.",
+      "verify": "v5가 softirq·arm64 KCOV 후속과 어떻게 합쳐지는지 Andrew Morton mm 트리 머지 시점은 추가 확인이 필요합니다."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**locking/rtmutex: Stop spinning on the owner when the waiter is woken**\n\nrtmutex_spin_on_owner()가 waiter가 TASK_RUNNING으로 깨어난 뒤에도 owner가 userspace에서 돌 때 계속 스핀하던 경로에 task_is_running(current) 검사를 넣어 타임아웃·시그널·ww_mutex wound를 slowpath에서 처리하게 한다.\n\n영향: PI futex와 PREEMPT_RT ww_mutex에서 1ms timed lock이 최대 1.4s 지연되거나 wound가 놓치는 회귀를 막아 RT 워크로드·사용자 공간 락 지연에 직결된다.\n\n> if (!owner_on_cpu(owner) || need_resched() ||\n+\t    task_is_running(current) ||\n\t    !data_race(rt_mutex_waiter_is_top_waiter(lock, waiter))) {\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/07/5)\n\n**bpf, sockmap: Restrict iter-context sockmap updates to sockmap iterators**\n\nv3 시리즈는 BPF_TRACE_ITER 중 iter/sockmap만 sockmap/sockhash map_update_elem·map_delete_elem을 허용하고, bpf_iter__sockmap::sk를 PTR_TRUSTED로 두며 bpf_sock_destroy() 호출을 iter/tcp·iter/udp로 제한한다.\n\n영향: af_unix 등 비-sockmap iterator에서의 sockmap 갱신으로 생기던 데드락·잠금 문제를 막고 sockmap/PSP 계열 BPF 운영자의 API 표면을 조이는 보안·안정화 작업이다.\n\n> Series started short: remove about-to-be-stale test, restrict updates, add a negative test. Then it\nexpanded: mark bpf_iter__sockmap::sk as PTR_TRUSTED, restrict\nbpf_sock_destroy() callers to iter/{tc\n\n[원문 확인](https://lore-kernel.gnuweeb.org/bpf/20261107-sockmap-update-limit-iter-v3-0-7c0bad1ad036@rbox.co/)\n\n**bpf: Walk a short loop for what it loads if something looks at it**\n\n첫 iteration 분리(df9b13a441c9) 이후에도 kptr·rodata 오프셋처럼 매 회 로드 뒤 사용되는 값은 짧은 per-iteration walk가 필요하도록 bpf_compute_loop_iters()의 fresh_regs 처리를 조정한다.\n\n영향: 유효한 BPF 프로그램이 잘못 거부되거나 libarena 같은 selftest insn 비용이 튀는 verifier 회귀를 막아 RT·스케줄링 BPF 워크로드 검증에 영향을 준다.\n\n> Do the same for what is loaded and then looked at: t is the base of a load,\ncur is an offset. A stack slot that the loop fills and that is only copied\nlater is no reason for a walk.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/bpf/20261107175819.3707050-1-alexei.starovoitov@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**kcov: Keep timer and scheduler noise out of task coverage**\n\nv5 시리즈는 중첩 가능한 KCOV_PAUSED와 kcov_pause_scope()로 deferred hrtimer rearm·__schedule()·try_to_wake_up()·wake_up_new_task() 경로의 비결정적 커버리지 기록을 억제한다.\n\n영향: PREEMPT_RT에서 syzkaller triage 낭비를 줄이고 동일 syscall 입력의 KCOV 신호를 안정화해 RT 커널 퍼징·회귀 탐지 효율을 높인다.\n\n> On a Raspberry Pi 400 with\nPREEMPT_RT, triage dropped from 26-34% of all executions to 10%, and\n20-minute runs ended with a 26-82% larger corpus at equal execution\ncounts.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/07/920)\n\n**selftests/bpf: Skip plain_c_test_wakeup_source without the kfuncs**\n\nCONFIG_PM_SLEEP 없는 s390 커널에는 wakeup kfunc BTF가 없어 plain_c_test_wakeup_source 로드가 실패하므로, wakeup_source.c와 같이 vmlinux BTF에 bpf_wakeup_sources_get_head가 없으면 test__skip()한다.\n\n영향: BPF CI의 s390 잡 거짓 실패를 없애 RT·다아키텍처 트리에서 selftest 신뢰도를 유지한다.\n\n> s390 has no suspend and no hibernation, so its kernel\ndoes not have the kfuncs and the load fails:\n\n  libbpf: extern (func ksym) 'bpf_wakeup_sources_get_head': not found\n\n[원문 확인](https://lore-kernel.gnuweeb.org/bpf/20261107170306.2831028-5-alexei.starovoitov@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "locking/rtmutex: Stop spinning on the owner when the waiter is woken",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/07/5",
+      "note": "thread"
+    },
+    {
+      "title": "bpf, sockmap: Restrict iter-context sockmap updates to sockmap iterators",
+      "url": "https://lore-kernel.gnuweeb.org/bpf/20261107-sockmap-update-limit-iter-v3-0-7c0bad1ad036@rbox.co/",
+      "note": "thread"
+    },
+    {
+      "title": "sockmap iter may_update_sockmap verifier discussion",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/07/1357",
+      "note": "thread"
+    },
+    {
+      "title": "selftests/bpf: Skip plain_c_test_wakeup_source without the kfuncs",
+      "url": "https://lore-kernel.gnuweeb.org/bpf/20261107170306.2831028-5-alexei.starovoitov@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Walk a short loop for what it loads if something looks at it",
+      "url": "https://lore-kernel.gnuweeb.org/bpf/20261107175819.3707050-1-alexei.starovoitov@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "kcov: Keep timer and scheduler noise out of task coverage",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/07/920",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-07T18:30:06.399Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
