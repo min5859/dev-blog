@@ -1,0 +1,148 @@
+{
+  "id": "2026-11-08-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-11-08 MSM a5xx 스톨 수정 — Linux GPU·AI 렌즈",
+  "headline": "Qualcomm a5xx resume 스톨 완화 패치와 sysfb PCI refcount 누수 수정이 dri-devel에서 이어졌고, Tab S9 패널·i915 selftest 정리 패치도 제출되었습니다.",
+  "date": "2026-11-08",
+  "summary": "SDM630 실기에서 재현된 A508/A509/A512 GPU 스톨을 줄이는 MSM a5xx v3 시리즈와 native DRM 연동 시 sysfb_disable() refcount 누수를 고치는 v2가 주목됩니다. Anapass Tab S9 패널 드라이버·s6e63m0 ESD 바인딩·PowerVR sparse 정리 패치도 함께 올라왔습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "MSM a5xx: A508/A509/A512 GPU 스톨 완화",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "Qualcomm Adreno a5xx·Freedreno/MSM DRM 유지보수자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/07/1608",
+      "if": "SDM630급 보드에서 suspend/resume 직후 GPU hang이나 CP stale ringbuffer 의심이 있으면",
+      "do": "v3 시리즈의 resume 소프트 리셋·CPU latency·idle 타임아웃 변경을 리뷰 스레드와 함께 실기 로그와 대조하세요",
+      "verify": "Moto X4(SDM630, A508) 재현·측정 언급이 있는 openwall 스레드 원문을 먼저 확인하세요"
+    },
+    {
+      "title": "firmware/sysfb: sysfb_disable() device refcount 누수",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "DRM·efifb/simpledrm·PCI display 스택 및 stable 백포트 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/07/1407",
+      "if": "네이티브 GPU 드라이버 로드 전후 sysfb 비활성화·모듈 재로드에서 refcount나 간섭이 의심되면",
+      "do": "put_device() 해제와 parent 조회 실패 시 unregister 방어 로직이 Fixes b49420d6a1ae와 맞는지 패치 diff를 검토하세요",
+      "verify": "커버 레터의 parent 미확인 시 unregister 근거 인용문이 있는 스레드 링크를 열어 확인하세요"
+    },
+    {
+      "title": "drm/panel: Anapass ANA38407(Tab S9 Wi-Fi)",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "DRM panel·DSI·DSC 드라이버 및 해당 보드 DT 작성자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/07/1519",
+      "if": "SM8550 태블릿급 DSC command-mode DSI 패널 바인딩을 추적 중이면",
+      "do": "2560×1600·revision D 120 Hz만 지원한다는 시리즈 설명과 실기 부트·밝기 테스트 항목을 패치별로 대조하세요",
+      "verify": "보드 device tree는 별도 시리즈라는 점은 머지 순서를 별도로 확인해야 합니다"
+    },
+    {
+      "title": "drm/i915/selftests: mock GGTT VM 참조 해제",
+      "priority": "하",
+      "impactType": "build",
+      "affectedAudience": "Intel i915 selftest·CI를 돌리는 드라이버 개발자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/07/1423",
+      "if": "CONFIG_DRM_I915_SELFTEST나 KUnit mock 경로에서 teardown 누수가 보이면",
+      "do": "v2에서 stable 백포트 태그가 빠진 selftest 전용 정리임을 확인한 뒤 i915_vm_put() 경로만 검증하세요",
+      "verify": "mock device 한정 변경이라는 dri-devel 원 스레드 인용을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**firmware/sysfb: Fix device reference count leak in sysfb_disable()**\n\nsysfb_disable() v2는 sysfb_parent_dev()로 얻은 PCI device 참조를 put_device()로 놓고, 부모 조회가 실패하면 sysfb를 무조건 unregister하는 방어 로직을 추가했습니다.\n\n영향: 네이티브 DRM/GPU 드라이버가 aperture·sysfb를 비활성화할 때 refcount 누수와 잘못 남은 sysfb가 실드라이버와 간섭할 수 있는 문제를 줄입니다.\n\n> without a known parent we cannot tell whether the system framebuffer belongs to the calling device, and leaving it registered could make sysfb interfere with the native driver.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/07/1407)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/msm/a5xx: Fix GPU stalls on A508, A509 and A512**\n\nSDM630 실기 테스트에서 드러난 v3 4패치 시리즈가 resume 시 GPU 소프트 리셋, 전원 중 CPU latency 요청(2336 µs), 80 ms idle 타임아웃으로 MSM a5xx 전원·런타임 PM을 조정합니다.\n\n영향: Qualcomm mid-range SoC에서 빠른 suspend/resume·시스템 idle과 겹칠 때 CP stale ringbuffer·hang detector 스톨을 줄여 Freedreno/모바일 mainline 추적에 직접적입니다. 시스템 수준 idle DT 시리즈는 아직 공개되지 않아 CPU latency 요청의 실효 차단 범위는 mainline idle state 병합 전까지 달라질 수 있습니다(확인 필요).\n\n> Soft reset the GPU in a5xx_pm_resume() once it is powered, so that every resume starts from the reset state.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/07/1612)\n\n**drm/panel: Add Anapass ANA38407 DDIC**\n\nGalaxy Tab S9 Wi-Fi(SM8550)용 Samsung AMSA10FA01 2560×1600 DSC command-mode DSI 패널을 위한 dt-binding·panel-anapass-ana38407 드라이버 3패치 시리즈가 제출되었고, revision D의 120 Hz 모드만 지원합니다.\n\n영향: SM8550 태블릿급 AMOLED·DSC 패널 스택이 mainline에 들어오면 Qualcomm display 파이프라인·패널 바인딩 패턴을 다른 Anapass/Samsung 조합에도 재사용할 수 있습니다. 보드 device tree는 별도 시리즈로 따른다고 하여 upstream 머지 순서와 보드 지원 시점은 별도 확인이 필요합니다.\n\n> This series adds a driver for the Samsung AMSA10FA01, the 2560x1600 AMOLED panel of the Samsung Galaxy Tab S9 Wi-Fi (SM8550).\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/07/1519)\n\n**drm/i915/selftests: Release GT VM reference on mock device teardown**\n\ni915 mock selftest 장치가 gt->vm에 잡은 GGTT VM 참조를 정상 teardown과 초기화 실패 unwind 모두에서 i915_vm_put()으로 해제하도록 v2 패치가 제출되었고, v2에서는 stable 백포트 태그를 제거했습니다.\n\n영향: CONFIG_DRM_I915_SELFTEST 빌드·KUnit 경로의 누수·정리 순서를 바로잡아 Intel GFX 셀프테스트 CI 신뢰도에 영향을 주지만 프로덕션 i915 경로는 아닙니다.\n\n> Release the reference during normal teardown after draining the GEM workqueue and before finalizing the mock GGTT.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/07/1423)\n\n**dt-bindings: display: panel: samsung,s6e63m0: Describe ESD interrupt**\n\nSamsung Golden 보드 DT가 쓰는 ESD 표시 GPIO·interrupt-names \"esd\"를 samsung,s6e63m0 YAML 바인딩에 optional interrupt로 문서화하는 v1.1 패치입니다.\n\n영향: CHECK_DTBS=1에서 unexpected property로 깨지던 Golden 패널 노드를 정합시키고, 향후 s6e63m0 ESD IRQ 핸들러 작업과 DT 검증 기반을 만듭니다. 패널 드라이버가 ESD IRQ를 실제로 처리하는 RFC는 별도이며 본 패치는 바인딩·DT 검증 정합에 한정됩니다.\n\n> The Samsung Golden device tree wires the panel electrostatic discharge (ESD) indication to GPIO82 and names the interrupt \"esd\".\n\n[원문 확인](https://lore.kernel.org/dri-devel/20261108-b4-samsung-s6e63m0-esd-v1-1-ab5c252c9646@kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "**drm/imagination: use appropriate poll function for non-iomem**\n\npvr_power_send_command()의 펌웨어 동기화 폴링을 readl_poll_timeout에서 readx_poll_timeout(READ_ONCE, …)로 바꿔 system memory에 대한 sparse __iomem 경고를 없앱니다.\n\n영향: PowerVR/Imagination 드라이버 CI(sparse·robot 빌드) 정리와 fw power_sync 폴링 의미론을 맞춥니다.\n\n> The previous sparse warning is gone:\n\n[원문 확인](https://lore.kernel.org/dri-devel/CAKbEznvHw-0ovzz-YFnY5t58cCpYN0f+9Hywa53rgeX3nZzi5g@mail.gmail.com/)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/i915/selftests: mock GGTT VM 참조 해제",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/07/1423",
+      "note": "thread"
+    },
+    {
+      "title": "i915 mock device 한정 변경 (dri-devel)",
+      "url": "https://lore.kernel.org/dri-devel/1794071400.2684480.vulab@iscas.ac.cn/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/msm/a5xx GPU stall 시리즈 표지",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/07/1608",
+      "note": "thread"
+    },
+    {
+      "title": "drm/msm/a5xx resume 소프트 리셋",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/07/1612",
+      "note": "thread"
+    },
+    {
+      "title": "drm/panel Anapass ANA38407 시리즈",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/07/1519",
+      "note": "thread"
+    },
+    {
+      "title": "panel-anapass-ana38407 드라이버 패치",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/07/1520",
+      "note": "thread"
+    },
+    {
+      "title": "firmware/sysfb_disable refcount v2",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/07/1407",
+      "note": "thread"
+    },
+    {
+      "title": "video/aperture: sysfb_disable() device 인자",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=b49420d6a1ae",
+      "note": "commit"
+    },
+    {
+      "title": "samsung,s6e63m0 ESD interrupt 바인딩 v1.1",
+      "url": "https://lore.kernel.org/dri-devel/20261108-b4-samsung-s6e63m0-esd-v1-1-ab5c252c9646@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "Golden DTS interrupt-names esd (참고)",
+      "url": "https://lists.infradead.org/pipermail/linux-arm-kernel/2020-August/592610.html",
+      "note": "thread"
+    },
+    {
+      "title": "openwall 2026-11-08 일별 인덱스",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/08/",
+      "note": "article"
+    },
+    {
+      "title": "drm/imagination readx_poll_timeout",
+      "url": "https://lore.kernel.org/dri-devel/CAKbEznvHw-0ovzz-YFnY5t58cCpYN0f+9Hywa53rgeX3nZzi5g@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "kernel test robot sparse 경고 맥락",
+      "url": "https://lists.openwall.net/linux-kernel/2026/08/20/415",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-08T04:06:42.621Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
