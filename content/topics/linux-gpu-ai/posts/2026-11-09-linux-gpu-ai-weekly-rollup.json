@@ -1,0 +1,127 @@
+{
+  "id": "2026-11-09-linux-gpu-ai-weekly-rollup",
+  "topic": "linux-gpu-ai",
+  "title": "2026-11-09 주간 요약",
+  "headline": "mxsfb/i.MX DRM·KMS 및 임베디드 display 스택 유지보수자 주목: drm/mxsfb: Complete page flips on",
+  "date": "2026-11-09",
+  "summary": "오늘의 핵심: 릴리스/로드맵 0건, 회귀·보안 신호 6건, 핵심 변경 2건. 리서치 dossier 의 출처를 근거로 정리했습니다.",
+  "tags": [
+    "주간"
+  ],
+  "highlights": [
+    {
+      "title": "drm/mxsfb: Complete page flips only once the new buffer is latched",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "mxsfb/i.MX DRM·KMS 및 임베디드 display 스택 유지보수자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/08/594",
+      "if": "mxsfb/i.MX DRM·KMS 및 임베디드 display 스택 유지보수자라면",
+      "do": "mxsfb가 vblank/page-flip 완료 이벤트를 atomic_flush가 아니라 CUR_BUF·NEXT_BUF(및 오버레이 AS_BUF",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lists.openwall.net/linux-kernel/2026/11/08/594"
+    },
+    {
+      "title": "drm/amdkfd: fix use-after-free in create_process() error path",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "amdkfd·AMD GPU compute 드라이버 유지보수자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/08/500",
+      "if": "amdkfd·AMD GPU compute 드라이버 유지보수자라면",
+      "do": "create_process()가 해시에 올린 뒤 실패하면 kfree 대신 hash_del_rcu·synchronize_srcu·kref 정리로 ",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lists.openwall.net/linux-kernel/2026/11/08/500"
+    },
+    {
+      "title": "firmware/sysfb: Fix device reference count leak in sysfb_disable()",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "DRM·efifb/simpledrm·PCI display 스택 및 stable 백포트 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/07/1407",
+      "if": "DRM·efifb/simpledrm·PCI display 스택 및 stable 백포트 담당라면",
+      "do": "sysfb_disable() v2는 sysfb_parent_dev()로 얻은 PCI device 참조를 put_device()로 놓고, 부모 조",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lists.openwall.net/linux-kernel/2026/11/07/1407"
+    },
+    {
+      "title": "drm/vblank: Restart enabling vblank timer on possible deadlock",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "drm/vblank helper·VKMS·소프트웨어 vblank 타이머 사용자",
+      "verifyLink": "https://ci.syzbot.org/patches/ebf3779b-c8ae-47a6-bd3d-594f7779788f",
+      "if": "drm/vblank helper·VKMS·소프트웨어 vblank 타이머 사용자라면",
+      "do": "drm_crtc_vblank_start_timer()가 실행 중인 hrtimer를 vblank_time_lock 아래에서 기다리며 enable_",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://ci.syzbot.org/patches/ebf3779b-c8ae-47a6-bd3d-594f7779788f"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm/mxsfb: Complete page flips only once the new buffer is latched**\n\nmxsfb가 vblank/page-flip 완료 이벤트를 atomic_flush가 아니라 CUR_BUF·NEXT_BUF(및 오버레이 AS_BUF) 래치 이후 IRQ에서 보내도록 바꿉니다.\n\n영향: i.MX LCDIF 위에서 scanout 버퍼에 직접 그리는 컴포저가 조기 flip 완료 신호로 아직 화면에 있는 버퍼에 그려 반쪽만 갱신된 프레임(약 2% 조기 완료)을 막습니다.\n\n> Userspace then renders into a buffer that is still on screen, which shows up as half drawn frames when a compositor renders directly into its scanout buffers.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/08/594)\n\n**drm/amdkfd: fix use-after-free in create_process() error path**\n\ncreate_process()가 해시에 올린 뒤 실패하면 kfree 대신 hash_del_rcu·synchronize_srcu·kref 정리로 프로세스를 내리고, lead_thread 참조·ida_init 순서와 pqm_uninit 누수·debugfs 제거 기준을 고칩니다.\n\n영향: KFD 프로세스 테이블을 srcu로 순회하는 ioctl·GPU IRQ 경로에서 공개 전 실패 시 UAF·조기 해제가 날 수 있어 ROCm/KFD 보안·안정성에 직접적입니다.\n\n> frees it with a bare kfree(), ignoring the refcount. find_process() takes its reference inside the sRCU critical section but callers use the process after leaving it\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/08/500)\n\n**firmware/sysfb: Fix device reference count leak in sysfb_disable()**\n\nsysfb_disable() v2는 sysfb_parent_dev()로 얻은 PCI device 참조를 put_device()로 놓고, 부모 조회가 실패하면 sysfb를 무조건 unregister하는 방어 로직을 추가합니다.\n\n영향: 네이티브 DRM/GPU 드라이버가 aperture·sysfb를 비활성화할 때 PCI device refcount가 새면 프로브/해제 반복 시 누수가 쌓이고, 잘못 남은 sysfb가 실드라이버와 간섭할 수 있습니다.\n\n> without a known parent we cannot tell whether the system framebuffer belongs to the calling device, and leaving it registered could make sysfb interfere with the native driver.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/07/1407)\n\n**drm/vblank: Restart enabling vblank timer on possible deadlock**\n\ndrm_crtc_vblank_start_timer()가 실행 중인 hrtimer를 vblank_time_lock 아래에서 기다리며 enable_vblank() 경로에서 -EDEADLK를 반환하고, drm_vblank_enable()이 lock을 놓은 뒤 재시도해 VKMS·bochs 등 \n\n영향: 공통 vblank HR timer helper를 쓰는 가상·legacy DRM 출력은 cancel 경로와 대칭되는 start 경로 데드락이 hang으로 이어질 수 있어, drm/vblank·stable(v6.19+) 백포트 추적자는 Fixes 74afeb812850 이후 회귀를 봐야 합\n\n> Return -EDEADLK when trying to cancel a running hrtimer as part of enable_vblank(). Reacquire vblank_time_lock and try again.\n\n[원문 확인](https://ci.syzbot.org/patches/ebf3779b-c8ae-47a6-bd3d-594f7779788f)\n\n**drm/msm/gem: A couple VM_BIND fixes**\n\nv3 4패치는 VM_BIND range 검증 overflow·range==0 거부, GEM_SUBMIT에서 VM_BIND 컨텍스트 nr_bos 테이블 금지, handle lookup 실패 시 루프 인덱스·nr_ops 정리 버그를 고칩니다.\n\n영향: Adreno sparse/VM_BIND userspace 경계에서 잘못된 범위나 legacy submit 형식이 통과하면 IOMMU 매핑 corruption 위험이 있어, drm/msm gem·Mesa VM_BIND 경로 담당은 v3 hardening을 리뷰해야 합니다.\n\n> v3: - Also disallow range==0 - Add patch to clear stale nr_ops in lookup_ops error path\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/20261102172001.508440-1-robin.clark@oss.qualcomm.com/raw)\n\n**drm/xe/pcode: Fix pcode_try_request polling delays**\n\npcode_try_request()에서 atomic udelay(wait)에 MAX_UDELAY_MS clamp와 wait 지수 backoff 100ms 상한을 두는 Oct 30 패치에 대해, Nov 2 Alan Previn은 Sashiko 지적 수용과 __XE_PCODE_WAIT_MA\n\n영향: Intel Xe pcode MMIO 폴링이 udelay OOB·wait overflow로 비정상 지연되면 probe·GuC/pcode transaction이 hang처럼 보일 수 있어, drm/xe pcode 경로 담당은 Fixes 7dc9b92dcfef 회귀 수정과 매크로 rename\n\n> Honor OOB max for udelay. Also add a backoff for 'wait' as it exponentially increases so that doesn't overflow and also caps to a sane limit\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/20261030173038.681250-2-alan.previn.teres.alexis@intel.com/raw)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/sched: Remove the single scheduler special case**\n\ndrm_sched_entity가 단일 스케줄러일 때 sched_list를 NULL로 두던 예외를 없애고 union의 sched 포인터에 sched_list[0]을 저장해 단일 IP에서도 priority/run-queue 변경이 가능해집니다.\n\n영향: amdgpu 동적 우선순위 경로 정리와 함께 공용 스케줄러 API 의미가 바뀌며, rocket은 단일 코어·kfree(entity->sched_list) 패턴과 충돌해 devm 영역을 해제하는 회귀가 보고되었습니다.\n\n> This allows removal of the special cases which artificially cleared entity->sched_list for a single scheduler case and fixes the amdgpu dynamic priority changes for the single IP instances.\n\n[원문 확인](https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg651341.html)\n\n**drm: remove drmm_of_get_bridge()**\n\ndeprecated된 `drmm_of_get_bridge()`를 마지막 사용자를 고쳐 제거하고, DRM bridge 핫플러그·refcount 로드맵의 한 단계로 문서/코드를 정리하는 3패치 시리즈가 게시되었습니다.\n\n영향: 패널·브리지 연결을 OF endpoint와 refcounted `of_drm_get_bridge_by_endpoint()`로만 다루게 되어, 향후 브리지 수명·핫플러그 작업과 드라이버 정리 방향을 예측하기 쉬워집니다.\n\n> drmm_of_get_bridge() is deprecated. By now it is just a complicated wrapper to of_drm_get_bridge_by_endpoint(), and it does not implement bridge refcounting.\n\n[원문 확인](https://lore.jethome.com/lkml/20261106-drm-panel_bridge-remove-drmm_of_get_bridge-v1-0-c0ea3382b798@bootlin.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "국부 드라이버/플랫폼 패치는 본문에서 제외했습니다. 자기 영역 키워드로 lore.kernel.org에서 직접 검색하세요."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/mxsfb: Complete page flips only once the new buffer is latched",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/08/594",
+      "note": "thread"
+    },
+    {
+      "title": "drm/amdkfd: fix use-after-free in create_process() error path",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/08/500",
+      "note": "thread"
+    },
+    {
+      "title": "firmware/sysfb: Fix device reference count leak in sysfb_disable()",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/07/1407",
+      "note": "thread"
+    },
+    {
+      "title": "drm/vblank: Restart enabling vblank timer on possible deadlock",
+      "url": "https://ci.syzbot.org/patches/ebf3779b-c8ae-47a6-bd3d-594f7779788f",
+      "note": "thread"
+    },
+    {
+      "title": "drm/msm/gem: A couple VM_BIND fixes",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/20261102172001.508440-1-robin.clark@oss.qualcomm.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "drm/xe/pcode: Fix pcode_try_request polling delays",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/20261030173038.681250-2-alan.previn.teres.alexis@intel.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "drm/sched: Remove the single scheduler special case",
+      "url": "https://www.mail-archive.com/dri-devel@lists.freedesktop.org/msg651341.html",
+      "note": "thread"
+    },
+    {
+      "title": "drm: remove drmm_of_get_bridge()",
+      "url": "https://lore.jethome.com/lkml/20261106-drm-panel_bridge-remove-drmm_of_get_bridge-v1-0-c0ea3382b798@bootlin.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "source": "research-dossier",
+    "bucketCounts": {
+      "릴리스/로드맵": 0,
+      "회귀·보안 신호": 6,
+      "핵심 변경": 2,
+      "기타": 0
+    },
+    "entryCount": 8
+  }
+}

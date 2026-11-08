@@ -1,0 +1,131 @@
+{
+  "id": "2026-11-09-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-11-09 AF_XDP·rtmutex — Perf/RT",
+  "headline": "virtio_net AF_XDP zero-copy 회귀 수정, BPF kptr 검증 강화, rt_mutex PI 버그 수정이 RT·eBPF 운영 안정성에 직결됩니다.",
+  "date": "2026-11-09",
+  "summary": "virtio_net AF_XDP zero-copy v2와 locking/rtmutex PI v7.4-rc1 수정 시리즈가 suspend·arm64·futex 경로의 크래시·지연을 줄입니다. RISC-V per-CPU 최적화와 lwtunnel GFP_KERNEL 전환은 성능·구성 실패(-ENOMEM) 완화에 기여합니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "PREEMPT_RT",
+    "BPF",
+    "AF_XDP"
+  ],
+  "highlights": [
+    {
+      "title": "virtio_net: AF_XDP zero-copy fixes for arm64 and suspend",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "virtio_net·AF_XDP·XDP_ZEROCOPY·시스템 suspend를 추적하는 네트워크·BPF 엔지니어",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/bpf/20261108193845.73621-1-yanhaishuang@cmss.chinamobile.com/",
+      "if": "AF_XDP zero-copy와 freeze/resume을 함께 쓰는 virtio_net 워크로드를 운영 중이라면",
+      "do": "arm64+IOMMU 바인딩·suspend/resume 후 통신·소켓 close 경로를 v2 패치 기준으로 재현 테스트하세요",
+      "verify": "커버 레터의 KASAN/QEMU 시나리오와 lore 스레드 원문을 대조해 확인하세요"
+    },
+    {
+      "title": "bpf: Check variable-offset accesses against special fields",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF verifier·BTF·kptr를 유지보수하는 엔지니어",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/bpf/20261108152941.7363-1-shlomojune6@gmail.com/",
+      "if": "손작성 BTF에서 겹치는 멤버 레이아웃과 변수 오프셋 접근을 쓰는 프로그램을 검토 중이라면",
+      "do": "btf_struct_access() min_off+k*step 검사가 arr[i]가 __kptr를 덮지 못하게 막는지 테스트 케이스를 추가하세요",
+      "verify": "스레드의 손상·이중 해제 시나리오와 Fixes 커밋 89e72f81a455 링크를 확인하세요"
+    },
+    {
+      "title": "locking/rtmutex: priority inheritance fixes and tests",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "rt_mutex·PI futex·PREEMPT_RT ww_mutex 유지보수자",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/linux-rt-devel/20261108141347.1525532-1-mathieu.desnoyers@efficios.com/",
+      "if": "PREEMPT_RT에서 PI futex·ww_mutex ABBA 자가시험을 돌리고 있다면",
+      "do": "v7.4-rc1 실패 케이스가 시리즈 적용 후 통과하는지 futex·locktorture selftest로 검증하세요",
+      "verify": "linux-rt-devel 커버 레터의 세 가지 수정 설명과 원문을 확인하세요"
+    },
+    {
+      "title": "riscv: optimize percpu access",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "RISC-V 아키텍처·BPF JIT·per-CPU 카운터를 다루는 커널 엔지니어",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/bpf/20261108110406.97495-1-cuiyunhui@bytedance.com/",
+      "if": "RISC-V에서 this_cpu 카운터·BPF comp64 JIT 핫패스를 프로파일링 중이라면",
+      "do": "v9 시리즈의 AMO/LR-SC per-CPU 경로와 SiFive P550 마이크로벤치 수치를 벤치와 비교하세요",
+      "verify": "CPU hotplug·Zabha 미지원 코어의 8/16비트 LR-SC 폴백 부하는 추가 벤치가 필요할 수 있으니 스레드를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**virtio_net: AF_XDP zero-copy fixes for arm64 and suspend**\n\nvirtio_net AF_XDP zero-copy 3패치 시리즈(v2)가 arm64 DMA map 실패, XDP 해제 후 큐 풀 유령 바인딩, suspend/resume 중 풀 DMA 상태 유실로 인한 oops/UAF를 각각 수정한다.\n\n영향: AF_XDP zero-copy와 freeze/resume을 함께 쓰는 eBPF 네트워킹·가상화 워크로드에서 재개 후 무통신·크래시·UAF가 재현 가능했고, arm64+IOMMU 조합에서 소켓 바인딩 자체가 깨지므로 RT/XDP 운영 환경의 안정성에 직결된다.\n\n> Patch 3: freeze frees the rx/tx queues while the sockets stay bound in\nthe xsk core. The driver state of the pools is leaked, and closing the\nsocket after resume hits a \"Missing register\" warning and\n\n[원문 확인](https://lore-kernel.gnuweeb.org/bpf/20261108193845.73621-1-yanhaishuang@cmss.chinamobile.com/)\n\nv2에서 arm64·실제 hibernation·멀티큐 트래픽 재검증과 resume 후 virtio_net XDP 프로그램 재부착 이슈는 확인이 필요합니다.\n\n**bpf: Check variable-offset accesses against special fields**\n\nbtf_struct_access()가 변수 오프셋 접근 시 min_off만 검사하던 틈을 메워, 손작성 BTF의 겹치는 멤버 레이아웃에서 arr[i] 저장이 __kptr를 덮어쓰지 못하게 모든 도달 가능 오프셋(min_off + k*step)을 검사한다.\n\n영향: 검증기·런타임 불일치로 program-allocated object의 kptr가 손상되면 bpf_obj_free_fields()가 잘못된 포인터를 해제할 수 있어 verifier 보안 모델을 깨는 클래스의 결함이다.\n\n> A 4-byte store to arr[i], i in [0, 3], passes the check at offset 0 and\noverwrites p at run time when i == 2 or 3; the release path\n(bpf_obj_free_fields()) then frees the corrupted pointer.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/bpf/20261108152941.7363-1-shlomojune6@gmail.com/)\n\nCc: stable 여부와 hand-written BTF 호환 영향은 후속 리뷰에서 확정될 수 있습니다.\n\n**locking/rtmutex: priority inheritance fixes and tests**\n\nv7.4-rc1 기준 rt_mutex PI 세 버그(깨어난 waiter가 running owner에 무한 스핀, ww_mutex waiter 컨텍스트 미초기화, pi_waiters sort key stale)를 고치고 futex_lock_pi_inherit·ww_mutex ABBA 자가시험을 추가한다.\n\n영향: 타임아웃·시그널 지연, PREEMPT_RT에서 PI futex deadlock 미보고, 잘못된 우선순위 상속은 RT 스케줄링·락킹 신뢰성을 직접 해치며 deadline boost 시리즈의 전제(patch 3)이기도 하다.\n\n> v7.4-rc1 fails the cases of each fix. The series passes them, with and\nwithout PREEMPT_RT. So do the locking API selftests, the ww_mutex\nselftest, locktorture's rtmutex_lock and the futex selftests.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-rt-devel/20261108141347.1525532-1-mathieu.desnoyers@efficios.com/)\n\nmainline v7.4 merge 이후 stable 백포트와 sched/deadline v5 시리즈 머지 순서는 추적이 필요합니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**riscv: optimize percpu access**\n\nRISC-V에 arch-specific asm/percpu.h를 추가해 this_cpu RMW를 선점 비활성+relaxed AMO(또는 Zabha/LR-SC)로 처리하고, thread_info에 per-CPU 오프셋을 캐시하며 HAVE_CMPXCHG_LOCAL을 선택한다.\n\n영향: 기존 generic per-CPU 경로는 로컬 IRQ를 끄므로 카운터·vmstat·BPF JIT(comp64) 등 핫패스 지연이 커지고, SiFive P550에서 this_cpu_inc() 비용이 15–20% 줄어든다고 보고되어 RT·eBPF 관측 워크로드의 per-CPU 오버헤드에 영향한다.\n\n> On a SiFive P550, Davidlohr Bueso measured about 15-20% lower\nthis_cpu_inc() cost in an ad-hoc microbenchmark.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/bpf/20261108110406.97495-1-cuiyunhui@bytedance.com/)\n\n**net: lwtunnel: use GFP_KERNEL in build_state paths**\n\nlwtunnel build_state가 RCU 밖에서 sleep 가능한데도 GFP_ATOMIC을 쓰던 할당을 GFP_KERNEL로 바꿔 bpf_build_state·seg6/SRv6 nexthop dst cache 등 경로의 per-CPU atomic 할당 고갈을 피한다.\n\n영향: 대량 RTM_NEWNEXTHOP·SRv6 nexthop 구성 시 bpf_parse_prog()와 lwtunnel state 할당이 -ENOMEM으로 실패해 BPF lwtunnel/SRv6 데이터플레인 구성이 불안정해질 수 있다.\n\n> For dst caches, that limits allocation to populated percpu pages. A\nlarge burst of SRv6 nexthops outruns the refill worker and will fail\nwith -ENOMEM despite there being free memory:\n\n[원문 확인](https://lore-kernel.gnuweeb.org/bpf/20261106-build-state-use-gfp-kernel-v1-1-18084382f878@akamai.com/)\n\nnet-next 머지 시점과 RCU 구간 밖 sleep 가정은 maintainer 응답을 볼 필요가 있습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "virtio_net AF_XDP zero-copy v2 (bpf list)",
+      "url": "https://lore-kernel.gnuweeb.org/bpf/20261108193845.73621-1-yanhaishuang@cmss.chinamobile.com/",
+      "note": "thread"
+    },
+    {
+      "title": "virtio_net AF_XDP zero-copy v2 (mirror)",
+      "url": "https://lore.kernel.org/bpf/20261108193845.73621-1-yanhaishuang@cmss.chinamobile.com/",
+      "note": "thread"
+    },
+    {
+      "title": "RISC-V percpu optimization v9",
+      "url": "https://lore-kernel.gnuweeb.org/bpf/20261108110406.97495-1-cuiyunhui@bytedance.com/",
+      "note": "thread"
+    },
+    {
+      "title": "RISC-V percpu optimization v9 (mirror)",
+      "url": "https://lore.kernel.org/bpf/20261108110406.97495-1-cuiyunhui@bytedance.com/",
+      "note": "thread"
+    },
+    {
+      "title": "BPF variable-offset BTF access check",
+      "url": "https://lore-kernel.gnuweeb.org/bpf/20261108152941.7363-1-shlomojune6@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Varying offset access support for PTR_TO_BTF_ID pointers",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=89e72f81a455",
+      "note": "commit"
+    },
+    {
+      "title": "rt_mutex PI fixes v2",
+      "url": "https://lore-kernel.gnuweeb.org/linux-rt-devel/20261108141347.1525532-1-mathieu.desnoyers@efficios.com/",
+      "note": "thread"
+    },
+    {
+      "title": "rt_mutex PI fixes v2 (mirror)",
+      "url": "https://lore.kernel.org/linux-rt-devel/20261108141347.1525532-1-mathieu.desnoyers@efficios.com/",
+      "note": "thread"
+    },
+    {
+      "title": "lwtunnel build_state GFP_KERNEL",
+      "url": "https://lore-kernel.gnuweeb.org/bpf/20261106-build-state-use-gfp-kernel-v1-1-18084382f878@akamai.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-08T18:29:57.141Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

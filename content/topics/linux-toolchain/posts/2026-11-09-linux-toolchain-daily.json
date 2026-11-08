@@ -1,0 +1,133 @@
+{
+  "id": "2026-11-09-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-11-09 RISC-V percpu 최적화 — 툴체인",
+  "headline": "RISC-V percpu v9, Rust 7.4 빌드 수정, rust_binder 동기 트랜잭션 거부 패치가 toolchain 메일링 리스트의 주요 화두입니다.",
+  "date": "2026-11-09",
+  "summary": "RISC-V용 asm/percpu.h 도입으로 this_cpu RMW 비용이 줄고, Rust for Linux 쪽은 7.4-rc2·bindgen 0.73 빌드 회귀와 Binder 런타임 결함 수정이 이어졌습니다. v11 input/serio 시리즈는 connect 콜백 맥락을 반영해 init 시그니처가 조정되었습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "riscv: optimize percpu access",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "RISC-V 커널·percpu·thread_info·인라인 asm를 다루는 아키텍처 담당",
+      "verifyLink": "https://lore.kernel.org/llvm/20261108110406.97495-1-cuiyunhui@bytedance.com/",
+      "if": "RISC-V에서 vmstat·percpu 카운터 hot path를 추적 중이라면",
+      "do": "v9 3패치와 SiFive P550 측정·Zabha/LR-SC 경로를 스레드에서 검토하세요",
+      "verify": "linux-riscv·arch 트리 land 시점과 Gleixner·Sashiko 리뷰 반영 여부는 확인이 필요합니다"
+    },
+    {
+      "title": "rust_binder: reject sync transaction with pending sync work",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "rust_binder·Android Binder 프로토콜·Rust 드라이버 메모리 모델을 추적하는 개발자",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/rust-for-linux/18e61a85b0d13e9c.3137322e32332e3235332e313736.9c152.0000sendgmr@google.com/raw",
+      "if": "TF_DEFER_COMPLETE와 동기 BC_TRANSACTION 조합을 쓰고 있다면",
+      "do": "work_list에 should_sync_wakeup 항목이 남을 때 EINVAL로 거부하는 1/2 패치를 읽고 재현 여부를 점검하세요",
+      "verify": "stable 백포트 범위·재현 테스트는 스레드 후속에서 확인하지 못했습니다"
+    },
+    {
+      "title": "Driver core fixes for 7.4-rc2",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "CONFIG_RUST·WERROR·PCI 비활성 구성을 검증하는 Rust·driver-core 빌드 담당",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/DMPU2INZSMAU.3H6O1U564A48B@kernel.org/",
+      "if": "CONFIG_PCI=n이고 WERROR로 Rust in-tree 빌드를 돌린다면",
+      "do": "Danilo Krummrich의 driver-core-7.4-rc2 PR에서 Flags::from_raw 미사용 수정을 CI에 반영하세요",
+      "verify": "Linus merge 여부와 7.4-rc2 타임라인은 이 조사 시점에 mainline git으로 확인하지 않았습니다"
+    },
+    {
+      "title": "Rust fixes for 7.4 (2nd)",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "Rust bindgen·allmodconfig·Clippy(CLIPPY=1) CI를 돌리는 커널 toolchain 담당",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20261108041659.97199-1-ojeda@kernel.org/",
+      "if": "bindgen 0.73·allmodconfig Rust crate 빌드를 올리는 중이라면",
+      "do": "rust-fixes-7.4-2 PR의 opaque array Zeroable derive와 cpufreq Clippy 정리를 머지 윈도우와 함께 추적하세요",
+      "verify": "Clippy-only 수정을 -fixes PR에 넣는 관행이 수용될지는 PR 코멘트에서 열려 있습니다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**Driver core fixes for 7.4-rc2**\n\nDanilo Krummrich의 driver-core-7.4-rc2 PR이 Rust I/O Flags::from_raw 미사용 경고(CONFIG_PCI=n·WERROR) 수정, Alpha kernfs sparse 경고 수정, auxiliary bus MAINTAINERS 갱신 3건을 담습니다.\n\n영향: allmodconfig가 아닌 PCI 없는 Rust 빌드가 WERROR로 깨지는 회귀는 distro·CI toolchain 검증을 막으므로 7.4-rc2 fixes 트리 추적이 필요합니다.\n\n> Fix an unused-function warning in the Rust I/O code that breaks builds\n  with CONFIG_PCI disabled and CONFIG_WERROR enabled\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/DMPU2INZSMAU.3H6O1U564A48B@kernel.org/)\n\n**rust_binder: reject sync transaction with pending sync work**\n\nChris Wiseman 1/2가 TF_DEFER_COMPLETE 상태에서 work_list에 동기 트랜잭션이 남을 때 추가 동기 BC_TRANSACTION을 EINVAL로 거부해 current_transaction 덮어쓰기와 Arc 순환 참조·프로세스 종료 후 메모리 고정을 막습니다.\n\n영향: Rust Binder는 Android·서브시스템 테스트 대상인데, 이 경로는 프로세스 종료 후에도 ShrinkablePageRange가 핀되는 심각한 런타임 결함이므로 TF_DEFER_COMPLETE 사용자는 패치 적용 전 재현 여부를 봐야 합니다.\n\n> rejecting outgoing\nsynchronous transactions with EINVAL when inner.work_list contains any\nitem where DeliverToRead::should_sync_wakeup() is true.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/rust-for-linux/18e61a85b0d13e9c.3137322e32332e3235332e313736.9c152.0000sendgmr@google.com/raw)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**riscv: optimize percpu access**\n\nv9 3패치 시리즈가 RISC-V 전용 asm/percpu.h와 thread_info에 캐시된 per-CPU 오프셋을 도입해 this_cpu RMW를 프리엠션 비활성화+relaxed AMO·Zabha/LR-SC로 처리하고 HAVE_CMPXCHG_LOCAL을 선택합니다.\n\n영향: 제네릭 percpu 폴백이 로컬 IRQ를 끄던 경로를 없애 vmstat·percpu 카운터 비용이 줄고, SiFive P550 마이크로벤치에서 this_cpu_inc()가 약 15–20% 빨라졌다고 보고되어 RISC-V 서버·Clang/LLVM 리스트를 함께 보는 toolchain 독자에게 아키텍처별 atomics 선택 신호입니다.\n\n> RISC-V has no asm/percpu.h, so this_cpu_*() read-modify-write\noperations use generic fallbacks that disable local interrupts.\n\n[원문 확인](https://lore.kernel.org/llvm/20261108110406.97495-1-cuiyunhui@bytedance.com/)\n\n**rust: input: add input/serio abstractions and port Gravis Stinger driver**\n\nv11(0/2)에서 serio connect 콜백이 really_probe devres 밖에서 도는 점을 반영해 Driver::init()이 &Device<Normal>을 받도록 시그니처를 바꿨습니다.\n\n영향: 입력·serio API는 IRQ·connect 경쟁과 probe 실패 시 uevent 문제와 직결되어 Rust 드라이버 soundness 패턴을 정립하는 사례이므로, in-tree Rust 드라이버·bindings 표면을 추적하는 toolchain 독자에게 API 확장 신호입니다.\n\n> because serio connect callbacks\n    run outside driver core really_probe() probe context without devres\n    release guarantees on connection failure.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20261107151238.607451-1-harepro29@gmail.com/)\n\n**Rust fixes for 7.4 (2nd)**\n\nMiguel Ojeda의 rust-fixes-7.4-2 PR은 bindgen 0.73 opaque array 래퍼에 Zeroable derive를 추가해 allmodconfig 빌드 오류를 고치고, cpufreq PolicyCpu::from_cpu()의 Clippy undocumented_unsafe_blocks 경고를 정리합니다.\n\n영향: bindgen 0.73과 lockdep spinlock opaque 타입 조합은 blk-mq tag_set 등 Rust crate 전역 빌드를 깨므로 Rust 툴체인·bindgen 버전을 올리는 팀은 이 fixes PR을 7.4 머지 윈도우와 함께 봐야 합니다.\n\n> Fix build error with bindgen 0.73 in certain configs such as\n   allmodconfig by deriving 'Zeroable' for opaque array wrappers.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20261108041659.97199-1-ojeda@kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "riscv: optimize percpu access (cover)",
+      "url": "https://lore.kernel.org/llvm/20261108110406.97495-1-cuiyunhui@bytedance.com/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: optimize percpu access (raw)",
+      "url": "https://lore-kernel.gnuweeb.org/llvm/20261108110406.97495-1-cuiyunhui@bytedance.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "rust: input/serio and Gravis Stinger v11",
+      "url": "https://lore.kernel.org/rust-for-linux/20261107151238.607451-1-harepro29@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: input/serio v11 (raw)",
+      "url": "https://lore-kernel.gnuweeb.org/rust-for-linux/20261107151238.607451-1-harepro29@gmail.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "Driver core fixes for 7.4-rc2",
+      "url": "https://lore.kernel.org/rust-for-linux/DMPU2INZSMAU.3H6O1U564A48B@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: io: fix Flags::from_raw when CONFIG_PCI is disabled",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/driver-core/driver-core.git/commit/?h=tags/driver-core-7.4-rc2&id=14098e496671dd5ae83999f89c6a80a86872792c",
+      "note": "commit"
+    },
+    {
+      "title": "Rust fixes for 7.4 (2nd)",
+      "url": "https://lore.kernel.org/rust-for-linux/20261108041659.97199-1-ojeda@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: bindings: derive Zeroable for opaque arrays",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/ojeda/linux.git/commit/?h=tags/rust-fixes-7.4-2&id=57d916a3eb765ee0577d269bb2ac1bdf3a7a7f40",
+      "note": "commit"
+    },
+    {
+      "title": "rust_binder: reject sync transaction",
+      "url": "https://lore.kernel.org/rust-for-linux/18e61a85b0d13e9c.3137322e32332e3235332e313736.9c152.0000sendgmr@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "rust_binder: reject sync transaction (raw)",
+      "url": "https://lore-kernel.gnuweeb.org/rust-for-linux/18e61a85b0d13e9c.3137322e32332e3235332e313736.9c152.0000sendgmr@google.com/raw",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-08T18:25:14.419Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

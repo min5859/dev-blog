@@ -1,0 +1,141 @@
+{
+  "id": "2026-11-09-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-11-09 Xen UAF·7.2 EOL — 커널 보안",
+  "headline": "7.3.3·LTS Xen 백엔드 UAF 백포트, 7.2.y EOL, /proc/config.gz 제한·strprefix() 논의가 이번 수집의 축입니다.",
+  "date": "2026-11-09",
+  "summary": "Greg Kroah-Hartman이 7.3.3과 7.2.15를 내었고 7.2.y는 마지막 stable 이후 EOL로 표시되었습니다. Xen blkback·netback sysfs 경합 UAF(XSA-526~528)는 7.3.3과 5.10.274·5.15.225에 백포트되었고, hardening 리스트에는 IKCONFIG 제한·strprefix()·gpiolib counted-by 패치가 올라왔습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "보안",
+    "stable",
+    "hardening"
+  ],
+  "highlights": [
+    {
+      "title": "Linux 7.3.3 stable — Xen dom0 UAF",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "Xen dom0·blkback/netback 운영·패키징 및 가상화 보안 담당자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/06/3013",
+      "if": "7.3 계열 커널에서 Xen blkback·netback을 dom0에 쓰고 있다면",
+      "do": "7.3.3으로 point 업그레이드하고 배포 채널에 동일 changelog 백포트가 반영됐는지 점검하세요",
+      "verify": "GregKH 공지와 ChangeLog-7.3.3에서 XSA-526~528·CVE-2026-100080~082 문구를 대조하세요"
+    },
+    {
+      "title": "security: /proc/config.gz 비특권 읽기 제한",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "커스텀 커널·KSPP hardening 설정을 다루는 보안·배포 엔지니어",
+      "verifyLink": "https://lists.openwall.net/linux-hardening/2026/11/08/11",
+      "if": "CONFIG_IKCONFIG_PROC로 실행 중 설정을 노출하는 커널을 빌드·배포한다면",
+      "do": "CONFIG_SECURITY_IKCONFIG_RESTRICT 옵션 동작과 기본값(n)을 hardened 프로필에 맞게 검토하세요",
+      "verify": "linux-hardening 스레드에서 S_IRUSR 제한 의도와 Christian Brauner procfs RFC와의 상호작용은 아직 정리 여부를 확인하세요"
+    },
+    {
+      "title": "string: strprefix() 도입·str_has_prefix() 폐기 예고",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "linux-hardening·driver-core·문자열/fortify API 유지보수자",
+      "verifyLink": "https://lists.openwall.net/linux-hardening/2026/11/05/34",
+      "if": "str_has_prefix()로 prefix 매칭·fwnode 이름 비교를 한다면",
+      "do": "빈 prefix·빈 문자열 구분 결함을 피하려 strprefix() 마이그레이션과 명칭 합의(strskip 등) 스레드를 따라가세요",
+      "verify": "11월 8일 답장의 strskip()/strskipover() 제안과 v2 반환 규약을 원문에서 확인하세요"
+    },
+    {
+      "title": "gpiolib: acpi_gpio_mapping __counted_by_ptr",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "gpiolib·ACPI GPIO 및 counted-by/fortify 인프라 유지보수자",
+      "verifyLink": "https://lists.openwall.net/linux-hardening/2026/11/08/12",
+      "if": "UBSAN_BOUNDS·FORTIFY로 ACPI GPIO 매핑 경계를 검증한다면",
+      "do": "Kees Cook 선행 수정 반영 후 Bill Wendling 패치의 Reviewed-by 상태를 기준으로 cherry-pick 여부를 판단하세요",
+      "verify": "mainline merge 여부와 다른 서브시스템 counted-by 패턴 일관성은 아직 확인이 필요합니다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.2.15 stable · EOL**\n\nGreg Kroah-Hartman이 Linux 7.2.15 stable을 발표했고 7.2.y 트리는 마지막 릴리스 후 EOL로 표시되었습니다.\n\n영향: 7.2.x에 머무는 배포는 이후 stable 보안 수정을 받기 어렵습니다.\n\n> Note, this is the LAST 7.2.y kernel release.  After this one the 7.2.y kernel tree is end-of-life.  Please move to 7.3.y at this time.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/01/439)\n\n**Linux 7.3.3 stable**\n\nLinux 7.3.3 stable에는 Xen blkback·netback 관련 수정 3건만 백포트되었습니다.\n\n영향: 7.3 계열 사용자는 공지된 대로 업그레이드가 요구됩니다.\n\n> I'm announcing the release of the 7.3.3 kernel. All users of the 7.3 kernel series must upgrade.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/06/3013)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**Linux 7.3.3 — Xen sysfs·teardown UAF**\n\nXen blkback·netback에서 sysfs 통계 읽기와 teardown/연결 오류 처리가 겹칠 때 UAF·RCU 동기화 결함이 수정되었습니다.\n\n영향: CVE-2026-100080~082(XSA-526~528)에 해당하는 dom0·백엔드 UAF로, point 업그레이드 없이 악용 가능할 수 있습니다.\n\n> In case the data is being read via sysfs in this phase, access to already freed memory or memory being in new use is possible. This is XSA-526 / CVE-2026-100080\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.3.3)\n\n**Linux 7.2.15 — skb_zerocopy() SKBFL_SHARED_FRAG**\n\n12건 백포트 중 skb_zerocopy()가 공유 frag 플래그를 복사하지 않던 문제가 수정되었습니다.\n\n영향: 비특권 사용자가 읽기 전용 page cache에 쓰는 클래스의 취약점을 막습니다.\n\n> letting an unprivileged user write into the page cache of a root-owned read-only file. Propagate SKBFL_SHARED_FRAG when frag descriptors are copied\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.15)\n\n**Linux 5.10.274·5.15.225 longterm — Xen 백포트**\n\n5.10.274·5.15.225에도 Xen 백엔드 sysfs 통계·teardown 경합 UAF 수정이 upstream과 동일하게 백포트되었습니다.\n\n영향: 5.10 LTS·CIP·5.15 LTS Xen 환경은 공식 changelog 기준으로 7.3.3과 동일 XSA/CVE 클래스를 맞춰야 합니다.\n\n> Reading I/O statistics via sysfs concurrently with tearing down a frontend device might result in UAF or a NULL dereference. This is XSA-528 / CVE-2026-100082\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.274)\n\n**security: Restrict unprivileged access to /proc/config.gz**\n\nCONFIG_SECURITY_IKCONFIG_RESTRICT Kconfig가 추가되어 활성화 시 /proc/config.gz 생성 권한을 S_IRUSR로 제한합니다.\n\n영향: CONFIG_IKCONFIG_PROC 노출이 KASLR 등 주소 은닉을 약화시킬 수 있어 hardening 관점에서 기본 노출을 줄이는 옵션이 논의됩니다.\n\n> world-readable through /proc/config.gz, which somewhat weakens existing address hiding defences, as it allows an unprivileged user to simply read built-in config\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/11/08/11)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**string: Add strprefix(), and deprecate str_has_prefix()**\n\nAlejandro Colomar v2는 포인터 기반 strprefix()와 KUnit 테스트를 추가하고 str_has_prefix()를 deprecated 처리합니다. 11월 8일 스레드에서는 Maciej W. Rozycki가 strskip()/strskipover() 등 명칭을 제안했습니다.\n\n영향: str_has_prefix()는 빈 prefix와 빈 문자열을 구분하지 못해 driver-core fwnode 매칭 등에서 false positive가 날 수 있습니다.\n\n> str_has_prefix() has a bug: it can't differentiate between an empty prefix matching an empty string from a non-matching prefix.\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/11/05/34)\n\n> then strskip() or strskipover() could be used for this API.\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/11/08/1)"
+    },
+    {
+      "heading": "기타",
+      "body": "**gpiolib: annotate struct acpi_gpio_mapping with __counted_by_ptr**\n\nstruct acpi_gpio_mapping의 data/size 쌍에 __counted_by_ptr를 붙이고, Kees Cook 선행 수정 반영 후 Linus Walleij가 Reviewed-by를 남겼습니다.\n\n영향: CONFIG_UBSAN_BOUNDS·FORTIFY_SOURCE가 acpi GPIO 매핑 경계를 정적으로 검증할 수 있어 counted-by 롤아웃 추적에 참고됩니다.\n\n> To improve bounds checking via CONFIG_UBSAN_BOUNDS and CONFIG_FORTIFY_SOURCE, annotate 'data' with the __counted_by_ptr attribute.\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/11/08/12)\n\n> Kees' patch made it in and the original patch now builds. PTAL.\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/11/08/10)"
+    }
+  ],
+  "confidence": {
+    "level": "high",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Linux 7.2.15 stable EOL 공지",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/01/439",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-7.2.15",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.15",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 7.3.3 stable 공지",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/06/3013",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-7.3.3",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.3.3",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-5.10.274",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.274",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-5.15.225",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.225",
+      "note": "changelog"
+    },
+    {
+      "title": "Restrict unprivileged access to /proc/config.gz",
+      "url": "https://lists.openwall.net/linux-hardening/2026/11/08/11",
+      "note": "thread"
+    },
+    {
+      "title": "strprefix() v2 패치",
+      "url": "https://lists.openwall.net/linux-hardening/2026/11/05/34",
+      "note": "thread"
+    },
+    {
+      "title": "strprefix() 명칭 제안",
+      "url": "https://lists.openwall.net/linux-hardening/2026/11/08/1",
+      "note": "thread"
+    },
+    {
+      "title": "gpiolib __counted_by_ptr",
+      "url": "https://lists.openwall.net/linux-hardening/2026/11/08/12",
+      "note": "thread"
+    },
+    {
+      "title": "gpiolib 패치 빌드 재공지",
+      "url": "https://lists.openwall.net/linux-hardening/2026/11/08/10",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-08T18:22:42.001Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
