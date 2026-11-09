@@ -68,6 +68,12 @@ for LENS in linux-kernel-security linux-toolchain linux-distro-stable linux-perf
   fi
 done
 
+# 커널 새 -rc1·정식 태그가 나오면 드라이버 영향 노트를 만든다(태그가 없는 날은 fetch만 한다).
+# 커널 저장소가 없는 환경(Mac)에서는 건너뛴다. 수집이 길어 재시도하지 않고 다음 날 다시 시도한다.
+if ! DRIVER_IMPACT_REPO="${DRIVER_IMPACT_REPO:-/srv/linux-kernel/linux.git}" node scripts/run-driver-impact.mjs; then
+  echo "driver-impact run failed; continuing"
+fi
+
 # Mondays (KST) get an additional weekly digest covering the past 7 days.
 if [ "$(TZ=Asia/Seoul date +%u)" = "1" ]; then
   if ! "${NPM_BIN}" run weekly:linux; then

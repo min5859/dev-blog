@@ -1,5 +1,53 @@
 # Todo
 
+## 2026-11-08 — 커널 버전별 드라이버 영향 노트 (시험: v7.3 → v7.4-rc1)
+
+목적: 드라이버 개발자가 새 버전에서 "내 드라이버가 깨지거나 고쳐야 할 것"을 한 페이지로 보게 한다.
+원칙: 사실은 git에서 코드가 뽑고(웹·lore 접근 없음), AI는 뽑힌 커밋 문구만 한국어로 정리한다.
+
+- [x] 커널 git 범위 수집: GitHub 미러 전체 이력(bare 5.6GB). `--shallow-exclude`는 범위를 15,388개로 잘못 계산해(실제 19,780개)
+      경계 커밋 diff가 트리 전체로 나와 버려서 쓰지 않는다.
+- [x] `scripts/collect-driver-impact.mjs` (Mac에서 약 11분): 커밋 18,591개·pull 258개 → 사라진 API 614개(드라이버 사용 127개),
+      export 해제 24개(선언만 남음, 링크 실패), 헤더에 inline·매크로로 남은 export 18개는 제외, 드라이버 Kconfig 18개, 반복 전환 21건, 넓은 범위 7건
+- [x] `scripts/draft-driver-impact.mjs` + `prompts/driver-impact-ko.md`: Cursor composer-2.5 ask 모드 1회(약 40초, 입력 101KB).
+      AI 문장은 입력에 있는 id·이름만 인용해야 하고 백틱 이름이 입력에 없거나 글자가 깨지면 버린다. 최종 글은 `auditPostQuality` 통과.
+- [x] 테스트: `scripts/driver-impact.test.mjs` 11개 포함 `npm test` 159개 통과
+- [x] 로컬 build 미리보기: `content/topics/linux-driver-impact/posts/2026-11-02-linux-v7.4-rc1-driver-impact.json`
+- [x] 사용자 확인(11/9): 공개 승인, OCI 자동 실행 승인, 중점 영역 = 메모리·V4L2·드라이버가 많이 쓰는 API(timer·workqueue·scheduler 등)
+
+### 2단계 (11/9): 중점 API 영역 + OCI 자동 실행
+
+- [x] 중점 영역 9개(메모리·DMA, V4L2·videobuf2·MC, 타이머, workqueue, 스케줄러·kthread·대기, IRQ, 락·RCU·cleanup,
+      디바이스 모델·PM, clk·GPIO·regulator·regmap·reset·pinctrl): 범위 안에서 바뀐 영역 헤더를 두 태그에서 파싱해
+      함수 시그니처 변경·삭제, 구조체 멤버 삭제·타입(콜백 시그니처) 변경, 매크로 인자 수 변경, 상수·extern 변수 삭제를 뽑는다.
+      인자 이름만 바뀐 것·`#ifdef` stub·속성(`__must_check` 등)·영역 안 헤더 이동은 변화로 치지 않는다.
+      개별 irqchip·clk 벤더 헤더는 잡음이라 뺐다. 새 이름은 함수·인자 있는 매크로·멤버만 남긴다.
+- [x] 글에 "중점 API 영역" 섹션(영역별 AI 요점 + 변경 표 + 새 이름 + 관련 pull), 점검 명령·요약·AI 입력/검증(focusNotes)에 영역 추가
+- [x] `scripts/run-driver-impact.mjs`: 커널 저장소 태그 fetch → 아직 글이 없는 새 `-rc1`·정식 태그 1개 처리(from = 직전 정식 릴리스)
+      → status 기록. 저장소가 없으면 건너뜀. `daily-deploy.sh`의 lens 뒤에 실패 격리 단계로 추가. `docs/SCHEDULING.md`에 운영 설명
+- [x] 테스트 4개 추가(헤더 파서, 헤더 비교, 새 태그 선택, 중점 영역 글) → `npm test` 163개 통과
+- [x] 테스트·Mac 재수집(약 12분, 최대 RSS 1.0GB)·AI(Cursor ask 모드, 근거 검사 보강 후 최종본)·build 확인 → commit/push(공개)
+- [ ] OCI: `/srv/linux-kernel/linux.git` 전체 bare clone(wiki-publisher), 서비스 설정 확인, 수집기 결과가 Mac과 같은지 대조
+
+### 검토 (2단계)
+
+- 헤더 비교 결과(v7.3 → v7.4-rc1): V4L2 `v4l2_subdev_pad_ops`의 `set_fmt`(v7.3 드라이버 214파일)·`get_selection`(84)·
+  `set_selection`(47)에 `const struct v4l2_subdev_client_info *` 인자 추가, `device_show_string()` 인자 const화,
+  `dma_opt_mapping_size()` → `dma_max_opt_mapping_size()`, `bus_type.need_parent_lock` 삭제 등 11개.
+  timer·workqueue·sched·irq·locking·clk/GPIO 계열은 드라이버가 쓰던 API의 삭제·시그니처 변경이 없다.
+- 메인테이너 pull 요약과 커밋 메시지가 `get_fmt`도 바뀌었다고 적었지만 실제 헤더에서 `get_fmt`는 그대로였다(커밋 diff로 확인).
+  AI가 그 문구를 따라 틀린 문장을 써서, 바뀐 구조체의 그대로인 멤버(`unchangedMembers`)를 입력에 넣고
+  그 멤버를 바뀐 멤버와 함께 언급한 AI 문장은 버리게 했다. 글에도 "요약과 표가 다르면 표가 맞다"를 적었다.
+- AI가 새 이름 목록만 보고 `irqaction.thread_dtor`를 "드라이버 teardown 훅"으로 짐작해(실제는 genirq 내부 UAF 수정)
+  새 이름 목록을 AI 입력에서 빼고 "용도는 근거 문구에 있을 때만" 규칙을 넣었다.
+- 커밋 연결: 이름이 있는 줄은 그대로이고 인자 줄만 바뀐 콜백은 hunk 머리(구조체·함수)로 찾는다.
+
+### 검토 (시험 결과)
+
+- 첫 AI 결과에 "fl사/eject" 같은 깨진 토큰 2곳이 있어 검사를 추가했고, 재생성본은 AI 문장 102줄의 백틱 이름이 모두 입력에 있다.
+- 사용 횟수는 v7.3 drivers/·sound/에서 그 이름이 나온 파일 수(정의 파일 제외)라 근사치다.
+- 구조체 멤버 삭제나 함수 시그니처 변경은 직접 뽑지 않는다. 넓은 범위 커밋·반복 전환·pull 요약으로만 드러난다.
+
 ## 2026-08-09 — Cursor Composer 2.5 첫 자동 실행 확인
 
 대상: 2026-08-09 03:00 KST에 실행되는 `com.user.dev-blog.daily` LaunchAgent.

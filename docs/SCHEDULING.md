@@ -1,5 +1,24 @@
 # Scheduling
 
+## 커널 버전별 드라이버 영향 노트
+
+`daily-deploy.sh`는 일일 토픽 뒤에 `scripts/run-driver-impact.mjs`를 실행합니다.
+OCI의 커널 전체 이력 bare 저장소 `/srv/linux-kernel/linux.git`(wiki-publisher 소유,
+약 6GB, GitHub `torvalds/linux` 미러)의 태그를 fetch해, 글이 아직 없는 새 `-rc1`이나
+정식 태그가 있으면 하나만 처리합니다. 비교 기준은 그 태그 직전의 정식 릴리스입니다
+(`v7.4-rc1`과 `v7.4` 모두 `v7.3`부터).
+
+- 처리: collect(git만 사용, 웹·lore 없음) → draft(Cursor ask 모드 1회) → build.
+  게시는 다른 토픽과 같이 `daily-deploy.sh`의 commit/push가 합니다.
+- 상태: 태그를 처리한 날만 `logs/daily/linux-driver-impact-latest-status.json`을 씁니다.
+  새 태그가 없는 날은 fetch만 하고 상태를 바꾸지 않습니다.
+- 실패: 재시도하지 않고 다음 날 다시 시도합니다. 수집 결과
+  (`data/raw/driver-impact/<from>..<to>.json`)가 있으면 수집은 건너뜁니다.
+- 저장소가 없는 환경(Mac)에서는 아무것도 하지 않습니다. 첫 글이 없으면 가장 최근 태그 하나만
+  만들고 과거를 소급하지 않습니다.
+- 수동 실행: `node scripts/collect-driver-impact.mjs --repo <linux.git> --from v7.3 --to v7.4-rc1`,
+  `node scripts/draft-driver-impact.mjs --from v7.3 --to v7.4-rc1`.
+
 ## 후보가 없는 Linux lens 토픽
 
 6개 Linux lens는 수집과 draft가 성공했지만 `candidates-latest.json`의 후보가
