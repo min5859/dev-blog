@@ -1,0 +1,135 @@
+{
+  "id": "2026-11-10-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-11-10 BPF 해제 교착 — Perf/RT",
+  "headline": "BPF 지연 해제 전용 workqueue v3와 arena fault·PREEMPT_RT GPIO·deadline 스케줄 수정이 메일링 리스트에 올라 운영 안정성 이슈가 집중됐습니다.",
+  "date": "2026-11-10",
+  "summary": "EXECMEM 팩 해제 경로의 hung task 교착을 피하는 BPF 전용 workqueue v3가 재전송됐고, arena fault 복구·Ocelot GPIO irqchip·SCHED_DEADLINE 관련 회귀 수정이 이어졌습니다. Clang LLVM 플러그인 인프라는 bpf-next 빌드 전제를 넓힙니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "BPF",
+    "PREEMPT_RT"
+  ],
+  "highlights": [
+    {
+      "title": "bpf: Use dedicated workqueue for freeing BPF programs",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "kernel/bpf·execmem·workqueue를 다루는 BPF 런타임 유지보수자",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/bpf/20261109181610.7027-1-emil@etsalapatis.com/",
+      "if": "JIT·대량 unload로 EXECMEM 팩 해제가 잦은 워크로드를 돌리신다면",
+      "do": "v3 전용 bpf_prog_free 큐와 vmalloc offload 교착 재현 스택을 lore 스레드에서 확인하세요",
+      "verify": "Syzbot Fixes 72210662c5a2 연계와 v3 CI·bpf-next 머지 일정은 아직 불명확하니 syzbot 시리즈를 주기적으로 확인하세요"
+    },
+    {
+      "title": "bpf: expand BPF arena kernel fault handling",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "BPF arena·sched_ext·kernel fault recovery를 추적하는 엔지니어",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/bpf/20261109181906.7350-1-emil@etsalapatis.com/",
+      "if": "sched-ext genpool·arena 포인터를 non-BPF 경로에서 역참조하신다면",
+      "do": "v2 latch rbtree·스택 fast path selftest를 패치 스레드에서 검토하세요",
+      "verify": "Syzbot CI 통과 여부와 latch rbtree 런타임 오버헤드는 후속 리뷰에서 확인이 필요합니다"
+    },
+    {
+      "title": "pinctrl: ocelot: fix the GPIO irqchip context handling",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "PREEMPT_RT·Microchip Ocelot/VSC 스위치 GPIO를 다루는 플랫폼 엔지니어",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/linux-rt-devel/20261109-ocelot-pinctrl-irqchip-fixes-v1-0-9d2d8fcd58f5@microchip.com/",
+      "if": "PREEMPT_RT에서 Ocelot·lan9645x GPIO irq 경로를 켜 두셨다면",
+      "do": "raw spinlock irq_desc::lock 아래 MMIO regmap 사용 제거와 sleeping 버스 chained irqchip 미등록 변경을 읽어 보세요",
+      "verify": "lan9668+lan9645x 외 다른 Ocelot 변형 회귀 범위는 스레드에서 추가 확인이 필요합니다"
+    },
+    {
+      "title": "sched: Let a task boosted by a deadline waiter change its policy",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "SCHED_DEADLINE·rt_mutex PI·PREEMPT_RT selftest 유지보수자",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/linux-rt-devel/avHMvpJonTciAtx_@jlelli-thinkpadt14gen4.remote.csb/",
+      "if": "rt_mutex deadline boost 후 sysrq-n·sched_setscheduler가 EBUSY로 실패한다면",
+      "do": "task_has_dl_policy() 판별과 PI boost 해제 hunk를 Reviewed-by 포함 스레드에서 따라가세요",
+      "verify": "stable Cc가 붙었으나 v7.4 머지·백포트 일정은 아직 공개되지 않았습니다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**bpf: expand BPF arena kernel fault handling**\n\nv2 시리즈는 arena 커널 page fault 복구를 스택의 단일 prog->arena 한정에서 시스템 전체 arena(latch rbtree·스택 fast path) 조회로 확장하고 selftests로 non-BPF·타 arena 접근 복구를 검증합니다.\n\n영향: sched-ext 등 non-BPF 경로가 arena 포인터를 dereference할 때 unmap된 페이지로 oops가 나므로 arena·sched_ext 운영 안정성과 직결됩니다.\n\n> The former case is already possible in sched-ext if a\nBPF program removes from the arena pages allocated\nfrom the genpool allocator.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/bpf/20261109181906.7350-1-emil@etsalapatis.com/)\n\n**pinctrl: ocelot: fix the GPIO irqchip context handling**\n\npinctrl-ocelot GPIO irqchip 두 패치가 MMIO regmap에 raw spinlock을 쓰고 SPI 등 sleeping 버스 뒤 chained irqchip 등록을 중단해 PREEMPT_RT에서 금지된 락 컨텍스트를 제거합니다.\n\n영향: CONFIG_PROVE_RAW_LOCK_NESTING 및 atomic irq_chip 콜백에서 sleepable spinlock 사용은 RT 빌드·보드에서 lockdep 경고나 실제 데드락으로 이어질 수 있습니다.\n\n> The callbacks run\nwith the raw spinlock irq_desc::lock held, where the spinlock_t of the\nMMIO regmap is not allowed on PREEMPT_RT\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-rt-devel/20261109-ocelot-pinctrl-irqchip-fixes-v1-0-9d2d8fcd58f5@microchip.com/)\n\n**sched/deadline: Do not divide by zero active CPUs of a root domain**\n\nMathieu Desnoyers가 Juri Lelli 피드백에 따라 root domain active CPU=0일 때 __dl_sub/__dl_add 나눗셈 스킵 패치와 offline runqueue debugfs 거부 패치를 다음 버전에서 분리하겠다고 답했습니다.\n\n영향: CPU hotplug 창에서 dl_server debugfs 쓰기 등이 divide error oops를 유발해 SCHED_DEADLINE·fair server 튜닝과 PREEMPT_RT VM 테스트가 깨질 수 있습니다.\n\n> Oops: divide error: 0000 [#1] SMP NOPTI\n   RIP: 0010:dl_server_apply_params+0x335/0x380\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/09/2174)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**bpf: Use dedicated workqueue for freeing BPF programs**\n\nv3 패치는 지연 BPF 프로그램·이미지·trampoline 해제를 system workqueue에서 WQ_PERCPU max_active=1 전용 bpf_prog_free 큐로 옮겨 pack_mutex 대기 worker가 vmalloc purge 슬롯을 고갈시키는 교착을 피합니다.\n\n영향: EXECMEM 팩 해제가 잦은 JIT 워크로드에서 hung task로 커널이 멈출 수 있어 BPF 런타임·테스트·대량 unload 경로의 안정성에 직결됩니다.\n\n> Move deferred freeing of BPF programs, program images, and trampoline\nimages to a dedicated workqueue to avoid this deadlock.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/bpf/20261109181610.7027-1-emil@etsalapatis.com/)\n\n**scripts: Add LLVM plugin infrastructure**\n\nbpf-next v2 시리즈 07/18이 scripts/llvm-plugins Kconfig·Makefile을 추가해 -fpass-plugin으로 LLVM IR 패스를 GCC 플러그인과 유사하게 빌드·로드하고 LLVM_PLUGINS_CFLAGS를 vDSO/EFI 등이 제외할 수 있게 내보냅니다.\n\n영향: 후속 bpf_scan_ir 등 Clang 커널 빌드 패스의 전제가 되므로 Clang으로 BPF·BTF를 빌드하는 팀은 Kconfig 의존성과 재빌드 규칙 변화를 추적해야 합니다.\n\n> Require\nllvm-config of the same major version as clang, which loads the plugins:\nunlike GCC, clang does not provide the headers for its plugins.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/09/2714)\n\n**sched: Let a task boosted by a deadline waiter change its policy**\n\nrt_mutex deadline boost로 SCHED_DEADLINE 우선순위만 갖는 태스크에 대해 sched_setattr/sched_setscheduler가 dl_task(p) 대신 task_has_dl_policy()로 판별하고 클래스 이탈 시 PI boost를 해제해 EBUSY·sysrq-n 실패를 고칩니다.\n\n영향: PREEMPT_RT·PI futex 환경에서 boosted owner가 정책 전환·normalize_rt_tasks·sysrq-n로 복구되지 않으면 운영·셀프테스트가 막히고 deadline v5 시리즈 전제 패치입니다.\n\n> Reviewed-by: Juri Lelli <juri.lelli@redhat.com>\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-rt-devel/avHMvpJonTciAtx_@jlelli-thinkpadt14gen4.remote.csb/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "bpf: Use dedicated workqueue for freeing BPF programs",
+      "url": "https://lore-kernel.gnuweeb.org/bpf/20261109181610.7027-1-emil@etsalapatis.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Syzbot series (bpf prog free)",
+      "url": "https://ci.syzbot.org/series/87832dbd-8eb0-4091-aac8-64859a500b37",
+      "note": "thread"
+    },
+    {
+      "title": "scripts: Add LLVM plugin infrastructure (openwall)",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/09/2714",
+      "note": "thread"
+    },
+    {
+      "title": "scripts: Add LLVM plugin infrastructure (lore)",
+      "url": "https://lore-kernel.gnuweeb.org/bpf/20261109170550.141443-8-a.s.protopopov@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: expand BPF arena kernel fault handling",
+      "url": "https://lore-kernel.gnuweeb.org/bpf/20261109181906.7350-1-emil@etsalapatis.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf arena fault handling (Syzbot patch)",
+      "url": "https://ci.syzbot.org/patches/e5f1638e-fdb6-40fb-a303-d57f5aa99eeb",
+      "note": "thread"
+    },
+    {
+      "title": "pinctrl: ocelot GPIO irqchip context",
+      "url": "https://lore-kernel.gnuweeb.org/linux-rt-devel/20261109-ocelot-pinctrl-irqchip-fixes-v1-0-9d2d8fcd58f5@microchip.com/",
+      "note": "thread"
+    },
+    {
+      "title": "sched/deadline divide by zero (openwall)",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/09/2174",
+      "note": "thread"
+    },
+    {
+      "title": "sched/deadline split response",
+      "url": "https://lore-kernel.gnuweeb.org/linux-rt-devel/3e6677a8-b972-4081-a080-e925fe1df3b0@efficios.com/",
+      "note": "thread"
+    },
+    {
+      "title": "sched: deadline boosted task policy change",
+      "url": "https://lore-kernel.gnuweeb.org/linux-rt-devel/avHMvpJonTciAtx_@jlelli-thinkpadt14gen4.remote.csb/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-09T18:23:11.808Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,133 @@
+{
+  "id": "2026-11-10-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-11-10 ACK 회귀·보안 보강 — Android 커널",
+  "headline": "ashmem ioctl 회귀·init 부트 완화와 drm-fixes dma-heap 보안 수정이 ACK mainline·6.12에 반영된 날입니다.",
+  "date": "2026-11-10",
+  "summary": "Rust ashmem 이후 깨졌던 GET_PIN_STATUS와 mount namespace 이후 펌웨어 로딩 회귀에 대한 패치가 계속 유지되고, dma-heap fd 조기 노출 보안 fix가 머지에 포함되었습니다. GKI defconfig·fuse-bpf selftest·clang 갱신 등 빌드·검증 측면의 변경도 함께 정리했습니다.",
+  "tags": [
+    "안드로이드",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "drm-fixes 머지와 dma-heap ioctl 보안 fix",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "dma-buf/Gralloc 연동, ACK mainline 통합",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/718136b3ae37acbdcda64dc8e373b26cb5082ca1",
+      "if": "버퍼 할당 ioctl 경로에서 copy_to_user 실패 전 fd가 노출될 수 있다면",
+      "do": "android-mainline의 dma-heap 머지 결과와 Gralloc·dma-buf 연동 테스트를 재실행하세요",
+      "verify": "머지 커밋과 upstream dma_heap_ioctl_allocate() 경로를 원문에서 확인하세요"
+    },
+    {
+      "title": "ASHMEM_GET_PIN_STATUS -EFAULT 회귀 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "ashmem 사용자, 벤더 HAL/네이티브",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/cc1c7ff323bdef240dc430508616414a9d65a91a",
+      "if": "pin 상태 조회 ioctl에 의존하는 네이티브·HAL 경로가 있다면",
+      "do": "해당 ioctl과 struct ashmem_pin 읽기 동작을 대상 빌드에서 검증하세요",
+      "verify": "_IO()로 인한 _IOC_SIZE 0 문제 설명을 커밋 메시지와 대조하세요"
+    },
+    {
+      "title": "init pid 1 CLONE_FS 복원(부트 회귀 완화)",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Android 부트/init 담당, ACK mainline 통합",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/d82b1e9acccf66dcebefedad2635d28e1d63d895",
+      "if": "mount namespace unshare 이후 펌웨어·kworker 루트 FS 접근 이슈를 추적 중이라면",
+      "do": "mainline 이미지에서 부트·펌웨어 로딩 회귀 테스트를 우선 돌리세요",
+      "verify": "kworker root filesystem 접근 실패 서술과 패치 의도를 원문에서 확인하세요"
+    },
+    {
+      "title": "arm64 suspend 시 TPIDR2_EL0 보존(ACK 6.12)",
+      "priority": "중",
+      "impactType": "backport",
+      "affectedAudience": "arm64 전력관리, SME/Neoverse 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/08008f77e8925306287ffadfb7ad349a7bad29cb",
+      "if": "SME 지원 기기에서 suspend/resume 후 userspace 레지스터 손상을 의심한다면",
+      "do": "6.12 트리 백포트 포함 여부와 resume 경로를 기기에서 확인하세요",
+      "verify": "cpu_do_suspend/resume 미보존 인용문을 원문과 대조하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ANDROID: ashmem: Read the pin argument for GET_PIN_STATUS**\n\nASHMEM_GET_PIN_STATUS ioctl 처리 시 pin 인자를 struct ashmem_pin 크기만큼 읽도록 수정했습니다.\n\n영향: Rust ashmem 이후 항상 -EFAULT로 실패하던 pin 상태 조회 회귀를 고쳐 관련 Android·네이티브 코드가 다시 동작할 수 있습니다.\n\n> ASHMEM_GET_PIN_STATUS is defined with _IO(), so _IOC_SIZE() is zero for it, and the reader that ioctl() builds from it cannot hold a struct ashmem_pin. The ioctl then always fails with -EFAULT.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/cc1c7ff323bdef240dc430508616414a9d65a91a)\n\n**ANDROID: init: spawn pid 1 with CLONE_FS**\n\npid 1 생성 시 CLONE_FS를 다시 사용하도록 되돌렸습니다.\n\n영향: init이 mount namespace를 unshare한 뒤에도 kworker가 루트 파일시스템에 접근해 펌웨어 로딩 등이 깨지던 부트 회귀에 대한 임시 완화입니다. upstream fs_struct 공유 중단과 양립하는 영구 해결 일정은 확인이 필요합니다.\n\n> When Android init then unshares its mount namespace, kworkers lose access to the root filesystem, which breaks firmware loading.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/d82b1e9acccf66dcebefedad2635d28e1d63d895)\n\n**Merge drm-fixes into android-mainline (dma-heap conflict)**\n\ndrm-fixes-2026-09-05 태그를 android-mainline에 머지했고 dma-heap 충돌에서 upstream dma_heap_ioctl_allocate() 보안 fix를 유지하면서 downstream dma_heap_* 헬퍼를 보존했습니다.\n\n영향: copy_to_user() 성공 전 fd 노출을 막는 fix가 ACK에 반영되어 dma-buf·dma-heap 기반 그래픽·버퍼 공유 경로에 보안상 이점이 있습니다. 태그 전체의 Android 영향 범위는 패치 단위로는 아직 확인이 필요합니다.\n\n> Keep the downstream dma_heap_*() helpers but take upstream's dma_heap_ioctl_allocate() from commit 30d0aff2c65a (\"dma-buf: dma-heap: don't publish fd before copy_to_user() succeeds\")\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/718136b3ae37acbdcda64dc8e373b26cb5082ca1)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**FROMGIT: arm64: suspend: Save and restore TPIDR2_EL0 across CPU suspend**\n\nSME 지원 시스템의 cpu_do_suspend/resume 경로에 TPIDR2_EL0 저장·복원을 추가했습니다.\n\n영향: suspend 후 userspace TPIDR2 손상 가능성을 줄이는 커널 수정의 ACK 6.12 백포트입니다.\n\n> TPIDR2_EL0 is a live EL0 register on systems with SME, but cpu_do_suspend()/cpu_do_resume() don't preserve it. Its value is UNKNOWN after a warm reset\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/08008f77e8925306287ffadfb7ad349a7bad29cb)\n\n**ANDROID: GKI: enable CONFIG_BLK_CGROUP_IOCOST**\n\nGKI defconfig에서 CONFIG_BLK_CGROUP_IOCOST를 활성화했습니다.\n\n영향: blk cgroup iocost 기반 I/O 자원 제어가 GKI 바이너리에 포함되어 Android I/O 스로틀·우선순위 정책과 연계할 수 있습니다.\n\n> Enable CONFIG_BLK_CGROUP_IOCOST to help control IO resources.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/d325e8927f99b6977661ca0dc97ff7f9d1dba3bd)\n\n**ANDROID: Update to clang r614150**\n\nGKI 빌드용 LLVM/clang을 r614150으로 올렸습니다.\n\n영향: 컴파일러 변경은 GKI ABI·경고·최적화에 영향을 주므로 벤더 모듈 빌드 시 동일 rev 정렬이 필요합니다.\n\n> Update the GKI compiler version to r614150.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/22bd9e8ce82a136999e6209dc0601c995d978feb)\n\n**ANDROID: gki_defconfig: enable REFCOUNT_INTERRUPT_KUNIT_TEST**\n\nupstream 분리 Kconfig에 맞춰 GKI defconfig에서 CONFIG_REFCOUNT_INTERRUPT_KUNIT_TEST를 켰습니다.\n\n영향: refcount-interrupt KUnit이 다시 빌드·실행되면 GKI CI의 해당 경로 검증 공백을 줄일 수 있습니다. 커밋 인용문은 dossier에서 미검증이므로 upstream 26f6b6357b1b 이후 Kconfig 분리 경위는 원문에서 직접 확인하는 것이 좋습니다.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/83c0e0cc2b172d5dde4d7d7f6259edd30e8748b3)\n\n**ANDROID: GKI: Unprotect CoreSight GKI modules**\n\nCoreSight 관련 GKI 모듈 다섯 개를 _COMMON_UNPROTECTED_MODULES_LIST에 넣었습니다.\n\n영향: 벤더 CoreSight 모듈이 GKI 심볼 보호에 막히지 않게 하는 정책 변경으로 보이나, dossier 인용 검증이 실패했으므로 모듈 목록·정확한 export 정책은 원문에서 확인하세요.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/9ce06fabc7c80704e972d836454569a3e144a368)\n\n**ANDROID: fuse-bpf: selftests: Add epoch invalidation and casefold tests**\n\nFUSE-BPF Android kselftest에 epoch dentry 무효화·F2FS casefold 통합 테스트와 stale tempdir·시그널 정리를 추가했습니다.\n\n영향: fuse-bpf·F2FS casefold 조합의 캐시 일관성을 CI로 잡아 ACK 업데이트 시 dentry 회귀를 조기 발견할 수 있습니다.\n\n> Add two FUSE-BPF dcache invalidation and Android F2FS integration tests plus stale-tempdir crash/signal cleanup to fuse_bpf_android_test\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/b799b99bc9a4e92d6e5149d98de5d08ea9901f7e)\n\n**ANDROID: fuse-bpf: selftests: Add portable BPF loader and verifier test**\n\n__NR_bpf 기반 portable 로더와 sysfs·verifier 게이트 테스트를 fuse_bpf_android_test에 추가했습니다.\n\n영향: libelf·llc 없이 ACK CI에서 fuse-bpf 회귀를 잡을 수 있습니다.\n\n> Add an Android-portable kselftest_harness binary (fuse_bpf_android_test) with zero libelf, llc, or prebuilt BPF object dependencies.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/d7a40a6faba34b54fb5b744aacb069cfa9fdc2f8)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ANDROID: fuse-bpf: selftests: Add epoch invalidation and casefold tests",
+      "url": "https://android.googlesource.com/kernel/common/+/b799b99bc9a4e92d6e5149d98de5d08ea9901f7e",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: ashmem: Read the pin argument for GET_PIN_STATUS",
+      "url": "https://android.googlesource.com/kernel/common/+/cc1c7ff323bdef240dc430508616414a9d65a91a",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: gki_defconfig: enable REFCOUNT_INTERRUPT_KUNIT_TEST",
+      "url": "https://android.googlesource.com/kernel/common/+/83c0e0cc2b172d5dde4d7d7f6259edd30e8748b3",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: init: spawn pid 1 with CLONE_FS",
+      "url": "https://android.googlesource.com/kernel/common/+/d82b1e9acccf66dcebefedad2635d28e1d63d895",
+      "note": "commit"
+    },
+    {
+      "title": "FROMGIT: arm64: suspend: Save and restore TPIDR2_EL0 across CPU suspend",
+      "url": "https://android.googlesource.com/kernel/common/+/08008f77e8925306287ffadfb7ad349a7bad29cb",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: fuse-bpf: selftests: Add portable BPF loader and verifier test",
+      "url": "https://android.googlesource.com/kernel/common/+/d7a40a6faba34b54fb5b744aacb069cfa9fdc2f8",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: GKI: enable CONFIG_BLK_CGROUP_IOCOST",
+      "url": "https://android.googlesource.com/kernel/common/+/d325e8927f99b6977661ca0dc97ff7f9d1dba3bd",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: Update to clang r614150",
+      "url": "https://android.googlesource.com/kernel/common/+/22bd9e8ce82a136999e6209dc0601c995d978feb",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: GKI: Unprotect CoreSight GKI modules",
+      "url": "https://android.googlesource.com/kernel/common/+/9ce06fabc7c80704e972d836454569a3e144a368",
+      "note": "commit"
+    },
+    {
+      "title": "Merge drm-fixes into android-mainline (dma-heap conflict)",
+      "url": "https://android.googlesource.com/kernel/common/+/718136b3ae37acbdcda64dc8e373b26cb5082ca1",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-09T18:03:23.781Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/android-newsletter-from-dossier-ko.md"
+  }
+}

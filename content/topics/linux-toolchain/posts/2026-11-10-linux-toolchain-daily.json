@@ -1,0 +1,93 @@
+{
+  "id": "2026-11-10-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-11-10 Kbuild·Clang 회귀 — 툴체인 렌즈",
+  "headline": "modpost 단계 헤더 의존 회귀, v7.5 modules-check 충돌 정리, Clang AutoFDO에서 blk_plug 순서 버그가 동시에 신호됩니다.",
+  "date": "2026-11-10",
+  "summary": "loongarch·mips defconfig가 bounds.h 생성 전 modpost에서 깨지던 문제가 device-id 헤더 분리로 수정되었고, apm-power 드라이버 제거로 모듈명 충돌이 해소됩니다. blk_finish_plug()에는 Clang 인라인 시 store 순서를 맞추는 barrier() 패치가 제안되었습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "devicetable-offsets: struct cpu_feature를 device-id 헤더로 분리",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "Kbuild·modpost·GENERIC_CPU_AUTOPROBE 아키텍처(loongarch/mips) 빌드 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/09/2187",
+      "if": "loongarch 또는 mips defconfig·KernelCI 빌드에서 generated/bounds.h 부재 오류가 보이면",
+      "do": "cdfdbc11552b 이후 회귀인지 확인하고 device-id/cpu_feature.h 분리 패치 적용 여부를 추적하세요",
+      "verify": "패치 스레드와 KernelCI bot 보고(Fixes: cdfdbc11552b)를 원문에서 대조하세요"
+    },
+    {
+      "title": "Input: apm-power 드라이버 제거",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "Kbuild modules-check·INPUT_APMPOWER·레거시 ARM mach-pxa 유지보수 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/09/926",
+      "if": "v7.5 allmodconfig나 modules-check에서 apm_power 모듈명 충돌이 발생하면",
+      "do": "input apm-power 제거 패치와 리네이밍 대안 스레드를 비교해 CI에 맞는 쪽을 선택하세요",
+      "verify": "modules-check.sh 정규화와 충돌 설명이 커밋 메시지·스레드에 있는지 확인하세요"
+    },
+    {
+      "title": "block: blk_finish_plug()에 컴파일러 barrier",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Clang/LLVM 커널 빌드·Android GKI·블록 레이어 blk_plug 타임스탬프 경로 담당",
+      "verifyLink": "https://ci.syzbot.org/patches/a361fa59-9fa4-4fe3-b395-79c823d4be2c",
+      "if": "Clang r596125+AutoFDO로 arm64 빌드 시 PF_BLOCK_TS와 NULL plug가 겹치면",
+      "do": "barrier()가 flag clear 이후 pointer detachment 순서를 강제하는 syzbot 미러 패치를 검토하세요",
+      "verify": "syzbot 패치 본문의 store 순서 설명과 blk-core.c diff를 원문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**block: order timestamp flag clearing before plug detachment**\n\nWael Hasnaoui가 blk_finish_plug()에 컴파일러 barrier()를 넣어 __blk_flush_plug()가 PF_BLOCK_TS를 지운 뒤에만 current->plug을 NULL로 두도록 순서를 강제합니다. Android Clang r596125+AutoFDO로 인라인 시 플래그 클리어와 포인터 분리가 뒤바뀌어 선점 후 blk_plug_invalidate_ts()가 NULL plug를 dereference하던 arm64 오류를 설명합니다.\n\n영향: 소스 순서와 실제 store 순서가 어긋나는 것은 LLVM/Clang·프로파일 기반 최적화 환경에서만 드러나는 전형적 toolchain 이슈이며, GKI·Android common과 mainline 7.4-rc2 양쪽에 동일 패턴이 있다고 합니다.\n\n> Preemption after detaching the plug but before storing the cleared flag exposes a NULL plug with PF_BLOCK_TS still set.\n\n[원문 확인](https://ci.syzbot.org/patches/a361fa59-9fa4-4fe3-b395-79c823d4be2c)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**devicetable-offsets: Get struct cpu_feature from a device-id header**\n\nSasha Levin이 struct cpu_feature를 linux/device-id/cpu_feature.h로 옮겨 devicetable-offsets.c가 무거운 linux/cpufeature.h 대신 얇은 헤더만 포함하도록 했습니다. cdfdbc11552b 이후 loongarch·mips defconfig에서 generated/bounds.h 생성 전에 modpost 스크립트가 커져 빌드가 깨지던 회귀를 고칩니다.\n\n영향: modpost·devicetable-offsets는 모든 아키텍처 초기 Kbuild 단계에 걸려 있어, 헤더 끌어오기 한 줄이 kernelci defconfig 전체를 막습니다. linux-kbuild·stable 머지 시점은 확인이 필요합니다.\n\n> devicetable-offsets.c is built before that header is generated, so even defconfig fails on both:\n>\n>   include/linux/page-flags-layout.h:6:10: fatal error: generated/bounds.h: No such file or directory\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/09/2187)\n\n**Input: apm-power - remove driver**\n\nDmitry Torokhov가 유휴 Sharp Zaurus용 input apm-power 핸들러 전체(드라이버·Kconfig·pxa_defconfig 항목)를 삭제합니다. v7.5에서 scripts/modules-check.sh가 모듈 이름을 정규화하면서 drivers/input/apm-power.ko와 drivers/power/supply/apm_power.ko가 둘 다 apm_power로 충돌하던 문제를 이름 변경 대신 드라이버 제거로 해소합니다.\n\n영향: kbuild 모듈 이름 유일성 검사 강화는 7.5 사이클의 toolchain 회귀면이며, 충돌 드라이버를 남기면 allmodconfig·modules-check CI가 막힙니다. Input maintainer ack와 kbuild-next pick 여부는 미확인입니다.\n\n> Normalizing dashes and underscores in scripts/modules-check.sh for v7.5 exposes a module name collision (apm_power) between drivers/input/apm-power.ko and drivers/power/supply/apm_power.ko.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/09/926)\n\n대안으로는 apm-power-input 리네이밍이 스레드에 기록되어 있습니다.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/09/793)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "devicetable-offsets cpu_feature device-id 헤더",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/09/2187",
+      "note": "thread"
+    },
+    {
+      "title": "Input apm-power 드라이버 제거",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/09/926",
+      "note": "thread"
+    },
+    {
+      "title": "apm-power-input 리네이밍 대안",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/09/793",
+      "note": "thread"
+    },
+    {
+      "title": "blk_finish_plug barrier syzbot 패치",
+      "url": "https://ci.syzbot.org/patches/a361fa59-9fa4-4fe3-b395-79c823d4be2c",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-09T18:17:23.319Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
