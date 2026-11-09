@@ -1,0 +1,374 @@
+{
+  "id": "2026-11-02-linux-v7.4-rc1-driver-impact",
+  "topic": "linux-driver-impact",
+  "title": "Linux 7.4-rc1 드라이버 영향 노트",
+  "headline": "v7.3에서 v7.4-rc1로 올릴 때 V4L2 서브디바이스 `v4l2_subdev_pad_ops`의 `set_fmt`, `get_selection`, `set_selection` 콜백 시그니처에 `const struct v4l2_subdev_client_info *` 인자가 추가되어 서브디바이스 드라이버 구현을 맞춰야 한다.",
+  "date": "2026-11-02",
+  "summary": "v7.3 → v7.4-rc1: 커밋 18591개, pull 258개. 드라이버에서 쓰이던 API 127개와 드라이버 Kconfig 심볼 18개가 사라졌고, 메모리·V4L2·타이머 등 중점 영역에서 드라이버가 쓰던 API 11개가 바뀌거나 사라졌습니다. 반복 전환 패턴은 21건입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "드라이버",
+    "v7.4-rc1"
+  ],
+  "sections": [
+    {
+      "heading": "먼저 볼 것",
+      "body": "- v7.3에서 v7.4-rc1로 올릴 때 V4L2 서브디바이스 `v4l2_subdev_pad_ops`의 `set_fmt`, `get_selection`, `set_selection` 콜백 시그니처에 `const struct v4l2_subdev_client_info *` 인자가 추가되어 서브디바이스 드라이버 구현을 맞춰야 한다. — [커밋 7eef49c](https://git.kernel.org/torvalds/c/7eef49c16461), `v4l2_subdev_pad_ops.set_fmt`\n- `dma_opt_mapping_size()`가 제거되고 `dma_max_opt_mapping_size()`로 이름이 바뀌었으므로 DMA 매핑 크기 상한을 조회하는 드라이버 코드의 호출부를 갱신해야 한다. — `dma_opt_mapping_size`\n- 디바이스 모델 `device_show_string()` 등 표준 sysfs 콜백의 `struct device_attribute *` 인자가 `const struct device_attribute *`로 바뀌어 커스텀 show 콜백 시그니처를 맞춰야 한다. — `device_show_string`\n- DRM atomic helper의 `drm_atomic_helper_*_reset()` 계열이 제거되고 `atomic_create_state`/`drm_atomic_helper_*_create_state()` 흐름으로 정리되었으므로 DRM/KMS 드라이버의 state reset hook을 점검해야 한다. — `drm_atomic_helper_crtc_reset`, [커밋 8b32d06](https://git.kernel.org/torvalds/c/8b32d0652db9), [커밋 c4967fd](https://git.kernel.org/torvalds/c/c4967fd8b43e)\n- export `acpi_get_first_physical_node()`가 사라졌고 트리 안 드라이버는 `acpi_bus_get_primary_device()`로 옮겨졌으므로 ACPI companion 조회 코드를 수정해야 한다. — `acpi_get_first_physical_node`, [커밋 4ed5b18](https://git.kernel.org/torvalds/c/4ed5b18e4ebd)\n- SCSI sense 조립 API `scsi_build_sense()`·`scsi_build_sense_buffer()`가 `scsi_set_sense()`·`scsi_set_sense_buffer()`로 통합·개명되어 16비트 sense 코드 형식으로 HBA·타겟 드라이버를 맞춰야 한다. — `scsi_build_sense`\n- dmaengine 등록용 `dma_async_device_register()` 등이 공개 헤더에서 빠지고 `drivers/dma/dmaengine.h`로 옮겨져 dmaengine 호스트 드라이버만 해당 비공개 헤더를 포함하도록 빌드를 조정해야 한다. — `dma_async_device_register`\n- MM 쪽에서 `VM_SPECIAL`이 제거되고 VMA 의미가 helper로 정리되어 `VM_SPECIAL`에 의존하던 특수 mmap 드라이버는 새 helper 기준으로 매핑 판별 로직을 바꿔야 한다. — [more MM updates from Andrew Morton](https://git.kernel.org/torvalds/c/8a36f53fd5ec)"
+    },
+    {
+      "heading": "중점 API 영역",
+      "body": "드라이버가 많이 쓰는 영역의 헤더를 v7.3과 v7.4-rc1에서 각각 파싱해 비교했습니다. 시그니처·구조체 멤버가 바뀐 것은 컴파일 오류나 콜백 대입 오류로 드러납니다. `사용`은 이전 버전 drivers/·sound/에서 그 이름을 쓴 파일 수이고, 구조체 멤버는 구조체와 멤버 이름이 함께 나온 파일 수입니다. 표는 헤더를 직접 비교한 결과라, 요약 문장이나 메인테이너 pull 요약과 다르면 표가 맞습니다.\n\n### 메모리·DMA\n\n- `dma_opt_mapping_size()` 호출을 `dma_max_opt_mapping_size()`로 바꾸고 상한 의미(이상에서는 매핑 성능 저하 가능)를 반영한다.\n- `for_each_present_section_nr` 매크로가 `for_each_early_section_nr`로 바뀌었으므로 초기 section 순회 매크로 사용처를 갱신한다.\n- export `zs_obj_read_begin()`·`zs_obj_read_end()`가 제거되어 zsmalloc 객체 읽기 helper에 의존하던 코드는 in-tree 대안 여부를 확인해야 한다.\n\n| 변화 | 이름 | 이전 → 이후 | 사용 | 커밋 |\n|---|---|---|---:|---|\n| 함수 삭제 | `dma_opt_mapping_size` | `size_t dma_opt_mapping_size(struct device *)` → `dma_max_opt_mapping_size` (같은 커밋에서 추가) | 2 | [dma-mapping: rename dma_opt_mapping_size()](https://git.kernel.org/torvalds/c/95d2fec40c48) |\n| 매크로 삭제 | `for_each_present_section_nr` | `(2)` | 1 | [mm/sparse: remove SECTION_MARKED_PRESENT](https://git.kernel.org/torvalds/c/da7acb8982ed) |\n| 함수 삭제 | `vma_desc_set_anonymous` | `void vma_desc_set_anonymous(struct vm_area_desc *)` | 1 | [mm/vma: make MAP_PRIVATE-mapped /dev/zero mappings truly anonymous](https://git.kernel.org/torvalds/c/e59c9a971a9f) |\n| export 해제 | `zs_obj_read_begin` | `EXPORT_SYMBOL_GPL` | 1 | [zsmalloc: remove old object read API](https://git.kernel.org/torvalds/c/7ade67b8d5b4) |\n| export 해제 | `zs_obj_read_end` | `EXPORT_SYMBOL_GPL` | 1 | [zsmalloc: remove old object read API](https://git.kernel.org/torvalds/c/7ade67b8d5b4) |\n\n새로 생긴 함수·매크로·멤버 37개: `dma_max_opt_mapping_size`, `vma_flags_is_hugetlb`, `vma_is_hugetlb`, `vma_flags_is_mm_managed`, `vma_is_mm_managed`, `vma_flags_is_fixed_mapping`, `vma_is_fixed_mapping`, `vma_flags_is_mm_backed`, `vma_is_mm_backed`, `vma_flags_can_merge`, `vma_can_merge`, `set_page_section_from_pfn`, `copy_remote_mm_str`, `mapping_rmap_tree_pre_update`, `mapping_rmap_tree_post_update`, `anon_rmap_tree_pre_update_vma`, `anon_rmap_tree_post_update_vma`, `mmap_action_map_discontig_kernel_pages`, `discontig_kernel_map_abort`, `discontig_kernel_map_page`, `discontig_kernel_map_pages`, `range_first_hwpoison`, `range_last_hwpoison`, `vma_start_read_unlocked`, `__mm_reset_vma_seqcounts`, `for_each_early_section_nr`, `zone_is_contiguous`, `set_zone_contiguous`, `clear_zone_contiguous`, `early_section_nr` …\n\n관련 pull: [more MM updates from Andrew Morton](https://git.kernel.org/torvalds/c/8a36f53fd5ec) · [memblock updates from Mike Rapoport](https://git.kernel.org/torvalds/c/394023fbe34f) · [dma-mapping updates from Marek Szyprowski](https://git.kernel.org/torvalds/c/906b6e1d8c78) · [slab updates from Harry Yoo](https://git.kernel.org/torvalds/c/7a78f7ba9f24) · [core memory management updates from David Hildenbrand](https://git.kernel.org/torvalds/c/2ee2475e15b4) · [MM updates from Andrew Morton](https://git.kernel.org/torvalds/c/c5fd5e67c781)\n\n### V4L2·videobuf2·미디어 컨트롤러\n\n- `v4l2_subdev_pad_ops.set_fmt`·`get_selection`·`set_selection` 구현을 `const struct v4l2_subdev_client_info *`를 받는 새 함수 포인터 타입에 맞춘다.\n- struct `rc_map`에서 `alloc` 멤버가 제거되어 RC map을 직접 다루는 IR 드라이버는 `krealloc` 기반 크기 관리 방식 변경을 따라가야 한다.\n\n| 변화 | 이름 | 이전 → 이후 | 사용 | 커밋 |\n|---|---|---|---:|---|\n| 멤버 타입 변경 | `v4l2_subdev_pad_ops.set_fmt` | `int (*)(struct v4l2_subdev *, struct v4l2_subdev_state *, struct v4l2_subdev_format *)` → `int (*)(struct v4l2_subdev *, const struct v4l2_subdev_client_info *, struct v4l2_subdev_state *, struct v4l2_subdev_fo…` | 214 | [media: v4l2-subdev: Add struct v4l2_subdev_client_info pointer to pad ops](https://git.kernel.org/torvalds/c/7eef49c16461) |\n| 멤버 타입 변경 | `v4l2_subdev_pad_ops.get_selection` | `int (*)(struct v4l2_subdev *, struct v4l2_subdev_state *, struct v4l2_subdev_selection *)` → `int (*)(struct v4l2_subdev *, const struct v4l2_subdev_client_info *, struct v4l2_subdev_state *, struct v4l2_subdev_se…` | 84 | [media: v4l2-subdev: Add struct v4l2_subdev_client_info pointer to pad ops](https://git.kernel.org/torvalds/c/7eef49c16461) |\n| 멤버 타입 변경 | `v4l2_subdev_pad_ops.set_selection` | `int (*)(struct v4l2_subdev *, struct v4l2_subdev_state *, struct v4l2_subdev_selection *)` → `int (*)(struct v4l2_subdev *, const struct v4l2_subdev_client_info *, struct v4l2_subdev_state *, struct v4l2_subdev_se…` | 47 | [media: v4l2-subdev: Add struct v4l2_subdev_client_info pointer to pad ops](https://git.kernel.org/torvalds/c/7eef49c16461) |\n| 멤버 삭제 | `rc_map.alloc` | `unsigned int` | 1 | [media: rc: Replace open coded krealloc() for keymap](https://git.kernel.org/torvalds/c/e4b4aa413cc2) |\n\n새로 생긴 함수·매크로·멤버 9개: `IPU_SENSOR_CONFIG_MATCH_FL`, `IPU_BRIDGE_NEXT_PROPERTY`, `ipu_bridge_get_ipu6`, `v4l2_fill_pixfmt_aligned`, `ipu_property_names.clock_noncontinuous`, `ipu_sensor_config.pci_ids`, `ipu_sensor_config.flags`, `ipu_bridge.pci_id`, `v4l2_subdev_fh.ci`\n\n관련 pull: [media update from Mauro Carvalho Chehab](https://git.kernel.org/torvalds/c/d738fbd1a8b9) · [media updates from Mauro Carvalho Chehab](https://git.kernel.org/torvalds/c/42e6549eafc6)\n\n### 타이머·시간\n\n헤더 1개가 바뀌었지만 v7.3 드라이버가 쓰던 API의 삭제·시그니처 변경은 없습니다.\n\n새로 생긴 함수·매크로·멤버 2개: `hrtimer_sleeper_task_get`, `hrtimer_sleeper_task_set`\n\n관련 pull: [NOHZ updates from Thomas Gleixner](https://git.kernel.org/torvalds/c/1ae0ee1ba729) · [timer core updates from Thomas Gleixner](https://git.kernel.org/torvalds/c/aaf3d47e5306) · [clocksource updates from Thomas Gleixner](https://git.kernel.org/torvalds/c/b4460f89a274)\n\n### workqueue\n\n이번 범위에서 이 영역의 헤더는 바뀌지 않았습니다.\n\n관련 pull: [workqueue updates from Tejun Heo](https://git.kernel.org/torvalds/c/031cb4ccf803)\n\n### 스케줄러·kthread·대기\n\n헤더 10개가 바뀌었지만 v7.3 드라이버가 쓰던 API의 삭제·시그니처 변경은 없습니다.\n\n새로 생긴 함수·매크로·멤버 17개: `set_cpu_preferred`, `cpumask_intersects_and`, `cpu_preferred`, `task_pids`, `get_task_pids`, `no_notify_signal_save`, `no_notify_signal_restore`, `__task_pids`, `__get_task_pids`, `cpu_has_iowait`, `wait_var_event_state`, `sched_statistics.nr_migrations_cpu_non_preferred`, `scx_dispatch_q.pcpu_user`, `sched_ext_entity.lazy_resched`, `scx_task_group.sched_idle`, `core_state.threads_remaining`, `core_state.tasks`\n\n관련 pull: [scheduler updates from Ingo Molnar](https://git.kernel.org/torvalds/c/cb95904b470d)\n\n### 인터럽트\n\n헤더 2개가 바뀌었지만 v7.3 드라이버가 쓰던 API의 삭제·시그니처 변경은 없습니다.\n\n새로 생긴 함수·매크로·멤버 2개: `irq_work_run_cpu`, `irqaction.thread_dtor`\n\n관련 pull: [irq chip driver updates from Thomas Gleixner](https://git.kernel.org/torvalds/c/2e973d488223) · [irq updates from Thomas Gleixner](https://git.kernel.org/torvalds/c/1fbe92c39e72)\n\n### 락·RCU·cleanup\n\n헤더 4개가 바뀌었지만 v7.3 드라이버가 쓰던 API의 삭제·시그니처 변경은 없습니다.\n\n새로 생긴 함수·매크로·멤버 8개: `init_srcu_struct_atomic`, `__init_srcu_struct_atomic`, `synchronize_srcu_atomic`, `DEFINE_SRCU_ATOMIC`, `DEFINE_STATIC_SRCU_ATOMIC`, `srcu_data.defer_cbs`, `srcu_data.defer_link`, `srcu_usage.srcu_atomic_gp_flag`\n\n관련 pull: [RCU updates from Paul McKenney](https://git.kernel.org/torvalds/c/a7f2bc878742) · [locking updates from Ingo Molnar](https://git.kernel.org/torvalds/c/776bb6df3f16)\n\n### 디바이스 모델·PM·펌웨어\n\n- `bus_type.need_parent_lock` 플래그가 bus_type에서 제거되고 USB처럼 parent lock이 필요한 경우 device type 쪽 세분화로 옮겨져, parent lock이 필요한 인터페이스 드라이버는 bus가 아닌 device type 설정을 검토해야 한다.\n\n| 변화 | 이름 | 이전 → 이후 | 사용 | 커밋 |\n|---|---|---|---:|---|\n| 시그니처 변경 | `device_show_string` | `ssize_t device_show_string(struct device *, struct device_attribute *, char *)` → `ssize_t device_show_string(struct device *, const struct device_attribute *, char *)` | 13 | [driver core: Constify the signature of device_show/store_*()](https://git.kernel.org/torvalds/c/ae324a719289) |\n| 멤버 삭제 | `bus_type.need_parent_lock` | `bool` | 1 | [driver core: fix parent lock use-after-free on USB disconnect](https://git.kernel.org/torvalds/c/0f554506a3fc) |\n\n새로 생긴 함수·매크로·멤버 17개: `companion_bus_register`, `__devm_alloc_objs`, `devm_kmalloc_obj`, `devm_kmalloc_objs`, `__devm_alloc_flex`, `devm_kmalloc_flex`, `devm_kzalloc_obj`, `devm_kzalloc_objs`, `devm_kzalloc_flex`, `subsys_driver`, `add_taint_module`, `subsys_platform_driver`, `subsys_platform_driver_probe`, `fwnode_graph_for_each_endpoint_scoped`, `device_type.need_parent_lock`, `module.btf_inline_data_size`, `module.btf_inline_data`\n\n관련 pull: [devicetree updates from Rob Herring](https://git.kernel.org/torvalds/c/21a7f44fd076) · [module updates from Petr Pavlu](https://git.kernel.org/torvalds/c/c0e8d3013787) · [driver core updates from Danilo Krummrich](https://git.kernel.org/torvalds/c/7be4bc52fd9e) · [power management updates from Rafael Wysocki](https://git.kernel.org/torvalds/c/df37e3924292)\n\n### clk·GPIO·regulator·regmap·reset·pinctrl\n\n- clk pull에서 `struct clk_init_data` 전 필드 초기화가 권장·대량 적용되었으므로 트리 밖 clk 드라이버도 parent·flags 미설정 orphan clk 버그를 막기 위해 동일 패턴을 쓴다.\n- regmap pull은 maple cache 관련 테스트·락 guard 정리 위주로, 기존 regmap API를 쓰는 드라이버 코드 시그니처 변경은 없다.\n\n헤더 5개가 바뀌었지만 v7.3 드라이버가 쓰던 API의 삭제·시그니처 변경은 없습니다.\n\n새로 생긴 함수·매크로·멤버 3개: `__clk_hw_get_clk`, `gpiochip_generic_get_config`, `gpio_chip.get_config`\n\n관련 pull: [clk updates from Stephen Boyd](https://git.kernel.org/torvalds/c/4517b5a6c874) · [pin control updates from Linus Walleij](https://git.kernel.org/torvalds/c/a8c2facb7b2c) · [regmap updates from Mark Brown](https://git.kernel.org/torvalds/c/9aa54fb74ead) · [regulator updates from Mark Brown](https://git.kernel.org/torvalds/c/003e5a0c479e) · [gpio updates from Bartosz Golaszewski](https://git.kernel.org/torvalds/c/bfa231bb4c7e)"
+    },
+    {
+      "heading": "빌드가 깨질 수 있는 변경",
+      "body": "v7.3에 있던 export 심볼·헤더 함수·매크로·구조체 가운데 v7.4-rc1에서 사라진 것이 614개이고, 그중 v7.3의 drivers/·sound/에서 쓰이던 것이 127개입니다. `사용`은 그 이름이 나온 횟수로, 트리 밖 드라이버가 걸릴 가능성을 가늠하는 값입니다.\n\n| 이름 | 종류 | 사용 | 대신 쓸 것 | 지운 커밋 |\n|---|---|---:|---|---|\n| `dma_async_device_register` | function | 74 | — | [dmaengine: move driver-private helpers out of include/linux/dmaengine.h](https://git.kernel.org/torvalds/c/511afae96d89) |\n| `drm_atomic_helper_crtc_reset` | export EXPORT_SYMBOL | 38 | — | [drm/atomic-helper: Remove drm_atomic_helper_crtc_reset](https://git.kernel.org/torvalds/c/5354d1e5fba4) |\n| `snd_card_free_on_error` | export EXPORT_SYMBOL_GPL | 34 | — | [ALSA: Drop unused snd_card_free_on_error()](https://git.kernel.org/torvalds/c/cb8e306fd99c) |\n| `drm_atomic_helper_plane_reset` | export EXPORT_SYMBOL | 33 | — | [drm/atomic-state-helper: Remove drm_atomic_helper_plane_reset()](https://git.kernel.org/torvalds/c/e62864df82f6) |\n| `is_slave_direction` | function | 31 | — | [dmaengine: move driver-private helpers out of include/linux/dmaengine.h](https://git.kernel.org/torvalds/c/511afae96d89) |\n| `__drm_atomic_helper_crtc_reset` | export EXPORT_SYMBOL | 25 | — | [drm/atomic-helper: Remove __drm_atomic_helper_crtc_reset](https://git.kernel.org/torvalds/c/9ea7393511e1) |\n| `__drm_atomic_helper_plane_reset` | export EXPORT_SYMBOL | 22 | — | [drm/atomic-state-helper: Remove __drm_atomic_helper_plane_reset()](https://git.kernel.org/torvalds/c/18216d5fa8dc) |\n| `acpi_get_first_physical_node` | export EXPORT_SYMBOL_GPL | 20 | acpi_bus_get_primary_device() | [ACPI: bus: Drop acpi_get_first_physical_node()](https://git.kernel.org/torvalds/c/538076b45429) |\n| `dmaenginem_async_device_register` | function | 19 | — | [dmaengine: move driver-private helpers out of include/linux/dmaengine.h](https://git.kernel.org/torvalds/c/511afae96d89) |\n| `scsi_build_sense` | export EXPORT_SYMBOL_GPL | 19 | scsi_set_sense() | [scsi: core: Remove scsi_build_sense() and scsi_build_sense_buffer()](https://git.kernel.org/torvalds/c/15de2788c91c) |\n| `drm_simple_encoder_init` | export EXPORT_SYMBOL | 15 | drm_encoder_init() | [drm/drm_simple: remove deprecated drm_simple_encoder_init function](https://git.kernel.org/torvalds/c/b9c2435a272f) |\n| `i915_gtt_view` | struct | 15 | intel_gtt_view | [drm/intel: rename i915_gtt_view* struct/enum to intel_gtt_view*](https://git.kernel.org/torvalds/c/468a755f203e) |\n| `serial8250_get_port` | export EXPORT_SYMBOL_GPL | 15 | — | [serial: 8250: make port operations work on struct uart_8250_port](https://git.kernel.org/torvalds/c/d6a0791098be) |\n| `arp_tbl` | export EXPORT_SYMBOL | 13 | — | [ipv4: Replace &arp_tbl with arp_table(net).](https://git.kernel.org/torvalds/c/2430df635a59) |\n| `scsi_build_sense_buffer` | export EXPORT_SYMBOL | 8 | scsi_set_sense_buffer() | [scsi: core: Remove scsi_build_sense() and scsi_build_sense_buffer()](https://git.kernel.org/torvalds/c/15de2788c91c) |\n| `ring_buffer_size` | export EXPORT_SYMBOL_GPL | 7 | ring_buffer_capacity() | [ring-buffer: Rename ring_buffer_size() to ring_buffer_capacity()](https://git.kernel.org/torvalds/c/4b0c4fb9bc51) |\n| `skb_unshare` | function | 6 | skb_unclone_full() | [net: rename skb_unshare() to skb_unclone_full()](https://git.kernel.org/torvalds/c/258c3ae4a4af) |\n| `snd_soc_component_alloc` | export EXPORT_SYMBOL_GPL | 6 | snd_soc_register_component() | [ASoC: core: Remove unused component-register members](https://git.kernel.org/torvalds/c/146caaa16f85) |\n| `__drm_gem_reset_shadow_plane` | export EXPORT_SYMBOL | 5 | — | [drm/gem-atomic-helper: Remove __drm_gem_reset_shadow_plane()](https://git.kernel.org/torvalds/c/d3e410b0e2b2) |\n| `neigh_update` | export 해제(선언은 남음) EXPORT_SYMBOL | 5 | — | [neighbour: Remove unnecessary EXPORT_SYMBOL().](https://git.kernel.org/torvalds/c/ffc5821e8ab8) |\n| `spk_stop_serial_interrupt` | export EXPORT_SYMBOL_GPL | 5 | — | [speakup: Drop now-unused serialio operations](https://git.kernel.org/torvalds/c/23de9e6a25d1) |\n| `adf_gen2_get_num_accels` | export EXPORT_SYMBOL_GPL | 4 | — | [crypto: qat - remove unused get_num_accels()](https://git.kernel.org/torvalds/c/c01d396a91e4) |\n| `lm3533_read` | export EXPORT_SYMBOL_GPL | 4 | — | [mfd: lm3533: Remove driver specific regmap wrappers](https://git.kernel.org/torvalds/c/f022c47f4843) |\n| `lm3533_update` | export EXPORT_SYMBOL_GPL | 4 | — | [mfd: lm3533: Remove driver specific regmap wrappers](https://git.kernel.org/torvalds/c/f022c47f4843) |\n| `otx2_smq_flush` | export EXPORT_SYMBOL | 4 | `otx2_mbox_up_handler_cgx_link_event` (같은 커밋에서 추가) | [octeontx2: remove unneeded symbol exports](https://git.kernel.org/torvalds/c/3e6a0e83c913) |\n| `snd_soc_component_set_name` | export EXPORT_SYMBOL_GPL | 4 | snd_soc_register_component() | [ASoC: core: Remove unused component-register members](https://git.kernel.org/torvalds/c/146caaa16f85) |\n| `__skb_frag_ref` | function | 3 | `skb_netmem_ref` (같은 커밋에서 추가) | [net: skbuff: replace __skb_frag_ref() with symmetric skb_netmem_ref()](https://git.kernel.org/torvalds/c/1f6f88105e1d) |\n| `acpi_bus_init_power` | function | 3 | — | [ACPI: PM: Move acpi_bus_init_power() declaration to internal header file](https://git.kernel.org/torvalds/c/811268084ef2) |\n| `adf_gen4_get_num_accels` | export EXPORT_SYMBOL_GPL | 3 | — | [crypto: qat - remove unused get_num_accels()](https://git.kernel.org/torvalds/c/c01d396a91e4) |\n| `cros_ec_sensors_pm_ops` | export EXPORT_SYMBOL_GPL | 3 | — | [iio: cros_ec: Convert to DEFINE_SIMPLE_DEV_PM_OPS()](https://git.kernel.org/torvalds/c/878bedc83342) |\n| `dma_async_device_channel_register` | function | 3 | — | [dmaengine: move driver-private helpers out of include/linux/dmaengine.h](https://git.kernel.org/torvalds/c/511afae96d89) |\n| `ili9806e_remove` | export EXPORT_SYMBOL_GPL | 3 | — | [drm/panel: Use managed helpers in Himax and Ilitek panels](https://git.kernel.org/torvalds/c/44b944ab41af) |\n| `ipu6_buttress_map_fw_image` | export EXPORT_SYMBOL_NS_GPL(\"INTEL_IPU6\") | 3 | — | [media: ipu6: Make fw mapping function reusable](https://git.kernel.org/torvalds/c/d155161199a6) |\n| `ipu6_buttress_unmap_fw_image` | export EXPORT_SYMBOL_NS_GPL(\"INTEL_IPU6\") | 3 | — | [media: ipu6: Make fw mapping function reusable](https://git.kernel.org/torvalds/c/d155161199a6) |\n| `iwl_trans_pcie_reset` | export EXPORT_SYMBOL | 3 | — | [wifi: iwlwifi: call generic trans API and not pcie one](https://git.kernel.org/torvalds/c/a95d336d91c0) |\n| `lm3533_write` | export EXPORT_SYMBOL_GPL | 3 | — | [mfd: lm3533: Remove driver specific regmap wrappers](https://git.kernel.org/torvalds/c/f022c47f4843) |\n| `otx2_nix_config_bp` | export EXPORT_SYMBOL | 3 | `otx2_mbox_up_handler_cgx_link_event` (같은 커밋에서 추가) | [octeontx2: remove unneeded symbol exports](https://git.kernel.org/torvalds/c/3e6a0e83c913) |\n| `otx2_nix_cpt_config_bp` | export EXPORT_SYMBOL | 3 | `otx2_mbox_up_handler_cgx_link_event` (같은 커밋에서 추가) | [octeontx2: remove unneeded symbol exports](https://git.kernel.org/torvalds/c/3e6a0e83c913) |\n| `otx2_txschq_config` | export EXPORT_SYMBOL | 3 | `otx2_mbox_up_handler_cgx_link_event` (같은 커밋에서 추가) | [octeontx2: remove unneeded symbol exports](https://git.kernel.org/torvalds/c/3e6a0e83c913) |\n| `otx2_txschq_free_one` | export EXPORT_SYMBOL | 3 | `otx2_mbox_up_handler_cgx_link_event` (같은 커밋에서 추가) | [octeontx2: remove unneeded symbol exports](https://git.kernel.org/torvalds/c/3e6a0e83c913) |\n| `rtw88xxa_phy_cck_pd_set` | export EXPORT_SYMBOL | 3 | `rtw_phy_cck_pd_set` (같은 커밋에서 추가) | [wifi: rtw88: move the 88xxa CCK power detect setter to phy.c](https://git.kernel.org/torvalds/c/9f596b63010b) |\n| `s6e63m0_remove` | export EXPORT_SYMBOL_GPL | 3 | — | [drm/panel: Use managed helpers in Samsung panels](https://git.kernel.org/torvalds/c/180acca3b7f0) |\n| `uverbs_get_cleared_udata` | export EXPORT_SYMBOL_NS_GPL(\"rdma_core\") | 3 | — | [RDMA/core: Clear driver_udata before destroying objects in rdma_core](https://git.kernel.org/torvalds/c/d37e98844afe) |\n| `__skb_frag_unref` | function | 2 | `skb_netmem_unref` (같은 커밋에서 추가) | [net: skbuff: replace skb_page_unref() and __skb_frag_unref() with skb_netmem_unref()](https://git.kernel.org/torvalds/c/4d688084070e) |\n| `amd_get_boost_ratio_numerator` | export EXPORT_SYMBOL_GPL | 2 | — | [ACPI: CPPC: Refactor boost ratio handling](https://git.kernel.org/torvalds/c/4817d3e2b90d) |\n| `amd_pmf_get_ta_custom_bios_inputs` | export EXPORT_SYMBOL | 2 | — | [platform/x86/amd/pmf: Inline simple helper function of Smart PC TA interfaces](https://git.kernel.org/torvalds/c/4cef7b872a6c) |\n| `dma_async_device_channel_unregister` | function | 2 | — | [dmaengine: move driver-private helpers out of include/linux/dmaengine.h](https://git.kernel.org/torvalds/c/511afae96d89) |\n| `dma_opt_mapping_size` | export EXPORT_SYMBOL_GPL | 2 | `dma_max_opt_mapping_size` (같은 커밋에서 추가) | [dma-mapping: rename dma_opt_mapping_size()](https://git.kernel.org/torvalds/c/95d2fec40c48) |\n| `drm_nova_getparam` | struct | 2 | — | [drm: nova: Move VRAM BAR size query to GPU info](https://git.kernel.org/torvalds/c/04476103b7bc) |\n| `drm_panic_qr_generate` | function | 2 | — | [drm/panic: Move panic display code into helper library](https://git.kernel.org/torvalds/c/5c3d323984fd) |\n\n사용 횟수가 적은 77개는 아래 점검 명령에만 넣었습니다.\n\n**라이선스·네임스페이스가 바뀐 export** — `_GPL`이 붙으면 GPL이 아닌 모듈은 더 쓸 수 없고, 네임스페이스가 붙으면 `MODULE_IMPORT_NS()`가 필요합니다.\n\n| 심볼 | 이전 | 이후 | 파일 |\n|---|---|---|---|\n| `tdx_mcall_get_report0` | EXPORT_SYMBOL_GPL | EXPORT_SYMBOL_FOR_MODULES(\"tdx-guest\") | arch/x86/coco/tdx/tdx.c |\n| `tdx_mcall_extend_rtmr` | EXPORT_SYMBOL_GPL | EXPORT_SYMBOL_FOR_MODULES(\"tdx-guest\") | arch/x86/coco/tdx/tdx.c |\n| `tdx_hcall_get_quote` | EXPORT_SYMBOL_GPL | EXPORT_SYMBOL_FOR_MODULES(\"tdx-guest\") | arch/x86/coco/tdx/tdx.c |\n| `kvm_get_kvm` | EXPORT_SYMBOL_GPL | EXPORT_SYMBOL_FOR_KVM_INTERNAL | virt/kvm/kvm_main.c |\n| `kvm_get_kvm_safe` | EXPORT_SYMBOL_GPL | EXPORT_SYMBOL_FOR_KVM_INTERNAL | virt/kvm/kvm_main.c |\n| `kvm_put_kvm` | EXPORT_SYMBOL_GPL | EXPORT_SYMBOL_FOR_KVM_INTERNAL | virt/kvm/kvm_main.c |"
+    },
+    {
+      "heading": "내 드라이버 점검 명령",
+      "body": "드라이버 소스 디렉터리에서 실행하면 위 변경에 걸리는 곳을 찾습니다. 아무것도 나오지 않으면 이 목록에는 걸리지 않습니다.\n```sh\n# 사라진 API\ngit grep -nwE 'dma_async_device_register|drm_atomic_helper_crtc_reset|snd_card_free_on_error|drm_atomic_helper_plane_reset|is_slave_direction|__drm_atomic_helper_crtc_reset|__drm_atomic_helper_plane_reset|acpi_get_first_physical_node|dmaenginem_async_device_register|scsi_build_sense|drm_simple_encoder_init|i915_gtt_view|serial8250_get_port|arp_tbl|scsi_build_sense_buffer|ring_buffer_size|skb_unshare|snd_soc_component_alloc|__drm_gem_reset_shadow_plane|neigh_update|spk_stop_serial_interrupt|adf_gen2_get_num_accels|lm3533_read|lm3533_update|otx2_smq_flush|snd_soc_component_set_name|__skb_frag_ref|acpi_bus_init_power|adf_gen4_get_num_accels|cros_ec_sensors_pm_ops|dma_async_device_channel_register|ili9806e_remove|ipu6_buttress_map_fw_image|ipu6_buttress_unmap_fw_image|iwl_trans_pcie_reset|lm3533_write|otx2_nix_config_bp|otx2_nix_cpt_config_bp|otx2_txschq_config|otx2_txschq_free_one|rtw88xxa_phy_cck_pd_set|s6e63m0_remove|uverbs_get_cleared_udata|__skb_frag_unref|amd_get_boost_ratio_numerator|amd_pmf_get_ta_custom_bios_inputs|dma_async_device_channel_unregister|dma_opt_mapping_size|drm_nova_getparam|drm_panic_qr_generate|drm_panic_qr_max_data_size|dw_pcie_allocate_domains|fd_prepare_fd|fd_prepare_file|iommu_deferred_attach|iommu_get_dma_domain|led_trigger_read|led_trigger_write|mmc_alloc_host|mmc_free_host|otx2_alloc_mcam_entries|otx2_mcam_entry_init|otx2_pfc_txschq_alloc|otx2_pfc_txschq_config|otx2_pfc_txschq_stop|otx2_tc_apply_ingress_police_rules|otx2_update_bpid_in_rqctx|page_buffers|rtw89_phy_bb_wrap_set_rfsi_ct_opt|snd_soc_acpi_amd_acp7x_sof_machines|snd_soc_component_probe|snd_soc_component_remove|snd_soc_dai_name_get|soc_pcm_set_dai_params|sof_compressed_ops|uart_match_port|vfio_pci_core_err_handlers|alloc_page_buffers|apr_device_id|cxl_cper_handle_prot_err|devm_drm_put_bridge|drm_panic_trylock|drm_sysfb_crtc_reset|drm_sysfb_plane_reset|dw_spi_update_config|for_each_free_tree|for_each_present_section_nr|hv_call_deposit_pages|hv_remove_kexec_handler|hv_setup_kexec_handler|inet_addr|iommu_dma_opt_mapping_size|is_vm_hugetlb_page|lm3533_als_platform_data|lm3533_bl_platform_data|lm3533_led_platform_data|lm3533_platform_data|lp872x_dvs|lp872x_platform_data|lpc32xx_mlc_platform_data|lpc32xx_slc_platform_data|mana_gd_resume|mana_gd_suspend|memblock_is_kho_scratch|native_write_cr4|neigh_parms_alloc|neigh_resolve_output|otx2_get_maxflows|otx2_pfc_txschq_update|otx2_realloc_msix_vectors|pcie_link_speed_mbps|psp_assoc_drv_data|qcom_scm_pas_context|samsung_keypad_platdata|snd_mixer_oss_notify_callback|snd_soc_dai_action|snd_soc_dai_activate|snd_soc_dai_deactivate|spk_serial_release|spk_serial_synth_immediate|spk_serial_synth_probe|vga_switcheroo_client_fb_set|vma_desc_set_anonymous|zs_obj_read_begin|zs_obj_read_end|zynqmp_pm_is_mphy_tx_rx_config_ready|zynqmp_pm_is_sram_init_done'\n# 중점 영역에서 시그니처가 바뀌거나 사라진 API\ngit grep -nwE 'device_show_string'\n# 라이선스·네임스페이스가 바뀐 export\ngit grep -nwE 'tdx_mcall_get_report0|tdx_mcall_extend_rtmr|tdx_hcall_get_quote|kvm_get_kvm|kvm_get_kvm_safe|kvm_put_kvm'\n# 사라진 드라이버 Kconfig 심볼\ngrep -rnwE '(CONFIG_)?(ANDROID_BINDER_ALLOC_KUNIT_TEST|ANDROID_BINDER_IPC|ANDROID_BINDERFS|SATA_INIC162X|CRYPTO_DEV_HISI_SEC|QCOM_TZMEM_MODE_GENERIC|HID_KYSONA|VIDEO_MAX96714|VIDEO_TI_CAL_MC|MMC_VUB300|GREYBUS_ARCHE|GREYBUS_CAMERA|ADIS16203|VIDEO_MAX96712|RTL8723BS|MOXA_INTELLIO|FB_IOMEM_HELPERS_DEFERRED|SND_SOC_UX500_MACH_MOP500)' --include='Kconfig*' --include='Makefile' --include='*defconfig' .\n```"
+    },
+    {
+      "heading": "반복 전환 패턴",
+      "body": "여러 서브시스템이 같은 변경을 되풀이한 것입니다. 진행 중인 API 전환이라 트리 밖 드라이버도 따라가야 할 가능성이 큽니다.\n\n- **Convert to atomic_create_state** — 커밋 75개 (drm/malidp, drm/vmwgfx, drm/sun4i, drm/shmobile, drm/rz-du, drm/rcar-du 외 51곳). 커스텀 reset hook 대신 `atomic_create_state`와 `drm_atomic_helper_*_create_state()` 패턴으로 DRM connector/CRTC/plane state 생성을 맞춘다. [예시](https://git.kernel.org/torvalds/c/8b32d0652db9)\n- **Make sure clk_init_data is fully initialized** — 커밋 61개 (phy, soc/tegra, peci, media, i2c, mmc 외 4곳). `struct clk_init_data`의 모든 멤버를 0으로 포함해 초기화해 부분 초기화로 인한 clk 플래그·parent 오류를 막는다. [예시](https://git.kernel.org/torvalds/c/91967098fd98)\n- **Switch to drm_atomic_helper_crtc_create_state** — 커밋 46개 (drm/xen, drm/tve200, drm/repaper, drm/pl111, drm/mcde, drm/gm12u320 외 34곳). deprecated `drm_atomic_helper_crtc_reset()`를 `drm_atomic_helper_crtc_create_state()` 기반 reset hook으로 교체한다. [예시](https://git.kernel.org/torvalds/c/c4967fd8b43e)\n- **Remove redundant dev_err()** — 커밋 19개 (media, platform/mellanox, hte, usb, soc, accel 외 1곳). `devm_request_threaded_irq()` 실패 뒤 중복 `dev_err()` 로그를 제거한다. [예시](https://git.kernel.org/torvalds/c/1b6d63de87fc)\n- **Use devm_of_reserved_mem_device_init()** — 커밋 18개 (firmware, misc, media, ASoC). reserved memory는 `of_reserved_mem_device_init()` 대신 `devm_of_reserved_mem_device_init()`로 probe하고 수동 `of_reserved_mem_device_release()` 정리 경로를 줄인다. [예시](https://git.kernel.org/torvalds/c/c373463f8c08)\n- **use assign_bit() where applicable** — 커밋 16개 (soc, misc, mmc, ALSA/ASoC, zorro, mtd 외 10곳). 조건부 `set_bit`/`clear_bit` 분기를 `assign_bit()` API로 통일한다. [예시](https://git.kernel.org/torvalds/c/1cd31ba4f9bc)\n- **Remove obsolete 32-bit DMA mask fallback** — 커밋 16개 (net, eth, mlxsw, net/mlx5, net/mlx4, fm10k 외 4곳). 넓은 마스크 실패 후 32비트 DMA 마스크로 재시도하던 fallback을 제거했으므로 실패 시 probe를 중단하고 성공 시에만 고대역 DMA capability를 광고하도록 맞춘다. [예시](https://git.kernel.org/torvalds/c/03011820f02f)\n- **use sysfs_emit() instead of sprintf()** — 커밋 15개 (rtc, spi, staging). sysfs show 콜백의 `sprintf()`를 `sysfs_emit()`으로 바꾼다. [예시](https://git.kernel.org/torvalds/c/7485659ecb81)\n- **use named initializers for acpi_device_id** — 커밋 15개 (mailbox, hwmon, irqchip, Input, i2c, dmaengine 외 4곳). `acpi_device_id` 테이블을 designated initializer 형식과 통일된 리스트 종료 행으로 맞춘다. [예시](https://git.kernel.org/torvalds/c/01a40ad5a968)\n- **Switch to use acpi_bus_get_primary_device()** — 커밋 13개 (efi/dev-path-parser, ALSA, iommu/arm-smmu-v3, ASoC, thunderbolt, platform/x86 외 1곳). `acpi_get_first_physical_node()` 호출을 `acpi_bus_get_primary_device()`로 바꾸고 반환 디바이스 reference 수명을 맞춘다. [예시](https://git.kernel.org/torvalds/c/4ed5b18e4ebd)\n- **remove dependency on DRM simple helpers** — 커밋 13개 (drm/meson, drm/arm/komeda, drm/hisilicon/kirin, drm/renesas/shmobile, drm/mediatek, drm/imx 외 7곳). simple KMS helper에 기대던 encoder 초기화를 `drm_encoder_init()`과 로컬 `drm_encoder_funcs`로 직접 구현한다. [예시](https://git.kernel.org/torvalds/c/c86a7b75e726)\n- **Convert to DEFINE_SIMPLE_DEV_PM_OPS()** — 커밋 12개 (irqchip, drivers, mfd, media, mtd, drivers/clk 외 3곳). `SIMPLE_DEV_PM_OPS`를 `DEFINE_SIMPLE_DEV_PM_OPS()`와 `pm_sleep_ptr()` 조합으로 교체한다. [예시](https://git.kernel.org/torvalds/c/e571b39dedb1)"
+    },
+    {
+      "heading": "넓은 범위 변경",
+      "body": "한 커밋이 여러 드라이버 디렉터리를 함께 바꾼 것입니다. 콜백 시그니처나 헬퍼가 바뀐 경우가 많습니다.\n\n- [media: v4l2-subdev: Add struct v4l2_subdev_client_info pointer to pad ops](https://git.kernel.org/torvalds/c/7eef49c16461) — 드라이버 디렉터리 48곳, 파일 253개.\n- [scsi: core: Drop Scsi_Host.default_lock](https://git.kernel.org/torvalds/c/e83b47309f73) — 드라이버 디렉터리 22곳, 파일 77개. 호스트 어댑터의 `Scsi_Host.host_lock` 포인터 대신 내장 `host_lock`을 직접 쓰도록 락 접근을 수정한다.\n- [net: use assign_bit() where applicable](https://git.kernel.org/torvalds/c/8830e65ed46d) — 드라이버 디렉터리 18곳, 파일 39개. 조건에 따라 `set_bit`/`clear_bit`를 나누던 비트 필드 갱신을 `assign_bit()` 또는 `__assign_bit()`로 바꾼다.\n- [drm/fbdev: Move fbdev helpers into client library](https://git.kernel.org/torvalds/c/6ccc5b5fc1d3) — 드라이버 디렉터리 15곳, 파일 25개. fbdev helper include 경로가 client library 쪽으로 옮겨졌으므로 DRM fbdev 사용 드라이버의 헤더·모듈 의존성을 새 `drm_fbdev_helper` 위치에 맞춘다.\n- [drm/panic: Display panic screen via per-plane callback](https://git.kernel.org/torvalds/c/b8bc58515ac4) — 드라이버 디렉터리 13곳, 파일 17개. 패닉 화면을 plane 단에서 쓰는 DRM 드라이버는 `get_scanout_buffer` 대신 `display_panic_screen`과 `DRM_PANIC_PLANE_FUNCS` 초기화 매크로를 사용하도록 맞춘다.\n- [drivers: Replace __MODULE_STRING() with __stringify()](https://git.kernel.org/torvalds/c/08abfa5a161e) — 드라이버 디렉터리 11곳, 파일 16개. 모듈 파라미터 문자열에 쓰던 `__MODULE_STRING()` 호출을 `__stringify()`로 교체한다.\n- [drm: of: move drm_of_find_panel_or_bridge() from drm_of.c to drm_panel.c](https://git.kernel.org/torvalds/c/bf30039e4b87) — 드라이버 디렉터리 11곳, 파일 13개. `drm_of_find_panel_or_bridge()`가 panel 모듈 쪽으로 옮겨졌으므로 호출 드라이버 Kconfig에 `DRM_PANEL` 선택이 필요한지 확인한다."
+    },
+    {
+      "heading": "사라진 Kconfig 심볼",
+      "body": "전체 53개가 사라졌고 새로 301개가 생겼습니다. drivers/·sound/ 아래의 18개는 defconfig나 `depends on`에 남아 있으면 경고 없이 빠지니 확인이 필요합니다.\n\n| 심볼 | 위치 | 이름 변경 후보 | 지운 커밋 |\n|---|---|---|---|\n| `ANDROID_BINDER_ALLOC_KUNIT_TEST` | drivers/android/Kconfig | — | [binder: rm -f binder.c](https://git.kernel.org/torvalds/c/fd2bc059ed46) |\n| `ANDROID_BINDER_IPC` | drivers/android/Kconfig | — | [binder: Fix up Kconfig dependancy due to removal of .c code](https://git.kernel.org/torvalds/c/315860c4f912) |\n| `ANDROID_BINDERFS` | drivers/android/Kconfig | — | [binder: rm -f binder.c](https://git.kernel.org/torvalds/c/fd2bc059ed46) |\n| `SATA_INIC162X` | drivers/ata/Kconfig | — | [ata: sata_inic162x: remove dangerous broken driver](https://git.kernel.org/torvalds/c/96fdeb7e3fd8) |\n| `CRYPTO_DEV_HISI_SEC` | drivers/crypto/hisilicon/Kconfig | — | [crypto: hisilicon/sec - remove SEC crypto block cipher accelerator](https://git.kernel.org/torvalds/c/40ea0a15f20c) |\n| `QCOM_TZMEM_MODE_GENERIC` | drivers/firmware/qcom/Kconfig | — | [tee: remove TZMEM_MODE_GENERIC](https://git.kernel.org/torvalds/c/35abc3cd8ab6) |\n| `HID_KYSONA` | drivers/hid/Kconfig | `HID_PULSAR` | [HID: pulsar: add driver for Pulsar gaming mice](https://git.kernel.org/torvalds/c/e55cf379e822) |\n| `VIDEO_MAX96714` | drivers/media/i2c/Kconfig | — | [media: i2c: remove MAX96714 driver](https://git.kernel.org/torvalds/c/5e2732d80842) |\n| `VIDEO_TI_CAL_MC` | drivers/media/platform/ti/Kconfig | — | [media: ti: cal: Deprecate non-MC API usage](https://git.kernel.org/torvalds/c/dbe74db44913) |\n| `MMC_VUB300` | drivers/mmc/host/Kconfig | — | [mmc: vub300: Remove the driver for the obsolete HW](https://git.kernel.org/torvalds/c/ddcec9ed9f24) |\n| `GREYBUS_ARCHE` | drivers/staging/greybus/Kconfig | — | [staging: greybus: remove driver depending on nonexistent config option](https://git.kernel.org/torvalds/c/2f75b2eac999) |\n| `GREYBUS_CAMERA` | drivers/staging/greybus/Kconfig | — | [staging: greybus: remove camera driver marked as broken since 2016](https://git.kernel.org/torvalds/c/e9ea7d167779) |\n| `ADIS16203` | drivers/staging/iio/accel/Kconfig | — | [staging: iio: accel: remove adis16203, merged into mainline adis16201 driver](https://git.kernel.org/torvalds/c/4342ce602c28) |\n| `VIDEO_MAX96712` | drivers/staging/media/max96712/Kconfig | — | [staging: media: remove MAX96712 driver](https://git.kernel.org/torvalds/c/9e88bdefadd4) |\n| `RTL8723BS` | drivers/staging/rtl8723bs/Kconfig | — | [staging: rtl8723bs: remove the obsolete driver](https://git.kernel.org/torvalds/c/c520f3af7df4) |\n| `MOXA_INTELLIO` | drivers/tty/Kconfig | — | [tty: moxa: remove driver.](https://git.kernel.org/torvalds/c/de7f683ff9e0) |\n| `FB_IOMEM_HELPERS_DEFERRED` | drivers/video/fbdev/core/Kconfig | — | [fbdev: Drop unused FB_IOMEM_HELPERS_DEFERRED Kconfig option](https://git.kernel.org/torvalds/c/8f5ba51fa043) |\n| `SND_SOC_UX500_MACH_MOP500` | sound/soc/ux500/Kconfig | — | [ASoC: ux500: Remove the MOP500 machine driver](https://git.kernel.org/torvalds/c/f25d142baa23) |"
+    },
+    {
+      "heading": "폐기 예고·권장 방식 문서",
+      "body": "이번 범위에서 `Documentation/process/deprecated.rst`는 바뀌지 않았습니다.\n\n`Documentation/driver-api/`를 바꾼 커밋 24개:\n\n- [firewire: core: add kerneldoc for inbound transaction-related symbols](https://git.kernel.org/torvalds/c/aa7f13e25c80)\n- [firewire: core: add kerneldoc for outbound transaction-related symbols](https://git.kernel.org/torvalds/c/7a8db81dbd78)\n- [Documentation/cxl: Document DPA partition layout and ordering rules](https://git.kernel.org/torvalds/c/e4478834aa09)\n- [docs: dmaengine: clarify ordering rules around cookie completion](https://git.kernel.org/torvalds/c/fa89be96e845)\n- [PCI/P2PDMA: Update DMABUF lifecycle docs after move_notify() rename](https://git.kernel.org/torvalds/c/1319b085869e)\n- [docs: dmaengine: document ownership of the descriptor flags field](https://git.kernel.org/torvalds/c/ef399305a5bf)\n- [Documentation: devres: Remove non-existent SPI register helpers](https://git.kernel.org/torvalds/c/d220c9443db6)\n- [kbuild: Move gen_init_cpio and gen_initramfs.sh to scripts/](https://git.kernel.org/torvalds/c/33bef8226308)\n- [ata: libata: Fix scsi_done() documentation](https://git.kernel.org/torvalds/c/cfce1dc63504)\n- [docs: mmc: fix stale async request documentation](https://git.kernel.org/torvalds/c/d0d409fc6c66)\n- [docs: mmc: document eMMC health status support in mmc-tools](https://git.kernel.org/torvalds/c/80aa4f00b218)\n- [virt: Introduce steal governor driver](https://git.kernel.org/torvalds/c/9a8e740ee9f6)\n- [serial: 8250: Make uart_match_port() a 8250 specific function](https://git.kernel.org/torvalds/c/a0ffa28e8746)\n- [vfio: selftests: Add documentation](https://git.kernel.org/torvalds/c/573f39cdf714)\n- [gpiolib: add get_config() and gpiochip_generic_get_config()](https://git.kernel.org/torvalds/c/fc291104d01a)\n- [media: Documentation: Improve pixel rate calculation documentation](https://git.kernel.org/torvalds/c/5bf928d12d87)\n- [Documentation: rs485: Pull uart_get_rs485_mode() from serial_core.c](https://git.kernel.org/torvalds/c/3cdc47b3f2b1)\n- [Documentation: reset: Use fwnode_reset_simple_xlate() in the kernel-doc directive](https://git.kernel.org/torvalds/c/40b2f901d63f)\n- [Documentation: gpio: Fix bracket](https://git.kernel.org/torvalds/c/31e7eb7e3897)\n- [mtd: spi-nor: Refactor Read Status/Write Status support](https://git.kernel.org/torvalds/c/63489002d397)"
+    },
+    {
+      "heading": "서브시스템별 요약",
+      "body": "각 메인테이너가 pull 요청에 쓴 요약에서 드라이버에 영향 있는 점만 추렸습니다.\n\n**Pull drm updates from Dave Airlie** · [머지](https://git.kernel.org/torvalds/c/5b0764a53235)\n- atomic state reset이 `atomic_create_state` 쪽으로 이동하고 `drm_simple_encoder_init()`이 제거되어 simple KMS·atomic 드라이버 초기화 경로를 바꿔야 한다.\n- fbdev helper가 `drm_client_lib.ko` 쪽으로 옮겨져 fbdev emulation 클라이언트 모듈 의존성이 달라진다.\n\n**Pull sound updates from Takashi Iwai** · [머지](https://git.kernel.org/torvalds/c/75c1cb8178fe)\n- ASoC 코어에서 deprecated DMA API 호출을 계속 치우는 방향이라 ASoC·codec 플랫폼 드라이버의 DMA prep/unmap 경로를 최신 DMA API에 맞춰야 한다.\n- component 관련 control 추가 함수 이름·위치 정리가 이어져 `snd_soc_*_add_controls()` 계열 리네임을 따라가야 한다.\n\n**Pull media updates from Mauro Carvalho Chehab** · [머지](https://git.kernel.org/torvalds/c/42e6549eafc6)\n- V4L2 코어 subdev·pixformat kAPI 정리와 P010 포맷 정보 수정·Y12 포맷 정보 추가가 들어가 포맷·subdev 헤더를 쓰는 드라이버 빌드 시 API include 영향이 있다.\n- 신규 `fwnode_graph_for_each_endpoint_scoped()`가 추가되어 fwnode 그래프 순회 코드를 이 helper로 맞출 수 있다.\n\n**Pull clk updates from Stephen Boyd** · [머지](https://git.kernel.org/torvalds/c/4517b5a6c874)\n- 많은 clk 드라이버가 `struct clk_init_data` 전체 초기화 패턴으로 맞춰져 트리 밖 clk 드라이버도 미초기화 멤버 없이 등록해야 한다.\n- 코어에 `subsys_driver()`·`subsys_platform_driver()`가 추가되어 device initcall 이전에 올려야 하는 early platform 드라이버 등록 방식을 검토할 수 있다.\n\n**Pull SCSI updates from James Bottomley** · [머지](https://git.kernel.org/torvalds/c/6fba331225f5)\n- SCSI sense 처리가 ASC/ASCQ 분리 대신 16비트 표준 define에 맞춰 `scsi_set_sense()` 계열로 통합되어 low-level 드라이버 sense 빌드 코드를 수정해야 한다.\n\n**Pull dmaengine updates from Vinod Koul** · [머지](https://git.kernel.org/torvalds/c/ae3690eb2a99)\n- dmaengine 코어가 내부 API를 숨기기 시작했으므로 consumer가 아닌 dmaengine 컨트롤러 드라이버는 공개 헤더만으로 등록 helper에 접근할 수 없게 된다.\n\n**Pull ACPI support updates from Rafael Wysocki** · [머지](https://git.kernel.org/torvalds/c/4df4d2a577db)\n- ACPI enumeration이 의존성 미충족 장치에 대해 PM을 너무 일찍 건드리지 않도록 바뀌어 probe 순서·PM 초기화 타이밍에 민감한 ACPI companion 드라이버 동작이 달라질 수 있다.\n\n**Pull driver core updates from Danilo Krummrich** · [머지](https://git.kernel.org/torvalds/c/7be4bc52fd9e)\n- Rust 드라이버 쪽 DMA coherent 객체가 unbind 이후 수명을 넘지 않도록 바인딩 수명과 연동된다.\n\n**Pull media update from Mauro Carvalho Chehab** · [머지](https://git.kernel.org/torvalds/c/d738fbd1a8b9)\n- 미디어 pull에서 I²C·SPI 드라이버를 기본적으로 숨기지 않도록 했던 변경이 되돌려져, 해당 버스 미디어 드라이버가 기본 Kconfig에서 다시 노출된다.\n\n**Pull irq updates from Thomas Gleixner** · [머지](https://git.kernel.org/torvalds/c/1fbe92c39e72)\n- PCI link down 복구 경로에서 오프라인 채널에 MSI 데이터를 쓰지 않고 캐시했다가 복구 후 적용하므로 error recovery 중 MSI setup 드라이버는 BUS error 없이 동작한다.\n- faulting interrupt thread exit와 `free_irq()` 경합을 막도록 thread 종료 동기화가 강화되었다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "v7.3..v7.4-rc1 git 기록에서 코드가 뽑은 사실과, 그 커밋·pull 문구만 본 AI 요약입니다(웹 검색 없음). 사용 횟수는 v7.3 drivers/·sound/ 안의 단어 일치 횟수입니다."
+  },
+  "sources": [
+    {
+      "title": "Pull drm updates from Dave Airlie",
+      "url": "https://git.kernel.org/torvalds/c/5b0764a53235",
+      "note": "merge"
+    },
+    {
+      "title": "Pull networking updates from Paolo Abeni",
+      "url": "https://git.kernel.org/torvalds/c/734bef548a96",
+      "note": "merge"
+    },
+    {
+      "title": "Pull sound updates from Takashi Iwai",
+      "url": "https://git.kernel.org/torvalds/c/75c1cb8178fe",
+      "note": "merge"
+    },
+    {
+      "title": "Pull media updates from Mauro Carvalho Chehab",
+      "url": "https://git.kernel.org/torvalds/c/42e6549eafc6",
+      "note": "merge"
+    },
+    {
+      "title": "Pull clk updates from Stephen Boyd",
+      "url": "https://git.kernel.org/torvalds/c/4517b5a6c874",
+      "note": "merge"
+    },
+    {
+      "title": "Pull Char/Misc/IIO/others driver updates from Greg KH",
+      "url": "https://git.kernel.org/torvalds/c/330517c63aa9",
+      "note": "merge"
+    },
+    {
+      "title": "Pull SCSI updates from James Bottomley",
+      "url": "https://git.kernel.org/torvalds/c/6fba331225f5",
+      "note": "merge"
+    },
+    {
+      "title": "Pull USB / Thunderbolt update from Greg KH",
+      "url": "https://git.kernel.org/torvalds/c/168151cdb0f9",
+      "note": "merge"
+    },
+    {
+      "title": "Pull rdma updates from Jason Gunthorpe",
+      "url": "https://git.kernel.org/torvalds/c/fcb92ecd733e",
+      "note": "merge"
+    },
+    {
+      "title": "Pull watchdog updates from Guenter Roeck",
+      "url": "https://git.kernel.org/torvalds/c/22cbcdafe135",
+      "note": "merge"
+    },
+    {
+      "title": "Pull pin control updates from Linus Walleij",
+      "url": "https://git.kernel.org/torvalds/c/a8c2facb7b2c",
+      "note": "merge"
+    },
+    {
+      "title": "Pull SoC driver updates from Arnd Bergmann",
+      "url": "https://git.kernel.org/torvalds/c/2e51c645fee2",
+      "note": "merge"
+    },
+    {
+      "title": "Pull x86 platform driver updates from Ilpo Järvinen",
+      "url": "https://git.kernel.org/torvalds/c/c339f4010dea",
+      "note": "merge"
+    },
+    {
+      "title": "Pull more SCSI updates from James Bottomley",
+      "url": "https://git.kernel.org/torvalds/c/bd5c762ac051",
+      "note": "merge"
+    },
+    {
+      "title": "Pull crypto updates from Herbert Xu",
+      "url": "https://git.kernel.org/torvalds/c/bf2325084583",
+      "note": "merge"
+    },
+    {
+      "title": "Pull dmaengine updates from Vinod Koul",
+      "url": "https://git.kernel.org/torvalds/c/ae3690eb2a99",
+      "note": "merge"
+    },
+    {
+      "title": "Pull devicetree updates from Rob Herring",
+      "url": "https://git.kernel.org/torvalds/c/21a7f44fd076",
+      "note": "merge"
+    },
+    {
+      "title": "Pull input updates from Dmitry Torokhov",
+      "url": "https://git.kernel.org/torvalds/c/a32e63a613aa",
+      "note": "merge"
+    },
+    {
+      "title": "Pull tty / serial driver updates from Greg KH",
+      "url": "https://git.kernel.org/torvalds/c/cb8fef4b07f7",
+      "note": "merge"
+    },
+    {
+      "title": "Pull MFD updates from Lee Jones",
+      "url": "https://git.kernel.org/torvalds/c/d857e1f3faf9",
+      "note": "merge"
+    },
+    {
+      "title": "Pull PCI updates from Bjorn Helgaas",
+      "url": "https://git.kernel.org/torvalds/c/17bb0e2f6c80",
+      "note": "merge"
+    },
+    {
+      "title": "Pull spi updates from Mark Brown",
+      "url": "https://git.kernel.org/torvalds/c/6ef8f742f900",
+      "note": "merge"
+    },
+    {
+      "title": "Pull MTD updates from Miquel Raynal",
+      "url": "https://git.kernel.org/torvalds/c/44388c8f3e22",
+      "note": "merge"
+    },
+    {
+      "title": "Pull hwmon updates from Guenter Roeck",
+      "url": "https://git.kernel.org/torvalds/c/7313d94c67da",
+      "note": "merge"
+    },
+    {
+      "title": "Pull phy updates from Vinod Koul",
+      "url": "https://git.kernel.org/torvalds/c/e191b05f321b",
+      "note": "merge"
+    },
+    {
+      "title": "Pull SoC devicetree updates from Arnd Bergmann",
+      "url": "https://git.kernel.org/torvalds/c/7b9a0e857b42",
+      "note": "merge"
+    },
+    {
+      "title": "Pull HID updates from Jiri Kosina",
+      "url": "https://git.kernel.org/torvalds/c/2c2fe95ab19b",
+      "note": "merge"
+    },
+    {
+      "title": "Pull ACPI support updates from Rafael Wysocki",
+      "url": "https://git.kernel.org/torvalds/c/4df4d2a577db",
+      "note": "merge"
+    },
+    {
+      "title": "Pull driver core updates from Danilo Krummrich",
+      "url": "https://git.kernel.org/torvalds/c/7be4bc52fd9e",
+      "note": "merge"
+    },
+    {
+      "title": "Pull module updates from Petr Pavlu",
+      "url": "https://git.kernel.org/torvalds/c/c0e8d3013787",
+      "note": "merge"
+    },
+    {
+      "title": "Pull gpio updates from Bartosz Golaszewski",
+      "url": "https://git.kernel.org/torvalds/c/bfa231bb4c7e",
+      "note": "merge"
+    },
+    {
+      "title": "Pull arm64 updates from Catalin Marinas",
+      "url": "https://git.kernel.org/torvalds/c/303bff3637d1",
+      "note": "merge"
+    },
+    {
+      "title": "Pull fbdev updates from Helge Deller",
+      "url": "https://git.kernel.org/torvalds/c/0dfc0090b925",
+      "note": "merge"
+    },
+    {
+      "title": "Pull RTC updates from Alexandre Belloni",
+      "url": "https://git.kernel.org/torvalds/c/9b6f2eabc837",
+      "note": "merge"
+    },
+    {
+      "title": "Pull regulator updates from Mark Brown",
+      "url": "https://git.kernel.org/torvalds/c/003e5a0c479e",
+      "note": "merge"
+    },
+    {
+      "title": "Pull IOMMU updates from Joerg Roedel",
+      "url": "https://git.kernel.org/torvalds/c/4da9dedf3fc5",
+      "note": "merge"
+    },
+    {
+      "title": "Pull power supply and reset updates from Sebastian Reichel",
+      "url": "https://git.kernel.org/torvalds/c/0ddbc782c0bb",
+      "note": "merge"
+    },
+    {
+      "title": "Pull MMC updates from Ulf Hansson",
+      "url": "https://git.kernel.org/torvalds/c/03480653ddfd",
+      "note": "merge"
+    },
+    {
+      "title": "Pull irq chip driver updates from Thomas Gleixner",
+      "url": "https://git.kernel.org/torvalds/c/2e973d488223",
+      "note": "merge"
+    },
+    {
+      "title": "Pull MM updates from Andrew Morton",
+      "url": "https://git.kernel.org/torvalds/c/c5fd5e67c781",
+      "note": "merge"
+    },
+    {
+      "title": "Pull LED updates from Lee Jones",
+      "url": "https://git.kernel.org/torvalds/c/5b93dc1c0c61",
+      "note": "merge"
+    },
+    {
+      "title": "Pull pmdomain updates from Ulf Hansson",
+      "url": "https://git.kernel.org/torvalds/c/0e557fc68a16",
+      "note": "merge"
+    },
+    {
+      "title": "Pull more MM updates from Andrew Morton",
+      "url": "https://git.kernel.org/torvalds/c/8a36f53fd5ec",
+      "note": "merge"
+    },
+    {
+      "title": "Pull more block updates from Jens Axboe",
+      "url": "https://git.kernel.org/torvalds/c/8ebbaf8835c6",
+      "note": "merge"
+    },
+    {
+      "title": "Pull i2c updates from Andi Shyti",
+      "url": "https://git.kernel.org/torvalds/c/bb436f2a8568",
+      "note": "merge"
+    },
+    {
+      "title": "Pull media update from Mauro Carvalho Chehab",
+      "url": "https://git.kernel.org/torvalds/c/d738fbd1a8b9",
+      "note": "merge"
+    },
+    {
+      "title": "Pull memblock updates from Mike Rapoport",
+      "url": "https://git.kernel.org/torvalds/c/394023fbe34f",
+      "note": "merge"
+    },
+    {
+      "title": "Pull dma-mapping updates from Marek Szyprowski",
+      "url": "https://git.kernel.org/torvalds/c/906b6e1d8c78",
+      "note": "merge"
+    },
+    {
+      "title": "Pull slab updates from Harry Yoo",
+      "url": "https://git.kernel.org/torvalds/c/7a78f7ba9f24",
+      "note": "merge"
+    },
+    {
+      "title": "Pull core memory management updates from David Hildenbrand",
+      "url": "https://git.kernel.org/torvalds/c/2ee2475e15b4",
+      "note": "merge"
+    },
+    {
+      "title": "Pull workqueue updates from Tejun Heo",
+      "url": "https://git.kernel.org/torvalds/c/031cb4ccf803",
+      "note": "merge"
+    },
+    {
+      "title": "Pull regmap updates from Mark Brown",
+      "url": "https://git.kernel.org/torvalds/c/9aa54fb74ead",
+      "note": "merge"
+    },
+    {
+      "title": "Pull power management updates from Rafael Wysocki",
+      "url": "https://git.kernel.org/torvalds/c/df37e3924292",
+      "note": "merge"
+    },
+    {
+      "title": "Pull NOHZ updates from Thomas Gleixner",
+      "url": "https://git.kernel.org/torvalds/c/1ae0ee1ba729",
+      "note": "merge"
+    },
+    {
+      "title": "Pull timer core updates from Thomas Gleixner",
+      "url": "https://git.kernel.org/torvalds/c/aaf3d47e5306",
+      "note": "merge"
+    },
+    {
+      "title": "Pull clocksource updates from Thomas Gleixner",
+      "url": "https://git.kernel.org/torvalds/c/b4460f89a274",
+      "note": "merge"
+    },
+    {
+      "title": "Pull irq updates from Thomas Gleixner",
+      "url": "https://git.kernel.org/torvalds/c/1fbe92c39e72",
+      "note": "merge"
+    },
+    {
+      "title": "Pull RCU updates from Paul McKenney",
+      "url": "https://git.kernel.org/torvalds/c/a7f2bc878742",
+      "note": "merge"
+    },
+    {
+      "title": "Pull locking updates from Ingo Molnar",
+      "url": "https://git.kernel.org/torvalds/c/776bb6df3f16",
+      "note": "merge"
+    },
+    {
+      "title": "Pull scheduler updates from Ingo Molnar",
+      "url": "https://git.kernel.org/torvalds/c/cb95904b470d",
+      "note": "merge"
+    }
+  ],
+  "draftMetadata": {
+    "source": "kernel-git",
+    "range": "v7.3..v7.4-rc1",
+    "ai": true,
+    "counts": {
+      "commits": 18591,
+      "merges": 258,
+      "focusChanges": 11,
+      "removedApis": 614,
+      "usedRemovedApis": 127,
+      "exportChanges": 6,
+      "driverKconfig": 18,
+      "campaigns": 21,
+      "broad": 7
+    }
+  }
+}
