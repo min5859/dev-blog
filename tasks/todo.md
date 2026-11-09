@@ -27,7 +27,13 @@
       → status 기록. 저장소가 없으면 건너뜀. `daily-deploy.sh`의 lens 뒤에 실패 격리 단계로 추가. `docs/SCHEDULING.md`에 운영 설명
 - [x] 테스트 4개 추가(헤더 파서, 헤더 비교, 새 태그 선택, 중점 영역 글) → `npm test` 163개 통과
 - [x] 테스트·Mac 재수집(약 12분, 최대 RSS 1.0GB)·AI(Cursor ask 모드, 근거 검사 보강 후 최종본)·build 확인 → commit/push(공개)
-- [ ] OCI: `/srv/linux-kernel/linux.git` 전체 bare clone(wiki-publisher), 서비스 설정 확인, 수집기 결과가 Mac과 같은지 대조
+- [x] OCI(11/9): `/srv/linux-kernel/linux.git` 전체 bare clone(wiki-publisher, GitHub 미러, 약 10분·6.5GB, 디스크 여유 71GB).
+      `dev-blog.service`는 ProtectSystem이 없어 unit 수정 없이 쓸 수 있다. 서비스가 쉬는 동안 `pull --ff-only`로 `cd27e50` 반영.
+      `run-driver-impact.mjs`는 태그 fetch 후 "no new -rc1 or release tag"로 1초에 끝났고 작업 트리는 그대로였다.
+      OCI 수집기(v7.3..v7.4-rc1)는 4분 34초·최대 RSS 1.2GB, 결과 JSON sha256이 Mac과 같다.
+- [x] 공개: GitHub Pages 배포(`cd27e50`) 성공, `posts/2026-11-02-linux-v7.4-rc1-driver-impact.html` 200 확인
+- 다음 자동 실행: v7.4 정식 태그(비교 기준 v7.3), 그다음 v7.5-rc1(비교 기준 v7.4). 상태는 처리한 날만
+  `logs/daily/linux-driver-impact-latest-status.json`에 남는다. OCI health check 스킬은 아직 이 토픽을 보지 않는다.
 
 ### 검토 (2단계)
 
