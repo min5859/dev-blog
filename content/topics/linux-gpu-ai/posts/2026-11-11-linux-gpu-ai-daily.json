@@ -1,0 +1,130 @@
+{
+  "id": "2026-11-11-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-11-11 buddy range 회귀 복구 — GPU·AI 렌즈",
+  "headline": "gpu/buddy range-biased 할당 회귀 수정과 drm_gpusvm·atomic·panthor 패치가 dri-devel에서 동시에 움직입니다.",
+  "date": "2026-11-11",
+  "summary": "v3 이후 range-biased 할당에서 clear/dirty 두-pass 검색이 빠지며 ENOSPC·assert가 다시 드러난 gpu/buddy v4가 핵심 회귀 신호입니다. drm_gpusvm pages 헬퍼는 drm-misc-next에 올라갔고, atomic RESET·Panthor PM·GlandaGPU 머지 예고가 이어집니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "GPU",
+    "DRM"
+  ],
+  "highlights": [
+    {
+      "title": "gpu/buddy: range-biased clear/dirty two-pass 복구",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "gpu/buddy 및 amdgpu/DRM VRAM·GTT 할당 스택 유지보수자",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/dri-devel/20261104072847.2617886-1-arunpravin.paneerselvam@amd.com/",
+      "if": "visible VRAM aperture에서 IGT kms_plane scanout이 -ENOSPC로 실패하거나 gpu_buddy_fini() assert가 재현되면 회귀 가능성을 의심하세요.",
+      "do": "dirty tracker 재설계(1ad5e807f716) 이후 v4 two-pass·KUnit 회귀 패치를 추적하고 자체 VRAM QA에 반영하세요.",
+      "verify": "패치 스레드와 Fixes 대상 커밋 링크에서 two-pass 동작과 Reviewed-by 수렴을 확인하세요."
+    },
+    {
+      "title": "drm/gpusvm_pages unmapped·retry 헬퍼",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "drm_gpusvm·amdgpu SVM·accel/amdxdna 매핑 추적 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/dri-devel/d835e953-a92d-1635-8210-913c4c4681c1@amd.com/",
+      "if": "pages-only SVM 경로에서 faulted no_dma_map 커밋 경쟁을 notifier 락 아래에서 처리해야 하면 기존 open-coded retry를 점검하세요.",
+      "do": "drm_gpusvm_pages_set_unmapped()와 drm_gpusvm_pages_read_retry()로 전환할 amdxdna 2/2 시리즈와 drm-misc-next 적용분을 맞추세요.",
+      "verify": "스레드에서 drm-misc-next 적용 회신과 헬퍼 시그니처를 원문으로 대조하세요."
+    },
+    {
+      "title": "drm_atomic_commit_fill_with_defaults (RESET v9)",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "drm atomic core·lease·compositor 드라이버 유지보수자",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/dri-devel/20261110-drm-reset-state-flag-v9-4-ddb0e26324a0@kernel.org/",
+      "if": "DRM_MODE_ATOMIC_RESET·lease reset UAPI를 도입하거나 plane pristine 상태를 커밋에 채우는 경로를 만지면 리뷰 지적을 선반영하세요.",
+      "do": "Sashiko가 표시한 plane->state 경쟁과 normalized_zpos 미보존 High 이슈 해결 여부를 v9 후속 패치에서 추적하세요.",
+      "verify": "패치 본문 헬퍼 설명과 Sashiko outbox High 스레드를 함께 읽으세요."
+    },
+    {
+      "title": "drm/panthor HW component PM 직렬화",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "drm/panthor·Arm Mali v15 가상화/PM 유지보수자",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/dri-devel/20261110153907.3241978-24-karunika.choo@arm.com/",
+      "if": "Mali v15 가상화 v2 시리즈(23/28) PM·arbitration 작업을 이어가면 component resume 경로를 분리된 락과 대조하세요.",
+      "do": "panthor_device_resume_hw_components()의 slow-reset fallback 누락 Medium 지적이 v2 후속에 반영되는지 메일을 확인하세요.",
+      "verify": "component suspend/resume mutex·state 플래그 설명과 Sashiko Medium 코멘트를 대조하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**drm/glanda: GlandaGPU(VHDL soft-IP) 드라이버**\n\nv6 0/2에서 maintainer가 블로커 없이 drm/glanda 머지를 예고했고, 작성자는 QEMU official device ID 후 placeholder 교체 follow-up을 계획합니다.\n\n영향: mainline tiny DRM이 늘면 FPGA·시뮬레이션 GPU 스택 검증·CI 대상이 확대되고 이후 QEMU·device-tree ID 정리가 필요합니다.\n\n> There's nothing blocking it, I think. I'll merged the driver in soon.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/CAMwcS0ii%2B%3D5LvgeFRmMkQKUm9oReQj%3D-t7vZ5uxCrLGi%3DjzvnQ@mail.gmail.com/)\n\n**drm_gpusvm pages 헬퍼 — drm-misc-next**\n\nLizhi Hou가 drm_gpusvm_pages 헬퍼 패치가 drm-misc-next에 적용됐다고 답했습니다. 실제 mainline·backport 시점은 확인이 필요합니다.\n\n영향: accel/KFD·amdxdna가 공용 SVM pages API로 모이는 속도에 따라 머지 일정이 달라집니다.\n\n> Thanks a lot. The patch is applied to drm-misc-next.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/d835e953-a92d-1635-8210-913c4c4681c1@amd.com/)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**gpu/buddy: restore two-pass clear/dirty guard for range-biased allocation**\n\nv4는 range-biased 할당에서 clear/dirty 호환 두-pass 검색을 복구하고, v3 회귀 후 range 경계 mixed 블록 분할 누수와 gpu_buddy_fini() assert를 막기 위해 strict pass에서 부분 overlap free 블록 split을 건너뜁니다.\n\n영향: amdgpu·xe 등 gpu/buddy 기반 드라이버는 visible VRAM에서 dirty tracker 이후 조각화로 IGT kms_plane scanout이 -ENOSPC에 걸릴 수 있어 allocator 유지보수와 VRAM QA에 직접 영향이 있습니다.\n\n> Range-restricted allocations (the visible-VRAM aperture) skip dirty_steer_window() and reach __alloc_range_bias() with no clear/dirty eligibility guard\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/20261104072847.2617886-1-arunpravin.paneerselvam@amd.com/)\n\n회귀 원인 커밋은 Torvalds 트리의 dirty tracker 재설계(1ad5e807f716)로 명시됩니다. Matthew Auld가 제안한 clear/dirty 미사용 시 single-pass 최적화가 v5에 들어가는지, drm-misc-next·stable 백포트 일정은 아직 확인이 필요합니다.\n\n> gpu/buddy: replace dual-tree/force_merge with decoupled dirty tracker\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=1ad5e807f716)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/gpusvm: add drm_gpusvm_pages unmapped and retry helpers**\n\ndrm_gpusvm_pages만 쓰는 드라이버용으로 drm_gpusvm_pages_set_unmapped()와 drm_gpusvm_pages_read_retry()를 분리·추가해 MMU notifier에서 range 없이 unmapped 표시와 commit-side retry를 공식화합니다.\n\n영향: accel/KFD 계열은 notifier 락 아래 open-coded mmu_interval_read_retry() 없이는 faulted no_dma_map 커밋 경쟁을 안전히 처리하기 어려워, amdxdna 2/2와 함께 공용 GPU SVM 표면 확장 신호입니다.\n\n> Split the pages part of drm_gpusvm_range_set_unmapped() into drm_gpusvm_pages_set_unmapped(), and add drm_gpusvm_pages_read_retry()\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/d835e953-a92d-1635-8210-913c4c4681c1@amd.com/)\n\n**drm/panthor: Synchronize HW component PM transitions**\n\nMali v15 가상화 v2 23/28은 HW component suspend/resume를 분리하고 hw_component_lock·원자 state로 직렬화해 access-window 중에도 런타임 PM과 분리된 component 전환이 가능하게 합니다.\n\n영향: Panthor v15 arbitration·partition 시리즈의 전제이며, PM 경로가 틀리면 resume 중 slow-reset·런타임 PM과 component lock 경합으로 GPU bring-up이 깨질 수 있습니다.\n\n> Split hardware component suspend/resume from the top-level device PM path and protect those transitions with a dedicated mutex and state flag.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/20261110153907.3241978-24-karunika.choo@arm.com/)\n\n**drm/atomic: Allow filling a commit with pristine object states**\n\nDRM_MODE_ATOMIC_RESET v9 04/10은 drm_atomic_commit_fill_with_defaults()로 CRTC·plane·connector·color op에 atomic_create_state() 기반 pristine 상태를 커밋에 채웁니다.\n\n영향: lease reset·전체 디바이스 초기화 UAPI의 기반이지만, Sashiko는 unleased plane 경로의 plane->state 경쟁과 normalized_zpos 미보존을 High로 지적해 머지 전 수정이 필요할 수 있습니다.\n\n> Create drm_atomic_commit_fill_with_defaults() which iterates over all CRTCs, planes, connectors, and color operations in the device and inserts a fresh default state\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/20261110-drm-reset-state-flag-v9-4-ddb0e26324a0@kernel.org/)\n\n> [High] drm/atomic: race on plane->state in drm_atomic_commit_fill_with_defaults()\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/sashiko-outbox-207416@kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "gpu/buddy two-pass v4 패치 스레드",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/20261104072847.2617886-1-arunpravin.paneerselvam@amd.com/",
+      "note": "thread"
+    },
+    {
+      "title": "gpu/buddy Reviewed-by·Fixes 스레드",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/398b34c3-3ccf-4568-9129-debcf554f06b@intel.com/",
+      "note": "thread"
+    },
+    {
+      "title": "gpu/buddy dirty tracker 재설계 커밋",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=1ad5e807f716",
+      "note": "commit"
+    },
+    {
+      "title": "drm_gpusvm_pages 헬퍼 패치",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/d835e953-a92d-1635-8210-913c4c4681c1@amd.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/panthor HW component PM v2",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/20261110153907.3241978-24-karunika.choo@arm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "panthor slow-reset fallback 리뷰",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/sashiko-outbox-207361@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/glanda GlandaGPU v6 스레드",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/CAMwcS0ii%2B%3D5LvgeFRmMkQKUm9oReQj%3D-t7vZ5uxCrLGi%3DjzvnQ@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm_atomic_commit_fill_with_defaults v9",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/20261110-drm-reset-state-flag-v9-4-ddb0e26324a0@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "atomic fill_with_defaults plane->state High 리뷰",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/sashiko-outbox-207416@kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-10T18:31:30.431Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,88 @@
+{
+  "id": "2026-11-11-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-11-11 arm64 POR resume — 커널 보안",
+  "headline": "hardening RFC v10에서 suspend 이후 _cpu_resume() 경로에 POR_EL1 복원과 POE 재활성화 순서·isb가 논의 중입니다.",
+  "date": "2026-11-11",
+  "summary": "linux-hardening RFC v10에서 CONFIG_ARM64_POE 하에 cpu_suspend() 이후 POR_EL1을 POR_EL1_INIT으로 되돌리는 asm 패치가 검토되고 있습니다. Mark Brown의 배리어 지적과 Yeoreum Yun의 msr 직후 isb() 필요 응답이 이어졌습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "arm64 resume 경로 POR_EL1 초기화",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "arm64 POE·kpkeys·CPU suspend/resume·가상화 EL2 설정 담당",
+      "verifyLink": "https://lists.openwall.net/linux-hardening/2026/02/27/28",
+      "if": "S1 POE를 쓰는 arm64에서 suspend/resume 후 키 보호 설정을 추적한다면",
+      "do": "cpu_do_resume() 전 POR_EL1 복원 패치와 resume·EL2 트랩 설정을 한 세트로 검토하세요",
+      "verify": "RFC v10 스레드 원문에서 cpu_suspend() 직전·이후 POR_EL1 값 가정을 확인하세요"
+    },
+    {
+      "title": "POE 재활성화와 POR_EL1 기록 순서",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "arm64 POE·kpkeys·CPU suspend/resume·가상화 EL2 설정 담당",
+      "verifyLink": "https://lists.openwall.net/linux-hardening/2026/11/10/60",
+      "if": "cpu_do_resume()이 TCR2_EL1로 POE를 다시 켜는 구현을 본다면",
+      "do": "POR_EL1 기록이 반영되기 전 POE 재활성화 가능성을 배리어 관점에서 점검하세요",
+      "verify": "Mark Brown 2026-11-10 리뷰 스레드에서 순서·배리어 논지를 확인하세요"
+    },
+    {
+      "title": "SYS_POR_EL1 초기화 직후 isb",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "arm64 POE·kpkeys·CPU suspend/resume·가상화 EL2 설정 담당",
+      "verifyLink": "https://lists.openwall.net/linux-hardening/2026/11/10/52",
+      "if": "패치 주석이 isb 생략을 가정한다면",
+      "do": "초기화 직후 isb() 포함 여부를 리뷰 코멘트와 맞춰 보세요",
+      "verify": "Yeoreum Yun 답장 스레드에서 isb() 필요 주장을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**arm64: Initialize POR_EL1 register on cpu_resume()**\n\nlinux-hardening RFC v10 시리즈에서 cpu_suspend() 이후 _cpu_resume() 경로에 CONFIG_ARM64_POE 보호 하에 POR_EL1을 POR_EL1_INIT으로 되돌리는 asm 패치가 논의 중이며, Mark Brown이 POE 재활성화 순서 관련 배리어 이슈를 제기한 뒤 Yeoreum Yun이 msr 직후 isb()가 필요하다고 답했습니다.\n\n영향: S1 POE(Protection over Exception)를 쓰는 arm64에서 suspend/resume 후 POR_EL1이 미초기화 상태로 resume되면 키 보호 설정이 틀어질 수 있어, hardening·kpkeys 추적자에게 resume 경로와 EL2 트랩 설정이 한 세트로 봐야 합니다.\n\n> The POR_EL1 register is reset to an unknown value after cpu_suspend(). Since POR_EL1 always holds POR_EL1_INIT when entering cpu_suspend(), initialize POR_EL1 with POR_EL1_INIT before cpu_do_resume().\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/02/27/28)\n\n**POE 재활성화 순서와 배리어**\n\n2026-11-10 리뷰에서 Mark Brown은 cpu_do_resume()이 TCR2_EL1로 POE를 다시 켜는 순서상 배리어 없이는 POR_EL1 기록이 늦게 반영될 수 있다고 지적했습니다.\n\n영향: resume 경로에서 보호 레지스터와 POE enable 순서가 어긋나면 하드닝 가정이 깨질 수 있습니다.\n\n> cpu_do_resume() will update TCR2_EL1 to enable POE again, a sufficiently unhelpful implementation could potentially decide to do that before this POR_EL1 value takes effect AFAICT given that there's n\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/11/10/60)\n\n**SYS_POR_EL1 초기화 직후 isb()**\n\nYeoreum Yun은 주석에 적힌 isb 생략 가정에 동의하지 않고 SYS_POR_EL1 초기화 직후 isb()가 필요하다고 답했습니다.\n\n영향: asm 패치 리뷰 시 동기화 명령 포함이 최종 합의에 남을지 확인이 필요합니다.\n\n> Thanks. seems required to isb() after initialising SYS_POR_EL1.\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/11/10/52)\n\nv10에서 초기화 위치가 __cpu_setup으로 옮겨지는지, 및 HFGRT{R,W}_EL2.nPOR_EL1 트랩 비트 설정 패치와 resume 경로 패치의 최종 합치 여부는 아직 확인이 필요합니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "high",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "arm64 POR_EL1 resume 초기화 (RFC v10)",
+      "url": "https://lists.openwall.net/linux-hardening/2026/02/27/28",
+      "note": "thread"
+    },
+    {
+      "title": "Mark Brown: POE 재활성화 순서 리뷰",
+      "url": "https://lists.openwall.net/linux-hardening/2026/11/10/60",
+      "note": "thread"
+    },
+    {
+      "title": "Yeoreum Yun: isb() after SYS_POR_EL1",
+      "url": "https://lists.openwall.net/linux-hardening/2026/11/10/52",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-10T18:18:57.974Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

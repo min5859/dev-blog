@@ -1,0 +1,143 @@
+{
+  "id": "2026-11-11-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-11-11 kbuild 호스트 UB 수정 — Linux 툴체인",
+  "headline": "일반 defconfig에서도 재현되는 kbuild 호스트 UB 수정과 Rust·Kconfig·BPF 쪽 툴체인 패치가 같은 날 묶였습니다.",
+  "date": "2026-11-11",
+  "summary": "Leizhen Zhang의 v3 kbuild 시리즈가 genksyms·kallsyms·modpost 등 호스트 도구 UB 여섯 건을 일반 빌드 기준으로 재검증했습니다. Andreas Hindborg Rust Page 공유 메모리 복사 API, menuconfig 식 줄바꿈, bitmap KUnit, XDP skb 메타데이터 selftest, overflow 매크로 stable 백포트 신호가 함께 올라왔습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "kbuild: fix UB hit by normal builds in host tools",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "Kbuild·모듈 빌드·sanitizer 기반 CI를 돌리는 커널 빌드 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/10/5",
+      "if": "UBSan·Clang 호스트 빌드나 modpost·kallsyms 경로를 쓰는 CI를 돌리고 있다면",
+      "do": "v3 머지 전후 x86_64 defconfig 산출물 동등성과 sanitizer 로그를 비교하세요",
+      "verify": "커버 레터의 6건 UB 목록과 v7.4-rc 기준 재현 비율을 원문 스레드에서 확인하세요"
+    },
+    {
+      "title": "rust: byte-wise atomic copies between `Page` and shared memory",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust 커널·mm/공유 메모리 경로를 다루는 개발자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/10/2694",
+      "if": "Page와 user·hw 공유 버퍼 사이 복사를 Rust로 작성한다면",
+      "do": "v5의 SysMem 불변식과 atomic_per_byte_memcpy·Page API 표면을 리뷰 기준으로 맞추세요",
+      "verify": "시리즈 요약과 Syzbot 추적 상태를 각각 원문·CI 페이지에서 확인하세요"
+    },
+    {
+      "title": "kconfig: wrap long expressions in menuconfig",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "Kconfig·menuconfig를 쓰는 빌드/배포 담당 및 CONFIG_RUST 추적자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/10/3413",
+      "if": "CONFIG_RUST 등 긴 depends on 식을 menuconfig에서 자주 본다면",
+      "do": "v2 expr 프린터로 help·검색 출력이 터미널 너비에서 읽히는지 로컬 menuconfig로 확인하세요",
+      "verify": "wrap 대상 섹션과 indentation 규칙 설명을 패치 본문에서 확인하세요"
+    },
+    {
+      "title": "selftests/bpf: Test RX metadata on skbs built from xdp_frames",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "BPF/XDP selftest·Clang 커널 빌드를 추적하는 네트워크·llvm 담당",
+      "verifyLink": "https://lists.openwall.net/netdev/2026/11/10/149",
+      "if": "XDP_PASS·cpumap·veth redirect로 스택에 넘기는 skb 메타데이터를 추적한다면",
+      "do": "xdp_skb_ext_to_skb selftest 30케이스가 자신의 Clang selftest 파이프라인과 맞는지 점검하세요",
+      "verify": "세 경로와 서브테스트 구성을 netdev 패치 본문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**kbuild: fix UB hit by normal builds in host tools**\n\nLeizhen Zhang이 v3 6패치로 defconfig 링크 과정에서 재현되는 genksyms·kallsyms·modpost·sorttable·byteshift 호스트 도구 UB 여섯 건을 고치며, v2 대비 fuzzer 전용 항목을 빼고 v7.4-rc1 기준 UBSan/GCC 빌드로 출력물 동일성을 재검증했습니다.\n\n영향: modpost·kallsyms·genksyms는 모든 모듈 빌드 경로에 있어 sanitizer 호스트 빌드의 조용한 UB는 CI 게이트와 릴리스 품질 리스크이며, 일반 x86_64 defconfig만으로도 매 빌드 재현되는 사례가 있다고 합니다.\n\n> 2/6 kallsyms   link-vmlinux.sh hands kallsyms an empty .syms file on every build (the .tmp_vmlinux0 pass), and both qsort() calls then get a NULL table. 2 UBSan reports -> 0, the generated tables are \n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/10/5)\n\n**rust: byte-wise atomic copies between `Page` and shared memory**\n\nAndreas Hindborg v5 4패치가 SysMem에 plain access 금지 불변식을 명시하고 atomic_per_byte_memcpy()를 도입한 뒤 Page::read_bytewise_atomic/write_bytewise_atomic로 공유 버퍼 복사 API를 추가합니다.\n\n영향: user/hw와 공유되는 버퍼와 Page 간 memcpy는 LKMM·volatile/원자 접근 규칙을 코드화해야 하며, 메모리 관리·드라이버 Rust 바인딩 작성자의 안전 요구와 컴파일 가능 surface가 바뀝니다. mainline 머지 시점은 syzbot 상태만으로는 불명확합니다.\n\n> This series adds a way to copy data between a `Page` and memory that is shared with actors outside the kernel, such as user space threads or hardware, without introducing a data race.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/10/2694)\n\n**kconfig: wrap long expressions in menuconfig**\n\nJulian Braha v2가 menuconfig 검색·help의 Kconfig 식 출력을 터미널 너비에서 토큰 단위 줄바꿈하도록 expr 프린터를 확장하고 negation·값 주석 붙임 규칙을 유지합니다.\n\n영향: CONFIG_RUST 등 긴 depends on 식을 가로 스크롤 없이 읽을 수 있어 Rust/Kconfig 디버깅과 배포판 설정 검토가 빨라집니다.\n\n> Let's wrap expressions (like in the 'Depends on', 'Selected by', or 'Range' sections) between tokens at the end of the window, such that each line begins with the same indentation.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/10/3413)\n\n**rust: bitmap: kunit: uncomment owned_bitmap_out_of_bounds panic case**\n\nRust bitmap KUnit 시리즈가 #[should_panic] 지원으로 CONFIG_RUST_BITMAP_HARDENED=y에서 owned_bitmap_out_of_bounds 테스트를 활성화하고, 11월 10일 스레드에서 #[test]·#[cfg] 배치 관례와 무관 diff 제거를 v3에서 정리하기로 합의했습니다.\n\n영향: hardened bitmap 경계 panic 회귀를 CI KUnit으로 잡으려면 이 테스트가 켜져야 하며, v3 패치 게시·머지 시점은 아직 확인이 필요합니다.\n\n> Rust KUnit tests now support `#[should_panic]` attribute. Uncomment the test so it can be run when CONFIG_RUST_BITMAP_HARDENED=y.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/10/29/2159)\n\n**selftests/bpf: Test RX metadata on skbs built from xdp_frames**\n\nTianyi Gao bpf-next 시리즈 일부로 xdp_skb_ext_to_skb selftest를 추가해 XDP_PASS·cpumap·veth redirect 경로에서 xdp_frame 기반 skb의 hash·VLAN·checksum 메타데이터를 30개 케이스로 검증합니다.\n\n영향: Clang/LLVM으로 빌드되는 BPF selftest 회귀망의 일부이며 XDP 메타데이터 스택 전달 버그는 NIC·BPF 프로그램 ABI와 직결됩니다. bpf-next 통합·CI green 여부는 후속 스레드만으로는 불명입니다.\n\n> Three paths pass the packet to the stack: XDP_PASS in BPF_PROG_RUN with BPF_F_TEST_XDP_LIVE_FRAMES, XDP_REDIRECT into a cpumap, and XDP_REDIRECT into a veth device.\n\n[원문 확인](https://lists.openwall.net/netdev/2026/11/10/149)\n\n**overflow: Introduce overflows_type() and castable_to_type()**\n\nSasha Levin이 llvm@lists.linux.dev로 upstream commit 4b21d25의 overflows_type()/castable_to_type() 매크로와 KUnit overflow 테스트 확장을 stable 백포트 큐 형태로 다시 올렸고 Stable-dep-of iommu/dma scatterlist 패치를 명시했습니다.\n\n영향: constexpr static_assert에 쓸 overflow 검사 매크로는 hardening·드라이버 크기 검증 패턴의 기반이며, 동일 신호가 전일 수집에서도 보였는지는 추가 확인이 필요합니다.\n\n> [ Upstream commit 4b21d25bf519c9487935a664886956bb18f04f6d ] Implement a robust overflows_type() macro\n\n[원문 확인](https://lore.kernel.org/llvm/20261110155252.2304363-1-sashal@kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "kbuild: fix UB hit by normal builds in host tools (v3 cover)",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/10/5",
+      "note": "thread"
+    },
+    {
+      "title": "kbuild UB series Patchew mirror",
+      "url": "https://patchew.org/linux/20261110000003.1719966-1-lzsx618@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: byte-wise atomic copies (v5 0/4)",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/10/2694",
+      "note": "thread"
+    },
+    {
+      "title": "Syzbot tracking rust Page atomic copy series",
+      "url": "https://ci.syzbot.org/series/03913dc4-9164-47a7-b65d-1a68fa2c257a",
+      "note": "changelog"
+    },
+    {
+      "title": "kconfig: wrap long expressions in menuconfig (v2)",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/10/3413",
+      "note": "thread"
+    },
+    {
+      "title": "CONFIG_RUST menuconfig horizontal scroll context",
+      "url": "https://lists.openwall.net/linux-kernel/2026/10/11/818",
+      "note": "thread"
+    },
+    {
+      "title": "rust bitmap KUnit should_panic test (v2 3/3)",
+      "url": "https://lists.openwall.net/linux-kernel/2026/10/29/2159",
+      "note": "thread"
+    },
+    {
+      "title": "rust bitmap KUnit convention reply (2026-11-10)",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/10/2614",
+      "note": "thread"
+    },
+    {
+      "title": "selftests/bpf xdp_skb_ext_to_skb (08/15)",
+      "url": "https://lists.openwall.net/netdev/2026/11/10/149",
+      "note": "thread"
+    },
+    {
+      "title": "skb core extension design context (00/15)",
+      "url": "https://lists.openwall.net/netdev/2026/11/10/147",
+      "note": "thread"
+    },
+    {
+      "title": "overflow macros stable backport announcement",
+      "url": "https://lore.kernel.org/llvm/20261110155252.2304363-1-sashal@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "upstream commit 4b21d25 overflows_type",
+      "url": "https://api.github.com/repos/torvalds/linux/commits/4b21d25bf519c9487935a664886956bb18f04f6d",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-10T18:23:47.045Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
