@@ -1,0 +1,121 @@
+{
+  "id": "2026-11-12-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-11-12 kallsyms·Rust API — 툴체인 렌즈",
+  "headline": "kallsyms 스택 버퍼 수정, kbuild 단일 빌드 단축, Rust configfs·NovaCore API 정리와 rust_binder 동기 트랜잭션 거부가 올라왔습니다.",
+  "date": "2026-11-12",
+  "summary": "호스트 도구 kallsyms의 on-stack 버퍼 크기와 단일 .o 빌드 prepare 경로가 정리되며, Rust for Linux 쪽은 configfs default group·NovaCoreApi·rust_binder 수정이 이어집니다. perf는 커널 compiler-context-analysis.h와 Clang thread-safety 경로를 맞춥니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "툴체인",
+    "Rust",
+    "kbuild"
+  ],
+  "highlights": [
+    {
+      "title": "scripts/kallsyms on-stack 버퍼 확장",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "Kbuild·kallsyms·linux-next kbuild 트리 추적자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/11/1758",
+      "if": "압축 심볼 확장 시 on-stack buf가 KSYM_NAME_LEN만 쓰는 경로를 빌드하거나 linux-next kallsyms 시리즈를 추적한다면",
+      "do": "v3-next 01/13 패치와 후속 시리즈 순서를 스레드에서 확인하고 로컬 vmlinux 링크에서 kallsyms 호스트 빌드를 재검증하세요",
+      "verify": "최대 길이 심볼 존재·실제 exploitability는 저자도 불확실하다고 했으므로 원문과 리뷰 응답을 꼭 확인하세요"
+    },
+    {
+      "title": "rust_binder 동기 트랜잭션 중복 거부",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "rust_binder·Binder IPC·Android 커널 검증 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/10/2338",
+      "if": "CONFIG_RUST_BINDER 또는 TF_DEFER_COMPLETE 경로를 검증한다면",
+      "do": "v2에서 top_of_transaction_stack()의 should_sync_wakeup() 검사와 Fixes 태그 대상 커밋을 대조해 백포트 필요성을 판단하세요",
+      "verify": "openwall v2와 11-11 lore Message-Id가 다를 수 있어 동일 시리즈 재게시 여부를 확인하세요"
+    },
+    {
+      "title": "kbuild 단일 빌드 prepare 의존성 축소",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "Kbuild·allmodconfig/단일 .o 빌드·sanitizer 플래그 실험 담당",
+      "verifyLink": "https://patchew.org/linux/20261111-reduce-single-build-dependencies-v1-0-7196ca986a85@kernel.org/",
+      "if": "CFLAGS/W=1로 init/main.o만 반복 빌드하는 루프를 쓴다면",
+      "do": "v1 시리즈의 scripts/mod·generic check 분리와 rq-offsets-file 의존을 적용한 뒤 타이밍을 재측정하세요",
+      "verify": "전체 vmlinux/module 빌드에서 prepare 누락 회귀는 리뷰 응답이 아직 미확인이니 머지 전 리뷰 스레드를 확인하세요"
+    },
+    {
+      "title": "perf compiler-context-analysis 동기화",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "perf-tools-next·Clang thread-safety·compiler-context-analysis.h 유지보수 담당",
+      "verifyLink": "https://patchew.org/linux/20261111174213.3526604-1-irogers@google.com/",
+      "if": "Clang -Wthread-safety로 perf나 tools/include를 빌드한다면",
+      "do": "v12 시리즈의 헤더 동기화와 Makefile.config 플래그 변경을 따라 로컬 perf 빌드를 돌려보세요",
+      "verify": "perf-tools-next 머지·distro 백포트 여부는 이번 수집에서 확인되지 않았습니다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**scripts/kallsyms: Avoid overrunning on-stack buffer**\n\nDavid Laight v3-next 시리즈 01/13이 scripts/kallsyms.c의 on-stack buf를 KSYM_NAME_LEN에서 1+KSYM_NAME_LEN으로 키워 압축 심볼 확장 시 선행 type 문자와 NUL을 담을 수 있게 합니다. code inspection으로 발견했으며 git import 이전부터 있던 버그로 기술합니다.\n\n영향: kallsyms는 모든 vmlinux 링크에서 돌아가는 호스트 도구라 스택 오버런은 빌드 타임 공격면·산출물 손상 가능성을 키우며, 이후 패치들이 kallsyms 성능/압축을 바꾸는 대형 시리즈의 전제 패치입니다.\n\n> But it is declared 'char buf[KSYM_NAME_LEN] so a maximal length name overwrites something on stack.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/11/1758)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**gpu: nova-core: minor NovaCoreApi cleanup**\n\nDanilo Krummrich v2가 NovaCoreApi에 new() 생성자를 추가하고 auxiliary 등록 시 이를 쓰도록 바꿔 gpu·pdev 필드를 private로 숨깁니다. 수명 파라미터도 'bound에서 'api로 바꿔 버스 디바이스 private data용 'bound와 API 핸들 수명을 구분합니다.\n\n영향: Rust for Linux에서 auxiliary registration_data 수명 명명과 캡슐화 패턴은 nova-drm 등 downstream 바인딩 작성자에게 그대로 복사되는 관례이며, pin-init self-referential 시리즈 이후 API surface 정리 신호입니다.\n\n> Add a constructor for NovaCoreApi and use it when registering the auxiliary device, allowing the gpu and pdev fields to become private.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/11/2590)\n\n**configfs: rust: add an API for adding default groups from C**\n\nAndreas Hindborg v3가 C configfs default group를 Rust Group::new에서 붙일 수 있게 helpers·CDefaultGroup·UnattachedGroup 토큰을 추가합니다. v3에서는 configfs_add/remove 참조 카운트 불일치, 이중 부착 컴파일 타임 거부, pin_init_scope로 초기화 순서를 고칩니다.\n\n영향: C 서브시스템과 섞이는 Rust configfs 바인딩이 default group을 안전히 다루려면 refcount·단일 부착 불변식이 코드화되어야 하며, rnull 등 하이브리드 드라이버 템플릿에 직접 영향을 줍니다.\n\n> Acquire a reference on each default group before adding it to its parent group. `configfs_add_default_group` does not acquire one, but `configfs_remove_default_groups` releases one\n\n[원문 확인](https://patchew.org/linux/20261111-configfs-c-default-groups-v3-1-aec19389272e@kernel.org/)\n\n**kbuild: reduce single-build dependencies**\n\nVincent Mailhol v1 3패치가 단일 .o 빌드 경로에서 prepare의 generic check·scripts/mod·일부 syscall/atomic check를 분리하고 rq-offsets-file을 명시적 prepare 의존으로 둡니다. W=1로 init/main.o만 다시 빌드할 때 modpost 재빌드 등이 빠져 약 3.6s에서 2.1s로 줄인다고 측정했습니다.\n\n영향: CFLAGS/W=1 반복 실험·CI incremental compile에서 artificial prepare 비용은 Rust/Clang toolchain 검증 루프를 느리게 하므로, 단일 오브젝트 빌드 의존성 그래프 변경은 로컬 개발·bisect 워크플로에 바로 체감됩니다.\n\n> Move the generic preparation checks and scripts/mod out of the single-build preparation path.\n\n[원문 확인](https://patchew.org/linux/20261111-reduce-single-build-dependencies-v1-0-7196ca986a85@kernel.org/)\n\n**tools/perf: Adopt kernel compiler-context-analysis.h annotations**\n\nIan Rogers v12 20패치가 tools/include의 compiler-context-analysis.h·compiler_types.h를 커널과 동기화하고 perf의 mutex.h 스타일 어노테이션을 커널 매크로로 통일합니다. 부수적으로 dsos/vdso/tpebs/maps 경로의 락 버그·TOCTOU·데드락·FD 이중 close를 고치고 Makefile.config에 Clang -Wthread-safety 플래그를 켭니다.\n\n영향: perf userspace 도구가 커널과 같은 Clang context-lock 분석 표면을 공유하면 toolchain 렌즈 독자는 커널 헤더 변경이 perf 빌드 실패로 번지는 경로를 추적할 수 있고, -Wthread-safety 확대는 LLVM 기반 CI 회귀망에 직접 영향을 줍니다.\n\n> This series makes tools/include/linux/compiler-context-analysis.h functional by synchronizing it and the required compiler_types.h helpers with the kernel headers, converts tools/perf from its custom\n\n[원문 확인](https://patchew.org/linux/20261111174213.3526604-1-irogers@google.com/)\n\n**rust_binder: reject sync transaction with pending sync work**\n\nChris Wiseman v2 1/2가 TF_DEFER_COMPLETE로 work_list에 동기 completion이 남은 상태에서 추가 동기 BC_TRANSACTION을 EINVAL로 거부하도록 top_of_transaction_stack()에 should_sync_wakeup() 검사를 넣습니다. Transaction::new() 전에 실패해 스택 덮어쓰기로 인한 Arc 순환 참조·프로세스 종료 후 메모리 고정을 막습니다.\n\n영향: Rust Binder는 CONFIG_RUST_BINDER 실험·Android/GKI 추적 대상이며, 이 결함은 프로세스 종료 후에도 ShrinkablePageRange가 핀되는 심각한 런타임 결함이라 stable Cc·Fixes 태그를 따라 백포트 필요성이 큽니다.\n\n> Fixes: eafedbc7c050 (\"rust_binder: add Rust Binder driver\") Fixes: 8eb05e8e47f1 (\"rust_binder: add TF_DEFER_COMPLETE flag for avoiding userspace roundtrip\")\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/10/2338)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "NovaCoreApi cleanup v2",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/11/2590",
+      "note": "thread"
+    },
+    {
+      "title": "NovaCoreApi cleanup lore",
+      "url": "https://lore.kernel.org/rust-for-linux/20261111161935.750047-1-dakr@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "configfs rust default groups v3",
+      "url": "https://patchew.org/linux/20261111-configfs-c-default-groups-v3-1-aec19389272e@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "kbuild reduce single-build dependencies v1",
+      "url": "https://patchew.org/linux/20261111-reduce-single-build-dependencies-v1-0-7196ca986a85@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "kallsyms on-stack buffer v3-next",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/11/1758",
+      "note": "thread"
+    },
+    {
+      "title": "perf compiler-context-analysis v12",
+      "url": "https://patchew.org/linux/20261111174213.3526604-1-irogers@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "rust_binder sync transaction reject v2",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/10/2338",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-11T18:16:47.556Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,113 @@
+{
+  "id": "2026-11-12-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-11-12 ashmem mmap 경고 — Android 커널",
+  "headline": "upstream shmem mmap_prepare 도입 뒤 ashmem에서 WARN·패닉 가능 회귀를 수정하고, dma-heap 보안 머지·Nvidia GKI 심볼이 ACK에 반영됐습니다.",
+  "date": "2026-11-12",
+  "summary": "android-mainline에서 ashmem vmfile fops의 .mmap_prepare 제거로 remap 경로 안정성을 되찾았고, drm-fixes 머지로 dma_heap fd 게시 순서를 upstream과 맞췄습니다. android16-6.12 GKI에는 arm64 suspend TPIDR2 보존과 Nvidia cpuidle용 KMI 심볼 추가가 포함됩니다.",
+  "tags": [
+    "안드로이드",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "ashmem: vmfile fops에서 .mmap_prepare 제거",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "ACK android-mainline 백포트 담당, ashmem/ION·dmabuf 연동 앱·프레임워크 개발자",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/08a3efe1ff960a381689797f790dda3070ffe70f",
+      "if": "/dev/ashmem mmap 후 remap_file_pages()를 쓰거나 panic_on_warn=1 환경에서 GKI를 검증한다면",
+      "do": "08a3efe 커밋이 들어간 android-mainline 기준으로 ashmem mmap·remap 시나리오와 WARN 로그를 재현 테스트하세요",
+      "verify": "원문 커밋과 shmem.rs diff에서 new_fops.mmap_prepare = None 변경을 확인하세요"
+    },
+    {
+      "title": "drm-fixes 머지: dma_heap_ioctl_allocate 채택",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "ACK mainline 머지 담당, GPU/멀티미디어·dmabuf 드라이버 팀",
+      "verifyLink": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=30d0aff2c65a",
+      "if": "dma-heap·dmabuf 할당 ioctl 경로를 벤더·HAL에서 다룬다면",
+      "do": "android-mainline 머지 결과가 copy_to_user 성공 전 fd를 게시하지 않는 upstream 동작과 일치하는지 ioctl 테스트를 수행하세요",
+      "verify": "718136b3 머지 커밋과 upstream 30d0aff2 커밋 메시지를 대조해 fd 게시 순서 수정을 확인하세요"
+    },
+    {
+      "title": "init: pid 1 생성 시 CLONE_FS 복원",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "ACK 통합·부팅 담당, 벤더 init/initramfs 팀",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/d82b1e9acccf66dcebefedad2635d28e1d63d895",
+      "if": "mount namespace unshare 후 펌웨어 로딩·kworker rootfs 접근을 검증한다면",
+      "do": "해당 패치가 포함된 빌드에서 부팅 및 펌웨어 로드 경로를 회귀 테스트하세요",
+      "verify": "d82b1e9 커밋에서 kworker rootfs 접근 실패와 CLONE_FS 임시 복원 근거를 원문에서 확인하세요"
+    },
+    {
+      "title": "GKI: Nvidia cpuidle 관련 KMI 심볼 3개 추가",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "GKI ABI 담당, Nvidia Android 벤더 커널 팀",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/ee77e2a295a18154b857479efc05b1c8c1e6b6cb",
+      "if": "Nvidia 플랫폼 cpuidle 아웃오브트리 모듈을 GKI 위에 올린다면",
+      "do": "ABI diff·gki/aarch64/abi.stg 갱신 후 모듈을 재빌드해 로드·idle 전환을 검증하세요",
+      "verify": "ee77e2a 커밋과 changelog에서 bitmap_parselist_user 등 3개 심볼 추가를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ANDROID: ashmem: clear .mmap_prepare in vmfile fops**\n\nupstream shmem의 mmap_prepare 도입 이후 복사된 ashmem vmfile fops에 .mmap과 .mmap_prepare가 동시에 남아 can_mmap_file()에서 WARN_ON_ONCE가 발생하도록, shmem.rs에서 .mmap_prepare를 None으로 지웁니다.\n\n영향: /dev/ashmem mmap 후 remap_file_pages() 경로에서 경고가 발생하고 panic_on_warn=1이면 커널 패닉으로 이어질 수 있어, GKI·앱 공유메모리 사용자에게 직접적인 런타임 안정성 이슈입니다.\n\n> Clear .mmap_prepare so only .mmap is used.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/08a3efe1ff960a381689797f790dda3070ffe70f)\n\n> +        new_fops.mmap_prepare = None;\n\n[원문 확인](https://android.googlesource.com/kernel/common/+diff/1c3cdb432822259ebe365912961ef8c62db70c86..08a3efe1ff960a381689797f790dda3070ffe70f/drivers/staging/android/shmem.rs)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**ANDROID: GKI: Add Nvidia cpuidle symbols**\n\nNvidia cpuidle 벤더 모듈이 쓰는 bitmap_parselist_user, play_idle_precise, smp_call_function_many를 aarch64 Nvidia KMI 심볼 목록·abi.stg에 추가합니다.\n\n영향: GKI 심볼 화이트리스트가 바뀌므로 Nvidia 플랫폼 cpuidle 아웃오브트리 모듈은 ABI diff·재빌드 없이는 로드가 깨질 수 있습니다.\n\n> 3 function symbol(s) added\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/ee77e2a295a18154b857479efc05b1c8c1e6b6cb)\n\n> Regenerate the ABI definition for these additions.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/ee77e2a295a18154b857479efc05b1c8c1e6b6cb?format=JSON)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ANDROID: ashmem: clear .mmap_prepare in vmfile fops",
+      "url": "https://android.googlesource.com/kernel/common/+/08a3efe1ff960a381689797f790dda3070ffe70f",
+      "note": "commit"
+    },
+    {
+      "title": "ashmem shmem.rs diff",
+      "url": "https://android.googlesource.com/kernel/common/+diff/1c3cdb432822259ebe365912961ef8c62db70c86..08a3efe1ff960a381689797f790dda3070ffe70f/drivers/staging/android/shmem.rs",
+      "note": "changelog"
+    },
+    {
+      "title": "dma-heap: don't publish fd before copy_to_user() succeeds",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=30d0aff2c65a",
+      "note": "commit"
+    },
+    {
+      "title": "Merge drm-fixes-2026-09-05 into android-mainline",
+      "url": "https://android.googlesource.com/kernel/common/+/718136b3ae37acbdcda64dc8e373b26cb5082ca1",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: init: spawn pid 1 with CLONE_FS",
+      "url": "https://android.googlesource.com/kernel/common/+/d82b1e9acccf66dcebefedad2635d28e1d63d895",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: GKI: Add Nvidia cpuidle symbols",
+      "url": "https://android.googlesource.com/kernel/common/+/ee77e2a295a18154b857479efc05b1c8c1e6b6cb",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-11T18:04:52.489Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/android-newsletter-from-dossier-ko.md"
+  }
+}

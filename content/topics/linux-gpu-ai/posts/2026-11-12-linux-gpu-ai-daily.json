@@ -1,0 +1,138 @@
+{
+  "id": "2026-11-12-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-11-12 DP PM 참조 누적 — Linux GPU·AI",
+  "headline": "Qualcomm MSM DP의 runtime PM 참조 누적 회귀와 drm atomic colorop 범위 수정이 dri-devel 논의 중심입니다.",
+  "date": "2026-11-12",
+  "summary": "msm_dp_bridge_detect()에서 plugged 상태당 runtime PM 참조를 하나만 유지하도록 하는 v3가 USB-C DP 언플러그 후 suspend 회귀를 겨냥합니다. msm DSI 바인딩 endpoint 필수화, Adreno AHB 로그, atomic colorop, Rust DRM open() API 변경도 함께 올라왔습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "drm/msm/dp: plugged 상태당 runtime PM 참조 1개",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "drm/msm/dp·Qualcomm Type-C/DP runtime PM 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/10/24/225",
+      "if": "USB-C DP 기기에서 언플러그 후에도 MDSS GDSC나 컨트롤러가 꺼지지 않는다면 detect() 경로의 PM 참조 누적을 의심하세요.",
+      "do": "IRQ_HPD v8 위에 올라간 v3 패치 동작과 Lenovo Y700 Gen 5에서의 언플러그 후 suspend를 재현 테스트하세요.",
+      "verify": "원문 스레드와 Fixes 대상 커밋(3ea2d1c3d154)을 대조해 merge·fold 형태를 확인하세요."
+    },
+    {
+      "title": "drm/atomic: active·전환 중 colorop만 affected에 포함",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "drm/atomic·colorop/color pipeline UAPI 구현 및 AMD/Intel/KMS colorop 드라이버 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/dri-devel/20261111160814.21326-4-mwen@igalia.com/",
+      "if": "color pipeline UAPI 사용 중 비활성 colorop까지 atomic 검사에 끼는 이상 동작이 보이면 최근 affected colorops 추가 회귀를 점검하세요.",
+      "do": "Melissa Wen v5 03/15의 drm_atomic_add_pipeline_colorops() 경로로 plane·colorop 조합을 atomic selftest하세요.",
+      "verify": "Sashiko가 제안한 Fixes: 6955d6bca053 반영 여부와 v5 시리즈 upstream 합류 상태를 스레드에서 확인하세요."
+    },
+    {
+      "title": "arm: qcom: MSM DSI graph endpoint 바인딩 필수",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Qualcomm MSM/MDSS DTS·devicetree 바인딩 및 drm/msm DSI 유지보수자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/10/2372",
+      "if": "DSI 패널 endpoint 없이 lane 수가 초기화되지 않아 dsi_host_attach()에서 실패한다면 DTS·바인딩 검증 갭을 먼저 보세요.",
+      "do": "v2 시리즈의 OF graph endpoint·remote-endpoint 요구와 apq8016 보드 DTS 변경을 로컬 빌드·dtc 검증에 반영하세요.",
+      "verify": "patchew v2 커버레터와 패치 3/3 설명을 읽고, v2가 어떤 트리로 합쳐지는지는 아직 확인이 필요합니다."
+    },
+    {
+      "title": "drm/msm/adreno: AHB 오류 로그에 주소·방향 추가",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "drm/msm/adreno IRQ·GPU fault 핸들링 및 Freedreno 디버깅 담당",
+      "verifyLink": "https://patchew.org/linux/20261111171417.249152-1-robin.clark@oss.qualcomm.com/",
+      "if": "a7xx/a8xx에서 CP AHB fault만 보이고 register dump가 부족하면 새 RL_ERROR 로그 포맷 적용 빌드를 써 보세요.",
+      "do": "패치가 적용된 커널에서 fault 재현 시 RL_ERROR_0/1에 addr·read/write가 찍히는지 dmesg를 수집하세요.",
+      "verify": "a6xx 이하 동등 로그·drm-msm-fixes 백포트 필요성은 스레드에서 아직 열려 있으니 판단 전 원문을 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm/msm/dp: hold one runtime PM reference per plugged state**\n\nmsm_dp_bridge_detect()가 plugged 상태당 runtime PM 참조를 하나만 유지하도록 하는 v3가 IRQ_HPD v8 시리즈 위에 올라갔고, Dmitry가 discuss 중 재게시했습니다.\n\n영향: detect()마다 참조가 누적되면 DP 컨트롤러와 MDSS GDSC가 언플러그 후에도 꺼지지 않아 USB-C DP 기기에서 전력·suspend 회귀를 일으킬 수 있습니다.\n\n> Hold the function's own reference for the duration of the call, take the plugged state's reference when detect() sets the plugged state and drop it when detect() clears it.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/10/24/225)\n\n**drm/atomic: only add states of active or transient active colorops**\n\nMelissa Wen v5 시리즈 03/15는 plane color pipeline 체인에 속한 active·전환 중 colorop만 atomic affected 목록에 넣도록 drm_atomic_add_pipeline_colorops()를 사용합니다.\n\n영향: 비활성 colorop까지 atomic에 끼워 넣으면 color pipeline UAPI 정책과 맞지 않는 상태 검사·드라이버 commit 경로가 흔들릴 수 있어 공용 atomic/core 추적이 중요합니다.\n\n> Only consider affected colorop states those that are part of an active color pipeline or a pipeline that is about to be activated or deactivated in the same atomic commit\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/20261111160814.21326-4-mwen@igalia.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**arm: qcom: display/msm: Require DSI graph endpoint**\n\nv2 시리즈는 Qualcomm MSM DSI 바인딩에 OF graph endpoint·remote-endpoint를 필수로 두고, v1 대비 apq8016 보드 DTS도 함께 정리합니다.\n\n영향: MSM DRM DSI 드라이버는 패널 endpoint 없이 lane 수가 초기화되지 않아 attach 단계에서 실패할 수 있어, 바인딩 검증으로 DTS 오류를 조기에 잡는 데 중요합니다.\n\n> If it is missing, the drivers will silently accept such DTS in dsi_host_parse_dt(), but later fail on dsi_host_attach() because number of lanes is not initialized.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/10/2372)\n\n**drm/msm/adreno: Improve AHB error messages**\n\nAdreno AHB 버스 오류 로그에 a7xx/a8xx CP_RL_ERROR_DETAILS 레지스터에서 주소·읽기/쓰기 방향을 포함하고, a7xx용 레지스터 정의를 추가합니다.\n\n영향: CP AHB fault 디버깅 시 기존 메시지는 register dump가 부족해 원인 추적이 어려워, 새 GPU 세대에서 bring-up·회귀 분석 품질을 높입니다.\n\n> On a7xx/a8xx we can get some details out of the CP_RL_ERROR_DETAILS registers.\n\n[원문 확인](https://patchew.org/linux/20261111171417.249152-1-robin.clark@oss.qualcomm.com/)\n\n**arm64: dts: qcom: msm8916: Disable disconnected DSI**\n\n패널이 없는 보드에서 mdss_dsi0·phy를 기본 disabled로 두고, 패널이 정의된 Samsung 보드만 status okay로 다시 켜는 DTS 정리가 v2에서 apq8016까지 확장됩니다.\n\n영향: 빈 DSI 노드가 켜진 채 probe되면 MSM DRM이 실패하거나 불필요한 전력·클럭이 켜질 수 있어 downstream 보드 유지보수에 직접 영향이 있습니다.\n\n> MDSS DSI and DSI PHY is useless, when nothing is attached (no panel description in DTS), thus should be disabled in DTS. Linux MSM DRM drivers will also fail the probe.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/10/2313)\n\n**rust: drm: return impl PinInit from DriverFile::open()**\n\nDanilo Krummrich v2 시리즈 6/7은 DriverFile::open()이 Pin<KBox<Self>> 대신 impl PinInit를 반환하고, open_callback이 KBox::try_pin_init로 할당하도록 바꿉니다.\n\n영향: Rust DRM 스택의 file private 초기화 패턴이 bus device와 맞춰지며 nova·tyr 등 in-tree Rust DRM 드라이버 API 마이그레이션 비용이 줄어듭니다.\n\n> Change DriverFile::open() to return impl PinInit<Self, Error> instead of Result<Pin<KBox<Self>>>, consistent with how bus device private data works.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/07/272)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "display/msm OF graph v2 (patchew)",
+      "url": "https://patchew.org/linux/20261111-display-msm-of-graph-v2-0-fdf8fd97f49d@oss.qualcomm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "MSM DSI endpoint / lane init",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/10/2372",
+      "note": "thread"
+    },
+    {
+      "title": "drm/msm/adreno AHB error messages",
+      "url": "https://patchew.org/linux/20261111171417.249152-1-robin.clark@oss.qualcomm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "msm_dp runtime PM reference v3",
+      "url": "https://lists.openwall.net/linux-kernel/2026/10/24/225",
+      "note": "thread"
+    },
+    {
+      "title": "drm/msm/dp: turn link_ready into plugged",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=3ea2d1c3d154",
+      "note": "commit"
+    },
+    {
+      "title": "drm atomic pipeline colorops v5 03/15",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/20261111160814.21326-4-mwen@igalia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Fixes suggestion for colorops regression",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/sashiko-outbox-209384@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/atomic: Add affected colorops with affected planes",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=6955d6bca053",
+      "note": "commit"
+    },
+    {
+      "title": "msm8916 disable disconnected DSI",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/10/2313",
+      "note": "thread"
+    },
+    {
+      "title": "rust drm DriverFile::open PinInit v2 6/7",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/07/272",
+      "note": "thread"
+    },
+    {
+      "title": "Re: rust drm PinInit series",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/1a1cba8671a.1ba93626263271.8137996775533663026@collabora.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-11T18:27:43.635Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

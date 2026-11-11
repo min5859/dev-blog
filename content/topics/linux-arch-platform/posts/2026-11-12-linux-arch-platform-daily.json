@@ -1,0 +1,123 @@
+{
+  "id": "2026-11-12-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-11-12 Fire HD10 suez — Arch·Platform",
+  "headline": "MT8173 suez DTS 제출과 RISC-V 회귀·빌드·IOMMU 연동이 arm64·riscv 플랫폼 담당의 머지·검증 순서를 동시에 건드립니다.",
+  "date": "2026-11-12",
+  "summary": "Amazon Fire HD 10(2017, suez)용 MediaTek DT 시리즈가 펌웨어·binding 의존을 드러냈고, RISC-V는 LR/SC 프로브 거부·cpufreq-dt 초기 OPP·섹션 마커 정렬·-mtune Kconfig 논쟁이 겹쳤습니다. IOMMU 2단계 dirty tracking은 QEMU AMO_HWAD 시리즈와 맞춰 end-to-end 검증 경로를 논의 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "arm64: mediatek suez(Fire HD 10 2017) DTS",
+      "priority": "상",
+      "impactType": "project",
+      "affectedAudience": "MediaTek MT8173·arm64 디바이스트리·Amazon suez bring-up 담당",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-November/1198853.html",
+      "if": "MT8173 suez 보드 bring-up이나 upstream DT 머지 일정을 맞추고 있다면",
+      "do": "keypad·MT6397 AUXADC binding 의존과 BL31·DSI·power-domain 요구사항을 머지 전에 추적하세요",
+      "verify": "커버레터와 5패치 시리즈에서 펌웨어·후속 Wi-Fi/USB 드라이버 언급을 원문으로 확인하세요"
+    },
+    {
+      "title": "cpufreq-dt: 초기 OPP 전압 제약",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "SpacemiT K1/K3·공유 CPU supply OPP를 쓰는 RISC-V 보드 담당",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/103614.html",
+      "if": "이종 클러스터·공유 레귤레이터 보드에서 부팅 중 스케일링을 검증한다면",
+      "do": "Natanael Copa 패치가 현재 클럭에 맞는 OPP를 등록 전에 적용하는지 트리에 반영 여부를 확인하세요",
+      "verify": "K1에서 policy0 다운·policy4 고주파 시 전압 0.95V 사례와 Fixes 커밋 링크를 대조하세요"
+    },
+    {
+      "title": "riscv: LR/SC 시퀀스 내 probe 거부",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "RISC-V kprobes/uprobes·동적 계측 담당",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/103628.html",
+      "if": "RISC-V 동적 프로브나 decode-insn 경로를 유지보수한다면",
+      "do": "v2에서 LR 자체는 허용·루프 내부는 -EINVAL 거부 규칙에 맞게 도구·테스트를 조정하세요",
+      "verify": "sashiko-bot OOB 수정과 arch_prepare_kprobe 반환 변경을 스레드에서 확인하세요"
+    },
+    {
+      "title": "riscv: EFI 섹션 마커 정렬",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "RISC-V EFI stub·zboot·링커 스크립트 유지보수자",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/103624.html",
+      "if": "generic zboot·EFI libstub와 RISC-V 링커 스크립트를 함께 다룬다면",
+      "do": "Ard Biesheuvel 3패치 머지 순서를 stable topic·EFI 시리즈 의존과 맞춰 계획하세요",
+      "verify": "_stext/_text·__inittext_end 정렬 목적을 커버레터 인용과 대조하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**riscv: probes: reject probes inside an LR/SC sequence**\n\nVladimir Kondratiev v2는 riscv_probe_decode_insn OOB 읽기를 고치고 LR/SC 루프 내부 kprobe/uprobe 설치를 arch_check_kprobe 경로에서 거부하도록 정리합니다.\n\n영향: LR/SC 원자 시퀀스에 프로브를 꽂으면 메모리 순서·페이지 폴트 위험이 커지므로 동적 계측 담당은 새 거부 규칙과 에러 코드 변화를 알아야 합니다.\n\n> Patch 2 rejects probes inside the LR/SC sequence.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-November/103628.html)\n\n**cpufreq: dt: Set the initial OPP to apply its voltage constraints**\n\nNatanael Copa 패치는 cpufreq-dt 등록 전 각 CPU 현재 클럭에 맞는 OPP를 dev_pm_opp_set_rate로 설정해 공급 전압 제약이 즉시 적용되게 합니다.\n\n영향: 공유 레귤레이터에서 한 policy만 먼저 다운스케일되면 다른 클러스터 전압이 부족해 SpacemiT K1 같은 이종 RISC-V 보드가 부팅 중 크래시할 수 있습니다.\n\n> When policy0 scales down, the supply drops to 0.95 V while policy4 still runs at 1.6 GHz\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-November/103614.html)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**arm64: dts: mediatek: Add the Amazon Fire HD 10 (2017)**\n\nRyan Brue의 5패치 시리즈가 MT8173 기반 Amazon Fire HD 10(2017, codename suez)용 binding·board DTS를 제출하며 keypad·MT6397 AUXADC는 별도 binding 시리즈에 의존합니다.\n\n영향: 소비자 태블릿 upstream DT는 PSCI·DSI·power domain·커스텀 BL31 bring-up 함정을 문서화하므로 MediaTek arm64 담당은 머지 전 의존 패치와 펌웨어 요구를 추적해야 합니다.\n\n> This adds the Amazon Fire HD 10 (2017), codename suez, an MT8173 tablet with an MT6397 PMIC.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-arm-kernel/2026-November/1198853.html)\n\n**riscv: Align section markers with other archs**\n\nArd Biesheuvel 3패치가 RISC-V 링커·섹션 심볼과 EFI libstub을 다른 아키텍처와 맞춰 generic zboot·EFI stub가 arch별 #ifdef 없이 섹션 마커를 참조할 수 있게 합니다.\n\n영향: EFI·zboot 공통화 중 섹션 명명 불일치는 이미지 정보 전달·부팅 도구 회귀 원인이 될 수 있어 선행 머지 순서가 중요합니다.\n\n> harmonize all architectures that support EFI in terms of the section markers\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-November/103624.html)\n\n**iommu/riscv: Add hardware dirty tracking for second-stage domains**\n\nTan Chi는 Fangyu Yu의 iommu/riscv 2단계 dirty tracking v7 스레드에 QEMU AMO_HWAD 기반 PTE A/D 자동 갱신 패치를 알려 G-stage dirty-bit DMA 테스트에 쓰자고 제안합니다.\n\n영향: 커널 IOMMU dirty tracking은 에뮬레이터 HWAD 지원 없이 end-to-end 검증이 어려워 QEMU·커널 시리즈를 함께 맞춰야 합니다. QEMU AMO_HWAD가 Fangyu v7과 어떤 조합으로 CI에 묶일지는 확인이 필요합니다.\n\n> automatic PTE A/D updates through AMO_HWAD\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-November/103619.html)\n\n**riscv: kconfig: enable -mtune built kernel**\n\nJisheng Zhang는 Andy Chiu의 arch/riscv Kconfig -mtune 옵션에 대해 per-CPU Kconfig 대신 KCFLAGS로 넘기자고 반대하며 NONPORTABLE·RISCV_EFFICIENT_UNALIGNED_ACCESS 묵시 선택 설계도 문제삼습니다.\n\n영향: SoC별 -mtune Kconfig 확장은 범용 Image 분열과 툴체인 플래그 난립으로 이어져 RISC-V 배포·벤더 빌드 정책 논의의 분기점이 됩니다.\n\n> I don't think we should introduce per-cpu -mtune options into arch/riscv/Kconfig.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-November/103621.html)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "arm64: mediatek: Add the Amazon Fire HD 10 (2017)",
+      "url": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-November/1198853.html",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: Align section markers with other archs",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/103624.html",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: probes: reject probes inside an LR/SC sequence",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/103628.html",
+      "note": "thread"
+    },
+    {
+      "title": "iommu/riscv: hardware dirty tracking follow-up",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/103619.html",
+      "note": "thread"
+    },
+    {
+      "title": "QEMU AMO_HWAD PTE A/D updates",
+      "url": "https://lore.kernel.org/qemu-devel/20261108143934.129923-1-tanchi25@mails.ucas.ac.cn/",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: kconfig: enable -mtune built kernel discussion",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/103621.html",
+      "note": "thread"
+    },
+    {
+      "title": "cpufreq: dt: Set the initial OPP to apply its voltage constraints",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/103614.html",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: dts: spacemit: Add cpu scaling for K1 SoC",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=3b9c34556fc1",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-11T18:23:56.001Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
