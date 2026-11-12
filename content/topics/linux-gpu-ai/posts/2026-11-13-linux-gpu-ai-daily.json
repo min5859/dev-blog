@@ -1,0 +1,138 @@
+{
+  "id": "2026-11-13-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-11-13 RESET·NPU PM — GPU·AI",
+  "headline": "DRM MODE_ATOMIC_RESET 후속과 Rocket·ivpu NPU 관측·PM 패치가 dri-devel에서 동시에 리뷰 중입니다.",
+  "date": "2026-11-13",
+  "summary": "drm_atomic_commit_fill_with_defaults()와 msm DPU1 mixer 이월이 RESET UAPI 회귀를 막는 축이고, ivpu·Rocket은 NPU probe·fdinfo 노출을 다룹니다. i915는 Apple T2 eDP에서 PSR1 복구 패치가 올라왔습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "drm/atomic: Allow filling a commit with pristine object states",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "drm/core atomic·lease 및 MODE_ATOMIC_RESET 시리즈 리뷰어",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/12/2962",
+      "if": "lease·RESET 기본 커밋 경로를 리뷰하거나 멀티 GPU lease를 검증한다면",
+      "do": "fill_with_defaults()가 leased 객체에 pristine state를 넣는 동작과 Sashiko 지적 두 건을 스레드에서 따라가세요",
+      "verify": "Ripard 측 lost driver state·lease revoke 대응 여부는 원문 스레드를 확인하세요"
+    },
+    {
+      "title": "accel/ivpu: Defer recovery until probe completes",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "accel/ivpu(Meteor Lake 등) PM·IRQ 및 stable 백포트 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/10/1405",
+      "if": "Meteor Lake 등 ivpu에서 probe·runtime PM 레이스나 syzbot oops를 추적한다면",
+      "do": "probe 구간 recovery_work 비활성화와 ivpu_pm_enable()에서의 enable·flush 흐름을 패치 본문과 대조하세요",
+      "verify": "v3 mainline 게시·머지 여부와 kexec 후 ATS_ERR 정책은 아직 확인이 필요합니다"
+    },
+    {
+      "title": "accel/rocket: Report NPU usage through fdinfo",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "accel/rocket·drm/sched 유지보수자 및 NPU 멀티테넌시 운영자",
+      "verifyLink": "https://patchwork.kernel.org/series/1209801/",
+      "if": "프로세스별 NPU 엔진 사용량을 fdinfo로 보고해야 한다면",
+      "do": "drm_sched_entity_get_runtime() export와 drm-engine-npu 키 노출을 v5 시리즈에서 검토하세요",
+      "verify": "drm-misc-next 합류 전 Reviewed-by·stable 백포트 필요 여부는 릴리스 계획을 확인하세요"
+    },
+    {
+      "title": "drm/i915/psr: enable PSR on Apple T2 eDP panels",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "drm/i915 display/PSR 및 Apple eDP bring-up 담당",
+      "verifyLink": "https://patchew.org/linux/20261112165956.61633-1-aditya.garg@linux.dev/",
+      "if": "Intel Mac+i915에서 유휴 전력·발열과 Apple eDP PSR quirk를 맞춘다면",
+      "do": "DPCD quirk·0x4d4 self-refresh 트리거가 1035f4a65f58 이후 NO_PSR 예외를 되돌리는지 패치를 읽어보세요",
+      "verify": "T1·Apple silicon 확장 일정과 drm-misc-next 합류 시기는 스레드에서 확인이 필요합니다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm/msm/dpu1: Carry the mixers over to created CRTC states**\n\ndrm_atomic_commit_fill_with_defaults()로 만든 pristine CRTC state에 현재 mixer 할당을 복사해, check가 리소스 재할당을 건너뛸 때 빈 mixer로 커밋되는 문제를 막습니다.\n\n영향: DRM_MODE_ATOMIC_RESET 시리즈의 msm follow-up으로, DPU1에서 무음 하드웨어 미구성·표시 깨짐 회귀를 피하려면 필수입니다.\n\n> so a CRTC that keeps its configuration with a created state runs with no mixers at all.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/12/2988)\n\n**accel/ivpu: Defer recovery until probe completes**\n\nivpu_pm_init()부터 ivpu_pm_enable()까지 recovery_work를 비활성화하고, probe 중 트리거는 enable 시점까지 지연·flush하며 reset 후 autosuspend를 재요청합니다.\n\n영향: probe 실패 시 BAR 해제 뒤 recovery work가 page fault로 패닉하거나, probe 성공 시 runtime PM 레이스로 NPU가 쉬지 않는 Intel NPU PM 버그를 막습니다.\n\n> BUG: unable to handle page fault for address: ffffcfc6680200f4 Workqueue: events_unbound ivpu_pm_recovery_work [intel_vpu]\n\n[원문 확인](https://ci.syzbot.org/patches/b83ddbf0-8955-4331-83a8-06f326026945)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/atomic: Allow filling a commit with pristine object states**\n\ndrm_atomic_commit_fill_with_defaults()가 leased CRTC·plane·connector·colorop에 atomic_create_state() 기반 pristine state를 채워 DRM_MODE_ATOMIC_RESET 기본 커밋을 구성합니다.\n\n영향: 리셋 UAPI와 driver-specific pristine state가 맞물리며, Sashiko가 지적한 드라이버 state 유실·lease revoke 레이스는 이 경로 리뷰의 핵심입니다.\n\n> Create drm_atomic_commit_fill_with_defaults() which iterates over all CRTCs, planes, connectors, and color operations in the device and inserts a fresh default state for each one into the commit.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/12/2962)\n\n**accel/rocket: Report NPU usage through fdinfo**\n\ndrm_sched_entity_get_runtime()을 추가하고 Furiosa Rocket accel 드라이버가 fdinfo에 drm-engine-npu·용량 키로 스케줄러가 계정한 NPU 사용 시간을 노출합니다.\n\n영향: NPU 워크로드 공존·성능 분석 시 프로세스별 엔진 사용량을 /proc fdinfo로 볼 수 있어, Rocket 및 drm/sched 공용 API 추적에 중요합니다.\n\n> accel/rocket: Report NPU usage through fdinfo\n\n[원문 확인](https://patchwork.kernel.org/series/1209801/)\n\n**drm/i915/psr: enable PSR on Apple T2 eDP panels**\n\nApple T2 Mac의 OUI 일치 eDP 패널에 DPCD 퀴크와 0x4d4 self-refresh 트리거를 추가해 기존 NO_PSR 예외를 PSR1 동작으로 되돌립니다.\n\n영향: Intel Mac+i915 사용자는 패널 self refresh로 유휴 전력·발열을 줄일 수 있고, Apple 패널 프로토콜·DPCD quirk 테이블 유지보수에 직접 해당합니다.\n\n> With the three setup writes, CRC verification disabled, and the 0x4d4 trigger added to i915's existing PSR enable sequence, the tested panels enter PSR1.\n\n[원문 확인](https://patchew.org/linux/20261112165956.61633-1-aditya.garg@linux.dev/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/i915/psr: enable PSR on Apple T2 eDP panels",
+      "url": "https://patchew.org/linux/20261112165956.61633-1-aditya.garg@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "1035f4a65f58 — Apple panels PSR disabled",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=1035f4a65f58",
+      "note": "commit"
+    },
+    {
+      "title": "drm/msm/dpu1 mixer carry-over",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/12/2988",
+      "note": "thread"
+    },
+    {
+      "title": "drm-reset-state-flag v10 7/9",
+      "url": "https://patchwork.kernel.org/project/dri-devel/patch/20261112-drm-reset-state-flag-v10-7-cefaa1ed056d@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "accel/rocket fdinfo series",
+      "url": "https://patchwork.kernel.org/series/1209801/",
+      "note": "thread"
+    },
+    {
+      "title": "drm_sched_entity_get_runtime",
+      "url": "https://patchew.org/linux/20261112171144.3151554-1-sidong.yang@furiosa.ai/",
+      "note": "thread"
+    },
+    {
+      "title": "drm_atomic_commit_fill_with_defaults",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/12/2962",
+      "note": "thread"
+    },
+    {
+      "title": "Sashiko review — fill_with_defaults",
+      "url": "https://lore.kernel.org/dri-devel/sashiko-outbox-211576@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "accel/ivpu defer recovery (syzbot patch)",
+      "url": "https://ci.syzbot.org/patches/b83ddbf0-8955-4331-83a8-06f326026945",
+      "note": "thread"
+    },
+    {
+      "title": "ivpu recovery_work probe discussion",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/10/1405",
+      "note": "thread"
+    },
+    {
+      "title": "852be13f3bd3 — accel/ivpu Add PM support",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=852be13f3bd3",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-12T18:34:06.190Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

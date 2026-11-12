@@ -1,0 +1,123 @@
+{
+  "id": "2026-11-13-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-11-13 AF_PACKET RT 스톨 — 성능·RT",
+  "headline": "AF_PACKET retire 경로 rebase 요청, RISC-V IMSIC 스톨 수정, MIPS CM3 uncore PMU, cgroup BPF 락 분리가 스레드에 올라왔습니다.",
+  "date": "2026-11-13",
+  "summary": "PREEMPT_RT에서 TPACKET_V3 retire 시 rwlock 대기가 수백 ms 수신 스톨을 재현한 af_packet 수정이 net/main 기준 rebase를 요청받았습니다. 관측·제어 평면 쪽에서는 cgroup BPF 전용 mutex, IMSIC IRQ work, I6500 CM3 PMU가 각각 linux-rt-devel·bpf 스레드에서 논의 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "af_packet: TPACKET_V3 retire 시 PREEMPT_RT 수신 스톨",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "af_packet·TPACKET_V3·PREEMPT_RT 패킷 캡처 운영자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20261110072221.24701-1-jingxuanxie@deeproute.ai/",
+      "if": "PREEMPT_RT에서 AF_PACKET·TPACKET_V3 캡처로 수신 지연이 보이면",
+      "do": "v4 trylock·드롭 경로와 net/main rebase 제출 여부를 linux-rt-devel 스레드를 추적하세요",
+      "verify": "632ca50f2cbd 원인 커밋과 최신 rebase 요청 스레드 원문을 대조해 확인하세요"
+    },
+    {
+      "title": "cgroup BPF 상태를 cgroup_bpf_mutex로 분리",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "cgroup BPF·컨테이너 런타임·fleet 스케일 BPF_PROG_QUERY 운영자",
+      "verifyLink": "https://lore.kernel.org/bpf/20261112172721.440275-4-shakeel.butt@linux.dev/",
+      "if": "cgroup mkdir/rmdir 중 BPF_PROG_QUERY가 수 분 이상 멈춘 적이 있으면",
+      "do": "bpf-next 3/3 시리즈의 query·release 경로 락 분리를 머지 일정과 함께 따라가세요",
+      "verify": "스레드에 적힌 fleet 대기 시간(최대 75분)과 지연 테스트의 sub-ms 회복 수치를 원문에서 확인하세요"
+    },
+    {
+      "title": "riscv-imsic: 원격 동기화를 hard IRQ work로 전환",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "RISC-V IMSIC·tick broadcast·PREEMPT_RT bring-up 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20261112-imsic-remote-sync-irqwork-v2-0-680f65b24ff6@linux.dev/",
+      "if": "NO_HZ idle·SoC tick broadcast 환경에서 RISC-V bring-up 중 전체 스톨이 나면",
+      "do": "v2 IRQ work·CPU kick 패치 리뷰 상태를 linux-rt-devel에서 확인하세요",
+      "verify": "SpacemiT K3 재현 스레드의 stall·patch 설명 인용을 원문으로 검증하세요"
+    },
+    {
+      "title": "perf: MIPS I6500 CM3 uncore PMU 드라이버",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "MIPS·Mobileye EyeQ6·perf uncore·임베디드 성능 분석 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20261112-i6500-cm3-pmu-v2-0-cd2569571819@mobileye.com/",
+      "if": "EyeQ6H 등 SoC에서 L2·메모리 병목을 per-core PMU만으로는 못 좁히면",
+      "do": "v2 6패치 시리즈의 GCR_DB_PC_* 이벤트·qualifier 동작을 스레드 기준으로 평가하세요",
+      "verify": "L2·메모리 인터페이스 가시성 주장과 qualifier 예시 인용을 원문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**af_packet: avoid waiting for TPACKET_V3 copies at retirement**\n\nv4는 PREEMPT_RT에서 TPACKET_V3 블록 retire 시 blk_fill_in_prog_lock write_lock 대기 대신 trylock을 쓰고, 복사 중이면 블록을 건드리지 않고 tp_drops로 드롭하거나 타이머를 재시도한다. Jakub Kicinski는 2026-11-12에 패치가 더 이상 적용되지 않으니 net/main 기준으로 rebase해 다시 올리라고 요청했다.\n\n영향: 632ca50f2cbd의 rwlock 대기가 PREEMPT_RT 배포에서 수백 ms 수신 스톨을 재현했고, AF_PACKET·TPACKET_V3 캡처 경로가 수신 스택을 막을 수 있어 RT·관측 스택 운영자가 rebase 후 머지를 추적해야 한다.\n\n> This was observed as a receive stall of hundreds of milliseconds in a PREEMPT_RT deployment\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20261110072221.24701-1-jingxuanxie@deeproute.ai/)\n\n> This patch does not seem to apply any more? Could you rebase on latest net/main and repost?\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20261112093404.40b823e3@kernel.org/)\n\n> a problem on PREEMPT_RT because the copying task could be preempted by the busy-waiting task\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=632ca50f2cbd8809a2fc1934b4b2c9c49bd55e98)\n\nnet/main rebase 후 v5가 netdev·linux-rt-devel 중 어디로 머지되는지와 비-PREEMPT_RT 빌드에서의 드롭률 회귀 검증 범위는 아직 확정되지 않았다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**irqchip/riscv-imsic: Synchronize remote state with IRQ work**\n\nv2는 SpacemiT K3에서 SoC tick broadcast를 등록한 뒤 IMSIC 원격 동기화가 idle CPU에서 멈추는 스톨을 hard IRQ work로 고치고, 벡터 이동 지연 시 0.5s까지 -EBUSY가 나는 retry timer를 새 CPU kick으로 대체한다.\n\n영향: NO_HZ idle에서 로컬 tick을 끊는 RISC-V 플랫폼에서 broadcast·IMSIC 동기화 버그는 시스템 전체가 멈출 수 있어 RT·tick broadcast·RISC-V bring-up 담당이 이 수정을 따라가야 한다.\n\n> The system stalls.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20261112-imsic-remote-sync-irqwork-v2-0-680f65b24ff6@linux.dev/)\n\nmainline·PREEMPT_RT 트리 머지 시점과 K3 외 플랫폼 재현 여부는 아직 공개되지 않았다.\n\n**perf: add PMU driver for the MIPS Coherence Manager 3 performance counters**\n\nv2 6패치 시리즈는 MIPS I6500 CM3의 L2·메모리 인터페이스 트래픽을 보는 uncore perf PMU 드라이버를 추가하고, GCR_DB_PC_* 카운터·64비트 qualifier로 코어·IOCU별 대역·L2 hit rate를 좁혀 측정한다.\n\n영향: per-core PMU는 L1에서 끊기므로 EyeQ6H 같은 SoC에서 RT·메모리 병목을 attributed하려면 이 uncore 카운터가 사실상 유일한 관측 창이다.\n\n> This is the only visibility into the L2 and the memory interface that the I6500 offers\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20261112-i6500-cm3-pmu-v2-0-cd2569571819@mobileye.com/)\n\nlinux-perf-users·linux-mips 쪽 리뷰와 perf tools 이벤트 표기 upstream 일정은 아직 확인되지 않았다.\n\n**bpf, cgroup: Protect cgroup_bpf state with its own mutex**\n\nbpf-next 3/3는 cgroup_bpf_mutex를 도입해 BPF_PROG_QUERY·release work·link info는 cgroup_mutex 없이 돌리고, attach/detach/replace만 cgroup_mutex 후 cgroup_bpf_mutex를 잡는다. Meta fleet 데이터에서는 BPF_PROG_QUERY 등이 cgroup mkdir/rmdir이 kernfs_rwsem에서 막힐 때 최대 75분 대기했다.\n\n영향: 컨테이너 헬스체크·BPF 조회가 cgroupfs 전역 락에 묶이면 수 분~수십 분 hung task가 나와 대규모 RT·관측 노드의 제어 평면 지연이 커지므로 머지 후 락 분리 동작을 검증해야 한다.\n\n> The typical wait is 11 minutes, the longest 75 minutes.\n\n[원문 확인](https://lore.kernel.org/bpf/20261112172721.440275-4-shakeel.butt@linux.dev/)\n\n시리즈 0/3·1/3·2/3의 bpf-next 머지 순서와 attach 시 cgroup 생존 검사 패치 의존성은 별도 스레드에서 확인이 필요하다.\n\n**sched_ext: fix kfunc, sub-sched, flatcg and idle-mask issues**\n\nTejun Heo는 Tao Cui의 6패치 시리즈 cover에 대해 실질 수정은 1/6뿐이고 나머지는 공허하며, 사용 맥락을 더 검토하라고 거절성 리뷰를 남겼다.\n\n영향: sched_ext·scx_flatcg는 BPF 기반 RT 스케줄링 실험 경로라 maintainer가 시리즈 대부분을 무효로 보면 당분간 mainline에 들어갈 수정 폭이 1패치로 줄어든다.\n\n> The core.c fixes travel as a separate series.\n\n[원문 확인](https://lore.kernel.org/bpf/20261112130934.563321-1-cui.tao@linux.dev/)\n\nTejun이 인정한 1/6이 tracing DSQ iterator kfunc 거부 수정인지, core.c 별도 시리즈 제출 여부는 아직 확인되지 않았다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "af_packet: TPACKET_V3 retire PREEMPT_RT receive stall (linux-rt-devel)",
+      "url": "https://lore.kernel.org/linux-rt-devel/20261110072221.24701-1-jingxuanxie@deeproute.ai/",
+      "note": "thread"
+    },
+    {
+      "title": "af_packet rebase on latest net/main request",
+      "url": "https://lore.kernel.org/linux-rt-devel/20261112093404.40b823e3@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "632ca50f2cbd — af_packet busy-wait to rwlock",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=632ca50f2cbd8809a2fc1934b4b2c9c49bd55e98",
+      "note": "commit"
+    },
+    {
+      "title": "riscv-imsic remote sync IRQ work v2",
+      "url": "https://lore.kernel.org/linux-rt-devel/20261112-imsic-remote-sync-irqwork-v2-0-680f65b24ff6@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "MIPS I6500 CM3 uncore perf PMU v2",
+      "url": "https://lore.kernel.org/linux-rt-devel/20261112-i6500-cm3-pmu-v2-0-cd2569571819@mobileye.com/",
+      "note": "thread"
+    },
+    {
+      "title": "cgroup_bpf_mutex — BPF_PROG_QUERY lock separation",
+      "url": "https://lore.kernel.org/bpf/20261112172721.440275-4-shakeel.butt@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "sched_ext series review (Tejun Heo)",
+      "url": "https://lore.kernel.org/bpf/eb63bdf20dd6e2f09b0e7c81bc905878@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "sched_ext cover — core.c fixes separate series",
+      "url": "https://lore.kernel.org/bpf/20261112130934.563321-1-cui.tao@linux.dev/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-12T18:27:43.888Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

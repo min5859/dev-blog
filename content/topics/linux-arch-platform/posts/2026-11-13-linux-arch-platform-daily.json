@@ -1,0 +1,113 @@
+{
+  "id": "2026-11-13-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-11-13 RISC-V 스택가드 한도 — 아키·플랫폼",
+  "headline": "RISC-V에서 gcc 16·sched 확장 조합이 스택 가드 오프셋 한도를 넘기고, mm·kdump·SpacemiT 이더넷 회귀가 동시에 논의됩니다.",
+  "date": "2026-11-13",
+  "summary": "Peter Zijlstra의 stack_canary 재배치안이 RISC-V 빌드 실패를 막는 실험이 Ron Economos 쪽에서 확인됐고, Carlos López와 Christian Brauner·SpacemiT 이더넷 패치는 플랫폼 가상화·kdump·PM 경로의 회귀를 다룹니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "RISC-V stack_canary 12비트 한도",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "RISC-V 스택 프로텍터·CONFIG_SCHED_CLASS_EXT 빌드 담당",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/103746.html",
+      "if": "gcc 16과 CONFIG_SCHED_CLASS_EXT=y로 RISC-V per-task 스택 프로텍터 빌드를 돌린다면",
+      "do": "Peter Zijlstra thread_info 이동안과 sched 코어 쪽 대안의 머지 방향을 메일링에서 따라가세요",
+      "verify": "Ron Economos 재현 로그와 TSK_STACK_CANARY 12비트 immediate 조건을 원문에서 확인하세요"
+    },
+    {
+      "title": "write-notified shmem 쓰기 비트 회귀",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "mm·userfaultfd·공유 shmem 매핑을 쓰는 플랫폼·가상화 담당",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/103734.html",
+      "if": "uffd-wp·soft-dirty 등 write-notified 공유 매핑으로 heterogenous·가상화 워크로드를 검증한다면",
+      "do": "Carlos López v3 시리즈의 vma_pgprot_modify() 수정이 트리에 들어가는지 추적하세요",
+      "verify": "MM_CP_TRY_CHANGE_WRITABLE 미설정으로 fault만 발생한다는 주장을 스레드 인용과 대조하세요"
+    },
+    {
+      "title": "kdump vmcore 복사 중 machine check",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "kdump·crash_dump·arch/riscv crash_dump 유지보수 담당",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/103751.html",
+      "if": "RISC-V·다아키 fleet에서 kdump vmcore 수집을 운영한다면",
+      "do": "Christian Brauner RFC의 copy_oldmem_to_iter() 통합과 arch/riscv crash_dump.c 변경을 리뷰 일정에 넣으세요",
+      "verify": "x86에서 old page 복사 중 machine check가 캡처 커널을 패닉시킨다는 인용을 원문에서 확인하세요"
+    },
+    {
+      "title": "SpacemiT emac RTNL·work 데드락",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "SpacemiT K1·RISC-V 이더넷·PM bring-up 담당",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/103744.html",
+      "if": "Orange Pi RV2(SpacemiT K1) 등에서 이더넷 suspend/resume과 lockdep를 검증한다면",
+      "do": "Ali Tariq v2 방향(emac_down() cancel 제거·disable_work_sync 후 RTNL)이 netdev에 올라오는지 확인하세요",
+      "verify": "Troy Mitchell 데드락 시나리오와 v2 두 패치 합의 문구를 스레드에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**mm: fix eager write-bit restore for write-notified shared mappings**\n\nCarlos López v3 1/9는 shared·write-notified 매핑에서 vma_wants_manual_pte_write_upgrade()가 writenotify 때문에 write 비트가 빠진 vm_page_prot만 비교해 MM_CP_TRY_CHANGE_WRITABLE이 켜지지 않던 regress를 vma_pgprot_modify()로 고친다. 패치는 성능에만 영향하고 다음 write fault가 비트를 복구한다고 명시한다.\n\n영향: uffd-wp·soft-dirty 등 write-notified shmem 경로는 dirty PTE를 즉시 쓰기 가능하게 되돌리지 못해 페이지 폴트가 불필요하게 늘 수 있으며, heterogenous·가상화 테스트 워크로드를 돌리는 플랫폼 엔지니어는 이 회귀 수정의 백포트·머지를 추적할 가치가 있다.\n\n> write-notified shmem mappings never get MM_CP_TRY_CHANGE_WRITABLE.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-November/103734.html)\n\n**crash_dump: recover from machine checks in copy_oldmem_page()**\n\nChristian Brauner RFC 4패치는 kdump 캡처 커널이 /proc/vmcore 복사 중 machine check로 패닉하는 hole을 copy_oldmem_to_iter()(_copy_mc_to_iter 기반)로 통합하고, powerpc·sh는 매핑 실패 검사를 추가하며 arch/riscv를 포함한 여러 crash_dump.c가 helper를 쓰도록 바꾼다.\n\n영향: 1차 커널이 메모리 오류로 죽었을 때 캡처 커널까지 죽으면 vmcore 자체가 사라지므로, fleet kdump·RISC-V/arm 등 다아키 crash_dump 유지보수자는 machine check를 EFAULT로 격리하는 이 RFC를 추적해야 한다.\n\n> On x86 a machine check in the copy that /proc/vmcore does out of an old page panics the capture kernel.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-November/103751.html)\n\n**net: spacemit: Hold RTNL lock in emac_resume() and emac_suspend()**\n\nSpacemiT emac 드라이버의 suspend/resume RTNL 보유 패치는 lockdep에서 RCU 경고를 없애려 했으나 Troy Mitchell이 emac_stop()의 cancel_work_sync와 emac_tx_timeout_task()의 rtnl_lock() 사이 데드락을 지적했다. 11월 12일 스레드에서 Ali Tariq는 rtnl_trylock()을 버리고 emac_down()에서 cancel을 제거하고 suspend/remove 경로에 disable_work_sync()를 쓰는 v2 2패치 방향으로 합의했다.\n\n영향: Orange Pi RV2(SpacemiT K1) 등 RISC-V 보드에서 이더넷 PM·lockdep가 얽히므로 플랫폼 담당자는 RTNL 없이 work 동기화를 재설계하는 최종 패치가 netdev에 들어가는지 확인해야 한다.\n\n> v2 will have two patches. First the TX timeout fix (reported by Troy)\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-November/103744.html)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**sched: move stack_canary to the start of the randomizable region**\n\nPeter Zijlstra의 RISC-V용 패치는 stack_canary를 thread_info로 옮기고, Ron Economos는 gcc 16·CONFIG_SCHED_CLASS_EXT=y 조합에서 task_struct 오프셋이 12비트 immediate 한도를 넘어 -mstack-protector-guard-offset 빌드가 깨지는 것을 재현했으며 해당 패치로 실기에서 빌드·부팅을 확인했다. Peter는 RISC-V 트리 경유 머지를 검토 중이다.\n\n영향: task_struct 성장과 sched 확장 옵션이 겹치면 RISC-V per-task 스택 프로텍터 빌드가 툴체인·설정 조합에 따라 갑자기 실패할 수 있어 RISC-V 커널·툴체인 담당자는 sched 코어 vs arch 전용 수정 중 어떤 경로가 채택되는지 따라가야 한다.\n\n> I'm seeing this build failure on RISC-V with gcc 16 and CONFIG_SCHED_CLASS_EXT=y.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-November/103746.html)\n\nValentin Schneider v2와 riscv/thread_info 이동안 중 최종 머지안 및 RISC-V maintainer 응답은 아직 확인되지 않았습니다.\n\n**KVM: arm64: Hide FEAT_LS64_ACCDATA from guests**\n\nSiddharth Chintamaneni의 11월 12일 메일은 제목이 guest FEAT_LS64_ACCDATA 숨김 패치이나 본문은 Microsoft Cobalt SDA VF dmaengine(IOMMU SVA·EL0 ST64BV0) 드라이버 제출에 앞서 Fuad Tabba guest 시리즈 머지 이후 host ST64BV0 SVA·EL2/KVM 패치 단독 시리즈 일정을 Arnd Bergmann에 문의하고 silicon 테스트를 제안한다.\n\n영향: Cobalt·FEAT_LS64_ACCDATA는 게스트 노출·호스트 EL2 트랩 설정·EL0 portal PASID 제출이 한 묶음이라 arm64 KVM·IOMMU SVA 플랫폼 담당자는 guest hide 패치와 host 시리즈 머지 순서를 같이 봐야 한다.\n\n> Now that Fuad's KVM guest FEAT_LS64_ACCDATA series is queued, are you planning to post the host ST64BV0 SVA + EL2/KVM patches\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-arm-kernel/2026-November/1199622.html)\n\n동일 Message-ID 메일에 Hide FEAT_LS64 패치 diff가 없어 guest hide 변경 내용은 별도 패치·시리즈에서 확인이 필요합니다."
+    },
+    {
+      "heading": "기타",
+      "body": "**MAINTAINERS: Add entry for Xilinx AXI DMA driver**\n\nSuraj Gupta 패치는 Xilinx AXI DMA/CDMA/VDMA/MCDMA 드라이버·DT binding·헤더에 전용 MAINTAINERS 항목을 추가해 dmaengine catch-all 대신 명시적 maintainer 라우팅을 만든다.\n\n영향: FPGA·ZynqMPSoC 보드 bring-up에서 xilinx_dma 시리즈는 arm 플랫폼 메일링과 dmaengine 양쪽을 오가므로 MAINTAINERS 정리는 패치 리뷰 지연을 줄이는 실무 신호다.\n\n> has no MAINTAINERS entry, so patches touching it are only picked up by the dmaengine subsystem catch-all.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-arm-kernel/2026-November/1199616.html)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "sched stack_canary — linux-riscv",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/103746.html",
+      "note": "thread"
+    },
+    {
+      "title": "mm write-notified shmem — linux-riscv",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/103734.html",
+      "note": "thread"
+    },
+    {
+      "title": "crash_dump machine check — linux-riscv",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/103751.html",
+      "note": "thread"
+    },
+    {
+      "title": "SpacemiT emac RTNL — linux-riscv",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/103744.html",
+      "note": "thread"
+    },
+    {
+      "title": "Xilinx AXI DMA MAINTAINERS — linux-arm-kernel",
+      "url": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-November/1199616.html",
+      "note": "thread"
+    },
+    {
+      "title": "KVM FEAT_LS64 / Cobalt SDA VF — linux-arm-kernel",
+      "url": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-November/1199622.html",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-12T18:29:55.327Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

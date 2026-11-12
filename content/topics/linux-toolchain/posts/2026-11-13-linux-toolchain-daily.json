@@ -1,0 +1,101 @@
+{
+  "id": "2026-11-13-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-11-13 objtool noinstr GCOV — 툴체인",
+  "headline": "GCOV 빌드가 noinstr·#DB 경로를 깨뜨릴 수 있는 문제와 objtool 검사, Rust IOMMU·serdev 하드닝 패치가 동시에 논의됩니다.",
+  "date": "2026-11-13",
+  "summary": "Sasha Levin은 GCOV_PROFILE_ALL에서 exc_debug_kernel()가 DR7을 지우기 전 카운터를 갱신하면 #DB 핸들러가 돌아오지 않고 hang할 수 있다고 설명했고, objtool이 .noinstr.text 안 인라인 커버리지 갱신을 잡도록 하는 논의가 이어집니다. Daniel Almeida의 Rust IOMMU paging domain 시리즈와 Markus Probst의 serdev v6 리팩터도 격리·프로브 경계 안정성 신호입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "툴체인",
+    "objtool",
+    "Rust"
+  ],
+  "highlights": [
+    {
+      "title": "objtool: Detect code coverage instrumentation in noinstr code",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "objtool·noinstr·커버리지/KCOV를 쓰는 커널 하드닝·디버그 담당",
+      "verifyLink": "https://lore.landau.one/lkml/20261112151232.GC1813469@noisy.programming.kicks-ass.net/raw",
+      "if": "GCOV_PROFILE_ALL 또는 커버리지 카운터가 noinstr·exc_debug_kernel 경로와 겹치는 빌드·검증 파이프라인을 운영한다면",
+      "do": "커버리지 빌드에서 #DB·watchpoint 재현 여부를 확인하고 openwall 쪽 objtool check.c 확장 패치와 lore 스레드를 함께 추적하십시오",
+      "verify": "원문 스레드에서 DR7 클리어 전 카운터 갱신 시나리오와 objtool 경고 조건을 직접 대조하십시오"
+    },
+    {
+      "title": "rust: iommu: add a paging domain abstraction",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "IOMMU·Rust-for-Linux·미디어(rkvenc) 드라이버 및 가상화/격리 모델 설계자",
+      "verifyLink": "https://lore.landau.one/lkml/20261112-b4-iommu-domain-v1-0-c29e86788dda@collabora.com/raw",
+      "if": "유저스페이스가 인코더 레지스터를 직접 설정하는 제출 모델이나 rkvenc 격리 설계를 다룬다면",
+      "do": "6패치 시리즈의 Domain·attach·map·with_fault_handler() 흐름과 클라이언트별 도메인 요구사항을 리뷰하십시오",
+      "verify": "메일에서 userspace 레지스터 설정과 fault 시 세션 종료 전제를 원문 인용과 대조하십시오"
+    },
+    {
+      "title": "rust: serdev: Refactor",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "serdev·Greybus·Rust-for-Linux 드라이버 유지보수자",
+      "verifyLink": "https://lore.landau.one/lkml/20261112-rust_serdev_probe_refactor-v6-0-3568ed56264c@posteo.de/raw",
+      "if": "Rust serdev·Greybus 드라이버에서 probe 실패·unbind와 수신 콜백 경로를 유지보수한다면",
+      "do": "v6의 C ttyport 뮤텍스·수신 일시정지 API와 Sashiko가 지적한 3번 패치 컴파일 수정·v7.4-rc2 리베이스를 빌드로 확인하십시오",
+      "verify": "v5 스레드의 driver data NULL 레이스 설명과 v6 커버레터 변경이 동일 경로를 막는지 대조하십시오"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**objtool: Detect code coverage instrumentation in noinstr code**\n\nSasha Levin은 GCOV/커버리지 카운터가 noinstr 구간에 인라인으로 끼어들면 예외 처리 전 메모리 쓰기(트랩)로 #DB 핸들러가 재진입·hang할 수 있다고 설명했고, objtool이 .noinstr.text에서 인라인 카운터 갱신을 잡도록 하는 패치 논의가 이어지고 있습니다.\n\n영향: noinstr/디버그 예외 경로는 하드닝·KCOV·프로파일링 검증의 핵심이라, 커버리지 빌드가 이 경로를 깨면 DoS급 안정성 문제와 noinstr 보장 실패로 이어질 수 있습니다. 커버리지 시리즈 v2 메인라인 시점과 objtool 검사 필수화 여부, 툴체인 인라인 억제와 커널 objtool 보완 중 최종 합의는 확인이 필요합니다.\n\n> With GCOV_PROFILE_ALL today, exc_debug_kernel() bumps a counter before it clears DR7. Set a watchpoint on that counter and the next kernel #DB never returns\n\n[원문 확인](https://lore.landau.one/lkml/20261112151232.GC1813469@noisy.programming.kicks-ass.net/raw)\n\n**rust: iommu: add a paging domain abstraction**\n\nDaniel Almeida가 Rust로 IOMMU paging domain(Domain·attach·map·fault handler) 추상화 6패치 시리즈를 올렸고, rkvenc 등 미디어 드라이버가 클라이언트별 도메인으로 버퍼를 격리하는 데 쓸 예정입니다.\n\n영향: 유저스페이스가 인코더 레지스터를 직접 건드리는 모델에서는 커널이 모든 DMA를 검증할 수 없어, 클라이언트별 IOMMU 도메인과 fault 시 세션 종료가 메모리 격리의 핵심선입니다. IOMMU 그룹 공유 미지원이 rkvenc SoC에서 문제가 되는지, fault handler의 추가 감사·로깅 요구는 확인이 필요합니다.\n\n> each client will have its own IOMMU domain. This is needed as the submission model will let userspace set most of the encoder's registers directly\n\n[원문 확인](https://lore.landau.one/lkml/20261112-b4-iommu-domain-v1-0-c29e86788dda@collabora.com/raw)\n\n**rust: serdev: Refactor**\n\nMarkus Probst v6 시리즈는 C serdev ttyport에 뮤텍스·수신 일시정지 API를 넣고 Rust probe/unbind 경로의 레이스를 줄이며, v6에서는 Sashiko가 지적한 3번 패치 컴파일 오류 수정과 v7.4-rc2 리베이스를 포함한 것으로 보입니다.\n\n영향: probe 실패·unbind 시 드라이버 데이터가 NULL인 동안 receive_buf가 돌면 null 포인터 접근이 가능해, 시리얼/Greybus Rust 드라이버 경계에서 안정성·잠재적 권한 문제로 이어질 수 있습니다. v6의 linux-serial 리뷰어 승인 조건과 C serdev API 변경의 out-of-tree ABI 영향은 추가 확인이 필요할 수 있습니다.\n\n> introduce mutex to C serdev tty port controller - introduce a new C serdev API to fix race conditions\n\n[원문 확인](https://lore.landau.one/lkml/20261112-rust_serdev_probe_refactor-v6-0-3568ed56264c@posteo.de/raw)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "objtool: GCOV_PROFILE_ALL and exc_debug_kernel() hang (Sasha Levin)",
+      "url": "https://lore.landau.one/lkml/20261112151232.GC1813469@noisy.programming.kicks-ass.net/raw",
+      "note": "thread"
+    },
+    {
+      "title": "objtool: flag coverage counters in noinstr code",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/03/210",
+      "note": "changelog"
+    },
+    {
+      "title": "rust: iommu paging domain abstraction v1",
+      "url": "https://lore.landau.one/lkml/20261112-b4-iommu-domain-v1-0-c29e86788dda@collabora.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "rust: serdev probe refactor v6",
+      "url": "https://lore.landau.one/lkml/20261112-rust_serdev_probe_refactor-v6-0-3568ed56264c@posteo.de/raw",
+      "note": "thread"
+    },
+    {
+      "title": "rust: serdev probe refactor v5 race discussion",
+      "url": "https://lore.landau.one/lkml/20261022-rust_serdev_probe_refactor-v5-0-a27d862a415a@posteo.de/T/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-12T18:22:22.473Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
