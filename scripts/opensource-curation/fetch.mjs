@@ -31,7 +31,10 @@ function githubHeaders() {
 async function fetchRepoMeta(owner, name) {
   try {
     const res = await fetch(`${GITHUB_API}/repos/${owner}/${name}`, { headers: githubHeaders() });
-    if (!res.ok) return {};
+    if (!res.ok) {
+      await logLine(`warning: metadata ${owner}/${name}: HTTP ${res.status}`);
+      return {};
+    }
     const data = await res.json();
     return {
       stars: data.stargazers_count ?? 0,
@@ -54,7 +57,11 @@ async function fetchRepoMeta(owner, name) {
 async function fetchReadme(owner, name) {
   try {
     const res = await fetch(`${GITHUB_API}/repos/${owner}/${name}/readme`, { headers: githubHeaders() });
-    if (!res.ok) return '';
+    if (!res.ok) {
+      // 404만 README가 없는 것이다. 403(호출 한도) 등은 원인이 보이게 남긴다.
+      if (res.status !== 404) await logLine(`warning: README ${owner}/${name}: HTTP ${res.status}`);
+      return '';
+    }
     const data = await res.json();
     const content = data.content || '';
     const encoding = data.encoding || 'base64';

@@ -14,9 +14,12 @@ const runId = collectedAt.slice(0, 10);
 const USER_AGENT = 'dev-blog-collector/0.1 (+opensource trending)';
 
 async function fetchJson(url, accept = 'application/json') {
-  const response = await fetch(url, {
-    headers: { 'user-agent': USER_AGENT, accept },
-  });
+  const headers = { 'user-agent': USER_AGENT, accept };
+  // 토큰 없는 GitHub API는 IP당 시간 60회라, 같은 실행의 큐레이션 토픽까지 403을 받는다.
+  if (process.env.GITHUB_TOKEN && new URL(url).hostname === 'api.github.com') {
+    headers.authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
+  }
+  const response = await fetch(url, { headers });
   if (!response.ok) {
     throw new Error(`Failed to fetch ${url}: ${response.status} ${response.statusText}`);
   }

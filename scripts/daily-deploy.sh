@@ -26,6 +26,14 @@ if ! node scripts/gc-cursor-chats.mjs \
   echo "cursor chat GC failed; continuing"
 fi
 
+# GitHub API(오픈소스·큐레이션 수집)는 토큰이 없으면 IP당 시간 60회로 막힌다. 공개 저장소
+# 읽기 전용 fine-grained 토큰을 실행 계정만 읽을 수 있는 파일(600)로 둔다. 없으면 토큰 없이 실행한다.
+GITHUB_TOKEN_FILE="${GITHUB_TOKEN_FILE:-${HOME}/.config/dev-blog/github-token}"
+if [ -z "${GITHUB_TOKEN:-}" ] && [ -r "${GITHUB_TOKEN_FILE}" ]; then
+  GITHUB_TOKEN="$(cat "${GITHUB_TOKEN_FILE}")"
+  export GITHUB_TOKEN
+fi
+
 # research 타임아웃/AI CLI exit 1/research non-JSON 같은 외부의존 transient 실패를 자동
 # 회복하기 위해, 실패한 커맨드는 20초 대기 후 1회만 재시도한다. 재시도까지 실패하면 그
 # 실패 상태를 그대로 돌려주므로 호출부의 기존 "continuing" 격리 로직은 그대로 동작한다.

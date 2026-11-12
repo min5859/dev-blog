@@ -1,5 +1,16 @@
 # Scheduling
 
+## GitHub API 토큰
+
+오픈소스 토픽(`collect-opensource.mjs`)과 오픈소스 큐레이션(`discover`·`fetch`)은 GitHub API를
+부른다. 토큰이 없으면 서버 IP 기준 시간당 60회(검색 분당 10회)라 같은 실행의 다른 단계와 한도를
+나눠 쓰다 403을 받는다(2026-11-12 큐레이션 README 0개 실패). `daily-deploy.sh`는
+`GITHUB_TOKEN`이 없을 때 `~/.config/dev-blog/github-token`(실행 계정 소유, 600)을 읽는다.
+
+- 토큰은 권한 없는 fine-grained 토큰(Public repositories read-only)만 쓴다. 서버에서 AI 단계가
+  같은 계정으로 돌기 때문에 쓰기·관리 권한이 있는 토큰은 두지 않는다.
+- 파일이 없으면 토큰 없이 실행한다. 큐레이션 `fetch`는 404가 아닌 실패를 `HTTP <status>`로 남긴다.
+
 ## 커널 버전별 드라이버 영향 노트
 
 `daily-deploy.sh`는 일일 토픽 뒤에 `scripts/run-driver-impact.mjs`를 실행합니다.
