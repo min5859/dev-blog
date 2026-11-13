@@ -15,17 +15,19 @@ test('exports: removed, GPL/namespace changes and macro definitions are told apa
     'v1:mm/kasan/shadow.c:EXPORT_SYMBOL(memcpy);',
     'v1:mm/kasan/shadow.c:EXPORT_SYMBOL_KASAN(memcpy);',
     'v1:drivers/android/binder.c:EXPORT_SYMBOL_IF_KUNIT(binder_test_only);',
+    'v1:drivers/cxl/core/port.c:EXPORT_SYMBOL_NS_GPL(cxl_port_x, CXL);',
   ]);
   const after = parseExports([
     'v2:drivers/base/core.c:EXPORT_SYMBOL(dev_kept);',
     'v2:drivers/usb/core/hub.c:EXPORT_SYMBOL_NS_GPL(usb_thing, "USB_CORE");',
     'v2:drivers/base/core.c:EXPORT_SYMBOL_GPL(dev_new);',
     'v2:mm/kasan/shadow.c:EXPORT_SYMBOL(memcpy);',
+    'v2:drivers/cxl/core/port.c:EXPORT_SYMBOL_NS_GPL(cxl_port_x, "CXL");', // 6.13 문자열 표기: 변경 아님
   ]);
   assert.equal(before.has('sym'), false);
   const diff = diffExports(before, after);
   assert.deepEqual(diff.removed, [{ name: 'dev_old', kind: 'EXPORT_SYMBOL', file: 'drivers/base/core.c' }]);
-  assert.deepEqual(diff.changed.map((c) => [c.name, c.from, c.to]), [['usb_thing', 'EXPORT_SYMBOL', 'EXPORT_SYMBOL_NS_GPL("USB_CORE")']]);
+  assert.deepEqual(diff.changed.map((c) => [c.name, c.from, c.to]), [['usb_thing', 'EXPORT_SYMBOL', 'EXPORT_SYMBOL_NS_GPL(USB_CORE)']]);
   assert.equal(diff.added, 1);
 });
 
@@ -292,6 +294,7 @@ test('header diff: changes callers still compile with are not signature changes'
     + 'extern unsigned long volatile jiffies;\nbool x_sub(int i, int *r);\nvoid x_rd(void *p);\nvoid x_le(__le32 v);\n';
   const items = diffHeaderApi(mergeHeaderApis([parseHeaderApi(v1, 'include/linux/x.h')]), mergeHeaderApis([parseHeaderApi(v2, 'include/linux/x.h')]));
   assert.deepEqual(items.map((i) => [i.change, i.name, i.before, i.after]), [['changed', 'x_le', 'void x_le(__u32)', 'void x_le(__le32)']]);
+  assert.equal(compatibleChange('randomized_struct_fields_end struct thread_struct', 'struct thread_struct'), true);
   assert.equal(compatibleChange('(2)', '(1)'), false);
   assert.equal(compatibleChange('int f(struct x *)', 'int f(const struct x *)'), false);
 });

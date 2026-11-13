@@ -24,7 +24,9 @@ export function parseExports(lines) {
     if (/^\s*#\s*define\b/.test(text)) continue;
     const m = EXPORT_RE.exec(text);
     if (!m) continue;
-    const kind = m[3] ? `${m[1]}(${m[3]})` : m[1];
+    // 6.13 부터 네임스페이스는 문자열(`NS(CXL)` → `NS("CXL")`)이다. 표기만 바뀐 것을 심볼마다 변경으로 세지 않는다.
+    // 전환 자체는 그 커밋이 넓은 범위 변경으로 잡힌다.
+    const kind = m[3] ? `${m[1]}(${m[3].replace(/^"(.*)"$/, '$1')})` : m[1];
     const entry = map.get(m[2]) || { kinds: new Set(), file };
     entry.kinds.add(kind);
     map.set(m[2], entry);
@@ -469,11 +471,12 @@ const sameSet = (a, b) => a.size === b.size && [...a].every((x) => b.has(x));
 /**
  * 같은 인자로 부르던 코드가 그대로 빌드되는 변화. 가변 인자 매크로와 고정 인자 사이(v7.2 `kmalloc(...)` →
  * `kmalloc(size, flags)`), 속성·주석 매크로가 한쪽에만 붙거나 빠진 것(v7.1 `jiffies`의 `__jiffy_arch_data`,
- * `__signed_wrap`, `__iomem`)이다. 양쪽에 서로 다른 `__` 이름이 있으면(`__u32` → `__le32`) 변화로 둔다.
+ * `__signed_wrap`, `__iomem`, 구조체 배치 표지 `randomized_struct_fields_end`)이다. 양쪽에 서로 다른 `__` 이름이
+ * 있으면(`__u32` → `__le32`) 변화로 둔다.
  */
 export function compatibleChange(was, now) {
   if (was === '(...)' || now === '(...)') return true;
-  const words = (s) => s.match(/\b__[a-z0-9_]+\b/g) || [];
+  const words = (s) => s.match(/\b(?:__[a-z0-9_]+|randomized_struct_fields_(?:start|end))\b/g) || [];
   const gone = words(was).filter((w) => !words(now).includes(w));
   const added = words(now).filter((w) => !words(was).includes(w));
   if (gone.length > 0 === added.length > 0) return false;

@@ -35,6 +35,7 @@ OCI의 커널 전체 이력 bare 저장소 `/srv/linux-kernel/linux.git`(wiki-pu
   접근하는 파일 수입니다. 이름만 맞추면 흔한 멤버가 부풀었습니다(v7.3 `module.args` 811, 실제 0 → 6).
 - 시그니처 변경에서 호출부가 그대로 빌드되는 것은 뺍니다: 가변 인자 매크로와 고정 인자 사이
   (v7.2 `kmalloc(...)` → `kmalloc(size, flags)`), 한쪽에만 붙거나 빠진 `__` 속성(`__jiffy_arch_data`, `__iomem`).
+  export 네임스페이스는 따옴표를 떼고 비교합니다(6.13의 `NS(CXL)` → `NS("CXL")` 표기 전환이 1,300여 건으로 잡혔습니다).
 - 수동 실행: `node scripts/collect-driver-impact.mjs --repo <linux.git> --from v7.3 --to v7.4-rc1`,
   `node scripts/draft-driver-impact.mjs --from v7.3 --to v7.4-rc1` (LTS 노트는 `--lts`를 붙입니다).
 
