@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  broadCommits, buildAiInput, buildPost, cleanNotes, declaredName, diffExports, diffHeaderApi, exportName, filesByWord, findCampaigns,
-  headerStatus, mergeHeaderApis, normalizeSubject, parseExports, parseHeaderApi, parseKconfig, parsePull, patchLines, pendingTags, removalCommits,
+  broadCommits, buildAiInput, buildPost, cleanNotes, compatibleChange, declaredName, diffExports, diffHeaderApi, exportName, filesByWord, findCampaigns,
+  headerStatus, ltsPair, memberGreps, memberUsers, mergeHeaderApis, normalizeSubject, parseExports, parseHeaderApi, parseKconfig, parsePull, patchLines,
+  pendingTags, postedRanges, removalCommits,
 } from './lib/driver-impact.mjs';
 
 test('exports: removed, GPL/namespace changes and macro definitions are told apart', () => {
@@ -69,6 +70,18 @@ test('a removed export left in a header is either still inline or only declared'
   assert.equal(headerStatus('old_api', ' * old_api() was removed, use new_api()'), 'gone');
   const files = filesByWord(['v1:drivers/a.c:old_api', 'v1:drivers/a.c:old_api', 'v1:sound/b.c:old_api', 'v1:drivers/c.c:other']);
   assert.deepEqual([...files.get('old_api')], ['drivers/a.c', 'sound/b.c']);
+});
+
+test('struct members count only files that name the struct and access the member', () => {
+  const greps = memberGreps([{ struct: 'module', member: 'args' }, { struct: 'device', member: 'offline' }, { struct: 'bad name', member: 'x' }]);
+  assert.equal(greps.typed, 'struct[[:space:]]+(module|device)\\b');
+  assert.equal(greps.accessed, '(->|\\.)(args|offline|x)\\b');
+  const usersOf = memberUsers(
+    ['v1:drivers/a.c:struct module', 'v1:drivers/c.c:struct  device', 'v1:drivers/d.c:struct device'],
+    ['v1:drivers/b.c:->args', 'v1:drivers/c.c:->offline', 'v1:drivers/d.c:.offline', 'v1:drivers/d.c:->offline'],
+  );
+  assert.deepEqual(usersOf('module', 'args'), []); // a.c 는 struct module 만, b.c 는 다른 구조체의 ->args 만
+  assert.deepEqual(usersOf('device', 'offline'), ['drivers/c.c', 'drivers/d.c']);
 });
 
 test('kconfig symbols keep the path they were declared in', () => {
@@ -272,12 +285,51 @@ test('header diff: signature and callback changes, removals and moves between he
   assert.deepEqual(items.filter(([c]) => c === 'added').map(([, k, n]) => [k, n]), [['function', 'x_new']]);
 });
 
+test('header diff: changes callers still compile with are not signature changes', () => {
+  const v1 = '#define kzalloc(...) alloc_hooks(kzalloc_noprof(__VA_ARGS__))\n#define x_pr(fmt, ...) pr(fmt)\n'
+    + 'extern unsigned long volatile __jiffy_arch_data jiffies;\n__signed_wrap bool x_sub(int i, int *r);\nvoid x_rd(void __iomem *p);\nvoid x_le(__u32 v);\n';
+  const v2 = '#define kzalloc(size, flags) alloc_hooks(kzalloc_noprof(size, flags))\n#define x_pr(fmt) pr(fmt)\n'
+    + 'extern unsigned long volatile jiffies;\nbool x_sub(int i, int *r);\nvoid x_rd(void *p);\nvoid x_le(__le32 v);\n';
+  const items = diffHeaderApi(mergeHeaderApis([parseHeaderApi(v1, 'include/linux/x.h')]), mergeHeaderApis([parseHeaderApi(v2, 'include/linux/x.h')]));
+  assert.deepEqual(items.map((i) => [i.change, i.name, i.before, i.after]), [['changed', 'x_le', 'void x_le(__u32)', 'void x_le(__le32)']]);
+  assert.equal(compatibleChange('(2)', '(1)'), false);
+  assert.equal(compatibleChange('int f(struct x *)', 'int f(const struct x *)'), false);
+});
+
 test('new tags: -rc1 and releases after the last note, compared with the previous release', () => {
   const tags = ['v7.2', 'v7.3-rc1', 'v7.3-rc7', 'v7.3', 'v7.4-rc1', 'v7.4-rc2', 'v7.4', 'v7.5-rc1', 'v7.5-rc1-dontuse', 'v2.6.39'];
   assert.deepEqual(pendingTags(tags, ['v7.4-rc1']), [{ from: 'v7.3', to: 'v7.4' }, { from: 'v7.4', to: 'v7.5-rc1' }]);
   assert.deepEqual(pendingTags(tags, ['v7.4-rc1', 'v7.4', 'v7.5-rc1']), []);
   assert.deepEqual(pendingTags(tags, []), [{ from: 'v7.4', to: 'v7.5-rc1' }]);
   assert.deepEqual(pendingTags(['v8.0-rc1'], []), []); // 이전 정식 릴리스가 없으면 비교할 수 없다
+});
+
+test('LTS notes: the newest two longterm releases, tracked apart from release notes', () => {
+  const releases = [
+    { moniker: 'mainline', version: '7.4-rc2' }, { moniker: 'stable', version: '7.3.4' },
+    { moniker: 'longterm', version: '6.18.63' }, { moniker: 'longterm', version: '6.12.117' }, { moniker: 'longterm', version: '6.6.162' },
+  ];
+  const tags = ['v6.6', 'v6.12', 'v6.18', 'v7.3', 'v7.4'];
+  assert.deepEqual(ltsPair(releases, tags), { from: 'v6.12', to: 'v6.18' });
+  assert.deepEqual(ltsPair([...releases, { moniker: 'longterm', version: '7.4.2' }], tags), { from: 'v6.18', to: 'v7.4' });
+  assert.equal(ltsPair(releases.slice(0, 3), tags), null);
+
+  const posted = postedRanges([
+    { draftMetadata: { range: 'v7.3..v7.4-rc1' } },
+    { draftMetadata: { kind: 'lts', range: 'v6.18..v7.4' } },
+    { draftMetadata: {} },
+  ]);
+  assert.deepEqual(posted.done, ['v7.4-rc1']); // LTS 노트의 끝(v7.4)을 일반 노트가 끝낸 것으로 치지 않는다
+  assert.deepEqual([...posted.lts], ['v6.18..v7.4']);
+  assert.deepEqual(pendingTags(['v7.3', 'v7.4-rc1', 'v7.4'], posted.done), [{ from: 'v7.3', to: 'v7.4' }]);
+
+  const data = { ...DATA, range: { ...DATA.range, from: 'v1.0', to: 'v1.1' } };
+  const post = buildPost(data, buildAiInput(data), undefined, { lts: true });
+  assert.equal(post.id, '2026-10-26-linux-v1.0-v1.1-lts-driver-impact');
+  assert.equal(post.title, 'Linux 1.0 → 1.1 LTS 드라이버 영향 노트');
+  assert.equal(post.draftMetadata.kind, 'lts');
+  assert.deepEqual(post.tags.slice(-3), ['LTS', 'v1.0', 'v1.1']);
+  assert.equal(buildPost(data, buildAiInput(data)).draftMetadata.kind, undefined);
 });
 
 test('focus areas: header changes and area exports become per-area tables with AI points', () => {

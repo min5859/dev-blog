@@ -181,15 +181,33 @@ export function parsePull({ sha, subject, body, files }) {
 }
 
 /** `git grep -o -w -F <tag>` 출력("tag:path:name") → Map(name → Set(path)). */
-export function filesByWord(lines) {
+export function filesByWord(lines, normalize = (w) => w) {
   const map = new Map();
   for (const line of lines) {
-    const [file, word] = splitGrepLine(line);
+    const [file, raw] = splitGrepLine(line);
+    const word = raw && normalize(raw);
     if (!word) continue;
     if (!map.has(word)) map.set(word, new Set());
     map.get(word).add(file);
   }
   return map;
+}
+
+/** 구조체 멤버를 쓰는 파일을 찾는 `git grep -o -E` 패턴. 이름은 식별자만 받는다. */
+export function memberGreps(items) {
+  const alt = (names) => [...new Set(names)].filter((n) => /^\w+$/.test(n)).join('|');
+  return { typed: `struct[[:space:]]+(${alt(items.map((i) => i.struct))})\\b`, accessed: `(->|\\.)(${alt(items.map((i) => i.member))})\\b` };
+}
+
+/**
+ * memberGreps 출력 → (struct, member) 를 쓰는 파일 목록. `struct <이름>`이 나오고 `->멤버`·`.멤버`로 접근하는 파일이다.
+ * 이름만 맞추면 args·flags 같은 흔한 멤버가 다른 구조체 것까지 잡혀 수백 배 부푼다(v7.3 module.args 811, 실제 0).
+ * 타입은 확인하지 않으므로 여전히 상한이다.
+ */
+export function memberUsers(typedLines, accessedLines) {
+  const typed = filesByWord(typedLines, (w) => w.replace(/^struct\s+/, ''));
+  const accessed = filesByWord(accessedLines, (w) => w.replace(/^(?:->|\.)/, ''));
+  return (struct, member) => [...(accessed.get(member) || [])].filter((f) => typed.get(struct)?.has(f));
 }
 
 /**
@@ -373,7 +391,8 @@ export function parseHeaderApi(text, file = '') {
     (m) => (m[0] === '/' ? ` ${m.replace(/[^\n]/g, '')}` : `${m[0]}${m[0]}`));
   const code = clean.split('\n').map((line) => {
     const m = /^\s*#\s*define\s+([A-Za-z_]\w*)(\(([^)]*)\))?/.exec(line);
-    if (m) add(m[1], 'macro', m[2] ? `(${splitTop(m[3], ',').length})` : '');
+    const params = m?.[2] ? splitTop(m[3], ',') : null;
+    if (m) add(m[1], 'macro', params ? (params.some((p) => p.trim().endsWith('...')) ? '(...)' : `(${params.length})`) : '');
     return /^\s*#/.test(line) ? '' : line;
   }).join('\n');
 
@@ -447,13 +466,29 @@ export function mergeHeaderApis(list) {
 
 const sameSet = (a, b) => a.size === b.size && [...a].every((x) => b.has(x));
 
+/**
+ * 같은 인자로 부르던 코드가 그대로 빌드되는 변화. 가변 인자 매크로와 고정 인자 사이(v7.2 `kmalloc(...)` →
+ * `kmalloc(size, flags)`), 속성·주석 매크로가 한쪽에만 붙거나 빠진 것(v7.1 `jiffies`의 `__jiffy_arch_data`,
+ * `__signed_wrap`, `__iomem`)이다. 양쪽에 서로 다른 `__` 이름이 있으면(`__u32` → `__le32`) 변화로 둔다.
+ */
+export function compatibleChange(was, now) {
+  if (was === '(...)' || now === '(...)') return true;
+  const words = (s) => s.match(/\b__[a-z0-9_]+\b/g) || [];
+  const gone = words(was).filter((w) => !words(now).includes(w));
+  const added = words(now).filter((w) => !words(was).includes(w));
+  if (gone.length > 0 === added.length > 0) return false;
+  const drop = (s) => [...gone, ...added].reduce((t, w) => t.replace(new RegExp(`\\b${w}\\b`, 'g'), ' '), s)
+    .replace(/\s*([(),*])\s*/g, '$1').replace(/\s+/g, ' ').trim();
+  return drop(was) === drop(now);
+}
+
 /** 이전·이후 헤더 API → [{ change: removed|changed|added, kind, name, struct?, member?, before?, after?, file }]. */
 export function diffHeaderApi(before, after) {
   const items = [];
   const changed = (b, a) => {
     const was = [...b].find((s) => !a.has(s));
     const now = [...a].find((s) => !b.has(s));
-    return was !== undefined && now !== undefined ? { before: was, after: now } : null;
+    return was !== undefined && now !== undefined && !compatibleChange(was, now) ? { before: was, after: now } : null;
   };
   for (const [name, b] of before.decls) {
     const a = after.decls.get(name);
@@ -511,6 +546,23 @@ export function pendingTags(tags, doneTags) {
     const from = finals.filter((t) => { const [a, b] = versionKey(t); return a < major || (a === major && b < minor); }).at(-1);
     return from ? { from, to } : null;
   }).filter(Boolean);
+}
+
+/**
+ * 게시된 글 → 일반 노트가 끝낸 태그(pendingTags 용)와 LTS 노트 범위. LTS 노트(v6.18..v7.4 등)의 끝 태그를
+ * 일반 노트가 끝낸 것으로 치면 그 버전의 일반 노트를 건너뛰므로 둘을 나눈다.
+ */
+export function postedRanges(posts) {
+  const ranges = (lts) => posts.filter((p) => (p.draftMetadata?.kind === 'lts') === lts).map((p) => p.draftMetadata?.range).filter(Boolean);
+  return { done: ranges(false).map((r) => r.split('..')[1]), lts: new Set(ranges(true)) };
+}
+
+/** kernel.org releases.json 의 longterm 목록 → 가장 최근 두 LTS 의 mainline 태그 쌍. 둘 다 저장소에 있어야 한다. */
+export function ltsPair(releases, tags) {
+  const have = new Set(tags);
+  const lts = [...new Set(releases.filter((r) => r.moniker === 'longterm').map((r) => `v${r.version.split('.').slice(0, 2).join('.')}`))]
+    .filter((t) => TAG_RE.test(t) && have.has(t)).sort(compareTags);
+  return lts.length >= 2 ? { from: lts.at(-2), to: lts.at(-1) } : null;
 }
 
 // ── 글 조립 ─────────────────────────────────────────────────────────────
@@ -664,10 +716,14 @@ function kstDate(iso) {
   return new Date(new Date(iso).getTime() + 9 * 3600 * 1000).toISOString().slice(0, 10);
 }
 
-/** 수집 사실 + (있으면) AI 요약 → Dev Blog 글 JSON. 표·명령·링크는 모두 코드가 만든다. */
-export function buildPost(data, input, notes = EMPTY_NOTES) {
+/**
+ * 수집 사실 + (있으면) AI 요약 → Dev Blog 글 JSON. 표·명령·링크는 모두 코드가 만든다.
+ * lts: LTS → 다음 LTS 노트. 같은 끝 버전의 일반 노트와 id·제목이 겹치지 않고 draftMetadata.kind 로 구분한다.
+ */
+export function buildPost(data, input, notes = EMPTY_NOTES, { lts = false } = {}) {
   const { from, to, toDate, commits, merges } = data.range;
   const version = to.replace(/^v/, '');
+  const label = lts ? `LTS ${from} → LTS ${to}` : `${from} → ${to}`;
   const apis = removedApis(data);
   const used = apis.filter((e) => e.driverUses > 0);
   const driverKconfig = data.kconfig.removed.filter((k) => /^(?:drivers|sound)\//.test(k.file))
@@ -709,7 +765,7 @@ export function buildPost(data, input, notes = EMPTY_NOTES) {
     heading: '중점 API 영역',
     body: [
       `드라이버가 많이 쓰는 영역의 헤더를 ${from}과 ${to}에서 각각 파싱해 비교했습니다. 시그니처·구조체 멤버가 바뀐 것은 컴파일 오류나 콜백 대입 오류로 드러납니다. `
-        + '`사용`은 이전 버전 drivers/·sound/에서 그 이름을 쓴 파일 수이고, 구조체 멤버는 구조체와 멤버 이름이 함께 나온 파일 수입니다. '
+        + '`사용`은 이전 버전 drivers/·sound/에서 그 이름을 쓴 파일 수이고, 구조체 멤버는 \`struct 구조체\`가 나오고 \`->멤버\`·\`.멤버\`로 접근하는 파일 수입니다(타입은 확인하지 않아 상한값입니다). '
         + '표는 헤더를 직접 비교한 결과라, 요약 문장이나 메인테이너 pull 요약과 다르면 표가 맞습니다.',
       ...focusBlocks,
     ].join('\n\n'),
@@ -806,22 +862,24 @@ export function buildPost(data, input, notes = EMPTY_NOTES) {
   });
 
   return {
-    id: `${kstDate(toDate)}-linux-${to}-driver-impact`,
+    id: lts ? `${kstDate(toDate)}-linux-${from}-${to}-lts-driver-impact` : `${kstDate(toDate)}-linux-${to}-driver-impact`,
     topic: 'linux-driver-impact',
-    title: `Linux ${version} 드라이버 영향 노트`,
-    headline: notes.overview[0]?.text || `${from} → ${to}: 드라이버 개발자가 확인할 변경`,
+    title: lts ? `Linux ${from.replace(/^v/, '')} → ${version} LTS 드라이버 영향 노트` : `Linux ${version} 드라이버 영향 노트`,
+    headline: notes.overview[0]?.text || `${label}: 드라이버 개발자가 확인할 변경`,
     date: kstDate(toDate),
-    summary: `${from} → ${to}: 커밋 ${commits}개, pull ${merges}개. 드라이버에서 쓰이던 API ${used.length}개와 드라이버 Kconfig 심볼 ${driverKconfig.length}개가 사라졌고, `
+    summary: `${label}: 커밋 ${commits}개, pull ${merges}개. 드라이버에서 쓰이던 API ${used.length}개와 드라이버 Kconfig 심볼 ${driverKconfig.length}개가 사라졌고, `
       + `메모리·V4L2·타이머 등 중점 영역에서 드라이버가 쓰던 API ${focusCount}개가 바뀌거나 사라졌습니다. 반복 전환 패턴은 ${data.campaigns.length}건입니다.`,
-    tags: ['리눅스', '커널', '드라이버', to],
+    tags: ['리눅스', '커널', '드라이버', ...(lts ? ['LTS', from] : []), to],
     sections,
     confidence: {
       level: '자동 생성',
-      note: `${from}..${to} git 기록에서 코드가 뽑은 사실과, 그 커밋·pull 문구만 본 AI 요약입니다(웹 검색 없음). 사용 횟수는 ${from} drivers/·sound/ 안의 단어 일치 횟수입니다.`,
+      note: `${from}..${to} git 기록에서 코드가 뽑은 사실과, 그 커밋·pull 문구만 본 AI 요약입니다(웹 검색 없음). `
+        + `사용 수는 ${from} drivers/·sound/에서 그 이름을 쓴 파일 수이고, 구조체 멤버는 타입을 확인하지 않은 상한값입니다.`,
     },
     sources: input.pulls.map((p) => ({ title: p.title, url: commitUrl(p.id), note: 'merge' })),
     draftMetadata: {
       source: 'kernel-git',
+      ...(lts ? { kind: 'lts' } : {}),
       range: `${from}..${to}`,
       ai: notes.overview.length > 0,
       counts: { commits, merges, focusChanges: focusCount, removedApis: apis.length, usedRemovedApis: used.length, exportChanges: data.exports.changed.length, driverKconfig: driverKconfig.length, campaigns: data.campaigns.length, broad: data.broad.length },

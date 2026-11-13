@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import {
   broadCommits, declaredName, diffExports, diffHeaderApi, exportName, filesByWord, findCampaigns, FOCUS_AREAS,
-  headerStatus, kconfigName, mergeHeaderApis, parseExports, parseHeaderApi, parseKconfig, parsePull, patchLines, removalCommits,
+  headerStatus, kconfigName, memberGreps, memberUsers, mergeHeaderApis, parseExports, parseHeaderApi, parseKconfig, parsePull, patchLines, removalCommits,
 } from './lib/driver-impact.mjs';
 
 const exec = promisify(execFile);
@@ -116,18 +116,24 @@ async function collectFocus(includeLog) {
   const all = areas.flatMap((a) => a.items);
   const named = (change) => [...new Set(all.filter((i) => i.change === change && i.kind !== 'member').map((i) => i.name))];
   const [stillThere, wasThere] = await Promise.all([wordFiles(to, named('removed'), ['include/']), wordFiles(from, named('added'), ['include/'])]);
-  const words = [...new Set(all.filter((i) => i.change !== 'added').flatMap((i) => (i.kind === 'member' ? [i.member, i.struct] : [i.name])))];
-  const users = await wordFiles(from, words, ['drivers/', 'sound/']);
+  const used = all.filter((i) => i.change !== 'added');
+  const members = used.filter((i) => i.kind === 'member');
+  const words = [...new Set(used.filter((i) => i.kind !== 'member').map((i) => i.name))];
+  const grepO = async (pattern) => lines(await git(['grep', '-o', '-E', pattern, from, '--', 'drivers/', 'sound/'], { allowNoMatch: true }));
+  const greps = memberGreps(members);
+  const [users, memberFiles] = await Promise.all([
+    wordFiles(from, words, ['drivers/', 'sound/']),
+    members.length ? Promise.all([grepO(greps.typed), grepO(greps.accessed)]).then(([t, a]) => memberUsers(t, a)) : () => [],
+  ]);
 
   // 남길 항목마다 그 헤더에서 이름이 나온 줄을 마지막으로 바꾼 커밋.
   const kept = areas.map(({ area, files, after, items }) => {
-    const usedBy = (word) => [...(users.get(word) || [])].filter((f) => !area.sources.test(f));
+    const outside = (files) => files.filter((f) => !area.sources.test(f));
     const list = items.filter((i) => !(i.change === 'removed' && i.kind !== 'member' && stillThere.has(i.name))
       && !(i.change === 'added' && i.kind !== 'member' && wasThere.has(i.name)));
     for (const i of list) {
       if (i.change === 'added') continue;
-      const structFiles = i.kind === 'member' ? new Set(usedBy(i.struct)) : null;
-      i.driverUses = i.kind === 'member' ? usedBy(i.member).filter((f) => structFiles.has(f)).length : usedBy(i.name).length;
+      i.driverUses = outside(i.kind === 'member' ? memberFiles(i.struct, i.member) : [...(users.get(i.name) || [])]).length;
     }
     const shown = list.filter((i) => (i.change === 'added' ? isNewApi(i) : i.driverUses > 0));
     // 멤버가 바뀐 구조체에서 그대로인 멤버: 요약·커밋 메시지가 더 많은 콜백이 바뀌었다고 해도 걸러 내는 근거다.

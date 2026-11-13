@@ -7,7 +7,8 @@
   `changes`는 이전 버전 드라이버가 쓰던 API의 삭제·시그니처 변경·구조체 멤버 변경(`before`/`after`, 이름 변경 후보 `renamedTo`), `pulls`는 관련 pull id,
   `unchangedMembers`는 멤버가 바뀐 구조체에서 그대로인 멤버
 - `pulls`: Linus가 받은 서브시스템 pull의 메인테이너 요약
-- `apiRemovals`: 지워진 export 심볼·헤더 함수·매크로·구조체. `driverUses`는 이전 버전 drivers/·sound/ 안의 사용 횟수
+- `apiRemovals`: 지워진 export 심볼·헤더 함수·매크로·구조체. `driverUses`는 이전 버전 drivers/·sound/에서 그 이름을 쓴 파일 수
+  (구조체 멤버는 타입을 확인하지 않은 상한이라, 이 값만으로 중요하다고 판단하지 않습니다)
 - `conversions`: 여러 드라이버 디렉터리를 한 번에 바꾼 커밋과, 같은 변경을 여러 서브시스템에서 반복한 패턴
 - `messages`: 위 항목 커밋의 메시지(id → 본문)
 

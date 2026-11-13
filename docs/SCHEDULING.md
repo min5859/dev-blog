@@ -27,8 +27,16 @@ OCI의 커널 전체 이력 bare 저장소 `/srv/linux-kernel/linux.git`(wiki-pu
   (`data/raw/driver-impact/<from>..<to>.json`)가 있으면 수집은 건너뜁니다.
 - 저장소가 없는 환경(Mac)에서는 아무것도 하지 않습니다. 첫 글이 없으면 가장 최근 태그 하나만
   만들고 과거를 소급하지 않습니다.
+- LTS: 새 태그가 없는 날 kernel.org `releases.json`(버전 목록만)에서 가장 최근 두 longterm을 보고,
+  그 LTS → 다음 LTS 노트가 없으면 만듭니다(예: 2026년 LTS가 지정되면 `v6.18..<새 LTS>`). LTS 글은
+  `draftMetadata.kind: "lts"`로 구분해 일반 태그 추적에 넣지 않습니다. 목록을 못 읽으면
+  `[driver-impact] LTS list unavailable`을 남기고 다음 날 다시 봅니다.
+- `사용` 수: 이름은 그 단어가 나온 파일 수, 구조체 멤버는 `struct <이름>`이 나오고 `->멤버`·`.멤버`로
+  접근하는 파일 수입니다. 이름만 맞추면 흔한 멤버가 부풀었습니다(v7.3 `module.args` 811, 실제 0 → 6).
+- 시그니처 변경에서 호출부가 그대로 빌드되는 것은 뺍니다: 가변 인자 매크로와 고정 인자 사이
+  (v7.2 `kmalloc(...)` → `kmalloc(size, flags)`), 한쪽에만 붙거나 빠진 `__` 속성(`__jiffy_arch_data`, `__iomem`).
 - 수동 실행: `node scripts/collect-driver-impact.mjs --repo <linux.git> --from v7.3 --to v7.4-rc1`,
-  `node scripts/draft-driver-impact.mjs --from v7.3 --to v7.4-rc1`.
+  `node scripts/draft-driver-impact.mjs --from v7.3 --to v7.4-rc1` (LTS 노트는 `--lts`를 붙입니다).
 
 ## 후보가 없는 Linux lens 토픽
 

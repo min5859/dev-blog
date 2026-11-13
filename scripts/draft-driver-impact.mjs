@@ -3,6 +3,7 @@
 // AI 는 ask 모드(도구·웹 없음)로 커밋·pull 문구만 요약하고, 표·명령·링크는 코드가 만든다.
 // AI_ADAPTER=template 이면 AI 없이 사실 부분만 쓴다.
 //   node scripts/draft-driver-impact.mjs --from v7.3 --to v7.4-rc1
+//   node scripts/draft-driver-impact.mjs --from v6.12 --to v6.18 --lts   (LTS → 다음 LTS 노트)
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -48,7 +49,8 @@ async function main() {
   console.log(`[driver-impact] AI input ${Buffer.byteLength(JSON.stringify(input))} bytes: ${input.pulls.length} pulls, `
     + `${input.apiRemovals.length} removals, ${input.conversions.length} conversions, `
     + `focus ${input.focus.map((f) => `${f.id}:${f.changes.length}`).join(' ')}`);
-  const post = buildPost(data, input, await writeNotes(input, path.join(root, 'data', 'generated', 'driver-impact', `${range}.notes.json`)));
+  const notes = await writeNotes(input, path.join(root, 'data', 'generated', 'driver-impact', `${range}.notes.json`));
+  const post = buildPost(data, input, notes, { lts: process.argv.includes('--lts') });
   auditPostQuality(post);
   const out = path.join(root, 'content', 'topics', post.topic, 'posts', `${post.id}.json`);
   await mkdir(path.dirname(out), { recursive: true });
