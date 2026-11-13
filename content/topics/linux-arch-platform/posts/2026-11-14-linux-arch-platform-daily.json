@@ -1,0 +1,133 @@
+{
+  "id": "2026-11-14-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-11-14 SpacemiT·arm64 회귀 — 아키·플랫폼",
+  "headline": "SpacemiT emac RTNL 데드락과 arm64 suspend cpuidle 회귀 수정이 올라왔고, arm64 PLT text-poke와 RISC-V 벡터·KVM 빌드 이슈가 동시에 표면화됐습니다.",
+  "date": "2026-11-14",
+  "summary": "RISC-V·arm64 플랫폼 쪽에서는 이더넷 PM·system suspend 회귀 패치와 모듈 PLT 안정화가 핵심입니다. Andes LLC 일반화, Bao virt 드라이버, SpacemiT K3 바인딩·벡터 리팩터 CI 깨짐도 함께 추적할 가치가 있습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "net: spacemit: Fix TX timeout work deadlock and RTNL in PM callbacks",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "SpacemiT K1·RISC-V SBC 이더넷·시스템 suspend 담당",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/103852.html",
+      "if": "Orange Pi RV2(SpacemiT K1)에서 suspend/resume 또는 이더넷 PM 테스트 중 네트가 멈추거나 lockdep RCU 경고가 보이면,",
+      "do": "Ali Tariq v2 시리즈의 머지·백포트 여부를 메일링 리스트와 로컬 트리에서 확인하세요.",
+      "verify": "lockdep 커널에서 다회 suspend/resume 후 RTNL 점유·RCU 경고 재현 여부로 패치 효과를 검증하세요."
+    },
+    {
+      "title": "arm64: suspend: Only track cpuidle context for idle tasks",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "arm64 system suspend·PSCI·cpuidle 유지보수 담당",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-November/1200276.html",
+      "if": "CONFIG_RCU_EQS_DEBUG 또는 context-tracking을 켠 arm64에서 /sys/power/state suspend 시 경고가 나왔다면,",
+      "do": "Uladzislau Zhauniarovich 패치가 arm64 for-next/fixes에 들어갔는지 확인하고 자신의 베이스 커널과의 차이를 따라가세요.",
+      "verify": "syzbot이 보고한 system suspend 경로에서 ct_cpuidle_enter/exit 호출이 idle 태스크에만 남는지 디버그 커널로 재확인하세요."
+    },
+    {
+      "title": "arm64: module: Use text-poke for late PLT/veneer emission",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "arm64 모듈·livepatch·PLT/veneer 유지보수 담당",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-November/1198467.html",
+      "if": "livepatch나 늦은 R_AARCH64_CALL26/ADRP erratum 경로에서 모듈 로드·패치 후 Data Abort가 발생했다면,",
+      "do": "Rui Qi v2의 module_write_place() text-poke 경로 적용 여부와 Catalin 리뷰의 asm/module.h 통합 상태를 확인하세요.",
+      "verify": "LIVE 모듈·kpatch 시나리오에서 ROX .plt 직접 쓰기 없이 동작하는지, bounds 검사 후속 패치 논의도 원문을 읽어보세요."
+    },
+    {
+      "title": "riscv: vector: refactor vector context operations",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "RISC-V 벡터·KVM·randconfig CI 담당",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/103892.html",
+      "if": "CONFIG_KVM과 RVV를 함께 켠 clang randconfig 빌드가 깨졌다면,",
+      "do": "Andy Chiu v7 시리즈에서 arch/riscv/kvm/vcpu.c의 kvm_riscv_vector_restore 호출과 리네이밍 후속 수정 여부를 추적하세요.",
+      "verify": "LKP가 보고한 미선언 호출이 v7 후속 패치 또는 v8 리스핀에서 __kvm_riscv_vector_restore로 정리됐는지 빌드 로그로 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**net: spacemit: Fix TX timeout work deadlock and RTNL in PM callbacks**\n\nAli Tariq v2 2패치는 SpacemiT K1 emac에서 TX 타임아웃 work가 emac_down()의 cancel_work_sync()로 자기 자신을 기다리며 RTNL을 영구 점유하는 데드락을 고치고, suspend/resume에서 RTNL을 잡기 전 TX 타임아웃 work를 끄어 phy_disconnect() 시 lockdep RCU 경고를 없앤다.\n\n영향: Orange Pi RV2(SpacemiT K1) 등 RISC-V 보드에서 이더넷 PM·suspend 테스트 중 네트가 멈추거나 lockdep이 울리면 플랫폼 담당자는 이 netdev 시리즈 머지 여부를 바로 확인해야 한다.\n\n> Patch 1 fixes the TX timeout work, which ends up waiting for itself through cancel_work_sync() in emac_down(), so every TX timeout leaves RTNL held forever.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-November/103852.html)\n\n> Tested on Orange Pi RV2 (SpacemiT K1) with a lockdep kernel: 12 suspend/resume cycles without the warning.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-November/103852.html)\n\n시리즈 적용 후에도 수십 회 suspend 후 네트워크가 끊기는 별도 이슈의 근본 원인과 수정 일정은 확인이 필요합니다.\n\n**arm64: suspend: Only track cpuidle context for idle tasks**\n\nUladzislau Zhauniarovich 패치는 cpu_suspend()에서 idle 태스크가 아닐 때 ct_cpuidle_enter/exit를 호출하지 않도록 해 syzbot이 찾은 system suspend 경로의 context-tracking·CONFIG_RCU_EQS_DEBUG 경고를 제거했고, Catalin Marinas가 arm64 for-next/fixes에 적용했다.\n\n영향: /sys/power/state suspend를 디버그 커널에서 돌리는 arm64 플랫폼·전력 담당은 cpuidle 논리 변경(19235e472798) 회귀 수정이 mainline arm64 트리에 들어갔는지 추적할 필요가 있다.\n\n> Applied to arm64 (for-next/fixes), thanks!\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-arm-kernel/2026-November/1200276.html)\n\n> When entering system suspend, current is a non-idle task. Calling ct_cpuidle_enter() invokes ct_kernel_exit() from kernel space (!user) on a non-idle task.\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/arm64/linux.git/commit/?id=ad3fc05c7e65)\n\nLinus 트리·stable 백포트 일정은 확인하지 못했습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**arm64: module: Use text-poke for late PLT/veneer emission**\n\nRui Qi v2는 LIVE 상태 모듈·kpatch의 늦은 PLT/veneer 기록을 직접 대입 대신 module_write_place()로 text-poke 경로에 태워 ROX .plt에서의 Data Abort 패닉을 막고, Catalin 리뷰에 따라 helper를 asm/module.h로 통합했다.\n\n영향: arm64 livepatch·늦은 R_AARCH64_CALL26/ADRP erratum 경로를 쓰는 플랫폼·모듈 담당은 text-poke 미적용 PLT 쓰기가 여전히 패닉 원인이었는지와 후속 bounds 검사 패치 필요성을 따라가야 한다.\n\n> Once a module is fully formed its .plt is read-only/executable, so a late (livepatch) relocation ... triggers a synchronous Data Abort and panics.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-arm-kernel/2026-November/1198467.html)\n\n> could we include a bounds check before writing the PLT entry, maybe with a WARN_ON_ONCE?\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-arm-kernel/2026-November/1200299.html)\n\nSashiko가 보고한 모듈 재로드 시 PLT overrun·ADRP corruption 후속 패치 일정은 확인이 필요합니다.\n\n**riscv: andes: make the LLC driver and cache errata generic**\n\nMina Hui-Min Chou v2 19패치는 AX45MP 전용 Andes LLC 드라이버·errata를 andestech,llcache로 일반화하고 V821(A27L2, Zicbom 없음)용 CCTL·hart ID 인덱싱 버그를 고치며, 리뷰어는 cover에 언급된 patch 19(andestech,a27l2 CPU compatible)가 빠졌다고 지적했다.\n\n영향: Zicbom/IOCP 없는 Andes RISC-V SoC는 LLC CCTL 없이 DMA 일관성이 깨질 수 있어 Allwinner V821·RZ/Five 외 Andes 플랫폼 담당은 generic compatible·errata 범위 변경을 검토해야 한다.\n\n> The A27L2 has neither IOCP nor Zicbom, so it relies on the LLC driver for DMA cache maintenance.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-November/103785.html)\n\n> - Patch 19 adds the andestech,a27l2 CPU compatible. ... This patch is missing.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-November/103881.html)\n\n누락된 patch 19가 포함된 v3 리스핀 일정과 V821 DT 제출과의 순서는 확인이 필요합니다.\n\n**riscv: vector: refactor vector context operations**\n\nAndy Chiu v7 벡터 컨텍스트 리팩터 시리즈에 대해 kernel test robot이 clang 17 randconfig 빌드에서 arch/riscv/kvm/vcpu.c가 선언되지 않은 kvm_riscv_vector_restore()를 호출한다고 보고했다.\n\n영향: 벡터·KVM 경로를 건드리는 RISC-V 아키 담당은 리네이밍 후 KVM 호출부 동기화 누락이 CONFIG_KVM·RVV 조합 빌드를 깨지 않는지 v7 후속 수정을 확인해야 한다.\n\n> arch/riscv/kvm/vcpu.c:828:3: error: call to undeclared function 'kvm_riscv_vector_restore'\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-November/103892.html)\n\n> did you mean '__kvm_riscv_vector_restore'?\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-November/103892.html)\n\nv7 2/6 이후 패치에서 KVM 심볼 정리가 이미 되었는지, 아니면 v8 리스핀이 필요한지는 확인이 필요합니다."
+    },
+    {
+      "heading": "기타",
+      "body": "**virt: bao: add Bao hypervisor IPC and I/O dispatcher drivers**\n\nJoão Peixoto v6 3패치는 Bao static-partitioning 하이퍼바이저용 IPC shared-memory misc 드라이버와 VirtIO I/O를 게스트 VM으로 넘기는 I/O dispatcher를 추가하고, v5 Sashiko 리뷰에서 지적된 teardown·ioeventfd·64-bit 전제 등을 반영했다.\n\n영향: 임베디드·safety-critical 파티셔닝에서 Bao와 Linux 게스트를 묶는 RISC-V·arm64 플랫폼 엔지니어는 커맨드라인 IPC 채널·/dev/bao UAPI 설계가 확정되는지 리뷰해야 한다.\n\n> This series adds guest-side drivers for the Bao static-partitioning hypervisor: an IPC shared-memory driver, an I/O dispatcher\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-November/103885.html)\n\n> A device model is torn down in order: dispatching stops first, every I/O client is stopped before any is destroyed\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-November/103885.html)\n\nvirt 서브시스템 머지 타깃 커널 버전과 RV32 지원 제외가 실제 배포에 미치는 영향은 확인이 필요합니다.\n\n**dt-bindings: riscv: spacemit: Add K3 BS01DCMA RV2768**\n\nTroy Mitchell v2는 BS01DCMA 듀얼 K3 노드 컴pute 모듈과 SpacemiT Cluster Server RV2768용 spacemit,k3-bs01dcma-rv2768 호환 문자열을 spacemit.yaml 바인딩에 추가한다.\n\n영향: K3 클러스터 하드웨어를 DT로 가져오는 SpacemiT 플랫폼 담당은 모듈·RV2768 보드 호환 이름이 upstream 바인딩에 들어가는지와 후속 DTS 패치를 맞춰야 한다.\n\n> BS01DCMA is a compute module carrying two independent SpacemiT K3 nodes. The SpacemiT Cluster Server RV2768 is built from several of these modules\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-November/103865.html)\n\n> - spacemit,k3-bs01dcma-rv2768\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-November/103865.html)\n\nv2 DTS 2/2 패치와의 머지 순서 및 보드 지원 범위는 확인이 필요합니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "net: spacemit: Fix TX timeout work deadlock and RTNL in PM callbacks",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/103852.html",
+      "note": "thread"
+    },
+    {
+      "title": "arm64: module: Use text-poke for late PLT/veneer emission",
+      "url": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-November/1198467.html",
+      "note": "thread"
+    },
+    {
+      "title": "arm64: module PLT bounds check review",
+      "url": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-November/1200299.html",
+      "note": "thread"
+    },
+    {
+      "title": "arm64: suspend: Only track cpuidle context for idle tasks",
+      "url": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-November/1200276.html",
+      "note": "thread"
+    },
+    {
+      "title": "arm64 suspend cpuidle context-tracking fix",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/arm64/linux.git/commit/?id=ad3fc05c7e65",
+      "note": "commit"
+    },
+    {
+      "title": "virt: bao: add Bao hypervisor IPC and I/O dispatcher drivers",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/103885.html",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: andes: make the LLC driver and cache errata generic",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/103785.html",
+      "note": "thread"
+    },
+    {
+      "title": "andes LLC series missing patch 19 review",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/103881.html",
+      "note": "thread"
+    },
+    {
+      "title": "dt-bindings: riscv: spacemit: Add K3 BS01DCMA RV2768",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/103865.html",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: vector: refactor vector context operations",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/103892.html",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-13T18:28:12.718Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

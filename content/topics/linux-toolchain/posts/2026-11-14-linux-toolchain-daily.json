@@ -1,0 +1,125 @@
+{
+  "id": "2026-11-14-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-11-14 Page-SysMem 복사 — Linux 툴체인",
+  "headline": "Rust for Linux가 공유 메모리·DRM 리셋·configfs·fault-injection API를 다듬고, kbuild·Clang perf 빌드 경로도 정리됩니다.",
+  "date": "2026-11-14",
+  "summary": "v6가 `Page`와 `SysMem` 사이 바이트 단위 원자적 복사 API를 제안하고, drm/tyr GPU 리셋·C configfs default group·Rust fault-injection이 이어집니다. kbuild v2는 단일 `.o` 빌드 prepare 비용을 줄이고, LLVM 쪽은 perf의 context-analysis 경고를 정리합니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "툴체인",
+    "Rust"
+  ],
+  "highlights": [
+    {
+      "title": "Rust Page-SysMem 바이트 단위 원자적 복사",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust for Linux 드라이버·mm/io 바인딩 작성자",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/rust-for-linux/20261113-page-volatile-io-v6-0-5603e527c919@kernel.org/",
+      "if": "커널 밖(user space·하드웨어)과 공유되는 버퍼를 `read_raw`/`write_raw` 대신 안전한 경로로 다루려면",
+      "do": "v6의 `kernel::sync::atomic::memcpy()`와 `Page::{read,write}_sysmem` 설계를 읽고 본인 바인딩에 적용 가능한지 판단하세요",
+      "verify": "linux-mm 쪽 plain 대 atomic `SysMem` 규칙 추가 리뷰와 머지 대상 트리·의존 패치 순서는 아직 lore에서 확인이 필요합니다"
+    },
+    {
+      "title": "kbuild 단일 오브젝트 빌드 prepare 경량화",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "커널·out-of-tree 개발자 및 kbuild 유지보수자",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/linux-kbuild/20261113-reduce-single-build-dependencies-v2-0-93ba1f6c4e46@kernel.org/",
+      "if": "`make path/foo.o`나 `make W=1`로 Rust/C 파일만 반복 컴파일하는 워크플로를 쓰면",
+      "do": "v2 패치가 `prepare_checks`·`scripts/mod` 건너뛰기와 `modpost_prepare`→`prepare` 의존을 어떻게 맞추는지 로컬에서 시험 빌드하세요",
+      "verify": "전체 커널 빌드 경로 회귀와 다른 아키텍처 벤치마크는 CI·추가 측정으로 확인하세요"
+    },
+    {
+      "title": "drm/tyr GPU 리셋 workqueue 인프라",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "Rust for Linux DRM(특히 tyr/panfrost 계열) 및 workqueue API 사용자",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/rust-for-linux/20261113-tyr-reset-impl-v8-0-2ee298ac9808@onurozkan.dev/",
+      "if": "Rust DRM 스택에서 리셋 스케줄링·iomem 게이팅 패턴을 참고하려면",
+      "do": "v8의 전용 workqueue·SRCU/mutex HwGate·teardown 드레인 동작을 cover letter와 함께 검토하세요",
+      "verify": "Alice Ryhl Reviewed-by 수령 여부와 후속 unplug·리셋 소스 연동 시리즈 머지 순서는 스레드에서 추적하세요"
+    },
+    {
+      "title": "configfs·fault-injection Rust API 연계",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust configfs·블록/테스트 서브시스템 바인딩 작성자",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/rust-for-linux/20261113-configfs-c-default-groups-v4-1-863963d3017c@kernel.org/",
+      "if": "C configfs default group와 Rust 드라이버 fault-injection을 한 트리에서 쓰려면",
+      "do": "configfs v4의 `CDefaultGroup`/`rust_helper_configfs_add_default_group`와 fault-inject v3의 `FaultConfig`·`PinnedDrop` 수정을 prerequisite 순서에 맞춰 계획하세요",
+      "verify": "v4 무추가 리뷰 머지 가능 여부와 rnull block fault injection 동시 머지 여부는 lore에서 확인이 필요합니다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**rust: byte-wise atomic copies between `Page` and shared memory**\n\nv6 시리즈가 `kernel::sync::atomic::memcpy()`를 도입하고 `Page::{read,write}_sysmem`으로 `Page`와 `SysMem` 공유 버퍼 사이를 레이스 없이 복사할 수 있게 합니다. `SysMem` 쪽은 byte-wise atomic 접근을 쓰고 plain 접근과의 레이스는 명시적으로 금지합니다.\n\n영향: Rust for Linux에서 GEM/DMA 등 커널 밖과 공유되는 메모리를 다룰 때 공식 API가 정리되고, LLVM/Rust 메모리 모델과 커널 LKMM 가정을 맞추는 패턴이 코드화됩니다.\n\n> This series adds a way to copy data between a `Page` and memory that is shared with actors outside the kernel, such as user space threads or hardware, without introducing a data race.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/rust-for-linux/20261113-page-volatile-io-v6-0-5603e527c919@kernel.org/)\n\n**drm/tyr: GPU reset infrastructure**\n\nv8이 drm/tyr에 전용 workqueue 기반 GPU 리셋 스케줄링, SRCU·mutex 기반 HwGate, teardown 시 리셋 드레인을 추가하고 iomem 접근을 게이트 뒤로 옮깁니다. drm-rust-next와 workqueue OwnedQueue v3 위에 리베이스됐습니다.\n\n영향: Rust DRM 스택에서 workqueue·SRCU 추상화가 실제 하드웨어 게이팅 패턴과 결합되는 참고 구현이며, 후속 GPU unplug/리셋 소스 연동 시리즈의 전제 패치입니다.\n\n> Add support for scheduling GPU resets on a dedicated workqueue. Track the reset state to avoid queueing another reset while one is already pending or in progress.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/rust-for-linux/20261113-tyr-reset-impl-v8-0-2ee298ac9808@onurozkan.dev/)\n\n**configfs: rust: add an API for adding default groups from C**\n\nv4가 C가 만든 configfs default group를 Rust `Group::new`에 붙일 수 있게 `CDefaultGroup`·`UnattachedGroup` 토큰과 `rust_helper_configfs_add_default_group` helper를 추가합니다. `CONFIG_CONFIGFS_FS=m` 빌드와 Send/Sync 요구를 고칩니다.\n\n영향: C 서브시스템과 섞이는 Rust configfs 바인딩(블록 rnull 등)이 default group을 안전하게 다루려면 이 API가 선행되어야 하며, fault-injection 등 configfs 기반 테스트 인프라와 직접 연결됩니다.\n\n> Some C subsystems provide a feature to add configfs default groups to the configfs hierarchy of other drivers or subsystems.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/rust-for-linux/20261113-configfs-c-default-groups-v4-1-863963d3017c@kernel.org/)\n\n**fault-inject: rust: add a Rust API for fault-injection**\n\nv3가 `FaultConfig`와 `should_fail()` Rust API를 추가하고 configfs default group 부착을 `UnattachedGroup`/`CDefaultGroup` 패턴으로 정리합니다. v3에서 `PinnedDrop`으로 configfs 참조 누수를 수정합니다.\n\n영향: Rust 드라이버가 C fault-injection 프레임워크를 그대로 쓰며 userspace configfs로 실패 주입을 테스트할 수 있어, rnull 등 Rust 드라이버 CI·개발 루프가 완성됩니다.\n\n> Add a way for Rust code to create fault-injection control points. The control points can be attached to a configfs tree as default groups and controlled from user space.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/rust-for-linux/20261113-rust-fault-inject-v3-1-d8bd240f22dc@kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "**kbuild: reduce single-build dependencies**\n\nv2가 단일 `.o` 빌드(`make path/foo.o`) 시 `prepare_checks`와 `scripts/mod` 준비를 건너뛰도록 Makefile/Kbuild를 조정하고, v2에서는 `modpost_prepare`가 `prepare`에 의존하도록 해 sashiko 리포트를 반영합니다.\n\n영향: `make W=1`이나 단일 오브젝트 재빌드로 Rust/C 파일을 반복 컴파일하는 개발자의 불필요한 prepare 비용이 줄어들어 로컬 툴체인 반복 작업 시간이 단축됩니다.\n\n> Move the generic preparation checks and scripts/mod out of the single-build preparation path.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-kbuild/20261113-reduce-single-build-dependencies-v2-0-93ba1f6c4e46@kernel.org/)\n\n**compiler-context-analysis: Avoid unused parameter warning in _context_unsafe_alias()**\n\nIan Rogers v13 시리즈 첫 패치가 `_context_unsafe_alias()`에 `(void)p;`를 넣어 `-Wextra` 빌드(특히 tools/perf)에서 `-Wunused-parameter` 경고를 없앱니다. 더 큰 시리즈는 perf에 kernel `compiler-context-analysis.h` 주석을 확대 적용합니다.\n\n영향: Clang thread-safety/context-analysis 플래그를 perf와 툴에 켜는 작업의 선행 조건이라, LLVM/Clang으로 커널·perf를 빌드하는 툴체인 사용자에게 경고 노이즈와 CI 실패 리스크가 줄어듭니다.\n\n> _context_unsafe_alias() does not use its parameter 'p', which triggers -Wunused-parameter when building code that enables -Wextra\n\n[원문 확인](https://lore-kernel.gnuweeb.org/llvm/20261113164152.2095566-2-irogers@google.com/)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "rust: Page and shared memory atomic copy (v6 thread)",
+      "url": "https://lore-kernel.gnuweeb.org/rust-for-linux/20261113-page-volatile-io-v6-0-5603e527c919@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: page SysMem copy methods (syzbot series)",
+      "url": "https://ci.syzbot.org/series/1a3fdaa6-1a24-4b9e-a90d-47b59ecff16e",
+      "note": "thread"
+    },
+    {
+      "title": "drm/tyr GPU reset infrastructure v8",
+      "url": "https://lore-kernel.gnuweeb.org/rust-for-linux/20261113-tyr-reset-impl-v8-0-2ee298ac9808@onurozkan.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "configfs rust C default groups v4",
+      "url": "https://lore-kernel.gnuweeb.org/rust-for-linux/20261113-configfs-c-default-groups-v4-1-863963d3017c@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "fault-inject rust API v3",
+      "url": "https://lore-kernel.gnuweeb.org/rust-for-linux/20261113-rust-fault-inject-v3-1-d8bd240f22dc@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "kbuild reduce single-build dependencies v2",
+      "url": "https://lore-kernel.gnuweeb.org/linux-kbuild/20261113-reduce-single-build-dependencies-v2-0-93ba1f6c4e46@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "compiler-context-analysis unused parameter fix",
+      "url": "https://lore-kernel.gnuweeb.org/llvm/20261113164152.2095566-2-irogers@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "tools/perf compiler-context-analysis v13 series",
+      "url": "https://lore-kernel.gnuweeb.org/llvm/20261113164152.2095566-1-irogers@google.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-13T18:21:23.174Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
