@@ -1,0 +1,882 @@
+{
+  "id": "2025-12-01-linux-v6.12-v6.18-lts-driver-impact",
+  "topic": "linux-driver-impact",
+  "title": "Linux 6.12 → 6.18 LTS 드라이버 영향 노트",
+  "headline": "v6.12에서 v6.18로 올릴 때 `del_timer_sync()`가 없어지므로 in-tree와 같이 `timer_delete_sync()` 이름으로 바꿔야 한다.",
+  "date": "2025-12-01",
+  "summary": "LTS v6.12 → LTS v6.18: 커밋 80035개, pull 2753개. 드라이버에서 쓰이던 API 895개와 드라이버 Kconfig 심볼 115개가 사라졌고, 메모리·V4L2·타이머 등 중점 영역에서 드라이버가 쓰던 API 158개가 바뀌거나 사라졌습니다. 반복 전환 패턴은 134건입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "드라이버",
+    "LTS",
+    "v6.12",
+    "v6.18"
+  ],
+  "sections": [
+    {
+      "heading": "먼저 볼 것",
+      "body": "- v6.12에서 v6.18로 올릴 때 `del_timer_sync()`가 없어지므로 in-tree와 같이 `timer_delete_sync()` 이름으로 바꿔야 한다. — [커밋 8fa7292](https://git.kernel.org/torvalds/c/8fa7292fee5c), `del_timer_sync`\n- `from_timer()` 매크로가 제거되고 `timer_container_of()`로 옮겨졌으므로 타이머 콜백에서 컨테이너를 얻는 매크로 호출을 새 이름에 맞춘다. — [커밋 41cb085](https://git.kernel.org/torvalds/c/41cb08555c41), `from_timer`\n- `gpiod_set_value()`·`gpiod_set_value_cansleep()`와 `gpio_chip.set` 콜백이 `int`를 반환하도록 바뀌었으므로 GPIO consumer·provider 코드는 새 시그니처에 맞추고 실패 반환을 처리한다. — `gpiod_set_value`, `gpio_chip.set`, [gpio updates from Bartosz Golaszewski](https://git.kernel.org/torvalds/c/0227b49b5027)\n- `v4l2_fh_add()`·`v4l2_fh_del()`에 `struct file *` 인자가 추가되었으므로 V4L2 디바이스의 open·release 경로는 코어가 `file->private_data`를 맞추도록 새 시그니처로 호출한다. — [커밋 47f4b1a](https://git.kernel.org/torvalds/c/47f4b1acb4d5), [커밋 2779667](https://git.kernel.org/torvalds/c/277966749f46), `v4l2_fh_add`, `v4l2_fh_del`\n- `irq_domain_add_simple()`·`irq_domain_add_legacy()`·`irq_domain_add_hierarchy()`가 삭제되었으므로 이 헬퍼에 의존하던 irqdomain 등록 코드는 현행 irqdomain API로 바꿔야 한다. — `irq_domain_add_simple`"
+    },
+    {
+      "heading": "중점 API 영역",
+      "body": "드라이버가 많이 쓰는 영역의 헤더를 v6.12과 v6.18에서 각각 파싱해 비교했습니다. 시그니처·구조체 멤버가 바뀐 것은 컴파일 오류나 콜백 대입 오류로 드러납니다. `사용`은 이전 버전 drivers/·sound/에서 그 이름을 쓴 파일 수이고, 구조체 멤버는 `struct 구조체`가 나오고 `->멤버`·`.멤버`로 접근하는 파일 수입니다(타입은 확인하지 않아 상한값입니다). 표는 헤더를 직접 비교한 결과라, 요약 문장이나 메인테이너 pull 요약과 다르면 표가 맞습니다.\n\n### 메모리·DMA\n\n- `page_size()`·`kmap_local_page()`·`kmap_atomic()`·`kunmap()`·`compound_order()`·`folio_pfn()` 등 다수 MM 헬퍼가 `const struct page *`·`const struct folio *`를 받도록 바뀌었으므로 호출부 const성을 새 시그니처에 맞춘다.\n- `page.index` 멤버가 삭제되었으므로 folio·offset 기반 접근으로 바뀐 in-tree 패턴과 맞는지 본다.\n- `vm_get_page_prot()`는 `unsigned long` 대신 `vm_flags_t`를 받고 `vmf_insert_mixed()`·`vmf_insert_pfn_pmd()`는 pfn 타입 대신 `unsigned long`을 쓰도록 바뀌었으므로 mmap helper 호출을 헤더에 맞춘다.\n- `dma_buf_attachment`의 `sgt`·`dir` 멤버가 없어져 attachment에서 scatterlist·방향을 직접 꺼내던 코드는 컴파일되지 않는다.\n\n| 변화 | 이름 | 이전 → 이후 | 사용 | 커밋 |\n|---|---|---|---:|---|\n| 멤버 타입 변경 | `page.flags` | `unsigned long` → `memdesc_flags_t` | 309 | [ptdesc: convert __page_flags to pt_flags](https://git.kernel.org/torvalds/c/522abd92279a) |\n| 시그니처 변경 | `page_size` | `unsigned long page_size(struct page *)` → `unsigned long page_size(const struct page *)` | 226 | [mm: constify compound_order() and page_size()](https://git.kernel.org/torvalds/c/3a37469e5ac0) |\n| 멤버 삭제 | `page.index` | `pgoff_t` | 68 | [mm: rename page->index to page->__folio_index](https://git.kernel.org/torvalds/c/acc53a0b4c15) |\n| 시그니처 변경 | `kmap_local_page` | `void *kmap_local_page(struct page *)` → `void *kmap_local_page(const struct page *)` | 50 | [mm: constify highmem related functions for improved const-correctness](https://git.kernel.org/torvalds/c/a847b17009ec) |\n| 시그니처 변경 | `kmap_atomic` | `void *kmap_atomic(struct page *)` → `void *kmap_atomic(const struct page *)` | 43 | [mm: constify highmem related functions for improved const-correctness](https://git.kernel.org/torvalds/c/a847b17009ec) |\n| 멤버 타입 변경 | `mm_struct.flags` | `unsigned long` → `mm_flags_t` | 33 | [ptdesc: convert __page_flags to pt_flags](https://git.kernel.org/torvalds/c/522abd92279a) |\n| 시그니처 변경 | `kunmap` | `void kunmap(struct page *)` → `void kunmap(const struct page *)` | 24 | [mm: constify highmem related functions for improved const-correctness](https://git.kernel.org/torvalds/c/a847b17009ec) |\n| 시그니처 변경 | `vma_pages` | `unsigned long vma_pages(struct vm_area_struct *)` → `unsigned long vma_pages(const struct vm_area_struct *)` | 24 | [mm: constify assert/test functions in mm.h](https://git.kernel.org/torvalds/c/da0045587d59) |\n| 멤버 삭제 | `dma_buf_attachment.sgt` | `struct sg_table *` | 23 | [dma-buf: drop caching of sg_tables](https://git.kernel.org/torvalds/c/b72f66f22c0e) |\n| 시그니처 변경 | `vm_get_page_prot` | `pgprot_t vm_get_page_prot(unsigned long)` → `pgprot_t vm_get_page_prot(vm_flags_t)` | 18 | [mm: change vm_get_page_prot() to accept vm_flags_t argument](https://git.kernel.org/torvalds/c/78ddaa358ec4) |\n| 매크로 삭제 | `nth_page` | `(2)` | 11 | [mm: remove nth_page()](https://git.kernel.org/torvalds/c/84efbefa26df) |\n| 멤버 삭제 | `page.pgmap` | `struct dev_pagemap *` | 6 | [mm: allow compound zone device pages](https://git.kernel.org/torvalds/c/82ba975e4c43) |\n| 멤버 삭제 | `dma_buf_attachment.dir` | `enum dma_data_direction` | 5 | [dma-buf: drop caching of sg_tables](https://git.kernel.org/torvalds/c/b72f66f22c0e) |\n| 멤버 타입 변경 | `folio.flags` | `unsigned long` → `memdesc_flags_t` | 3 | [ptdesc: convert __page_flags to pt_flags](https://git.kernel.org/torvalds/c/522abd92279a) |\n| 멤버 삭제 | `vm_area_struct.vm_lock` | `struct vma_lock *` | 3 | [mm: replace vm_lock and detached flag with a reference count](https://git.kernel.org/torvalds/c/f35ab95ca0af) |\n| 시그니처 변경 | `vmf_insert_mixed` | `vm_fault_t vmf_insert_mixed(struct vm_area_struct *, unsigned long, pfn_t)` → `vm_fault_t vmf_insert_mixed(struct vm_area_struct *, unsigned long, unsigned long)` | 3 | [mm: remove callers of pfn_t functionality](https://git.kernel.org/torvalds/c/21aa65bf82a7) |\n| 시그니처 변경 | `__account_locked_vm` | `int __account_locked_vm(struct mm_struct *, unsigned long, bool, struct task_struct *, bool)` → `int __account_locked_vm(struct mm_struct *, unsigned long, bool, const struct task_struct *, bool)` | 2 | [mm, s390: constify mapping related test/getter functions](https://git.kernel.org/torvalds/c/0bf25cfc9e79) |\n| 시그니처 변경 | `__dma_fence_is_later` | `bool __dma_fence_is_later(u64, u64, const struct dma_fence_ops *)` → `bool __dma_fence_is_later(struct dma_fence *, u64, u64)` | 2 | [dma-fence: Change signature of __dma_fence_is_later](https://git.kernel.org/torvalds/c/549810e91815) |\n| 매크로 삭제 | `alloc_pages_bulk_array` | `(3)` | 2 | [mm: alloc_pages_bulk: rename API](https://git.kernel.org/torvalds/c/6bf9b5b40af3) |\n| 시그니처 변경 | `compound_order` | `unsigned int compound_order(struct page *)` → `unsigned int compound_order(const struct page *)` | 2 | [mm: constify compound_order() and page_size()](https://git.kernel.org/torvalds/c/3a37469e5ac0) |\n\n나머지 25개는 점검 명령에 넣었습니다.\n\n새로 생긴 함수·매크로·멤버 206개: `dma_buf_iter_begin`, `dma_buf_iter_next`, `dma_fence_init64`, `dma_fence_driver_name`, `dma_fence_timeline_name`, `dma_iova_size`, `dma_map_phys`, `dma_unmap_phys`, `dma_use_iova`, `dma_iova_try_alloc`, `dma_iova_free`, `dma_iova_destroy`, `dma_iova_sync`, `dma_iova_link`, `dma_iova_unlink`, `dma_need_unmap`, `dma_pool_create_node`, `alloc_pages_bulk_mempolicy`, `alloc_pages_bulk`, `alloc_pages_bulk_node`, `alloc_pages_nolock`, `gfpflags_allow_spinning`, `alloc_pages_bulk_mempolicy_noprof`, `alloc_pages_bulk_node_noprof`, `alloc_pages_nolock_noprof`, `free_pages_nolock`, `kmap_local_page_try_from_panic`, `tag_clear_highpages`, `memcpy_folio`, `vmf_insert_folio_pmd` …\n\n관련 pull: [more MM updates from Andrew Morton](https://git.kernel.org/torvalds/c/7a405dbb0f03) · [mm-init update from Mike Rapoport](https://git.kernel.org/torvalds/c/b41048485ee3) · [dma-mapping updates from Marek Szyprowski](https://git.kernel.org/torvalds/c/a498d59c469b) · [MM updates from Andrew Morton](https://git.kernel.org/torvalds/c/8804d970fab4) · [slab updates from Vlastimil Babka](https://git.kernel.org/torvalds/c/24d9e8b3c9c8) · [more MM updates from Andrew Morton](https://git.kernel.org/torvalds/c/da23ea194db9) · [MM updates from Andrew Morton](https://git.kernel.org/torvalds/c/beace86e61e4) · [slab updates from Vlastimil Babka](https://git.kernel.org/torvalds/c/e8d780dcd957) · [more MM updates from Andrew Morton](https://git.kernel.org/torvalds/c/bdc7f8c5adad) · [slab updates from Vlastimil Babka](https://git.kernel.org/torvalds/c/1af80d00e1e0) · [more MM updates from Andrew Morton](https://git.kernel.org/torvalds/c/fd1f8473503e) · [MM updates from Andrew Morton](https://git.kernel.org/torvalds/c/00c010e130e5) · [dma-mapping updates from Marek Szyprowski](https://git.kernel.org/torvalds/c/23022f545610) · [more MM updates from Andrew Morton](https://git.kernel.org/torvalds/c/8c7c1b5506e5) · [MM updates from Andrew Morton](https://git.kernel.org/torvalds/c/eb0ece16027f) · [slab updates from Vlastimil Babka](https://git.kernel.org/torvalds/c/05b00ffd7a0b) · [MM updates from Andrew Morton](https://git.kernel.org/torvalds/c/9c5968db9e62) · [slab updates from Vlastimil Babka](https://git.kernel.org/torvalds/c/ad37df3bcb1c) · [memblock updates from Mike Rapoport](https://git.kernel.org/torvalds/c/ab952fc5c736) · [slab updates from Vlastimil Babka](https://git.kernel.org/torvalds/c/e06635e26cd8) · [MM updates from Andrew Morton](https://git.kernel.org/torvalds/c/5c00ff742bf5) · [dma-mapping updates from Christoph Hellwig](https://git.kernel.org/torvalds/c/51ae62a12c24)\n\n### V4L2·videobuf2·미디어 컨트롤러\n\n- `v4l2_ctrl_handler_free()`가 `int`를 반환하므로 handler 오류 시 `return v4l2_ctrl_handler_free(handler)` 패턴을 쓸 수 있다.\n- `v4l2_fh_add()`·`v4l2_fh_del()`에 `struct file *`가 필요하므로 open·release 핸들러는 코어에 private_data 관리를 맡긴다.\n- `v4l2_get_link_freq()`는 `struct v4l2_ctrl_handler *` 대신 `const struct media_pad *`를 받도록 바뀌었으므로 링크 주파수 조회 호출을 맞춘다.\n- `v4l2_detect_cvt()`·`v4l2_detect_gtf()`는 `const struct v4l2_dv_timings_cap *` 인자가 추가되었으므로 DV timings 검출 호출을 새 시그니처에 맞춘다.\n\n| 변화 | 이름 | 이전 → 이후 | 사용 | 커밋 |\n|---|---|---|---:|---|\n| 시그니처 변경 | `v4l2_ctrl_handler_free` | `void v4l2_ctrl_handler_free(struct v4l2_ctrl_handler *)` → `int v4l2_ctrl_handler_free(struct v4l2_ctrl_handler *)` | 269 | [media: v4l2-ctrls: Return the handler's error in v4l2_ctrl_handler_free()](https://git.kernel.org/torvalds/c/04f541cef2db) |\n| 타입 변경 | `tuners` | `struct tunertype[]` → `const struct tunertype[]` | 92 | [media: tuners: Constify struct tunertype, tuner_range and tuner_params](https://git.kernel.org/torvalds/c/70d4fd1200ca) |\n| 시그니처 변경 | `v4l2_fh_add` | `void v4l2_fh_add(struct v4l2_fh *)` → `void v4l2_fh_add(struct v4l2_fh *, struct file *)` | 57 | [media: Set file->private_data in v4l2_fh_add()](https://git.kernel.org/torvalds/c/47f4b1acb4d5) |\n| 시그니처 변경 | `v4l2_fh_del` | `void v4l2_fh_del(struct v4l2_fh *)` → `void v4l2_fh_del(struct v4l2_fh *, struct file *)` | 54 | [media: Reset file->private_data to NULL in v4l2_fh_del()](https://git.kernel.org/torvalds/c/277966749f46) |\n| 시그니처 변경 | `v4l2_get_link_freq` | `s64 v4l2_get_link_freq(struct v4l2_ctrl_handler *, unsigned int, unsigned int)` → `s64 v4l2_get_link_freq(const struct media_pad *, unsigned int, unsigned int)` | 10 | [media: v4l2-common: Constify media_pad argument to v4l2_get_link_freq()](https://git.kernel.org/torvalds/c/6234d0df236a) |\n| 시그니처 변경 | `v4l2_detect_cvt` | `bool v4l2_detect_cvt(unsigned, unsigned, unsigned, unsigned, u32, bool, struct v4l2_dv_timings *)` → `bool v4l2_detect_cvt(unsigned int, unsigned int, unsigned int, unsigned int, u32, bool, const struct v4l2_dv_timings_ca…` | 3 | [media: v4l2-core: v4l2-dv-timings: check cvt/gtf result](https://git.kernel.org/torvalds/c/9f070b1862f3) |\n| 시그니처 변경 | `v4l2_detect_gtf` | `bool v4l2_detect_gtf(unsigned, unsigned, unsigned, u32, bool, struct v4l2_fract, struct v4l2_dv_timings *)` → `bool v4l2_detect_gtf(unsigned int, unsigned int, unsigned int, u32, bool, struct v4l2_fract, const struct v4l2_dv_timin…` | 3 | [media: v4l2-core: v4l2-dv-timings: check cvt/gtf result](https://git.kernel.org/torvalds/c/9f070b1862f3) |\n| 멤버 삭제 | `v4l2_ioctl_ops.vidioc_queryctrl` | `int (*)(struct file *, void *, struct v4l2_queryctrl *)` | 3 | [media: v4l2: Remove vidioc_queryctrl callback](https://git.kernel.org/torvalds/c/0f6b05e069a7) |\n| 멤버 삭제 | `v4l2_ioctl_ops.vidioc_s_ctrl` | `int (*)(struct file *, void *, struct v4l2_control *)` | 3 | [media: v4l2: Remove vidioc_s_ctrl callback](https://git.kernel.org/torvalds/c/0d75129312ff) |\n| 멤버 삭제 | `v4l2_subdev_video_ops.g_pixelaspect` | `int (*)(struct v4l2_subdev *, struct v4l2_fract *)` | 3 | [media: v4l2-subdev: Remove g_pixelaspect operation](https://git.kernel.org/torvalds/c/c9596e882032) |\n| 멤버 타입 변경 | `tuner_params.ranges` | `struct tuner_range *` → `const struct tuner_range *` | 2 | [media: tuners: Constify struct tunertype, tuner_range and tuner_params](https://git.kernel.org/torvalds/c/70d4fd1200ca) |\n| 멤버 타입 변경 | `tunertype.params` | `struct tuner_params *` → `const struct tuner_params *` | 2 | [media: tuners: Constify struct tunertype, tuner_range and tuner_params](https://git.kernel.org/torvalds/c/70d4fd1200ca) |\n| 시그니처 변경 | `v4l2_ctrl_new_std_compound` | `struct v4l2_ctrl *v4l2_ctrl_new_std_compound(struct v4l2_ctrl_handler *, const struct v4l2_ctrl_ops *, u32, const union…` → `struct v4l2_ctrl *v4l2_ctrl_new_std_compound(struct v4l2_ctrl_handler *, const struct v4l2_ctrl_ops *, u32, const union…` | 2 | [media: v4l2-ctrls: add support for V4L2_CTRL_WHICH_MIN/MAX_VAL](https://git.kernel.org/torvalds/c/a5bd42aafb06) |\n| 멤버 삭제 | `v4l2_ioctl_ops.vidioc_g_ctrl` | `int (*)(struct file *, void *, struct v4l2_control *)` | 2 | [media: v4l2: Remove vidioc_s_ctrl callback](https://git.kernel.org/torvalds/c/0d75129312ff) |\n| 멤버 타입 변경 | `lirc_fh.carrier_low` | `int` → `u32` | 1 | [media: rc: reduce useless padding in struct rc_dev etc](https://git.kernel.org/torvalds/c/eb9919b541ad) |\n| 구조체 삭제 | `mt9p031_platform_data` | `struct` | 1 | [media: i2c: mt9p031: Drop support for legacy platform data](https://git.kernel.org/torvalds/c/28aeaeaca62e) |\n| 구조체 삭제 | `mt9v032_platform_data` | `struct` | 1 | [media: i2c: mt9v032: Drop support for platform data](https://git.kernel.org/torvalds/c/b4dd3bbd2eeb) |\n\n새로 생긴 함수·매크로·멤버 34개: `cdns_csi2rx_negotiate_ppc`, `rcar_fcp_soft_reset`, `v4l2_find_nearest_size_conditional`, `__v4l2_find_nearest_size_conditional`, `__devm_v4l2_sensor_clk_get`, `devm_v4l2_sensor_clk_get`, `devm_v4l2_sensor_clk_get_legacy`, `v4l2_query_ext_ctrl_to_v4l2_queryctrl`, `v4l2_debugfs_root`, `v4l2_num_edid_blocks`, `v4l2_debugfs_if_alloc`, `v4l2_debugfs_if_free`, `file_to_v4l2_fh`, `v4l2_translate_cmd`, `vsp1_isp_init`, `vsp1_isp_get_bus_master`, `vsp1_isp_alloc_buffer`, `vsp1_isp_free_buffer`, `vsp1_isp_start_streaming`, `vsp1_isp_stop_streaming`, `vsp1_isp_job_prepare`, `vsp1_isp_job_run`, `vsp1_isp_job_release`, `v4l2_ctrl_ptr.p_rect`, `v4l2_ctrl_type_ops.minimum`, `v4l2_ctrl_type_ops.maximum`, `v4l2_ctrl.p_min`, `v4l2_ctrl.p_max`, `v4l2_ctrl_config.p_min`, `v4l2_ctrl_config.p_max` …\n\n관련 pull: [media updates from Mauro Carvalho Chehab](https://git.kernel.org/torvalds/c/f79e772258df) · [media updates from Mauro Carvalho Chehab](https://git.kernel.org/torvalds/c/0cdee263bc5e) · [media updates from Mauro Carvalho Chehab](https://git.kernel.org/torvalds/c/a61e26038143) · [media updates from Mauro Carvalho Chehab](https://git.kernel.org/torvalds/c/1e26c5e28ca5) · [media updates from Mauro Carvalho Chehab](https://git.kernel.org/torvalds/c/184a0997fb77) · [media updates from Mauro Carvalho Chehab](https://git.kernel.org/torvalds/c/9f5a6a1fe690)\n\n### 타이머·시간\n\n- `del_timer_sync()`·`try_to_del_timer_sync()`·`from_timer()`·`destroy_timer_on_stack()`가 제거되었으므로 `timer_delete_sync()`·`timer_delete_sync_try()`·`timer_container_of()`·`timer_destroy_on_stack()`로 이름을 맞춘다.\n- `hrtimer_init()` export가 삭제되었으므로 `hrtimer_setup()`으로 초기화하는 패턴으로 옮긴다.\n- `alarm_init()` 콜백 타입이 restart 반환 없이 `void (*)(struct alarm *, ktime_t)`로 바뀌었고 `ALARMTIMER_NORESTART` 상수가 없어지므로 alarmtimer 콜백 구현을 헤더에 맞춘다.\n- `hrtimer_cb_get_time()`은 `const struct hrtimer *`를 받도록 바뀌었으므로 호출 인자 const성을 맞춘다.\n\n| 변화 | 이름 | 이전 → 이후 | 사용 | 커밋 |\n|---|---|---|---:|---|\n| 매크로 삭제 | `from_timer` | `(3)` → `timer_container_of` (같은 커밋에서 추가) | 581 | [treewide, timers: Rename from_timer() to timer_container_of()](https://git.kernel.org/torvalds/c/41cb08555c41) |\n| 함수 삭제 | `del_timer_sync` | `int del_timer_sync(struct timer_list *)` | 516 | [treewide: Switch/rename to timer_delete[_sync]()](https://git.kernel.org/torvalds/c/8fa7292fee5c) |\n| 함수 삭제 | `hrtimer_init` | `void hrtimer_init(struct hrtimer *, clockid_t, enum hrtimer_mode)` | 93 | [hrtimers: Delete hrtimer_init()](https://git.kernel.org/torvalds/c/9779489a31d7) |\n| 함수 삭제 | `destroy_timer_on_stack` | `void destroy_timer_on_stack(struct timer_list *)` → `timer_destroy_on_stack` (같은 커밋에서 추가) | 14 | [treewide, timers: Rename destroy_timer_on_stack() as timer_destroy_on_stack()](https://git.kernel.org/torvalds/c/aad823aa3a7d) |\n| 시그니처 변경 | `alarm_init` | `void alarm_init(struct alarm *, enum alarmtimer_type, enum alarmtimer_restart (*)(struct alarm *, ktime_t))` → `void alarm_init(struct alarm *, enum alarmtimer_type, void (*)(struct alarm *, ktime_t))` | 7 | [alarmtimers: Remove return value from alarm functions](https://git.kernel.org/torvalds/c/2634303f8773) |\n| 함수 삭제 | `try_to_del_timer_sync` | `int try_to_del_timer_sync(struct timer_list *)` → `timer_delete_sync_try` (같은 커밋에서 추가) | 3 | [treewide, timers: Rename try_to_del_timer_sync() as timer_delete_sync_try()](https://git.kernel.org/torvalds/c/367ed4e35734) |\n| 상수 삭제 | `ALARMTIMER_NORESTART` | — | 1 | [alarmtimers: Remove return value from alarm functions](https://git.kernel.org/torvalds/c/2634303f8773) |\n| 시그니처 변경 | `hrtimer_cb_get_time` | `ktime_t hrtimer_cb_get_time(struct hrtimer *)` → `ktime_t hrtimer_cb_get_time(const struct hrtimer *)` | 1 | [hrtimer: Remove hrtimer_clock_base:: Get_time](https://git.kernel.org/torvalds/c/009eb5da29a9) |\n\n새로 생긴 함수·매크로·멤버 27개: `usleep_range_idle`, `hrtimer_dummy_timeout`, `hrtimer_setup`, `hrtimer_setup_on_stack`, `hrtimer_setup_sleeper_on_stack`, `hrtimer_update_function`, `hrtimers_cpu_starting`, `secs_to_jiffies`, `us_to_ktime`, `timespec64_is_epoch`, `ktime_get_clock_ts64`, `ktime_get_coarse_real_ts64_mg`, `ktime_get_real_ts64_mg`, `timekeeping_get_mg_floor_swaps`, `ktime_get_aux`, `ktime_get_aux_ts64`, `__timer_init`, `__timer_init_on_stack`, `timer_container_of`, `timer_init_key`, `timer_init_key_on_stack`, `timer_destroy_on_stack`, `timer_delete_sync_try`, `timers_init`, `clocksource.max_raw_delta`, `hrtimer_cpu_base.csd`, `system_time_snapshot.boot`\n\n관련 pull: [clocksource updates from Thomas Gleixner](https://git.kernel.org/torvalds/c/70de5572a82b) · [timer core updates from Thomas Gleixner](https://git.kernel.org/torvalds/c/c5448d46b399) · [timer core updates from Thomas Gleixner](https://git.kernel.org/torvalds/c/d614399b281a) · [timer core updates from Thomas Gleixner](https://git.kernel.org/torvalds/c/b1456f6dc167) · [clocksource updates from Thomas Gleixner](https://git.kernel.org/torvalds/c/6376c0770656) · [clocksource/event updates from Thomas Gleixner](https://git.kernel.org/torvalds/c/1e1ba8d23dae) · [timer core updates from Thomas Gleixner](https://git.kernel.org/torvalds/c/d5048d1176b8) · [timer and timekeeping updates from Thomas Gleixner](https://git.kernel.org/torvalds/c/f200c315da80) · [timer updates from Thomas Gleixner](https://git.kernel.org/torvalds/c/bf9aa14fc523)\n\n### workqueue\n\n헤더 1개가 바뀌었지만 v6.12 드라이버가 쓰던 API의 삭제·시그니처 변경은 없습니다.\n\n새로 생긴 함수·매크로·멤버 2개: `alloc_workqueue_noprof`, `alloc_workqueue_attrs_noprof`\n\n관련 pull: [workqueue updates from Tejun Heo](https://git.kernel.org/torvalds/c/77fc3f669655) · [workqueue updates from Tejun Heo](https://git.kernel.org/torvalds/c/af5b2619a89d) · [workqueue updates from Tejun Heo](https://git.kernel.org/torvalds/c/91ad250cbe57) · [workqueue update from Tejun Heo](https://git.kernel.org/torvalds/c/b05f8fbe0f68) · [workqueue updates from Tejun Heo](https://git.kernel.org/torvalds/c/d6b6d39054fa)\n\n### 스케줄러·kthread·대기\n\n- `wake_up_bit()`와 `clear_and_wake_up_bit()`는 대상 포인터 타입이 `unsigned long *`로 바뀌었으므로 bit wait를 쓰는 드라이버는 주소 타입을 맞춘다.\n- `cpumask_any_but()`·`cpumask_any_and_but()`는 마지막 인자가 `unsigned int`에서 `int`로 바뀌었으므로 CPU 선택 호출을 새 선언에 맞춘다.\n- `cpumask_next_wrap()`는 래핑 관련 추가 인자 없이 `find_next_bit_wrap()` 별칭 형태로 단순화되었으므로 호출부를 헤더 시그니처에 맞춘다.\n\n| 변화 | 이름 | 이전 → 이후 | 사용 | 커밋 |\n|---|---|---|---:|---|\n| 시그니처 변경 | `cpumask_any_but` | `unsigned int cpumask_any_but(const struct cpumask *, unsigned int)` → `unsigned int cpumask_any_but(const struct cpumask *, int)` | 29 | [cpumask: Relax cpumask_any_but()](https://git.kernel.org/torvalds/c/189572bf4e00) |\n| 시그니처 변경 | `wake_up_bit` | `void wake_up_bit(void *, int)` → `void wake_up_bit(unsigned long *, int)` | 17 | [sched: Add test_and_clear_wake_up_bit() and atomic_dec_and_wake_up()](https://git.kernel.org/torvalds/c/52d633def56c) |\n| 시그니처 변경 | `cpumask_any_and_but` | `unsigned int cpumask_any_and_but(const struct cpumask *, const struct cpumask *, unsigned int)` → `unsigned int cpumask_any_and_but(const struct cpumask *, const struct cpumask *, int)` | 10 | [cpumask: Rephrase comments for cpumask_any*() APIs](https://git.kernel.org/torvalds/c/e876695aab1e) |\n| 시그니처 변경 | `clear_and_wake_up_bit` | `void clear_and_wake_up_bit(int, void *)` → `void clear_and_wake_up_bit(int, unsigned long *)` | 6 | [sched: Improve documentation for wake_up_bit/wait_on_bit family of functions](https://git.kernel.org/torvalds/c/3cdee6b359f1) |\n| 시그니처 변경 | `cpumask_next_wrap` | `unsigned int cpumask_next_wrap(int, const struct cpumask *, int, bool)` → `unsigned int cpumask_next_wrap(int, const struct cpumask *)` | 5 | [cpumask: re-introduce cpumask_next{,_and}_wrap()](https://git.kernel.org/torvalds/c/3268cb2e49cc) |\n\n새로 생긴 함수·매크로·멤버 84개: `for_each_possible_cpu_wrap`, `for_each_online_cpu_wrap`, `__assign_cpu`, `cpumask_first_andnot`, `cpumask_next_andnot`, `cpumask_next_and_wrap`, `cpumask_random`, `cpumask_any_andnot_but`, `cpumask_clear_cpus`, `kthread_run_worker`, `kthread_affine_preferred`, `kthread_create_worker_on_node`, `kthread_run_worker_on_cpu`, `preempt_model_lazy`, `preempt_model_str`, `trace_set_current_state`, `this_rq_raw`, `this_rq_pinned`, `__trace_set_current_state`, `__trace_set_need_resched`, `sched_domains_mutex_lock`, `sched_domains_mutex_unlock`, `sched_proxy_exec`, `__get_task_blocked_on`, `__set_task_blocked_on`, `set_task_blocked_on`, `__clear_task_blocked_on`, `clear_task_blocked_on`, `___migrate_enable`, `__migrate_enable` …\n\n관련 pull: [scheduler updates from Ingo Molnar](https://git.kernel.org/torvalds/c/6c7340a7a8d2) · [scheduler updates from Ingo Molnar](https://git.kernel.org/torvalds/c/bf76f23aa1c1) · [scheduler updates from Ingo Molnar](https://git.kernel.org/torvalds/c/eaed94d1f68c) · [scheduler updates from Ingo Molnar](https://git.kernel.org/torvalds/c/32b22538bea8) · [kthread updates from Frederic Weisbecker](https://git.kernel.org/torvalds/c/1d6d3992235e) · [scheduler updates from Ingo Molnar](https://git.kernel.org/torvalds/c/62de6e168526) · [scheduler updates from Ingo Molnar](https://git.kernel.org/torvalds/c/3f020399e4f1)\n\n### 인터럽트\n\n- `nr_irqs` export가 없어지고 `irq_domain_add_simple()`·`irq_domain_add_legacy()`·`irq_domain_add_hierarchy()`가 삭제되었으므로 irqdomain 생성·IRQ 개수 접근 코드를 현행 API로 바꿔야 한다.\n- `irq_gc_lock()`·`irq_gc_unlock()` 및 관련 매크로가 없어져 generic irqchip lock helper에 기대던 코드는 컴파일되지 않는다.\n- `irq_set_default_host()`·`irq_get_default_host()`는 각각 `irq_set_default_domain()`·`irq_get_default_domain()`으로 이름이 바뀌었으므로 default domain 설정·조회 호출을 맞춘다.\n- `can_request_irq()` 반환 타입이 `bool`로 바뀌었으므로 호출부 타입을 맞춘다.\n\n| 변화 | 이름 | 이전 → 이후 | 사용 | 커밋 |\n|---|---|---|---:|---|\n| export 해제 | `nr_irqs` | `EXPORT_SYMBOL_GPL` | 135 | [genirq: Unexport nr_irqs](https://git.kernel.org/torvalds/c/ef4c675dc296) |\n| 함수 삭제 | `irq_domain_add_simple` | `struct irq_domain *irq_domain_add_simple(struct device_node *, unsigned int, unsigned int, const struct irq_domain_ops …` | 25 | [irqdomain: Drop irq_domain_add_*() functions](https://git.kernel.org/torvalds/c/42b8b16fe56c) |\n| 함수 삭제 | `irq_domain_add_legacy` | `struct irq_domain *irq_domain_add_legacy(struct device_node *, unsigned int, unsigned int, irq_hw_number_t, const struc…` | 22 | [irqdomain: Drop irq_domain_add_*() functions](https://git.kernel.org/torvalds/c/42b8b16fe56c) |\n| 함수 삭제 | `irq_domain_add_hierarchy` | `struct irq_domain *irq_domain_add_hierarchy(struct irq_domain *, unsigned int, unsigned int, struct device_node *, cons…` | 21 | [irqdomain: Drop irq_domain_add_*() functions](https://git.kernel.org/torvalds/c/42b8b16fe56c) |\n| 함수 삭제 | `irq_gc_lock` | `void irq_gc_lock(struct irq_chip_generic *)` | 15 | [genirq/generic-chip: Remove unused lock wrappers](https://git.kernel.org/torvalds/c/7ae844a6650c) |\n| 함수 삭제 | `irq_gc_unlock` | `void irq_gc_unlock(struct irq_chip_generic *)` | 15 | [genirq/generic-chip: Remove unused lock wrappers](https://git.kernel.org/torvalds/c/7ae844a6650c) |\n| 함수 삭제 | `irq_set_default_host` | `void irq_set_default_host(struct irq_domain *)` → `irq_set_default_domain` (같은 커밋에서 추가) | 7 | [irqdomain: Rename irq_set_default_host() to irq_set_default_domain()](https://git.kernel.org/torvalds/c/825dfab23bca) |\n| 함수 삭제 | `irq_linear_revmap` | `unsigned int irq_linear_revmap(struct irq_domain *, irq_hw_number_t)` | 6 | [irqdomain: Drop irq_linear_revmap()](https://git.kernel.org/torvalds/c/14ebb11ba895) |\n| export 해제 | `msi_lock_descs` | `EXPORT_SYMBOL_GPL` | 6 | [genirq/msi: Rename msi_[un]lock_descs()](https://git.kernel.org/torvalds/c/9357e329cdeb) |\n| export 해제 | `msi_unlock_descs` | `EXPORT_SYMBOL_GPL` | 6 | [genirq/msi: Rename msi_[un]lock_descs()](https://git.kernel.org/torvalds/c/9357e329cdeb) |\n| 매크로 삭제 | `irq_gc_lock_irqsave` | `(2)` | 4 | [genirq/generic-chip: Remove unused lock wrappers](https://git.kernel.org/torvalds/c/7ae844a6650c) |\n| 매크로 삭제 | `irq_gc_unlock_irqrestore` | `(2)` | 4 | [genirq/generic-chip: Remove unused lock wrappers](https://git.kernel.org/torvalds/c/7ae844a6650c) |\n| 상수 삭제 | `IRQ_MOVE_PCNTXT` | — | 3 | [genirq: Remove IRQ_MOVE_PCNTXT and related code](https://git.kernel.org/torvalds/c/f94a18249b7f) |\n| 시그니처 변경 | `can_request_irq` | `int can_request_irq(unsigned int, unsigned long)` → `bool can_request_irq(unsigned int, unsigned long)` | 1 | [genirq/manage: Rework can_request_irq()](https://git.kernel.org/torvalds/c/a1ceb831417b) |\n| 함수 삭제 | `irq_get_default_host` | `struct irq_domain *irq_get_default_host(void)` → `irq_get_default_domain` (같은 커밋에서 추가) | 1 | [irqdomain: Rename irq_get_default_host() to irq_get_default_domain()](https://git.kernel.org/torvalds/c/0a27ea384c82) |\n| 함수 삭제 | `msi_desc_get_iommu_cookie` | `const void *msi_desc_get_iommu_cookie(struct msi_desc *)` → `msi_desc_set_iommu_msi_iova` (같은 커밋에서 추가) | 1 | [genirq/msi: Store the IOMMU IOVA directly in msi_desc instead of iommu_cookie](https://git.kernel.org/torvalds/c/1f7df3a69174) |\n| 함수 삭제 | `msi_desc_set_iommu_cookie` | `void msi_desc_set_iommu_cookie(struct msi_desc *, const void *)` → `msi_desc_set_iommu_msi_iova` (같은 커밋에서 추가) | 1 | [genirq/msi: Store the IOMMU IOVA directly in msi_desc instead of iommu_cookie](https://git.kernel.org/torvalds/c/1f7df3a69174) |\n| 멤버 삭제 | `msi_desc.iommu_cookie` | `const void *` | 1 | [genirq/msi: Store the IOMMU IOVA directly in msi_desc instead of iommu_cookie](https://git.kernel.org/torvalds/c/1f7df3a69174) |\n| 변수 삭제 | `pci_msi_ignore_mask` | `int` | 1 | [PCI/MSI: Convert pci_msi_ignore_mask to per MSI domain flag](https://git.kernel.org/torvalds/c/c3164d2e0d18) |\n\n새로 생긴 함수·매크로·멤버 31개: `raise_ktimers_thread`, `local_timers_pending_force_th`, `raise_timer_softirq`, `local_timers_pending`, `irq_can_move_in_process_context`, `irq_chip_shutdown_parent`, `irq_chip_startup_parent`, `machine_kexec_mask_interrupts`, `irq_set_default_domain`, `irq_get_default_domain`, `irq_domain_create_nomap`, `irq_domain_xlate_twothreecell`, `irq_domain_translate_twothreecell`, `irq_domain_is_msi_immutable`, `lockdep_cleanup_dead_cpu`, `__msi_lock_descs`, `__msi_unlock_descs`, `msi_desc_set_iommu_msi_iova`, `msi_msg_set_addr`, `msi_create_parent_irq_domain`, `pci_msi_map_rid_ctlr_node`, `pci_msix_prepare_desc`, `irq_chip.irq_force_complete_move`, `irq_domain_info.dev`, `msi_desc.iommu_msi_iova`, `msi_desc.iommu_msi_shift`, `msi_domain_ops.msi_teardown`, `msi_domain_info.dev`, `msi_domain_info.alloc_data`, `msi_domain_template.alloc_info` …\n\n관련 pull: [irq chip driver updates from Thomas Gleixner](https://git.kernel.org/torvalds/c/03a53e09cd72) · [irq core updates from Thomas Gleixner](https://git.kernel.org/torvalds/c/3b2074c77d25) · [interrupt chip driver updates from Thomas Gleixner](https://git.kernel.org/torvalds/c/0b29600a304c) · [irq updates from Thomas Gleixner](https://git.kernel.org/torvalds/c/dba3ec9f2ad0) · [irq controller updates from Thomas Gleixner](https://git.kernel.org/torvalds/c/c0f182c979cf) · [irq core updates from Thomas Gleixner](https://git.kernel.org/torvalds/c/60c1d948f79d) · [irq driver updates from Thomas Gleixner](https://git.kernel.org/torvalds/c/0f4046467450) · [irq updates from Thomas Gleixner](https://git.kernel.org/torvalds/c/43a7eec035a5) · [interrupt subsystem updates from Thomas Gleixner](https://git.kernel.org/torvalds/c/4c551165e771) · [interrupt subsystem updates from Thomas Gleixner](https://git.kernel.org/torvalds/c/5c2b05084833)\n\n### 락·RCU·cleanup\n\n헤더 16개가 바뀌었지만 v6.12 드라이버가 쓰던 API의 삭제·시그니처 변경은 없습니다.\n\n새로 생긴 함수·매크로·멤버 65개: `retain_and_null_ptr`, `scoped_class`, `__DEFINE_CLASS_IS_CONDITIONAL`, `__GUARD_IS_ERR`, `__DEFINE_GUARD_LOCK_PTR`, `DEFINE_CLASS_IS_GUARD`, `DEFINE_CLASS_IS_COND_GUARD`, `DEFINE_GUARD_COND_4`, `DEFINE_GUARD_COND_3`, `__guard_err`, `__is_cond_ptr`, `ACQUIRE_ERR`, `__scoped_guard`, `__scoped_cond_guard`, `DEFINE_LOCK_GUARD_1_COND_4`, `DEFINE_LOCK_GUARD_1_COND_3`, `local_trylock_init`, `local_trylock`, `local_lock_is_locked`, `local_trylock_irqsave`, `__mutex_init_ret`, `mutex_lock_killable_nest_lock`, `mutex_trylock_nest_lock`, `_mutex_lock_killable`, `_mutex_trylock_nest_lock`, `mutex_get_owner`, `list_bidir_prev_rcu`, `list_bidir_del_rcu`, `rcu_dereference_all_check`, `rcu_dereference_all` …\n\n관련 pull: [RCU updates from Paul McKenney](https://git.kernel.org/torvalds/c/67da125e30ab) · [locking updates from Ingo Molnar](https://git.kernel.org/torvalds/c/88b489385bfe) · [RCU updates from Neeraj Upadhyay](https://git.kernel.org/torvalds/c/2db4df0c09ee) · [locking updates from Ingo Molnar](https://git.kernel.org/torvalds/c/72b8944f147e) · [locking updates from Ingo Molnar](https://git.kernel.org/torvalds/c/b3570b00dc30) · [locking updates from Ingo Molnar](https://git.kernel.org/torvalds/c/23608993bb22) · [RCU updates from Uladzislau Rezki](https://git.kernel.org/torvalds/c/9f3ee94e705a) · [locking updates from Ingo Molnar](https://git.kernel.org/torvalds/c/8838a1a2d219) · [locking updates from Ingo Molnar](https://git.kernel.org/torvalds/c/364eeb79a213) · [RCU updates from Frederic Weisbecker](https://git.kernel.org/torvalds/c/8cdf2d19038f)\n\n### 디바이스 모델·PM·펌웨어\n\n- `device_for_each_child()`·`bus_for_each_dev()`·`driver_for_each_device()` 등은 콜백 타입이 `device_iter_t`로 통일되었으므로 for_each 콜백 함수 포인터 시그니처를 맞춘다.\n- `device_find_child()`는 match 콜백이 `device_match_t`를 쓰도록 바뀌었으므로 자식 검색 helper 호출을 맞춘다.\n- `bin_attribute`의 read·write·llseek·mmap와 `attribute_group.bin_attrs`·`is_bin_visible`이 const `bin_attribute` 포인터를 받도록 바뀌었으므로 sysfs binary 속성 ops 테이블을 맞춘다.\n- `of_msi_map_id()` 함수가 없어졌으므로 DT MSI map은 `of_msi_xlate()` 경로로 맞춘다.\n\n| 변화 | 이름 | 이전 → 이후 | 사용 | 커밋 |\n|---|---|---|---:|---|\n| 멤버 삭제 | `platform_driver.remove_new` | `void (*)(struct platform_device *)` | 2223 | [Get rid of 'remove_new' relic from platform driver struct](https://git.kernel.org/torvalds/c/e70140ba0d2b) |\n| 시그니처 변경 | `device_for_each_child` | `int device_for_each_child(struct device *, void *, int (*)(struct device *, void *))` → `int device_for_each_child(struct device *, void *, device_iter_t)` | 97 | [driver core: Rename declaration parameter name for API device_find_child() cluster](https://git.kernel.org/torvalds/c/ab017a15fdb2) |\n| 멤버 타입 변경 | `bin_attribute.read` | `ssize_t (*)(struct file *, struct kobject *, struct bin_attribute *, char *, loff_t, size_t)` → `ssize_t (*)(struct file *, struct kobject *, const struct bin_attribute *, char *, loff_t, size_t)` | 69 | [sysfs: constify bin_attribute argument of bin_attribute::read/write()](https://git.kernel.org/torvalds/c/97d06802d10a) |\n| 멤버 타입 변경 | `attribute_group.bin_attrs` | `struct bin_attribute **` → `const struct bin_attribute * const *` | 57 | [sysfs: remove attribute_group::bin_attrs_new](https://git.kernel.org/torvalds/c/44d454fcffa8) |\n| 멤버 타입 변경 | `bin_attribute.write` | `ssize_t (*)(struct file *, struct kobject *, struct bin_attribute *, char *, loff_t, size_t)` → `ssize_t (*)(struct file *, struct kobject *, const struct bin_attribute *, char *, loff_t, size_t)` | 45 | [sysfs: constify bin_attribute argument of bin_attribute::read/write()](https://git.kernel.org/torvalds/c/97d06802d10a) |\n| 시그니처 변경 | `bus_for_each_dev` | `int bus_for_each_dev(const struct bus_type *, struct device *, void *, int (*)(struct device *, void *))` → `int bus_for_each_dev(const struct bus_type *, struct device *, void *, device_iter_t)` | 44 | [driver core: Introduce device_iter_t for device iterating APIs](https://git.kernel.org/torvalds/c/767b74e0d1fc) |\n| 시그니처 변경 | `device_find_child` | `struct device *device_find_child(struct device *, void *, int (*)(struct device *, void *))` → `struct device *device_find_child(struct device *, const void *, device_match_t)` | 23 | [driver core: Move two simple APIs for finding child device to header](https://git.kernel.org/torvalds/c/51796f5e2960) |\n| 시그니처 변경 | `driver_for_each_device` | `int driver_for_each_device(struct device_driver *, struct device *, void *, int (*)(struct device *, void *))` → `int driver_for_each_device(struct device_driver *, struct device *, void *, device_iter_t)` | 14 | [driver core: Introduce device_iter_t for device iterating APIs](https://git.kernel.org/torvalds/c/767b74e0d1fc) |\n| 시그니처 변경 | `device_for_each_child_reverse` | `int device_for_each_child_reverse(struct device *, void *, int (*)(struct device *, void *))` → `int device_for_each_child_reverse(struct device *, void *, device_iter_t)` | 12 | [driver core: Rename declaration parameter name for API device_find_child() cluster](https://git.kernel.org/torvalds/c/ab017a15fdb2) |\n| 멤버 타입 변경 | `attribute_group.is_bin_visible` | `umode_t (*)(struct kobject *, struct bin_attribute *, int)` → `umode_t (*)(struct kobject *, const struct bin_attribute *, int)` | 11 | [sysfs: remove attribute_group::bin_attrs_new](https://git.kernel.org/torvalds/c/44d454fcffa8) |\n| 멤버 타입 변경 | `bin_attribute.llseek` | `loff_t (*)(struct file *, struct kobject *, struct bin_attribute *, loff_t, int)` → `loff_t (*)(struct file *, struct kobject *, const struct bin_attribute *, loff_t, int)` | 8 | [sysfs: treewide: constify attribute callback of bin_attribute::llseek()](https://git.kernel.org/torvalds/c/699e7b85afb5) |\n| 멤버 타입 변경 | `bin_attribute.mmap` | `int (*)(struct file *, struct kobject *, struct bin_attribute *, struct vm_area_struct *)` → `int (*)(struct file *, struct kobject *, const struct bin_attribute *, struct vm_area_struct *)` | 7 | [sysfs: treewide: constify attribute callback of bin_attribute::mmap()](https://git.kernel.org/torvalds/c/94a20fb9af16) |\n| 시그니처 변경 | `software_node_register_node_group` | `int software_node_register_node_group(const struct software_node **)` → `int software_node_register_node_group(const struct software_node * const *)` | 7 | [software node: Constify node_group in registration functions](https://git.kernel.org/torvalds/c/292cb391479d) |\n| 시그니처 변경 | `software_node_unregister_node_group` | `void software_node_unregister_node_group(const struct software_node **)` → `void software_node_unregister_node_group(const struct software_node * const *)` | 6 | [software node: Constify node_group in registration functions](https://git.kernel.org/torvalds/c/292cb391479d) |\n| 시그니처 변경 | `of_map_id` | `int of_map_id(struct device_node *, u32, const char *, const char *, struct device_node **, u32 *)` → `int of_map_id(const struct device_node *, u32, const char *, const char *, struct device_node **, u32 *)` | 4 | [of: Constify struct device_node function arguments](https://git.kernel.org/torvalds/c/ec8c2329da1a) |\n| 시그니처 변경 | `class_for_each_device` | `int class_for_each_device(const struct class *, const struct device *, void *, int (*)(struct device *, void *))` → `int class_for_each_device(const struct class *, const struct device *, void *, device_iter_t)` | 3 | [driver core: Introduce device_iter_t for device iterating APIs](https://git.kernel.org/torvalds/c/767b74e0d1fc) |\n| 시그니처 변경 | `of_prop_next_string` | `const char *of_prop_next_string(struct property *, const char *)` → `const char *of_prop_next_string(const struct property *, const char *)` | 3 | [of: Constify struct property pointers](https://git.kernel.org/torvalds/c/9c63fea9acd0) |\n| 시그니처 변경 | `of_prop_next_u32` | `const __be32 *of_prop_next_u32(struct property *, const __be32 *, u32 *)` → `const __be32 *of_prop_next_u32(const struct property *, const __be32 *, u32 *)` | 3 | [of: Constify struct property pointers](https://git.kernel.org/torvalds/c/9c63fea9acd0) |\n| 시그니처 변경 | `device_for_each_child_reverse_from` | `int device_for_each_child_reverse_from(struct device *, struct device *, const void *, int (*)(struct device *, const v…` → `int device_for_each_child_reverse_from(struct device *, struct device *, void *, device_iter_t)` | 2 | [driver core: Introduce device_iter_t for device iterating APIs](https://git.kernel.org/torvalds/c/767b74e0d1fc) |\n| 시그니처 변경 | `of_console_check` | `bool of_console_check(struct device_node *, char *, int)` → `bool of_console_check(const struct device_node *, char *, int)` | 2 | [of: Constify struct device_node function arguments](https://git.kernel.org/torvalds/c/ec8c2329da1a) |\n\n나머지 4개는 점검 명령에 넣었습니다.\n\n새로 생긴 함수·매크로·멤버 65개: `dev_pm_smart_suspend`, `dev_pm_set_strict_midlayer`, `dev_pm_strict_midlayer_is_set`, `dev_set_drv_sync_state`, `device_add_of_node`, `device_remove_of_node`, `get_dev_from_fwnode`, `device_link_test`, `device_match_type`, `devm_kmemdup_const`, `devm_kmemdup_array`, `devm_remove_action_nowarn`, `devm_is_action_added`, `to_faux_device`, `faux_device_create`, `faux_device_create_with_groups`, `faux_device_destroy`, `faux_device_get_drvdata`, `faux_device_set_drvdata`, `__mod_device_table`, `lookup_or_create_module_kobject`, `module_for_each_mod`, `__core_param_cb`, `for_each_child_of_node_with_prefix`, `of_get_next_child_with_prefix`, `of_get_available_child_by_name`, `of_property_read_u16_index`, `of_changeset_update_prop_string`, `for_each_of_graph_port`, `for_each_of_graph_port_endpoint` …\n\n관련 pull: [more power management updates from Rafael Wysocki](https://git.kernel.org/torvalds/c/abdf766d149c) · [devicetree updates from Rob Herring](https://git.kernel.org/torvalds/c/9792d660a4e9) · [power management updates from Rafael Wysocki](https://git.kernel.org/torvalds/c/991053178e08) · [driver core updates from Danilo Krummrich](https://git.kernel.org/torvalds/c/eb3289fc474f) · [module updates from Daniel Gomez](https://git.kernel.org/torvalds/c/8877fcb70fd7) · [driver core updates from Danilo Krummrich](https://git.kernel.org/torvalds/c/22c5696e3fe0) · [devicetree updates from Rob Herring](https://git.kernel.org/torvalds/c/69f2970aad93) · [power management updates from Rafael Wysocki](https://git.kernel.org/torvalds/c/53edfecef66b) · [module updates from Petr Pavlu](https://git.kernel.org/torvalds/c/c8be54240893) · [more power management updates from Rafael Wysocki](https://git.kernel.org/torvalds/c/976aa630da5b) · [driver core updates from Greg KH](https://git.kernel.org/torvalds/c/9d230d500b0e) · [devicetree updates from Rob Herring](https://git.kernel.org/torvalds/c/bf373e4c786b) · [power management updates from Rafael Wysocki](https://git.kernel.org/torvalds/c/c89756bcf406) · [driver core updatesk from Greg KH](https://git.kernel.org/torvalds/c/2cd5769fb0b7) · [modules updates from Petr Pavlu](https://git.kernel.org/torvalds/c/01d5b167dc23) · [devicetree updates from Rob Herring](https://git.kernel.org/torvalds/c/3b9ea5b5ed7e) · [power management updates from Rafael Wysocki](https://git.kernel.org/torvalds/c/7d20aa5c32ac) · [driver core api addition from Greg KH](https://git.kernel.org/torvalds/c/ae5fa8ce7ef2) · [more power management updates from Rafael Wysocki](https://git.kernel.org/torvalds/c/f55b0671e3f9) · [driver core and debugfs updates from Greg KH](https://git.kernel.org/torvalds/c/2ab002c755bf) · [modules updates from Petr Pavlu](https://git.kernel.org/torvalds/c/41bfad507c04) · [devicetree updates from Rob Herring](https://git.kernel.org/torvalds/c/f345fc7a0706) · [power management updates from Rafael Wysocki](https://git.kernel.org/torvalds/c/f4b9d3bf44d5) · [driver core updates from Greg KH](https://git.kernel.org/torvalds/c/55cb93fd243b) · [morepower management updates from Rafael Wysocki](https://git.kernel.org/torvalds/c/79525e24af2f) · [modules updates from Luis Chamberlain](https://git.kernel.org/torvalds/c/b5361254c902) · [more power management updates from Rafael Wysocki](https://git.kernel.org/torvalds/c/6f9baa9b92c2) · [devicetree updates from Rob Herring](https://git.kernel.org/torvalds/c/e6de688e93a9) · [power management updates from Rafael Wysocki](https://git.kernel.org/torvalds/c/ad52c55e1d3a)\n\n### clk·GPIO·regulator·regmap·reset·pinctrl\n\n- `gpiod_set_value()`·`gpiod_set_value_cansleep()`가 `void` 대신 `int`를 반환하므로 consumer 코드에서 반환값을 확인할 수 있게 맞춘다.\n- `gpio_chip.set` 콜백이 `int`를 반환하도록 바뀌었으므로 GPIO 컨트롤러 드라이버 ops를 새 타입에 맞춘다.\n- `bgpio_init()`가 없어지고 `gpio_generic_chip_init()`로 대체되었으므로 mmio bit-banged GPIO 초기화 호출을 바꾼다.\n- `devm_pinctrl_register()`는 `const struct pinctrl_desc *`를 받도록 바뀌었으므로 pinctrl descriptor를 const로 둘 수 있게 맞춘다.\n\n| 변화 | 이름 | 이전 → 이후 | 사용 | 커밋 |\n|---|---|---|---:|---|\n| 시그니처 변경 | `gpiod_set_value_cansleep` | `void gpiod_set_value_cansleep(struct gpio_desc *, int)` → `int gpiod_set_value_cansleep(struct gpio_desc *, int)` | 467 | [gpiolib: make value setters have return values](https://git.kernel.org/torvalds/c/8ce258f62f90) |\n| 시그니처 변경 | `gpiod_set_value` | `void gpiod_set_value(struct gpio_desc *, int)` → `int gpiod_set_value(struct gpio_desc *, int)` | 293 | [gpiolib: make value setters have return values](https://git.kernel.org/torvalds/c/8ce258f62f90) |\n| 멤버 타입 변경 | `gpio_chip.set` | `void (*)(struct gpio_chip *, unsigned int, int)` → `int (*)(struct gpio_chip *, unsigned int, int)` | 255 | [gpio: move gpio-mmio-specific fields out of struct gpio_chip](https://git.kernel.org/torvalds/c/9b90afa6d613) |\n| 시그니처 변경 | `devm_pinctrl_register` | `struct pinctrl_dev *devm_pinctrl_register(struct device *, struct pinctrl_desc *, void *)` → `struct pinctrl_dev *devm_pinctrl_register(struct device *, const struct pinctrl_desc *, void *)` | 79 | [pinctrl: Constify pointers to 'pinctrl_desc'](https://git.kernel.org/torvalds/c/9724e6f19536) |\n| 함수 삭제 | `bgpio_init` | `int bgpio_init(struct gpio_chip *, struct device *, unsigned long, void *, void *, void *, void *, void *, unsigned lon…` → `gpio_generic_chip_init` (같은 커밋에서 추가) | 41 | [gpio: move gpio-mmio-specific fields out of struct gpio_chip](https://git.kernel.org/torvalds/c/9b90afa6d613) |\n| 멤버 타입 변경 | `clk_divider.flags` | `u8` → `u16` | 37 | [clk: fixed-factor: add clk_hw_register_fixed_factor_index() function](https://git.kernel.org/torvalds/c/4eb5e9c6c4cd) |\n| 상수 삭제 | `PIN_CONFIG_OUTPUT` | — | 34 | [pinctrl: generic: rename PIN_CONFIG_OUTPUT to LEVEL](https://git.kernel.org/torvalds/c/203a83112e09) |\n| 멤버 타입 변경 | `gpio_chip.set_multiple` | `void (*)(struct gpio_chip *, unsigned long *, unsigned long *)` → `int (*)(struct gpio_chip *, unsigned long *, unsigned long *)` | 29 | [treewide: rename GPIO set callbacks back to their original names](https://git.kernel.org/torvalds/c/d9d87d90cc0b) |\n| 시그니처 변경 | `devm_pinctrl_register_and_init` | `int devm_pinctrl_register_and_init(struct device *, struct pinctrl_desc *, void *, struct pinctrl_dev **)` → `int devm_pinctrl_register_and_init(struct device *, const struct pinctrl_desc *, void *, struct pinctrl_dev **)` | 27 | [pinctrl: Constify pointers to 'pinctrl_desc'](https://git.kernel.org/torvalds/c/9724e6f19536) |\n| 시그니처 변경 | `clk_register_divider_table` | `struct clk *clk_register_divider_table(struct device *, const char *, const char *, unsigned long, void *, u8, u8, u8, …` → `struct clk *clk_register_divider_table(struct device *, const char *, const char *, unsigned long, void *, u8, u8, unsi…` | 19 | [clk: divider: Introduce CLK_DIVIDER_EVEN_INTEGERS flag](https://git.kernel.org/torvalds/c/6a136805e3c1) |\n| 멤버 삭제 | `gpio_chip.bgpio_lock` | `raw_spinlock_t` | 19 | [gpio: move gpio-mmio-specific fields out of struct gpio_chip](https://git.kernel.org/torvalds/c/9b90afa6d613) |\n| 시그니처 변경 | `regmap_multi_reg_read` | `int regmap_multi_reg_read(struct regmap *, unsigned int *, void *, size_t)` → `int regmap_multi_reg_read(struct regmap *, const unsigned int *, void *, size_t)` | 13 | [regmap: regmap_multi_reg_read(): make register list const](https://git.kernel.org/torvalds/c/eb708cd631a8) |\n| 매크로 삭제 | `BGPIOF_BIG_ENDIAN_BYTE_ORDER` | — | 8 | [gpio: generic: rename BGPIOF_ flags to GPIO_GENERIC_](https://git.kernel.org/torvalds/c/64f89f6e1f2b) |\n| 매크로 삭제 | `BGPIOF_READ_OUTPUT_REG_SET` | — | 8 | [gpio: generic: rename BGPIOF_ flags to GPIO_GENERIC_](https://git.kernel.org/torvalds/c/64f89f6e1f2b) |\n| 시그니처 변경 | `pinctrl_register` | `struct pinctrl_dev *pinctrl_register(struct pinctrl_desc *, struct device *, void *)` → `struct pinctrl_dev *pinctrl_register(const struct pinctrl_desc *, struct device *, void *)` | 8 | [pinctrl: Constify pointers to 'pinctrl_desc'](https://git.kernel.org/torvalds/c/9724e6f19536) |\n| 멤버 삭제 | `gpio_chip.read_reg` | `unsigned long (*)(void *)` | 7 | [gpio: move gpio-mmio-specific fields out of struct gpio_chip](https://git.kernel.org/torvalds/c/9b90afa6d613) |\n| 멤버 삭제 | `gpio_chip.write_reg` | `void (*)(void *, unsigned long)` | 7 | [gpio: move gpio-mmio-specific fields out of struct gpio_chip](https://git.kernel.org/torvalds/c/9b90afa6d613) |\n| 시그니처 변경 | `gpiod_set_raw_value` | `void gpiod_set_raw_value(struct gpio_desc *, int)` → `int gpiod_set_raw_value(struct gpio_desc *, int)` | 4 | [gpiolib: make value setters have return values](https://git.kernel.org/torvalds/c/8ce258f62f90) |\n| 매크로 삭제 | `BGPIOF_NO_SET_ON_INPUT` | — | 3 | [gpio: generic: rename BGPIOF_ flags to GPIO_GENERIC_](https://git.kernel.org/torvalds/c/64f89f6e1f2b) |\n| 함수 삭제 | `devm_clk_bulk_get_all_enable` | `int devm_clk_bulk_get_all_enable(struct device *, struct clk_bulk_data **)` → `devm_clk_bulk_get_all_enabled` (같은 커밋에서 추가) | 3 | [clk: Drop obsolete devm_clk_bulk_get_all_enable() helper](https://git.kernel.org/torvalds/c/ef94ea4fc18f) |\n\n나머지 20개는 점검 명령에 넣었습니다.\n\n새로 생긴 함수·매크로·멤버 38개: `devm_clk_hw_register_gate_parent_hw`, `clk_hw_register_fixed_factor_index`, `clk_hw_get_dev`, `clk_hw_get_of_node`, `devm_clk_bulk_get_all_enabled`, `gpiod_is_equal`, `gpiod_multi_set_value_cansleep`, `for_each_hwgpio_in_range`, `gpiochip_query_valid_mask`, `gpiochip_add_pin_range_with_pins`, `gpiochip_add_sparse_pin_range`, `pinctrl_pm_select_init_state`, `devm_pinctrl_register_mappings`, `pinconf_generic_dt_node_to_map_pinmux`, `PINCTRL_GPIO_PINFUNCTION`, `regmap_init_sdw_mbq_cfg`, `devm_regmap_init_sdw_mbq_cfg`, `regcache_sort_defaults`, `regmap_assign_bits`, `regulator_get_unclaimed_power_budget`, `regulator_request_power_budget`, `regulator_free_power_budget`, `of_regulator_get`, `devm_of_regulator_get`, `of_regulator_get_optional`, `devm_of_regulator_get_optional`, `devm_reset_control_get_exclusive_deasserted`, `devm_reset_control_get_shared_deasserted`, `devm_reset_control_bulk_get_shared_deasserted`, `devm_reset_control_get_optional_exclusive_deasserted` …\n\n관련 pull: [clk updates from Stephen Boyd](https://git.kernel.org/torvalds/c/522ba450b56f) · [pin control updates from Linus Walleij](https://git.kernel.org/torvalds/c/5fb024931949) · [regulator updates from Mark Brown](https://git.kernel.org/torvalds/c/ad6657804c10) · [regmap updates from Mark Brown](https://git.kernel.org/torvalds/c/c252b8cf1228) · [gpio updates from Bartosz Golaszewski](https://git.kernel.org/torvalds/c/d5f74114114c) · [gpio updates from Bartosz Golaszewski](https://git.kernel.org/torvalds/c/0227b49b5027) · [pin control updates from Linus Walleij](https://git.kernel.org/torvalds/c/186f3edfdd41) · [clk updates from Stephen Boyd](https://git.kernel.org/torvalds/c/2d945dde7fa3) · [regulator updates from Mark Brown](https://git.kernel.org/torvalds/c/bf977a9ad33d) · [regmap updates from Mark Brown](https://git.kernel.org/torvalds/c/5339a2aefc35) · [gpio updates from Bartosz Golaszewski](https://git.kernel.org/torvalds/c/fcb117e0758d) · [pin control updates from Linus Walleij](https://git.kernel.org/torvalds/c/eafd95ea7484) · [clk updates from Stephen Boyd](https://git.kernel.org/torvalds/c/9f32a03e3e0d) · [regulator updates from Mark Brown](https://git.kernel.org/torvalds/c/350d9ab73654) · [regmap updates from Mark Brown](https://git.kernel.org/torvalds/c/c971f11dbf1b) · [gpio updates from Bartosz Golaszewski](https://git.kernel.org/torvalds/c/aacc73ceeb8b) · [clk updates from Stephen Boyd](https://git.kernel.org/torvalds/c/59c35416f424) · [pin control updates from Linus Walleij](https://git.kernel.org/torvalds/c/29d9983b2c31) · [regmap updates from Mark Brown](https://git.kernel.org/torvalds/c/054b7477e3bf) · [gpio updates from Bartosz Golaszewski](https://git.kernel.org/torvalds/c/5143840cef6b) · [regulator updates from Mark Brown](https://git.kernel.org/torvalds/c/e2ae6e14d7c4) · [pin control updates from Linus Walleij](https://git.kernel.org/torvalds/c/b746043cb325) · [clk updates from Stephen Boyd](https://git.kernel.org/torvalds/c/641b0c64b85a) · [regulator updates from Mark Brown](https://git.kernel.org/torvalds/c/7b081a74c07d) · [regmap updates from Mark Brown](https://git.kernel.org/torvalds/c/6f10810ccd6d) · [gpio updates from Bartosz Golaszewski](https://git.kernel.org/torvalds/c/4abae5b6af81) · [pin control updates from Linus Walleij](https://git.kernel.org/torvalds/c/2d32fba02e0e) · [clk updates from Stephen Boyd](https://git.kernel.org/torvalds/c/9f3a2ba62c72) · [gpio updates from Bartosz Golaszewski](https://git.kernel.org/torvalds/c/131561f2ca07) · [regulator updates from Mark Brown](https://git.kernel.org/torvalds/c/4bd37a902ab6) · [regmap updates from Mark Brown](https://git.kernel.org/torvalds/c/37c7d3538af4)"
+    },
+    {
+      "heading": "빌드가 깨질 수 있는 변경",
+      "body": "v6.12에 있던 export 심볼·헤더 함수·매크로·구조체 가운데 v6.18에서 사라진 것이 2222개이고, 그중 v6.12의 drivers/·sound/에서 쓰이던 것이 895개입니다. `사용`은 그 이름이 나온 횟수로, 트리 밖 드라이버가 걸릴 가능성을 가늠하는 값입니다.\n\n| 이름 | 종류 | 사용 | 대신 쓸 것 | 지운 커밋 |\n|---|---|---:|---|---|\n| `from_timer` | macro | 581 | `timer_container_of()`로 바꾼다. | [treewide, timers: Rename from_timer() to timer_container_of()](https://git.kernel.org/torvalds/c/41cb08555c41) |\n| `del_timer_sync` | function | 516 | `timer_delete_sync()`로 바꾼다. | [treewide: Switch/rename to timer_delete[_sync]()](https://git.kernel.org/torvalds/c/8fa7292fee5c) |\n| `highmem` | export EXPORT_SYMBOL | 183 | — | [um: Remove highmem leftovers](https://git.kernel.org/torvalds/c/cd05cbed42b7) |\n| `nr_irqs` | export EXPORT_SYMBOL_GPL | 135 | `number_of_interrupts()`와 `set_number_of_interrupts()`로 바꾼다. | [genirq: Unexport nr_irqs](https://git.kernel.org/torvalds/c/ef4c675dc296) |\n| `hrtimer_init` | export EXPORT_SYMBOL_GPL | 93 | — | [hrtimers: Delete hrtimer_init()](https://git.kernel.org/torvalds/c/9779489a31d7) |\n| `iio_device_claim_direct_mode` | export EXPORT_SYMBOL_GPL | 84 | — | [iio: Adjust internals of handling of direct mode claiming to suit new API.](https://git.kernel.org/torvalds/c/5d1dff5b45b7) |\n| `iio_device_release_direct_mode` | export EXPORT_SYMBOL_GPL | 84 | — | [iio: Adjust internals of handling of direct mode claiming to suit new API.](https://git.kernel.org/torvalds/c/5d1dff5b45b7) |\n| `msm_pinctrl_remove` | export EXPORT_SYMBOL | 51 | — | [pinctrl: qcom: switch to devm_gpiochip_add_data()](https://git.kernel.org/torvalds/c/56ec63a6e107) |\n| `drm_fbdev_dma_setup` | export EXPORT_SYMBOL | 43 | `drm_client_setup()`를 쓰도록 맞춘다. | [drm/fbdev-dma: Remove obsolete setup function](https://git.kernel.org/torvalds/c/731fddf4302e) |\n| `bgpio_init` | export EXPORT_SYMBOL_GPL | 40 | `gpio_generic_chip_init()`로 바꾼다. | [gpio: move gpio-mmio-specific fields out of struct gpio_chip](https://git.kernel.org/torvalds/c/9b90afa6d613) |\n| `cpufreq_generic_attr` | export EXPORT_SYMBOL_GPL | 31 | — | [cpufreq: Remove cpufreq_generic_attrs](https://git.kernel.org/torvalds/c/486729c60120) |\n| `sdhci_pltfm_free` | export EXPORT_SYMBOL_GPL | 27 | — | [mmc: sdhci: Drop sdhci_free_host()/sdhci_pltfm_free() interface](https://git.kernel.org/torvalds/c/1f129bc3ebe5) |\n| `irq_domain_add_simple` | function | 25 | — | [irqdomain: Drop irq_domain_add_*() functions](https://git.kernel.org/torvalds/c/42b8b16fe56c) |\n| `irq_domain_add_legacy` | export EXPORT_SYMBOL_GPL | 22 | — | [irqdomain: Drop irq_domain_add_*() functions](https://git.kernel.org/torvalds/c/42b8b16fe56c) |\n| `irq_domain_add_hierarchy` | function | 21 | — | [irqdomain: Drop irq_domain_add_*() functions](https://git.kernel.org/torvalds/c/42b8b16fe56c) |\n| `iio_device_claim_direct_scoped` | macro | 18 | — | [iio: Drop iio_device_claim_direct_scoped() and related infrastructure](https://git.kernel.org/torvalds/c/4c571885898c) |\n| `mipi_dsi_dcs_write_seq` | macro | 16 | — | [drm/mipi-dsi: Remove mipi_dsi_dcs_write_seq](https://git.kernel.org/torvalds/c/61a0fc33b853) |\n| `irq_gc_lock` | function | 15 | — | [genirq/generic-chip: Remove unused lock wrappers](https://git.kernel.org/torvalds/c/7ae844a6650c) |\n| `irq_gc_unlock` | function | 15 | — | [genirq/generic-chip: Remove unused lock wrappers](https://git.kernel.org/torvalds/c/7ae844a6650c) |\n| `pcf50633` | struct | 15 | — | [mfd: pcf50633: Remove the header file core.h](https://git.kernel.org/torvalds/c/e403cdf0704b) |\n| `destroy_timer_on_stack` | export EXPORT_SYMBOL_GPL | 14 | `timer_destroy_on_stack()`로 바꾼다. | [treewide, timers: Rename destroy_timer_on_stack() as timer_destroy_on_stack()](https://git.kernel.org/torvalds/c/aad823aa3a7d) |\n| `drm_aperture_remove_conflicting_pci_framebuffers` | export EXPORT_SYMBOL | 14 | — | [drm: Remove DRM aperture helpers](https://git.kernel.org/torvalds/c/689274a56c0c) |\n| `HDA_CODEC_ENTRY` | macro | 14 | — | [ALSA: hda: Drop old codec binding method](https://git.kernel.org/torvalds/c/cabaf5908e58) |\n| `sof_pci_pm` | export EXPORT_SYMBOL_NS(SND_SOC_SOF_PCI_DEV) | 14 | — | [ASoC: SOF: pci: Convert to EXPORT_NS_DEV_PM_OPS()](https://git.kernel.org/torvalds/c/24df03e2b43c) |\n| `drm_fbdev_shmem_setup` | export EXPORT_SYMBOL | 12 | — | [drm/fbdev-shmem: Remove obsolete setup function](https://git.kernel.org/torvalds/c/bf0978203a74) |\n| `nth_page` | macro | 11 | — | [mm: remove nth_page()](https://git.kernel.org/torvalds/c/84efbefa26df) |\n| `pcim_iomap_regions_request_all` | export EXPORT_SYMBOL | 11 | — | [PCI: Remove pcim_iomap_regions_request_all()](https://git.kernel.org/torvalds/c/6d9c59212523) |\n| `platform_profile_handler` | struct | 11 | — | [ACPI: platform_profile: Move platform_profile_handler](https://git.kernel.org/torvalds/c/6ef338955035) |\n| `snd_hda_gen_free` | export EXPORT_SYMBOL_GPL | 11 | `snd_hda_gen_remove()`로 바꾼다. | [ALSA: hda/generic: Rewrite to new probe method](https://git.kernel.org/torvalds/c/1d0e6926ef87) |\n| `SPINAND_PAGE_READ_FROM_CACHE_OP` | macro | 11 | `SPINAND_PAGE_READ_FROM_CACHE_1S_1D_1D_OP`로 바꾼다. | [mtd: spinand: Use more specific naming for the (single) read from cache ops](https://git.kernel.org/torvalds/c/ea2087d4e66d) |\n| `SPINAND_PAGE_READ_FROM_CACHE_X4_OP` | macro | 11 | `SPINAND_PAGE_READ_FROM_CACHE_1S_1D_4D_OP`로 바꾼다. | [mtd: spinand: Use more specific naming for the (quad output) read from cache ops](https://git.kernel.org/torvalds/c/1deae734cc1c) |\n| `SPINAND_PROG_LOAD` | macro | 11 | `SPINAND_PROG_LOAD_1S_1S_1S_OP`로 바꾼다. | [mtd: spinand: Use more specific naming for the (single) program load op](https://git.kernel.org/torvalds/c/07cdbae7f841) |\n| `SPINAND_PROG_LOAD_X4` | macro | 11 | `SPINAND_PROG_LOAD_1S_1S_4S_OP`로 바꾼다. | [mtd: spinand: Use more specific naming for the (quad) program load op](https://git.kernel.org/torvalds/c/ac3a4b17e03b) |\n| `blk_mq_pci_map_queues` | export EXPORT_SYMBOL_GPL | 10 | — | [blk-mq: remove unused queue mapping helpers](https://git.kernel.org/torvalds/c/9bc1e897a821) |\n| `SPINAND_PAGE_READ_FROM_CACHE_X2_OP` | macro | 10 | `SPINAND_PAGE_READ_FROM_CACHE_1S_1D_2D_OP`로 바꾼다. | [mtd: spinand: Use more specific naming for the (dual output) read from cache ops](https://git.kernel.org/torvalds/c/684f7105e853) |\n| `lib80211_crypt_data` | struct | 9 | — | [wifi: ipw2x00/lib80211: move remaining lib80211 into libipw](https://git.kernel.org/torvalds/c/02f220b52670) |\n| `coresight_get_enable_apb_pclk` | function | 8 | `coresight_get_enable_clocks()`로 바꾼다. | [coresight: Consolidate clock enabling](https://git.kernel.org/torvalds/c/fbe7514a7912) |\n| `drm_fbdev_ttm_setup` | export EXPORT_SYMBOL | 8 | — | [drm/fbdev-ttm: Remove obsolete setup function](https://git.kernel.org/torvalds/c/1000634477d8) |\n| `to_encoder_slave` | macro | 8 | — | [drm/nouveau: vendor in drm_encoder_slave API](https://git.kernel.org/torvalds/c/a73583107af9) |\n| `adf_cfg_services` | export EXPORT_SYMBOL_GPL | 7 | — | [crypto: qat - do not export adf_cfg_services](https://git.kernel.org/torvalds/c/9057f824c197) |\n| `cpufreq_freq_attr_scaling_available_freqs` | export EXPORT_SYMBOL_GPL | 7 | — | [cpufreq: Remove cpufreq_generic_attrs](https://git.kernel.org/torvalds/c/486729c60120) |\n| `drm_gem_vunmap_unlocked` | export EXPORT_SYMBOL | 7 | — | [drm/gem: Change locked/unlocked postfix of drm_gem_v/unmap() function names](https://git.kernel.org/torvalds/c/8f5c4871a014) |\n| `irq_set_default_host` | export EXPORT_SYMBOL_GPL | 7 | `irq_set_default_domain` (같은 커밋에서 추가) | [irqdomain: Rename irq_set_default_host() to irq_set_default_domain()](https://git.kernel.org/torvalds/c/825dfab23bca) |\n| `pci_host_common_probe` | function | 7 | — | [PCI: host-common: Convert to library for host controller drivers](https://git.kernel.org/torvalds/c/d1c696dba120) |\n| `pcim_iounmap_regions` | export EXPORT_SYMBOL | 7 | — | [PCI: Remove pcim_iounmap_regions()](https://git.kernel.org/torvalds/c/855c634930f0) |\n| `sdhci_free_host` | export EXPORT_SYMBOL_GPL | 7 | — | [mmc: sdhci: Drop sdhci_free_host()/sdhci_pltfm_free() interface](https://git.kernel.org/torvalds/c/1f129bc3ebe5) |\n| `cpufreq_enable_boost_support` | export EXPORT_SYMBOL_GPL | 6 | — | [cpufreq: Remove cpufreq_enable_boost_support()](https://git.kernel.org/torvalds/c/0322f3e89b4e) |\n| `debugfs_rename` | export EXPORT_SYMBOL_GPL | 6 | `debugfs_change_name` (같은 커밋에서 추가) | [saner replacement for debugfs_rename()](https://git.kernel.org/torvalds/c/f7862dfef661) |\n| `dev_to_pcf50633` | function | 6 | — | [mfd: pcf50633: Remove the header file core.h](https://git.kernel.org/torvalds/c/e403cdf0704b) |\n| `drm_encoder_slave` | struct | 6 | — | [drm/nouveau: vendor in drm_encoder_slave API](https://git.kernel.org/torvalds/c/a73583107af9) |\n\n사용 횟수가 적은 845개는 아래 점검 명령에만 넣었습니다.\n\n**라이선스·네임스페이스가 바뀐 export** — `_GPL`이 붙으면 GPL이 아닌 모듈은 더 쓸 수 없고, 네임스페이스가 붙으면 `MODULE_IMPORT_NS()`가 필요합니다.\n\n| 심볼 | 이전 | 이후 | 파일 |\n|---|---|---|---|\n| `kvm_cpu_caps` | EXPORT_SYMBOL_GPL | EXPORT_SYMBOL_FOR_KVM_INTERNAL | arch/x86/kvm/cpuid.c |\n| `kvm_set_cpu_caps` | EXPORT_SYMBOL_GPL | EXPORT_SYMBOL_FOR_KVM_INTERNAL | arch/x86/kvm/cpuid.c |\n| `kvm_cpuid` | EXPORT_SYMBOL_GPL | EXPORT_SYMBOL_FOR_KVM_INTERNAL | arch/x86/kvm/cpuid.c |\n| `kvm_emulate_cpuid` | EXPORT_SYMBOL_GPL | EXPORT_SYMBOL_FOR_KVM_INTERNAL | arch/x86/kvm/cpuid.c |\n| `kvm_hv_assist_page_enabled` | EXPORT_SYMBOL_GPL | EXPORT_SYMBOL_FOR_KVM_INTERNAL | arch/x86/kvm/hyperv.c |\n| `kvm_hv_get_assist_page` | EXPORT_SYMBOL_GPL | EXPORT_SYMBOL_FOR_KVM_INTERNAL | arch/x86/kvm/hyperv.c |\n| `kvm_cpu_has_injectable_intr` | EXPORT_SYMBOL_GPL | EXPORT_SYMBOL_FOR_KVM_INTERNAL | arch/x86/kvm/irq.c |\n| `kvm_cpu_has_interrupt` | EXPORT_SYMBOL_GPL | EXPORT_SYMBOL_FOR_KVM_INTERNAL | arch/x86/kvm/irq.c |\n| `kvm_cpu_get_extint` | EXPORT_SYMBOL_GPL | EXPORT_SYMBOL_FOR_KVM_INTERNAL | arch/x86/kvm/irq.c |\n| `kvm_intr_is_single_vcpu` | EXPORT_SYMBOL_GPL | EXPORT_SYMBOL_FOR_KVM_INTERNAL | arch/x86/kvm/lapic.c |\n| `hv_flush_remote_tlbs_range` | EXPORT_SYMBOL_GPL | EXPORT_SYMBOL_FOR_KVM_INTERNAL | arch/x86/kvm/kvm_onhyperv.c |\n| `hv_flush_remote_tlbs` | EXPORT_SYMBOL_GPL | EXPORT_SYMBOL_FOR_KVM_INTERNAL | arch/x86/kvm/kvm_onhyperv.c |\n| `hv_track_root_tdp` | EXPORT_SYMBOL_GPL | EXPORT_SYMBOL_FOR_KVM_INTERNAL | arch/x86/kvm/kvm_onhyperv.c |\n| `kvm_has_noapic_vcpu` | EXPORT_SYMBOL_GPL | EXPORT_SYMBOL_FOR_KVM_INTERNAL | arch/x86/kvm/lapic.c |\n| `__kvm_apic_update_irr` | EXPORT_SYMBOL_GPL | EXPORT_SYMBOL_FOR_KVM_INTERNAL | arch/x86/kvm/lapic.c |\n| `kvm_apic_update_irr` | EXPORT_SYMBOL_GPL | EXPORT_SYMBOL_FOR_KVM_INTERNAL | arch/x86/kvm/lapic.c |\n| `kvm_apic_clear_irr` | EXPORT_SYMBOL_GPL | EXPORT_SYMBOL_FOR_KVM_INTERNAL | arch/x86/kvm/lapic.c |\n| `kvm_lapic_find_highest_irr` | EXPORT_SYMBOL_GPL | EXPORT_SYMBOL_FOR_KVM_INTERNAL | arch/x86/kvm/lapic.c |\n| `kvm_apic_update_ppr` | EXPORT_SYMBOL_GPL | EXPORT_SYMBOL_FOR_KVM_INTERNAL | arch/x86/kvm/lapic.c |\n| `kvm_apic_match_dest` | EXPORT_SYMBOL_GPL | EXPORT_SYMBOL_FOR_KVM_INTERNAL | arch/x86/kvm/lapic.c |\n| `kvm_apic_set_eoi_accelerated` | EXPORT_SYMBOL_GPL | EXPORT_SYMBOL_FOR_KVM_INTERNAL | arch/x86/kvm/lapic.c |\n| `kvm_apic_send_ipi` | EXPORT_SYMBOL_GPL | EXPORT_SYMBOL_FOR_KVM_INTERNAL | arch/x86/kvm/lapic.c |\n| `kvm_lapic_readable_reg_mask` | EXPORT_SYMBOL_GPL | EXPORT_SYMBOL_FOR_KVM_INTERNAL | arch/x86/kvm/lapic.c |\n| `kvm_wait_lapic_expire` | EXPORT_SYMBOL_GPL | EXPORT_SYMBOL_FOR_KVM_INTERNAL | arch/x86/kvm/lapic.c |\n| `kvm_lapic_expired_hv_timer` | EXPORT_SYMBOL_GPL | EXPORT_SYMBOL_FOR_KVM_INTERNAL | arch/x86/kvm/lapic.c |\n| `kvm_lapic_set_eoi` | EXPORT_SYMBOL_GPL | EXPORT_SYMBOL_FOR_KVM_INTERNAL | arch/x86/kvm/lapic.c |\n| `kvm_apic_write_nodecode` | EXPORT_SYMBOL_GPL | EXPORT_SYMBOL_FOR_KVM_INTERNAL | arch/x86/kvm/lapic.c |\n| `kvm_alloc_apic_access_page` | EXPORT_SYMBOL_GPL | EXPORT_SYMBOL_FOR_KVM_INTERNAL | arch/x86/kvm/lapic.c |\n| `kvm_apic_has_interrupt` | EXPORT_SYMBOL_GPL | EXPORT_SYMBOL_FOR_KVM_INTERNAL | arch/x86/kvm/lapic.c |\n| `kvm_apic_ack_interrupt` | EXPORT_SYMBOL_GPL | EXPORT_SYMBOL_FOR_KVM_INTERNAL | arch/x86/kvm/lapic.c |\n| `kvm_mmu_free_roots` | EXPORT_SYMBOL_GPL | EXPORT_SYMBOL_FOR_KVM_INTERNAL | arch/x86/kvm/mmu/mmu.c |\n| `kvm_mmu_free_guest_mode_roots` | EXPORT_SYMBOL_GPL | EXPORT_SYMBOL_FOR_KVM_INTERNAL | arch/x86/kvm/mmu/mmu.c |\n| `kvm_handle_page_fault` | EXPORT_SYMBOL_GPL | EXPORT_SYMBOL_FOR_KVM_INTERNAL | arch/x86/kvm/mmu/mmu.c |\n| `kvm_mmu_new_pgd` | EXPORT_SYMBOL_GPL | EXPORT_SYMBOL_FOR_KVM_INTERNAL | arch/x86/kvm/mmu/mmu.c |\n| `kvm_init_shadow_npt_mmu` | EXPORT_SYMBOL_GPL | EXPORT_SYMBOL_FOR_KVM_INTERNAL | arch/x86/kvm/mmu/mmu.c |\n| `kvm_init_shadow_ept_mmu` | EXPORT_SYMBOL_GPL | EXPORT_SYMBOL_FOR_KVM_INTERNAL | arch/x86/kvm/mmu/mmu.c |\n| `kvm_init_mmu` | EXPORT_SYMBOL_GPL | EXPORT_SYMBOL_FOR_KVM_INTERNAL | arch/x86/kvm/mmu/mmu.c |\n| `kvm_mmu_reset_context` | EXPORT_SYMBOL_GPL | EXPORT_SYMBOL_FOR_KVM_INTERNAL | arch/x86/kvm/mmu/mmu.c |\n| `kvm_mmu_page_fault` | EXPORT_SYMBOL_GPL | EXPORT_SYMBOL_FOR_KVM_INTERNAL | arch/x86/kvm/mmu/mmu.c |\n| `kvm_mmu_print_sptes` | EXPORT_SYMBOL_GPL | EXPORT_SYMBOL_FOR_KVM_INTERNAL | arch/x86/kvm/mmu/mmu.c |"
+    },
+    {
+      "heading": "내 드라이버 점검 명령",
+      "body": "드라이버 소스 디렉터리에서 실행하면 위 변경에 걸리는 곳을 찾습니다. 아무것도 나오지 않으면 이 목록에는 걸리지 않습니다.\n```sh\n# 사라진 API\ngit grep -nwE 'from_timer|del_timer_sync|highmem|nr_irqs|hrtimer_init|iio_device_claim_direct_mode|iio_device_release_direct_mode|msm_pinctrl_remove|drm_fbdev_dma_setup|bgpio_init|cpufreq_generic_attr|sdhci_pltfm_free|irq_domain_add_simple|irq_domain_add_legacy|irq_domain_add_hierarchy|iio_device_claim_direct_scoped|mipi_dsi_dcs_write_seq|irq_gc_lock|irq_gc_unlock|pcf50633|destroy_timer_on_stack|drm_aperture_remove_conflicting_pci_framebuffers|HDA_CODEC_ENTRY|sof_pci_pm|drm_fbdev_shmem_setup|nth_page|pcim_iomap_regions_request_all|platform_profile_handler|snd_hda_gen_free|SPINAND_PAGE_READ_FROM_CACHE_OP|SPINAND_PAGE_READ_FROM_CACHE_X4_OP|SPINAND_PROG_LOAD|SPINAND_PROG_LOAD_X4|blk_mq_pci_map_queues|SPINAND_PAGE_READ_FROM_CACHE_X2_OP|lib80211_crypt_data|coresight_get_enable_apb_pclk|drm_fbdev_ttm_setup|to_encoder_slave|adf_cfg_services|cpufreq_freq_attr_scaling_available_freqs|drm_gem_vunmap_unlocked|irq_set_default_host|pci_host_common_probe|pcim_iounmap_regions|sdhci_free_host|cpufreq_enable_boost_support|debugfs_rename|dev_to_pcf50633|drm_encoder_slave|drm_gem_vmap_unlocked|irq_linear_revmap|mctrl_gpio_disable_ms|md_cluster_ops|msi_lock_descs|msi_unlock_descs|policy_has_boost_freq|rtw_rx_fill_rx_status|sfp_parse_support|sof_of_pm|SPINAND_PAGE_READ_FROM_CACHE_DUALIO_OP|SPINAND_PAGE_READ_FROM_CACHE_QUADIO_OP|xdp_buff_is_frag_pfmemalloc|ata_do_set_mode|ata_scsi_device_configure|cpufreq_freq_attr_scaling_boost_freqs|cv1800_pinctrl_probe|debugfs_real_fops|devm_phy_package_join|devm_power_supply_register_no_ws|drm_encoder_slave_funcs|iidc_event|intel_tpmi_plat_info|iommu_dma_compose_msi_msg|lib80211_crypto_ops|mmc_can_gpio_cd|mmc_can_trim|pcf50633_reg_read|power_supply_for_each_device|rdmsrl_safe_on_cpu|register_md_personality|smn_write|snd_hdac_adsp_readl|snd_hdac_adsp_updatel|unregister_md_personality|__crc32c_le|__pfn_to_pfn_t|ath9k_platform_data|bioset_integrity_create|cxl_slbia|drm_gem_shmem_vmap|drm_i2c_encoder_get_client|fw_attributes_class_get|fw_attributes_class_put|generic_delete_inode|hisi_sas_device_configure|hisi_sas_slave_alloc|hw_protection_shutdown|imx_drm_connector_destroy|iommu_dev_enable_feature|iommu_domain_alloc|iommu_fwspec_free|irq_gc_lock_irqsave|irq_gc_unlock_irqrestore|mdio_board_info|meson_eeclkc_probe|mlx5_port_max_linkspeed|mmc_can_erase|mmc_can_gpio_ro|mptscsih_slave_configure|mptscsih_slave_destroy|oxygen_pci_pm|pcf50633_free_irq|pcf50633_reg_write|pcf50633_register_irq|phy_package_init_once|phy_setting|pse_control_status|put_cxl_root|rtllib_act_scanning|smn_read|snd_emu1010_fpga_unlock|SPINAND_GET_FEATURE_OP|ttm_bo_get|__phy_package_read|__phy_package_write|ad5686_remove|adf_gen4_timer_start|adf_gen4_timer_stop|bio_set_prio|can_tdc_is_enabled|cbe_get_cpu_mic_tm_regs|ch7006_encoder_params|cpufreq_cpu_release|cs42l43_dev_remove|cxl_ctx_put|cxl_dev_context_init|cxl_get_context|cxl_ioctl_start_work|cxl_irq_ranges|cxl_process_element|cxl_release_context|devm_cxl_setup_hdm|devm_gpio_request|devm_spi_alloc_master|dk_cxlflash_release|dk_cxlflash_resize|drm_fb_build_fourcc_list|drm_gem_shmem_vunmap|drm_i2c_encoder_driver'\n# 중점 영역에서 시그니처가 바뀌거나 사라진 API\ngit grep -nwE 'page_size|kmap_local_page|kmap_atomic|kunmap|vma_pages|vm_get_page_prot|vmf_insert_mixed|__account_locked_vm|__dma_fence_is_later|alloc_pages_bulk_array|compound_order|folio_nr_pages|folio_pfn|vmf_insert_pfn_pmd|vmf_insert_pfn_pud|zone_managed_pages|get_dev_pagemap|kmap_atomic_prot|kmap_local_folio|kmap_local_page_prot|memory_failure_queue_kick|NR_BOUNCE|NR_WRITEBACK_TEMP|populated_zone|valid_section|zero_user|zone_intersects|v4l2_ctrl_handler_free|tuners|v4l2_fh_add|v4l2_fh_del|v4l2_get_link_freq|v4l2_detect_cvt|v4l2_detect_gtf|v4l2_ctrl_new_std_compound|mt9p031_platform_data|mt9v032_platform_data|alarm_init|try_to_del_timer_sync|ALARMTIMER_NORESTART|hrtimer_cb_get_time|cpumask_any_but|wake_up_bit|cpumask_any_and_but|clear_and_wake_up_bit|cpumask_next_wrap|IRQ_MOVE_PCNTXT|can_request_irq|irq_get_default_host|msi_desc_get_iommu_cookie|msi_desc_set_iommu_cookie|pci_msi_ignore_mask|device_for_each_child|bus_for_each_dev|device_find_child|driver_for_each_device|device_for_each_child_reverse|software_node_register_node_group|software_node_unregister_node_group|of_map_id|class_for_each_device|of_prop_next_string|of_prop_next_u32|device_for_each_child_reverse_from|of_console_check|of_msi_map_id|class_compat_create_link|class_compat_remove_link|gpiod_set_value_cansleep|gpiod_set_value|devm_pinctrl_register|PIN_CONFIG_OUTPUT|devm_pinctrl_register_and_init|clk_register_divider_table|regmap_multi_reg_read|BGPIOF_BIG_ENDIAN_BYTE_ORDER|BGPIOF_READ_OUTPUT_REG_SET|pinctrl_register|gpiod_set_raw_value|BGPIOF_NO_SET_ON_INPUT|devm_clk_bulk_get_all_enable|gpiod_set_raw_value_cansleep|bgpio_pdata|BGPIOF_BIG_ENDIAN|BGPIOF_NO_OUTPUT|__clk_hw_register_divider|__devm_clk_hw_register_divider|BGPIOF_UNREADABLE_REG_DIR|BGPIOF_UNREADABLE_REG_SET'\n# 라이선스·네임스페이스가 바뀐 export\ngit grep -nwE 'kvm_cpu_caps|kvm_set_cpu_caps|kvm_cpuid|kvm_emulate_cpuid|kvm_hv_assist_page_enabled|kvm_hv_get_assist_page|kvm_cpu_has_injectable_intr|kvm_cpu_has_interrupt|kvm_cpu_get_extint|kvm_intr_is_single_vcpu|hv_flush_remote_tlbs_range|hv_flush_remote_tlbs|hv_track_root_tdp|kvm_has_noapic_vcpu|__kvm_apic_update_irr|kvm_apic_update_irr|kvm_apic_clear_irr|kvm_lapic_find_highest_irr|kvm_apic_update_ppr|kvm_apic_match_dest|kvm_apic_set_eoi_accelerated|kvm_apic_send_ipi|kvm_lapic_readable_reg_mask|kvm_wait_lapic_expire|kvm_lapic_expired_hv_timer|kvm_lapic_set_eoi|kvm_apic_write_nodecode|kvm_alloc_apic_access_page|kvm_apic_has_interrupt|kvm_apic_ack_interrupt|kvm_mmu_free_roots|kvm_mmu_free_guest_mode_roots|kvm_handle_page_fault|kvm_mmu_new_pgd|kvm_init_shadow_npt_mmu|kvm_init_shadow_ept_mmu|kvm_init_mmu|kvm_mmu_reset_context|kvm_mmu_page_fault|kvm_mmu_print_sptes|kvm_mmu_invalidate_addr|kvm_mmu_invlpg|kvm_configure_mmu|kvm_zap_gfn_range|enable_mmio_caching|kvm_mmu_set_mmio_spte_mask|kvm_mmu_set_me_spte_mask|kvm_mmu_set_ept_masks|kvm_pmu_cap|pmc_write_counter|kvm_caps|kvm_host|report_ignored_msrs|enable_vmware_backdoor|enable_pmu|kvm_nr_uret_msrs|allow_smaller_maxphyaddr|enable_apicv|kvm_add_user_return_msr|kvm_find_user_return_msr|kvm_set_user_return_msr|kvm_spurious_fault|kvm_deliver_exception_payload|kvm_queue_exception|kvm_requeue_exception|kvm_queue_exception_p|kvm_complete_insn_gp|kvm_inject_emulated_page_fault|kvm_queue_exception_e|kvm_require_dr|load_pdptrs|kvm_post_set_cr0|kvm_set_cr0|kvm_lmsw|kvm_load_guest_xsave_state|kvm_load_host_xsave_state|kvm_emulate_xsetbv|kvm_post_set_cr4|kvm_set_cr4|kvm_set_cr3'\n# 사라진 드라이버 Kconfig 심볼\ngrep -rnwE '(CONFIG_)?(ANDROID_BINDER_IPC_SELFTEST|CDROM_PKTCDVD|CDROM_PKTCDVD_BUFFERS|CDROM_PKTCDVD_WCACHE|COMMON_CLK_MT8195_AUDSYS|COMMON_CLK_MT8195_MSDC|COMMON_CLK_MESON_EE_CLKC|VF_PIT_TIMER|CPU_FREQ_CBE|CPU_FREQ_CBE_PMI|CPU_FREQ_MAPLE|CRYPTO_DEV_CAVIUM_ZIP|CRYPTO_DEV_NIAGARA2|CRYPTO_DEV_STM32_CRC|LS2X_APB_DMA|EDAC_AMD8111|EDAC_AMD8131|EDAC_CELL|DRM_I2C_CH7006|DRM_I2C_NXP_TDA9950|DRM_I2C_SIL164|DRM_NOUVEAU_GSP_DEFAULT|TINYDRM_ST7586|TINYDRM_ST7735R|DRM_XE_LARGE_GUC_BUFFER|SENSORS_OXP|SENSORS_SBRMI|I2C_AMD756_S4882|I2C_NFORCE2_S4985|ROHM_BU27008|INFINIBAND_HNS|INFINIBAND_QIB|INFINIBAND_QIB_DCA|INPUT_EVBUG|KEYBOARD_ADP5589|KEYBOARD_TCA6416|INPUT_PCF50633_PMU|RISCV_IMSIC_PCI|VIDEO_OV6650|STA2X11_VIP|RADIO_WL1273|RADIO_WL128X|MFD_PCF50633|MFD_STA2X11|PCF50633_ADC|PCF50633_GPIO|CXL|CXL_BASE|ECHO|TI_ST|MTD_NAND_S3C2410|MTD_NAND_S3C2410_CLKSTOP|MTD_NAND_S3C2410_DEBUG|SPIDER_NET|NET_SB1000|MDIO_DEVICE|MDIO_DEVRES|MICREL_KS8995MA|RT2X00_LIB_SOC|PCI_PWRCTL|PCCARD_IODYN|PHY_QCOM_SNPS_EUSB2|PINCTRL_SOPHGO_CV18XX|CHARGER_PCF50633|PWM_RCAR|PWM_RZ_MTU3|REGULATOR_PCF50633|RTC_DRV_PCF50633|LCS|NETIUCV|CXLFLASH|SLIM_QCOM_CTRL|ARCX_ANYBUS_CONTROLLER|HMS_ANYBUSS_BUS|HMS_PROFINET|FIELDBUS_DEV|LTE_GDM724X|ADIS16240|VIDEO_ATOMISP_GC0310|VIDEO_ATOMISP_MSRLIST_HELPER|VIDEO_ATOMISP_MT9M114|VIDEO_OMAP4|FB_OLPC_DCON|RTLLIB|RTLLIB_CRYPTO_CCMP|RTLLIB_CRYPTO_TKIP|RTLLIB_CRYPTO_WEP|RTL8192E|R8712_TX_AGGR|R8712U|RTS5208|VT6655|VT6656|SERIAL_KGDB_NMI|USB_FUSB300|USB_MV_U3D|USB_MV_UDC|USB_NET2272|USB_NET2272_DMA|USB_MV_OTG|VFIO_PCI_MMAP|BACKLIGHT_PCF50633|CPU5_WDT|SND_HDA_CS_DSP_CONTROLS|SND_SOC_ADI|SND_ATMEL_SOC|SND_SOC_WL1273|SND_SOC_IMG|SND_SOC_INTEL_DA7219_MAX98357A_GENERIC|SND_SOC_INTEL_SST|SND_SOC_ROCKCHIP|SND_SOC_SOF_IMX8M|SND_SOC_SOF_IMX8ULP|SND_SOC_STARFIVE|SND_SOC_UNIPHIER)' --include='Kconfig*' --include='Makefile' --include='*defconfig' .\n```"
+    },
+    {
+      "heading": "반복 전환 패턴",
+      "body": "여러 서브시스템이 같은 변경을 되풀이한 것입니다. 진행 중인 API 전환이라 트리 밖 드라이버도 따라가야 할 가능성이 큽니다.\n\n- **use new GPIO line value setter callbacks** — 커밋 197개 (pinctrl, misc, gpio, soc, USB, ssb 외 18곳). GPIO 컨트롤러 `set`·`set_multiple` 콜백이 실패 시 `int`를 반환하도록 구현을 맞춘다. [예시](https://git.kernel.org/torvalds/c/83d92eae8d44)\n- **convert from round_rate() to determine_rate()** — 커밋 166개 (clocksource/drivers/ingenic-sysost, pmdomain, clk, drm/msm/hdmi_pll_8960, drm/msm/disp/mdp4/mdp4_lvds_pll, drm/msm/hdmi_phy_8998 외 10곳). [예시](https://git.kernel.org/torvalds/c/21b8a635f3b3)\n- **Use refcounted allocation in place of devm_kzalloc()** — 커밋 97개 (drm/panel/boe-himax8279d, drm/panel/boe-tv101wum-nl6, drm/panel/himax-hx83102, drm/panel/ilitek-ili9882t, drm/panel/lpm102a188a, drm/panel/jdi-lt070me05000 외 91곳). [예시](https://git.kernel.org/torvalds/c/d27da6792c80)\n- **Constify 'struct bin_attribute'** — 커밋 89개 (rapidio, firmware, pcmcia, accel/habanalabs, drm/amd/display, drm/amdgpu 외 41곳). sysfs용 `struct bin_attribute` 테이블을 const·읽기 전용 메모리에 둘 수 있게 정의한다. [예시](https://git.kernel.org/torvalds/c/5d0fbf548cbf)\n- **Switch to use hrtimer_setup()** — 커밋 75개 (serial, ASoC, RDMA, virtio, drm/vmwgfx, drm/xe/oa 외 42곳). `hrtimer_init()`와 수동 `function` 대입 대신 `hrtimer_setup()`으로 초기화한다. [예시](https://git.kernel.org/torvalds/c/d2fa8e52cf91)\n- **Run DRM default client setup** — 커밋 68개 (drm/omapdrm, drm/tegra, drm/radeon, drm/msm, drm/gma500, drm/exynos-drm 외 62곳). [예시](https://git.kernel.org/torvalds/c/15499749fbb8)\n- **Switch back to struct platform_driver::remove()** — 커밋 48개 (ptp, irqchip, mailbox, scsi, i2c, thermal 외 37곳). [예시](https://git.kernel.org/torvalds/c/b32913a5609a)\n- **use new generic GPIO chip API** — 커밋 45개 (gpio, mfd, pinctrl). MMIO GPIO 드라이버는 `linux/gpio/generic.h`의 generic GPIO chip API로 맞춘다. [예시](https://git.kernel.org/torvalds/c/e43e94fa19cf)\n- **Replace deprecated PCI functions** — 커밋 40개 (media, ASoC, ALSA, stmmac, vdpa, pwm 외 17곳). [예시](https://git.kernel.org/torvalds/c/f8a1082ecb5d)\n- **Convert to RUNTIME_PM_OPS()** — 커밋 39개 (media, drm, ASoC, ALSA). [예시](https://git.kernel.org/torvalds/c/2549f534e131)\n- **convert to devm_drm_bridge_alloc() API** — 커밋 36개 (drm/imx, drm/tidss, drm/sti, drm/bridge, drm/tests, drm 외 9곳). [예시](https://git.kernel.org/torvalds/c/3257bd193fa1)\n- **Remove redundant pm_runtime_mark_last_busy() calls** — 커밋 36개 (i2c, HSI, iio, media, drm/panfrost, i3c 외 10곳). [예시](https://git.kernel.org/torvalds/c/ae11e08c3d0c)"
+    },
+    {
+      "heading": "넓은 범위 변경",
+      "body": "한 커밋이 여러 드라이버 디렉터리를 함께 바꾼 것입니다. 콜백 시그니처나 헬퍼가 바뀐 경우가 많습니다.\n\n- [treewide: Switch/rename to timer_delete[_sync]()](https://git.kernel.org/torvalds/c/8fa7292fee5c) — 드라이버 디렉터리 262곳, 파일 645개. `del_timer()`·`del_timer_sync()` 호출을 `timer_delete()`·`timer_delete_sync()`로 바꾼다.\n- [treewide, timers: Rename from_timer() to timer_container_of()](https://git.kernel.org/torvalds/c/41cb08555c41) — 드라이버 디렉터리 251곳, 파일 571개. `from_timer()` 사용처를 `timer_container_of()`로 이름만 맞춘다.\n- [module: Convert symbol namespace to string literal](https://git.kernel.org/torvalds/c/cdd30ebb1b9f) — 드라이버 디렉터리 153곳, 파일 823개. `MODULE_IMPORT_NS()`·`EXPORT_SYMBOL_NS()`의 네임스페이스 인자를 문자열 리터럴로 쓴다.\n- [Get rid of 'remove_new' relic from platform driver struct](https://git.kernel.org/torvalds/c/e70140ba0d2b) — 드라이버 디렉터리 118곳, 파일 455개.\n- [drm: remove driver date from struct drm_driver and all drivers](https://git.kernel.org/torvalds/c/cb2e1c2136f7) — 드라이버 디렉터리 60곳, 파일 100개.\n- [treewide: rename GPIO set callbacks back to their original names](https://git.kernel.org/torvalds/c/d9d87d90cc0b) — 드라이버 디렉터리 59곳, 파일 263개. `gpio_chip`의 line value setter 콜백 이름을 in-tree와 같이 원래 `set`·`set_multiple` 이름으로 맞춘다.\n- [net: ethernet: Switch back to struct platform_driver::remove()](https://git.kernel.org/torvalds/c/e96321fad3ad) — 드라이버 디렉터리 51곳, 파일 136개.\n- [drm/client: Move public client header to clients/ subdirectory](https://git.kernel.org/torvalds/c/b86711c6d6e2) — 드라이버 디렉터리 47곳, 파일 71개.\n- [sysfs: treewide: switch back to bin_attribute::read()/write()](https://git.kernel.org/torvalds/c/2fbe82037ab2) — 드라이버 디렉터리 44곳, 파일 65개. sysfs `bin_attribute`의 `read`·`write` 콜백을 `const struct bin_attribute *`를 받는 시그니처로 되돌린다.\n- [media: Switch back to struct platform_driver::remove()](https://git.kernel.org/torvalds/c/b8fc42dc0657) — 드라이버 디렉터리 41곳, 파일 122개. 미디어 subsystem의 `platform_driver`가 `.remove` 콜백 이름을 쓰도록 초기화를 맞춘다.\n- [iio: normalize array sentinel style](https://git.kernel.org/torvalds/c/70788d26ae1c) — 드라이버 디렉터리 40곳, 파일 286개.\n- [sysfs: treewide: switch back to attribute_group::bin_attrs](https://git.kernel.org/torvalds/c/fb506e31b3d5) — 드라이버 디렉터리 35곳, 파일 62개. `attribute_group`에서 `bin_attrs_new` 대신 `bin_attrs` const 포인터 배열을 쓴다.\n- [media: Set file->private_data in v4l2_fh_add()](https://git.kernel.org/torvalds/c/47f4b1acb4d5) — 드라이버 디렉터리 32곳, 파일 58개. `v4l2_fh_add()` 호출에 `struct file *`를 넘기고 `file->private_data`를 직접 쓰지 않는다.\n- [media: Reset file->private_data to NULL in v4l2_fh_del()](https://git.kernel.org/torvalds/c/277966749f46) — 드라이버 디렉터리 30곳, 파일 54개. `v4l2_fh_del()` 호출에 `struct file *`를 넘기고 release에서 `private_data`를 직접 NULL로 두지 않는다.\n- [media: platform: drop vb2_ops_wait_prepare/finish](https://git.kernel.org/torvalds/c/4bf194e10e42) — 드라이버 디렉터리 27곳, 파일 76개."
+    },
+    {
+      "heading": "사라진 Kconfig 심볼",
+      "body": "전체 390개가 사라졌고 새로 1197개가 생겼습니다. drivers/·sound/ 아래의 115개는 defconfig나 `depends on`에 남아 있으면 경고 없이 빠지니 확인이 필요합니다.\n\n| 심볼 | 위치 | 이름 변경 후보 | 지운 커밋 |\n|---|---|---|---|\n| `ANDROID_BINDER_IPC_SELFTEST` | drivers/android/Kconfig | — | [binder: Convert binder_alloc selftests to KUnit](https://git.kernel.org/torvalds/c/f6544dcdd0d2) |\n| `CDROM_PKTCDVD` | drivers/block/Kconfig | — | [block: remove pktcdvd driver](https://git.kernel.org/torvalds/c/1cea5180f2f8) |\n| `CDROM_PKTCDVD_BUFFERS` | drivers/block/Kconfig | — | [block: remove pktcdvd driver](https://git.kernel.org/torvalds/c/1cea5180f2f8) |\n| `CDROM_PKTCDVD_WCACHE` | drivers/block/Kconfig | — | [block: remove pktcdvd driver](https://git.kernel.org/torvalds/c/1cea5180f2f8) |\n| `COMMON_CLK_MT8195_AUDSYS` | drivers/clk/mediatek/Kconfig | — | [clk: mediatek: drop two dead config options](https://git.kernel.org/torvalds/c/98619dc3cecc) |\n| `COMMON_CLK_MT8195_MSDC` | drivers/clk/mediatek/Kconfig | — | [clk: mediatek: drop two dead config options](https://git.kernel.org/torvalds/c/98619dc3cecc) |\n| `COMMON_CLK_MESON_EE_CLKC` | drivers/clk/meson/Kconfig | — | [clk: amlogic: drop meson-clkcee](https://git.kernel.org/torvalds/c/e256a6602aa0) |\n| `VF_PIT_TIMER` | drivers/clocksource/Kconfig | `NXP_PIT_TIMER` | [clocksource/drivers/vf-pit: Rename the VF PIT to NXP PIT](https://git.kernel.org/torvalds/c/fc346a155fe9) |\n| `CPU_FREQ_CBE` | drivers/cpufreq/Kconfig.powerpc | — | [cpufreq: ppc_cbe: Remove powerpc Cell driver](https://git.kernel.org/torvalds/c/16479389cfeb) |\n| `CPU_FREQ_CBE_PMI` | drivers/cpufreq/Kconfig.powerpc | — | [cpufreq: ppc_cbe: Remove powerpc Cell driver](https://git.kernel.org/torvalds/c/16479389cfeb) |\n| `CPU_FREQ_MAPLE` | drivers/cpufreq/Kconfig.powerpc | — | [cpufreq: maple: Remove maple driver](https://git.kernel.org/torvalds/c/fae2987e6778) |\n| `CRYPTO_DEV_CAVIUM_ZIP` | drivers/crypto/Kconfig | — | [crypto: cavium/zip - Remove driver](https://git.kernel.org/torvalds/c/d462ae23bb3c) |\n| `CRYPTO_DEV_NIAGARA2` | drivers/crypto/Kconfig | — | [crypto: n2 - remove Niagara2 SPU driver](https://git.kernel.org/torvalds/c/9cda46babdfe) |\n| `CRYPTO_DEV_STM32_CRC` | drivers/crypto/stm32/Kconfig | — | [crypto: stm32 - remove crc32 and crc32c support](https://git.kernel.org/torvalds/c/5b019bb25fbf) |\n| `LS2X_APB_DMA` | drivers/dma/Kconfig | `LOONGSON2_APB_DMA` | [dmaengine: loongson2-apb: Rename the prefix ls2x to loongson2](https://git.kernel.org/torvalds/c/8974f34de2ef) |\n| `EDAC_AMD8111` | drivers/edac/Kconfig | — | [EDAC/powerpc: Remove PPC_MAPLE drivers](https://git.kernel.org/torvalds/c/3c592ce7991c) |\n| `EDAC_AMD8131` | drivers/edac/Kconfig | — | [EDAC/powerpc: Remove PPC_MAPLE drivers](https://git.kernel.org/torvalds/c/3c592ce7991c) |\n| `EDAC_CELL` | drivers/edac/Kconfig | — | [EDAC/cell: Remove powerpc Cell driver](https://git.kernel.org/torvalds/c/6696037a56a7) |\n| `DRM_I2C_CH7006` | drivers/gpu/drm/i2c/Kconfig | — | [drm/nouveau: incorporate I2C TV encoder drivers](https://git.kernel.org/torvalds/c/9a0dfe9bacef) |\n| `DRM_I2C_NXP_TDA9950` | drivers/gpu/drm/i2c/Kconfig | `CEC_NXP_TDA9950` | [media: cec: move driver for TDA9950 from drm/i2c](https://git.kernel.org/torvalds/c/caa6f4a75e9f) |\n| `DRM_I2C_SIL164` | drivers/gpu/drm/i2c/Kconfig | — | [drm/nouveau: incorporate I2C TV encoder drivers](https://git.kernel.org/torvalds/c/9a0dfe9bacef) |\n| `DRM_NOUVEAU_GSP_DEFAULT` | drivers/gpu/drm/nouveau/Kconfig | — | [drm/nouveau: Remove DRM_NOUVEAU_GSP_DEFAULT config](https://git.kernel.org/torvalds/c/e0ed674acbac) |\n| `TINYDRM_ST7586` | drivers/gpu/drm/tiny/Kconfig | — | [drm/sitronix: Remove broken backwards-compatibility layer](https://git.kernel.org/torvalds/c/a3f7d26dfce9) |\n| `TINYDRM_ST7735R` | drivers/gpu/drm/tiny/Kconfig | — | [drm/sitronix: Remove broken backwards-compatibility layer](https://git.kernel.org/torvalds/c/a3f7d26dfce9) |\n| `DRM_XE_LARGE_GUC_BUFFER` | drivers/gpu/drm/xe/Kconfig.debug | `DRM_XE_DEBUG_GUC` | [drm/xe/guc: Rename CONFIG_XE_LARGE_GUC_BUFFER](https://git.kernel.org/torvalds/c/d7d97890e2a7) |\n| `SENSORS_OXP` | drivers/hwmon/Kconfig | `OXP_EC` | [platform/x86: oxpec: Move hwmon/oxp-sensors to platform/x86](https://git.kernel.org/torvalds/c/3012bb39001c) |\n| `SENSORS_SBRMI` | drivers/hwmon/Kconfig | `AMD_SBRMI_I2C` | [hwmon/misc: amd-sbi: Move core sbrmi from hwmon to misc](https://git.kernel.org/torvalds/c/e15658676405) |\n| `I2C_AMD756_S4882` | drivers/i2c/busses/Kconfig | — | [i2c: Drop legacy muxing pseudo-drivers](https://git.kernel.org/torvalds/c/b7ef4e0b1fb5) |\n| `I2C_NFORCE2_S4985` | drivers/i2c/busses/Kconfig | — | [i2c: Drop legacy muxing pseudo-drivers](https://git.kernel.org/torvalds/c/b7ef4e0b1fb5) |\n| `ROHM_BU27008` | drivers/iio/light/Kconfig | — | [iio: light: Drop BU27008 and BU27010](https://git.kernel.org/torvalds/c/91407b55181d) |\n| `INFINIBAND_HNS` | drivers/infiniband/hw/hns/Kconfig | — | [RDMA/hns: Clean up the legacy CONFIG_INFINIBAND_HNS](https://git.kernel.org/torvalds/c/8977b561216c) |\n| `INFINIBAND_QIB` | drivers/infiniband/hw/qib/Kconfig | — | [RDMA/qib: Remove outdated driver](https://git.kernel.org/torvalds/c/24baad32b710) |\n| `INFINIBAND_QIB_DCA` | drivers/infiniband/hw/qib/Kconfig | — | [RDMA/qib: Remove outdated driver](https://git.kernel.org/torvalds/c/24baad32b710) |\n| `INPUT_EVBUG` | drivers/input/Kconfig | — | [Input: remove evbug driver](https://git.kernel.org/torvalds/c/e571f988af1b) |\n| `KEYBOARD_ADP5589` | drivers/input/keyboard/Kconfig | — | [Input: adp5589: remove the driver](https://git.kernel.org/torvalds/c/3bdbd0858df6) |\n| `KEYBOARD_TCA6416` | drivers/input/keyboard/Kconfig | — | [Input: tca6416-keypad - remove the driver](https://git.kernel.org/torvalds/c/534b9bdeb4b8) |\n| `INPUT_PCF50633_PMU` | drivers/input/misc/Kconfig | — | [Input: pcf50633-input - remove the driver](https://git.kernel.org/torvalds/c/fc75e51e6977) |\n| `RISCV_IMSIC_PCI` | drivers/irqchip/Kconfig | — | [irqchip/riscv-imsic: Move to common MSI library](https://git.kernel.org/torvalds/c/fe35ecee8ec8) |\n| `VIDEO_OV6650` | drivers/media/i2c/Kconfig | — | [media: i2c: ov6650: Drop unused driver](https://git.kernel.org/torvalds/c/73d31c7626ef) |\n| `STA2X11_VIP` | drivers/media/pci/sta2x11/Kconfig | — | [media: remove STA2x11 media pci driver](https://git.kernel.org/torvalds/c/29d69273fefd) |\n| `RADIO_WL1273` | drivers/media/radio/Kconfig | — | [media: radio-wl1273: Remove](https://git.kernel.org/torvalds/c/103b0cfc9ab6) |\n| `RADIO_WL128X` | drivers/media/radio/wl128x/Kconfig | — | [media: remove dead TI wl128x FM radio driver](https://git.kernel.org/torvalds/c/945215ee45e6) |\n| `MFD_PCF50633` | drivers/mfd/Kconfig | — | [mfd: pcf50633: Remove remaining PCF50633 support](https://git.kernel.org/torvalds/c/44356090d59e) |\n| `MFD_STA2X11` | drivers/mfd/Kconfig | — | [mfd: Remove STA2x11 core driver](https://git.kernel.org/torvalds/c/98cf2d503910) |\n| `PCF50633_ADC` | drivers/mfd/Kconfig | — | [mfd: pcf50633-adc: Remove unused driver](https://git.kernel.org/torvalds/c/0d0e54953805) |\n| `PCF50633_GPIO` | drivers/mfd/Kconfig | — | [mfd: pcF50633-gpio: Remove unused driver](https://git.kernel.org/torvalds/c/8559602247d0) |\n| `CXL` | drivers/misc/cxl/Kconfig | — | [cxl: Remove driver](https://git.kernel.org/torvalds/c/5a0fcb0ef558) |\n| `CXL_BASE` | drivers/misc/cxl/Kconfig | — | [cxl: Remove driver](https://git.kernel.org/torvalds/c/5a0fcb0ef558) |\n| `ECHO` | drivers/misc/echo/Kconfig | — | [misc: echo: Remove](https://git.kernel.org/torvalds/c/7f4de1867ef9) |\n| `TI_ST` | drivers/misc/ti-st/Kconfig | — | [misc: ti-st: st_kim: remove the driver](https://git.kernel.org/torvalds/c/78fe66360ed6) |\n| `MTD_NAND_S3C2410` | drivers/mtd/nand/raw/Kconfig | — | [mtd: rawnand: s3c2410: Drop driver (no actual S3C64xx user)](https://git.kernel.org/torvalds/c/c9f62564252c) |\n| `MTD_NAND_S3C2410_CLKSTOP` | drivers/mtd/nand/raw/Kconfig | — | [mtd: rawnand: s3c2410: Drop driver (no actual S3C64xx user)](https://git.kernel.org/torvalds/c/c9f62564252c) |\n| `MTD_NAND_S3C2410_DEBUG` | drivers/mtd/nand/raw/Kconfig | — | [mtd: rawnand: s3c2410: Drop driver (no actual S3C64xx user)](https://git.kernel.org/torvalds/c/c9f62564252c) |\n| `SPIDER_NET` | drivers/net/ethernet/toshiba/Kconfig | — | [net: spider_net: Remove powerpc Cell driver](https://git.kernel.org/torvalds/c/d9fefcea813e) |\n| `NET_SB1000` | drivers/net/Kconfig | — | [net: remove sb1000 cable modem driver](https://git.kernel.org/torvalds/c/3fed9fda150d) |\n| `MDIO_DEVICE` | drivers/net/mdio/Kconfig | — | [net: phy: make mdio consumer / device layer a separate module](https://git.kernel.org/torvalds/c/31be641d7426) |\n| `MDIO_DEVRES` | drivers/net/mdio/Kconfig | — | [net: phy: remove Kconfig symbol MDIO_DEVRES](https://git.kernel.org/torvalds/c/73d952840d9f) |\n| `MICREL_KS8995MA` | drivers/net/phy/Kconfig | `NET_DSA_KS8995` | [net: dsa: Move KS8995 to the DSA subsystem](https://git.kernel.org/torvalds/c/60cbe71fdba1) |\n| `RT2X00_LIB_SOC` | drivers/net/wireless/ralink/rt2x00/Kconfig | — | [wifi: rt2800: move 2x00soc to 2800soc](https://git.kernel.org/torvalds/c/7f6109086c9e) |\n| `PCI_PWRCTL` | drivers/pci/pwrctl/Kconfig | — | [PCI/pwrctrl: Rename pwrctrl Kconfig symbols and slot module](https://git.kernel.org/torvalds/c/13bbf6a5f065) |\n\n나머지 55개는 점검 명령에 넣었습니다."
+    },
+    {
+      "heading": "폐기 예고·권장 방식 문서",
+      "body": "이번 범위에서 `Documentation/process/deprecated.rst`는 바뀌지 않았습니다.\n\n`Documentation/driver-api/`를 바꾼 커밋 109개:\n\n- [dpll: add phase-offset-avg-factor device attribute to netlink spec](https://git.kernel.org/torvalds/c/a680581f6a13)\n- [mm: remove unused zpool layer](https://git.kernel.org/torvalds/c/2ccd9fecd916)\n- [docs: driver-api: fix spelling of \"buses\".](https://git.kernel.org/torvalds/c/395107a7c91a)\n- [cxl: Documentation/driver-api/cxl: Describe the x86 Low Memory Hole solution](https://git.kernel.org/torvalds/c/c5dca38633da)\n- [Documentation/driver-api: Fix typo error in cxl](https://git.kernel.org/torvalds/c/a414408126d1)\n- [Documentation: update Hans Verkuil's email address](https://git.kernel.org/torvalds/c/9bff72cb99b1)\n- [pinctrl: generic: rename PIN_CONFIG_OUTPUT to LEVEL](https://git.kernel.org/torvalds/c/203a83112e09)\n- [docs: driver-api pinctrl cleanup](https://git.kernel.org/torvalds/c/2dddb2792b2e)\n- [Documentation: pinctrl: Describe PM helper functions for standard states.](https://git.kernel.org/torvalds/c/272dad3f8400)\n- [Documentation: gpio: add documentation about using software nodes](https://git.kernel.org/torvalds/c/8003235b10e5)\n- [Documentation: driver-api: usb: Limit toctree depth](https://git.kernel.org/torvalds/c/af4ed17fa0c4)\n- [docs: initramfs: file data alignment via name padding](https://git.kernel.org/torvalds/c/7c1f14f6e8e7)\n- [Documentation: Fix driver-api typos](https://git.kernel.org/torvalds/c/6cf5f13ef3f1)\n- [Documentation: media: camera-sensor: Mention v4l2_devm_sensor_clk_get() for obtaining the clock](https://git.kernel.org/torvalds/c/e2b1ebd72c81)\n- [media: Drop V4L2_FL_USES_V4L2_FH checks](https://git.kernel.org/torvalds/c/bb4d6be205da)\n- [media: Reset file->private_data to NULL in v4l2_fh_del()](https://git.kernel.org/torvalds/c/277966749f46)\n- [media: Set file->private_data in v4l2_fh_add()](https://git.kernel.org/torvalds/c/47f4b1acb4d5)\n- [media: Wrap file->private_data access with a helper function](https://git.kernel.org/torvalds/c/618882c92681)\n- [cxl/region: Add inject and clear poison by region offset](https://git.kernel.org/torvalds/c/c3dd67681c70)\n- [Documentation: driver-api: Update libata error handler information](https://git.kernel.org/torvalds/c/546527b92d7e)"
+    },
+    {
+      "heading": "서브시스템별 요약",
+      "body": "각 메인테이너가 pull 요청에 쓴 요약에서 드라이버에 영향 있는 점만 추렸습니다.\n\n**Pull drm updates from Dave Airlie** · [머지](https://git.kernel.org/torvalds/c/0c86b42439b6)\n- fbdev 쪽에서 `page->index` 접근 제거 언급이 있어 아직 `page.index`를 직접 읽는 디스플레이·fbdev 연동 코드가 걸릴 수 있다.\n- dma-buf attach 시 sg map 캐시 동작 변경이 공유 버퍼를 다루는 DRM·media 드라이버와 맞닿는다.\n\n**Pull char/misc/IIO/whatever driver subsystem updates from Greg KH** · [머지](https://git.kernel.org/torvalds/c/2eff01ee2881)\n- pull 요약에 `platform_driver::remove()` fixups가 대량으로 포함되어 out-of-tree platform 드라이버도 `.remove` 이름을 쓰는지 점검할 여지가 있다.\n\n**Pull clk updates from Stephen Boyd** · [머지](https://git.kernel.org/torvalds/c/522ba450b56f)\n- clk `round_rate`에서 `determine_rate`로 옮기는 전환이 계속되어 커스텀 clk 드라이버 ops 테이블을 맞출 필요가 있다.\n\n**Pull media updates from Mauro Carvalho Chehab** · [머지](https://git.kernel.org/torvalds/c/1e26c5e28ca5)\n- V4L2 ioctl 테이블에서 `vidioc_g_ctrl`·`vidioc_s_ctrl`·`vidioc_queryctrl` 제거가 레거시 control ioctl을 구현하던 드라이버와 맞지 않게 한다.\n\n**Pull gpio updates from Bartosz Golaszewski** · [머지](https://git.kernel.org/torvalds/c/0227b49b5027)\n- 레거시 GPIO line setter 콜백 제거 후 새 콜백 이름을 예전 `set`·`set_multiple`으로 되돌리는 treewide 변경이 포함된다.\n- `gpio-mmio` 전용 필드를 `gpio_chip` 밖 generic chip 구조로 옮기는 API 전환이 이어진다.\n\n**Pull gpio updates from Bartosz Golaszewski** · [머지](https://git.kernel.org/torvalds/c/fcb117e0758d)\n- GPIO line value setter가 `int` 반환으로 바뀐 consumer·provider 인터페이스 전환이 treewide로 이어진다.\n- 새 generic GPIO chip API와 `bgpio_init` 계열 제거 방향이 mmio GPIO out-of-tree 코드와 맞닿는다.\n\n**Pull pin control updates from Linus Walleij** · [머지](https://git.kernel.org/torvalds/c/5fb024931949)\n- `PIN_CONFIG_OUTPUT`가 `PIN_CONFIG_LEVEL`로 이름이 바뀌어 pinconf 속성 문자열을 쓰는 드라이버·DT binding과 맞춰야 한다.\n- generic MMIO GPIO는 새 generic GPIO chip management API로 옮기는 작업이 pull에 포함된다.\n\n**Pull dma-mapping updates from Marek Szyprowski** · [머지](https://git.kernel.org/torvalds/c/a498d59c469b)\n- DMA mapping API가 page+offset보다 물리 주소를 우선하는 쪽으로 리팩터링되어 버퍼 attach·map 경로를 쓰는 드라이버가 영향을 받는다.\n\n**Pull MM updates from Andrew Morton** · [머지](https://git.kernel.org/torvalds/c/8804d970fab4)\n- `memdesc_flags_t` 도입으로 `page`·`folio` 쪽 flags 멤버 타입이 바뀌어 MM·DMA를 다루는 드라이버 헤더 의존 코드가 컴파일에 걸린다.\n- DMA mapping이 physical address 중심 인터페이스로 정리되는 방향과 맞물린다.\n\n**Pull devicetree updates from Rob Herring** · [머지](https://git.kernel.org/torvalds/c/9792d660a4e9)\n- `of_msi_map_id()` 호출을 `of_msi_xlate()`로 바꾸는 DT 코어 정리가 MSI routing을 DT로 잡는 장치 드라이버와 연결된다.\n\n**Pull driver core updates from Danilo Krummrich** · [머지](https://git.kernel.org/torvalds/c/eb3289fc474f)\n- `attribute_group`의 transitional `bin_attrs_new`와 `bin_attribute`의 `read_new`·`write_new`가 제거되어 sysfs binary 속성 테이블을 const화한 드라이버와 맞춘다.\n- software node 등록 함수의 `node_group` 인자 const화가 DT·firmware node를 쓰는 드라이버에 닿는다.\n\n**Pull timer core updates from Thomas Gleixner** · [머지](https://git.kernel.org/torvalds/c/c5448d46b399)\n- hrtimer clock base 접근이 캡슐화되어 `hrtimer_cb_get_time()` 등이 `const struct hrtimer *`를 받도록 바뀐 헤더와 맞는다.\n- per-CPU clockevent shutdown 순서 수정은 clockevents를 쓰는 SoC 타이머 드라이버 동작·전력과 관련된다.\n\n**Pull irq chip driver updates from Thomas Gleixner** · [머지](https://git.kernel.org/torvalds/c/03a53e09cd72)\n- PCI/MSI per-device 도메인이 startup/shutdown 콜백을 쓰도록 바뀌어 MSI provider·PCI host 드라이버 init 순서가 달라질 수 있다.\n- MSI provider가 run-time에 PCI 디바이스 mask를 생략할 수 있는 opt-out이 생겨 `disable_irq()`·`enable_irq()`를 자주 쓰는 드라이버 오버헤드가 달라질 수 있다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "v6.12..v6.18 git 기록에서 코드가 뽑은 사실과, 그 커밋·pull 문구만 본 AI 요약입니다(웹 검색 없음). 사용 수는 v6.12 drivers/·sound/에서 그 이름을 쓴 파일 수이고, 구조체 멤버는 타입을 확인하지 않은 상한값입니다."
+  },
+  "sources": [
+    {
+      "title": "Pull drm updates from Dave Airlie",
+      "url": "https://git.kernel.org/torvalds/c/b08494a8f741",
+      "note": "merge"
+    },
+    {
+      "title": "Pull drm updates from Dave Airlie",
+      "url": "https://git.kernel.org/torvalds/c/0c86b42439b6",
+      "note": "merge"
+    },
+    {
+      "title": "Pull drm updates from Dave Airlie",
+      "url": "https://git.kernel.org/torvalds/c/260f6f4fda93",
+      "note": "merge"
+    },
+    {
+      "title": "Pull drm updates from Dave Airlie",
+      "url": "https://git.kernel.org/torvalds/c/28eb75e178d3",
+      "note": "merge"
+    },
+    {
+      "title": "Pull networking updates from Jakub Kicinski",
+      "url": "https://git.kernel.org/torvalds/c/8be4d31cb8aa",
+      "note": "merge"
+    },
+    {
+      "title": "Pull networking updates from Paolo Abeni",
+      "url": "https://git.kernel.org/torvalds/c/fcc79e1714e8",
+      "note": "merge"
+    },
+    {
+      "title": "Pull drm updates from Dave Airlie",
+      "url": "https://git.kernel.org/torvalds/c/58809f614e0e",
+      "note": "merge"
+    },
+    {
+      "title": "Pull networking updates from Paolo Abeni",
+      "url": "https://git.kernel.org/torvalds/c/1b98f357dadd",
+      "note": "merge"
+    },
+    {
+      "title": "Pull drm updates from Dave Airlie",
+      "url": "https://git.kernel.org/torvalds/c/96c84703f1cf",
+      "note": "merge"
+    },
+    {
+      "title": "Pull networking updates from Jakub Kicinski",
+      "url": "https://git.kernel.org/torvalds/c/1a9239bb4253",
+      "note": "merge"
+    },
+    {
+      "title": "Pull media updates from Mauro Carvalho Chehab",
+      "url": "https://git.kernel.org/torvalds/c/9f5a6a1fe690",
+      "note": "merge"
+    },
+    {
+      "title": "Pull networking updates from Paolo Abeni",
+      "url": "https://git.kernel.org/torvalds/c/07fdad3a9375",
+      "note": "merge"
+    },
+    {
+      "title": "Pull networking updates from Paolo Abeni",
+      "url": "https://git.kernel.org/torvalds/c/0ad9617c78ac",
+      "note": "merge"
+    },
+    {
+      "title": "Pull timer cleanups from Thomas Gleixner",
+      "url": "https://git.kernel.org/torvalds/c/16cd1c265776",
+      "note": "merge"
+    },
+    {
+      "title": "Pull sound updates from Takashi Iwai",
+      "url": "https://git.kernel.org/torvalds/c/e50da555ca4d",
+      "note": "merge"
+    },
+    {
+      "title": "Pull sound updates from Takashi Iwai",
+      "url": "https://git.kernel.org/torvalds/c/05a54fa77328",
+      "note": "merge"
+    },
+    {
+      "title": "Pull char / misc / iio driver updates from Greg KH",
+      "url": "https://git.kernel.org/torvalds/c/c26f4fbd5837",
+      "note": "merge"
+    },
+    {
+      "title": "Pull timer cleanup from Thomas Gleixner",
+      "url": "https://git.kernel.org/torvalds/c/be54f8c55802",
+      "note": "merge"
+    },
+    {
+      "title": "Pull sound updates from Takashi Iwai",
+      "url": "https://git.kernel.org/torvalds/c/177bf8620cf4",
+      "note": "merge"
+    },
+    {
+      "title": "Pull media updates from Mauro Carvalho Chehab",
+      "url": "https://git.kernel.org/torvalds/c/f79e772258df",
+      "note": "merge"
+    },
+    {
+      "title": "Pull char/misc/IIO/whatever driver subsystem updates from Greg KH",
+      "url": "https://git.kernel.org/torvalds/c/2eff01ee2881",
+      "note": "merge"
+    },
+    {
+      "title": "Pull Char/Misc/IIO/Binder updates from Greg KH",
+      "url": "https://git.kernel.org/torvalds/c/6093a688a07d",
+      "note": "merge"
+    },
+    {
+      "title": "Pull sound updates from Takashi Iwai",
+      "url": "https://git.kernel.org/torvalds/c/071b34dcf715",
+      "note": "merge"
+    },
+    {
+      "title": "Pull sound updates from Takashi Iwai",
+      "url": "https://git.kernel.org/torvalds/c/a9e6060bb2a6",
+      "note": "merge"
+    },
+    {
+      "title": "Pull clk updates from Stephen Boyd",
+      "url": "https://git.kernel.org/torvalds/c/2d945dde7fa3",
+      "note": "merge"
+    },
+    {
+      "title": "Pull staging driver updates from Greg KH",
+      "url": "https://git.kernel.org/torvalds/c/a0c1ca3934dd",
+      "note": "merge"
+    },
+    {
+      "title": "Pull clk updates from Stephen Boyd",
+      "url": "https://git.kernel.org/torvalds/c/522ba450b56f",
+      "note": "merge"
+    },
+    {
+      "title": "Pull media updates from Mauro Carvalho Chehab",
+      "url": "https://git.kernel.org/torvalds/c/a61e26038143",
+      "note": "merge"
+    },
+    {
+      "title": "Pull media updates from Mauro Carvalho Chehab",
+      "url": "https://git.kernel.org/torvalds/c/0cdee263bc5e",
+      "note": "merge"
+    },
+    {
+      "title": "Pull Char/Misc/IIO driver updates from Greg KH",
+      "url": "https://git.kernel.org/torvalds/c/13845bdc869f",
+      "note": "merge"
+    },
+    {
+      "title": "Pull char / misc / IIO / other driver updates from Greg KH",
+      "url": "https://git.kernel.org/torvalds/c/0d5ec7919f37",
+      "note": "merge"
+    },
+    {
+      "title": "Pull media updates from Mauro Carvalho Chehab",
+      "url": "https://git.kernel.org/torvalds/c/1e26c5e28ca5",
+      "note": "merge"
+    },
+    {
+      "title": "Pull gpio updates from Bartosz Golaszewski",
+      "url": "https://git.kernel.org/torvalds/c/0227b49b5027",
+      "note": "merge"
+    },
+    {
+      "title": "Pull USB / Thunderbolt updates from Greg KH",
+      "url": "https://git.kernel.org/torvalds/c/e33a6d83e178",
+      "note": "merge"
+    },
+    {
+      "title": "Pull clk updates from Stephen Boyd",
+      "url": "https://git.kernel.org/torvalds/c/9f3a2ba62c72",
+      "note": "merge"
+    },
+    {
+      "title": "Pull char / misc / IIO driver updates from Greg KH",
+      "url": "https://git.kernel.org/torvalds/c/25601e85441d",
+      "note": "merge"
+    },
+    {
+      "title": "Pull sound updates from Takashi Iwai",
+      "url": "https://git.kernel.org/torvalds/c/2c8d2a510c15",
+      "note": "merge"
+    },
+    {
+      "title": "Pull clk updates from Stephen Boyd",
+      "url": "https://git.kernel.org/torvalds/c/59c35416f424",
+      "note": "merge"
+    },
+    {
+      "title": "Pull irq cleanups from Thomas Gleixner",
+      "url": "https://git.kernel.org/torvalds/c/2bd1bea5fa6a",
+      "note": "merge"
+    },
+    {
+      "title": "Pull gpio updates from Bartosz Golaszewski",
+      "url": "https://git.kernel.org/torvalds/c/fcb117e0758d",
+      "note": "merge"
+    },
+    {
+      "title": "Pull SCSI updates from James Bottomley",
+      "url": "https://git.kernel.org/torvalds/c/88e45067a309",
+      "note": "merge"
+    },
+    {
+      "title": "Pull pin control updates from Linus Walleij",
+      "url": "https://git.kernel.org/torvalds/c/5fb024931949",
+      "note": "merge"
+    },
+    {
+      "title": "Pull ACPI updates from Rafael Wysocki",
+      "url": "https://git.kernel.org/torvalds/c/3702a515edec",
+      "note": "merge"
+    },
+    {
+      "title": "Pull crypto updates from Herbert Xu",
+      "url": "https://git.kernel.org/torvalds/c/14418ddcc2c2",
+      "note": "merge"
+    },
+    {
+      "title": "Pull media updates from Mauro Carvalho Chehab",
+      "url": "https://git.kernel.org/torvalds/c/184a0997fb77",
+      "note": "merge"
+    },
+    {
+      "title": "Pull more power management updates from Rafael Wysocki",
+      "url": "https://git.kernel.org/torvalds/c/abdf766d149c",
+      "note": "merge"
+    },
+    {
+      "title": "Pull more MM updates from Andrew Morton",
+      "url": "https://git.kernel.org/torvalds/c/7a405dbb0f03",
+      "note": "merge"
+    },
+    {
+      "title": "Pull RCU updates from Paul McKenney",
+      "url": "https://git.kernel.org/torvalds/c/67da125e30ab",
+      "note": "merge"
+    },
+    {
+      "title": "Pull mm-init update from Mike Rapoport",
+      "url": "https://git.kernel.org/torvalds/c/b41048485ee3",
+      "note": "merge"
+    },
+    {
+      "title": "Pull dma-mapping updates from Marek Szyprowski",
+      "url": "https://git.kernel.org/torvalds/c/a498d59c469b",
+      "note": "merge"
+    },
+    {
+      "title": "Pull MM updates from Andrew Morton",
+      "url": "https://git.kernel.org/torvalds/c/8804d970fab4",
+      "note": "merge"
+    },
+    {
+      "title": "Pull slab updates from Vlastimil Babka",
+      "url": "https://git.kernel.org/torvalds/c/24d9e8b3c9c8",
+      "note": "merge"
+    },
+    {
+      "title": "Pull devicetree updates from Rob Herring",
+      "url": "https://git.kernel.org/torvalds/c/9792d660a4e9",
+      "note": "merge"
+    },
+    {
+      "title": "Pull power management updates from Rafael Wysocki",
+      "url": "https://git.kernel.org/torvalds/c/991053178e08",
+      "note": "merge"
+    },
+    {
+      "title": "Pull regulator updates from Mark Brown",
+      "url": "https://git.kernel.org/torvalds/c/ad6657804c10",
+      "note": "merge"
+    },
+    {
+      "title": "Pull regmap updates from Mark Brown",
+      "url": "https://git.kernel.org/torvalds/c/c252b8cf1228",
+      "note": "merge"
+    },
+    {
+      "title": "Pull gpio updates from Bartosz Golaszewski",
+      "url": "https://git.kernel.org/torvalds/c/d5f74114114c",
+      "note": "merge"
+    },
+    {
+      "title": "Pull driver core updates from Danilo Krummrich",
+      "url": "https://git.kernel.org/torvalds/c/eb3289fc474f",
+      "note": "merge"
+    },
+    {
+      "title": "Pull clocksource updates from Thomas Gleixner",
+      "url": "https://git.kernel.org/torvalds/c/70de5572a82b",
+      "note": "merge"
+    },
+    {
+      "title": "Pull timer core updates from Thomas Gleixner",
+      "url": "https://git.kernel.org/torvalds/c/c5448d46b399",
+      "note": "merge"
+    },
+    {
+      "title": "Pull irq chip driver updates from Thomas Gleixner",
+      "url": "https://git.kernel.org/torvalds/c/03a53e09cd72",
+      "note": "merge"
+    },
+    {
+      "title": "Pull irq core updates from Thomas Gleixner",
+      "url": "https://git.kernel.org/torvalds/c/3b2074c77d25",
+      "note": "merge"
+    },
+    {
+      "title": "Pull locking updates from Ingo Molnar",
+      "url": "https://git.kernel.org/torvalds/c/88b489385bfe",
+      "note": "merge"
+    },
+    {
+      "title": "Pull scheduler updates from Ingo Molnar",
+      "url": "https://git.kernel.org/torvalds/c/6c7340a7a8d2",
+      "note": "merge"
+    },
+    {
+      "title": "Pull workqueue updates from Tejun Heo",
+      "url": "https://git.kernel.org/torvalds/c/77fc3f669655",
+      "note": "merge"
+    },
+    {
+      "title": "Pull more MM updates from Andrew Morton",
+      "url": "https://git.kernel.org/torvalds/c/da23ea194db9",
+      "note": "merge"
+    },
+    {
+      "title": "Pull module updates from Daniel Gomez",
+      "url": "https://git.kernel.org/torvalds/c/8877fcb70fd7",
+      "note": "merge"
+    },
+    {
+      "title": "Pull pin control updates from Linus Walleij",
+      "url": "https://git.kernel.org/torvalds/c/186f3edfdd41",
+      "note": "merge"
+    },
+    {
+      "title": "Pull workqueue updates from Tejun Heo",
+      "url": "https://git.kernel.org/torvalds/c/af5b2619a89d",
+      "note": "merge"
+    },
+    {
+      "title": "Pull MM updates from Andrew Morton",
+      "url": "https://git.kernel.org/torvalds/c/beace86e61e4",
+      "note": "merge"
+    },
+    {
+      "title": "Pull slab updates from Vlastimil Babka",
+      "url": "https://git.kernel.org/torvalds/c/e8d780dcd957",
+      "note": "merge"
+    },
+    {
+      "title": "Pull RCU updates from Neeraj Upadhyay",
+      "url": "https://git.kernel.org/torvalds/c/2db4df0c09ee",
+      "note": "merge"
+    },
+    {
+      "title": "Pull locking updates from Ingo Molnar",
+      "url": "https://git.kernel.org/torvalds/c/72b8944f147e",
+      "note": "merge"
+    },
+    {
+      "title": "Pull scheduler updates from Ingo Molnar",
+      "url": "https://git.kernel.org/torvalds/c/bf76f23aa1c1",
+      "note": "merge"
+    },
+    {
+      "title": "Pull timer core updates from Thomas Gleixner",
+      "url": "https://git.kernel.org/torvalds/c/d614399b281a",
+      "note": "merge"
+    },
+    {
+      "title": "Pull interrupt chip driver updates from Thomas Gleixner",
+      "url": "https://git.kernel.org/torvalds/c/0b29600a304c",
+      "note": "merge"
+    },
+    {
+      "title": "Pull irq updates from Thomas Gleixner",
+      "url": "https://git.kernel.org/torvalds/c/dba3ec9f2ad0",
+      "note": "merge"
+    },
+    {
+      "title": "Pull driver core updates from Danilo Krummrich",
+      "url": "https://git.kernel.org/torvalds/c/22c5696e3fe0",
+      "note": "merge"
+    },
+    {
+      "title": "Pull devicetree updates from Rob Herring",
+      "url": "https://git.kernel.org/torvalds/c/69f2970aad93",
+      "note": "merge"
+    },
+    {
+      "title": "Pull regulator updates from Mark Brown",
+      "url": "https://git.kernel.org/torvalds/c/bf977a9ad33d",
+      "note": "merge"
+    },
+    {
+      "title": "Pull regmap updates from Mark Brown",
+      "url": "https://git.kernel.org/torvalds/c/5339a2aefc35",
+      "note": "merge"
+    },
+    {
+      "title": "Pull power management updates from Rafael Wysocki",
+      "url": "https://git.kernel.org/torvalds/c/53edfecef66b",
+      "note": "merge"
+    },
+    {
+      "title": "Pull more MM updates from Andrew Morton",
+      "url": "https://git.kernel.org/torvalds/c/bdc7f8c5adad",
+      "note": "merge"
+    },
+    {
+      "title": "Pull slab updates from Vlastimil Babka",
+      "url": "https://git.kernel.org/torvalds/c/1af80d00e1e0",
+      "note": "merge"
+    },
+    {
+      "title": "Pull module updates from Petr Pavlu",
+      "url": "https://git.kernel.org/torvalds/c/c8be54240893",
+      "note": "merge"
+    },
+    {
+      "title": "Pull more MM updates from Andrew Morton",
+      "url": "https://git.kernel.org/torvalds/c/fd1f8473503e",
+      "note": "merge"
+    },
+    {
+      "title": "Pull MM updates from Andrew Morton",
+      "url": "https://git.kernel.org/torvalds/c/00c010e130e5",
+      "note": "merge"
+    },
+    {
+      "title": "Pull more power management updates from Rafael Wysocki",
+      "url": "https://git.kernel.org/torvalds/c/976aa630da5b",
+      "note": "merge"
+    },
+    {
+      "title": "Pull pin control updates from Linus Walleij",
+      "url": "https://git.kernel.org/torvalds/c/eafd95ea7484",
+      "note": "merge"
+    },
+    {
+      "title": "Pull clk updates from Stephen Boyd",
+      "url": "https://git.kernel.org/torvalds/c/9f32a03e3e0d",
+      "note": "merge"
+    },
+    {
+      "title": "Pull driver core updates from Greg KH",
+      "url": "https://git.kernel.org/torvalds/c/9d230d500b0e",
+      "note": "merge"
+    },
+    {
+      "title": "Pull devicetree updates from Rob Herring",
+      "url": "https://git.kernel.org/torvalds/c/bf373e4c786b",
+      "note": "merge"
+    },
+    {
+      "title": "Pull workqueue updates from Tejun Heo",
+      "url": "https://git.kernel.org/torvalds/c/91ad250cbe57",
+      "note": "merge"
+    },
+    {
+      "title": "Pull dma-mapping updates from Marek Szyprowski",
+      "url": "https://git.kernel.org/torvalds/c/23022f545610",
+      "note": "merge"
+    },
+    {
+      "title": "Pull power management updates from Rafael Wysocki",
+      "url": "https://git.kernel.org/torvalds/c/c89756bcf406",
+      "note": "merge"
+    },
+    {
+      "title": "Pull regulator updates from Mark Brown",
+      "url": "https://git.kernel.org/torvalds/c/350d9ab73654",
+      "note": "merge"
+    },
+    {
+      "title": "Pull regmap updates from Mark Brown",
+      "url": "https://git.kernel.org/torvalds/c/c971f11dbf1b",
+      "note": "merge"
+    },
+    {
+      "title": "Pull gpio updates from Bartosz Golaszewski",
+      "url": "https://git.kernel.org/torvalds/c/aacc73ceeb8b",
+      "note": "merge"
+    },
+    {
+      "title": "Pull timer core updates from Thomas Gleixner",
+      "url": "https://git.kernel.org/torvalds/c/b1456f6dc167",
+      "note": "merge"
+    },
+    {
+      "title": "Pull clocksource updates from Thomas Gleixner",
+      "url": "https://git.kernel.org/torvalds/c/6376c0770656",
+      "note": "merge"
+    },
+    {
+      "title": "Pull irq controller updates from Thomas Gleixner",
+      "url": "https://git.kernel.org/torvalds/c/c0f182c979cf",
+      "note": "merge"
+    },
+    {
+      "title": "Pull irq core updates from Thomas Gleixner",
+      "url": "https://git.kernel.org/torvalds/c/60c1d948f79d",
+      "note": "merge"
+    },
+    {
+      "title": "Pull scheduler updates from Ingo Molnar",
+      "url": "https://git.kernel.org/torvalds/c/eaed94d1f68c",
+      "note": "merge"
+    },
+    {
+      "title": "Pull locking updates from Ingo Molnar",
+      "url": "https://git.kernel.org/torvalds/c/b3570b00dc30",
+      "note": "merge"
+    },
+    {
+      "title": "Pull more MM updates from Andrew Morton",
+      "url": "https://git.kernel.org/torvalds/c/8c7c1b5506e5",
+      "note": "merge"
+    },
+    {
+      "title": "Pull driver core updatesk from Greg KH",
+      "url": "https://git.kernel.org/torvalds/c/2cd5769fb0b7",
+      "note": "merge"
+    },
+    {
+      "title": "Pull MM updates from Andrew Morton",
+      "url": "https://git.kernel.org/torvalds/c/eb0ece16027f",
+      "note": "merge"
+    },
+    {
+      "title": "Pull modules updates from Petr Pavlu",
+      "url": "https://git.kernel.org/torvalds/c/01d5b167dc23",
+      "note": "merge"
+    },
+    {
+      "title": "Pull pin control updates from Linus Walleij",
+      "url": "https://git.kernel.org/torvalds/c/29d9983b2c31",
+      "note": "merge"
+    },
+    {
+      "title": "Pull regmap updates from Mark Brown",
+      "url": "https://git.kernel.org/torvalds/c/054b7477e3bf",
+      "note": "merge"
+    },
+    {
+      "title": "Pull devicetree updates from Rob Herring",
+      "url": "https://git.kernel.org/torvalds/c/3b9ea5b5ed7e",
+      "note": "merge"
+    },
+    {
+      "title": "Pull clocksource/event updates from Thomas Gleixner",
+      "url": "https://git.kernel.org/torvalds/c/1e1ba8d23dae",
+      "note": "merge"
+    },
+    {
+      "title": "Pull gpio updates from Bartosz Golaszewski",
+      "url": "https://git.kernel.org/torvalds/c/5143840cef6b",
+      "note": "merge"
+    },
+    {
+      "title": "Pull regulator updates from Mark Brown",
+      "url": "https://git.kernel.org/torvalds/c/e2ae6e14d7c4",
+      "note": "merge"
+    },
+    {
+      "title": "Pull power management updates from Rafael Wysocki",
+      "url": "https://git.kernel.org/torvalds/c/7d20aa5c32ac",
+      "note": "merge"
+    },
+    {
+      "title": "Pull timer core updates from Thomas Gleixner",
+      "url": "https://git.kernel.org/torvalds/c/d5048d1176b8",
+      "note": "merge"
+    },
+    {
+      "title": "Pull irq driver updates from Thomas Gleixner",
+      "url": "https://git.kernel.org/torvalds/c/0f4046467450",
+      "note": "merge"
+    },
+    {
+      "title": "Pull irq updates from Thomas Gleixner",
+      "url": "https://git.kernel.org/torvalds/c/43a7eec035a5",
+      "note": "merge"
+    },
+    {
+      "title": "Pull scheduler updates from Ingo Molnar",
+      "url": "https://git.kernel.org/torvalds/c/32b22538bea8",
+      "note": "merge"
+    },
+    {
+      "title": "Pull locking updates from Ingo Molnar",
+      "url": "https://git.kernel.org/torvalds/c/23608993bb22",
+      "note": "merge"
+    },
+    {
+      "title": "Pull workqueue update from Tejun Heo",
+      "url": "https://git.kernel.org/torvalds/c/b05f8fbe0f68",
+      "note": "merge"
+    },
+    {
+      "title": "Pull slab updates from Vlastimil Babka",
+      "url": "https://git.kernel.org/torvalds/c/05b00ffd7a0b",
+      "note": "merge"
+    },
+    {
+      "title": "Pull driver core api addition from Greg KH",
+      "url": "https://git.kernel.org/torvalds/c/ae5fa8ce7ef2",
+      "note": "merge"
+    },
+    {
+      "title": "Pull more power management updates from Rafael Wysocki",
+      "url": "https://git.kernel.org/torvalds/c/f55b0671e3f9",
+      "note": "merge"
+    },
+    {
+      "title": "Pull driver core and debugfs updates from Greg KH",
+      "url": "https://git.kernel.org/torvalds/c/2ab002c755bf",
+      "note": "merge"
+    },
+    {
+      "title": "Pull MM updates from Andrew Morton",
+      "url": "https://git.kernel.org/torvalds/c/9c5968db9e62",
+      "note": "merge"
+    },
+    {
+      "title": "Pull modules updates from Petr Pavlu",
+      "url": "https://git.kernel.org/torvalds/c/41bfad507c04",
+      "note": "merge"
+    },
+    {
+      "title": "Pull devicetree updates from Rob Herring",
+      "url": "https://git.kernel.org/torvalds/c/f345fc7a0706",
+      "note": "merge"
+    },
+    {
+      "title": "Pull pin control updates from Linus Walleij",
+      "url": "https://git.kernel.org/torvalds/c/b746043cb325",
+      "note": "merge"
+    },
+    {
+      "title": "Pull power management updates from Rafael Wysocki",
+      "url": "https://git.kernel.org/torvalds/c/f4b9d3bf44d5",
+      "note": "merge"
+    },
+    {
+      "title": "Pull clk updates from Stephen Boyd",
+      "url": "https://git.kernel.org/torvalds/c/641b0c64b85a",
+      "note": "merge"
+    },
+    {
+      "title": "Pull regulator updates from Mark Brown",
+      "url": "https://git.kernel.org/torvalds/c/7b081a74c07d",
+      "note": "merge"
+    },
+    {
+      "title": "Pull regmap updates from Mark Brown",
+      "url": "https://git.kernel.org/torvalds/c/6f10810ccd6d",
+      "note": "merge"
+    },
+    {
+      "title": "Pull gpio updates from Bartosz Golaszewski",
+      "url": "https://git.kernel.org/torvalds/c/4abae5b6af81",
+      "note": "merge"
+    },
+    {
+      "title": "Pull kthread updates from Frederic Weisbecker",
+      "url": "https://git.kernel.org/torvalds/c/1d6d3992235e",
+      "note": "merge"
+    },
+    {
+      "title": "Pull RCU updates from Uladzislau Rezki",
+      "url": "https://git.kernel.org/torvalds/c/9f3ee94e705a",
+      "note": "merge"
+    },
+    {
+      "title": "Pull slab updates from Vlastimil Babka",
+      "url": "https://git.kernel.org/torvalds/c/ad37df3bcb1c",
+      "note": "merge"
+    },
+    {
+      "title": "Pull interrupt subsystem updates from Thomas Gleixner",
+      "url": "https://git.kernel.org/torvalds/c/4c551165e771",
+      "note": "merge"
+    },
+    {
+      "title": "Pull timer and timekeeping updates from Thomas Gleixner",
+      "url": "https://git.kernel.org/torvalds/c/f200c315da80",
+      "note": "merge"
+    },
+    {
+      "title": "Pull scheduler updates from Ingo Molnar",
+      "url": "https://git.kernel.org/torvalds/c/62de6e168526",
+      "note": "merge"
+    },
+    {
+      "title": "Pull locking updates from Ingo Molnar",
+      "url": "https://git.kernel.org/torvalds/c/8838a1a2d219",
+      "note": "merge"
+    },
+    {
+      "title": "Pull driver core updates from Greg KH",
+      "url": "https://git.kernel.org/torvalds/c/55cb93fd243b",
+      "note": "merge"
+    },
+    {
+      "title": "Pull morepower management updates from Rafael Wysocki",
+      "url": "https://git.kernel.org/torvalds/c/79525e24af2f",
+      "note": "merge"
+    },
+    {
+      "title": "Pull memblock updates from Mike Rapoport",
+      "url": "https://git.kernel.org/torvalds/c/ab952fc5c736",
+      "note": "merge"
+    },
+    {
+      "title": "Pull modules updates from Luis Chamberlain",
+      "url": "https://git.kernel.org/torvalds/c/b5361254c902",
+      "note": "merge"
+    },
+    {
+      "title": "Pull pin control updates from Linus Walleij",
+      "url": "https://git.kernel.org/torvalds/c/2d32fba02e0e",
+      "note": "merge"
+    },
+    {
+      "title": "Pull slab updates from Vlastimil Babka",
+      "url": "https://git.kernel.org/torvalds/c/e06635e26cd8",
+      "note": "merge"
+    },
+    {
+      "title": "Pull MM updates from Andrew Morton",
+      "url": "https://git.kernel.org/torvalds/c/5c00ff742bf5",
+      "note": "merge"
+    },
+    {
+      "title": "Pull more power management updates from Rafael Wysocki",
+      "url": "https://git.kernel.org/torvalds/c/6f9baa9b92c2",
+      "note": "merge"
+    },
+    {
+      "title": "Pull dma-mapping updates from Christoph Hellwig",
+      "url": "https://git.kernel.org/torvalds/c/51ae62a12c24",
+      "note": "merge"
+    },
+    {
+      "title": "Pull devicetree updates from Rob Herring",
+      "url": "https://git.kernel.org/torvalds/c/e6de688e93a9",
+      "note": "merge"
+    },
+    {
+      "title": "Pull gpio updates from Bartosz Golaszewski",
+      "url": "https://git.kernel.org/torvalds/c/131561f2ca07",
+      "note": "merge"
+    },
+    {
+      "title": "Pull regulator updates from Mark Brown",
+      "url": "https://git.kernel.org/torvalds/c/4bd37a902ab6",
+      "note": "merge"
+    },
+    {
+      "title": "Pull regmap updates from Mark Brown",
+      "url": "https://git.kernel.org/torvalds/c/37c7d3538af4",
+      "note": "merge"
+    },
+    {
+      "title": "Pull workqueue updates from Tejun Heo",
+      "url": "https://git.kernel.org/torvalds/c/d6b6d39054fa",
+      "note": "merge"
+    },
+    {
+      "title": "Pull timer updates from Thomas Gleixner",
+      "url": "https://git.kernel.org/torvalds/c/bf9aa14fc523",
+      "note": "merge"
+    },
+    {
+      "title": "Pull interrupt subsystem updates from Thomas Gleixner",
+      "url": "https://git.kernel.org/torvalds/c/5c2b05084833",
+      "note": "merge"
+    },
+    {
+      "title": "Pull scheduler updates from Ingo Molnar",
+      "url": "https://git.kernel.org/torvalds/c/3f020399e4f1",
+      "note": "merge"
+    },
+    {
+      "title": "Pull locking updates from Ingo Molnar",
+      "url": "https://git.kernel.org/torvalds/c/364eeb79a213",
+      "note": "merge"
+    },
+    {
+      "title": "Pull RCU updates from Frederic Weisbecker",
+      "url": "https://git.kernel.org/torvalds/c/8cdf2d19038f",
+      "note": "merge"
+    },
+    {
+      "title": "Pull power management updates from Rafael Wysocki",
+      "url": "https://git.kernel.org/torvalds/c/ad52c55e1d3a",
+      "note": "merge"
+    }
+  ],
+  "draftMetadata": {
+    "source": "kernel-git",
+    "kind": "lts",
+    "range": "v6.12..v6.18",
+    "ai": true,
+    "counts": {
+      "commits": 80035,
+      "merges": 2753,
+      "focusChanges": 158,
+      "removedApis": 2222,
+      "usedRemovedApis": 895,
+      "exportChanges": 233,
+      "driverKconfig": 115,
+      "campaigns": 134,
+      "broad": 87
+    }
+  }
+}
