@@ -1,0 +1,146 @@
+{
+  "id": "2026-11-15-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-11-15 fwnode PCS API — 툴체인",
+  "headline": "phylink fwnode PCS 통합과 Rust 보안·API 정리가 net·PWM·iov_iter·빌드 Kconfig까지 한꺼번에 움직였습니다.",
+  "date": "2026-11-15",
+  "summary": "net-next v20는 fwnode PCS producer/consumer와 phylink late attach까지 묶어 PCS 수명주기를 표준화하려 합니다. 같은 날 Rust 쪽은 iov_iter 수명·PWM 정렬·PHY MDIO 락 가정을 손보고 SPI helper와 x86 크로스 빌드 Kconfig도 보강됩니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "툴체인",
+    "Rust",
+    "네트워크"
+  ],
+  "highlights": [
+    {
+      "title": "net: fwnode PCS 지원 도입",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "네트워크 담당 개발자",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/linux-devicetree/20261114104426.235620-11-ansuelsmth@gmail.com/T/",
+      "if": "SoC나 10G 보드에서 MAC 밖 PCS를 phylink로 묶어야 한다면",
+      "do": "v20 fwnode_pcs API와 phylink DT 파싱·late provider attach 흐름을 cover letter 기준으로 설계하세요",
+      "verify": "devicetree 스레드 원문에서 .mac_select_pcs 우회 제거 방향을 확인하세요"
+    },
+    {
+      "title": "rust: copy_from_iter_raw 수명 수정",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "관련 커널 서브시스템 담당자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/14/255",
+      "if": "in-kernel Rust에서 iov_iter 복사 API를 쓰거나 백포트를 검토한다면",
+      "do": "반환 슬라이스가 out 버퍼에 묶이도록 한 패치 리비전을 추적하고 머지 여부를 확인하세요",
+      "verify": "openwall 패치와 Rust-for-Linux 이슈 1265의 KASAN UAF 설명을 대조하세요"
+    },
+    {
+      "title": "rust: pwm Chip::new 과도 정렬 거부",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "드라이버 담당 개발자",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/rust-for-linux/caddec5478a0d39a73152247a60bc21b3c609cc7.1794600927.git.pgovind2@uci.edu/T/",
+      "if": "Rust PWM 드라이버 private 데이터 타입 정렬을 정한다면",
+      "do": "ARCH_DMA_MINALIGN을 넘는 align_of::<T>()는 compile-time const_assert로 빌드 실패하도록 맞추세요",
+      "verify": "패치 인용과 C pwmchip_priv 정렬 로직을 함께 읽으세요"
+    },
+    {
+      "title": "rust: PHY Driver read_mmd/write_mmd 제거",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "네트워크 담당 개발자",
+      "verifyLink": "https://lists.openwall.net/netdev/2026/11/13/216",
+      "if": "Rust PHY 바인딩에서 MMD 접근 훅을 설계 중이라면",
+      "do": "MDIO bus lock만 잡은 C 호출 경로와 맞지 않는 훅은 제거된 방향에 맞춰 MaybeLocked 기반 API를 다시 설계하세요",
+      "verify": "netdev 스레드의 C쪽 호출 인용과 patchew 시리즈 설명을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**rust: pwm: reject over-aligned driver data in `Chip::new()`**\n\nChip::new()에 compile-time const_assert를 넣어 드라이버 private 데이터 타입 T의 정렬이 ARCH_DMA_MINALIGN(pwmchip_priv 정렬)을 넘으면 빌드가 실패하도록 합니다.\n\n영향: C pwmchip_alloc이 보장하는 정렬보다 큰 align_of::<T>()를 쓰면 misaligned drvdata 참조로 Rust 메모리 안전 전제가 깨질 수 있어, PWM Rust 드라이버·바인딩 유지보수 담당자는 머지 후 정렬 요구를 타입 수준에서 확인해야 합니다.\n\n> Reject over-aligned types at compile time by asserting that T's alignment does not exceed ARCH_DMA_MINALIGN.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/rust-for-linux/caddec5478a0d39a73152247a60bc21b3c609cc7.1794600927.git.pgovind2@uci.edu/T/)\n\n**rust: kernel: fix lifetime of copy_from_iter_raw**\n\nIovIterSource::copy_from_iter_raw 시그니처에 명시적 수명을 붙여 반환 &mut [u8]이 out 버퍼가 아니라 self에 묶이지 않도록 수정합니다.\n\n영향: 수명 치환 오류는 안전 Rust 호출자가 버퍼를 해제한 뒤에도 슬라이스를 쓸 수 있는 공개 API 불건전(잠재 UAF)이므로, Rust in-kernel iov_iter 사용자는 백포트·머지 여부를 추적해야 합니다. 후보 lore URL과 openwall Message-ID가 달라 동일 패치 리비전인지는 확인이 필요합니다.\n\n> Explicitly bind the return lifetime to `out` so the returned slice cannot outlive its backing buffer.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/14/255)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**net: pcs: Introduce support for fwnode PCS**\n\nnet-next v20 시리즈가 fwnode 기반 PCS producer/consumer API(fwnode_pcs_add_provider 등)를 도입하고, phylink가 DT/firmware에서 PCS 목록을 파싱·선택하며 늦은 provider attach·removal까지 처리하도록 확장합니다.\n\n영향: MAC 밖에 별도 PCS가 붙는 SoC/10G 보드에서 phylink가 PCS 수명주기를 일관되게 다루지 못하던 문제를 줄여, netdev·devicetree 드라이버 작성자가 .mac_select_pcs 우회 없이 표준 패턴을 따를 수 있습니다. v20의 netdev/devicetree 리뷰 피드백·머지 시점은 아직 미확인입니다.\n\n> This series introduce a most awaited feature that is correctly provide PCS with fwnode without having to use specific export symbol and additional handling of PCS in phylink.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-devicetree/20261114104426.235620-11-ansuelsmth@gmail.com/T/)\n\n**rust: net: phy: drop read_mmd and write_mmd from Driver**\n\nRust PHY Driver 트레이트와 vtable에서 read_mmd/write_mmd 훅과 관련 어댑터를 제거합니다. C측은 MDIO bus lock만 잡은 채 콜백을 호출할 수 있어, 기존 SAFETY 주석(항상 phy_device->lock)과 맞지 않았습니다.\n\n영향: 향후 Rust PHY에서 MMD 접근을 추가하기 전에 잘못된 락 가정으로 MDIO 이중 잠금·데드락을 피하고, MaybeLocked 락 컨텍스트 작업과 맞는 API를 다시 설계할 여지를 만듭니다.\n\n> The register accessors on `Device` take the bus lock again, so using them there would deadlock. No Rust driver implements these callbacks\n\n[원문 확인](https://patchew.org/linux/20261114-exp-phy-rs-maybelocked-v2-0-19a4dd658b6b@gmail.com/20261114-exp-phy-rs-maybelocked-v2-1-19a4dd658b6b@gmail.com/)\n\n**rust: helpers: add SPI helpers**\n\nRust에서 직접 링크할 수 없는 C static inline SPI 루틴(spi_unregister_driver, spi_write/read, 메시지 헬퍼)용 rust_helper_* C 래퍼와 bindings_helper.h의 <linux/spi/spi.h> 포함을 추가합니다(CONFIG_SPI 가드).\n\n영향: 동일 SPI Rust 추상화 시리즈의 기반으로, SPI Rust 드라이버 작업·리뷰 담당자는 helpers 없이는 바인딩이 막히는 지점을 줄일 수 있습니다. v8에서 spi_write/read helper가 message API로 바뀐 이유와 최종 시리즈 API 표면은 확인이 필요합니다.\n\n> Add C helpers for the SPI functions that are `static inline` in C and therefore cannot be accessed from Rust directly\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/14/155)\n\n**x86/build: Do not allow X86_NATIVE_CPU to be enabled on non-x86_64 hosts**\n\nKconfig에서 CONFIG_X86_NATIVE_CPU가 X86_64뿐 아니라 빌드 호스트 uname -m이 x86_64일 때만 선택 가능하도록 depends 조건을 강화합니다.\n\n영향: aarch64 호스트에서 clang으로 x86_64 크로스 빌드 시 -march=native가 호스트 CPU feature로 확장되어 경고 폭주하는 문제를 막아, LLVM/clang 크로스 빌드·CI 담당자의 로그 가독성이 개선됩니다. clang 드라이버 측 -march=native/host 타깃 검증 FIXME의 상용 툴체인 수정 일정은 미확인입니다.\n\n> When cross compiling x86_64 from an aarch64 machine using clang with CONFIG_X86_NATIVE_CPU enabled, there may be a slew of warnings from each .c file\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/14/73)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "net-next v20 fwnode PCS cover (devicetree)",
+      "url": "https://lore-kernel.gnuweeb.org/linux-devicetree/20261114104426.235620-11-ansuelsmth@gmail.com/T/",
+      "note": "thread"
+    },
+    {
+      "title": "phylink late PCS provider attach (v19)",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/13/427",
+      "note": "thread"
+    },
+    {
+      "title": "rust PHY drop read_mmd/write_mmd (patchew)",
+      "url": "https://patchew.org/linux/20261114-exp-phy-rs-maybelocked-v2-0-19a4dd658b6b@gmail.com/20261114-exp-phy-rs-maybelocked-v2-1-19a4dd658b6b@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "C-side MDIO lock context for PHY MMD",
+      "url": "https://lists.openwall.net/netdev/2026/11/13/216",
+      "note": "thread"
+    },
+    {
+      "title": "rust pwm Chip::new alignment assert",
+      "url": "https://lore-kernel.gnuweeb.org/rust-for-linux/caddec5478a0d39a73152247a60bc21b3c609cc7.1794600927.git.pgovind2@uci.edu/T/",
+      "note": "thread"
+    },
+    {
+      "title": "pwmchip_priv alignment (drivers/pwm/core.c)",
+      "url": "https://github.com/torvalds/linux/blob/master/drivers/pwm/core.c",
+      "note": "commit"
+    },
+    {
+      "title": "rust copy_from_iter_raw lifetime fix",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/14/255",
+      "note": "thread"
+    },
+    {
+      "title": "Rust-for-Linux issue 1265 (KASAN UAF)",
+      "url": "https://github.com/Rust-for-Linux/linux/issues/1265",
+      "note": "article"
+    },
+    {
+      "title": "rust helpers SPI (v8)",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/14/155",
+      "note": "thread"
+    },
+    {
+      "title": "SPI Rust abstraction series index (patchew)",
+      "url": "https://patchew.org/linux/tencent._5FCCF7B170CBDF37A5E3E689714FA4B99F4B0A@qq.com/",
+      "note": "thread"
+    },
+    {
+      "title": "X86_NATIVE_CPU Kconfig on non-x86_64 host",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/14/73",
+      "note": "thread"
+    },
+    {
+      "title": "Kconfig depends host uname check",
+      "url": "https://lkml.indiana.edu/2611.1/20909.html",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-14T18:33:18.657Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,108 @@
+{
+  "id": "2026-11-15-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-11-15 HDMI connector·EDID — Linux GPU·AI",
+  "headline": "DRM HDMI 25패치 시리즈의 KUnit·SPD 보안 정리와 DMT 1080p60 sync 회귀 수정이 dri-devel에 올라왔습니다.",
+  "date": "2026-11-15",
+  "summary": "Collabora의 HDMI connector 인프라 정리 시리즈가 drmm_connector_hdmi_init() ABI와 KUnit, SPD strtomem_pad() 경로를 다루고 있습니다. Jernej Skrabec의 EDID DMT 0x52 sync 극성 수정은 CTA/VIC 매칭 실패 증상을 겨냥합니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "drm/tests: connector — drmm_connector_hdmi_init() KUnit 전환",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "DRM KMS HDMI connector·KUnit 테스트 및 dw_hdmi 계열 패치 시리즈 추적 담당",
+      "verifyLink": "https://lore.jethome.com/lkml/20261114-drm-conn-hdmi-cleanup-v1-5-20e8a33a2286@collabora.com/",
+      "if": "25패치 HDMI connector API 정리와 dw_hdmi QP 후속을 추적 중이라면",
+      "do": "PATCH 05/25에서 drm_connector_hdmi_funcs 이동과 NULL hdmi_funcs 등록 실패 검증을 먼저 읽으세요",
+      "verify": "KUnit이 신규 시그니처를 반영했는지 lore 스레드 원문을 확인하세요"
+    },
+    {
+      "title": "drm/edid: DMT 1920x1080@60Hz sync 극성 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "drm/edid·modeset·HDMI display path maintainer 및 userspace 모드 선택 경로 담당",
+      "verifyLink": "https://lore.jethome.com/lkml/20261114180711.207722-1-jernej.skrabec@gmail.com/",
+      "if": "EDID DMT 1080p60 선택 시 sync·AVI VIC 증상을 본다면",
+      "do": "0x52 항목 PHSYNC|PVSYNC 변경과 drm_match_cea_mode()·VIC 16 영향을 패치 설명과 대조하세요",
+      "verify": "Fixes bfcd74d2aeda 및 stable 백포트 필요성은 maintainer 쪽 확인이 필요합니다"
+    },
+    {
+      "title": "video/hdmi: SPD vendor/product — strtomem_pad()",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "drivers/video/hdmi·DRM HDMI SPD InfoFrame 경로 및 stable 백포트 담당",
+      "verifyLink": "https://lore.jethome.com/lkml/20261114-drm-conn-hdmi-cleanup-v1-1-20e8a33a2286@collabora.com/",
+      "if": "HDMI SPD unpack 경로와 stable@vger # v6.1+ 백포트를 검토한다면",
+      "do": "strtomem_pad() 도입과 __nonstring 표기가 wire 비-NUL 데이터 경로를 어떻게 막는지 패치를 따라가세요",
+      "verify": "Fixes: 태그(2c676f378edb vs 35bed3fa9ec5) 확정과 mirror 교차검증이 필요할 수 있으니 Sashiko 리뷰 스레드를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm/edid: Fix sync polarity of DMT 1920x1080@60Hz**\n\nJernej Skrabec 단일 패치가 drm_dmt_modes의 DMT 0x52(1920x1080@60) sync 플래그를 NHSYNC|NVSYNC에서 PHSYNC|PVSYNC로 바꿉니다(Fixes: bfcd74d2aeda).\n\n영향: 잘못된 극성 때문에 drm_match_cea_mode()가 VIC 16과 매치하지 못해 중복 모드·잘못된 sync·AVI VIC 누락·RGB full range가 나올 수 있어 EDID 기반 HDMI 모드 나열을 다루는 GPU 스택이 직접 영향을 받습니다.\n\n> When userspace picks it, the sink receives the wrong sync polarities, and because the mode isn't recognized as a CTA format, the AVI InfoFrame carries no VIC\n\n[원문 확인](https://lore.jethome.com/lkml/20261114180711.207722-1-jernej.skrabec@gmail.com/)\n\n**video/hdmi: Copy SPD vendor/product with strtomem_pad()**\n\n[PATCH 01/25]가 hdmi_spd_infoframe_init()에서 strlen/memcpy 대신 strtomem_pad()를 쓰고 vendor/product 필드를 __nonstring으로 표시하며 stable@vger.kernel.org # v6.1+를 표시합니다.\n\n영향: unpack 경로에서 wire 데이터가 NUL 종료되지 않을 때 strlen()이 버퍼를 넘어읽을 수 있어 DRM HDMI InfoFrame·drivers/video/hdmi 사용자가 백포트 대상을 봐야 합니다(신뢰도 medium).\n\n> the open-coded strlen() could run past the end of the buffer in the hdmi_spd_infoframe_unpack() path, where the names come straight from the wire\n\n[원문 확인](https://lore.jethome.com/lkml/20261114-drm-conn-hdmi-cleanup-v1-1-20e8a33a2286@collabora.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/tests: connector: Convert to drmm_connector_hdmi_init()**\n\nCristian Ciocaltea의 [PATCH 05/25]가 DRM HDMI connector KUnit을 drmm_connector_hdmi_init() 신규 시그니처에 맞추고, 테스트별 hdmi_funcs 사본을 drm_connector_init_priv에 두며 NULL hdmi_funcs 등록 실패를 검증합니다.\n\n영향: vendor·product·supported_formats·max_bpc가 drm_connector_hdmi_funcs로 이동하는 ABI 변화를 테스트가 선행 반영해 드라이버·reviewer가 실수 패턴을 미리 볼 수 있습니다. drm-misc-next 합류 일정과 dw-hdmi-qp 시리즈 선행 의존은 확인이 필요합니다.\n\n> Since struct drm_connector_hdmi_funcs is now mandatory, as it carries the HDMI controller capabilities, also verify that registering an HDMI connector without it fails.\n\n[원문 확인](https://lore.jethome.com/lkml/20261114-drm-conn-hdmi-cleanup-v1-5-20e8a33a2286@collabora.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "high",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/tests: connector — PATCH 05/25",
+      "url": "https://lore.jethome.com/lkml/20261114-drm-conn-hdmi-cleanup-v1-5-20e8a33a2286@collabora.com/",
+      "note": "thread"
+    },
+    {
+      "title": "DRM HDMI connector cleanup — cover 00/25",
+      "url": "https://patchew.org/linux/20261114-drm-conn-hdmi-cleanup-v1-0-20e8a33a2286@collabora.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/edid: DMT 1920x1080@60Hz sync fix",
+      "url": "https://lore.jethome.com/lkml/20261114180711.207722-1-jernej.skrabec@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/edid: Add DMT modes with ID > 0x50",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=bfcd74d2aeda",
+      "note": "commit"
+    },
+    {
+      "title": "video/hdmi: SPD strtomem_pad — PATCH 01/25",
+      "url": "https://lore.jethome.com/lkml/20261114-drm-conn-hdmi-cleanup-v1-1-20e8a33a2286@collabora.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Sashiko review — Fixes: tag",
+      "url": "https://lore.kernel.org/dri-devel/sashiko-outbox-214896@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "drivers/video: Fix -Wstringop-truncation in hdmi.c",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=35bed3fa9ec5",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-14T18:42:40.183Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

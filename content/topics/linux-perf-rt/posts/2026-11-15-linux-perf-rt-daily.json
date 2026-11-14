@@ -1,0 +1,103 @@
+{
+  "id": "2026-11-15-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-11-15 TCP fixed-ID v2 — Perf·RT",
+  "headline": "터널·BPF skb 경로 TCP fixed-ID GSO 플래그 v2가 회귀 수정 후보로 올라왔고, sockmap 문서가 verifier 정책과 맞춰졌습니다.",
+  "date": "2026-11-15",
+  "summary": "net 시리즈 v2는 SKB_GSO_TCP_FIXEDID를 innermost 헤더 기준으로 되돌리고 캡슐화마다 플래그를 옮기던 v1 접근을 버립니다. bpf-next 문서 패치는 sockmap 갱신 제한과 selftest 경로를 최신 상태로 맞춥니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "TCP fixed-ID GSO 플래그 v2",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "BPF skb helper·sockmap/tc 개발자 및 터널 GSO를 쓰는 네트워크 스택 유지보수 담당",
+      "verifyLink": "https://patchew.org/linux/cover.1794139176.git.julius@bairaktaris.de/",
+      "if": "터널·BPF skb 조정 경로에서 GRO/GSO와 skb 프로그램을 함께 다루면",
+      "do": "v2에서 innermost에 SKB_GSO_TCP_FIXEDID·바깥은 SKB_GSO_TCP_FIXEDID_OUTER 정의와 iptunnel_pull_offloads·bpf_skb_net_shrink 정리를 패치 노트 기준으로 검토하세요",
+      "verify": "Patchew 커버와 Fixes 대상 커밋 3271f19bf7b9 원문에서 플래그 의미 변경 범위를 확인하세요"
+    },
+    {
+      "title": "sockmap 문서·verifier 정책 정렬",
+      "priority": "중",
+      "impactType": "project",
+      "affectedAudience": "BPF map·sockmap 프로그램 및 selftest 작성자",
+      "verifyLink": "https://ci.syzbot.org/series/47a12858-8f80-4847-9a07-b753197464ec",
+      "if": "tracing·sk_lookup 등 허용 컨텍스트 밖에서 sockmap/sockhash를 설계하려 한다면",
+      "do": "be39165224d0 이후 tc·xdp·socket_filter·flow_dissector에서 update·delete가 거부된다는 문서 반영을 읽고 프로그램·selftest 경로를 고치세요",
+      "verify": "syzbot 시리즈와 be39165224d0 커밋 메시지로 제한 문구와 selftest 파일명을 대조하세요"
+    },
+    {
+      "title": "spi-atmel 짧은 PIO 폴링 v2",
+      "priority": "하",
+      "impactType": "performance",
+      "affectedAudience": "PREEMPT_RT 사용자 및 SPI 마스터 드라이버·레지스터 IO 경로 담당",
+      "verifyLink": "https://lore.jethome.com/lkml/20261113-spi-atmel-poll-short-pio-transfers-v2-1-f280762685e2@microchip.com/",
+      "if": "PREEMPT_RT에서 30µs 미만 SPI PIO 지연과 threaded IRQ 상호작용을 추적한다면",
+      "do": "v2의 폴링 중 IRQ 마스킹·poll 플래그 설명이 어제 논의 대비 진척인지 스레드 본문만 짚어 보세요",
+      "verify": "lore·openwall 스레드에서 PREEMPT_RT threaded handler 경합 문단을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**net: keep the TCP fixed-ID flags on the header they describe**\n\nv2 시리즈는 SKB_GSO_TCP_FIXEDID를 다시 가장 안쪽(innermost) IPv4 헤더에 두고 SKB_GSO_TCP_FIXEDID_INNER 대신 SKB_GSO_TCP_FIXEDID_OUTER로 바깥 헤더를 표기하며, 캡슐화마다 플래그를 옮기던 v1 접근을 버립니다. decapsulation은 iptunnel_pull_offloads()와 bpf_skb_net_shrink()에서 바깥 플래그를 지우고, mlx5·sfc 드라이버를 새 플래그에 맞춥니다.\n\n영향: BPF skb 조정·터널 경로에서 잘못된 fixed-ID GSO 상태가 세그먼트별 IP ID를 깨뜨릴 수 있어, skb 프로그램과 tunneled GRO/GSO를 함께 다루는 eBPF·네트워킹 추적자에게 직접적인 회귀 수정 후보입니다.\n\n> Patch 1 lets SKB_GSO_TCP_FIXEDID describe the innermost header again and replaces the inner flag with SKB_GSO_TCP_FIXEDID_OUTER, as Alexei suggested in review of v1.\n\n[원문 확인](https://patchew.org/linux/cover.1794139176.git.julius@bairaktaris.de/)\n\nmainline 머지 여부와 netdev 쪽 리뷰 반응은 아직 확인하지 못했습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Documentation/bpf: Fix stale references in map docs**\n\nDocumentation/bpf의 sockmap 문서에 be39165224d0 이후 tc·xdp·socket_filter·flow_dissector에서 sockmap/sockhash 갱신이 거부된다는 제한을 반영하고, 삭제된 selftest 경로 참조를 최신 파일명으로 고칩니다.\n\n영향: sockmap을 tracing·sk_lookup 등 허용된 컨텍스트에서만 쓰는지 문서와 실제 verifier 정책이 어긋나면 잘못된 BPF 프로그램 설계로 이어지므로, map API를 추적하는 독자에게 실무 기준을 맞춥니다.\n\n> Documentation/bpf: Fix stale references in map docs\n\n[원문 확인](https://ci.syzbot.org/series/47a12858-8f80-4847-9a07-b753197464ec)\n\n**spi: atmel: poll short PIO transfers**\n\nspi-atmel 드라이버가 예상 전송 시간이 30µs 미만인 PIO 전송에서 인터럽트·completion 대신 상태 레지스터 폴링을 사용하도록 바꾸고, 폴링 중 threaded IRQ가 상태를 뺏어가지 못하게 락 아래 poll 플래그와 IRQ 마스킹을 추가합니다(v2).\n\n영향: PREEMPT_RT에서 지연된 threaded 핸들러가 폴링과 경합할 수 있다는 점을 v2가 명시해, 짧은 SPI 레지스터 IO 지연과 RT IRQ 모델 상호작용을 추적하는 실시간 렌즈 독자에게 의미 있습니다.\n\n> Such an interrupt can be delivered while a poll is in progress, and with PREEMPT_RT its threaded handler can run at any later time.\n\n[원문 확인](https://lore.jethome.com/lkml/20261113-spi-atmel-poll-short-pio-transfers-v2-1-f280762685e2@microchip.com/)\n\nlinux-rt-devel 트리 적용·베이스 브랜치(일반 spi vs -rt)는 본문에서 추가 확인하지 않았습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "net: keep the TCP fixed-ID flags on the header they describe (cover)",
+      "url": "https://patchew.org/linux/cover.1794139176.git.julius@bairaktaris.de/",
+      "note": "thread"
+    },
+    {
+      "title": "net: gso: restore ids of outer ip headers correctly",
+      "url": "https://github.com/torvalds/linux/commit/3271f19bf7b9df665549666d789b9f126b4420c7",
+      "note": "commit"
+    },
+    {
+      "title": "Documentation/bpf: Fix stale references in map docs",
+      "url": "https://ci.syzbot.org/series/47a12858-8f80-4847-9a07-b753197464ec",
+      "note": "thread"
+    },
+    {
+      "title": "bpf, sockmap: Disallow update and delete from tc, xdp, socket_filter and flow_dissector",
+      "url": "https://github.com/torvalds/linux/commit/be39165224d03d92a05f62b9ea10eec089365480",
+      "note": "commit"
+    },
+    {
+      "title": "spi: atmel: poll short PIO transfers v2",
+      "url": "https://lore.jethome.com/lkml/20261113-spi-atmel-poll-short-pio-transfers-v2-1-f280762685e2@microchip.com/",
+      "note": "thread"
+    },
+    {
+      "title": "spi-atmel short PIO poll (openwall mirror)",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/13/2075",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-14T18:38:18.383Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

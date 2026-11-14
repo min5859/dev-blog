@@ -1,0 +1,133 @@
+{
+  "id": "2026-11-15-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-11-15 MACB·execmem 회귀 — Arch/Platform",
+  "headline": "RISC-V macb jumbo RX 드롭 수정과 RV64 execmem PGD 회귀 패치가 11월 스레드에서 다시 부각됐고, Bao VirtIO·MT8189 GMAC 지원도 진행 중이다.",
+  "date": "2026-11-15",
+  "summary": "Han Gao의 macb JML 조정과 Karl Mehltretter의 CONFIG_EXECMEM 기반 모듈 VA 사전 할당이 RISC-V 보드·모듈리스 BPF 구성의 안정성과 직결된다. João Peixoto Bao v7과 MediaTek MT8189 stmmac v5는 arm64·RISC-V 플랫폼 bring-up 담당이 따라갈 변경이다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "net: macb: limit jumbo frames to the RX buffer size",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Cadence GEM/macb 및 RISC-V·FPGA 이더넷 보드 담당",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/103946.html",
+      "if": "SiFive FU740 등에서 VLAN·jumbo 트래픽 시 RX 드롭과 \"not whole frame pointed by descriptor\" dmesg가 보이면,",
+      "do": "macb_configure_dma()에서 JML을 RX 버퍼 크기·MTU에 맞추는 Fixes 시리즈 적용 여부를 확인하세요.",
+      "verify": "net 드라이버 트리 라우팅·netdev maintainer 리뷰 일정은 아직 확인이 필요합니다."
+    },
+    {
+      "title": "riscv: mm: Pre-allocate module page tables for execmem",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "RV64 BPF·execmem·모듈리스 커널 구성 담당",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/103944.html",
+      "if": "CONFIG_MODULES=n·CONFIG_BPF_JIT=y RV64 제품에서 BPF JIT 팩 할당 시 PGD 없음 Oops가 의심되면,",
+      "do": "pgtable_cache_init()의 CONFIG_EXECMEM 조건 v2와 2c9e5d4a0082 이후 stable 백포트 여부를 추적하세요.",
+      "verify": "Acked-by 이후 추가 코멘트·stable 큐 등재 시점은 확인이 필요합니다."
+    },
+    {
+      "title": "virt: bao: add Bao hypervisor IPC and I/O dispatcher drivers",
+      "priority": "중",
+      "impactType": "project",
+      "affectedAudience": "Bao 하이퍼바이저·임베디드 VirtIO 백엔드 개발자",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/103947.html",
+      "if": "arm64·RISC-V 위 Bao로 멀티 게스트 VirtIO 브리지를 준비 중이면,",
+      "do": "v7의 IPC misc·/dev/bao I/O 디스패처와 KVM 패턴 irqfd shutdown 순서 변경을 리뷰 스레드를 따라가세요.",
+      "verify": "virt maintainer v7 리뷰와 net-next 대신 어느 트리로 갈지는 확인이 필요합니다."
+    },
+    {
+      "title": "net: stmmac: mediatek: add support for MT8189 SoC",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "MediaTek Genio·MT8189/MT8371 플랫폼·디바이스트리 담당",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-November/1200752.html",
+      "if": "Genio 520/720 EVK에서 MT8189 GMAC bring-up 중 링크가 불안정하면,",
+      "do": "mediatek,mt8189-gmac의 pericfg 0x270·180ps 지연 단계·TX 클록 설정이 net-next v5와 일치하는지 확인하세요.",
+      "verify": "bindings 패치와 함께 merge queue에 올라가는 시점은 확인이 필요합니다."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**net: macb: limit jumbo frames to the RX buffer size**\n\nHan Gao 패치는 GEM/macb에서 JML을 고정 jumbo_max_len 대신 MTU에 따라 바뀌는 RX 버퍼 크기에 맞추도록 macb_configure_dma()로 옮겨, 한 버퍼를 넘는 프레임이 디스크립터에 쪼개져 gem_rx()에서 조용히 버려지던 동작을 막는다.\n\n영향: SiFive FU740 등 MACB jumbo를 쓰는 RISC-V 보드에서 VLAN·jumbo 트래픽 시 RX 드롭과 dmesg 노이즈가 나면 이 Fixes 시리즈 적용 여부를 바로 확인해야 한다.\n\n> Set JML from the RX buffer size in macb_configure_dma(), so that it follows MTU changes and longer frames are dropped by the MAC instead.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-November/103946.html)\n\n> Seen on a SiFive FU740 with the default MTU: every jumbo frame on the network caused two \"not whole frame pointed by descriptor\" errors.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-November/103946.html)\n\n**riscv: mm: Pre-allocate module page tables for execmem**\n\nKarl Mehltretter v2는 pgtable_cache_init()에서 모듈 VA 범위 사전할당 조건을 CONFIG_MODULES에서 CONFIG_EXECMEM으로 바꿔 CONFIG_BPF_JIT=y·CONFIG_MODULES=n 구성에서 BPF JIT 팩 할당 시 PGD 없음 Oops를 막는다.\n\n영향: 모듈 없이 BPF/XDP만 쓰는 RV64 제품 커널은 2c9e5d4a0082 이후 execmem 회귀 수정 머지·stable 백포트 여부가 네트워킹 스택 안정성에 직결된다.\n\n> Use CONFIG_EXECMEM for the module-range pre-allocation, as powerpc does for its execmem page-table setup. Both CONFIG_MODULES and CONFIG_BPF_JIT select it.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-October/101629.html)\n\n> A friendly ping on v2 of this RV64 execmem page-table fix. Is anything else needed from my side?\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-November/103944.html)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**virt: bao: add Bao hypervisor IPC and I/O dispatcher drivers**\n\nJoão Peixoto v7는 Bao 정적 파티셔닝 하이퍼바이저용 게스트 IPC 공유메모리 드라이버·VirtIO 백엔드 I/O 디스패처·UAPI·MAINTAINERS를 제출했고, v6 Sashiko 리뷰의 irqfd EPOLLHUP/teardown 경쟁을 KVM 패턴으로 정리했다.\n\n영향: arm64·RISC-V 위 Bao로 안전·임베디드 멀티 게스트를 돌리는 플랫폼 담당은 커널 쪽 VirtIO 브리지가 머지되기 전 v7의 lock·shutdown 순서 변경을 따라가야 한다.\n\n> This series adds guest-side drivers for the Bao static-partitioning hypervisor: an IPC shared-memory driver, an I/O dispatcher that lets a backend guest service VirtIO I/O for frontend guests.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-November/103947.html)\n\n> irqfds now follow KVM: an irqfd is active while it is on its device model's list, and whichever path deactivates it removes it from the list and queues its shutdown under the same spinlock.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-November/103947.html)\n\n**riscv: mm: Trace TLB flush requests**\n\nRoman Storozhenko v7은 flush_tlb_all()·__flush_tlb_range()에 riscv_tlb:riscv_tlb_flush_request 트레이스포인트를 두어 범위·stride·ASID·타깃 CPU 마스크·스코프를 기록하고, 11월에는 RISC-V maintainer 리뷰를 다시 요청했다.\n\n영향: SMP·SBI RFENCE vs IPI TLB 경로를 분석하는 RISC-V 플랫폼·MM 담당은 maintainer가 tracepoint 추가를 받아들일지 Jisheng Zhang의 kprobe 대안 논쟁 결과를 주시해야 한다.\n\n> Add riscv_tlb:riscv_tlb_flush_request in flush_tlb_all() and __flush_tlb_range(). Record start, size, stride, ASID, whether an mm is associated with the request, the target CPU mask and its weight.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-October/101760.html)\n\n> So I prefer not adding this tracepoint. But let's wait for riscv maintainers decision.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-November/103945.html)\n\n**KVM: arm64: Refactor idreg caching into dedicated structure**\n\nSteffen Eiden v3 01/23은 VM 단위 ID 레지스터 에뮬레이션 필드를 struct kvm_vm_id_regs로 묶어 공유 영역에 두고 ftr_reg 등 접근부를 갱신하며, Marc Zyngier는 헬퍼·네이밍을 더 정리하라고 요구했다.\n\n영향: KVM/arm64·향후 s390 공유 ID 레지 시리즈를 추적하는 아키텍트는 기능 변화 없는 리팩터가 Marc 요구대로 분할·헬퍼화될 때까지 머지 타이밍을 조정해야 한다.\n\n> Move VM-wide ID register emulation fields from struct kvm_arch into a new struct kvm_vm_id_regs. The new struct is placed in a shared region.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-arm-kernel/2026-November/1196286.html)\n\n> I'd like to see a first patch introducing helpers that the code uses everywhere possible, then another patch that introduces the structure, the renaming, and changes the accessors.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-arm-kernel/2026-November/1200759.html)\n\n**net: stmmac: mediatek: add support for MT8189 SoC**\n\nLouis-Alexis Eyraud net-next v5 10/10은 mediatek,mt8189-gmac 호환·pericfg 오프셋 0x270·180ps MII/RGMII 지연 단계·TX 클록 출력 enable을 dwmac-mediatek 플랫폼 데이터에 넣는다.\n\n영향: MediaTek Genio 520/720(MT8371/MT8391) 등 MT8189 계열 EVK에서 이더넷 bring-up 시 잘못된 pericfg·지연 한도는 링크 불안정으로 이어지므로 v5 시리즈 net-next 머지를 추적해야 한다.\n\n> It also has different RX and TX internal delay stage dividers (290ps for MT8195, 180ps for MT8189), and by consequence a reduced value range for these delays.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-arm-kernel/2026-November/1200752.html)\n\n> It has been tested on Mediatek Genio 520-EVK (MT8371) and 720-EVK (MT8391) boards, which both integrate an Airoha AN8801R Ethernet PHY.\n\n[원문 확인](https://patchew.org/linux/20261110-dwmac-mediatek-mt8189-v5-0-7d99d6292962@collabora.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "high",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "net: macb: limit jumbo frames to the RX buffer size",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/103946.html",
+      "note": "thread"
+    },
+    {
+      "title": "virt: bao: add Bao hypervisor IPC and I/O dispatcher drivers",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/103947.html",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: mm: Trace TLB flush requests (v7)",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/101760.html",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: mm: Trace TLB flush — kprobe 대안 논의",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/103945.html",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: mm: Pre-allocate module page tables for execmem",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/101629.html",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: mm: execmem v2 maintainer ping",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/103944.html",
+      "note": "thread"
+    },
+    {
+      "title": "KVM: arm64: Refactor idreg caching into dedicated structure",
+      "url": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-November/1196286.html",
+      "note": "thread"
+    },
+    {
+      "title": "KVM: arm64: idreg — Marc Zyngier 리팩터 분할 요청",
+      "url": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-November/1200759.html",
+      "note": "thread"
+    },
+    {
+      "title": "net: stmmac: mediatek: add support for MT8189 SoC",
+      "url": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-November/1200752.html",
+      "note": "thread"
+    },
+    {
+      "title": "dwmac-mediatek-mt8189 v5 — Patchew",
+      "url": "https://patchew.org/linux/20261110-dwmac-mediatek-mt8189-v5-0-7d99d6292962@collabora.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-14T18:40:09.718Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
