@@ -1,0 +1,136 @@
+{
+  "id": "2026-11-16-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-11-16 RISC-V MM 회귀 · H6 이더넷 — 아키·플랫폼",
+  "headline": "RISC-V kprobes·execmem·kernel_page_present 회귀 수정이 메일링에서 진행되고, Allwinner H6 Tanix 이더넷 DT와 KVM IMSIC 잠금 변경이 제출됐습니다.",
+  "date": "2026-11-16",
+  "summary": "이번 수집은 RISC-V 메모리·kprobes·KVM 쪽 회귀 대응과 arm64 H6 보드 DT 보완이 중심입니다. 릴리스·로드맵 항목은 dossier에 없었습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "RISC-V",
+    "arm64",
+    "KVM"
+  ],
+  "highlights": [
+    {
+      "title": "riscv: kprobes 페이지 경계 OOB 읽기 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "RISC-V kprobes·ftrace·디버깅 도구 사용자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/15/679",
+      "if": "모듈·vmalloc 텍스트 끝의 compressed 명령에 kprobe를 걸 계획이면",
+      "do": "riscv_probe_decode_insn()에 &p->opcode를 넘기는 v4 시리즈 리뷰·머지와 stable 백포트 범위를 추적하세요",
+      "verify": "메일 스레드와 Fixes 커밋 c22b0bcb1dd0 연관을 원문에서 확인하세요"
+    },
+    {
+      "title": "riscv: execmem 모듈 구간 PGD 선할당",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "RISC-V MM·BPF JIT·distro 커널 설정 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/15/757",
+      "if": "CONFIG_BPF_JIT=y이고 CONFIG_MODULES=n인 RISC-V 구성을 쓰면",
+      "do": "CONFIG_EXECMEM 기준 PGD 선할당 v2의 머지와 Cc: stable@ 백포트 일정을 확인하세요",
+      "verify": "Jisheng Zhang Reviewed-by와 powerpc execmem 패턴 인용을 스레드에서 대조하세요"
+    },
+    {
+      "title": "riscv: kernel_page_present() valid 비트 검사",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "RISC-V MM·hibernate·set_memory API 사용자",
+      "verifyLink": "http://lists.infradead.org/pipermail/linux-riscv/2026-November/103731.html",
+      "if": "set_direct_map_invalid_noflush()·hibernate·set_memory 경로를 RISC-V에서 운영하면",
+      "do": "PMD·PTE leaf의 _PAGE_PRESENT 검사 Fixes 적용과 pmdp_get() 재사용 v2 반영 여부를 보세요",
+      "verify": "무효화 후 present 오판으로 hibernation이 remap 없이 복사한다는 인용을 확인하세요"
+    },
+    {
+      "title": "arm64: Tanix TX6 H6 이더넷 DT",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "Allwinner H6·Tanix TX6 보드 및 arm64 DT 유지보수 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/15/1056",
+      "if": "v7.4-rc1 AC200·EPHY 드라이버만으로 Tanix TX6 링크를 올리려면",
+      "do": "sun50i-h6.dtsi·보드 DTSI 2패치 시리즈와 CONFIG_MFD_AC200 등 defconfig 패치 제출 시점을 확인하세요",
+      "verify": "James Hilliard ACx00 대형 시리즈와 DT 모델 중복 가능성은 아직 확인이 필요합니다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**riscv: kprobes: fix out-of-bounds read in riscv_probe_decode_insn**\n\narch_prepare_kprobe()가 안전히 복사한 p->opcode 대신 p->addr를 32비트로 다시 읽어 페이지 끝 16비트 compressed 명령에서 경계 넘김 폴트가 나던 버그를, riscv_probe_decode_insn()에 &p->opcode를 넘기는 v4 시리즈가 고칩니다.\n\n영향: RISC-V에서 kprobe·트레이스가 모듈/vmalloc 텍스트 페이지 경계나 compressed insn에 걸리면 설치 단계에서 커널 페이지 폴트가 날 수 있어, probes/LR-SC 시리즈와 함께 백포트·안정화 여부를 봐야 합니다.\n\n> Passing &p->opcode instead of p->addr to riscv_probe_decode_insn() (as arch_uprobe_analyze_insn() already does) avoid reading past the instruction.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/15/679)\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=c22b0bcb1dd0)\n\n**riscv: mm: Pre-allocate module page tables for execmem**\n\nRV64 pgtable_cache_init()의 모듈 구간 PGD 선할당 조건을 CONFIG_MODULES에서 CONFIG_EXECMEM으로 바꾸는 v2 수정에 Jisheng Zhang가 Reviewed-by를 달았고, Karl Mehltretter가 11월에 재요청했습니다.\n\n영향: CONFIG_BPF_JIT=y·CONFIG_MODULES=n 구성에서 execmem/BPF JIT 영역 PGD가 비어 bpf_prog_pack_alloc 등에서 커널 페이징 폴트가 나므로, RISC-V BPF·XDP distro 설정 담당은 이 Fixes의 머지를 추적해야 합니다.\n\n> Use CONFIG_EXECMEM for the module-range pre-allocation, as powerpc does for its execmem page-table setup.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-October/101629.html)\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/15/757)\n\n**riscv: mm: check the valid bit in kernel_page_present()**\n\nMike Rapoport 패치는 direct map 무효화 후에도 pmd_present/pte_present가 참을 반환하던 RISC-V kernel_page_present()가 PMD·PTE leaf에서 _PAGE_PRESENT를 직접 검사하도록 고치며, Jisheng Zhang는 pmdp_get() 3회 호출을 줄이자고 리뷰했습니다.\n\n영향: set_direct_map_invalid_noflush()와 hibernate·set_memory 경로를 쓰는 RISC-V 플랫폼은 잘못된 present 판정이 스왑/이미지 복사 오류로 이어질 수 있어 이 Fixes 시리즈 적용을 봐야 합니다.\n\n> kernel_page_present() then reports that an unmapped page is mapped, and hibernation copies it without remapping it first.\n\n[원문 확인](http://lists.infradead.org/pipermail/linux-riscv/2026-November/103731.html)\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/15/754)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**arm64: dts: allwinner: h6: Enable Ethernet on Tanix TX6**\n\nv7.4-rc1에 머지된 AC200 MFD·EPHY 드라이버에 맞춰 sun50i-h6.dtsi에 AC200·RMII·PWM 24 MHz 클록·SID 캘리브레이션 노드를 추가하고, Tanix TX6/mini 보드 DTSI에서 이더넷을 활성화하는 2패치 시리즈가 제출됐습니다.\n\n영향: H6 코패키지 AC200 RMII 이더넷을 쓰는 Tanix 계열 arm64 보드 담당은 upstream DT 없이는 v7.4 드라이버만으로 링크를 올릴 수 없으며, defconfig에 CONFIG_MFD_AC200 등이 아직 빠져 별도 패치가 필요합니다.\n\n> The AC200 MFD and Ethernet PHY drivers and their bindings were merged in v7.4-rc1. This series adds the device tree parts needed to use them on H6, starting with the Tanix TX6 and TX6 mini TV boxes\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/15/1056)\n\n**KVM: selftests: riscv: Test the SBI STA shared memory lifecycle**\n\n기존 steal_time KVM selftest에 SBI STA 공유 페이지의 비활성화·재설정·MADV_DONTNEED 후 갱신·dirty 마킹을 검증하는 생명주기 시나리오 4개를 추가하는 패치가 제출됐고 QEMU TCG H 게스트에서 8/8 통과했습니다.\n\n영향: RISC-V KVM steal-time·STA UAPI를 다루는 호스트/툴 개발자는 공유 페이지 교체·무효화 버그를 이 테스트로 회귀 잡을 수 있으며, gfn-to-pfn 캐시 구현에 의존하지 않습니다.\n\n> Extend the existing test to check that disabling STA stops shared-page updates and that reconfiguring it leaves the old shared page unchanged.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/15/412)\n\n**RISC-V: KVM: Convert IMSIC vsfile_lock to a raw spinlock**\n\nAnup Patel v2는 KVM RISC-V IMSIC의 vsfile_lock을 rwlock_t에서 raw_spinlock_t로 바꿔 스케줄러 선점 알림(rq lock 보유) 경로에서의 잘못된 wait context를 피하고, vsfile_hgei_lock 제거·writel()/swfile_extirq_lock 정리를 포함합니다.\n\n영향: AIA·IMSIC 가상화와 PREEMPT_RT·syzbot fuzz 경로를 쓰는 RISC-V KVM 호스트는 vsfile_lock 잠금 규칙이 바뀌면 게스트 부팅·인터럽트 주입 안정성에 직접 영향을 받습니다. 10월 v2 전면 raw spinlock 전환이 EMUL 모드 ABBA 교착을 일으켰다는 기록이 있어, 11월 v2의 swfile_extirq_lock 변경으로 교착이 해소됐는지는 확인이 필요합니다.\n\n> kvm_riscv_vcpu_aia_imsic_put() runs from the scheduler preemption notifier with the raw runqueue lock held, so it must not take vsfile_lock, an rwlock_t\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/15/354)\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/10/19/2617)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "high",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요. KVM IMSIC spinlock 항목은 dossier confidence가 medium입니다."
+  },
+  "sources": [
+    {
+      "title": "arm64: dts: allwinner: h6: Enable Ethernet on Tanix TX6",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/15/1056",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: kprobes: fix out-of-bounds read in riscv_probe_decode_insn",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/15/679",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: Add kprobes supported",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=c22b0bcb1dd0",
+      "note": "commit"
+    },
+    {
+      "title": "riscv: mm: Pre-allocate module page tables for execmem (infradead)",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/101629.html",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: mm: Pre-allocate module page tables — Reviewed-by",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/15/757",
+      "note": "thread"
+    },
+    {
+      "title": "KVM: selftests: riscv: Test the SBI STA shared memory lifecycle",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/15/412",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: mm: check the valid bit in kernel_page_present()",
+      "url": "http://lists.infradead.org/pipermail/linux-riscv/2026-November/103731.html",
+      "note": "thread"
+    },
+    {
+      "title": "kernel_page_present() pmdp_get() review",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/15/754",
+      "note": "thread"
+    },
+    {
+      "title": "RISC-V: KVM: Convert IMSIC vsfile_lock to a raw spinlock",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/15/354",
+      "note": "thread"
+    },
+    {
+      "title": "IMSIC vsfile_lock ABBA deadlock discussion",
+      "url": "https://lists.openwall.net/linux-kernel/2026/10/19/2617",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-15T18:27:37.339Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

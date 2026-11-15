@@ -1,0 +1,133 @@
+{
+  "id": "2026-11-16-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-11-16 Clang jiffies 진단 — 리눅스 툴체인",
+  "headline": "Clang -Wunsequenced 진단이 encx24j600·MPTCP Werror 빌드를 깨뜨리고, Rust PHY·LZ4 모듈 압축 패치가 올라왔습니다.",
+  "date": "2026-11-16",
+  "summary": "최신 Clang은 volatile jiffies의 unsequenced 접근을 거부해 netdev·MPTCP 경로에 수정 패치가 제출되었습니다. kbuild LZ4 모듈 압축과 Rust PHY MMD 콜백 제거도 툴체인·바인딩 설계에 직접 영향을 줍니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "encx24j600: jiffies unsequenced로 Werror 빌드 실패",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "Clang 커널 빌드·ClangBuiltLinux CI 담당자, encx24j600 드라이버 사용자",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/llvm/20261114-encx24j600-wunsequenced-v1-1-c978fc36cacd@kernel.org/",
+      "if": "CONFIG_WERROR=y 또는 W=error로 Clang 네트워크 트리를 빌드한다면",
+      "do": "encx24j600_tx() jiffies 지역 변수 패치의 netdev 머지를 추적하고 CI에 반영하세요",
+      "verify": "llvm 스레드와 ClangBuiltLinux 이슈에서 동일 경고 재현 여부를 확인하세요"
+    },
+    {
+      "title": "mptcp: 타이머 경로 jiffies unsequenced 회귀",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "ClangBuiltLinux·MPTCP 개발자",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/llvm/20261114-mptcp-wunsequenced-v1-1-707a73a6c172@kernel.org/",
+      "if": "Clang·W=error로 MPTCP를 포함한 net 트리를 돌린다면",
+      "do": "mptcp_reset_tout_timer() 분할 패치와 백포트 후보를 netdev 머지 일정과 함께 보세요",
+      "verify": "protocol.c 오류 로그와 ClangBuiltLinux 이슈 #2193을 대조하세요"
+    },
+    {
+      "title": "Rust PHY: read_mmd/write_mmd 제거",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust for Linux netdev·PHY 바인딩 작업자",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/rust-for-linux/20261115-exp-phy-rs-maybelocked-v2-1-8fa7897a0352@gmail.com/",
+      "if": "Rust PHY Driver 트레이트에 MMD 접근자를 구현 중이라면",
+      "do": "bus lock만 잡은 C 호출 컨텍스트와 맞지 않는 콜백을 제거한 v2 패치 의도를 따르세요",
+      "verify": "rust-for-linux 스레드와 netdev 리뷰 스레드에서 락 가정을 확인하세요"
+    },
+    {
+      "title": "kbuild: LZ4 모듈 압축(.ko.lz4) 제안",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "kbuild·배포판 모듈 압축 정책 담당자, kmod/mkinitcpio 유지보수자",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/linux-kbuild/20261115120416.256087-1-pmenzel@molgen.mpg.de/",
+      "if": "MODULE_COMPRESS_XZ 부팅 지연을 줄이려 한다면",
+      "do": "LZ4 frame·kmod LZ4 지원과 CPU·디스크 트레이드오프를 패치 수치로 평가하세요",
+      "verify": "linux-kbuild 스레드와 kmod PR에서 .ko.lz4 형식 지원 범위를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**net: microchip: encx24j600: Avoid unsequenced accesses to jiffies in encx24j600_tx()**\n\nClang의 새 -Wunsequenced 진단 때문에 encx24j600_tx()에서 jiffies를 인자 평가 과정에서 두 번 읽는 코드가 CONFIG_WERROR=y·W=e 빌드에서 실패합니다. 패치는 jiffies를 지역 변수에 담아 부작용 순서를 명시합니다.\n\n영향: ClangBuiltLinux·W=error 네트워크 트리 빌드 담당자는 최신 Clang으로 Microchip ENC28J60/24J600 경로가 깨지지 않도록 이 수정의 netdev 머지를 추적해야 합니다. netdev 트리 머지 시점과 stable 백포트 필요 여부는 확인이 필요합니다.\n\n> drivers/net/ethernet/microchip/encx24j600.c:898:14: error: unsequenced accesses to volatile qualified 'jiffies' [-Werror,-Wunsequenced]\n\n[원문 확인](https://lore-kernel.gnuweeb.org/llvm/20261114-encx24j600-wunsequenced-v1-1-c978fc36cacd@kernel.org/)\n\n**mptcp: Avoid unsequenced accesses to jiffies in mptcp_reset_tout_timer()**\n\nmptcp_reset_tout_timer()에서 tcp_jiffies32 + jiffies + timeout 식이 Clang -Wunsequenced에 걸려 Werror 빌드가 깨집니다. 패치는 덧셈을 나눠 jiffies 읽기 순서를 명시합니다.\n\n영향: MPTCP를 Clang·W=error로 빌드하는 네트워크·툴체인 담당자는 동일 LLVM 회귀가 protocol.c 타이머 경로에도 퍼졌음을 인지하고 백포트 후보를 봐야 합니다. net/mptcp 머지 여부와 다른 서브시스템 jiffies 패턴 스윕 범위는 확인이 필요합니다.\n\n> net/mptcp/protocol.c:3044:20: error: unsequenced accesses to volatile qualified 'jiffies' [-Werror,-Wunsequenced]\n\n[원문 확인](https://lore-kernel.gnuweeb.org/llvm/20261114-mptcp-wunsequenced-v1-1-707a73a6c172@kernel.org/)\n\n**rust: net: phy: drop read_mmd and write_mmd from Driver**\n\nRust PHY Driver 트레이트에서 read_mmd/write_mmd 콜백과 vtable 어댑터를 제거합니다. C PHYLIB는 MDIO bus lock만 잡은 채 이 훅을 호출할 수 있어 기존 SAFETY 주석과 실제 락 컨텍스트가 어긋났습니다.\n\n영향: Rust for Linux에서 PHY·MDIO 추상화를 설계하는 담당자는 잘못된 락 가정으로 이중 bus lock·데드락을 피하고, MaybeLocked 표현이 가능해질 때까지 MMD API를 다시 넣어야 합니다. net-next Rust PHY 시리즈 머지와 read_mmd/write_mmd 재도입 설계 일정은 확인이 필요합니다.\n\n> The register accessors on `Device` take the bus lock again, so using them there would deadlock.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/rust-for-linux/20261115-exp-phy-rs-maybelocked-v2-1-8fa7897a0352@gmail.com/)\n\n**gpu: nova-core: remove unnecessary firmware pin-init**\n\nSGTable이 더 이상 pinning을 요구하지 않아 nova-core GSP/Radix3 펌웨어 경로에서 pin-init 보일러플레이트를 걷어냅니다.\n\n영향: in-kernel Rust 드라이버에서 pin_init/pin_data를 쓰는 유지보수 담당자는 SGTable·DMA 버퍼 모델 변화에 따른 초기화 단순화 패턴을 참고할 수 있습니다. drm/nova-core 시리즈의 drm 트리 머지 일정은 확인이 필요합니다.\n\n> Now that SGTable no longer requires pinning, remove the pin-init machinery from Radix3 and GspFirmware.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/rust-for-linux/20261114234324.82387-2-dakr@kernel.org/)\n\n**module: Add LZ4 module compression**\n\nv2 패치는 lz4(1) LZ4 frame 형식(.ko.lz4)으로 압축된 모듈을 커널이 블록 단위로 풀어 로드하고, modules_install는 lz4 -12 -B4 -BD를 사용합니다. kmod 측 LZ4 지원이 동반되어야 합니다.\n\n영향: MODULE_COMPRESS_XZ 부팅 지연을 줄이려는 배포·kbuild 담당자는 디스크·CPU 트레이드오프와 userspace kmod 의존성을 함께 평가해야 합니다. 커널 패치와 kmod PR의 동시 머지·배포 순서, distro 기본 MODULE_COMPRESS 선택은 확인이 필요합니다.\n\n> decompressing and checking the signatures of the 237 modules loaded during boot takes 624 ms of CPU time with XZ (i915: 91 ms) and 131 ms with LZ4 (i915: 12 ms)\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-kbuild/20261115120416.256087-1-pmenzel@molgen.mpg.de/)"
+    },
+    {
+      "heading": "기타",
+      "body": "LLVM 쪽에서는 동일 volatile 변수에 대한 미배열 다중 접근에 Sema 검사가 추가되어 위 netdev·MPTCP 경고의 공통 원인으로 보입니다.\n\n> According to standards volatile accesses is a side effect and multiple unsequenced volatile accesses same variable is UB.\n\n[원문 확인](https://github.com/llvm/llvm-project/commit/955715460eaf9188c241c74750637fc82dfcc423)\n\nC PHYLIB 측 MDIO bus lock만 잡고 MMD를 읽는 호출 패턴은 netdev 리뷰에서 다음과 같이 정리됩니다.\n\n> The C side calls them with only the MDIO bus lock held: phy_lock_mdio_bus(phydev); ret = __phy_read_mmd(phydev, devad, regnum);\n\n[원문 확인](https://lists.openwall.net/netdev/2026/11/13/216)\n\nClangBuiltLinux는 encx24j600·MPTCP 경로의 unsequenced jiffies 경고를 각각 이슈로 추적 중입니다.\n\n[원문 확인](https://github.com/ClangBuiltLinux/linux/issues/2196)\n\n[원문 확인](https://github.com/ClangBuiltLinux/linux/issues/2193)\n\nkmod 저장소 PR은 .ko.lz4 및 LZ4 frame 형식 지원을 추가하는 방향입니다.\n\n> Support LZ4 (.ko.lz4, LZ4 frame format as written by lz4(1)).\n\n[원문 확인](https://github.com/kmod-project/kmod/pull/505)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "encx24j600 -Wunsequenced 패치 스레드",
+      "url": "https://lore-kernel.gnuweeb.org/llvm/20261114-encx24j600-wunsequenced-v1-1-c978fc36cacd@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "LLVM Sema volatile unsequenced 검사 커밋",
+      "url": "https://github.com/llvm/llvm-project/commit/955715460eaf9188c241c74750637fc82dfcc423",
+      "note": "commit"
+    },
+    {
+      "title": "ClangBuiltLinux encx24j600 이슈",
+      "url": "https://github.com/ClangBuiltLinux/linux/issues/2196",
+      "note": "article"
+    },
+    {
+      "title": "Rust PHY read_mmd/write_mmd 제거 v2",
+      "url": "https://lore-kernel.gnuweeb.org/rust-for-linux/20261115-exp-phy-rs-maybelocked-v2-1-8fa7897a0352@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "netdev PHY MDIO bus lock 논의",
+      "url": "https://lists.openwall.net/netdev/2026/11/13/216",
+      "note": "thread"
+    },
+    {
+      "title": "nova-core pin-init 제거 패치",
+      "url": "https://lore-kernel.gnuweeb.org/rust-for-linux/20261114234324.82387-2-dakr@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "LZ4 모듈 압축 v2 패치",
+      "url": "https://lore-kernel.gnuweeb.org/linux-kbuild/20261115120416.256087-1-pmenzel@molgen.mpg.de/",
+      "note": "thread"
+    },
+    {
+      "title": "kmod LZ4 지원 PR",
+      "url": "https://github.com/kmod-project/kmod/pull/505",
+      "note": "article"
+    },
+    {
+      "title": "mptcp -Wunsequenced 패치 스레드",
+      "url": "https://lore-kernel.gnuweeb.org/llvm/20261114-mptcp-wunsequenced-v1-1-707a73a6c172@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "ClangBuiltLinux MPTCP 이슈",
+      "url": "https://github.com/ClangBuiltLinux/linux/issues/2193",
+      "note": "article"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-15T18:20:43.270Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

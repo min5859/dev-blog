@@ -1,0 +1,138 @@
+{
+  "id": "2026-11-16-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-11-16 ICMP 큐 정보 노출 — 커널 보안",
+  "headline": "7.2.15로 7.2.y가 EOL됐고, ICMP error queue 미초기화·stable 대량 백포트·strprefix 리뷰가 겹칩니다.",
+  "date": "2026-11-16",
+  "summary": "Linux 7.2.15가 7.2.y 마지막 stable·EOL로 태그됐으며, 7.3.4·6.12.117·6.18.63 longterm에 Xen·LSM·kgdb 클래스 수정이 백포트됐습니다. linux-hardening에서는 ICMP opt_stats 초기화·seq_buf 인라인·strprefix 전환 중 off-by-one 논의가 이어집니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "net: ICMP error queue opt_stats 초기화",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "net/core·BPF/TCX·HARDENED_USERCOPY 빌드·UDP ICMP error queue 사용자",
+      "verifyLink": "https://lists.openwall.net/linux-hardening/2026/11/11/51",
+      "if": "HARDENED_USERCOPY가 켜진 환경에서 TCX·UDP ICMP error queue 경로를 다루면",
+      "do": "Weiming Shi 패치와 Schimmel의 memset_after() 대안 리뷰를 추적하고 distro 백포트 계획에 반영하세요",
+      "verify": "netdev 머지·stable 백포트 시점·memset_after() 채택·CVE 부여 여부는 아직 확인이 필요합니다"
+    },
+    {
+      "title": "Linux 7.2.15 stable · EOL",
+      "priority": "상",
+      "impactType": "release",
+      "affectedAudience": "7.2.y 고정 배포·vendor stable 유지보수 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/01/439",
+      "if": "7.2.y 커널에 고정된 제품·배포를 운영 중이면",
+      "do": "7.3.y 이전 일정을 확정하고 마지막 7.2.15 ChangeLog의 zerocopy·io_uring·SMB 수정을 검증하세요",
+      "verify": "Greg Kroah-Hartman 공지와 ChangeLog-7.2.15로 최종 릴리스·EOL을 대조하세요"
+    },
+    {
+      "title": "Linux 7.3.4 stable",
+      "priority": "중",
+      "impactType": "backport",
+      "affectedAudience": "7.3.y 배포·Xen 호스트·AppArmor·kgdb 환경 유지보수 담당",
+      "verifyLink": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.3.4",
+      "if": "활성 7.3.y stable 라인을 기준으로 Xen·x86·LSM·kgdb 보안을 맞추면",
+      "do": "ChangeLog-7.3.4 상단의 xen-netback XSA·AMD Zen5 TSA·AppArmor·kgdb 항목을 배포 검증 체크리스트에 넣으세요",
+      "verify": "2026-11-10 릴리스 공지 스레드와 ChangeLog 원문으로 백포트 목록을 확인하세요"
+    },
+    {
+      "title": "seq_buf: always inline seq_buf_terminate()",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "linux-hardening·tracing·clang/kbuild allmodconfig 유지보수 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/15/935",
+      "if": "clang allmodconfig에서 SECTION_MISMATCH_WARN_ONLY=n 빌드를 돌리면",
+      "do": "Sasha Levin의 __always_inline 패치가 hardening/for-linus·linux-next에 들어가는지 추적하세요",
+      "verify": "modpost section mismatch 경고 문구와 Fixes: 7b8cd26b6aab8 인용을 스레드 원문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.2.15 stable · EOL**\n\nGreg Kroah-Hartman이 Linux 7.2.15를 태그했고 공지에서 7.2.y 최종 릴리스·EOL을 선언했습니다. ChangeLog 12건에는 skb_zerocopy() shared-frag 마커 전파, exec/coredump·io_uring 경합, ksmbd/smbdirect·SMB 서버 수정이 포함됩니다.\n\n영향: 7.2.y 고정 배포는 이후 upstream stable 보안 수정을 받지 못하므로 7.3.y로 옮겨야 하며, 마지막 7.2.15에도 zerocopy·io_uring·SMB 경계 클래스 결함 수정이 실립니다.\n\n> Note, this is the LAST 7.2.y kernel release.  After this one the 7.2.y kernel tree is end-of-life.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/01/439)\n\n> letting an unprivileged user write into the page cache of a root-owned read-only file\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.15)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**net: initialize ICMP error queue opt_stats**\n\nWeiming Shi 패치가 ip_icmp_error()/ipv6_icmp_error()에서 skb_clone() 후 남는 sock_exterr_skb::opt_stats·unused 비트를 0으로 초기화합니다. Ido Schimmel은 linux-hardening에서 동일 취지의 memset_after() 대안을 제안했습니다.\n\n영향: TCX classifier가 남긴 control buffer 잔여 데이터로 SCM_TIMESTAMPING_OPT_STATS가 위조되면 HARDENED_USERCOPY에서 커널 슬랩이 사용자 recvmsg cmsg로 넘어갈 수 있어, 네트워크·BPF·하드닝 스택이 함께 다뤄야 할 정보 노출 경로입니다.\n\n> A TCX classifier can leave bpf_skb_data_end::data_end across that byte, forging opt_stats\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/11/11/51)\n\n> usercopy: Kernel memory exposure attempt detected from SLUB object\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/11/11/51)\n\n> How about [1] instead? Allows us to avoid potential issues in the future.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/15/566)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Linux 7.3.4 stable**\n\n2026-11-10 Linux 7.3.4 stable이 발표되었고 ChangeLog에 1253건 이상 백포트가 있습니다. 상위에는 xen-netback XSA-531/XSA-532 수정, AMD Zen5 TSA 완화, AppArmor 정책 로드·DFA remap 경로, arm64/gcs fork 실패 시 GCS 해제, kgdb 패킷 핸들러 버퍼 오버플로 등이 포함됩니다.\n\n영향: 활성 7.3.y stable이 Xen dom0·x86 speculative·LSM·arm64 하드닝 수정의 주 통합 경로이므로 보안 릴리스 검증 시 ChangeLog 상단 대조가 필요합니다.\n\n> I'm announcing the release of the 7.3.4 kernel.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/10/3593)\n\n**Linux 6.12.117 longterm**\n\nLinux 6.12.117 longterm(2026-11-10)에 1534건 이상 백포트가 담겼으며 xen-netback XSA 수정, x86 TSA 완화, kgdb 원격 패킷 핸들러 버퍼 오버플로 3건, fsverity descriptor 반환값 처리 강화 등이 ChangeLog에 포함됩니다.\n\n영향: 6.12 LTS 제품은 short-lived 7.x 없이도 Xen·kgdb·fsverity 클래스 수정을 받아야 하며, kgdb 노출 환경에서는 패치 포함 여부가 원격 공격면 축소에 직결됩니다. kgdb 패킷 핸들러 수정에 공식 CVE·distro security advisory가 별도로 올라왔는지는 미확인입니다.\n\n> kgdb: Fix buffer overflow in the qRcmd packet handler\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.12.117)\n\n**Linux 6.18.63 longterm**\n\nLinux 6.18.63 longterm(2026-11-10)은 약 870건 백포트를 포함하며 xen-netback XSA 수정, AppArmor 로드·unix 소켓 ctx 경로, backing-file append-only·immutable 강제, userns exec securebits 유지, mount setns/fs_struct 공유 거부 등이 담깁니다.\n\n영향: 6.18 longterm 채널 제품은 LSM·VFS·namespace 경계와 Xen 백엔드 수정을 공식 longterm 태그 기준으로 맞춰야 합니다.\n\n> mount: refuse setns() with a shared fs_struct again\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.18.63)\n\n**powerpc: Fix off-by-one bug**\n\nAlejandro Colomar가 handle_ssbd()에서 strncmp(p,\"auto\",5)를 4로 줄이는 패치를 제안했으나, Ritesh Harjani는 기존 동작이 의도적이며 기능 버그가 아니라고 반박했고 Colomar는 strprefix() 전환 시 streq(\"auto\")·strprefix(\"on\"/\"off\")로 현 동작을 유지하기로 했습니다.\n\n영향: strprefix() 시리즈가 treewide 문자열 패턴을 바꿀 때, 잘못된 Fixes 태그나 접두/완전 일치 변경은 powerpc SSBD boot 파라미터 해석·stable 백포트 판단을 흔들 수 있습니다. strprefix() 시리즈에 powerpc/security.c 변환이 별도 패치로 올라오는지는 확인이 필요합니다.\n\n[원문 확인](https://kernelthread.org/t/1f7d29cebba5823400ad0bc5d95610f05f55e2d0.1794686962.git.alx@kernel.org)\n\n**Off-by-one in arch/mips/bcm47xx/time.c**\n\nstrprefix() 시리즈 리뷰 중 Colomar가 arch/mips/bcm47xx/time.c의 !strncmp(buf,\"200\",4)가 사실상 strcmp와 같다는 off-by-one을 지적하고, 원 의도가 prefix 3바이트인지 완전 일치인지 Hauke Mehrtens에게 확인을 요청했습니다.\n\n영향: 2013년부터 남아 있던 strncmp 길이 오류는 BCM5354 NVRAM clkfreq 해석에 영향을 줄 수 있어, treewide strprefix() 전환 시 레거시 라우터/MIPS 플랫폼에서 잘못된 수정은 타이밍·부팅 안정성 회귀를 낳을 수 있습니다. NVRAM에 \"200\"이 아닌 값이 있을 때 현재 코드가 실제로 잘못된 주파수를 선택하는지는 확인이 필요합니다.\n\n> if (len >= 0 && !strncmp(buf, \"200\", 4))\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/14/1701)\n\n**seq_buf: always inline seq_buf_terminate()**\n\nSasha Levin 패치가 seq_buf_terminate()와 __seq_buf_terminate()에 __always_inline을 넣어, clang이 trace_events.c의 __initdata bootup_event_seq를 .text out-of-line 참조할 때 나는 modpost section mismatch 경고를 없앱니다.\n\n영향: CONFIG_SECTION_MISMATCH_WARN_ONLY=n 빌드에서는 동일 경고가 오류가 되므로, hardening/for-linus 트리의 allmodconfig·clang CI가 seq_buf 최근 변경(7b8cd26b6aab8)에 막히지 않도록 하는 빌드 하드닝 수정입니다. for-linus/hardening·linux-next 머지 여부는 확인이 필요합니다.\n\n> WARNING: modpost: vmlinux: section mismatch in reference: seq_buf_terminate+0x12 (section: .text) -> bootup_event_seq (section: .init.data)\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/15/935)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ChangeLog Linux 7.2.15",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.15",
+      "note": "changelog"
+    },
+    {
+      "title": "7.2.y EOL 공지 (Greg Kroah-Hartman)",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/01/439",
+      "note": "thread"
+    },
+    {
+      "title": "7.3.4 stable 릴리스 공지",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/10/3593",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog Linux 7.3.4",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.3.4",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog Linux 6.12.117",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.12.117",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog Linux 6.18.63",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.18.63",
+      "note": "changelog"
+    },
+    {
+      "title": "powerpc handle_ssbd strprefix 논의",
+      "url": "https://kernelthread.org/t/1f7d29cebba5823400ad0bc5d95610f05f55e2d0.1794686962.git.alx@kernel.org",
+      "note": "thread"
+    },
+    {
+      "title": "MIPS BCM47xx time.c off-by-one",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/14/1701",
+      "note": "thread"
+    },
+    {
+      "title": "ICMP error queue opt_stats (linux-hardening)",
+      "url": "https://lists.openwall.net/linux-hardening/2026/11/11/51",
+      "note": "thread"
+    },
+    {
+      "title": "memset_after() 대안 제안",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/15/566",
+      "note": "thread"
+    },
+    {
+      "title": "seq_buf_terminate __always_inline",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/15/935",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-15T18:17:23.416Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

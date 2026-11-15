@@ -1,0 +1,127 @@
+{
+  "id": "2026-11-16-linux-toolchain-weekly-rollup",
+  "topic": "linux-toolchain",
+  "title": "2026-11-16 주간 요약",
+  "headline": "드라이버 담당 개발자 주목: rust: pwm: reject over-aligned driver data in `Chip::new()`",
+  "date": "2026-11-16",
+  "summary": "오늘의 핵심: 릴리스/로드맵 0건, 회귀·보안 신호 6건, 핵심 변경 2건. 리서치 dossier 의 출처를 근거로 정리했습니다.",
+  "tags": [
+    "주간"
+  ],
+  "highlights": [
+    {
+      "title": "rust: pwm: reject over-aligned driver data in `Chip::new()`",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "드라이버 담당 개발자",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/rust-for-linux/caddec5478a0d39a73152247a60bc21b3c609cc7.1794600927.git.pgovind2@uci.edu/T/",
+      "if": "드라이버 담당 개발자라면",
+      "do": "Chip::new()에 compile-time const_assert를 넣어 드라이버 private 데이터 타입 T의 정렬이 ARCH_DMA_M",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore-kernel.gnuweeb.org/rust-for-linux/caddec5478a0d39a73152247a60bc21b3c609cc7.1794600927.git.pgovind2@uci.edu/T/"
+    },
+    {
+      "title": "rust: kernel: fix lifetime of copy_from_iter_raw",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "관련 커널 서브시스템 담당자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/14/255",
+      "if": "관련 커널 서브시스템 담당자라면",
+      "do": "IovIterSource::copy_from_iter_raw 시그니처에 명시적 수명을 붙여 반환 &mut [u8]이 out 버퍼가 아니라 sel",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lists.openwall.net/linux-kernel/2026/11/14/255"
+    },
+    {
+      "title": "objtool: Detect code coverage instrumentation in noinstr code",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "objtool·noinstr·커버리지/KCOV를 쓰는 커널 하드닝·디버그 담당",
+      "verifyLink": "https://lore.landau.one/lkml/20261112151232.GC1813469@noisy.programming.kicks-ass.net/raw",
+      "if": "objtool·noinstr·커버리지/KCOV를 쓰는 커널 하드닝·디버그 담당라면",
+      "do": "Sasha Levin은 GCOV/커버리지 카운터가 noinstr 구간에 인라인으로 끼어들면 예외 처리 전에 메모리 쓰기(트랩)가 발생해 #DB ",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.landau.one/lkml/20261112151232.GC1813469@noisy.programming.kicks-ass.net/raw"
+    },
+    {
+      "title": "rust: iommu: add a paging domain abstraction",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "IOMMU·Rust-for-Linux·미디어(rkvenc) 드라이버 및 가상화/격리 모델 설계자",
+      "verifyLink": "https://lore.landau.one/lkml/20261112-b4-iommu-domain-v1-0-c29e86788dda@collabora.com/raw",
+      "if": "IOMMU·Rust-for-Linux·미디어(rkvenc) 드라이버 및 가상화/격리 모델 설계자라면",
+      "do": "Daniel Almeida가 Rust로 IOMMU paging domain(Domain·attach·map·fault handler) 추상화 6",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore.landau.one/lkml/20261112-b4-iommu-domain-v1-0-c29e86788dda@collabora.com/raw"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**rust: pwm: reject over-aligned driver data in `Chip::new()`**\n\nChip::new()에 compile-time const_assert를 넣어 드라이버 private 데이터 타입 T의 정렬이 ARCH_DMA_MINALIGN( pwmchip_priv 정렬)을 넘으면 빌드가 실패하도록 합니다.\n\n영향: C pwmchip_alloc이 보장하는 정렬보다 큰 align_of::<T>()를 쓰면 misaligned drvdata 참조로 Rust 메모리 안전 전제가 깨질 수 있어, PWM Rust 드라이버·바인딩 유지보수 담당자는 머지 후 정렬 요구를 타입 수준에서 확인해야 합니다.\n\n> Reject over-aligned types at compile time by asserting that T's alignment does not exceed ARCH_DMA_MINALIGN.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/rust-for-linux/caddec5478a0d39a73152247a60bc21b3c609cc7.1794600927.git.pgovind2@uci.edu/T/)\n\n**rust: kernel: fix lifetime of copy_from_iter_raw**\n\nIovIterSource::copy_from_iter_raw 시그니처에 명시적 수명을 붙여 반환 &mut [u8]이 out 버퍼가 아니라 self에 묶이지 않도록 수정합니다.\n\n영향: 수명 치환 오류는 안전 Rust 호출자가 버퍼를 해제한 뒤에도 슬라이스를 쓸 수 있는 공개 API 불건전(잠재 UAF)이므로, Rust in-kernel iov_iter 사용자는 백포트·머지 여부를 추적해야 합니다.\n\n> Explicitly bind the return lifetime to `out` so the returned slice cannot outlive its backing buffer.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/14/255)\n\n**objtool: Detect code coverage instrumentation in noinstr code**\n\nSasha Levin은 GCOV/커버리지 카운터가 noinstr 구간에 인라인으로 끼어들면 예외 처리 전에 메모리 쓰기(트랩)가 발생해 #DB 핸들러가 재진입·행(hang)할 수 있다고 설명했고, objtool이 .noinstr.text에서 인라인 카운터 갱신을 잡도록 하는 패치 논의가\n\n영향: noinstr/디버그 예외 경로는 하드닝·KCOV·프로파일링 검증의 핵심이라, 커버리지 빌드가 이 경로를 깨면 DoS급 안정성 문제와 noinstr 보장 실패로 이어질 수 있다.\n\n> With GCOV_PROFILE_ALL today, exc_debug_kernel() bumps a counter before it clears DR7. Set a watchpoint on that counter and the next kernel #DB never returns\n\n[원문 확인](https://lore.landau.one/lkml/20261112151232.GC1813469@noisy.programming.kicks-ass.net/raw)\n\n**rust: iommu: add a paging domain abstraction**\n\nDaniel Almeida가 Rust로 IOMMU paging domain(Domain·attach·map·fault handler) 추상화 6패치 시리즈를 올렸고, rkvenc 등 미디어 드라이버가 클라이언트별 도메인으로 버퍼를 격리하는 데 쓸 예정이다.\n\n영향: 유저스페이스가 인코더 레지스터를 직접 건드리는 모델에서는 커널이 모든 DMA를 검증할 수 없어, 클라이언트별 IOMMU 도메인과 fault 시 세션 종료가 메모리 격리의 핵심선이다.\n\n> each client will have its own IOMMU domain. This is needed as the submission model will let userspace set most of the encoder's registers directly\n\n[원문 확인](https://lore.landau.one/lkml/20261112-b4-iommu-domain-v1-0-c29e86788dda@collabora.com/raw)\n\n**scripts/kallsyms: Avoid overrunning on-stack buffer**\n\nDavid Laight v3-next 시리즈 01/13이 scripts/kallsyms.c의 on-stack buf를 KSYM_NAME_LEN에서 1+KSYM_NAME_LEN으로 키워 압축 심볼 확장 시 선행 type 문자와 NUL을 담을 수 있게 합니다. code inspection으\n\n영향: kallsyms는 모든 vmlinux 링크에서 돌아가는 호스트 도구라 스택 오버런은 빌드 타임 공격면·산출물 손상 가능성을 키우며, 이후 패치들이 kallsyms 성능/압축을 바꾸는 대형 시리즈의 전제 패치입니다.\n\n> But it is declared 'char buf[KSYM_NAME_LEN] so a maximal length name overwrites something on stack.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/11/1758)\n\n**block: order timestamp flag clearing before plug detachment**\n\nWael Hasnaoui가 blk_finish_plug()에 컴파일러 barrier()를 넣어 __blk_flush_plug()가 PF_BLOCK_TS를 지운 뒤에만 current->plug을 NULL로 두도록 순서를 강제합니다. Android Clang r596125+AutoFDO로 \n\n영향: 소스 순서와 실제 store 순서가 어긋나는 것은 LLVM/Clang+프로파일 기반 최적화 환경에서만 드러나는 전형적 toolchain 이슈이며, GKI·Android common과 mainline 7.4-rc2 양쪽에 동일 패턴이 있다고 합니다. PF_BLOCK_TS 불변식을 깨는 컴\n\n> Preemption after detaching the plug but before storing the cleared flag exposes a NULL plug with PF_BLOCK_TS still set.\n\n[원문 확인](https://ci.syzbot.org/patches/a361fa59-9fa4-4fe3-b395-79c823d4be2c)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**rust: net: phy: drop read_mmd and write_mmd from Driver**\n\nRust PHY Driver 트레이트에서 read_mmd/write_mmd 콜백과 vtable 어댑터를 제거합니다. C PHYLIB는 MDIO bus lock만 잡은 채 이 훅을 호출할 수 있어 기존 SAFETY 주석과 실제 락 컨텍스트가 어긋났습니다.\n\n영향: Rust for Linux에서 PHY·MDIO 추상화를 설계하는 담당자는 잘못된 락 가정으로 이중 bus lock·데드락을 피하고, MaybeLocked 표현이 가능해질 때까지 MMD API를 다시 넣어야 합니다.\n\n> The register accessors on `Device` take the bus lock again, so using them there would deadlock.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/rust-for-linux/20261115-exp-phy-rs-maybelocked-v2-1-8fa7897a0352@gmail.com/)\n\n**net: pcs: Introduce support for fwnode PCS**\n\nnet-next v20 시리즈가 fwnode 기반 PCS producer/consumer API(fwnode_pcs_add_provider 등)를 도입하고, phylink가 DT/firmware에서 PCS 목록을 파싱·선택하며 늦은 provider attach·removal까지 처리하도\n\n영향: MAC 밖에 별도 PCS가 붙는 SoC/10G 보드에서 phylink가 PCS 수명주기를 일관되게 다루지 못하던 문제를 줄여, netdev·devicetree 드라이버 작성자가 .mac_select_pcs 우회 없이 표준 패턴을 따를 수 있습니다.\n\n> This series introduce a most awaited feature that is correctly provide PCS with fwnode without having to use specific export symbol and additional handling of PCS in phylink.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-devicetree/20261114104426.235620-11-ansuelsmth@gmail.com/T/)"
+    },
+    {
+      "heading": "기타",
+      "body": "국부 드라이버/플랫폼 패치는 본문에서 제외했습니다. 자기 영역 키워드로 lore.kernel.org에서 직접 검색하세요."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "rust: pwm: reject over-aligned driver data in `Chip::new()`",
+      "url": "https://lore-kernel.gnuweeb.org/rust-for-linux/caddec5478a0d39a73152247a60bc21b3c609cc7.1794600927.git.pgovind2@uci.edu/T/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: kernel: fix lifetime of copy_from_iter_raw",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/14/255",
+      "note": "thread"
+    },
+    {
+      "title": "objtool: Detect code coverage instrumentation in noinstr code",
+      "url": "https://lore.landau.one/lkml/20261112151232.GC1813469@noisy.programming.kicks-ass.net/raw",
+      "note": "thread"
+    },
+    {
+      "title": "rust: iommu: add a paging domain abstraction",
+      "url": "https://lore.landau.one/lkml/20261112-b4-iommu-domain-v1-0-c29e86788dda@collabora.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "scripts/kallsyms: Avoid overrunning on-stack buffer",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/11/1758",
+      "note": "thread"
+    },
+    {
+      "title": "block: order timestamp flag clearing before plug detachment",
+      "url": "https://ci.syzbot.org/patches/a361fa59-9fa4-4fe3-b395-79c823d4be2c",
+      "note": "thread"
+    },
+    {
+      "title": "rust: net: phy: drop read_mmd and write_mmd from Driver",
+      "url": "https://lore-kernel.gnuweeb.org/rust-for-linux/20261115-exp-phy-rs-maybelocked-v2-1-8fa7897a0352@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "net: pcs: Introduce support for fwnode PCS",
+      "url": "https://lore-kernel.gnuweeb.org/linux-devicetree/20261114104426.235620-11-ansuelsmth@gmail.com/T/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "source": "research-dossier",
+    "bucketCounts": {
+      "릴리스/로드맵": 0,
+      "회귀·보안 신호": 6,
+      "핵심 변경": 2,
+      "기타": 0
+    },
+    "entryCount": 8
+  }
+}

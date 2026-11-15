@@ -1,0 +1,127 @@
+{
+  "id": "2026-11-16-linux-arch-platform-weekly-rollup",
+  "topic": "linux-arch-platform",
+  "title": "2026-11-16 주간 요약",
+  "headline": "RISC-V kprobes·ftrace·디버깅 도구 사용자 주목: riscv: kprobes: fix out-of-bounds read in r",
+  "date": "2026-11-16",
+  "summary": "오늘의 핵심: 릴리스/로드맵 0건, 회귀·보안 신호 8건, 핵심 변경 0건. 리서치 dossier 의 출처를 근거로 정리했습니다.",
+  "tags": [
+    "주간"
+  ],
+  "highlights": [
+    {
+      "title": "riscv: kprobes: fix out-of-bounds read in riscv_probe_decode_insn",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "RISC-V kprobes·ftrace·디버깅 도구 사용자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/15/679",
+      "if": "RISC-V kprobes·ftrace·디버깅 도구 사용자라면",
+      "do": "arch_prepare_kprobe()가 안전히 복사한 p->opcode 대신 p->addr를 32비트로 다시 읽어 페이지 끝 16비트 comp",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lists.openwall.net/linux-kernel/2026/11/15/679"
+    },
+    {
+      "title": "riscv: mm: Pre-allocate module page tables for execmem",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "RISC-V MM·BPF JIT·distro 커널 설정 담당",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/101629.html",
+      "if": "RISC-V MM·BPF JIT·distro 커널 설정 담당라면",
+      "do": "RV64 pgtable_cache_init()의 모듈 구간 PGD 선할당 조건을 CONFIG_MODULES에서 CONFIG_EXECMEM으로 바",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lists.infradead.org/pipermail/linux-riscv/2026-October/101629.html"
+    },
+    {
+      "title": "riscv: mm: check the valid bit in kernel_page_present()",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "RISC-V MM·hibernate·set_memory API 사용자",
+      "verifyLink": "http://lists.infradead.org/pipermail/linux-riscv/2026-November/103731.html",
+      "if": "RISC-V MM·hibernate·set_memory API 사용자라면",
+      "do": "Mike Rapoport 패치는 direct map 무효화 후에도 pmd_present/pte_present가 참을 반환하던 RISC-V ker",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: http://lists.infradead.org/pipermail/linux-riscv/2026-November/103731.html"
+    },
+    {
+      "title": "net: macb: limit jumbo frames to the RX buffer size",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Cadence GEM/macb 및 RISC-V·FPGA 이더넷 보드 담당",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/103946.html",
+      "if": "Cadence GEM/macb 및 RISC-V·FPGA 이더넷 보드 담당라면",
+      "do": "Han Gao 패치는 GEM/macb에서 JML을 고정 jumbo_max_len 대신 MTU에 따라 바뀌는 RX 버퍼 크기에 맞추도록 macb_",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lists.infradead.org/pipermail/linux-riscv/2026-November/103946.html"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**riscv: kprobes: fix out-of-bounds read in riscv_probe_decode_insn**\n\narch_prepare_kprobe()가 안전히 복사한 p->opcode 대신 p->addr를 32비트로 다시 읽어 페이지 끝 16비트 compressed 명령에서 경계 넘김 폴트가 나던 kprobes 버그를, riscv_probe_decode_insn()에 &p->opcode를 넘기도\n\n영향: RISC-V에서 kprobe·트레이스가 모듈/vmalloc 텍스트 페이지 경계나 compressed insn에 걸리면 설치 단계에서 커널 페이지 폴트가 날 수 있어, probes/LR-SC 시리즈와 함께 백포트·안정화 여부를 봐야 한다.\n\n> Passing &p->opcode instead of p->addr to riscv_probe_decode_insn() (as arch_uprobe_analyze_insn() already does) avoid reading past the instruction.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/15/679)\n\n**riscv: mm: Pre-allocate module page tables for execmem**\n\nRV64 pgtable_cache_init()의 모듈 구간 PGD 선할당 조건을 CONFIG_MODULES에서 CONFIG_EXECMEM으로 바꾸는 v2 수정에 Jisheng Zhang가 Reviewed-by를 달았고, Karl Mehltretter가 11월에 재요청했다.\n\n영향: CONFIG_BPF_JIT=y·CONFIG_MODULES=n 구성에서 execmem/BPF JIT 영역 PGD가 비어 bpf_prog_pack_alloc 등에서 커널 페이징 폴트가 나므로, RISC-V BPF·XDP distro 설정 담당은 이 Fixes의 머지를 추적해야 한다.\n\n> Use CONFIG_EXECMEM for the module-range pre-allocation, as powerpc does for its execmem page-table setup.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-October/101629.html)\n\n**riscv: mm: check the valid bit in kernel_page_present()**\n\nMike Rapoport 패치는 direct map 무효화 후에도 pmd_present/pte_present가 참을 반환하던 RISC-V kernel_page_present()가 PMD·PTE leaf에서 _PAGE_PRESENT를 직접 검사하도록 고치며, Jisheng Zhang는 p\n\n영향: set_direct_map_invalid_noflush()와 hibernate·set_memory 경로를 쓰는 RISC-V 플랫폼은 잘못된 present 판정이 스왑/이미지 복사 오류로 이어질 수 있어 이 Fixes 시리즈 적용을 봐야 한다.\n\n> kernel_page_present() then reports that an unmapped page is mapped, and hibernation copies it without remapping it first.\n\n[원문 확인](http://lists.infradead.org/pipermail/linux-riscv/2026-November/103731.html)\n\n**net: macb: limit jumbo frames to the RX buffer size**\n\nHan Gao 패치는 GEM/macb에서 JML을 고정 jumbo_max_len 대신 MTU에 따라 바뀌는 RX 버퍼 크기에 맞추도록 macb_configure_dma()로 옮겨, 한 버퍼를 넘는 프레임이 디스크립터에 쪼개져 gem_rx()에서 조용히 버려지던 동작을 막는다.\n\n영향: SiFive FU740 등 MACB jumbo를 쓰는 RISC-V 보드에서 VLAN·jumbo 트래픽 시 RX 드롭과 dmesg 노이즈가 나면 이 Fixes 시리즈 적용 여부를 바로 확인해야 한다.\n\n> Set JML from the RX buffer size in macb_configure_dma(), so that it follows MTU changes and longer frames are dropped by the MAC instead.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-November/103946.html)\n\n**riscv: mm: Pre-allocate module page tables for execmem**\n\nKarl Mehltretter v2는 pgtable_cache_init()에서 모듈 VA 범위 사전할당 조건을 CONFIG_MODULES에서 CONFIG_EXECMEM으로 바꿔 CONFIG_BPF_JIT=y·CONFIG_MODULES=n 구성에서 BPF JIT 팩 할당 시 PGD 없음 \n\n영향: 모듈 없이 BPF/XDP만 쓰는 RV64 제품 커널은 2c9e5d4a0082 이후 execmem 회귀 수정 머지·stable 백포트 여부가 네트워킹 스택 안정성에 직결된다.\n\n> Use CONFIG_EXECMEM for the module-range pre-allocation, as powerpc does for its execmem page-table setup. Both CONFIG_MODULES and CONFIG_BPF_JIT select it.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-October/101629.html)\n\n**net: spacemit: Fix TX timeout work deadlock and RTNL in PM callbacks**\n\nAli Tariq v2 2패치는 SpacemiT K1 emac에서 TX 타임아웃 work가 emac_down()의 cancel_work_sync()로 자기 자신을 기다리며 RTNL을 영구 점유하는 데드락을 고치고, suspend/resume에서 RTNL을 잡기 전 TX 타임아웃 work\n\n영향: Orange Pi RV2(SpacemiT K1) 등 RISC-V 보드에서 이더넷 PM·suspend 테스트 중 네트가 멈추거나 lockdep이 울리면 플랫폼 담당자는 이 netdev 시리즈 머지 여부를 바로 확인해야 한다.\n\n> Patch 1 fixes the TX timeout work, which ends up waiting for itself through cancel_work_sync() in emac_down(), so every TX timeout leaves RTNL held forever.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-November/103852.html)\n\n**arm64: suspend: Only track cpuidle context for idle tasks**\n\nUladzislau Zhauniarovich 패치는 cpu_suspend()에서 idle 태스크가 아닐 때 ct_cpuidle_enter/exit를 호출하지 않도록 해 syzbot이 찾은 system suspend 경로의 context-tracking·CONFIG_RCU_EQS_DEBU\n\n영향: /sys/power/state suspend를 디버그 커널에서 돌리는 arm64 플랫폼·전력 담당은 cpuidle 논리 변경(19235e472798) 회귀 수정이 mainline arm64 트리에 들어갔는지 추적할 필요가 있다.\n\n> Applied to arm64 (for-next/fixes), thanks!\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-arm-kernel/2026-November/1200276.html)\n\n**crash_dump: recover from machine checks in copy_oldmem_page()**\n\nChristian Brauner RFC 4패치는 kdump 캡처 커널이 /proc/vmcore 복사 중 machine check로 패닉하는 hole을 copy_oldmem_to_iter()(_copy_mc_to_iter 기반)로 통합하고, powerpc·sh는 매핑 실패 검사를 추가하며\n\n영향: 1차 커널이 메모리 오류로 죽었을 때 캡처 커널까지 죽으면 vmcore 자체가 사라지므로, fleet kdump·RISC-V/arm 등 다아키 crash_dump 유지보수자는 machine check를 EFAULT로 격리하는 이 RFC를 추적해야 한다.\n\n> On x86 a machine check in the copy that /proc/vmcore does out of an old page panics the capture kernel.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-November/103751.html)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "국부 드라이버/플랫폼 패치는 본문에서 제외했습니다. 자기 영역 키워드로 lore.kernel.org에서 직접 검색하세요."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "riscv: kprobes: fix out-of-bounds read in riscv_probe_decode_insn",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/15/679",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: mm: Pre-allocate module page tables for execmem",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/101629.html",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: mm: check the valid bit in kernel_page_present()",
+      "url": "http://lists.infradead.org/pipermail/linux-riscv/2026-November/103731.html",
+      "note": "thread"
+    },
+    {
+      "title": "net: macb: limit jumbo frames to the RX buffer size",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/103946.html",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: mm: Pre-allocate module page tables for execmem",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-October/101629.html",
+      "note": "thread"
+    },
+    {
+      "title": "net: spacemit: Fix TX timeout work deadlock and RTNL in PM callbacks",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/103852.html",
+      "note": "thread"
+    },
+    {
+      "title": "arm64: suspend: Only track cpuidle context for idle tasks",
+      "url": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-November/1200276.html",
+      "note": "thread"
+    },
+    {
+      "title": "crash_dump: recover from machine checks in copy_oldmem_page()",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/103751.html",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "source": "research-dossier",
+    "bucketCounts": {
+      "릴리스/로드맵": 0,
+      "회귀·보안 신호": 8,
+      "핵심 변경": 0,
+      "기타": 0
+    },
+    "entryCount": 8
+  }
+}

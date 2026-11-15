@@ -1,0 +1,123 @@
+{
+  "id": "2026-11-16-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-11-16 kmalloc_nolock 수정 — linux-perf-rt",
+  "headline": "PREEMPT_RT·slab/memcg의 kmalloc_nolock() 버그 수정과 BPF attach·IPE·reuseport 보안·성능 패치가 동시에 논의됩니다.",
+  "date": "2026-11-16",
+  "summary": "Harry Yoo v3는 for-next-fixes에서 kmalloc_nolock() 관련 스핀lock·데드락·PREEMPT_RT hang 세 건과 SLAB_*_NOLOCK 전파를 slab/for-next 위에 리베이스했습니다. Qi Wu v2는 tcx/netkit attach 경로의 RCU 대기를 지연시키고, overlay IPE·sock_reuseport migration 검증 패치가 bpf 리스트에 올라왔습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "memcg,slab: kmalloc_nolock() fixes",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "PREEMPT_RT·slab/memcg 유지보수 담당, kmalloc_nolock() 경로를 쓰는 BPF·트레이싱 개발자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20261115-kmalloc-nolock-fixes-v3-0-9034dd4ecaab@kernel.org/",
+      "if": "IRQ·NMI·PREEMPT_RT에서 kmalloc_nolock() 경로에 lockdep·Sashiko 재현이나 hang이 보이면",
+      "do": "v3 스레드의 obj_cgroup_put()·memcg_alloc_abort_single()·irq_work_sync/rcuwait 수정과 for-next-fixes·slab/for-next 리베이스 범위를 확인하세요",
+      "verify": "커버레터와 패치 diff에서 세 버그 수정과 free_flags 기반 SLAB_*_NOLOCK·percpu sheaf 우선 free 리팩터를 대조하세요"
+    },
+    {
+      "title": "bpf, mprog: Defer RCU synchronization until peer reuse",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "tcx·netkit·bpf_mprog attach 경로를 쓰는 eBPF·컨테이너 네트워킹 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20261115144556.41927-1-shijing.wuqi@linux.alibaba.com/",
+      "if": "대량 컨테이너·장치 생성 시 BPF tcx attach가 rtnl_lock() 안에서 오래 걸린다면",
+      "do": "attach 직후 RCU grace period 대기 대신 swap 시 cond_synchronize_rcu() 지연 패턴으로 바뀐 v2 설계를 검토하세요",
+      "verify": "BPF CI PR의 first link attach 41배 수치와 스레드 인용문을 원문에서 확인하세요"
+    },
+    {
+      "title": "ipe: handle errors from resolving the real inode",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "IPE·integrity BPF hook·overlayfs 통합을 추적하는 보안·파일시스템 개발자",
+      "verifyLink": "https://lore.kernel.org/bpf/20261115-work-ovl-d_real-v1-8-ca155efbcb2e@kernel.org/",
+      "if": "overlayfs 위에서 IPE 정책이 데이터 레이어 lookup 실패를 무시할 수 있는지 검토 중이라면",
+      "do": "ipe_build_eval_ctx()가 d_real_data_inode() 오류를 기록하고 정책 로드 시 -EACCES로 거부하는 8/13 패치 의도를 따라가세요",
+      "verify": "d_real() D_REAL_DATA 실패 가능 시리즈 전제와 커버 인용문을 스레드에서 확인하세요"
+    },
+    {
+      "title": "net: sock_reuseport: check program type on the migration path",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "SO_REUSEPORT eBPF·TCP listener migration을 운영·개발하는 네트워크·BPF 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20261115152408.48205-1-shlomojune6@gmail.com/",
+      "if": "SOCKET_FILTER를 reuseport migration(sk_reuseport_kern) 경로에서 돌리는 설정을 쓰고 있다면",
+      "do": "BPF_PROG_TYPE_SK_REUSEPORT 타입 검사가 추가된 v1 패치가 기존 expected_attach_type hole을 막는지 확인하세요",
+      "verify": "KASAN stack-out-of-bounds 재현 설명과 Fixes 커밋 d5e4ddaeb6ab를 원문에서 대조하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**memcg,slab: kmalloc_nolock() fixes**\n\nHarry Yoo v3 7패치는 for-next-fixes에서 kmalloc_nolock() 관련 세 건(obj_cgroup_put() 스핀lock, memcg_alloc_abort_single() 데드락 경로, PREEMPT_RT에서 irq_work_sync/rcuwait hang)을 고치고, free_flags 기반 SLAB_*_NOLOCK 전파·percpu sheaf 우선 free 등 리팩터를 slab/for-next 위에 리베이스했습니다.\n\n영향: kmalloc_nolock()은 IRQ·NMI·RT 등 스핀 불가 컨텍스트용인데 memcg/slab 훅이 잠금이나 hang을 유발하면 lockdep·Sashiko 재현과 함께 PREEMPT_RT·BPF sched 훅 경로까지 불안정해집니다.\n\n> This patchset fixes three kmalloc_nolock() bugs.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20261115-kmalloc-nolock-fixes-v3-0-9034dd4ecaab@kernel.org/)\n\n**ipe: handle errors from resolving the real inode**\n\nChristian Brauner 13패치 시리즈 8/13은 overlayfs d_real() 실패 가능 시점에 맞춰 ipe_build_eval_ctx()가 d_real_inode() 대신 d_real_data_inode() 오류를 평가 컨텍스트에 기록하고, 정책이 로드된 상태면 규칙 검사 없이 -EACCES로 거부합니다.\n\n영향: 데이터 레이어 lookup 실패 시 overlay inode만으로 IPE가 판단하면 fs-verity·블록 장치 정보가 빠져 보안 정책이 우회될 수 있으며, mmap exec 등은 overlayfs가 데이터를 재검증하지 않아 fail-closed가 필요합니다.\n\n> Remember the error in the evaluation context and if a policy is loaded refuse the operation with -EACCES without looking at the rules.\n\n[원문 확인](https://lore.kernel.org/bpf/20261115-work-ovl-d_real-v1-8-ca155efbcb2e@kernel.org/)\n\n**net: sock_reuseport: check program type on the migration path**\n\nv1 패치는 reuseport_migrate_sock()·reuseport_stop_listen_sock()가 user space가 설정한 expected_attach_type만 보고 SOCKET_FILTER를 migration 컨텍스트(sk_reuseport_kern)에서 실행할 수 있게 하던 hole을 막기 위해 BPF_PROG_TYPE_SK_REUSEPORT 타입 검사를 추가합니다.\n\n영향: 검증 컨텍스트가 어긋난 채 migration BPF가 실행되면 KASAN stack-out-of-bounds로 이어질 수 있어, SO_REUSEPORT·BPF attach를 CAP_BPF 없이 허용하는 환경에서 커널 메모리 안전성과 RT 관측 경로 신뢰도에 직접 영향을 줍니다.\n\n> Closing a listener that still has queued children then runs that socket filter with a struct sk_reuseport_kern as its context, while the program was verified against struct sk_buff.\n\n[원문 확인](https://lore.kernel.org/bpf/20261115152408.48205-1-shlomojune6@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**bpf, mprog: Defer RCU synchronization until peer reuse**\n\nQi Wu v2는 bpf_mprog_attach() 직후 무조건 RCU grace period를 기다리던 tcx/netkit attach 경로를, mini_qdisc_pair_swap()과 같이 swap 시점에 grace period 상태만 기록하고 peer 덮어쓰기 전에 cond_synchronize_rcu()로 미루도록 바꿉니다.\n\n영향: attach가 rtnl_lock() 안에서 전역 RCU 대기를 하면 대량 컨테이너·장치 생성 시 네트워크 제어 평면이 직렬화되어 BPF attach 지연과 RT·오케스트레이션 워크로드 체감이 크게 악화됩니다.\n\n> The unconditional wait buys nothing on the attach path, yet it runs inside rtnl_lock() and serializes the whole machine's network control plane.\n\n[원문 확인](https://lore.kernel.org/bpf/20261115144556.41927-1-shijing.wuqi@linux.alibaba.com/)\n\nBPF CI에서는 first link attach가 11.375 ms에서 277.1 us로 약 41배 개선된 수치가 공개되었습니다.\n\n[원문 확인](https://github.com/kernel-patches/bpf/pull/14821)"
+    },
+    {
+      "heading": "기타",
+      "body": "for-next-fixes·slab/for-next 머지 일정과 stable 백포트 여부, bpf-next 머지·rtnl_lock() 밖 프로덕션 회귀, d_real() 시리즈 머지 전 no-op·selftests 동기화, sock_reuseport v2·리뷰 반응은 이번 dossier에서 추가 확인하지 않았습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "kmalloc_nolock() fixes v3 cover letter",
+      "url": "https://lore.kernel.org/linux-rt-devel/20261115-kmalloc-nolock-fixes-v3-0-9034dd4ecaab@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "kmalloc_nolock() fixes v3 (mirror)",
+      "url": "https://lore-kernel.gnuweeb.org/linux-rt-devel/20261115-kmalloc-nolock-fixes-v3-0-9034dd4ecaab@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "Defer RCU synchronization until peer reuse v2",
+      "url": "https://lore.kernel.org/bpf/20261115144556.41927-1-shijing.wuqi@linux.alibaba.com/",
+      "note": "thread"
+    },
+    {
+      "title": "BPF CI PR #14821",
+      "url": "https://github.com/kernel-patches/bpf/pull/14821",
+      "note": "article"
+    },
+    {
+      "title": "ipe: handle errors from resolving the real inode 8/13",
+      "url": "https://lore.kernel.org/bpf/20261115-work-ovl-d_real-v1-8-ca155efbcb2e@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "overlayfs d_real() series cover",
+      "url": "https://lore-kernel.gnuweeb.org/bpf/20261115-work-ovl-d_real-v1-0-ca155efbcb2e@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "sock_reuseport: check program type on migration path",
+      "url": "https://lore.kernel.org/bpf/20261115152408.48205-1-shlomojune6@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: Support socket migration by eBPF",
+      "url": "https://github.com/torvalds/linux/commit/d5e4ddaeb6ab",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-15T18:25:47.261Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
