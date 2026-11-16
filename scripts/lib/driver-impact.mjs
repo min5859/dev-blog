@@ -1154,8 +1154,9 @@ export function buildPost(data, input, notes = EMPTY_NOTES, { lts = false, profi
     sections.push({
       heading: `${profile.title}에서 볼 것`,
       body: [
-        `${from} 트리에서 ${scope} 드라이버가 실제로 쓰던 API 가운데 바뀌거나 사라진 것입니다.${primary ? ` ${primary} 영역은 사용처와 관계없이 모두 넣었습니다.` : ''} `
-          + '트리 안 사용처로 고른 것이라, 사내 드라이버만 쓰는 API는 아래 점검 명령으로 확인합니다.',
+        // 독자의 드라이버는 트리 밖에 있어 볼 수 없다. 무엇을 기준으로 골랐는지 숨기지 않는다.
+        `메인라인 ${from} 트리에 들어 있는 ${scope} 드라이버가 실제로 쓰던 API 가운데 바뀌거나 사라진 것입니다.${primary ? ` ${primary} 영역은 사용처와 관계없이 모두 넣었습니다.` : ''} `
+          + '트리 밖(사내) 드라이버를 직접 본 것이 아니라 같은 종류의 메인라인 드라이버로 가늠한 것이므로, 사내 드라이버만 쓰는 API는 아래 점검 명령으로 확인합니다.',
         ...(top.length ? [] : ['이 범위에서 해당하는 API 변경은 없습니다.']),
         ...parts,
         orientation,
@@ -1287,7 +1288,7 @@ export function buildPost(data, input, notes = EMPTY_NOTES, { lts = false, profi
       level: '자동 생성',
       note: `${from}..${to} git 기록에서 코드가 뽑은 사실과, 그 커밋·pull 문구만 본 AI 요약입니다(웹 검색 없음). `
         + `사용 수는 ${from} drivers/·sound/에서 그 이름을 쓴 파일 수이고, 구조체 멤버는 타입을 확인하지 않은 상한값입니다.`
-        + (active ? ' 어느 항목을 위에 둘지는 트리 안 드라이버의 사용처로 가른 근사치입니다.' : ''),
+        + (active ? ' 어느 항목을 위에 둘지는 메인라인에 있는 같은 종류 드라이버의 사용처로 가른 근사치이고, 트리 밖 드라이버는 보지 않았습니다.' : ''),
     },
     sources: sources.map((p) => ({ title: p.title, url: commitUrl(p.id), note: 'merge' })),
     draftMetadata: {

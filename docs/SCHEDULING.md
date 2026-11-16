@@ -39,6 +39,8 @@ OCI의 커널 전체 이력 bare 저장소 `/srv/linux-kernel/linux.git`(wiki-pu
 - 수동 실행: `node scripts/collect-driver-impact.mjs --repo <linux.git> --from v7.3 --to v7.4-rc1`,
   `node scripts/draft-driver-impact.mjs --from v7.3 --to v7.4-rc1` (LTS 노트는 `--lts`를 붙입니다).
 - 독자 프로필: `config/driver-impact.json`의 `profile`이 "누구의 드라이버 관점에서 읽는가"를 정합니다(지금은 카메라·Exynos).
+  독자의 드라이버는 트리 밖(사내)에 있어 직접 보지 못합니다. 메인라인에 있는 같은 종류의 드라이버(미디어 드라이버 전체와
+  Samsung SoC 플랫폼 드라이버)가 그 이름을 썼는지로 가늠하고, 정확한 대조는 글의 점검 명령을 사내 소스에서 돌려서 합니다.
   `groups[].paths`는 트리 안 드라이버 경로 정규식이고, 수집기는 바뀌거나 사라진 이름마다 이전 버전에서 그 이름을 쓴 드라이버
   파일(`users`)을 남깁니다. 글은 이름을 세 자리 중 한 곳에만 둡니다: 프로필 경로의 드라이버가 쓰던 것(맨 위, 펼침) →
   드라이버 서브시스템 `genericSubsystems`곳 이상이 쓰던 것(펼침) → 나머지(접음). `primaryAreas` 영역은 사용처와 관계없이 맨 위에 두고,
