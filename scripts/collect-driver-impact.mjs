@@ -9,7 +9,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import {
-  areaDefs, broadCommits, declaredName, diffExports, diffHeaderApi, exportName, filesByWord, findCampaigns,
+  areaDefs, broadCommits, changeCommit, declaredName, diffExports, diffHeaderApi, exportName, filesByWord, findCampaigns,
   defineGrep, fixExamples, headerStatus, kconfigName, memberGreps, memberUsers, mergeHeaderApis, parseExports, parseHeaderApi, parseKconfig, parsePull, patchLines,
   RAW_SCHEMA, removalCommits, structGrep,
 } from './lib/driver-impact.mjs';
@@ -201,20 +201,25 @@ async function collectFocus(includeLog, areaList) {
     if (i.struct) wanted.get(i.file).add(i.struct);
   }
   // 이름이 있는 줄은 그대로이고 다음 줄(인자)만 바뀐 경우는 hunk 머리의 구조체·함수 이름으로 찾는다.
+  // 이름마다 그 이름이 나온 패치 줄(hits)과, hunk 머리가 그 구조체·함수 안이라고 알려 준 패치 줄(around)을 모아 두고
+  // 변화를 실제로 넣은 커밋을 고른다(changeCommit). 같은 줄을 여러 커밋이 건드리는 긴 범위에서 마지막 커밋이 답이 아니다.
   const hits = new Map();
   const around = new Map();
-  for (const { sha, subject, file, text, context } of patchLines(await includeLog)) {
+  const keep = (map, key, line) => {
+    if (!map.has(key)) map.set(key, []);
+    if (map.get(key).length < 400) map.get(key).push(line);
+  };
+  for (const { sha, subject, file, sign, text, context } of patchLines(await includeLog)) {
     const want = wanted.get(file);
     if (!want) continue;
+    const line = { sha, subject, sign, text };
     for (const [words, map] of [[text, hits], [context, around]]) {
-      for (const w of words.match(/[A-Za-z_]\w*/g) || []) {
-        if (want.has(w) && !map.has(`${file}\0${w}`)) map.set(`${file}\0${w}`, { sha, subject });
-      }
+      for (const w of new Set(words.match(/[A-Za-z_]\w*/g) || [])) if (want.has(w)) keep(map, `${file}\0${w}`, line);
     }
   }
   for (const i of kept.flatMap((a) => a.items)) {
     const key = (w) => `${i.file}\0${w}`;
-    i.commit = hits.get(key(i.member || i.name)) || around.get(key(i.struct || i.name)) || null;
+    i.commit = changeCommit(i, hits.get(key(i.member || i.name)), around.get(key(i.struct || i.name)));
   }
   return kept;
 }

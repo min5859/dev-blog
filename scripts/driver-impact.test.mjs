@@ -4,6 +4,7 @@ import {
   areaDefs, broadCommits, buildAiInput, buildPost, cleanNotes, compatibleChange, compileProfile, declaredName, diffExports, diffHeaderApi, exportName, filesByWord,
   findCampaigns, FOCUS_AREAS, headerStatus, ltsPair, memberGreps, memberUsers, mergeHeaderApis, normalizeSubject, parseExports, parseHeaderApi, parseKconfig, parsePull,
   patchLines, pendingTags, postedRanges, relevance, removalCommits, structGrep, defineGrep, fixExamples, impactOf, moduleOf, renamedInExamples, splitAiInput,
+  changeCommit,
 } from './lib/driver-impact.mjs';
 
 test('exports: removed, GPL/namespace changes and macro definitions are told apart', () => {
@@ -590,6 +591,33 @@ test('header diff: signature and callback changes, removals and moves between he
     ['removed', 'member', 'x_ops.remove', 'void (*)(struct x_dev *)', null],
   ]);
   assert.deepEqual(items.filter(([c]) => c === 'added').map(([, k, n]) => [k, n]), [['function', 'x_new']]);
+});
+
+test('the commit that made a change is the one that brought the new type in, not the last to touch the line', () => {
+  const line = (sha, sign, text) => ({ sha, subject: `subject ${sha}`, sign, text });
+  // gpio_chip.set: void → int. 최신순으로 (1) 다른 필드를 옮기며 그 줄을 다시 쓴 커밋, (2) set_rv 를 set 으로 되돌린 커밋, (3) 옛 void 콜백을 지운 커밋
+  const set = { change: 'changed', kind: 'member', struct: 'gpio_chip', member: 'set', name: 'gpio_chip.set',
+    before: 'void (*)(struct gpio_chip *, unsigned int, int)', after: 'int (*)(struct gpio_chip *, unsigned int, int)' };
+  const named = [
+    line('mmio', '-', '\tint\t\t\t(*set)(struct gpio_chip *gc,'), line('mmio', '+', '\tint (*set)(struct gpio_chip *gc,'),
+    line('rename', '+', '\tint\t\t\t(*set)(struct gpio_chip *gc,'),
+    line('drop', '-', '\tvoid\t\t\t(*set)(struct gpio_chip *gc,'),
+  ];
+  assert.deepEqual(changeCommit(set, named), { sha: 'rename', subject: 'subject rename' });
+  // 타입만 바뀐 멤버
+  const flags = { change: 'changed', kind: 'member', struct: 'clk_divider', member: 'flags', name: 'clk_divider.flags', before: 'u8', after: 'u16' };
+  assert.equal(changeCommit(flags, [line('later', '-', '\tu16\t\tflags;'), line('later', '+', '\tu16 flags;'), line('widen', '-', '\tu8\t\tflags;'), line('widen', '+', '\tu16\t\tflags;')]).sha, 'widen');
+  // 이름 줄은 그대로고 다음 줄에 인자가 더해진 콜백: 구조체 안에서 새 타입을 들인 커밋
+  const pad = { change: 'changed', kind: 'member', struct: 'v4l2_subdev_pad_ops', member: 'set_fmt', name: 'v4l2_subdev_pad_ops.set_fmt',
+    before: 'int (*)(struct v4l2_subdev *, struct v4l2_subdev_format *)', after: 'int (*)(struct v4l2_subdev *, const struct v4l2_subdev_client_info *, struct v4l2_subdev_format *)' };
+  assert.equal(changeCommit(pad, [line('doc', '+', ' * @set_fmt: callback for VIDIOC_SUBDEV_S_FMT')],
+    [line('doc', '+', ' * some comment'), line('ci', '+', '\t\t       const struct v4l2_subdev_client_info *ci,')]).sha, 'ci');
+  // 삭제: 그 줄을 지우기만 한 가장 최근 커밋. 주석에서 이름을 언급한 더 최근 커밋이 아니다
+  const gone = { change: 'removed', kind: 'function', name: 'old_fn', before: 'int old_fn(void)' };
+  assert.equal(changeCommit(gone, [line('doc', '+', ' * old_fn() is gone, use new_fn()'), line('rm', '-', 'int old_fn(void);'), line('edit', '-', 'int old_fn(int);'), line('edit', '+', 'int old_fn(void);')]).sha, 'rm');
+  // 가를 수 없으면 그 이름을 건드린 가장 최근 커밋, 아무 줄도 없으면 null
+  assert.equal(changeCommit(flags, [line('only', '+', '\tu16 flags; /* note */')]).sha, 'only');
+  assert.equal(changeCommit(flags), null);
 });
 
 test('fix examples: the small call-site hunks of the commit that changed the name', () => {

@@ -754,6 +754,43 @@ export function ltsPair(releases, tags) {
   return lts.length >= 2 ? { from: lts.at(-2), to: lts.at(-1) } : null;
 }
 
+// ── 변화를 넣은 커밋 고르기 ───────────────────────────────────────────────
+
+/**
+ * 변화 하나를 실제로 넣은 커밋. named: 그 이름이 나온 패치 줄들, inStruct: 그 구조체(나 함수) 안이라고 hunk 머리가 알려 준 패치 줄들.
+ * 둘 다 { sha, subject, sign, text } 이고 최신 커밋이 먼저다.
+ * 긴 범위(LTS)에서는 같은 줄을 여러 커밋이 건드린다. "마지막으로 건드린 커밋"을 고르면 v6.18 `gpio_chip.set`(void → int)에
+ * gpio-mmio 필드를 옮긴 커밋이, `clk_divider.flags`(u8 → u16)에 등록 함수를 더한 커밋이 붙어 설명이 엉뚱해진다.
+ * - 삭제: 그 이름이 든 줄을 지우기만 한 가장 최근 커밋
+ * - 변경: 새 타입에만 있는 토큰을 그 이름의 줄에 처음 들인 가장 최근 커밋(지운 줄에 이미 그 토큰이 있었다면 들인 것이 아니다).
+ *   이름 줄은 그대로고 다음 줄(인자)만 바뀐 선언은, 구조체 안에서 구별되는 새 토큰을 들인 커밋
+ * 못 찾으면 그 이름을 건드린 가장 최근 커밋.
+ */
+export function changeCommit(item, named = [], inStruct = []) {
+  const word = (t) => new RegExp(`(?<![A-Za-z0-9_])${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![A-Za-z0-9_])`);
+  const byCommit = (lines) => {
+    const groups = new Map();
+    for (const l of lines) {
+      if (!groups.has(l.sha)) groups.set(l.sha, { sha: l.sha, subject: l.subject, plus: [], minus: [] });
+      groups.get(l.sha)[l.sign === '+' ? 'plus' : 'minus'].push(l.text);
+    }
+    return [...groups.values()];
+  };
+  const pick = (c) => (c ? { sha: c.sha, subject: c.subject } : null);
+  const fallback = pick(named[0] || inStruct[0]);
+  if (item.change === 'removed') return pick(byCommit(named).find((c) => c.minus.length && !c.plus.length) || byCommit(named).find((c) => c.minus.length)) || fallback;
+  const [a, b] = [typeTokens(item.before || ''), typeTokens(item.after || '')];
+  const [ka, kb] = commonMarks(a, b);
+  const fresh = [...new Set(b.filter((t, i) => !kb[i] && /^[A-Za-z_]/.test(t)))];
+  const gone = [...new Set(a.filter((t, i) => !ka[i] && /^[A-Za-z_]/.test(t)))];
+  const brings = (tokens) => (c) => tokens.some((t) => c.plus.some((l) => word(t).test(l)) && !c.minus.some((l) => word(t).test(l)));
+  const drops = (tokens) => (c) => tokens.some((t) => c.minus.some((l) => word(t).test(l)) && !c.plus.some((l) => word(t).test(l)));
+  const distinct = fresh.filter((t) => t.length >= 6 && !TYPE_WORDS.has(t));
+  return pick((fresh.length && byCommit(named).find(brings(fresh)))
+    || (distinct.length && byCommit(inStruct).find(brings(distinct)))
+    || (!fresh.length && gone.length && byCommit(named).find(drops(gone)))) || fallback;
+}
+
 // ── 글 조립 ─────────────────────────────────────────────────────────────
 
 /**
