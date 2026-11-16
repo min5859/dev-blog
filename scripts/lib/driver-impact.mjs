@@ -425,7 +425,8 @@ export function relevance(item, profile) {
   // 벤더 코드: `drivers/<서브시스템>/<벤더>/…` 처럼 한 단계 더 들어간 곳과 `include/soc/`. 서브시스템 코어(`drivers/iommu/iommu.c`,
   // `drivers/media/v4l2-core/`)는 벤더 코드가 아니라서, 미디어 드라이버 한 곳만 써도 센다.
   const file = item.file || '';
-  const vendorDefined = /^include\/soc\//.test(file)
+  // V4L2·videobuf2·미디어 컨트롤러가 아닌 `include/media/` 헤더(센서 플랫폼 데이터, 벤더 IP)도 벤더 코드다(v7.2 `LM3560_*`, `vsp1_du_setup_lif`).
+  const vendorDefined = /^include\/soc\//.test(file) || moduleOf(file).id === 'media'
     || (DRIVER_PATH_RE.test(file) && file.split('/').length >= 4 && !/\/(?:[\w-]*core|common)\//.test(file));
   const vendors = (files) => new Set(files.map((f) => f.split('/').slice(0, 4).join('/'))).size;
   const groups = profile.groups
@@ -927,6 +928,8 @@ export function impactOf(r) {
   return level;
 }
 
+const CORE_API_RE = /^(?:include\/linux\/[^/]+\.h$|include\/asm-generic\/|kernel\/|mm\/|lib\/|fs\/|block\/|init\/|drivers\/base\/)/;
+
 /**
  * 수집 결과를 글이 쓰는 변화 목록으로. rows 마다 module·impact·rel 이 붙는다.
  * visible: 독자와 가까운 것(프로필의 주 영역이거나 프로필 경로의 드라이버가 쓰던 것)과 여러 서브시스템이 쓰는 것. 표로 펼친다.
@@ -939,9 +942,13 @@ function classify(data, profile) {
   const inFocus = new Set(areaRows.map((r) => r.name));
   const loose = removedApis(data).filter((e) => e.driverUses > 0 && !inFocus.has(e.name))
     .map((e) => ({ ...e, change: 'removed', loose: true, renamedTo: e.commit?.renamedTo, rel: relevance(e, profile) }));
-  const near = (r) => active && (Boolean(r.area?.primary) || r.rel.tier === 'mine');
+  // 주 영역은 사용처와 관계없이 올리되, 그 영역의 벤더·장치 전용 헤더("미디어 기타")는 다른 것과 같이 사용처를 본다.
+  const near = (r) => active && ((Boolean(r.area?.primary) && moduleOf(r.file).id !== 'media') || r.rel.tier === 'mine');
+  // "여러 서브시스템이 쓴다"는 코어가 정의한 이름에만 뜻이 있다: 중점 영역의 것이거나, 영역 밖이면 `include/linux/*.h`·코어 소스가 정의한 것.
+  // 서브시스템 전용 헤더의 이름은 같은 이름의 무관한 코드가 여러 곳에 있을 뿐이다(v7.1 `include/net/atmclip.h` 의 `PRIV`).
+  const widely = (r) => r.rel.tier === 'generic' && (Boolean(r.area) || CORE_API_RE.test(r.file || ''));
   const rows = [...areaRows, ...loose].map((r) => ({ ...r, near: near(r), module: moduleOf(r.file), impact: impactOf(r) }));
-  const visible = rows.filter((r) => r.near || r.rel.tier === 'generic');
+  const visible = rows.filter((r) => r.near || widely(r));
   return { active, areas, rows, visible, other: rows.filter((r) => !visible.includes(r)) };
 }
 
@@ -1054,7 +1061,8 @@ const SPECULATION_RE = /영향을 (?:줄|미칠) 수 있|점검한다|점검해�
 // 글이 아니라 입력을 가리키는 말(v7.3: "메시지에 적힌 대로 `delay_read_timer`를 쓴다"). 독자는 그 "메시지"를 보지 못한다.
 const META_RE = /메시지에 (?:적힌|따르면)|메시지대로|요약에 (?:적힌|따르면)|입력(?:에 |된 | JSON)/;
 // 기존 코드가 그대로 빌드되는 변화(impact ok)를 "고쳐야 한다"고 쓴 문장.
-const MUST_FIX_RE = /고친다|고쳐야|맞춘다|맞춰야|수정한다|수정해야|받도록/;
+// 지시하는 말끝만 본다: "받도록 맞춘 뒤 …"처럼 커널 쪽이 한 일을 말하는 문장까지 버리지 않는다.
+const MUST_FIX_RE = /(?:고친다|고쳐야 한다|맞춘다|맞춰야 한다|수정한다|수정해야 한다|바꿔야 한다)(?:[.\s]|$)/;
 
 /**
  * AI 출력에서 입력에 있는 id·이름을 가리키는 항목만 남긴다. 길이를 넘기거나 URL 을 넣었거나,

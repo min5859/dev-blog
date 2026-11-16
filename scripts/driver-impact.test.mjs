@@ -216,6 +216,9 @@ test('profile: relevance comes from which in-tree drivers used the name', () => 
   assert.equal(relevance({ users: oneVendor.slice(0, 1), file: 'drivers/iommu/iommu.c' }, PROFILE).tier, 'mine'); // 서브시스템 코어도 마찬가지
   assert.equal(relevance({ users: oneVendor.slice(0, 1), file: 'drivers/media/v4l2-core/v4l2-fh.c' }, PROFILE).tier, 'mine');
   assert.equal(relevance({ users: ['drivers/soc/x/pm.c'], file: 'drivers/clk/x/clk.c' }, PROFILE).tier, 'mine'); // 내 플랫폼 경로는 한 곳이어도 센다
+  // 센서 플랫폼 데이터 같은 장치 전용 미디어 헤더도 벤더 코드다. V4L2 코어 헤더는 아니다.
+  assert.equal(relevance({ users: ['drivers/media/i2c/lm3560.c'], file: 'include/media/i2c/lm3560.h' }, PROFILE).tier, 'other');
+  assert.equal(relevance({ users: ['drivers/media/i2c/lm3560.c'], file: 'include/media/v4l2-subdev.h' }, PROFILE).tier, 'mine');
   assert.deepEqual(areaDefs(PROFILE).map((a) => a.id), [...FOCUS_AREAS.map((a) => a.id), 'soc']);
   const headers = (id) => FOCUS_AREAS.find((a) => a.id === id).headers;
   assert.equal(headers('v4l2').test('include/media/v4l2-subdev.h') && headers('v4l2').test('include/media/videobuf2-core.h'), true);
@@ -332,6 +335,7 @@ test('AI notes: only sentences the input supports survive', () => {
       { name: 'fd_old', note: '메시지에 적힌 대로 정리했다.' }, // 독자가 볼 수 없는 입력을 가리킨다
       { name: 'fd_old', note: 'device mapping은 fl사/eject 경로를 본다.' }, // 깨진 글자
       { name: 'v4l2_free', note: '반환값을 받도록 고친다.' }, // 그대로 빌드되는 변화를 고치라고 썼다
+      { name: 'v4l2_free', note: '오류를 받도록 맞춘 뒤 호출부가 값을 볼 수 있게 했다.' }, // 커널 쪽이 한 일을 말한 문장은 남긴다(아래 문장이 덮어쓴다)
       { name: 'v4l2_free', note: '`return v4l2_free(hdl);`로 오류를 바로 돌려줄 수 있다.' },
       { name: 'wq_ops.set_fmt', note: '`get_fmt`·`set_fmt` 콜백에 인자가 늘었다.' }, // get_fmt 는 헤더 비교로 그대로다
       { name: 'wq_ops.old', note: '`old`를 `flags`로 옮겼다.' }, // 지워진 멤버가 옮겨 간 곳으로 그대로인 멤버를 든 것은 괜찮다
@@ -467,6 +471,28 @@ test('post with a profile: changed parts in bold, repeated changes in one row, r
     removedApis: 135, usedRemovedApis: 134, exportChanges: 1, driverKconfig: 2 });
   assert.equal(post.draftMetadata.profile, 'cam');
   assert.deepEqual(post.sources.map((s) => s.title), ['Pull media updates from Mauro']);
+});
+
+test('post: only names the core defines count as widely used; device headers in the main area need users', () => {
+  const wide = SUBSYSTEMS.map((s) => `drivers/${s}/w.c`);
+  const data = {
+    ...DATA,
+    // 서브시스템 전용 헤더의 매크로와 벤더 드라이버의 export: 이름이 같은 무관한 코드가 여섯 서브시스템에 있을 뿐이다
+    headers: [...DATA.headers, { name: 'PRIV', kind: 'macro', file: 'include/net/atmclip.h', driverUses: 6, users: wide, commit: null },
+      { name: 'core_helper', kind: 'function', file: 'include/linux/core.h', driverUses: 6, users: wide, commit: null }],
+    exports: { ...DATA.exports, removed: [...DATA.exports.removed,
+      { name: 'tegra_power_off', kind: 'EXPORT_SYMBOL', header: 'gone', file: 'drivers/soc/tegra/pmc.c', driverUses: 6, users: wide, commit: null }] },
+    focus: [{ id: 'v4l2', files: 2, items: [
+      { change: 'removed', kind: 'macro', name: 'LM3560_NAME', before: '', driverUses: 1, users: ['drivers/media/i2c/lm3560.c'], file: 'include/media/i2c/lm3560.h', commit: null },
+      { change: 'removed', kind: 'function', name: 'v4l2_gone', before: 'void v4l2_gone(void)', driverUses: 1, users: ['drivers/media/usb/x/y.c'], file: 'include/media/v4l2-common.h', commit: null },
+    ], same: {} }],
+  };
+  const post = buildPost(data, buildAiInput(data, PROFILE), undefined, { profile: PROFILE });
+  const open = post.sections.slice(0, -1).map((s) => `${s.heading}\n${s.body}`).join('\n');
+  assert.match(open, /core&#95;helper\(\)/);
+  assert.match(open, /^V4L2\n[^]*v4l2&#95;gone\(void\)/); // 주 영역의 코어 헤더는 사용처와 관계없이 올린다
+  assert.doesNotMatch(open, /PRIV|tegra|LM3560/);
+  for (const name of ['PRIV', 'tegra_power_off', 'LM3560_NAME']) assert.match(post.sections.at(-1).body, new RegExp(`\\| \`${name}\` \\|`), name); // 지우지 않고 접는다
 });
 
 test('post: a long range gets an index and folds what still builds', () => {
