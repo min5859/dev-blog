@@ -1099,6 +1099,7 @@ const SPECULATION_RE = /영향을 (?:줄|미칠) 수 있|점검한다|점검해�
 const META_RE = /메시지에 (?:적힌|따르면)|메시지대로|요약에 (?:적힌|따르면)|입력(?:에 |된 | JSON)/;
 // 기존 코드가 그대로 빌드되는 변화(impact ok)를 "고쳐야 한다"고 쓴 문장.
 // 지시하는 말끝만 본다: "받도록 맞춘 뒤 …"처럼 커널 쪽이 한 일을 말하는 문장까지 버리지 않는다.
+const BUILDS_AS_IS_RE = /(?:^|\s)(?:기존|이전|지금까지의?) 코드(?:는|도)? (?:수정 없이 )?그대로 빌드(?:된다|됩니다)\.?/g;
 const MUST_FIX_RE = /(?:고친다|고쳐야 한다|맞춘다|맞춰야 한다|수정한다|수정해야 한다|바꿔야 한다)(?:[.\s]|$)/;
 
 /**
@@ -1133,8 +1134,10 @@ export function cleanNotes(raw, input) {
   const text = (s, max) => (typeof s === 'string' && s.trim() && s.length <= max && !/https?:\/\//.test(s)
     && !GARBLED_RE.test(s) && !INPUT_FIELD_RE.test(s) && !SPECULATION_RE.test(s) && !META_RE.test(s) && grounded(s) && !contradicts(s) ? s.trim() : null);
   // 대체 이름만 달랑 준 답("delay_read_timer")은 문장 꼴로 바꾼다. 백틱이 붙으므로 다른 문장과 똑같이 근거를 검사한다.
-  const note = (s) => {
-    const bare = /^`?([A-Za-z_]\w*)(?:\(\))?`?\.?$/.exec(typeof s === 'string' ? s.trim() : '');
+  // 영향 칸이 이미 말하는 것("기존 코드는 그대로 빌드된다")은 설명에서 뺀다. 그 말뿐인 설명은 버린다.
+  const note = (raw) => {
+    const s = typeof raw === 'string' ? raw.replace(BUILDS_AS_IS_RE, ' ').replace(/\s+/g, ' ').trim() : raw;
+    const bare = /^`?([A-Za-z_]\w*)(?:\(\))?`?\.?$/.exec(typeof s === 'string' ? s : '');
     return text(bare ? `대신 쓸 것: \`${bare[1]}\`` : s, 300);
   };
   let dropped = 0;

@@ -353,6 +353,9 @@ test('AI notes: only sentences the input supports survive', () => {
   // 이름만 준 답은 문장 꼴로 바꾸되, 그 이름이 커밋 글에 있어야 한다.
   const bare = cleanNotes({ apiNotes: [{ name: 'old_api', note: 'new_api' }, { name: 'fd_old', note: '__FD_INTERNAL' }] }, input);
   assert.deepEqual([...bare.notes.apiNotes], [['old_api', '대신 쓸 것: `new_api`']]);
+  // 영향 칸과 같은 말("기존 코드는 그대로 빌드된다")은 지우고, 그 말뿐이면 설명을 버린다.
+  const asIs = cleanNotes({ apiNotes: [{ name: 'v4l2_free', note: '오류 코드를 돌려주게 했다. 기존 코드는 그대로 빌드된다.' }, { name: 'old_api', note: '기존 코드는 그대로 빌드된다.' }] }, input);
+  assert.deepEqual([...asIs.notes.apiNotes], [['v4l2_free', '오류 코드를 돌려주게 했다.']]);
   // 예전 필드 이름(replacement)으로 저장된 AI 원본도 읽는다.
   assert.equal(cleanNotes({ apiNotes: [{ name: 'old_api', replacement: '`new_api()`를 쓴다.' }] }, input).notes.apiNotes.get('old_api'), '`new_api()`를 쓴다.');
 });
