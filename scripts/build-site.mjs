@@ -676,6 +676,10 @@ p { margin: 8px 0; }
 .article-section .md-content pre code { background: none; border: none; padding: 0; font-size: inherit; }
 .article-section .md-content table { width: 100%; border-collapse: collapse; font-size: 0.95em; margin: 0.75em 0; }
 .article-section .md-content th, .article-section .md-content td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; }
+.article-section .md-content details { margin: 0.6em 0; padding: 8px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.article-section .md-content details > summary { cursor: pointer; }
+.article-section .md-content details[open] > summary { margin-bottom: 0.5em; }
+.article-section .md-content details table { display: block; overflow-x: auto; }
 .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; margin-top: 28px; }
 .panel h2 { margin-top: 0; }
 .note { background: var(--surface-alt); border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 8px; padding: 12px 16px; margin-top: 24px; font-size: .95rem; }

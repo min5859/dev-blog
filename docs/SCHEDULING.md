@@ -38,6 +38,29 @@ OCI의 커널 전체 이력 bare 저장소 `/srv/linux-kernel/linux.git`(wiki-pu
   export 네임스페이스는 따옴표를 떼고 비교합니다(6.13의 `NS(CXL)` → `NS("CXL")` 표기 전환이 1,300여 건으로 잡혔습니다).
 - 수동 실행: `node scripts/collect-driver-impact.mjs --repo <linux.git> --from v7.3 --to v7.4-rc1`,
   `node scripts/draft-driver-impact.mjs --from v7.3 --to v7.4-rc1` (LTS 노트는 `--lts`를 붙입니다).
+- 독자 프로필: `config/driver-impact.json`의 `profile`이 "누구의 드라이버 관점에서 읽는가"를 정합니다(지금은 카메라·Exynos).
+  `groups[].paths`는 트리 안 드라이버 경로 정규식이고, 수집기는 바뀌거나 사라진 이름마다 이전 버전에서 그 이름을 쓴 드라이버
+  파일(`users`)을 남깁니다. 글은 이름을 세 자리 중 한 곳에만 둡니다: 프로필 경로의 드라이버가 쓰던 것(맨 위, 펼침) →
+  드라이버 서브시스템 `genericSubsystems`곳 이상이 쓰던 것(펼침) → 나머지(접음). `primaryAreas` 영역은 사용처와 관계없이 맨 위에 두고,
+  `arch`에 없는 `arch/*`나 `foreignSources`(ACPI 등)가 정의한 것은 접습니다. 키워드가 아닌 경로로 가르는 이유는
+  `samsung` 같은 키워드가 패널·노트북 드라이버까지 잡기 때문입니다. 프로필을 지우면 범용 구조(여러 서브시스템이 쓰는 것 → 나머지)로 나옵니다.
+  `proxy: true`인 그룹은 "같은 종류의 드라이버"를 대신하는 넓은 경로라, 다른 드라이버가 정의하고 파일 하나만 쓰던 export는 세지 않습니다.
+  전환(넓은 범위 변경·반복 패턴)은 프로필 디렉터리를 건드린 것만 위에 두고, 반복 패턴은 세 곳 이상에서 되풀이된 것만 올립니다.
+- 프로필의 `extraAreas`는 헤더를 비교할 영역을 더합니다(수집 단계에서 쓰이므로 바꾸면 다시 수집합니다). `groups`·`pulls`만
+  바꾼 경우는 다시 수집하지 않고 `draft`만 다시 돌리면 됩니다.
+- 수집 결과에는 `schema`가 있고(`RAW_SCHEMA`), 옛 형식이면 `run-driver-impact.mjs`가 다시 수집합니다.
+- 다시 만들기: `--reuse-notes`는 게시된 글의 `draftMetadata.aiNotes`(AI 원본)를 다시 써서 AI 호출 없이 표현·구조만 바꿉니다.
+  `--out <dir>`는 글을 `content/` 밖에 써서 게시 전에 확인합니다(`daily-deploy.sh`는 `content/`를 통째로 게시합니다).
+  미리보기 사이트는 `content/topics/linux-driver-impact/`만 복사한 디렉터리에서 `node <repo>/scripts/build-site.mjs`로 만듭니다.
+- 점검 명령은 줄이지 않습니다. 표는 상한이 있어도 명령에는 드라이버가 쓰던 이름이 모두 들어갑니다
+  (예전에는 상위 150개만 넣어 v6.12 → v6.18 글에서 745개가 빠졌습니다).
+- AI 문장 가드(`cleanNotes`): 입력에 없는 이름, 헤더 비교와 어긋나는 멤버, 입력에 없는 영향·할 일("영향을 줄 수 있다", "점검한다"),
+  이름 변경 후보(`renamedTo`)만 근거로 한 "대체한다", 반환형만 바뀌어 기존 호출이 그대로 빌드되는 함수(`void` → 값, `int` → `bool`)를
+  고치라고 쓴 문장, 입력을 가리키는 말("메시지에 적힌 대로")은 버립니다. 사실은 표에 남고, 그런 함수는 글에
+  "반환형 변경 · 기존 호출은 그대로 빌드된다"로 나옵니다. 대체 이름만 준 답은 "대신 쓸 것: `이름`"으로 바꿉니다.
+- 수집 오탐 메모: 여러 줄 `#define` 본문의 `EXPORT_SYMBOL_FOR_MODULES(symbol, ...)`은 export가 아닙니다(v7.1·v7.2 `sym`, v7.3 `symbol`).
+  멤버를 감싼 매크로(`__SYSFS_FUNCTION_ALTERNATIVE(...)`, `struct_group(...)`)는 안쪽 선언을 멤버로 봅니다
+  (v7.3 `kobj_attribute.show`는 기존 타입도 그대로 받는데 타입 변경으로 잡혔습니다).
 
 ## 후보가 없는 Linux lens 토픽
 

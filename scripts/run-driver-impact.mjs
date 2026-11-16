@@ -10,7 +10,7 @@ import { existsSync } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { ltsPair, pendingTags, postedRanges } from './lib/driver-impact.mjs';
+import { ltsPair, pendingTags, postedRanges, RAW_SCHEMA } from './lib/driver-impact.mjs';
 import { runPipeline } from './lib/run-daily-pipeline.mjs';
 
 const exec = promisify(execFile);
@@ -29,16 +29,26 @@ async function releases() {
   return (await res.json()).releases;
 }
 
-function run({ from, to }, lts) {
+/** 수집 결과가 지금 수집기 형식인지. 옛 형식(사용 파일 목록이 없음)이면 다시 수집한다. */
+async function collected(raw) {
+  try {
+    return JSON.parse(await readFile(raw, 'utf8')).schema === RAW_SCHEMA;
+  } catch {
+    return false;
+  }
+}
+
+async function run({ from, to }, lts) {
   const range = ['--from', from, '--to', to];
   // 수집 결과는 다 만든 뒤 한 번에 쓰므로, 있으면 전날 실패의 재시도에서 다시 수집하지 않는다.
   const raw = path.join('data', 'raw', 'driver-impact', `${from}..${to}.json`);
+  const haveRaw = await collected(raw);
   return runPipeline({
     topic: 'linux-driver-impact',
     logTitle: `Linux driver impact ${from}..${to}${lts ? ' (LTS)' : ''}`,
     runDate: new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date()),
     steps: [
-      ...(existsSync(raw) ? [] : [['collect', 'node', ['scripts/collect-driver-impact.mjs', '--repo', repo, ...range]]]),
+      ...(haveRaw ? [] : [['collect', 'node', ['scripts/collect-driver-impact.mjs', '--repo', repo, ...range]]]),
       ['draft', 'node', ['scripts/draft-driver-impact.mjs', ...range, ...(lts ? ['--lts'] : [])]],
       ['build', 'npm', ['run', 'build']],
     ],

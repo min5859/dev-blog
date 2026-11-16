@@ -9,9 +9,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import {
-  broadCommits, declaredName, diffExports, diffHeaderApi, exportName, filesByWord, findCampaigns, FOCUS_AREAS,
-  headerStatus, kconfigName, memberGreps, memberUsers, mergeHeaderApis, parseExports, parseHeaderApi, parseKconfig, parsePull, patchLines, removalCommits,
+  areaDefs, broadCommits, declaredName, diffExports, diffHeaderApi, exportName, filesByWord, findCampaigns,
+  headerStatus, kconfigName, memberGreps, memberUsers, mergeHeaderApis, parseExports, parseHeaderApi, parseKconfig, parsePull, patchLines, RAW_SCHEMA, removalCommits,
+  structGrep,
 } from './lib/driver-impact.mjs';
+import { loadProfile } from './lib/driver-impact-profile.mjs';
 
 const exec = promisify(execFile);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -54,6 +56,13 @@ async function wordFiles(tag, names, paths) {
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+}
+
+/** 구조체·공용체 이름을 타입으로 쓴 드라이버 파일 → Map(name → Set(path)). */
+async function structFiles(tag, names) {
+  const { pattern, name } = structGrep(names);
+  if (!pattern) return new Map();
+  return filesByWord(lines(await git(['grep', '-o', '-E', pattern, tag, '--', 'drivers/', 'sound/'], { allowNoMatch: true })), name);
 }
 
 const patchLog = (pickaxe, paths) => git(['log', '--no-merges', '-p', '-U0', ...pickaxe, '--format=%x1e%H%x1f%s', range, '--', ...paths]);
@@ -103,11 +112,11 @@ const isNewApi = (i) => i.kind === 'function' || i.kind === 'member' || (i.kind 
  * 중점 영역마다 범위 안에서 바뀐 헤더를 두 태그에서 파싱해 비교한다. 다른 헤더로 옮겨 간 이름은 빼고,
  * 삭제·변경은 이전 버전 드라이버가 쓰던 것만 남긴다.
  */
-async function collectFocus(includeLog) {
+async function collectFocus(includeLog, areaList) {
   const changed = lines(await git(['diff', '--no-renames', '--name-only', from, to, '--', 'include/']));
   const show = (tag, file) => git(['show', `${tag}:${file}`]).catch(() => '');
   const areas = [];
-  for (const area of FOCUS_AREAS) {
+  for (const area of areaList) {
     const files = changed.filter((f) => area.headers.test(f));
     const api = async (tag) => mergeHeaderApis(await Promise.all(files.map(async (f) => parseHeaderApi(await show(tag, f), f))));
     const after = await api(to);
@@ -118,13 +127,16 @@ async function collectFocus(includeLog) {
   const [stillThere, wasThere] = await Promise.all([wordFiles(to, named('removed'), ['include/']), wordFiles(from, named('added'), ['include/'])]);
   const used = all.filter((i) => i.change !== 'added');
   const members = used.filter((i) => i.kind === 'member');
-  const words = [...new Set(used.filter((i) => i.kind !== 'member').map((i) => i.name))];
+  const isStruct = (i) => i.kind === 'struct';
+  const words = [...new Set(used.filter((i) => i.kind !== 'member' && !isStruct(i)).map((i) => i.name))];
   const grepO = async (pattern) => lines(await git(['grep', '-o', '-E', pattern, from, '--', 'drivers/', 'sound/'], { allowNoMatch: true }));
   const greps = memberGreps(members);
-  const [users, memberFiles] = await Promise.all([
+  const [wordUsers, structUsers, memberFiles] = await Promise.all([
     wordFiles(from, words, ['drivers/', 'sound/']),
+    structFiles(from, used.filter(isStruct).map((i) => i.name)),
     members.length ? Promise.all([grepO(greps.typed), grepO(greps.accessed)]).then(([t, a]) => memberUsers(t, a)) : () => [],
   ]);
+  const users = { get: (i) => (isStruct(i) ? structUsers : wordUsers).get(i.name) };
 
   // 남길 항목마다 그 헤더에서 이름이 나온 줄을 마지막으로 바꾼 커밋.
   const kept = areas.map(({ area, files, after, items }) => {
@@ -133,7 +145,9 @@ async function collectFocus(includeLog) {
       && !(i.change === 'added' && i.kind !== 'member' && wasThere.has(i.name)));
     for (const i of list) {
       if (i.change === 'added') continue;
-      i.driverUses = outside(i.kind === 'member' ? memberFiles(i.struct, i.member) : [...(users.get(i.name) || [])]).length;
+      // 파일 수만 남기면 "누가 썼는지"를 잃는다. 글 조립이 독자 프로필(미디어·Exynos 경로 등)로 가를 수 있게 파일을 남긴다.
+      i.users = outside(i.kind === 'member' ? memberFiles(i.struct, i.member) : [...(users.get(i) || [])]).sort();
+      i.driverUses = i.users.length;
     }
     const shown = list.filter((i) => (i.change === 'added' ? isNewApi(i) : i.driverUses > 0));
     // 멤버가 바뀐 구조체에서 그대로인 멤버: 요약·커밋 메시지가 더 많은 콜백이 바뀌었다고 해도 걸러 내는 근거다.
@@ -198,26 +212,31 @@ async function main() {
   const toDate = (await git(['log', '-1', '--format=%cI', toCommit])).trim();
   const commits = commitsWithFiles(await git(['log', '--no-merges', '--name-only', '--format=%x1e%H%x1f%s', range]));
   const includeLog = patchLog([], ['include/']); // 두 단계가 함께 쓰는 include/ 패치 로그(Promise)
+  const profile = await loadProfile(root); // 프로필이 더한 중점 영역(extraAreas)도 같이 비교한다
   const [exportsDiff, headers, focus, kconfig, pulls, docs] = await Promise.all([
-    collectExports(), collectHeaders(includeLog), collectFocus(includeLog), collectKconfig(), collectPulls(), collectDocs(),
+    collectExports(), collectHeaders(includeLog), collectFocus(includeLog, areaDefs(profile)), collectKconfig(), collectPulls(), collectDocs(),
   ]);
 
-  // 지워진 API 를 이전 버전 drivers/·sound/ 의 몇 파일이 썼는지(정의 파일 제외) — 트리 밖 드라이버가 걸릴 가능성의 근사치.
-  const apiNames = [...new Set([...exportsDiff.removed, ...headers].map((e) => e.name))];
-  const users = await wordFiles(from, apiNames, ['drivers/', 'sound/']);
-  for (const e of [...exportsDiff.removed, ...headers]) {
-    e.driverUses = [...(users.get(e.name) || [])].filter((f) => f !== e.file).length;
+  // 지워지거나 라이선스가 바뀐 API 를 이전 버전 drivers/·sound/ 의 어느 파일이 썼는지(정의 파일 제외) — 트리 밖 드라이버가 걸릴 가능성의 근사치.
+  const named = [...exportsDiff.removed, ...exportsDiff.changed, ...headers];
+  const isStruct = (e) => e.kind === 'struct'; // export 의 kind 는 매크로 이름이라 해당 없다
+  const [users, structUsers] = await Promise.all([
+    wordFiles(from, [...new Set(named.filter((e) => !isStruct(e)).map((e) => e.name))], ['drivers/', 'sound/']),
+    structFiles(from, named.filter(isStruct).map((e) => e.name)),
+  ]);
+  for (const e of named) {
+    e.users = [...((isStruct(e) ? structUsers : users).get(e.name) || [])].filter((f) => f !== e.file).sort();
+    e.driverUses = e.users.length;
   }
 
   const campaigns = findCampaigns(commits);
   const broad = broadCommits(commits);
-  // AI 가 대체 API·따라 할 일을 커밋 문구에서만 찾도록, 상위 항목의 커밋 메시지를 함께 남긴다.
-  const removals = [...exportsDiff.removed, ...headers].filter((e) => e.commit && e.driverUses > 0)
-    .sort((a, b) => b.driverUses - a.driverUses).slice(0, 40);
-  const focusCommits = focus.flatMap((a) => a.items.filter((i) => i.change !== 'added' && i.commit)
-    .sort((x, y) => y.driverUses - x.driverUses).slice(0, 8).map((i) => i.commit.sha));
+  // AI 가 대체 API·따라 할 일을 커밋 문구에서만 찾도록 커밋 메시지를 함께 남긴다. 어느 항목이 독자와 가까운지는 글 조립 때
+  // 프로필로 정하므로 사용 수 상위만이 아니라 드라이버가 쓰던 항목 전부의 커밋을 남기고, AI 입력은 그중 쓸 것만 고른다.
+  const removals = [...exportsDiff.removed, ...headers].filter((e) => e.commit && e.driverUses > 0);
+  const focusCommits = focus.flatMap((a) => a.items.filter((i) => i.change !== 'added' && i.commit).map((i) => i.commit.sha));
   const shas = [...new Set([
-    ...removals.map((e) => e.commit.sha), ...broad.slice(0, 20).map((c) => c.sha), ...campaigns.slice(0, 12).map((c) => c.commits[0]), ...focusCommits,
+    ...removals.map((e) => e.commit.sha), ...broad.map((c) => c.sha), ...campaigns.map((c) => c.commits[0]), ...focusCommits,
   ])];
   const messages = {};
   const log = shas.length ? await git(['log', '--no-walk=unsorted', '--format=%x1e%H%x1f%b', ...shas]) : '';
@@ -227,6 +246,7 @@ async function main() {
   }
 
   const data = {
+    schema: RAW_SCHEMA,
     range: { from, to, fromCommit, toCommit, toDate, commits: commits.length, merges: pulls.length },
     exports: exportsDiff,
     headers,
