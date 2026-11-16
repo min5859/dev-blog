@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // data/raw/driver-impact/<from>..<to>.json → content/topics/linux-driver-impact/posts/<date>-linux-<to>-driver-impact.json
-// AI 는 ask 모드(도구·웹 없음)로 커밋·pull 문구만 요약하고, 표·명령·링크는 코드가 만든다.
-// 독자 프로필(config/driver-impact.json)이 있으면 그 독자의 드라이버가 쓰던 것을 위에 두고 나머지는 접는다.
+// 글은 모듈마다 표 하나(영향 | 기존 | 변경 | 주요 설명)다. 기존·변경·영향·명령·링크는 코드가 만들고,
+// AI 는 ask 모드(도구·웹 없음)로 커밋 문구만 보고 행마다 설명 한두 문장을 쓴다.
+// 독자 프로필(config/driver-impact.json)이 있으면 그 독자와 가까운 변화만 표에 올리고 나머지는 접는다.
 // AI_ADAPTER=template 이면 AI 없이 사실 부분만 쓴다.
 //   node scripts/draft-driver-impact.mjs --from v7.3 --to v7.4-rc1
 //   node scripts/draft-driver-impact.mjs --from v6.12 --to v6.18 --lts   (LTS → 다음 LTS 노트)
@@ -11,7 +12,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { extractJsonObject, resolveAiAdapter, runAiAdapterPrompt } from './lib/ai-rewrite-adapter.mjs';
-import { buildAiInput, buildPost, cleanNotes, RAW_SCHEMA } from './lib/driver-impact.mjs';
+import { buildAiInput, buildPost, cleanNotes, RAW_SCHEMA, splitAiInput } from './lib/driver-impact.mjs';
 import { loadProfile } from './lib/driver-impact-profile.mjs';
 import { auditPostQuality } from './lib/quality-guard.mjs';
 
@@ -28,28 +29,39 @@ const option = (name) => {
 };
 const readJson = async (file) => JSON.parse(await readFile(file, 'utf8'));
 
-// overview 가 비어도 대체 API·pull 요약이 있으면 쓸 수 있다(독자와 가까운 변경이 없는 조용한 범위).
-const usable = (notes) => notes.overview.length > 0 || notes.apiNotes.size > 0 || notes.subsystems.size > 0;
+const usable = (notes) => notes.apiNotes.size > 0 || notes.subsystems.size > 0;
+const isNotes = (v) => Array.isArray(v?.apiNotes);
 
-async function askAi(input) {
-  if (resolveAiAdapter() === 'template') return undefined;
-  const instructions = await readFile(path.join(root, 'prompts', 'driver-impact-ko.md'), 'utf8');
-  const prompt = `${instructions}\n${JSON.stringify(input, null, 1)}\n`;
-  const isNotes = (v) => Array.isArray(v?.overview) && Array.isArray(v?.subsystems);
+/** 입력 조각 하나를 AI 에 묻는다. 형식에 맞는 JSON 이 안 오면 한 번 더 묻는다. */
+async function askPart(instructions, part, index) {
+  const prompt = `${instructions}\n${JSON.stringify(part, null, 1)}\n`;
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     const retry = attempt > 1 ? '\n\n[재시도] 직전 응답이 형식에 맞는 JSON이 아니었습니다. 도구 없이 JSON 객체 하나만 출력하세요.' : '';
     const raw = await runAiAdapterPrompt(prompt + retry);
     const parsed = extractJsonObject(raw, isNotes);
-    if (!parsed) {
-      console.warn(`[driver-impact] attempt ${attempt}: no notes JSON in AI output (${raw?.length || 0} bytes)`);
-      continue;
-    }
-    const { notes, dropped } = cleanNotes(parsed, input);
-    if (dropped) console.warn(`[driver-impact] dropped ${dropped} AI items that cited unknown ids or broke limits`);
-    if (usable(notes)) return { raw: parsed, notes };
-    console.warn(`[driver-impact] attempt ${attempt}: no usable notes`);
+    if (parsed) return parsed;
+    console.warn(`[driver-impact] part ${index + 1} attempt ${attempt}: no notes JSON in AI output (${raw?.length || 0} bytes)`);
   }
-  throw new Error('AI notes unusable after 2 attempts');
+  throw new Error(`AI notes unusable after 2 attempts (part ${index + 1})`);
+}
+
+/** 표의 행마다 "왜 바뀌었고 무엇을 하면 되는지"를 AI 에 묻는다. 변화가 많으면(LTS) 여러 번에 나눠 묻고 답을 합친다. */
+async function askAi(input) {
+  if (resolveAiAdapter() === 'template') return undefined;
+  const names = input.focus.flatMap((f) => f.changes).length + input.apiRemovals.length;
+  if (!names && !input.pulls.length) return undefined; // 물을 것이 없는 조용한 범위
+  const instructions = await readFile(path.join(root, 'prompts', 'driver-impact-ko.md'), 'utf8');
+  const parts = splitAiInput(input);
+  const raw = { apiNotes: [], subsystems: [] };
+  for (const [index, part] of parts.entries()) {
+    const answer = await askPart(instructions, part, index);
+    raw.apiNotes.push(...answer.apiNotes);
+    raw.subsystems.push(...(Array.isArray(answer.subsystems) ? answer.subsystems : []));
+  }
+  const { notes, dropped } = cleanNotes(raw, input);
+  console.log(`[driver-impact] AI: ${parts.length} call(s), notes for ${notes.apiNotes.size} of ${names} names, ${notes.subsystems.size} pulls${dropped ? `, dropped ${dropped} items that cited unknown ids or broke limits` : ''}`);
+  if (!usable(notes)) throw new Error('AI notes unusable: nothing passed the checks');
+  return { raw, notes };
 }
 
 /** 지난 AI 원본: 같은 범위의 게시된 글(draftMetadata.aiNotes). 없으면 undefined. */
@@ -69,8 +81,8 @@ async function main() {
   const profile = await loadProfile(root);
   const input = buildAiInput(data, profile);
   console.log(`[driver-impact] profile ${profile.id}; AI input ${Buffer.byteLength(JSON.stringify(input))} bytes: ${input.pulls.length} pulls, `
-    + `${input.apiRemovals.length} removals, ${input.conversions.length} conversions, `
-    + `focus ${input.focus.filter((f) => f.changes.length).map((f) => `${f.id}:${f.changes.length}`).join(' ')}`);
+    + `${input.apiRemovals.length} removals outside the areas, `
+    + `areas ${input.focus.filter((f) => f.changes.length).map((f) => `${f.id}:${f.changes.length}`).join(' ') || 'none'}`);
   const outDir = value('out') ? path.resolve(value('out')) : postsDir;
   const file = `${buildPost(data, input, undefined, { lts, profile }).id}.json`;
   // --reuse-notes: 쓰려는 자리(미리보기 디렉터리)의 글을 먼저 보고, 없으면 게시된 글의 AI 원본을 쓴다.

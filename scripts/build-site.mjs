@@ -676,6 +676,7 @@ p { margin: 8px 0; }
 .article-section .md-content pre code { background: none; border: none; padding: 0; font-size: inherit; }
 .article-section .md-content table { width: 100%; border-collapse: collapse; font-size: 0.95em; margin: 0.75em 0; }
 .article-section .md-content th, .article-section .md-content td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; }
+.article-section .md-content td code b { color: var(--accent); }
 .article-section .md-content details { margin: 0.6em 0; padding: 8px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
 .article-section .md-content details > summary { cursor: pointer; }
 .article-section .md-content details[open] > summary { margin-bottom: 0.5em; }

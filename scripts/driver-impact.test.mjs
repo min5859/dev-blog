@@ -3,7 +3,7 @@ import test from 'node:test';
 import {
   areaDefs, broadCommits, buildAiInput, buildPost, cleanNotes, compatibleChange, compileProfile, declaredName, diffExports, diffHeaderApi, exportName, filesByWord,
   findCampaigns, FOCUS_AREAS, headerStatus, ltsPair, memberGreps, memberUsers, mergeHeaderApis, normalizeSubject, parseExports, parseHeaderApi, parseKconfig, parsePull,
-  patchLines, pendingTags, postedRanges, relevance, removalCommits, returnChange, structGrep,
+  patchLines, pendingTags, postedRanges, relevance, removalCommits, structGrep, defineGrep, fixExamples, impactOf, moduleOf, renamedInExamples, splitAiInput,
 } from './lib/driver-impact.mjs';
 
 test('exports: removed, GPL/namespace changes and macro definitions are told apart', () => {
@@ -104,6 +104,11 @@ test('struct members count only files that name the struct and access the member
   assert.deepEqual([...typed.get('partition_table')], ['drivers/block/a.c']);
   assert.deepEqual([...typed.get('x_ops')], ['drivers/usb/b.c']);
   assert.equal(structGrep([]).pattern, '');
+  // 같은 이름을 스스로 #define 한 드라이버의 사용은 사라진 매크로의 사용이 아니다.
+  const own = defineGrep(['PRIV', 'to_dev_attr']);
+  assert.equal(own.pattern, '^[[:space:]]*#[[:space:]]*define[[:space:]]+(PRIV|to_dev_attr)\\b');
+  const definers = filesByWord(['v1:drivers/gpu/drm/x/x.h:#define PRIV', 'v1:drivers/base/core.c:# define\tto_dev_attr'], own.name);
+  assert.deepEqual([[...definers.get('PRIV')], [...definers.get('to_dev_attr')]], [['drivers/gpu/drm/x/x.h'], ['drivers/base/core.c']]);
 });
 
 test('kconfig symbols keep the path they were declared in', () => {
@@ -202,10 +207,15 @@ test('profile: relevance comes from which in-tree drivers used the name', () => 
   assert.equal(relevance({ users: MANY, file: 'drivers/acpi/bus.c' }, PROFILE).tier, 'other'); // 이 플랫폼에 없는 펌웨어 인터페이스
   assert.equal(relevance({ users: MANY }, compileProfile()).tier, 'generic'); // 프로필이 없으면 "내 영역"도 없다
   assert.equal(relevance({}, PROFILE).tier, 'other');
-  // 다른 벤더 드라이버가 정의하고 미디어 드라이버 파일 하나만 쓰던 export 는 그 드라이버 안의 연결이다
-  assert.equal(relevance({ users: ['drivers/media/platform/vendor/a.c'], file: 'drivers/soc/vendor/helper.c' }, PROFILE).tier, 'other');
-  assert.equal(relevance({ users: ['drivers/media/platform/vendor/a.c'], file: 'include/linux/of.h' }, PROFILE).tier, 'mine'); // 코어 헤더의 API 는 한 파일이 써도 센다
-  assert.equal(relevance({ users: ['drivers/soc/x/pm.c'], file: 'drivers/clk/x/clk.c' }, PROFILE).tier, 'mine'); // 내 플랫폼 경로는 한 파일이어도 센다
+  // 벤더가 정의하고 한 벤더의 미디어 드라이버만 쓰던 것은 그 벤더 안의 연결이다(같은 종류라는 이유로는 세지 않는다)
+  const oneVendor = ['drivers/media/platform/vendor/a.c', 'drivers/media/platform/vendor/b.c'];
+  assert.equal(relevance({ users: oneVendor, file: 'drivers/soc/vendor/helper.c' }, PROFILE).tier, 'other');
+  assert.equal(relevance({ users: oneVendor, file: 'include/soc/vendor/pmc.h' }, PROFILE).tier, 'other');
+  assert.equal(relevance({ users: [...oneVendor, 'drivers/media/platform/other/c.c'], file: 'drivers/soc/vendor/helper.c' }, PROFILE).tier, 'mine'); // 두 벤더가 쓴다
+  assert.equal(relevance({ users: oneVendor.slice(0, 1), file: 'include/linux/of.h' }, PROFILE).tier, 'mine'); // 코어 헤더의 API 는 한 파일이 써도 센다
+  assert.equal(relevance({ users: oneVendor.slice(0, 1), file: 'drivers/iommu/iommu.c' }, PROFILE).tier, 'mine'); // 서브시스템 코어도 마찬가지
+  assert.equal(relevance({ users: oneVendor.slice(0, 1), file: 'drivers/media/v4l2-core/v4l2-fh.c' }, PROFILE).tier, 'mine');
+  assert.equal(relevance({ users: ['drivers/soc/x/pm.c'], file: 'drivers/clk/x/clk.c' }, PROFILE).tier, 'mine'); // 내 플랫폼 경로는 한 곳이어도 센다
   assert.deepEqual(areaDefs(PROFILE).map((a) => a.id), [...FOCUS_AREAS.map((a) => a.id), 'soc']);
   const headers = (id) => FOCUS_AREAS.find((a) => a.id === id).headers;
   assert.equal(headers('v4l2').test('include/media/v4l2-subdev.h') && headers('v4l2').test('include/media/videobuf2-core.h'), true);
@@ -214,19 +224,59 @@ test('profile: relevance comes from which in-tree drivers used the name', () => 
   }
 });
 
-test('AI input keeps driver pulls and used changes keyed by short ids, each name in one place', () => {
+test('modules: a change lands in one table by the header or source it came from', () => {
+  const titles = ['include/media/v4l2-subdev.h', 'include/media/videobuf2-core.h', 'include/media/rc-core.h', 'include/linux/dma-buf.h', 'include/linux/mm.h',
+    'include/linux/mmc/host.h', 'include/linux/gpio/consumer.h', 'include/linux/spinlock.h', 'include/linux/spi/spi.h', 'include/linux/pm_runtime.h',
+    'include/linux/platform_device.h', 'drivers/base/regmap/regmap.c', 'include/linux/phy.h', 'include/linux/phy/phy.h', 'include/linux/soc/samsung/exynos-pmu.h',
+    'include/net/atmclip.h', undefined].map((f) => moduleOf(f).title);
+  assert.deepEqual(titles, ['V4L2', 'videobuf2', '미디어 기타', 'DMA·dma-buf', '메모리',
+    '그 밖의 API', 'GPIO', '락·RCU', 'SPI·I3C', '전원(PM)',
+    '디바이스 모델', 'regmap·reset', '그 밖의 API', 'PHY', 'Samsung SoC',
+    '그 밖의 API', '그 밖의 API']);
+});
+
+test('impact: whether existing code still builds, from the signatures alone', () => {
+  const fn = (name, before, after) => ({ kind: 'function', change: 'changed', name, before, after });
+  const member = (before, after) => ({ kind: 'member', change: 'changed', name: 's.m', struct: 's', member: 'm', before, after });
+  assert.equal(impactOf({ kind: 'function', change: 'removed', name: 'gone' }), 'break');
+  assert.equal(impactOf(fn('add', 'void add(struct fh *)', 'void add(struct fh *, struct file *)')), 'break'); // 인자가 늘었다
+  assert.equal(impactOf(fn('freq', 's64 freq(struct ctrl *, unsigned int)', 's64 freq(const struct pad *, unsigned int)')), 'break'); // 인자 타입이 바뀌었다
+  assert.equal(impactOf(fn('free', 'void free(struct h *)', 'int free(struct h *)')), 'ok'); // 반환값을 안 쓰던 호출은 그대로 빌드된다
+  assert.equal(impactOf(fn('check', 'int check(struct a *, u32)', 'bool check(struct a *, u32)')), 'ok');
+  assert.equal(impactOf(fn('get', 'int get(void)', 'void get(void)')), 'check'); // 반환값을 쓰던 호출만 깨진다
+  assert.equal(impactOf(fn('size', 'unsigned long size(struct page *)', 'unsigned long size(const struct page *)')), 'ok'); // 바깥 const 추가
+  assert.equal(impactOf(fn('grp', 'int grp(struct d *, const struct g **)', 'int grp(struct d *, const struct g * const *)')), 'ok');
+  assert.equal(impactOf(fn('deep', 'int deep(struct g **)', 'int deep(const struct g **)')), 'break'); // 안쪽 const 는 호출 쪽에서 오류다
+  assert.equal(impactOf(fn('smp', 'int smp(int, smp_call_func_t, void *, int)', 'int smp(int, smp_call_func_t, void *, bool)')), 'ok'); // 숫자형끼리는 넘기던 값이 변환된다
+  assert.equal(impactOf(fn('ptr', 'int ptr(int *)', 'int ptr(bool *)')), 'break'); // 포인터는 아니다
+  assert.equal(impactOf(fn('unc', 'int unc(const struct a *)', 'int unc(struct a *)')), 'check'); // const 가 빠졌다
+  assert.equal(impactOf(fn('cb', 'int cb(int (*)(void), int)', 'int cb(int (*)(void), int, int)')), 'break'); // 인자에 함수 포인터가 있어도 인자를 제대로 센다
+  assert.equal(impactOf(member('int (*)(struct sd *, struct fmt *)', 'int (*)(struct sd *, const struct ci *, struct fmt *)')), 'break'); // 콜백: 구현 함수의 타입이 맞아야 한다
+  assert.equal(impactOf(member('void (*)(struct chip *, int)', 'int (*)(struct chip *, int)')), 'break');
+  assert.equal(impactOf(member('u8', 'unsigned long')), 'check');
+  assert.equal(impactOf(member('const struct g **', 'const struct g * const *')), 'ok'); // 드라이버가 넣던 배열을 그대로 받는다
+  assert.equal(impactOf({ kind: 'macro', change: 'changed', name: 'M', before: '(2)', after: '(1)' }), 'break');
+  assert.equal(impactOf({ kind: 'export', change: 'changed', name: 'e', before: 'EXPORT_SYMBOL', after: 'EXPORT_SYMBOL_GPL' }), 'check');
+});
+
+test('a rename is read from call-site examples, not from the same-commit hint', () => {
+  const ex = (before, after) => ({ file: 'drivers/x/y.c', before: [before], after: [after] });
+  assert.equal(renamedInExamples({ name: 'del_timer_sync', examples: [ex('del_timer_sync(&a->t);', 'timer_delete_sync(&a->t);'), ex('del_timer_sync(&b);', 'timer_delete_sync(&b);')] }), 'timer_delete_sync');
+  assert.equal(renamedInExamples({ name: 'v4l2_fh_add', examples: [ex('v4l2_fh_add(&ctx->fh);', 'v4l2_fh_add(&ctx->fh, file);')] }), null); // 이름은 그대로고 인자가 늘었다
+  assert.equal(renamedInExamples({ name: 'old', examples: [ex('old(a);', 'new1(a);'), ex('old(b);', 'new2(b);')] }), null); // 예마다 다르다
+  assert.equal(renamedInExamples({ name: 'fd_prepare_fd', renamedTo: '__FD_PREPARE' }), null); // 같은 커밋이 더한 이름만으로는 대체가 아니다
+});
+
+test('AI input: every row of the tables with the commit text that explains it', () => {
   const input = buildAiInput(DATA);
-  assert.deepEqual(input.pulls.map((p) => p.id), ['eeeeeeeeeeee']);
   // old_api 는 drivers/base 의 export 라 디바이스 모델 영역의 변화로 한 번만 나온다
-  assert.deepEqual(input.focus.find((f) => f.id === 'device').changes.map((c) => [c.name, c.commit, c.renamedTo]), [['old_api', 'aaaaaaaaaaaa', 'new_api']]);
-  assert.deepEqual(input.apiRemovals.map((a) => [a.name, a.commit]), [['neigh_thing', null]]);
-  assert.match(input.apiRemovals[0].kind, /선언은 남음/);
-  assert.deepEqual(input.conversions.map((c) => c.id), ['dddddddddddd', 'cccccccccccc']);
-  assert.deepEqual(input.messages, { aaaaaaaaaaaa: 'base: drop old_api | legacy\n\nUse new_api instead.' }); // 입력에 든 항목의 커밋 제목·본문만
-  assert.equal('reader' in input, false);
-  assert.equal(JSON.stringify(input).includes('"mine"'), false);
-  // 본문 예산을 넘기면 제목만 남는다
-  assert.deepEqual(buildAiInput(DATA, undefined, { messageChars: 0 }).messages, { aaaaaaaaaaaa: 'base: drop old_api | legacy' });
+  assert.deepEqual(input.focus.find((f) => f.id === 'device').changes,
+    [{ name: 'old_api', kind: 'export', change: 'removed', before: 'EXPORT_SYMBOL_GPL', renamedTo: 'new_api', impact: 'break', commit: 'aaaaaaaaaaaa' }]);
+  assert.deepEqual(input.apiRemovals, []); // neigh_thing 은 net 안에서만 쓰던 것이라 표에 오르지 않고, AI 에도 묻지 않는다
+  assert.deepEqual(input.pulls.map((p) => p.id), ['eeeeeeeeeeee']);
+  assert.deepEqual(input.messages, { aaaaaaaaaaaa: 'base: drop old_api | legacy\n\nUse new_api instead.' }); // 표에 든 행의 커밋 제목·본문만
+  assert.equal('reader' in input || JSON.stringify(input).includes('"mine"'), false); // 프로필이 없으면 가까운 항목 표시도 없다
+  assert.deepEqual(buildAiInput(DATA, undefined, { messageChars: 0 }).messages, { aaaaaaaaaaaa: 'base: drop old_api | legacy' }); // 본문 예산을 넘기면 제목만
 });
 
 test('profile: AI input marks what is near the reader and cuts keyword pulls to the matching lines', () => {
@@ -241,108 +291,120 @@ test('profile: AI input marks what is near the reader and cuts keyword pulls to 
   assert.deepEqual(input.pulls.filter((p) => p.mine).map((p) => [p.id, p.summary]),
     [['222222222222', 'New sensor drivers.'], ['333333333333', ' - Exynos990 CMU clocks\n   and more'], ['444444444444', ' exynos:\n   - use atomic helpers\n   - fix vblank']]);
   assert.equal(input.focus.find((f) => f.id === 'device').changes[0].mine, true); // old_api 는 drivers/media/i2c 가 썼다
-  assert.deepEqual(input.apiRemovals.map((a) => [a.name, a.mine]), [['neigh_thing', undefined]]);
-  assert.equal(input.conversions.find((c) => c.id === 'dddddddddddd').mine, true); // 넓은 변경이 drivers/media/i2c 를 건드렸다
-  assert.equal(input.conversions.find((c) => c.id === 'cccccccccccc').mine, undefined);
 });
 
-test('AI notes that cite unknown ids, carry URLs or run long are dropped', () => {
-  const input = buildAiInput(DATA);
+test('AI input splits into parts when a range has many rows', () => {
+  const sha = (i) => String.fromCharCode(103 + i).repeat(40); // g…, h…, …
+  const headers = Array.from({ length: 9 }, (_, i) => ({ name: `wide_api_${i}`, kind: 'function', file: 'include/linux/wide.h', driverUses: 6,
+    users: SUBSYSTEMS.map((s) => `drivers/${s}/w.c`), commit: { sha: sha(i), subject: `wide: drop ${i}` } }));
+  const input = buildAiInput({ ...DATA, headers });
+  const names = (p) => [...p.focus.flatMap((f) => f.changes), ...p.apiRemovals].map((c) => c.name);
+  const parts = splitAiInput(input, 4);
+  assert.deepEqual(parts.map((p) => names(p).length), [4, 4, 2]); // old_api + 9
+  assert.deepEqual(parts.flatMap(names).sort(), names(input).sort());
+  assert.deepEqual(parts.map((p) => p.pulls.length), [1, 0, 0]); // pull 요약은 첫 조각에만 묻는다
+  assert.deepEqual(Object.keys(parts[2].messages).sort(), ['nnnnnnnnnnnn', 'oooooooooooo']); // 조각에 든 행의 커밋 글만
+  assert.equal(splitAiInput(input, 40).length, 1);
+});
+
+test('AI notes: only sentences the input supports survive', () => {
+  const free = { kind: 'function', change: 'changed', name: 'v4l2_free', before: 'void v4l2_free(struct h *)', after: 'int v4l2_free(struct h *)', driverUses: 6,
+    users: SUBSYSTEMS.map((s) => `drivers/${s}/c.c`), file: 'include/media/v4l2-ctrls.h', commit: { sha: SHA('4'), subject: 'media: return the handler error' } };
+  const setFmt = { kind: 'member', change: 'changed', struct: 'wq_ops', member: 'set_fmt', name: 'wq_ops.set_fmt', before: 'int (*)(int)', after: 'int (*)(int, int)', driverUses: 6,
+    users: SUBSYSTEMS.map((s) => `drivers/${s}/c.c`), file: 'include/linux/workqueue.h', commit: null };
+  const data = {
+    ...DATA,
+    exports: { ...DATA.exports, removed: [...DATA.exports.removed,
+      { name: 'fd_old', kind: 'EXPORT_SYMBOL', header: 'gone', file: 'fs/file.c', driverUses: 7, users: MANY, commit: { sha: SHA('3'), subject: 'file: simplify', renamedTo: '__FD_INTERNAL' } }] },
+    focus: [{ id: 'v4l2', files: 1, items: [free], same: {} },
+      { id: 'workqueue', files: 1, items: [setFmt, { ...setFmt, change: 'removed', member: 'old', name: 'wq_ops.old', before: 'u8', after: undefined }], same: { wq_ops: ['get_fmt', 'flags'] } }],
+    messages: { ...DATA.messages, [SHA('4')]: 'Callers can now write: return v4l2_free(hdl);' },
+  };
+  const input = buildAiInput(data);
+  assert.equal(input.focus.find((f) => f.id === 'v4l2').changes[0].impact, 'ok');
   const { notes, dropped } = cleanNotes({
-    overview: [
-      { text: '`old_api`가 사라졌다.', refs: ['old_api', 'eeeeeeeeeeee'] },
-      { text: '없는 근거', refs: ['zzzz'] },
-      { text: 'https://example.com 참고', refs: ['old_api'] },
+    apiNotes: [
+      { name: 'old_api', note: '`new_api()`로 바꾼다.' },
+      { name: 'ghost', note: '입력에 없는 이름' },
+      { name: 'fd_old', note: '`__FD_INTERNAL`로 대체한다.' }, // 이름 변경 후보만 근거로 삼았다
+      { name: 'fd_old', note: 'https://example.com 참고' },
+      { name: 'fd_old', note: '카메라 동작에 영향을 줄 수 있다.' }, // 입력에 없는 영향
+      { name: 'fd_old', note: '메시지에 적힌 대로 정리했다.' }, // 독자가 볼 수 없는 입력을 가리킨다
+      { name: 'fd_old', note: 'device mapping은 fl사/eject 경로를 본다.' }, // 깨진 글자
+      { name: 'v4l2_free', note: '반환값을 받도록 고친다.' }, // 그대로 빌드되는 변화를 고치라고 썼다
+      { name: 'v4l2_free', note: '`return v4l2_free(hdl);`로 오류를 바로 돌려줄 수 있다.' },
+      { name: 'wq_ops.set_fmt', note: '`get_fmt`·`set_fmt` 콜백에 인자가 늘었다.' }, // get_fmt 는 헤더 비교로 그대로다
+      { name: 'wq_ops.old', note: '`old`를 `flags`로 옮겼다.' }, // 지워진 멤버가 옮겨 간 곳으로 그대로인 멤버를 든 것은 괜찮다
     ],
-    apiNotes: [{ name: 'old_api', replacement: '`new_api()`를 쓴다.' }, { name: 'ghost', replacement: 'x' }],
-    conversionNotes: [{ id: 'dddddddddddd', action: '`remove()`가 void를 돌려주게 바꾼다.' }],
     subsystems: [
-      { id: 'eeeeeeeeeeee', points: ['`old_api` 제거', 'x'.repeat(401), '`made_up_api()`로 바뀌었다.', 'device mapping은 fl사/eject 경로를 본다.', '使用 `old_api`'] },
+      { id: 'eeeeeeeeeeee', points: ['`old_api` 제거', 'x'.repeat(401), '`made_up_api()`로 바뀌었다.', '使用 `old_api`'] },
       { id: 'ffffffffffff', points: ['fs'] },
     ],
   }, input);
-  assert.equal(notes.overview.length, 1);
-  assert.equal(notes.apiNotes.get('old_api'), '`new_api()`를 쓴다.');
+  assert.deepEqual([...notes.apiNotes], [['old_api', '`new_api()`로 바꾼다.'], ['v4l2_free', '`return v4l2_free(hdl);`로 오류를 바로 돌려줄 수 있다.'], ['wq_ops.old', '`old`를 `flags`로 옮겼다.']]);
   assert.deepEqual(notes.subsystems.get('eeeeeeeeeeee'), ['`old_api` 제거']);
   assert.equal(notes.subsystems.has('ffffffffffff'), false);
-  assert.equal(dropped, 4);
-
-  // 프로필이 있으면 "먼저 볼 것"은 독자와 가까운 근거를 든 항목만 남긴다.
-  const near = cleanNotes({ overview: [
-    { text: '`neigh_thing`은 선언만 남았다.', refs: ['neigh_thing'] },
-    { text: '`old_api`가 사라졌다.', refs: ['old_api'] },
-  ], subsystems: [] }, buildAiInput(DATA, PROFILE)).notes.overview;
-  assert.deepEqual(near.map((o) => o.refs[0]), ['old_api']);
-
-  // 입력에 없는 영향·할 일을 덧붙인 문장과, 이름 변경 후보만 보고 "대체한다"고 쓴 문장은 버린다.
-  const hinted = { ...DATA, exports: { ...DATA.exports, removed: [...DATA.exports.removed,
-    { name: 'fd_old', kind: 'EXPORT_SYMBOL', header: 'gone', file: 'fs/file.c', driverUses: 2, users: MANY, commit: { sha: SHA('3'), subject: 'file: simplify', renamedTo: '__FD_INTERNAL' } }] } };
-  const guarded = cleanNotes({
-    overview: [
-      { text: '`old_api`가 사라져 카메라 동작에 영향을 줄 수 있다.', refs: ['old_api'] },
-      { text: '`old_api` 호출부를 점검한다.', refs: ['old_api'] },
-    ],
-    apiNotes: [{ name: 'fd_old', replacement: '`__FD_INTERNAL`로 대체한다.' }, { name: 'old_api', replacement: '`new_api()`로 바꾼다.' }],
-    conversionNotes: [{ id: 'dddddddddddd', action: '메시지에 적힌 대로 `remove()`를 바꾼다.' }], // 독자가 볼 수 없는 입력을 가리키는 말
-    subsystems: [],
-  }, buildAiInput(hinted));
-  assert.equal(guarded.notes.overview.length, 0);
-  assert.deepEqual([...guarded.notes.apiNotes.keys()], ['old_api']); // new_api 는 커밋 본문에 있다
-  assert.equal(guarded.notes.conversionNotes.size, 0);
-  assert.equal(guarded.dropped, 4);
-  // 이름만 준 답은 문장 꼴로 바꾸되, 그 이름이 커밋 글에 있어야 한다(이름 변경 후보만으로는 안 된다).
-  const bare = cleanNotes({ overview: [], subsystems: [], apiNotes: [{ name: 'old_api', replacement: 'new_api' }, { name: 'fd_old', replacement: '__FD_INTERNAL' }] }, buildAiInput(hinted));
+  assert.equal(dropped, 9);
+  // 이름만 준 답은 문장 꼴로 바꾸되, 그 이름이 커밋 글에 있어야 한다.
+  const bare = cleanNotes({ apiNotes: [{ name: 'old_api', note: 'new_api' }, { name: 'fd_old', note: '__FD_INTERNAL' }] }, input);
   assert.deepEqual([...bare.notes.apiNotes], [['old_api', '대신 쓸 것: `new_api`']]);
+  // 예전 필드 이름(replacement)으로 저장된 AI 원본도 읽는다.
+  assert.equal(cleanNotes({ apiNotes: [{ name: 'old_api', replacement: '`new_api()`를 쓴다.' }] }, input).notes.apiNotes.get('old_api'), '`new_api()`를 쓴다.');
 });
 
-test('post without a profile: widely used APIs open, the rest folded, facts and commands from code', () => {
+test('post: one table per module; facts, impact and commands from code, AI text only in the last column', () => {
   const input = buildAiInput(DATA);
   const template = buildPost(DATA, input);
   assert.equal(template.id, '2026-10-26-linux-v1.1-rc1-driver-impact');
   assert.equal(template.topic, 'linux-driver-impact');
   assert.equal(template.draftMetadata.ai, false);
-  assert.deepEqual(template.sections.map((s) => s.heading), ['여러 서브시스템이 쓰는 API 변화', '트리 전체 참고', '내 드라이버 점검 명령']);
-  const body = Object.fromEntries(template.sections.map((s) => [s.heading, s.body]));
-  assert.match(body['여러 서브시스템이 쓰는 API 변화'],
-    /- \*\*`old_api`\*\* — export 해제 · 사용 7개 파일 · \[base: drop old_api \\\| legacy\]\(https:\/\/git\.kernel\.org\/torvalds\/c\/aaaaaaaaaaaa\)\n {2}- 이전 `EXPORT_SYMBOL_GPL`\n {2}- 같은 커밋에서 `new_api` 추가\(이름 변경 후보\)/);
-  const ref = body['트리 전체 참고'];
-  assert.match(ref, /<details>\n<summary><strong>다른 서브시스템 안에서만 쓰이던 API 1개<\/strong><\/summary>\n\n/);
-  assert.match(ref, /\| `neigh_thing` \| export 해제\(선언은 남아 링크에서 실패\) \| — \| 3 \| — \|/);
+  assert.deepEqual(template.sections.map((s) => s.heading), ['디바이스 모델', '참고']);
+  assert.equal(template.sections[0].body, [
+    '| 영향 | 기존 | 변경 | 주요 설명 |',
+    '|---|---|---|---|',
+    '| **빌드&nbsp;실패** | <code>old&#95;api</code> export | export 해제 | [base: drop old_api \\| legacy](https://git.kernel.org/torvalds/c/aaaaaaaaaaaa) |', // AI 설명이 없으면 커밋 제목
+  ].join('\n'));
+  assert.equal(template.headline, 'v1.0 → v1.1-rc1: 빌드 실패 1건, 확인 필요 0건, 그대로 빌드 0건 (디바이스 모델)');
+  const ref = template.sections[1].body;
+  assert.match(ref, /<details>\n<summary><strong>다른 서브시스템 안에서만 쓰이던 변경 1건<\/strong><\/summary>\n\n\| 이름 \| 모듈 \| 변화 \| 사용 파일 \| 커밋 \|\n\|---\|---\|---\|---:\|---\|\n\| `neigh_thing` \| 그 밖의 API \| export 해제 \| 3 \| — \|/);
   assert.match(ref, /\| `usb_thing` \| EXPORT_SYMBOL \| EXPORT_SYMBOL_NS_GPL\("USB"\) \| drivers\/usb\/x\.c \|/);
-  assert.match(ref, /\| `USB_OLD` \| drivers\/usb\/Kconfig \| — \| \[usb: remove old driver\]/);
-  assert.match(ref, /\*\*Use devm helper\*\* — 커밋 9개 \(usb, spi, i2c\)\. \[예시\]/);
-  assert.doesNotMatch(ref, /old_api|ARCH_X|now_inline|fix typo/); // 오타 수정 문서 커밋은 싣지 않는다
-  const check = body['내 드라이버 점검 명령'];
-  assert.match(check, /<details>\n<summary><strong>명령 펼치기<\/strong><\/summary>\n\n```sh\n# 사라진 API 2개\ngit grep -nwF -f - <<'EOF'\nold_api\nneigh_thing\nEOF\n/);
-  assert.match(check, /# 라이선스·네임스페이스가 바뀐 export 1개\ngit grep -nwF -f - <<'EOF'\nusb_thing\nEOF/);
-  assert.match(check, /\(CONFIG_\)\?\(USB_OLD\)/);
-  assert.doesNotMatch(check, /now_inline|ARCH_X/);
+  assert.match(ref, /\| `USB_OLD` \| drivers\/usb\/Kconfig \| \[usb: remove old driver\]/);
+  assert.match(ref, /\*\*Use devm helper\*\* — 커밋 9개 \(usb, spi, i2c\) \[예시\]/);
+  assert.match(ref, /<summary><strong>내 드라이버 점검 명령[^<]*<\/strong><\/summary>\n\n```sh\n# 사라진 API 2개\ngit grep -nwF -f - <<'EOF'\nold_api\nneigh_thing\nEOF\n/);
+  assert.match(ref, /# 라이선스·네임스페이스가 바뀐 export 1개\ngit grep -nwF -f - <<'EOF'\nusb_thing\nEOF/);
+  assert.match(ref, /\(CONFIG_\)\?\(USB_OLD\)/);
+  assert.doesNotMatch(ref, /ARCH_X|now_inline|fix typo/); // 헤더에 inline 으로 남은 export, 드라이버 밖 Kconfig, 오타 수정 문서 커밋은 싣지 않는다
+  assert.doesNotMatch(template.sections.map((s) => s.body.replace(/<details>[\s\S]*?<\/details>/g, '')).join('\n'), /니다\./); // 펼쳐진 본문에 설명문을 두지 않는다
 
   const { notes } = cleanNotes({
-    overview: [{ text: '`old_api` 대신 `new_api`.', refs: ['old_api', 'eeeeeeeeeeee'] }],
-    apiNotes: [{ name: 'old_api', replacement: '`new_api()`로 바꾼다.' }],
-    conversionNotes: [{ id: 'dddddddddddd', action: '`remove()`가 void를 돌려주게 바꾼다.' }],
+    apiNotes: [{ name: 'old_api', note: '쓰는 곳이 줄어 정리했다. `new_api()`로 바꾼다.' }],
     subsystems: [{ id: 'eeeeeeeeeeee', points: ['`old_api` 제거'] }],
   }, input);
   const post = buildPost(DATA, input, notes);
-  assert.equal(post.sections[0].heading, '먼저 볼 것');
-  assert.equal(post.sections[0].body, '- `old_api` 대신 `new_api`.');
-  assert.equal(post.headline, '`old_api` 대신 `new_api`.');
-  const text = post.sections.map((s) => s.body).join('\n');
-  assert.match(text, / {2}- 이전 `EXPORT_SYMBOL_GPL`\n {2}- `new_api\(\)`로 바꾼다\./); // AI 문장이 있으면 이름 변경 후보 대신 쓴다
-  assert.match(text, /\*\*USB updates from Greg KH\*\* · \[머지\]\(https:\/\/git\.kernel\.org\/torvalds\/c\/eeeeeeeeeeee\)\n- `old_api` 제거/);
-  assert.match(text, /\[driver core: convert remove\(\)\]\([^)]*\) — 드라이버 디렉터리 30곳, 파일 40개\. `remove\(\)`가 void를 돌려주게 바꾼다\./);
+  assert.match(post.sections[0].body, /export 해제 \| 쓰는 곳이 줄어 정리했다\. `new_api\(\)`로 바꾼다\. \[커밋\]\(https:\/\/git\.kernel\.org\/torvalds\/c\/aaaaaaaaaaaa\) \|$/);
+  assert.match(post.sections.at(-1).body, /<summary><strong>다른 서브시스템의 메인테이너 요약<\/strong><\/summary>\n\n\*\*USB updates from Greg KH\*\* · \[머지\]\([^)]*\)\n- `old_api` 제거/);
   assert.equal(post.draftMetadata.ai, true);
+  assert.equal(post.draftMetadata.counts.explained, 1);
 });
 
-test('post with a profile: the reader\'s drivers first, folded tables grouped by commit, a complete check list', () => {
-  const padCommit = { sha: SHA('4'), subject: 'media: v4l2-subdev: add client info to pad ops' };
+test('post with a profile: changed parts in bold, repeated changes in one row, real fixes as examples', () => {
   const cam = ['drivers/media/i2c/cam.c', 'drivers/media/platform/isp.c'];
+  const padCommit = { sha: SHA('4'), subject: 'media: v4l2-subdev: add client info to pad ops' };
   const padOps = (member, tail) => ({
     change: 'changed', kind: 'member', struct: 'v4l2_subdev_pad_ops', member, name: `v4l2_subdev_pad_ops.${member}`,
     before: `int (*)(struct v4l2_subdev *, ${tail})`, after: `int (*)(struct v4l2_subdev *, const struct v4l2_subdev_client_info *, ${tail})`,
     driverUses: 3, users: [...cam, 'drivers/staging/x/y.c'], file: 'include/media/v4l2-subdev.h', commit: padCommit,
   });
+  const fhAdd = { change: 'changed', kind: 'function', name: 'v4l2_fh_add', before: 'void v4l2_fh_add(struct v4l2_fh *)', after: 'void v4l2_fh_add(struct v4l2_fh *, struct file *)',
+    driverUses: 2, users: cam, file: 'include/media/v4l2-fh.h', commit: { sha: SHA('6'), subject: 'media: set private_data in v4l2_fh_add()' },
+    examples: [{ file: 'drivers/media/platform/a/a.c', before: ['file->private_data = &ctx->fh;', 'v4l2_fh_add(&ctx->fh);'], after: ['v4l2_fh_add(&ctx->fh, file);'] }] };
+  const free = { change: 'changed', kind: 'function', name: 'v4l2_free', before: 'void v4l2_free(struct h *)', after: 'int v4l2_free(struct h *)',
+    driverUses: 1, users: cam.slice(0, 1), file: 'include/media/v4l2-ctrls.h', commit: null };
+  const delTimer = { change: 'removed', kind: 'function', name: 'del_timer_sync', before: 'int del_timer_sync(struct timer_list *)', driverUses: 2, users: cam, file: 'include/linux/timer.h',
+    commit: { sha: SHA('7'), subject: 'treewide: switch to timer_delete_sync()' },
+    examples: [{ file: 'drivers/media/i2c/cam.c', before: ['del_timer_sync(&cam->timer);'], after: ['timer_delete_sync(&cam->timer);'] },
+      // 선언을 지우고 다른 변수를 더한 hunk 는 예시로 쓰지 않는다
+      { file: 'drivers/usb/u.c', before: ['struct timer_list *t = del_timer_sync(x);'], after: ['u32 peak;'] }] };
   // 한 커밋이 지운 60개(드라이버를 통째로 지움)와, 커밋이 다 다른 70개
   const gone = Array.from({ length: 60 }, (_, i) => ({ name: `sgi_api_${i}`, kind: 'EXPORT_SYMBOL_GPL', header: 'gone', file: 'drivers/misc/sgi/x.c', driverUses: 2,
     users: ['drivers/misc/sgi/a.c', 'drivers/misc/sgi/b.c'], commit: { sha: SHA('5'), subject: 'misc: remove SGI driver' } }));
@@ -352,77 +414,78 @@ test('post with a profile: the reader\'s drivers first, folded tables grouped by
     ...DATA,
     exports: { ...DATA.exports, removed: [...DATA.exports.removed, ...gone,
       { name: 'x86_only', kind: 'EXPORT_SYMBOL', header: 'gone', file: 'arch/x86/kernel/x.c', driverUses: 7, users: MANY, commit: null }] },
-    headers: [...DATA.headers, ...lone, { name: 'cam_helper', kind: 'function', file: 'include/linux/cam.h', driverUses: 2, users: cam, commit: { sha: SHA('6'), subject: 'cam: drop helper' } }],
+    headers: [...DATA.headers, ...lone, { name: 'cam_helper', kind: 'function', file: 'include/linux/cam.h', driverUses: 2, users: cam, commit: null }],
     kconfig: { ...DATA.kconfig, removed: [...DATA.kconfig.removed, { name: 'VIDEO_OLD', file: 'drivers/media/platform/Kconfig', commit: null }] },
     focus: [
-      { id: 'v4l2', files: 1, items: [padOps('set_fmt', 'struct v4l2_subdev_format *'), padOps('get_selection', 'struct v4l2_subdev_selection *'),
+      { id: 'v4l2', files: 1, items: [padOps('set_fmt', 'struct v4l2_subdev_format *'), padOps('get_selection', 'struct v4l2_subdev_selection *'), fhAdd, free,
         { change: 'added', kind: 'member', name: 'v4l2_subdev_fh.ci', after: 'x', file: 'include/media/v4l2-subdev.h' }], same: { v4l2_subdev_pad_ops: ['get_fmt'] } },
-      { id: 'media-legacy', files: 1, items: [{ change: 'removed', kind: 'member', struct: 'rc_map', member: 'alloc', name: 'rc_map.alloc', before: 'unsigned int',
-        driverUses: 2, users: ['drivers/media/rc/keymaps/rc-x.c', 'drivers/media/usb/x/ir.c'], file: 'include/media/rc-map.h', commit: null }], same: {} },
+      { id: 'timer', files: 1, items: [delTimer], same: {} },
     ],
     pulls: [...DATA.pulls, { sha: SHA('2'), tag: 'media/v1.1-1', title: 'Pull media updates from Mauro', summary: 'Pad ops take client info.', files: 30, driverFiles: 28 }],
   };
   const input = buildAiInput(data, PROFILE);
   const { notes } = cleanNotes({
-    overview: [{ text: 'pad ops 콜백에 인자가 늘었다.', refs: ['v4l2_subdev_pad_ops.set_fmt'] }],
-    apiNotes: [{ name: 'v4l2_subdev_pad_ops.set_fmt', replacement: '구현에 `const struct v4l2_subdev_client_info *` 인자를 더한다.' }],
-    subsystems: [{ id: '222222222222', points: ['pad ops가 client info를 받는다.'] }, { id: 'eeeeeeeeeeee', points: ['`old_api` 제거'] }],
+    apiNotes: [{ name: 'v4l2_subdev_pad_ops.set_fmt', note: '클라이언트별로 UAPI를 구분하려고 인자를 더했다.' }],
+    subsystems: [{ id: '222222222222', points: ['pad ops가 client info를 받는다.'] }],
   }, input);
   const post = buildPost(data, input, notes, { profile: PROFILE });
-  assert.deepEqual(post.sections.map((s) => s.heading), ['먼저 볼 것', '카메라 드라이버에서 볼 것', '트리 전체 참고', '내 드라이버 점검 명령']);
+  assert.deepEqual(post.sections.map((s) => s.heading), ['V4L2', '디바이스 모델', '타이머', '그 밖의 API', 'Kconfig', '참고']);
 
-  const mine = post.sections[1].body;
-  assert.match(mine, /### V4L2·videobuf2·미디어 컨트롤러\n\n- \*\*`struct v4l2_subdev_pad_ops`\*\* — 멤버 2개 타입 변경 · 사용 미디어 2 · 전체 3개 파일 · \[media: v4l2-subdev: add client info to pad ops\]\(https:\/\/git\.kernel\.org\/torvalds\/c\/444444444444\)\n {2}- `get_selection`: [^\n]+\n {2}- `set_fmt`: `int \(\*\)\(struct v4l2_subdev \*, struct v4l2_subdev_format \*\)` → `int \(\*\)\(struct v4l2_subdev \*, const struct v4l2_subdev_client_info \*, struct v4l2_subdev_format \*\)`\n {2}- 구현에 `const struct v4l2_subdev_client_info \*` 인자를 더한다\./);
-  assert.match(mine, /### 디바이스 모델·PM·펌웨어\n\n- \*\*`old_api`\*\* — export 해제 · 사용 미디어 1 · 전체 7개 파일/);
-  assert.match(mine, /### 그 밖에 사라진 API\n\n- \*\*`cam_helper`\*\* — 함수 삭제 · 사용 미디어 2 · 전체 2개 파일 · \[cam: drop helper\]/);
-  assert.match(mine, /### 사라진 Kconfig 심볼\n\n- `VIDEO_OLD` \(drivers\/media\/platform\/Kconfig\)/);
-  assert.match(mine, /### 함께 볼 전환\n\n[^\n]+\n\n- \[driver core: convert remove\(\)\]\([^)]*\) — 드라이버 디렉터리 30곳\(미디어 1곳\), 파일 40개\./);
-  assert.match(mine, /### 메인테이너 요약에서\n\n[^\n]+헤더로 확인한 내용이 아닙니다\.\n\n\*\*media updates from Mauro\*\* · \[머지\]\([^)]*\)\n- pad ops가 client info를 받는다\./);
-  assert.doesNotMatch(mine, /rc_map|sgi_api|x86_only|neigh_thing|USB_OLD|lone_api/);
+  const v4l2 = post.sections[0].body;
+  const lines = v4l2.split('\n');
+  // 같은 커밋에서 같은 인자가 더해진 두 콜백은 한 행. 길어서 그대로인 인자는 … 로 줄이고 더해진 인자만 굵게 쓴다.
+  assert.match(lines[2], /^\| \*\*빌드&nbsp;실패\*\* \| <code>v4l2&#95;subdev&#95;pad&#95;ops\.get&#95;selection\(struct v4l2&#95;subdev &#42;, struct v4l2&#95;subdev&#95;selection &#42;\)<\/code><br>외 1개: <code>\.set&#95;fmt<\/code> \| /);
+  assert.match(lines[2], / \| <code>v4l2&#95;subdev&#95;pad&#95;ops\.get&#95;selection\(…, <b>const struct v4l2&#95;subdev&#95;client&#95;info &#42;<\/b>, …\)<\/code> \| 클라이언트별로 UAPI를 구분하려고 인자를 더했다\. \[커밋\]\([^)]*444444444444\) \|$/);
+  assert.equal(lines[3], '| **빌드&nbsp;실패** | <code>v4l2&#95;fh&#95;add(struct v4l2&#95;fh &#42;)</code> | <code>v4l2&#95;fh&#95;add(struct v4l2&#95;fh &#42;, <b>struct file &#42;</b>)</code> | [media: set private_data in v4l2_fh_add()](https://git.kernel.org/torvalds/c/666666666666) |');
+  assert.equal(lines[4], '| 그대로&nbsp;빌드 | <code><b>void</b> v4l2&#95;free(struct h &#42;)</code> | <code><b>int</b> v4l2&#95;free(struct h &#42;)</code> | — |');
+  assert.match(v4l2, /<details>\n<summary><strong>고친 예 1건 \(메인라인 드라이버\)<\/strong><\/summary>\n\n`v4l2_fh_add` · drivers\/media\/platform\/a\/a\.c\n\n```diff\n- file->private_data = &ctx->fh;\n- v4l2_fh_add\(&ctx->fh\);\n\+ v4l2_fh_add\(&ctx->fh, file\);\n```\n\n<\/details>$/);
 
-  const ref = post.sections[2].body;
-  assert.match(ref, /다른 서브시스템 안에서만 쓰이던 API 133개/); // x86_only + neigh_thing + sgi 60 + rc_map.alloc + lone 70
-  assert.match(ref, /\| `x86_only` \| export 해제 \| — \| 7 \|/); // 다른 아키텍처의 export 는 여러 서브시스템이 써도 접는다
-  assert.match(ref, /\| `sgi_api_0`, `sgi_api_1`, `sgi_api_10` 외 57개 \| export 해제 \| — \| 2 \| \[misc: remove SGI driver\]/);
-  assert.match(ref, /\| `rc_map\.alloc` \| 멤버 삭제 \| `unsigned int` \| 2 \| — \|/); // 프로필 경로 밖(리모컨)은 V4L2 표에 섞이지 않는다
-  assert.match(ref, /사용 수가 적은 나머지 24줄은 표에서 뺐습니다\. 이름은 모두 아래 점검 명령에 있습니다\./);
-  assert.match(ref, /\*\*USB updates from Greg KH\*\* · \[머지\][^\n]*\n- `old_api` 제거/);
+  // 호출부 예시가 모두 같은 이름으로 바꿨으면 변경 칸에 새 이름을 쓴다.
+  const timer = post.sections[2].body;
+  assert.match(timer, /\| \*\*빌드&nbsp;실패\*\* \| <code>del&#95;timer&#95;sync\(struct timer&#95;list &#42;\)<\/code> \| <code><b>timer&#95;delete&#95;sync<\/b>\(\)<\/code> \| /);
+  assert.match(timer, /```diff\n- del_timer_sync\(&cam->timer\);\n\+ timer_delete_sync\(&cam->timer\);\n```/);
+  assert.doesNotMatch(timer, /u32 peak/);
+  assert.match(post.sections[1].body, /<code>old&#95;api<\/code> export \| export 해제 \|/);
+  assert.match(post.sections[3].body, /\| \*\*빌드&nbsp;실패\*\* \| <code>cam&#95;helper\(\)<\/code> \| 삭제 \| — \|/);
+  assert.equal(post.sections[4].body.split('\n')[2], '| 확인&nbsp;필요 | <code>CONFIG&#95;VIDEO&#95;OLD</code><br>drivers/media/platform/Kconfig | 삭제 | — |');
+
+  const ref = post.sections[5].body;
+  assert.match(ref, /다른 서브시스템 안에서만 쓰이던 변경 132건/); // x86_only + neigh_thing + sgi 60 + lone 70
+  assert.match(ref, /\| `x86_only` \| 그 밖의 API \| export 해제 \| 7 \| — \|/); // 다른 아키텍처의 export 는 여러 서브시스템이 써도 접는다
+  assert.match(ref, /\| `sgi_api_0`, `sgi_api_1`, `sgi_api_10` 외 57개 \| 그 밖의 API \| export 해제 \| 2 \| \[misc: remove SGI driver\]/);
+  assert.match(ref, /사용 수가 적은 나머지 23줄은 뺐습니다\. 이름은 모두 점검 명령에 있습니다\./);
+  assert.match(ref, /<summary><strong>API 밖의 변화 \(메인테이너 요약\)<\/strong><\/summary>\n\n\*\*media updates from Mauro\*\* · \[머지\]\([^)]*\)\n- pad ops가 client info를 받는다\./);
   assert.match(ref, /- \*\*V4L2·videobuf2·미디어 컨트롤러\*\* 1개: `v4l2_subdev_fh\.ci`/);
-  assert.doesNotMatch(ref, /media updates from Mauro|VIDEO_OLD|cam_helper/);
-
   // 표에서 뺀 이름도 점검 명령에는 모두 있다(예전에는 상위 150개만 넣고 "나머지는 점검 명령에"라고 썼다).
-  const check = post.sections[3].body;
-  assert.match(check, /# 사라진 API 134개\n/);
-  for (const name of ['lone_api_69', 'sgi_api_59', 'cam_helper', 'old_api', 'x86_only']) assert.match(check, new RegExp(`\\n${name}\\n`), name);
-  assert.match(check, /# 멤버가 바뀌거나 사라진 구조체 2개\ngit grep -nwF -f - <<'EOF'\nv4l2_subdev_pad_ops\nrc_map\nEOF/);
-  const shown = `${mine}\n${ref}`;
-  for (const name of ['cam_helper', 'neigh_thing', 'x86_only', 'sgi_api_0']) assert.equal(shown.split(`\`${name}\``).length - 1, 1, `${name} appears once`);
+  assert.match(ref, /# 사라진 API 134개\n/); // old_api, neigh_thing, sgi 60, x86_only, lone 70, cam_helper
+  for (const name of ['lone_api_69', 'sgi_api_59', 'cam_helper', 'old_api', 'x86_only']) assert.match(ref, new RegExp(`\\n${name}\\n`), name);
+  assert.match(ref, /# 중점 영역에서 바뀌거나 사라진 API 3개\ngit grep -nwF -f - <<'EOF'\nv4l2_fh_add\nv4l2_free\ndel_timer_sync\nEOF/);
+  assert.match(ref, /# 멤버가 바뀌거나 사라진 구조체 1개\ngit grep -nwF -f - <<'EOF'\nv4l2_subdev_pad_ops\nEOF/);
 
+  assert.equal(post.headline, 'v1.0 → v1.1-rc1: 빌드 실패 5건, 확인 필요 0건, 그대로 빌드 1건 (V4L2, 디바이스 모델, 타이머, 그 밖의 API)');
+  assert.deepEqual(post.draftMetadata.counts, { commits: 100, merges: 2, tableRows: 6, breaking: 5, check: 0, compatible: 1, explained: 1, folded: 132,
+    removedApis: 135, usedRemovedApis: 134, exportChanges: 1, driverKconfig: 2 });
   assert.equal(post.draftMetadata.profile, 'cam');
-  assert.equal(post.draftMetadata.counts.profileChanges, 4); // pad ops 멤버 2 + old_api + cam_helper
-  assert.match(post.summary, /카메라 드라이버에서 볼 API 변경이 4건/);
   assert.deepEqual(post.sources.map((s) => s.title), ['Pull media updates from Mauro']);
 });
 
-test('post with a profile: names one commit removed together are one item', () => {
-  const drop = { sha: SHA('7'), subject: 'media: i2c: lm3560: drop platform data' };
-  const macro = (name) => ({ change: 'removed', kind: 'macro', name, before: '', driverUses: 1, users: ['drivers/media/i2c/lm3560.c'], file: 'include/media/i2c/lm3560.h', commit: drop });
-  const data = { ...DATA, focus: [{ id: 'v4l2', files: 1, items: ['LM3560_NAME', 'LM3560_LED0', 'LM3560_LED1', 'LM3560_LED_MAX', 'LM3560_TOUT'].map(macro), same: {} }] };
-  const post = buildPost(data, buildAiInput(data, PROFILE), undefined, { profile: PROFILE });
-  const mine = post.sections[0].body;
-  assert.match(mine, /- \*\*`LM3560_LED_MAX`, `LM3560_LED0`, `LM3560_LED1`, `LM3560_NAME` 외 1개\*\* — 매크로 삭제 5개 · 사용 미디어 1 · 전체 1개 파일 · \[media: i2c: lm3560: drop platform data\]/);
-  assert.equal(mine.includes('LM3560_TOUT'), false);
-  assert.match(post.sections.at(-1).body, /\nLM3560_TOUT\n/); // 묶여서 이름이 안 보이는 것도 점검 명령에는 있다
-});
-
-test('post with a profile: long lists stay in place but fold after the first dozen', () => {
-  const headers = Array.from({ length: 15 }, (_, i) => ({ name: `cam_api_${String(i).padStart(2, '0')}`, kind: 'function', file: 'include/linux/cam.h', driverUses: 1, users: ['drivers/media/i2c/cam.c'], commit: null }));
-  const data = { ...DATA, headers };
-  const post = buildPost(data, buildAiInput(data, PROFILE), undefined, { profile: PROFILE });
-  const mine = post.sections.find((s) => s.heading === '카메라 드라이버에서 볼 것').body;
-  assert.match(mine, /`cam_api_11`\*\*[^\n]*\n\n<details>\n<summary><strong>그 밖에 사라진 API 나머지 3개<\/strong><\/summary>\n\n- \*\*`cam_api_12`/);
-  assert.match(mine, /### V4L2·videobuf2·미디어 컨트롤러\n\n이번 범위에서 이 영역의 헤더는 바뀌지 않았습니다\./); // 주 영역은 변화가 없어도 그렇다고 적는다
-  assert.equal(post.headline, 'v1.0 → v1.1-rc1: 카메라 드라이버에서 볼 변경 16건'); // old_api + 15
+test('post: a long range gets an index and folds what still builds', () => {
+  const wide = SUBSYSTEMS.map((s) => `drivers/${s}/w.c`);
+  const fn = (name, file, before, after) => ({ change: 'changed', kind: 'function', name, before, after, driverUses: 6, users: wide, file, commit: null });
+  const quiet = Array.from({ length: 31 }, (_, i) => fn(`mm_get_${String(i).padStart(2, '0')}`, 'include/linux/mm.h', `void mm_get_${String(i).padStart(2, '0')}(struct page *)`, `int mm_get_${String(i).padStart(2, '0')}(struct page *)`));
+  const broke = (name, file) => fn(name, file, `void ${name}(int)`, `void ${name}(int, int)`);
+  const data = { ...DATA, focus: [
+    { id: 'mm', files: 1, items: [...quiet, broke('mm_set', 'include/linux/mm.h')], same: {} },
+    { id: 'timer', files: 1, items: [broke('timer_x', 'include/linux/timer.h')], same: {} },
+    { id: 'irq', files: 1, items: [broke('irq_x', 'include/linux/interrupt.h')], same: {} },
+    { id: 'workqueue', files: 1, items: [broke('wq_x', 'include/linux/workqueue.h')], same: {} },
+  ] };
+  const post = buildPost(data, buildAiInput(data));
+  assert.deepEqual(post.sections.map((s) => s.heading), ['한눈에', '메모리', '디바이스 모델', '인터럽트', '타이머', 'workqueue', '참고']);
+  assert.equal(post.sections[0].body, ['| 모듈 | 빌드 실패 | 확인 필요 | 그대로 빌드 |', '|---|---:|---:|---:|', '| 메모리 | 1 | · | 31 |', '| 디바이스 모델 | 1 | · | · |',
+    '| 인터럽트 | 1 | · | · |', '| 타이머 | 1 | · | · |', '| workqueue | 1 | · | · |'].join('\n'));
+  const mm = post.sections[1].body;
+  assert.match(mm, /^\| 영향 \| 기존 \| 변경 \| 주요 설명 \|\n\|---\|---\|---\|---\|\n\| \*\*빌드&nbsp;실패\*\* \| <code>mm&#95;set\(int\)<\/code> \| <code>mm&#95;set\(int, <b>int<\/b>\)<\/code> \| — \|\n\n<details>\n<summary><strong>그대로 빌드되는 변경 31건<\/strong><\/summary>\n\n\| 영향 \|/);
 });
 
 const HEADER_V1 = `/* SPDX */
@@ -503,6 +566,35 @@ test('header diff: signature and callback changes, removals and moves between he
   assert.deepEqual(items.filter(([c]) => c === 'added').map(([, k, n]) => [k, n]), [['function', 'x_new']]);
 });
 
+test('fix examples: the small call-site hunks of the commit that changed the name', () => {
+  const diff = [
+    'diff --git a/drivers/media/v4l2-core/v4l2-fh.c b/drivers/media/v4l2-core/v4l2-fh.c',
+    '--- a/drivers/media/v4l2-core/v4l2-fh.c', '+++ b/drivers/media/v4l2-core/v4l2-fh.c',
+    '@@ -30 +30 @@', '-void v4l2_fh_add(struct v4l2_fh *fh)', '+void v4l2_fh_add(struct v4l2_fh *fh, struct file *filp)', // 0열: 정의는 예시가 아니다
+    'diff --git a/drivers/media/platform/a/a.c b/drivers/media/platform/a/a.c',
+    '--- a/drivers/media/platform/a/a.c', '+++ b/drivers/media/platform/a/a.c',
+    '@@ -10 +10 @@ static int a_open(struct file *file)', '-\tv4l2_fh_add(&ctx->fh);', '+\tv4l2_fh_add(&ctx->fh, file);',
+    '@@ -90,5 +90,2 @@', '-\tv4l2_fh_add(&x);', '-\ta();', '-\tb();', '-\tc();', '+\td();', // 지운 줄이 넷: 한눈에 볼 예시가 아니다
+    'diff --git a/drivers/media/platform/b/b.c b/drivers/media/platform/b/b.c',
+    '--- a/drivers/media/platform/b/b.c', '+++ b/drivers/media/platform/b/b.c',
+    '@@ -5 +5 @@', '-\tv4l2_fh_add(&b->fh);', '+\tv4l2_fh_add(&b->fh, file);', // 같은 서브시스템의 둘째 예는 필요 없다
+    'diff --git a/drivers/usb/gadget/u.c b/drivers/usb/gadget/u.c',
+    '--- a/drivers/usb/gadget/u.c', '+++ b/drivers/usb/gadget/u.c',
+    '@@ -7 +7 @@', '-\t * v4l2_fh_add() is called later', '+\t * see below', // 주석
+    '@@ -9 +9 @@', '-\t\tv4l2_fh_add(&u->fh);', '+\t\tv4l2_fh_add(&u->fh, file);',
+    'diff --git a/drivers/old/gone.c b/drivers/old/gone.c', '--- a/drivers/old/gone.c', '+++ /dev/null', '@@ -1 +0,0 @@', '-\tv4l2_fh_add(&g);',
+  ].join('\n');
+  const found = fixExamples(diff, ['v4l2_fh_add', 'v4l2_fh_del']);
+  assert.deepEqual(found.get('v4l2_fh_add'), [
+    { file: 'drivers/media/platform/a/a.c', before: ['v4l2_fh_add(&ctx->fh);'], after: ['v4l2_fh_add(&ctx->fh, file);'] },
+    { file: 'drivers/usb/gadget/u.c', before: ['v4l2_fh_add(&u->fh);'], after: ['v4l2_fh_add(&u->fh, file);'] },
+  ]);
+  assert.deepEqual(found.get('v4l2_fh_del'), []);
+  // 독자와 가까운 드라이버의 예를 앞에 둔다
+  const usbFirst = fixExamples(diff, ['v4l2_fh_add'], { prefer: (f) => f.startsWith('drivers/usb/') }).get('v4l2_fh_add');
+  assert.deepEqual(usbFirst.map((e) => e.file), ['drivers/usb/gadget/u.c', 'drivers/media/platform/a/a.c']);
+});
+
 test('header diff: changes callers still compile with are not signature changes', () => {
   const v1 = '#define kzalloc(...) alloc_hooks(kzalloc_noprof(__VA_ARGS__))\n#define x_pr(fmt, ...) pr(fmt)\n'
     + 'extern unsigned long volatile __jiffy_arch_data jiffies;\n__signed_wrap bool x_sub(int i, int *r);\nvoid x_rd(void __iomem *p);\nvoid x_le(__u32 v);\n';
@@ -512,6 +604,10 @@ test('header diff: changes callers still compile with are not signature changes'
   assert.deepEqual(items.map((i) => [i.change, i.name, i.before, i.after]), [['changed', 'x_le', 'void x_le(__u32)', 'void x_le(__le32)']]);
   assert.equal(compatibleChange('randomized_struct_fields_end struct thread_struct', 'struct thread_struct'), true);
   assert.equal(compatibleChange('(2)', '(1)'), false);
+  // 같은 타입의 다른 표기(`unsigned` 와 `unsigned int`)는 변화가 아니다
+  const spell = (text) => mergeHeaderApis([parseHeaderApi(text, 'include/linux/m.h')]);
+  assert.deepEqual(diffHeaderApi(spell('char *parse_args(const char *doing, unsigned num, s16 level);\nstruct k { unsigned flags; };\n'),
+    spell('char *parse_args(const char *doing, unsigned int num, s16 level);\nstruct k { unsigned int flags; };\n')), []);
   assert.equal(compatibleChange('int f(struct x *)', 'int f(const struct x *)'), false);
 });
 
@@ -561,87 +657,3 @@ test('header parser: members wrapped in a macro keep their own types', () => {
   assert.deepEqual(diffHeaderApi(api(v1), api(v2)).map((i) => [i.change, i.name]), [['added', 'kattr.show_const']]);
 });
 
-test('a function whose return type alone changed is told apart from a signature change', () => {
-  const fn = (name, before, after, kind = 'function') => ({ kind, change: 'changed', name, before, after });
-  assert.deepEqual(returnChange(fn('v4l2_free', 'void v4l2_free(struct h *)', 'int v4l2_free(struct h *)')), { only: true, callersBuild: true });
-  assert.deepEqual(returnChange(fn('i2c_check', 'int i2c_check(struct a *, u32)', 'bool i2c_check(struct a *, u32)')), { only: true, callersBuild: true });
-  assert.deepEqual(returnChange(fn('x_get', 'int x_get(void)', 'void x_get(void)')), { only: true, callersBuild: false }); // 반환값을 쓰던 호출은 깨진다
-  assert.equal(returnChange(fn('v4l2_add', 'void v4l2_add(struct fh *)', 'void v4l2_add(struct fh *, struct file *)')).only, false);
-  assert.equal(returnChange(fn('ops.set', 'void (*)(int)', 'int (*)(int)', 'member')).only, false); // 콜백은 구현을 고쳐야 한다
-
-  const free = { ...fn('v4l2_free', 'void v4l2_free(struct h *)', 'int v4l2_free(struct h *)'), driverUses: 6, users: SUBSYSTEMS.map((s) => `drivers/${s}/c.c`),
-    file: 'include/media/v4l2-ctrls.h', commit: { sha: SHA('4'), subject: 'media: return the handler error' } };
-  const add = { ...fn('v4l2_add', 'void v4l2_add(struct fh *)', 'void v4l2_add(struct fh *, struct file *)'), driverUses: 6, users: SUBSYSTEMS.map((s) => `drivers/${s}/c.c`),
-    file: 'include/media/v4l2-fh.h', commit: null };
-  const data = { ...DATA, focus: [{ id: 'v4l2', files: 2, items: [free, add], same: {} }], messages: { [SHA('4')]: 'Callers can now write: return v4l2_free(hdl);' } };
-  const input = buildAiInput(data);
-  assert.deepEqual(input.focus.find((f) => f.id === 'v4l2').changes.map((c) => [c.name, c.callersBuild]), [['v4l2_add', undefined], ['v4l2_free', true]]);
-  const { notes, dropped } = cleanNotes({
-    overview: [
-      { text: '`v4l2_free()`가 int를 반환하므로 반환값을 받도록 고친다.', refs: ['v4l2_free'] },
-      { text: '`v4l2_add()`에 인자가 늘어 호출을 고친다.', refs: ['v4l2_add'] },
-    ],
-    apiNotes: [{ name: 'v4l2_free', replacement: '`return v4l2_free(hdl);`로 쓸 수 있다.' }, { name: 'v4l2_free', replacement: '호출부를 수정해야 한다.' }],
-    subsystems: [],
-  }, input);
-  assert.deepEqual(notes.overview.map((o) => o.refs[0]), ['v4l2_add']);
-  assert.equal(notes.apiNotes.get('v4l2_free'), '`return v4l2_free(hdl);`로 쓸 수 있다.');
-  assert.equal(dropped, 2);
-  const open = buildPost(data, input, notes).sections.find((s) => s.heading === '여러 서브시스템이 쓰는 API 변화').body;
-  assert.match(open, /- \*\*`v4l2_free`\*\* — 반환형 변경 · 사용 6개 파일 · [^\n]+\n {2}- 이전 `void v4l2_free\(struct h \*\)`\n {2}- 이후 `int v4l2_free\(struct h \*\)`\n {2}- 기존 호출은 그대로 빌드된다\.\n {2}- `return v4l2_free\(hdl\);`로 쓸 수 있다\./);
-  assert.match(open, /- \*\*`v4l2_add`\*\* — 시그니처 변경 · /);
-});
-
-test('focus areas: header changes become blocks with before/after and the AI sentence for that name', () => {
-  const wide = SUBSYSTEMS.map((s) => `drivers/${s}/wq.c`);
-  const data = {
-    ...DATA,
-    pulls: [...DATA.pulls, { sha: SHA('7'), tag: 'wq-for-7.4', title: 'Pull workqueue updates from Tejun Heo', summary: 'Per-cpu default.', files: 5, driverFiles: 0 },
-      { sha: SHA('8'), tag: 'timers-urgent-2026-11-01', title: 'Pull timer fixes', summary: 'x', files: 2, driverFiles: 0 }],
-    headers: [...DATA.headers, { name: 'wq_old', kind: 'function', file: 'include/linux/workqueue.h', driverUses: 6, users: wide, commit: { sha: SHA('5'), subject: 'workqueue: rename', renamedTo: 'wq_new' } }],
-    focus: [{ id: 'workqueue', files: 1, items: [
-      { change: 'removed', kind: 'function', name: 'wq_old', before: 'void wq_old(void)', driverUses: 6, users: wide, file: 'include/linux/workqueue.h', commit: { sha: SHA('5'), subject: 'workqueue: rename' } },
-      { change: 'changed', kind: 'function', name: 'queue_work_on', before: 'bool queue_work_on(int, struct workqueue_struct *, struct work_struct *)',
-        after: 'bool queue_work_on(int, struct workqueue_struct *, struct work_struct *, unsigned int)', driverUses: 12, users: [...wide, ...wide.map((f) => f.replace('wq.c', 'wq2.c'))],
-        file: 'include/linux/workqueue.h', commit: { sha: SHA('6'), subject: 'workqueue: add flags to queue_work_on()' } },
-      { change: 'added', kind: 'function', name: 'queue_work_flags', after: 'bool queue_work_flags(void)', file: 'include/linux/workqueue.h' },
-      { change: 'changed', kind: 'member', struct: 'wq_ops', member: 'set_fmt', name: 'wq_ops.set_fmt', before: 'int (*)(int)', after: 'int (*)(int, int)', driverUses: 3,
-        users: ['drivers/net/a.c', 'drivers/net/b.c', 'drivers/net/c.c'], file: 'include/linux/workqueue.h', commit: null },
-    ], same: { wq_ops: ['get_fmt'] } }],
-  };
-  const input = buildAiInput(data);
-  const wq = input.focus.find((f) => f.id === 'workqueue');
-  assert.deepEqual(wq.changes.map((c) => [c.name, c.commit, c.renamedTo]), [['queue_work_on', '666666666666', undefined], ['wq_old', '555555555555', 'wq_new'], ['wq_ops.set_fmt', null, undefined]]);
-  assert.deepEqual(wq.pulls, ['777777777777']);
-  assert.deepEqual(wq.unchangedMembers, { wq_ops: ['get_fmt'] });
-  assert.ok(input.pulls.some((p) => p.id === '777777777777'), 'focus pulls reach the AI even with few driver files');
-  assert.deepEqual(input.focus.find((f) => f.id === 'timer').pulls, []); // urgent(fix) pull 은 뺀다
-  assert.equal(input.apiRemovals.some((a) => a.name === 'wq_old'), false); // 영역 변화로 이미 나온 이름
-  const { notes } = cleanNotes({
-    overview: [{ text: '`queue_work_on()`에 인자가 늘었다.', refs: ['queue_work_on'] }],
-    subsystems: [],
-    apiNotes: [
-      { name: 'queue_work_on', replacement: '`queue_work_on()` 호출에 `unsigned int` 인자를 더 넘긴다.' },
-      { name: 'wq_ops.set_fmt', replacement: '`get_fmt`·`set_fmt` 콜백에 인자가 늘었다.' }, // get_fmt 는 헤더 비교로 그대로다
-      { name: 'wq_old', replacement: '`made_up()`을 쓴다.' },
-      { name: 'nope', replacement: 'x' },
-    ],
-  }, input);
-  assert.equal(notes.overview.length, 1);
-  assert.deepEqual([...notes.apiNotes], [['queue_work_on', '`queue_work_on()` 호출에 `unsigned int` 인자를 더 넘긴다.']]);
-
-  const post = buildPost(data, input, notes);
-  const body = Object.fromEntries(post.sections.map((s) => [s.heading, s.body]));
-  const open = body['여러 서브시스템이 쓰는 API 변화'];
-  assert.match(open, /헤더를 비교한 영역 \d+개 가운데 v1\.0 드라이버가 쓰던 API가 바뀐 곳은 workqueue 3건, 디바이스 모델·PM·펌웨어 1건입니다\. 바뀐 것이 없는 곳: 메모리·DMA, /);
-  assert.match(open, /- \*\*`queue_work_on`\*\* — 시그니처 변경 · 사용 12개 파일 · \[workqueue: add flags to queue_work_on\(\)\]\([^)]*\)\n {2}- 이전 `bool queue_work_on\(int, struct workqueue_struct \*, struct work_struct \*\)`\n {2}- 이후 `bool queue_work_on\(int, struct workqueue_struct \*, struct work_struct \*, unsigned int\)`\n {2}- `queue_work_on\(\)` 호출에 `unsigned int` 인자를 더 넘긴다\./);
-  assert.match(open, /- \*\*`wq_old`\*\* — 함수 삭제 · 사용 6개 파일 · \[workqueue: rename\]\([^)]*\)\n {2}- 이전 `void wq_old\(void\)`\n {2}- 같은 커밋에서 `wq_new` 추가\(이름 변경 후보\)/);
-  const ref = body['트리 전체 참고'];
-  assert.match(ref, /\| `wq_ops\.set_fmt` \| 멤버 타입 변경 \| `int \(\*\)\(int\)` → `int \(\*\)\(int, int\)` \| 3 \| — \|/); // net 안에서만 쓰던 멤버는 접는다
-  assert.match(ref, /- \*\*workqueue\*\* 1개: `queue_work_flags`/);
-  assert.match(ref, /드라이버를 많이 바꾼 pull 2건[\s\S]*\[USB updates from Greg KH\]\([^)]*\) · \[workqueue updates from Tejun Heo\]\(/); // AI 요약이 없으면 링크만 한 줄
-  const check = body['내 드라이버 점검 명령'];
-  assert.match(check, /# 중점 영역에서 바뀌거나 사라진 API 1개\ngit grep -nwF -f - <<'EOF'\nqueue_work_on\nEOF/); // wq_old 는 이미 '사라진 API' 목록에 있다
-  assert.match(check, /# 멤버가 바뀌거나 사라진 구조체 1개\ngit grep -nwF -f - <<'EOF'\nwq_ops\nEOF/);
-  assert.equal(post.draftMetadata.counts.focusChanges, 4);
-});

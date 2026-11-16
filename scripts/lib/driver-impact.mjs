@@ -228,6 +228,58 @@ export function structGrep(names) {
 }
 
 /**
+ * 같은 이름을 스스로 `#define` 한 드라이버 파일을 찾는 `git grep -o -E` 패턴. 그 디렉터리의 사용은 사라진 매크로의 사용이 아니다:
+ * v7.1 에서 지워진 ATM 의 `PRIV`, libsas 의 `to_dev_attr` 는 다른 드라이버들이 제각기 정의한 같은 이름 때문에 "21개·8개 파일이 사용"으로 나왔다.
+ */
+export function defineGrep(names) {
+  const alt = [...new Set(names)].filter((n) => /^\w+$/.test(n)).join('|');
+  return { pattern: alt ? `^[[:space:]]*#[[:space:]]*define[[:space:]]+(${alt})\\b` : '', name: (hit) => /(\w+)\s*$/.exec(hit)?.[1] || '' };
+}
+
+/**
+ * 한 커밋의 `git show -U0` 출력에서, 이름마다 트리 안 드라이버의 호출부를 고친 작은 hunk 를 고른다 → Map(name → [{ file, before, after }]).
+ * 들여쓴 줄(호출부)에 이름이 있고 지운 줄·더한 줄이 각각 1~3줄인 hunk 만 쓴다. 0열에서 시작하는 줄은 정의·선언이라 예시가 아니다.
+ * 서브시스템이 다른 예를 perName 개까지 남기되 prefer(file) 가 참인 것(독자와 가까운 드라이버)을 앞에 둔다.
+ */
+export function fixExamples(diffText, names, { perName = 4, prefer = () => false } = {}) {
+  const found = new Map(names.map((n) => [n, []]));
+  const matchers = names.filter((n) => /^\w+$/.test(n)).map((n) => [n, new RegExp(`\\b${n}\\b`)]);
+  const area = (f) => f.split('/').slice(0, 3).join('/');
+  const clean = (l) => l.trim().replace(/\s+/g, ' ').slice(0, 160);
+  let file = '';
+  let minus = [];
+  let plus = [];
+  const flush = () => {
+    if (file && minus.length && plus.length && minus.length <= 3 && plus.length <= 3) {
+      for (const [name, re] of matchers) {
+        const list = found.get(name);
+        if (list.length < 200 && minus.some((l) => /^\s/.test(l) && !/^\s*(?:\*|\/\/|\/\*)/.test(l) && re.test(l))) list.push({ file, before: minus.map(clean), after: plus.map(clean) });
+      }
+    }
+    minus = [];
+    plus = [];
+  };
+  for (const line of diffText.split('\n')) {
+    if (line.startsWith('diff --git ')) { flush(); file = ''; }
+    else if (line.startsWith('+++ b/')) file = line.slice(6);
+    else if (line.startsWith('--- ') || line.startsWith('+++ ')) continue;
+    else if (line.startsWith('@@')) flush();
+    else if (line[0] === '-') minus.push(line.slice(1));
+    else if (line[0] === '+') plus.push(line.slice(1));
+  }
+  flush();
+  const out = new Map();
+  for (const [name, list] of found) {
+    const picked = [];
+    for (const e of [...list].sort((a, b) => Number(prefer(b.file)) - Number(prefer(a.file)))) {
+      if (picked.length < perName && !picked.some((p) => area(p.file) === area(e.file))) picked.push(e);
+    }
+    out.set(name, picked);
+  }
+  return out;
+}
+
+/**
  * memberGreps 출력 → (struct, member) 를 쓰는 파일 목록. `struct <이름>`이 나오고 `->멤버`·`.멤버`로 접근하는 파일이다.
  * 이름만 맞추면 args·flags 같은 흔한 멤버가 다른 구조체 것까지 잡혀 수백 배 부푼다(v7.3 module.args 811, 실제 0).
  * 타입은 확인하지 않으므로 여전히 상한이다.
@@ -367,11 +419,20 @@ const subsystemOf = (file) => file.split('/').slice(0, 2).join('/');
  */
 export function relevance(item, profile) {
   const users = item.users || [];
-  // 드라이버가 정의한 것을 트리에서 파일 하나만 쓰면 그 드라이버 안의 연결이다(v6.18 `cmdq_pkt_finalize`: mediatek soc → mediatek mdp3).
-  // 같은 종류라는 이유(proxy)로는 세지 않는다. 내 플랫폼 경로의 드라이버가 썼다면 한 파일이어도 센다.
-  const ownLink = users.length === 1 && DRIVER_PATH_RE.test(item.file || '');
+  // 드라이버(벤더)가 정의한 것을 한 벤더의 드라이버만 쓰면 그 벤더 안의 연결이다(v6.18 `cmdq_pkt_finalize`: mediatek soc → mediatek mdp3,
+  // v7.2 `tegra_powergate_power_off`: tegra soc → nvidia 미디어). 같은 종류라는 이유(proxy)로는 세지 않는다.
+  // 내 플랫폼 경로의 드라이버가 썼다면 한 곳이어도 센다.
+  // 벤더 코드: `drivers/<서브시스템>/<벤더>/…` 처럼 한 단계 더 들어간 곳과 `include/soc/`. 서브시스템 코어(`drivers/iommu/iommu.c`,
+  // `drivers/media/v4l2-core/`)는 벤더 코드가 아니라서, 미디어 드라이버 한 곳만 써도 센다.
+  const file = item.file || '';
+  const vendorDefined = /^include\/soc\//.test(file)
+    || (DRIVER_PATH_RE.test(file) && file.split('/').length >= 4 && !/\/(?:[\w-]*core|common)\//.test(file));
+  const vendors = (files) => new Set(files.map((f) => f.split('/').slice(0, 4).join('/'))).size;
   const groups = profile.groups
-    .map((g) => ({ id: g.id, label: g.label, count: g.proxy && ownLink ? 0 : users.filter((f) => g.paths.test(f)).length }))
+    .map((g) => {
+      const hit = users.filter((f) => g.paths.test(f));
+      return { id: g.id, label: g.label, count: g.proxy && vendorDefined && vendors(hit) < 2 ? 0 : hit.length };
+    })
     .filter((g) => g.count > 0);
   const arch = /^arch\/([^/]+)\//.exec(item.file || '')?.[1];
   const foreign = Boolean(arch && profile.arch.length && !profile.arch.includes(arch)) || profile.foreign.test(item.file || '');
@@ -419,7 +480,9 @@ function stripAttrs(s) {
   return (out + s.slice(at)).replace(/\s+/g, ' ').trim();
 }
 
-const tidy = (s) => (s.match(/[A-Za-z_]\w*|\.\.\.|\S/g) || []).join(' ').replace(/\* (?=\*)/g, '*');
+// 같은 타입의 다른 표기는 변화가 아니다(v7.1 `parse_args` 의 `unsigned` → `unsigned int` 가 시그니처 변경으로 나왔다).
+const sameSpelling = (s) => s.replace(/\bunsigned(?! (?:int|long|short|char)\b)/g, 'unsigned int');
+const tidy = (s) => sameSpelling((s.match(/[A-Za-z_]\w*|\.\.\.|\S/g) || []).join(' ').replace(/\* (?=\*)/g, '*'));
 
 /** 인자 하나에서 이름을 지운 타입. 함수 포인터 인자는 `ret (*)(args)` 로 둔다. */
 function paramType(p) {
@@ -432,7 +495,7 @@ function paramType(p) {
   const tokens = (arr ? p.slice(0, arr.index) : p).match(/[A-Za-z_]\w*|\.\.\.|\S/g) || [];
   const last = tokens.at(-1);
   if (tokens.length >= 2 && /^[A-Za-z_]/.test(last) && !TYPE_WORDS.has(last) && !/^(?:struct|union|enum)$/.test(tokens.at(-2))) tokens.pop();
-  return tokens.join(' ').replace(/\* (?=\*)/g, '*') + (arr ? '[]' : '');
+  return sameSpelling(tokens.join(' ').replace(/\* (?=\*)/g, '*')) + (arr ? '[]' : '');
 }
 
 const paramTypes = (s) => splitTop(s, ',').map(paramType).join(', ');
@@ -692,31 +755,21 @@ export function ltsPair(releases, tags) {
 
 // ── 글 조립 ─────────────────────────────────────────────────────────────
 
-/** 수집 결과 형식 판. 2: 이름마다 사용 파일(users)을, 전환마다 건드린 디렉터리(dirNames)를 남긴다. 다르면 다시 수집한다. */
-export const RAW_SCHEMA = 2;
+/**
+ * 수집 결과 형식 판. 다르면 다시 수집한다.
+ * 2: 이름마다 사용 파일(users)을, 전환마다 건드린 디렉터리(dirNames)를 남긴다.
+ * 3: 이름마다 트리 안 드라이버를 고친 예(examples)를 남기고, 스스로 정의한 같은 이름의 매크로 사용은 세지 않는다.
+ */
+export const RAW_SCHEMA = 3;
 
 const COMMIT_URL = 'https://git.kernel.org/torvalds/c/';
 export const shortSha = (sha) => sha.slice(0, 12);
 const commitUrl = (sha) => `${COMMIT_URL}${shortSha(sha)}`;
 const cell = (s) => String(s ?? '').replace(/\|/g, '\\|').replace(/\s*\n\s*/g, ' ');
 const code = (s) => `\`${String(s).replace(/`/g, '')}\``;
-const clip = (s, max = 120) => (s.length > max ? `${s.slice(0, max - 1)}…` : s);
 const REMOVED_LABEL = { function: '함수 삭제', macro: '매크로 삭제', constant: '상수 삭제', variable: '변수 삭제', struct: '구조체 삭제', member: '멤버 삭제', export: 'export 해제' };
 const CHANGED_LABEL = { function: '시그니처 변경', macro: '매크로 인자 수 변경', variable: '타입 변경', member: '멤버 타입 변경', export: 'export 변경' };
 const byUse = (a, b) => (b.driverUses ?? 0) - (a.driverUses ?? 0) || a.name.localeCompare(b.name);
-
-/**
- * 함수의 반환형만 바뀐 변화인지와, 그중 기존 호출이 그대로 빌드되는 것(`void` → 값, `int` → `bool`)인지.
- * 콜백 멤버는 구현 쪽 함수의 반환형을 고쳐야 하므로 해당하지 않는다. v6.18 `v4l2_ctrl_handler_free()`(void → int)를
- * AI 가 "반환값을 받도록 고친다"로 써서 헤드라인에 올랐다.
- */
-export function returnChange(r) {
-  if (r.kind !== 'function' || r.change !== 'changed' || !r.before || !r.after) return { only: false, callersBuild: false };
-  const split = (sig) => { const at = sig.indexOf(`${r.name}(`); return at < 0 ? null : [sig.slice(0, at).trim(), sig.slice(at)]; };
-  const [was, now] = [split(r.before), split(r.after)];
-  const only = Boolean(was && now && was[1] === now[1] && was[0] !== now[0]);
-  return { only, callersBuild: only && (was[0] === 'void' || (was[0] === 'int' && now[0] === 'bool')) };
-}
 const isFixPull = (p) => /\bfix(?:es)?\b|urgent/i.test(`${p.tag || ''} ${p.title}`);
 
 export function isDriverPull(p) {
@@ -740,17 +793,18 @@ export function removedApis(data) {
  */
 export function focusAreas(data, profile = compileProfile()) {
   const renamed = new Map([...data.exports.removed, ...data.headers].filter((e) => e.commit?.renamedTo).map((e) => [e.name, e.commit.renamedTo]));
+  const examples = new Map([...data.exports.removed, ...data.headers].filter((e) => e.examples).map((e) => [e.name, e.examples]));
   const taken = new Set();
   return areaDefs(profile).map((area) => {
     const found = (data.focus || []).find((f) => f.id === area.id) || { files: 0, items: [] };
     const exportRows = [
       ...data.exports.removed.filter((e) => area.sources.test(e.file) && e.header !== 'inline' && e.driverUses > 0)
-        .map((e) => ({ change: 'removed', kind: 'export', name: e.name, before: e.kind, driverUses: e.driverUses, users: e.users, file: e.file, commit: e.commit })),
+        .map((e) => ({ change: 'removed', kind: 'export', name: e.name, before: e.kind, declared: e.header === 'declared', driverUses: e.driverUses, users: e.users, file: e.file, commit: e.commit })),
       ...data.exports.changed.filter((c) => area.sources.test(c.file))
         .map((c) => ({ change: 'changed', kind: 'export', name: c.name, before: c.from, after: c.to, driverUses: c.users ? c.users.length : null, users: c.users, file: c.file, commit: null })),
     ];
     const rows = [...found.items.filter((i) => i.change !== 'added'), ...exportRows]
-      .map((r) => (r.change === 'removed' && renamed.get(r.name) ? { ...r, renamedTo: renamed.get(r.name) } : r))
+      .map((r) => ({ ...r, ...(r.change === 'removed' && renamed.get(r.name) ? { renamedTo: renamed.get(r.name) } : {}), ...(!r.examples && examples.get(r.name) ? { examples: examples.get(r.name) } : {}) }))
       .filter((r) => !taken.has(r.name) && taken.add(r.name))
       .map((r) => ({ ...r, rel: relevance(r, profile) }))
       .sort(byUse);
@@ -773,10 +827,123 @@ const touched = (c, profile) => profile.groups
   .map((g) => ({ label: g.label, count: (c.dirNames || []).filter((d) => g.paths.test(`${d}/`)).length }))
   .filter((g) => g.count > 0);
 const touchCount = (c, profile) => touched(c, profile).reduce((n, g) => n + g.count, 0);
-const nearBroad = (c, profile) => touchCount(c, profile) > 0;
-// 반복 패턴은 내 영역 디렉터리 세 곳 이상에서 되풀이된 것만: 한두 곳만 걸친 정리성 패턴(dev_err 제거 등)까지 올리면 볼 것이 흐려진다.
-const nearCampaign = (c, profile) => touchCount(c, profile) >= 3;
-const byTouch = (profile) => (a, b) => touchCount(b, profile) - touchCount(a, profile);
+
+// ── 모듈: 글에서 표를 나누는 단위 ──────────────────────────────────────────
+
+/**
+ * 글에서 표 하나가 되는 단위. 헤더·소스 경로로 가르며 중점 영역보다 잘다("메모리·DMA" → 메모리, DMA·dma-buf).
+ * 배열 순서가 글의 순서이고, 앞에서 먼저 걸린 모듈로 간다(`drivers/base/regmap` 은 디바이스 모델이 아니라 regmap).
+ */
+export const MODULES = [
+  { id: 'v4l2', title: 'V4L2', paths: /^(?:include\/media\/(?:v4l2-|media-|mipi-csi2)|drivers\/media\/(?:v4l2-core|mc)\/)/ },
+  { id: 'vb2', title: 'videobuf2', paths: /^(?:include\/media\/videobuf2-|drivers\/media\/common\/videobuf2\/)/ },
+  { id: 'media', title: '미디어 기타', paths: /^(?:include\/media\/|drivers\/media\/)/ },
+  { id: 'samsung', title: 'Samsung SoC', paths: /^(?:include\/linux\/(?:soc|mfd|firmware|clk)\/samsung|include\/linux\/clk\/samsung\.h|drivers\/(?:soc|firmware|clk|pinctrl|phy|pmdomain)\/samsung\/)/ },
+  { id: 'dma', title: 'DMA·dma-buf', paths: /^(?:include\/linux\/(?:dma-|dmapool|scatterlist|cma\.h)|kernel\/dma\/|drivers\/dma-buf\/|lib\/scatterlist)/ },
+  { id: 'mm', title: '메모리', paths: /^(?:include\/linux\/(?:mm[._]|mmzone|mmap_lock|gfp|slab|vmalloc|highmem|page|memremap|mempool|huge_mm|io-mapping|uaccess)|mm\/)/ },
+  { id: 'i2c', title: 'I2C', paths: /^(?:include\/linux\/i2c[.\-/]|drivers\/i2c\/)/ },
+  { id: 'spi', title: 'SPI·I3C', paths: /^(?:include\/linux\/(?:spi|i3c)\/|drivers\/(?:spi|i3c)\/)/ },
+  { id: 'gpio', title: 'GPIO', paths: /^(?:include\/linux\/gpio[./]|drivers\/gpio\/)/ },
+  { id: 'clk', title: 'clk', paths: /^(?:include\/linux\/clk[.\-/]|drivers\/clk\/)/ },
+  { id: 'regulator', title: 'regulator', paths: /^(?:include\/linux\/regulator\/|drivers\/regulator\/)/ },
+  { id: 'pinctrl', title: 'pinctrl', paths: /^(?:include\/linux\/pinctrl\/|drivers\/pinctrl\/)/ },
+  { id: 'regmap', title: 'regmap·reset', paths: /^(?:include\/linux\/(?:regmap\.h|reset[.\-/])|drivers\/(?:base\/regmap|reset)\/)/ },
+  { id: 'phy', title: 'PHY', paths: /^(?:include\/linux\/phy\/|drivers\/phy\/)/ },
+  { id: 'iommu', title: 'IOMMU', paths: /^(?:include\/linux\/(?:iommu[.\-]|iova|io-pgtable)|drivers\/iommu\/)/ },
+  { id: 'pm', title: '전원(PM)', paths: /^(?:include\/linux\/(?:pm[._]|devfreq|interconnect|thermal)|drivers\/(?:pmdomain|opp|devfreq|interconnect|thermal|base\/power)\/)/ },
+  { id: 'device', title: '디바이스 모델', paths: /^(?:include\/linux\/(?:device[./]|platform_device|property\.h|fwnode|of[._]|firmware\.h|devm-helpers|mod_devicetable|module\.h|moduleparam|kobject|sysfs)|drivers\/(?:base|of)\/)/ },
+  { id: 'irq', title: '인터럽트', paths: /^(?:include\/linux\/(?:interrupt\.h|irq|msi)|kernel\/irq\/)/ },
+  { id: 'timer', title: '타이머', paths: /^(?:include\/linux\/(?:timer|hrtimer|jiffies|ktime|timekeeping|delay\.h|clockchips|clocksource|time64|alarmtimer)|kernel\/time\/)/ },
+  { id: 'wq', title: 'workqueue', paths: /^(?:include\/linux\/workqueue|kernel\/workqueue)/ },
+  { id: 'sched', title: '스케줄러·kthread', paths: /^(?:include\/linux\/(?:sched[./]|kthread|wait|swait|completion|preempt|smp\.h|cpumask)|kernel\/(?:sched\/|kthread|smp))/ },
+  { id: 'lock', title: '락·RCU', paths: /^(?:include\/linux\/(?:mutex|spinlock|rwlock|rwsem|rcu|srcu|seqlock|refcount|kref|lockdep|cleanup|local_lock|llist)|kernel\/(?:locking|rcu)\/)/ },
+];
+const OTHER_MODULE = { id: 'etc', title: '그 밖의 API' };
+export const moduleOf = (file) => MODULES.find((m) => m.paths.test(file || '')) || OTHER_MODULE;
+
+// ── 영향: 호출·구현 쪽 코드가 그대로 빌드되는지를 시그니처만으로 가른다 ─────────────
+
+/** "ret name(p1, p2)" 나 콜백 타입 "ret (*)(p1, p2)" → { ret, params }. 꼴이 다르면 null. */
+function splitSig(sig, name = '') {
+  if (!sig) return null;
+  // 함수는 이름 바로 뒤의 괄호가 인자 목록이다(인자에 함수 포인터가 있어도 헷갈리지 않게 이름으로 찾는다).
+  const at = name ? sig.indexOf(`${name}(`) : -1;
+  const callback = at < 0 ? sig.indexOf('(*)') : -1;
+  const open = at >= 0 ? at + name.length : callback >= 0 ? sig.indexOf('(', callback + 3) : -1;
+  if (open < 0) return null;
+  return { ret: sig.slice(0, at >= 0 ? at : callback).trim(), params: splitTop(sig.slice(open + 1, closeOf(sig, open) - 1), ',') };
+}
+
+/** 두 배열의 최장 공통 부분열에 든 원소 표시 → [a 쪽, b 쪽]. 표시되지 않은 것이 지워지거나 더해진 것이다. */
+function commonMarks(a, b) {
+  const t = Array.from({ length: a.length + 1 }, () => new Array(b.length + 1).fill(0));
+  for (let i = a.length - 1; i >= 0; i -= 1) for (let j = b.length - 1; j >= 0; j -= 1) t[i][j] = a[i] === b[j] ? t[i + 1][j + 1] + 1 : Math.max(t[i + 1][j], t[i][j + 1]);
+  const ka = new Array(a.length).fill(false);
+  const kb = new Array(b.length).fill(false);
+  for (let i = 0, j = 0; i < a.length && j < b.length;) {
+    if (a[i] === b[j]) { ka[i] = true; kb[j] = true; i += 1; j += 1; } else if (t[i + 1][j] >= t[i][j + 1]) i += 1; else j += 1;
+  }
+  return [ka, kb];
+}
+
+const typeTokens = (s) => s.match(/[A-Za-z_]\w*|\.\.\.|\S/g) || [];
+
+/**
+ * 인자 타입이 const 만 더했고, 그 const 가 바깥 포인터가 가리키는 타입에 붙었는지(`T *` → `const T *`, `T **` → `T * const *`).
+ * C 는 이 자리의 한정자 추가만 암묵 변환으로 받는다. 더 안쪽(`T **` → `const T **`)은 호출 쪽에서 오류다.
+ */
+function addsOuterConst(before, after) {
+  const [a, b] = [typeTokens(before), typeTokens(after)];
+  const [ka, kb] = commonMarks(a, b);
+  const added = b.flatMap((t, i) => (kb[i] ? [] : [[t, i]]));
+  return !ka.includes(false) && added.length > 0 && added.every(([t, i]) => t === 'const' && b.slice(i).filter((x) => x === '*').length <= 1);
+}
+
+/** 값으로 넘기는 숫자형(`int`, `bool`, `u32`, `size_t` …). 숫자형끼리 바뀐 인자는 넘기던 값이 암묵 변환되어 호출부가 그대로 빌드된다. */
+const isScalar = (type) => { const t = typeTokens(type).filter((x) => x !== 'const'); return t.length > 0 && t.every((x) => TYPE_WORDS.has(x) && x !== 'void'); };
+
+/**
+ * 변화 하나의 영향. break: 쓰고 있으면 빌드가 깨진다. ok: 기존 코드가 그대로 빌드된다. check: 시그니처만으로는 가를 수 없다.
+ * - 삭제, 인자 수·타입 변경, 콜백 멤버의 타입 변경(구현 함수의 타입이 맞아야 한다)은 break
+ * - 반환형만 `void` → 값·`int` → `bool` 로 바뀌었거나 인자에 바깥 const 만 붙었거나 숫자형 인자가 다른 숫자형이 된 함수
+ *   (v7.3 `smp_call_function_single()` 의 `int` → `bool`), 바깥 const 만 붙은 멤버는 ok
+ * - 콜백이 아닌 멤버의 타입, 그 밖의 반환형, 인자에서 const 가 빠진 것, export 의 라이선스·네임스페이스는 check
+ * AI 는 이 판정에 끼지 않는다. v6.18 `v4l2_ctrl_handler_free()`(void → int)를 AI 가 "반환값을 받도록 고친다"로 썼다.
+ */
+export function impactOf(r) {
+  if (r.change === 'removed') return 'break';
+  if (r.kind === 'macro') return 'break';
+  if (r.kind === 'member') return /\(\*\)/.test(`${r.before} ${r.after}`) ? 'break' : addsOuterConst(r.before || '', r.after || '') ? 'ok' : 'check';
+  if (r.kind !== 'function') return 'check';
+  const [was, now] = [splitSig(r.before, r.name), splitSig(r.after, r.name)];
+  if (!was || !now) return 'check';
+  if (was.params.length !== now.params.length) return 'break';
+  let level = was.ret === now.ret || was.ret === 'void' || (was.ret === 'int' && now.ret === 'bool') ? 'ok' : 'check';
+  for (const [i, p] of was.params.entries()) {
+    if (p === now.params[i] || addsOuterConst(p, now.params[i]) || (isScalar(p) && isScalar(now.params[i]))) continue;
+    if (!addsOuterConst(now.params[i], p)) return 'break';
+    level = 'check'; // const 가 빠졌다: const 포인터를 넘기던 호출만 깨진다
+  }
+  return level;
+}
+
+/**
+ * 수집 결과를 글이 쓰는 변화 목록으로. rows 마다 module·impact·rel 이 붙는다.
+ * visible: 독자와 가까운 것(프로필의 주 영역이거나 프로필 경로의 드라이버가 쓰던 것)과 여러 서브시스템이 쓰는 것. 표로 펼친다.
+ * other: 다른 서브시스템 안에서만 쓰이던 것. 접어 둔다. 한 이름은 둘 중 한 곳에만 있다.
+ */
+function classify(data, profile) {
+  const active = profileActive(profile);
+  const areas = focusAreas(data, profile);
+  const areaRows = areas.flatMap((a) => a.rows.map((r) => ({ ...r, area: a })));
+  const inFocus = new Set(areaRows.map((r) => r.name));
+  const loose = removedApis(data).filter((e) => e.driverUses > 0 && !inFocus.has(e.name))
+    .map((e) => ({ ...e, change: 'removed', loose: true, renamedTo: e.commit?.renamedTo, rel: relevance(e, profile) }));
+  const near = (r) => active && (Boolean(r.area?.primary) || r.rel.tier === 'mine');
+  const rows = [...areaRows, ...loose].map((r) => ({ ...r, near: near(r), module: moduleOf(r.file), impact: impactOf(r) }));
+  const visible = rows.filter((r) => r.near || r.rel.tier === 'generic');
+  return { active, areas, rows, visible, other: rows.filter((r) => !visible.includes(r)) };
+}
 
 /** pull 요약에서 키워드가 나온 항목(목록 한 칸이나 문단)만. 서브시스템 전체 요약을 내 영역 요약으로 읽지 않게 한다. */
 function keywordExcerpt(summary, re, max = 1200) {
@@ -808,40 +975,37 @@ function keywordExcerpt(summary, re, max = 1200) {
 }
 
 /**
- * AI 에 넘길 입력. 프로필이 있으면 독자와 가까운 것(`mine`)을 앞에 두고, 다른 서브시스템 전용으로 사라진 API 는 상위 몇 개만 넣는다.
- * messages 는 입력에 든 항목의 커밋 제목·본문만 남긴다.
+ * AI 에 넘길 입력. 표에 펼치는 변화(visible) 전부와 그 커밋 글을 준다: AI 는 이름마다 "왜 바뀌었고 무엇을 하면 되는지"를 쓴다.
+ * 접어 두는 변화는 주지 않는다. pull 은 독자와 가까운 것, 바뀐 영역의 것, 드라이버를 많이 바꾼 것 순으로 조금만 준다.
+ * messages 는 깨지는 변화의 커밋부터 messageChars 까지만 본문을 싣고, 넘치면 제목만 준다.
  */
-export function buildAiInput(data, profile = compileProfile(), { maxPulls = 20, areaPulls = 2, summaryChars = 2500, otherSummaryChars = 1200, messageChars = 60000 } = {}) {
-  const areas = focusAreas(data, profile);
-  const active = profileActive(profile);
-  const mineFirst = (list, isMine) => [...list].sort((a, b) => Number(isMine(b)) - Number(isMine(a)));
+export function buildAiInput(data, profile = compileProfile(), { maxPulls = 12, areaPulls = 2, summaryChars = 2500, otherSummaryChars = 1200, messageChars = 120000 } = {}) {
+  const { active, areas, visible } = classify(data, profile);
   const flag = (yes) => (yes ? { mine: true } : {});
-
-  // 영역 pull 은 바뀐 것이 있는 영역에서 드라이버를 많이 건드린 순으로 areaPulls 개만(LTS 구간은 영역마다 릴리스 수만큼 있다).
-  const areaPull = (a) => (a.rows.length ? [...a.pulls].sort((x, y) => y.driverFiles - x.driverFiles).slice(0, areaPulls) : []);
-  const focus = areas.map((a) => {
-    const mine = (r) => active && (a.primary || r.rel.tier === 'mine');
-    return {
-      id: a.id,
-      title: a.title,
-      changes: mineFirst(a.rows, mine).slice(0, 25).map((r) => ({
-        change: r.change, kind: r.kind, name: r.name, ...(r.before ? { before: r.before } : {}), ...(r.after ? { after: r.after } : {}),
-        ...(r.renamedTo ? { renamedTo: r.renamedTo } : {}), driverUses: r.driverUses, commit: r.commit ? shortSha(r.commit.sha) : null, ...flag(mine(r)),
-        ...(returnChange(r).callersBuild ? { callersBuild: true } : {}),
-      })),
-      pulls: areaPull(a).map((p) => shortSha(p.sha)), // 새 이름 목록은 주지 않는다: 이름만 보고 용도를 짐작하게 된다
-      ...(Object.keys(a.same).length ? { unchangedMembers: a.same } : {}),
-    };
+  const brief = (r) => ({
+    name: r.name, kind: r.kind, change: r.change, ...(r.before ? { before: r.before } : {}), ...(r.after ? { after: r.after } : {}),
+    ...(r.renamedTo ? { renamedTo: r.renamedTo } : {}), impact: r.impact, commit: r.commit ? shortSha(r.commit.sha) : null, ...flag(r.near),
   });
+  // 영역 pull 은 표에 변화가 나온 영역에서 드라이버를 많이 건드린 순으로 areaPulls 개만(LTS 구간은 영역마다 릴리스 수만큼 있다).
+  const shownIn = (a) => visible.some((r) => r.area === a);
+  const areaPull = (a) => (shownIn(a) ? [...a.pulls].sort((x, y) => y.driverFiles - x.driverFiles).slice(0, areaPulls) : []);
+  const focus = areas.map((a) => ({
+    id: a.id,
+    title: a.title,
+    changes: visible.filter((r) => r.area === a).map(brief),
+    pulls: areaPull(a).map((p) => shortSha(p.sha)),
+    ...(Object.keys(a.same).length ? { unchangedMembers: a.same } : {}),
+  }));
+  const apiRemovals = visible.filter((r) => r.loose).map(brief);
 
   const byTag = (p) => profile.pullTags.test(p.tag || '');
-  const minePull = (p) => !isFixPull(p) && (byTag(p) || profile.pullKeywords.test(p.summary || ''));
-  const minePulls = mineFirst(data.pulls.filter(minePull).sort((a, b) => b.driverFiles - a.driverFiles), byTag).slice(0, 10);
+  const minePull = (p) => active && !isFixPull(p) && (byTag(p) || profile.pullKeywords.test(p.summary || ''));
+  const minePulls = data.pulls.filter(minePull).sort((a, b) => Number(byTag(b)) - Number(byTag(a)) || b.driverFiles - a.driverFiles).slice(0, 10);
   const focusPulls = new Set(areas.flatMap((a) => areaPull(a).map((p) => p.sha)));
   const pulls = [
     ...minePulls,
-    ...data.pulls.filter((p) => isDriverPull(p) && !/\bfix(?:es)?\b/i.test(p.title)).sort((a, b) => b.driverFiles - a.driverFiles).slice(0, maxPulls),
     ...data.pulls.filter((p) => focusPulls.has(p.sha)),
+    ...data.pulls.filter((p) => isDriverPull(p) && !/\bfix(?:es)?\b/i.test(p.title)).sort((a, b) => b.driverFiles - a.driverFiles).slice(0, maxPulls),
   ].filter((p, i, all) => all.findIndex((q) => q.sha === p.sha) === i).map((p) => {
     const mine = minePulls.includes(p);
     // 키워드로만 걸린 pull 은 그 키워드가 나온 대목만 준다(clk pull 전체가 아니라 Samsung 대목).
@@ -849,75 +1013,69 @@ export function buildAiInput(data, profile = compileProfile(), { maxPulls = 20, 
     return { id: shortSha(p.sha), title: p.title, summary, ...flag(mine) };
   });
 
-  const inFocus = new Set(areas.flatMap((a) => a.rows.map((r) => r.name)));
-  const loose = removedApis(data).filter((e) => e.driverUses > 0 && !inFocus.has(e.name)).map((e) => ({ ...e, tier: relevance(e, profile).tier }));
-  const pick = active
-    ? [...loose.filter((e) => e.tier === 'mine').slice(0, 30), ...loose.filter((e) => e.tier === 'generic').slice(0, 20), ...loose.filter((e) => e.tier === 'other').slice(0, 10)]
-    : loose.slice(0, 40);
-  const apiRemovals = pick.map((e) => ({
-    name: e.name, kind: e.kind, driverUses: e.driverUses,
-    commit: e.commit ? shortSha(e.commit.sha) : null, ...(e.commit?.renamedTo ? { renamedTo: e.commit.renamedTo } : {}), ...flag(active && e.tier === 'mine'),
-  }));
-
-  const broadNear = (c) => nearBroad(c, profile);
-  const campaignNear = (c) => nearCampaign(c, profile);
-  const conversions = [
-    ...mineFirst(data.broad, broadNear).slice(0, 20).map((c) => ({ id: shortSha(c.sha), subject: c.subject, driverDirs: c.dirs, ...flag(broadNear(c)) })),
-    ...mineFirst(data.campaigns, campaignNear).slice(0, 12).map((c) => ({ id: shortSha(c.commits[0]), pattern: c.pattern, commits: c.count, subsystems: c.prefixes.slice(0, 8), ...flag(campaignNear(c)) })),
-  ];
-
   // 커밋 제목도 함께 준다: "Rename a() to b()" 처럼 대체 이름이 제목에만 있는 커밋이 많다.
-  // 본문은 독자와 가까운 항목의 커밋부터 messageChars 까지만 싣고, 넘치면 제목만 준다(LTS 구간은 인용 커밋이 수백 개다).
-  const citing = [...focus.flatMap((f) => f.changes.map((c) => [c.commit, c.mine])), ...apiRemovals.map((a) => [a.commit, a.mine]), ...conversions.map((c) => [c.id, c.mine])].filter(([id]) => id);
-  const cited = [...new Set(mineFirst(citing, ([, mine]) => Boolean(mine)).map(([id]) => id))];
-  const subjects = new Map([...areas.flatMap((a) => a.rows), ...loose].filter((r) => r.commit?.subject).map((r) => [shortSha(r.commit.sha), r.commit.subject]));
-  const bodies = new Map(Object.entries(data.messages).map(([sha, body]) => [shortSha(sha), body]));
+  const weight = { break: 0, check: 1, ok: 2 };
+  const cited = [...new Set([...visible].filter((r) => r.commit).sort((a, b) => weight[a.impact] - weight[b.impact]).map((r) => r.commit.sha))];
+  const subjects = new Map(visible.filter((r) => r.commit?.subject).map((r) => [r.commit.sha, r.commit.subject]));
   let budget = messageChars;
-  const messages = Object.fromEntries(cited.map((id) => {
-    const body = budget > 0 ? bodies.get(id) : undefined;
+  const messages = Object.fromEntries(cited.map((sha) => {
+    const body = budget > 0 ? data.messages[sha] : undefined;
     budget -= body?.length || 0;
-    return [id, [subjects.get(id), body].filter(Boolean).join('\n\n')];
+    return [shortSha(sha), [subjects.get(sha), body].filter(Boolean).join('\n\n')];
   }).filter(([, text]) => text));
-  return { range: { from: data.range.from, to: data.range.to }, ...(profile.reader ? { reader: profile.reader } : {}), focus, pulls, apiRemovals, conversions, messages };
+  return { range: { from: data.range.from, to: data.range.to }, ...(profile.reader ? { reader: profile.reader } : {}), focus, pulls, apiRemovals, messages };
+}
+
+/**
+ * 변화가 많은 범위(LTS)는 AI 호출을 나눈다 → 입력 조각들. 조각마다 이름 size 개 안팎과 그 커밋 글만 들고, pull 은 첫 조각에만 준다.
+ * 조각의 답을 합쳐 전체 입력으로 cleanNotes 를 돌린다.
+ */
+export function splitAiInput(input, size = 40) {
+  const names = [...input.focus.flatMap((f) => f.changes), ...input.apiRemovals].map((c) => c.name);
+  if (names.length <= size) return [input];
+  const parts = [];
+  for (let at = 0; at < names.length; at += size) {
+    const part = new Set(names.slice(at, at + size));
+    const focus = input.focus.map((f) => ({ ...f, changes: f.changes.filter((c) => part.has(c.name)), pulls: at === 0 ? f.pulls : [] })).filter((f) => f.changes.length);
+    const apiRemovals = input.apiRemovals.filter((c) => part.has(c.name));
+    const cited = new Set([...focus.flatMap((f) => f.changes), ...apiRemovals].map((c) => c.commit));
+    parts.push({ ...input, focus, apiRemovals, pulls: at === 0 ? input.pulls : [], messages: Object.fromEntries(Object.entries(input.messages).filter(([id]) => cited.has(id))) });
+  }
+  return parts;
 }
 
 // 영문 사이에 한글이 끼어든 토큰("fl사/eject")과 한자·가나는 모델 출력이 깨진 흔적이다.
 const GARBLED_RE = /[A-Za-z][가-힣]{1,2}[A-Za-z/]|[぀-ヿ一-鿿]/;
 // 입력 JSON 필드 이름이 글에 새면 안 된다.
-const INPUT_FIELD_RE = /\b(?:unchangedMembers|apiRemovals|driverUses|renamedTo|focusNotes|conversionNotes|apiNotes)\b/;
+const INPUT_FIELD_RE = /\b(?:unchangedMembers|apiRemovals|driverUses|renamedTo|apiNotes)\b/;
 // 입력에 없는 영향·할 일을 덧붙인 문장. v7.3 글의 "GPIOLIB_LEGACY 선택이 필요한 조합이 생겼다"(실제로는 def_bool y)처럼
-// pull 요약을 부풀린 문장이 읽는 사람에게 "빌드가 깨진다"로 전해졌다. 사실은 표와 요약에 남으므로 문장만 버린다.
+// pull 요약을 부풀린 문장이 읽는 사람에게 "빌드가 깨진다"로 전해졌다. 사실은 표에 남으므로 문장만 버린다.
 const SPECULATION_RE = /영향을 (?:줄|미칠) 수 있|점검한다|점검해야|점검이 필요|확인이 필요/;
 // 글이 아니라 입력을 가리키는 말(v7.3: "메시지에 적힌 대로 `delay_read_timer`를 쓴다"). 독자는 그 "메시지"를 보지 못한다.
 const META_RE = /메시지에 (?:적힌|따르면)|메시지대로|요약에 (?:적힌|따르면)|입력(?:에 |된 | JSON)/;
-// 기존 호출이 그대로 빌드되는 변화(callersBuild)를 "고쳐야 한다"고 쓴 문장.
+// 기존 코드가 그대로 빌드되는 변화(impact ok)를 "고쳐야 한다"고 쓴 문장.
 const MUST_FIX_RE = /고친다|고쳐야|맞춘다|맞춰야|수정한다|수정해야|받도록/;
 
 /**
  * AI 출력에서 입력에 있는 id·이름을 가리키는 항목만 남긴다. 길이를 넘기거나 URL 을 넣었거나,
- * 백틱으로 감싼 이름이 입력에 없거나, 글자가 깨졌거나, 입력에 없는 영향·할 일을 덧붙였거나, 기존 호출이 그대로 빌드되는 변화를
- * 고치라고 쓴 항목은 버린다.
- * overview 는 독자와 가까운(`mine`) 근거를 든 항목이 있으면 그것만 남긴다.
- * 반환: { notes, dropped } — dropped 는 버린 항목 수.
+ * 백틱으로 감싼 이름이 입력에 없거나, 글자가 깨졌거나, 입력에 없는 영향·할 일을 덧붙였거나, 입력 자체를 가리키거나,
+ * 그대로 빌드되는 변화를 고치라고 쓴 항목은 버린다.
+ * 반환: { notes: { apiNotes: Map(name → 문장), subsystems: Map(pull id → 문장들) }, dropped } — dropped 는 버린 항목 수.
  */
 export function cleanNotes(raw, input) {
   const pullIds = new Set(input.pulls.map((p) => p.id));
-  const convIds = new Set(input.conversions.map((c) => c.id));
-  const changes = (input.focus || []).flatMap((f) => f.changes);
-  const apiNames = new Set([...input.apiRemovals.map((a) => a.name), ...changes.map((c) => c.name)]);
-  const near = new Set([...input.pulls, ...input.conversions].filter((x) => x.mine).map((x) => x.id)
-    .concat([...input.apiRemovals, ...changes].filter((x) => x.mine).map((x) => x.name)));
+  const changes = [...(input.focus || []).flatMap((f) => f.changes), ...input.apiRemovals];
+  const apiNames = new Set(changes.map((c) => c.name));
   // 이름 변경 후보(renamedTo)는 "같은 커밋이 이름 하나를 더했다"는 추정이라 근거로 치지 않는다. 커밋 제목·본문이나
   // pull 요약에 그 이름이 있어야 "대신 쓴다"고 쓸 수 있다(v7.4-rc1 `fd_prepare_fd` → `__FD_PREPARE` 는 대체가 아니었다).
   const haystack = JSON.stringify(input, (key, value) => (key === 'renamedTo' ? undefined : value));
-  const harmless = new Set(changes.filter((c) => c.callersBuild).map((c) => c.name));
-  // 근거로 든 API 가 모두 "기존 호출은 그대로 빌드"인데 고치라고 쓴 문장
-  const overstates = (s, names) => names.length > 0 && names.every((n) => harmless.has(n)) && MUST_FIX_RE.test(s);
+  const harmless = new Set(changes.filter((c) => c.impact === 'ok').map((c) => c.name));
   const ticked = (s) => [...s.matchAll(/`([^`]+)`/g)].map((m) => m[1].replace(/\(\)$/, ''));
   const grounded = (s) => ticked(s).every((t) => haystack.includes(t.split('*')[0]));
-  // 헤더 비교로 그대로인 멤버를, 같은 구조체의 바뀐 멤버와 함께 바뀌었다고 쓴 문장(요약·커밋 메시지를 따른 오류).
+  // 헤더 비교로 그대로인 멤버를, 같은 구조체의 타입이 바뀐 멤버와 함께 바뀌었다고 쓴 문장(요약·커밋 메시지를 따른 오류).
+  // 지워진 멤버에는 대지 않는다: "`offline`을 `flags`로 옮겼다"는 그대로인 멤버를 옮겨 간 곳으로 든 것이다(v7.2 `device.offline`).
   const sameMembers = (input.focus || []).flatMap((f) => Object.entries(f.unchangedMembers || {}).map(([struct, same]) => ({
-    same: new Set(same), changed: f.changes.filter((c) => c.name.startsWith(`${struct}.`)).map((c) => c.name.slice(struct.length + 1)),
+    same: new Set(same), changed: f.changes.filter((c) => c.change === 'changed' && c.name.startsWith(`${struct}.`)).map((c) => c.name.slice(struct.length + 1)),
   })));
   // `get_fmt` 처럼 구별되는 이름(밑줄 포함, 6자 이상)은 언급만 해도, `name` 같은 흔한 이름은 바뀐 멤버와 함께 쓸 때만 버린다.
   const changedNames = new Set(changes.flatMap((c) => c.name.split('.')));
@@ -929,28 +1087,22 @@ export function cleanNotes(raw, input) {
   };
   const text = (s, max) => (typeof s === 'string' && s.trim() && s.length <= max && !/https?:\/\//.test(s)
     && !GARBLED_RE.test(s) && !INPUT_FIELD_RE.test(s) && !SPECULATION_RE.test(s) && !META_RE.test(s) && grounded(s) && !contradicts(s) ? s.trim() : null);
+  // 대체 이름만 달랑 준 답("delay_read_timer")은 문장 꼴로 바꾼다. 백틱이 붙으므로 다른 문장과 똑같이 근거를 검사한다.
+  const note = (s) => {
+    const bare = /^`?([A-Za-z_]\w*)(?:\(\))?`?\.?$/.exec(typeof s === 'string' ? s.trim() : '');
+    return text(bare ? `대신 쓸 것: \`${bare[1]}\`` : s, 300);
+  };
   let dropped = 0;
   const keep = (list, fn) => (Array.isArray(list) ? list : []).flatMap((item) => {
     const value = item && typeof item === 'object' ? fn(item) : null;
     if (!value) dropped += 1;
     return value ? [value] : [];
   });
-  // 대체 이름만 달랑 준 답("delay_read_timer")은 문장 꼴로 바꾼다. 백틱이 붙으므로 다른 문장과 똑같이 근거를 검사한다.
-  const replacement = (s) => {
-    const bare = /^`?([A-Za-z_]\w*)(?:\(\))?`?\.?$/.exec(typeof s === 'string' ? s.trim() : '');
-    return text(bare ? `대신 쓸 것: \`${bare[1]}\`` : s, 300);
-  };
-  const overview = keep(raw.overview, (o) => {
-    const refs = (Array.isArray(o.refs) ? o.refs : []).filter((r) => pullIds.has(r) || convIds.has(r) || apiNames.has(r));
-    const t = text(o.text, 400);
-    return t && refs.length && !overstates(t, refs.filter((r) => apiNames.has(r))) ? { text: t, refs } : null;
-  });
-  const nearFirst = overview.filter((o) => o.refs.some((r) => near.has(r)));
   const notes = {
-    // 프로필이 있는 글의 "먼저 볼 것"은 독자와 가까운 것만 남긴다. 다른 서브시스템 안에서만 쓰던 API 로 채우느니 짧은 편이 낫다.
-    overview: (nearFirst.length ? nearFirst : overview).slice(0, 5),
-    apiNotes: new Map(keep(raw.apiNotes, (n) => (apiNames.has(n.name) && replacement(n.replacement) && !overstates(n.replacement, [n.name]) ? [n.name, replacement(n.replacement)] : null))),
-    conversionNotes: new Map(keep(raw.conversionNotes, (n) => (convIds.has(n.id) && text(n.action, 300) ? [n.id, text(n.action, 300)] : null))),
+    apiNotes: new Map(keep(raw.apiNotes, (n) => {
+      const t = note(n.note ?? n.replacement);
+      return apiNames.has(n.name) && t && !(harmless.has(n.name) && MUST_FIX_RE.test(t)) ? [n.name, t] : null;
+    })),
     subsystems: new Map(keep(raw.subsystems, (s) => {
       const points = (Array.isArray(s.points) ? s.points : []).map((p) => text(p, 400)).filter(Boolean).slice(0, 4);
       return pullIds.has(s.id) && points.length ? [s.id, points] : null;
@@ -959,291 +1111,265 @@ export function cleanNotes(raw, input) {
   return { notes, dropped };
 }
 
-const EMPTY_NOTES = { overview: [], apiNotes: new Map(), conversionNotes: new Map(), subsystems: new Map() };
+const EMPTY_NOTES = { apiNotes: new Map(), subsystems: new Map() };
 
 function kstDate(iso) {
   return new Date(new Date(iso).getTime() + 9 * 3600 * 1000).toISOString().slice(0, 10);
 }
 
+// ── 표의 칸: 바뀐 부분만 굵게, 긴 시그니처는 그대로인 인자를 줄인다 ──────────────────
+
+// 표의 칸은 HTML 로 쓴다(코드 안에서 굵은 글씨를 쓰려고). 마크다운이 `*`·`_`·`|` 를 문법으로 읽지 않게 문자 참조로 바꾼다.
+const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/[*_|`[\]~\\]/g, (c) => `&#${c.charCodeAt(0)};`);
+const mono = (html) => `<code>${html}</code>`;
+const strong = (s) => `<b>${esc(s)}</b>`;
+const SIG_LIMIT = 72; // 이보다 긴 인자 목록은 그대로인 인자를 … 로 줄인다
+
+/** 인자 목록. keep[i] 가 거짓인 인자(지워지거나 더해진 것)는 굵게, 길면 그대로인 인자의 연속을 … 하나로. */
+function paramsHtml(params, keep) {
+  const elide = params.join(', ').length > SIG_LIMIT;
+  const out = [];
+  for (const [i, p] of params.entries()) {
+    if (!keep[i]) out.push(strong(p));
+    else if (!elide) out.push(esc(p));
+    else if (out.at(-1) !== '…') out.push('…');
+  }
+  return out.join(', ');
+}
+
+/** 타입 문자열 두 개에서 서로 다른 토큰만 굵게 → [이전, 이후]. */
+function typeDiffHtml(before, after) {
+  const [a, b] = [typeTokens(before), typeTokens(after)];
+  const [ka, kb] = commonMarks(a, b);
+  const join = (tokens, keep) => tokens.map((t, i) => (keep[i] ? esc(t) : strong(t))).join(' ');
+  return [join(a, ka), join(b, kb)];
+}
+
+const displayName = (r) => (r.kind === 'member' ? `${r.struct}.${r.member}` : r.name);
+const macroArgs = (s) => (s === '(...)' ? '가변 인자' : /^\(\d+\)$/.test(s || '') ? `인자 ${s.slice(1, -1)}개` : '');
+
+/**
+ * 호출부 예시에서 읽은 새 이름. 그 이름만 다른 이름으로 바꾼 줄들이 모두 같은 이름으로 바꿨고, 고친 뒤에 옛 이름을 부르는 예가 없으면 그 이름이다.
+ * 같은 커밋이 더한 이름(renamedTo)만으로는 대체라고 하지 않는다(v7.4-rc1 `fd_prepare_fd` → `__FD_PREPARE` 는 대체가 아니었다).
+ */
+export function renamedInExamples(r) {
+  const tokens = (l) => l.match(/[A-Za-z_]\w*|\S/g) || [];
+  const found = new Set();
+  for (const e of r.examples || []) {
+    if (e.after.some((l) => tokens(l).includes(r.name))) return null; // 고친 뒤에도 그 이름을 부른다: 이름이 바뀐 것이 아니다
+    if (e.before.length !== 1 || e.after.length !== 1) continue;
+    const [a, b] = [tokens(e.before[0]), tokens(e.after[0])];
+    const diff = a.length === b.length ? a.flatMap((t, i) => (t === b[i] ? [] : [[t, b[i]]])) : [];
+    if (diff.length && diff.every(([was, now]) => was === r.name && /^[A-Za-z_]\w*$/.test(now))) found.add(diff[0][1]); // 그 이름만 다른 이름으로 바꾼 줄
+  }
+  return found.size === 1 ? [...found][0] : null;
+}
+
+/** 변화 하나의 [기존 칸, 변경 칸] (HTML). */
+function cells(r) {
+  const name = displayName(r);
+  const looseExport = r.loose && /^export/.test(r.kind);
+  if (r.change === 'removed') {
+    const renamed = renamedInExamples(r);
+    const sig = splitSig(r.before, r.name);
+    const callable = r.kind === 'function' || (r.kind === 'macro' && r.before !== '') || (r.kind === 'member' && /\(\*\)/.test(r.before || ''));
+    let before = mono(`${esc(name)}${callable ? `(${sig && r.kind === 'function' ? paramsHtml(sig.params, sig.params.map(() => true)) : ''})` : ''}`);
+    if (r.kind === 'struct') before = mono(`struct ${esc(name)}`);
+    if (r.kind === 'export' || looseExport) before = `${mono(esc(name))} export`;
+    const gone = r.kind === 'export' || looseExport ? `export 해제${r.declared || /선언은 남음/.test(r.kind) ? '(선언만 남음)' : ''}` : '삭제';
+    return [before, renamed ? mono(`${strong(renamed)}${callable ? '()' : ''}`) : gone];
+  }
+  if (r.kind === 'function' || (r.kind === 'member' && /\(\*\)/.test(`${r.before}${r.after}`))) {
+    const [was, now] = [splitSig(r.before, r.name), splitSig(r.after, r.name)];
+    if (was && now) {
+      const [ka, kb] = commonMarks(was.params, now.params);
+      const ret = (side, other) => (side.ret !== other.ret && side.ret ? `${strong(side.ret)} ` : '');
+      return [mono(`${ret(was, now)}${esc(name)}(${paramsHtml(was.params, ka)})`), mono(`${ret(now, was)}${esc(name)}(${paramsHtml(now.params, kb)})`)];
+    }
+  }
+  if (r.kind === 'macro') return [mono(`${esc(name)}(${macroArgs(r.before)})`), mono(`${esc(name)}(${strong(macroArgs(r.after))})`)];
+  const [was, now] = typeDiffHtml(r.before || '', r.after || '');
+  return r.kind === 'export' ? [`${mono(esc(name))} ${mono(was)}`, mono(now)] : [`${mono(esc(name))}: ${mono(was)}`, mono(now)];
+}
+
+/** 같은 변경을 여러 이름에 되풀이한 것을 한 행으로 묶는 열쇠. 같은 커밋의 같은 차이(더하고 뺀 인자, 반환형)만 묶는다. */
+function mergeKey(r) {
+  const sha = r.commit?.sha;
+  if (!sha) return null;
+  if (r.change === 'removed') return r.kind === 'member' ? `${sha}|gone|${r.struct}` : renamedInExamples(r) ? null : `${sha}|gone`;
+  const [was, now] = [splitSig(r.before, r.name), splitSig(r.after, r.name)];
+  if (r.kind === 'function' || (r.kind === 'member' && was && now && /\(\*\)/.test(`${r.before}${r.after}`))) {
+    if (!was || !now) return null;
+    const [ka, kb] = commonMarks(was.params, now.params);
+    const diff = [was.ret === now.ret ? '' : `${was.ret}>${now.ret}`, was.params.filter((_, i) => !ka[i]).join(';'), now.params.filter((_, i) => !kb[i]).join(';')].join('|');
+    return `${sha}|${r.kind}|${r.struct || ''}|${diff}`;
+  }
+  return r.kind === 'member' ? `${sha}|type|${r.struct}|${r.before}>${r.after}` : null;
+}
+
 // 오타·링크·담당자 변경처럼 드라이버가 따라 할 것이 없는 문서 커밋.
 const DOC_NOISE_RE = /typo|spelling|grammar|word order|dead link|\burl\b|maintainer|kernel-?doc|whitespace|copyright|spdx/i;
-const TOP_CAP = 12; // 영역마다 펼쳐 두는 항목 수. 나머지는 같은 자리에 접는다.
 const TABLE_CAP = 50;
+const FOLD_OK_OVER = 30; // 표에 펼칠 변화가 이보다 많은 글(LTS)은 그대로 빌드되는 것을 모듈마다 접는다
+const IMPACT = { break: '**빌드&nbsp;실패**', check: '확인&nbsp;필요', ok: '그대로&nbsp;빌드' };
+const IMPACT_ORDER = { break: 0, check: 1, ok: 2 };
 
 /** 접어 두는 블록. 사이트 렌더러(marked)는 HTML 블록 안의 빈 줄 뒤 마크다운을 그대로 렌더링한다. */
 const fold = (title, body) => `<details>\n<summary><strong>${title}</strong></summary>\n\n${body}\n\n</details>`;
 
 /**
- * 수집 사실 + (있으면) AI 요약 → Dev Blog 글 JSON. 표·명령·링크는 모두 코드가 만든다.
- * 프로필이 있으면 독자의 드라이버가 쓰던 것을 위에 펼치고, 여러 서브시스템이 쓰는 것을 다음에, 나머지는 접어 둔다. 한 이름은 한 곳에만 나온다.
+ * 수집 사실 + (있으면) AI 설명 → Dev Blog 글 JSON. 표·명령·링크·영향 판정은 모두 코드가 만든다.
+ * 본문은 모듈마다 표 하나(영향 | 기존 | 변경 | 주요 설명)다. 설명문은 두지 않는다: 무엇을 기준으로 골랐는지는 confidence 에만 적는다.
+ * 독자와 먼 변화와 목록성 자료는 맨 아래에 접는다. 한 이름은 한 곳에만 나온다.
  * lts: LTS → 다음 LTS 노트. 같은 끝 버전의 일반 노트와 id·제목이 겹치지 않고 draftMetadata.kind 로 구분한다.
  */
 export function buildPost(data, input, notes = EMPTY_NOTES, { lts = false, profile = compileProfile() } = {}) {
   const { from, to, toDate, commits, merges } = data.range;
   const version = to.replace(/^v/, '');
   const label = lts ? `LTS ${from} → LTS ${to}` : `${from} → ${to}`;
-  const active = profileActive(profile);
-  const areas = focusAreas(data, profile);
-  const areaRows = areas.flatMap((a) => a.rows.map((r) => ({
-    ...r, area: a, label: returnChange(r).only ? '반환형 변경' : (r.change === 'removed' ? REMOVED_LABEL : CHANGED_LABEL)[r.kind] || r.change,
-  })));
-  const inFocus = new Set(areaRows.map((r) => r.name));
+  const { active, areas, rows, visible, other } = classify(data, profile);
   const apis = removedApis(data);
   const used = apis.filter((e) => e.driverUses > 0);
-  const loose = used.filter((e) => !inFocus.has(e.name)).map((e) => ({
-    ...e, change: 'removed', renamedTo: e.commit?.renamedTo, rel: relevance(e, profile),
-    label: /^export 해제/.test(e.kind) ? 'export 해제(선언은 남아 링크에서 실패)' : /^export /.test(e.kind) ? 'export 해제' : REMOVED_LABEL[e.kind] || '삭제',
-  }));
   const driverKconfig = data.kconfig.removed.filter((k) => /^(?:drivers|sound)\//.test(k.file))
     .sort((a, b) => a.file.localeCompare(b.file) || a.name.localeCompare(b.name));
+  const commitLink = (c, text = '커밋') => (c ? `[${cell(text)}](${commitUrl(c.sha)})` : '');
 
-  // 한 이름은 세 자리 가운데 하나에만: 독자의 드라이버가 쓰던 것(top) → 여러 서브시스템이 쓰는 것(generic) → 나머지(other).
-  const isTop = (r) => active && (Boolean(r.area?.primary) || r.rel.tier === 'mine');
-  const everything = [...areaRows, ...loose];
-  const top = everything.filter(isTop);
-  const generic = everything.filter((r) => !isTop(r) && r.rel.tier === 'generic').sort(byUse);
-  const other = everything.filter((r) => !isTop(r) && r.rel.tier === 'other').sort(byUse);
-
-  const pullById = new Map(input.pulls.map((p) => [p.id, p]));
-  const commitLink = (c) => (c ? `[${cell(c.subject)}](${commitUrl(c.sha)})` : '');
-  const groupCounts = (files) => profile.groups.map((g) => ({ label: g.label, count: files.filter((f) => g.paths.test(f)).length })).filter((g) => g.count > 0);
-  const usage = (files, total) => {
-    if (total == null) return '';
-    const mine = groupCounts(files).map((g) => `${g.label} ${g.count}`).join(' · ');
-    return mine ? `사용 ${mine} · 전체 ${total}개 파일` : `사용 ${total}개 파일`;
-  };
-  const macroArgs = (s) => (s === '(...)' ? '가변 인자' : /^\(\d+\)$/.test(s) ? `인자 ${s.slice(1, -1)}개` : '');
-  // 이름 변경 후보는 "같은 커밋이 이름 하나를 더했다"는 사실일 뿐이라 대체 API 라고 단정하지 않는다.
-  const instead = (r) => notes.apiNotes.get(r.name) || (r.renamedTo ? `같은 커밋에서 ${code(r.renamedTo)} 추가(이름 변경 후보)` : '');
-
-  // 펼쳐 보이는 항목: 이름·변화·사용처·커밋 한 줄 아래에 이전·이후와 할 일을 둔다. 시그니처는 자르지 않는다.
-  const detail = (r) => {
-    const out = [];
-    if (r.kind === 'macro') {
-      if (r.change === 'changed') out.push(`${macroArgs(r.before)} → ${macroArgs(r.after)}`);
-    } else if (r.kind === 'export') {
-      out.push(r.change === 'changed' ? `${code(r.before)} → ${code(r.after)}` : `이전 ${code(r.before)}`);
-    } else if (r.before && !/^(?:struct|union)$/.test(r.before)) {
-      out.push(`이전 ${code(r.before)}`);
-      if (r.change === 'changed') out.push(`이후 ${code(r.after)}`);
-      if (returnChange(r).callersBuild) out.push('기존 호출은 그대로 빌드된다.');
-    } else if (/^export /.test(r.kind || '')) {
-      out.push(`이전 ${code(r.kind.replace(/^export (?:해제\(선언은 남음\) )?/, ''))}`);
-    }
-    const todo = instead(r);
-    return todo ? [...out, todo] : out;
-  };
-  const head = (name, what, files, total, links) => `- **${code(name)}** — ${[what, usage(files, total), ...links].filter(Boolean).join(' · ')}`;
-  const itemBlock = (r) => [head(r.name, r.label, r.users || [], r.driverUses, [commitLink(r.commit)]), ...detail(r).map((l) => `  - ${l}`)].join('\n');
-  // 같은 구조체의 멤버 변화는 한 덩어리로 묶는다(v7.4-rc1 `v4l2_subdev_pad_ops` 의 set_fmt·get_selection·set_selection).
-  const structBlock = (struct, rows) => {
-    const files = [...new Set(rows.flatMap((r) => r.users || []))];
-    const count = (change, word) => { const n = rows.filter((r) => r.change === change).length; return n ? `멤버 ${n}개 ${word}` : ''; };
-    const links = [...new Map(rows.filter((r) => r.commit).map((r) => [r.commit.sha, r.commit])).values()].slice(0, 3).map(commitLink);
-    const members = rows.map((r) => (r.change === 'changed'
-      ? `  - ${code(r.member)}: ${code(r.before)} → ${code(r.after)}`
-      : `  - ${code(r.member)} 삭제${r.before ? ` (이전 ${code(r.before)})` : ''}`));
-    const todo = [...new Set(rows.map((r) => notes.apiNotes.get(r.name)).filter(Boolean))].map((t) => `  - ${t}`);
-    return [head(`struct ${struct}`, [count('changed', '타입 변경'), count('removed', '삭제')].filter(Boolean).join(', '), files, files.length || Math.max(...rows.map((r) => r.driverUses ?? 0)), links), ...members, ...todo].join('\n');
-  };
-  // 한 커밋이 셋 이상 지운 이름도 한 덩어리로(v7.2: 플랫폼 데이터 헤더 하나를 지운 커밋의 `LM3560_*` 매크로 13개).
-  const removedTogether = (rows) => {
-    const files = [...new Set(rows.flatMap((r) => r.users || []))];
-    const names = `${rows.slice(0, 4).map((r) => code(r.name)).join(', ')}${rows.length > 4 ? ` 외 ${rows.length - 4}개` : ''}`;
-    const labels = [...new Set(rows.map((r) => r.label))];
-    return `- **${names}** — ${[`${labels[0]}${labels.length > 1 ? ' 등' : ''} ${rows.length}개`, usage(files, files.length || rows[0].driverUses), commitLink(rows[0].commit)].filter(Boolean).join(' · ')}`;
-  };
-  const blocks = (rows) => {
-    const out = [];
+  // 행: 같은 변경을 되풀이한 이름은 묶는다. 같은 커밋이 지운 이름은 셋 이상일 때만(둘은 따로 보는 편이 읽기 쉽다).
+  const toViews = (list) => {
     const groups = new Map();
-    const sameCommit = new Map();
-    for (const r of rows) if (r.kind !== 'member' && r.change === 'removed' && r.commit) sameCommit.set(r.commit.sha, (sameCommit.get(r.commit.sha) || 0) + 1);
-    for (const r of rows) {
-      const key = r.kind === 'member' ? `struct:${r.struct}` : r.change === 'removed' && sameCommit.get(r.commit?.sha) >= 3 ? `commit:${r.commit.sha}` : null;
-      if (!key) out.push({ rows: [r] });
-      else if (groups.has(key)) groups.get(key).rows.push(r);
-      else { groups.set(key, { key, rows: [r] }); out.push(groups.get(key)); }
-    }
-    return out.map((g) => (!g.key ? itemBlock(g.rows[0]) : g.key.startsWith('struct:') ? structBlock(g.rows[0].struct, g.rows) : removedTogether(g.rows)));
-  };
-  const capped = (title, list) => [list.slice(0, TOP_CAP).join('\n'), list.length > TOP_CAP ? fold(`${title} 나머지 ${list.length - TOP_CAP}개`, list.slice(TOP_CAP).join('\n')) : ''].filter(Boolean).join('\n\n');
-
-  // 접어 두는 표: 같은 커밋이 셋 이상 지운 이름은 한 줄로 묶는다(드라이버를 통째로 지운 커밋이 표를 채우지 않게).
-  const what = (r) => {
-    if (r.before === undefined && r.after === undefined) return instead(r) || '—';
-    if (r.change === 'changed') return `${code(clip(r.before))} → ${code(clip(r.after))}`;
-    return `${r.before ? code(clip(r.before)) : '—'}${r.renamedTo ? ` → ${code(r.renamedTo)} (같은 커밋에서 추가)` : ''}`;
-  };
-  const tableRows = (list) => {
-    const groups = new Map();
+    const order = [];
     for (const r of list) {
+      const key = mergeKey(r);
+      if (key && groups.has(key)) groups.get(key).push(r);
+      else { const g = [r]; if (key) groups.set(key, g); order.push(g); }
+    }
+    return order.flatMap((g) => (g.length === 2 && g[0].change === 'removed' && g[0].kind !== 'member' ? [[g[0]], [g[1]]] : [g])).map((g) => {
+      const [first] = g;
+      const [before, after] = cells(first);
+      const more = g.slice(1).map((r) => mono(esc(r.kind === 'member' ? `.${r.member}` : r.name)));
+      const others = more.length ? `<br>외 ${more.length}개: ${more.slice(0, 4).join(', ')}${more.length > 4 ? ' …' : ''}` : '';
+      const said = g.map((r) => notes.apiNotes.get(r.name)).find(Boolean);
+      const commit = g.find((r) => r.commit)?.commit;
+      const note = said ? `${cell(said)}${commit ? ` ${commitLink(commit)}` : ''}` : commit ? commitLink(commit, commit.subject) : '—';
+      return { rows: g, impact: g.map((r) => r.impact).sort((a, b) => IMPACT_ORDER[a] - IMPACT_ORDER[b])[0], before: `${before}${others}`, after, note };
+    }).sort((a, b) => IMPACT_ORDER[a.impact] - IMPACT_ORDER[b.impact]);
+  };
+  const table = (views) => ['| 영향 | 기존 | 변경 | 주요 설명 |', '|---|---|---|---|', ...views.map((v) => `| ${IMPACT[v.impact]} | ${v.before} | ${v.after} | ${v.note} |`)].join('\n');
+  // 고친 예: 메인라인이 트리 안 드라이버의 호출부를 실제로 고친 줄. 수집기가 독자와 가까운 드라이버의 예를 앞에 둔다.
+  // 같은 문장을 고친 hunk 만 쓴다: 지운 줄의 토큰 절반 이상이 더한 줄에 남아 있어야 한다(선언을 지우고 다른 변수를 더한 hunk 는 예시가 아니다).
+  const words = (lines) => new Set(lines.join(' ').match(/[A-Za-z_]\w*/g) || []);
+  const rewrites = (r) => (e) => {
+    const was = [...words(e.before)].filter((w) => w !== r.name);
+    const now = words(e.after);
+    return was.length > 0 && was.filter((w) => now.has(w)).length * 2 >= was.length;
+  };
+  const exampleOf = (view) => {
+    const r = view.rows.find((row) => (row.examples || []).some(rewrites(row)));
+    const e = r?.examples.find(rewrites(r));
+    return e ? `${code(r.name)} · ${e.file}\n\n\`\`\`diff\n${[...e.before.map((l) => `- ${l}`), ...e.after.map((l) => `+ ${l}`)].join('\n')}\n\`\`\`` : '';
+  };
+
+  const byWeight = (a, b) => b.rel.groups.reduce((n, g) => n + g.count, 0) - a.rel.groups.reduce((n, g) => n + g.count, 0) || byUse(a, b);
+  const foldOk = visible.length > FOLD_OK_OVER;
+  const modules = [...MODULES, OTHER_MODULE].map((m) => ({ ...m, views: toViews(visible.filter((r) => r.module.id === m.id).sort(byWeight)) })).filter((m) => m.views.length);
+  const count = (views, impact) => views.filter((v) => v.impact === impact).length;
+
+  const sections = [];
+  if (modules.length >= 4 && modules.reduce((n, m) => n + m.views.length, 0) >= 12) { // 모듈이 여럿이고 행이 많을 때만 색인을 둔다
+    sections.push({
+      heading: '한눈에',
+      body: ['| 모듈 | 빌드 실패 | 확인 필요 | 그대로 빌드 |', '|---|---:|---:|---:|',
+        ...modules.map((m) => `| ${m.title} | ${count(m.views, 'break') || '·'} | ${count(m.views, 'check') || '·'} | ${count(m.views, 'ok') || '·'} |`)].join('\n'),
+    });
+  }
+  for (const m of modules) {
+    const open = foldOk ? m.views.filter((v) => v.impact !== 'ok') : m.views;
+    const quiet = foldOk ? m.views.filter((v) => v.impact === 'ok') : [];
+    const examples = m.views.filter((v) => v.rows.length < 3).map(exampleOf).filter(Boolean).slice(0, 6); // 셋 이상 묶인 행은 한 드라이버의 내부 정리다
+    sections.push({
+      heading: m.title,
+      body: [
+        open.length ? table(open) : '',
+        quiet.length ? fold(`그대로 빌드되는 변경 ${quiet.length}건`, table(quiet)) : '',
+        examples.length ? fold(`고친 예 ${examples.length}건 (메인라인 드라이버)`, examples.join('\n\n')) : '',
+      ].filter(Boolean).join('\n\n'),
+    });
+  }
+  // 프로필 경로의 Kconfig 심볼이 사라진 것도 defconfig 에서 조용히 빠지므로 표로 보인다.
+  const mineKconfig = driverKconfig.filter((k) => profile.groups.some((g) => g.paths.test(k.file)));
+  if (mineKconfig.length) {
+    sections.push({
+      heading: 'Kconfig',
+      body: ['| 영향 | 기존 | 변경 | 주요 설명 |', '|---|---|---|---|', ...mineKconfig.map((k) => `| ${IMPACT.check} | ${mono(`CONFIG&#95;${esc(k.name)}`)}<br>${esc(k.file)} | `
+        + `${k.commit?.renamedTo ? `삭제 (같은 커밋이 ${mono(`CONFIG&#95;${esc(k.commit.renamedTo)}`)} 추가)` : '삭제'} | ${k.commit ? commitLink(k.commit, k.commit.subject) : '—'} |`)].join('\n'),
+    });
+  }
+  if (!sections.length) sections.push({ heading: '변경 없음', body: `${from}에서 ${to} 사이에 표에 올릴 API 변경은 없습니다.` });
+
+  // 참고: 다른 서브시스템 안에서만 쓰이던 것과 목록성 자료. 모두 접는다.
+  const reference = [];
+  if (other.length) {
+    const groups = new Map();
+    for (const r of [...other].sort(byUse)) {
       const key = r.commit?.sha || `name:${r.name}`;
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(r);
     }
-    return [...groups.values()].flatMap((g) => (g.length < 3
-      ? g.map((r) => `| ${code(r.name)} | ${cell(r.label)} | ${cell(what(r))} | ${r.driverUses ?? '—'} | ${commitLink(r.commit) || '—'} |`)
-      : [`| ${g.slice(0, 3).map((r) => code(r.name)).join(', ')}${g.length > 3 ? ` 외 ${g.length - 3}개` : ''} | ${cell(g[0].label)}${g.some((r) => r.label !== g[0].label) ? ' 등' : ''} | — | ${g[0].driverUses ?? '—'} | ${commitLink(g[0].commit)} |`]));
-  };
-  const table = (list) => {
-    const rows = tableRows(list);
-    return [
-      ['| 이름 | 변화 | 이전 → 이후 · 대신 쓸 것 | 사용 | 커밋 |', '|---|---|---|---:|---|', ...rows.slice(0, TABLE_CAP)].join('\n'),
-      rows.length > TABLE_CAP ? `사용 수가 적은 나머지 ${rows.length - TABLE_CAP}줄은 표에서 뺐습니다. 이름은 모두 아래 점검 명령에 있습니다.` : '',
-    ].filter(Boolean).join('\n\n');
-  };
-
-  const sections = [];
-  if (notes.overview.length) sections.push({ heading: '먼저 볼 것', body: notes.overview.map((o) => `- ${o.text}`).join('\n') });
-
-  const changedAreas = areas.filter((a) => a.rows.length).map((a) => `${a.title} ${a.rows.length}건`);
-  const quietAreas = areas.filter((a) => !a.rows.length).map((a) => a.title);
-  const orientation = `헤더를 비교한 영역 ${areas.length}개 가운데 ${from} 드라이버가 쓰던 API가 바뀐 곳은 ${changedAreas.join(', ') || '없습니다'}${changedAreas.length ? '입니다' : ''}.`
-    + (quietAreas.length ? ` 바뀐 것이 없는 곳: ${quietAreas.join(', ')}.` : '');
-
-  // 전환(넓은 범위 변경·반복 패턴)과 Kconfig·export 변경도 내 영역을 건드린 것만 위에 둔다.
-  const mark = (c) => touched(c, profile).map((g) => `${g.label} ${g.count}곳`).join(' · ');
-  const broadLine = (c) => {
-    const action = notes.conversionNotes.get(shortSha(c.sha));
-    return `- [${cell(c.subject)}](${commitUrl(c.sha)}) — 드라이버 디렉터리 ${c.dirs}곳${mark(c) ? `(${mark(c)})` : ''}, 파일 ${c.files}개.${action ? ` ${action}` : ''}`;
-  };
-  const campaignLine = (c) => {
-    const more = c.prefixes.length > 6 ? ` 외 ${c.prefixes.length - 6}곳` : '';
-    const action = notes.conversionNotes.get(shortSha(c.commits[0]));
-    return `- **${cell(c.pattern)}** — 커밋 ${c.count}개 (${c.prefixes.slice(0, 6).join(', ')}${more})${mark(c) ? ` · ${mark(c)}` : ''}. ${action ? `${action} ` : ''}[예시](${commitUrl(c.commits[0])})`;
-  };
-  const isNearBroad = (c) => active && nearBroad(c, profile);
-  const isNearCampaign = (c) => active && nearCampaign(c, profile);
-  const looseChanged = data.exports.changed.filter((c) => !inFocus.has(c.name)).map((c) => ({ ...c, rel: relevance(c, profile) }));
-  const mineChanged = looseChanged.filter((c) => active && c.rel.tier === 'mine');
-  const mineKconfig = driverKconfig.filter((k) => profile.groups.some((g) => g.paths.test(k.file)));
-  // pull 마다 AI 가 추린 점. AI 요약이 없으면(template) 링크만 한 줄로 잇는다.
-  const pullNotes = (pulls) => (notes.subsystems.size
-    ? pulls.filter((p) => notes.subsystems.has(p.id))
-      .map((p) => `**${cell(p.title.replace(/^Pull\s+/, ''))}** · [머지](${commitUrl(p.id)})\n${notes.subsystems.get(p.id).map((pt) => `- ${pt}`).join('\n')}`).join('\n\n')
-    : pulls.map((p) => `[${cell(p.title.replace(/^Pull\s+/, ''))}](${commitUrl(p.id)})`).join(' · '));
-
-  if (active) {
-    const parts = [];
-    for (const a of [...areas.filter((x) => x.primary), ...areas.filter((x) => !x.primary)]) {
-      const rows = top.filter((r) => r.area === a).sort((x, y) => y.rel.groups.reduce((n, g) => n + g.count, 0) - x.rel.groups.reduce((n, g) => n + g.count, 0) || byUse(x, y));
-      if (rows.length) parts.push(`### ${a.title}\n\n${capped(a.title, blocks(rows))}`);
-      else if (a.primary) parts.push(`### ${a.title}\n\n${a.files ? `헤더 ${a.files}개가 바뀌었지만 ${from} 드라이버가 쓰던 API의 삭제·시그니처 변경은 없습니다.` : '이번 범위에서 이 영역의 헤더는 바뀌지 않았습니다.'}`);
-    }
-    const topLoose = top.filter((r) => !r.area).sort(byUse);
-    if (topLoose.length) parts.push(`### 그 밖에 사라진 API\n\n${capped('그 밖에 사라진 API', blocks(topLoose))}`);
-    if (mineChanged.length) {
-      parts.push(`### 라이선스·네임스페이스가 바뀐 export\n\n${mineChanged.map((c) => `- ${code(c.name)} — ${code(c.from)} → ${code(c.to)} · ${usage(c.users || [], c.users?.length ?? null)}`).join('\n')}`);
-    }
-    if (mineKconfig.length) {
-      parts.push(`### 사라진 Kconfig 심볼\n\n${mineKconfig.map((k) => `- ${code(k.name)} (${cell(k.file)})${k.commit?.renamedTo ? ` → ${code(k.commit.renamedTo)}` : ''}${k.commit ? ` · ${commitLink(k.commit)}` : ''}`).join('\n')}`);
-    }
-    const conv = [
-      ...data.broad.filter(isNearBroad).sort(byTouch(profile)).slice(0, 6).map(broadLine),
-      ...data.campaigns.filter(isNearCampaign).sort(byTouch(profile)).slice(0, 6).map(campaignLine),
-    ];
-    if (conv.length) parts.push(`### 함께 볼 전환\n\n여러 드라이버를 한꺼번에 바꾼 커밋과 여러 서브시스템이 되풀이한 변경 가운데 이 영역을 건드린 것입니다.\n\n${conv.join('\n')}`);
-    const nearPulls = pullNotes(input.pulls.filter((p) => p.mine));
-    if (nearPulls) {
-      parts.push(notes.subsystems.size
-        ? `### 메인테이너 요약에서\n\n메인테이너가 pull 요청에 쓴 글을 줄인 것입니다. 위 항목과 달리 헤더로 확인한 내용이 아닙니다.\n\n${nearPulls}`
-        : `### 관련 pull\n\n${nearPulls}`);
-    }
-    const scope = profile.groups.map((g) => `${g.label}(${g.describe || g.id})`).join(', ');
-    const primary = areas.filter((a) => a.primary).map((a) => a.title).join(', ');
-    sections.push({
-      heading: `${profile.title}에서 볼 것`,
-      body: [
-        // 독자의 드라이버는 트리 밖에 있어 볼 수 없다. 무엇을 기준으로 골랐는지 숨기지 않는다.
-        `메인라인 ${from} 트리에 들어 있는 ${scope} 드라이버가 실제로 쓰던 API 가운데 바뀌거나 사라진 것입니다.${primary ? ` ${primary} 영역은 사용처와 관계없이 모두 넣었습니다.` : ''} `
-          + '트리 밖(사내) 드라이버를 직접 본 것이 아니라 같은 종류의 메인라인 드라이버로 가늠한 것이므로, 사내 드라이버만 쓰는 API는 아래 점검 명령으로 확인합니다.',
-        ...(top.length ? [] : ['이 범위에서 해당하는 API 변경은 없습니다.']),
-        ...parts,
-        orientation,
-      ].join('\n\n'),
-    });
+    const labelOf = (r) => (r.loose ? (/^export/.test(r.kind) ? 'export 해제' : REMOVED_LABEL[r.kind] || '삭제') : (r.change === 'removed' ? REMOVED_LABEL : CHANGED_LABEL)[r.kind] || r.change);
+    const lines = [...groups.values()].flatMap((g) => (g.length < 3
+      ? g.map((r) => `| ${code(displayName(r))} | ${r.module.title} | ${labelOf(r)} | ${r.driverUses ?? '—'} | ${commitLink(r.commit, r.commit?.subject) || '—'} |`)
+      : [`| ${g.slice(0, 3).map((r) => code(displayName(r))).join(', ')}${g.length > 3 ? ` 외 ${g.length - 3}개` : ''} | ${g[0].module.title} | ${labelOf(g[0])}${g.some((r) => labelOf(r) !== labelOf(g[0])) ? ' 등' : ''} | ${g[0].driverUses ?? '—'} | ${commitLink(g[0].commit, g[0].commit.subject)} |`]));
+    reference.push(fold(`다른 서브시스템 안에서만 쓰이던 변경 ${other.length}건`, [
+      ['| 이름 | 모듈 | 변화 | 사용 파일 | 커밋 |', '|---|---|---|---:|---|', ...lines.slice(0, TABLE_CAP)].join('\n'),
+      lines.length > TABLE_CAP ? `사용 수가 적은 나머지 ${lines.length - TABLE_CAP}줄은 뺐습니다. 이름은 모두 점검 명령에 있습니다.` : '',
+    ].filter(Boolean).join('\n\n')));
   }
-
-  if (generic.length || !active) {
-    sections.push({
-      heading: '여러 서브시스템이 쓰는 API 변화',
-      body: [
-        `${from}에서 드라이버 서브시스템 ${profile.genericSubsystems}곳 이상이 쓰던 API입니다. 어느 드라이버든 쓰고 있을 수 있습니다.`,
-        ...(active ? [] : [orientation]),
-        generic.length ? capped('여러 서브시스템이 쓰는 API', blocks(generic)) : '해당하는 변경은 없습니다.',
-      ].join('\n\n'),
-    });
-  }
-
-  // 트리 전체 참고: 다른 서브시스템 안에서만 쓰이던 것과 목록성 자료. 모두 접어 둔다.
-  const reference = [];
-  if (other.length) {
-    reference.push(fold(`다른 서브시스템 안에서만 쓰이던 API ${other.length}개`, [
-      `${from}에 있던 export 심볼·헤더 함수·매크로·구조체 가운데 ${to}에서 사라진 것이 ${apis.length}개이고, 그중 ${from}의 drivers/·sound/에서 쓰이던 것이 ${used.length}개입니다. `
-        + '`사용`은 그 이름을 쓴 파일 수입니다. 같은 커밋이 셋 이상 지운 이름은 한 줄로 묶었습니다.',
-      table(other),
-    ].join('\n\n')));
-  }
-  const restChanged = looseChanged.filter((c) => !mineChanged.includes(c));
-  if (restChanged.length) {
+  const inTables = new Set(rows.map((r) => r.name));
+  const looseChanged = data.exports.changed.filter((c) => !inTables.has(c.name));
+  if (looseChanged.length) {
     const groups = new Map();
-    for (const c of restChanged) {
+    for (const c of looseChanged) {
       const key = `${c.from}\0${c.to}\0${c.file}`;
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(c);
     }
-    const rows = [...groups.values()].sort((a, b) => b.length - a.length).slice(0, TABLE_CAP)
+    const lines = [...groups.values()].sort((a, b) => b.length - a.length).slice(0, TABLE_CAP)
       .map((g) => `| ${g.slice(0, 3).map((c) => code(c.name)).join(', ')}${g.length > 3 ? ` 외 ${g.length - 3}개` : ''} | ${cell(g[0].from)} | ${cell(g[0].to)} | ${cell(g[0].file)} |`);
-    reference.push(fold(`라이선스·네임스페이스가 바뀐 export ${restChanged.length}개`, [
-      '`_GPL`이 붙으면 GPL이 아닌 모듈은 더 쓸 수 없고, 네임스페이스가 붙으면 `MODULE_IMPORT_NS()`가 필요합니다. '
-        + '`EXPORT_SYMBOL_FOR_MODULES`처럼 받는 모듈을 정한 export는 트리 밖 모듈에서 쓸 수 없습니다.',
-      ['| 심볼 | 이전 | 이후 | 파일 |', '|---|---|---|---|', ...rows].join('\n'),
-    ].join('\n\n')));
+    reference.push(fold(`라이선스·네임스페이스가 바뀐 export ${looseChanged.length}개`,
+      ['| 심볼 | 이전 | 이후 | 파일 |', '|---|---|---|---|', ...lines].join('\n')));
   }
   const restKconfig = driverKconfig.filter((k) => !mineKconfig.includes(k));
   if (restKconfig.length) {
-    const rows = restKconfig.slice(0, 60).map((k) => `| ${code(k.name)} | ${cell(k.file)} | ${k.commit?.renamedTo ? code(k.commit.renamedTo) : '—'} | ${commitLink(k.commit) || '—'} |`);
-    reference.push(fold(`사라진 드라이버 Kconfig 심볼 ${restKconfig.length}개`, [
-      `전체 ${data.kconfig.removed.length}개가 사라졌고 새로 ${data.kconfig.added}개가 생겼습니다. drivers/·sound/ 아래의 심볼은 defconfig나 \`depends on\`에 남아 있으면 경고 없이 빠집니다.`,
-      ['| 심볼 | 위치 | 이름 변경 후보 | 지운 커밋 |', '|---|---|---|---|', ...rows].join('\n'),
-      restKconfig.length > rows.length ? `나머지 ${restKconfig.length - rows.length}개는 점검 명령에 있습니다.` : '',
-    ].filter(Boolean).join('\n\n')));
+    reference.push(fold(`사라진 드라이버 Kconfig 심볼 ${restKconfig.length}개`,
+      ['| 심볼 | 위치 | 커밋 |', '|---|---|---|', ...restKconfig.slice(0, 60).map((k) => `| ${code(k.name)} | ${cell(k.file)} | ${commitLink(k.commit, k.commit?.subject) || '—'} |`)].join('\n')));
   }
-  const restConv = [
-    ...data.campaigns.filter((c) => !isNearCampaign(c)).slice(0, 12).map(campaignLine),
-    ...data.broad.filter((c) => !isNearBroad(c)).slice(0, 15).map(broadLine),
+  // API 가 아닌 변화: 메인테이너가 pull 요청에 쓴 요약을 AI 가 줄인 것. 독자와 가까운 pull 을 먼저 둔다.
+  const pullNotes = (pulls) => pulls.filter((p) => notes.subsystems.has(p.id))
+    .map((p) => `**${cell(p.title.replace(/^Pull\s+/, ''))}** · [머지](${commitUrl(p.id)})\n${notes.subsystems.get(p.id).map((pt) => `- ${pt}`).join('\n')}`).join('\n\n');
+  const nearPulls = pullNotes(input.pulls.filter((p) => p.mine));
+  if (nearPulls) reference.push(fold('API 밖의 변화 (메인테이너 요약)', nearPulls));
+  const restPulls = pullNotes(input.pulls.filter((p) => !p.mine));
+  if (restPulls) reference.push(fold('다른 서브시스템의 메인테이너 요약', restPulls));
+  const conversions = [
+    ...[...data.broad].sort((a, b) => touchCount(b, profile) - touchCount(a, profile)).slice(0, 15)
+      .map((c) => `- ${commitLink(c, c.subject)} — 드라이버 디렉터리 ${c.dirs}곳, 파일 ${c.files}개`),
+    ...[...data.campaigns].sort((a, b) => touchCount(b, profile) - touchCount(a, profile)).slice(0, 12)
+      .map((c) => `- **${cell(c.pattern)}** — 커밋 ${c.count}개 (${c.prefixes.slice(0, 6).join(', ')}${c.prefixes.length > 6 ? ` 외 ${c.prefixes.length - 6}곳` : ''}) [예시](${commitUrl(c.commits[0])})`),
   ];
-  if (restConv.length) {
-    reference.push(fold(`반복 전환 패턴 ${data.campaigns.length}건·넓은 범위 변경 ${data.broad.length}건`, [
-      '여러 서브시스템이 같은 변경을 되풀이한 것과, 한 커밋이 여러 드라이버 디렉터리를 함께 바꾼 것입니다.',
-      restConv.join('\n'),
-    ].join('\n\n')));
-  }
+  if (conversions.length) reference.push(fold(`여러 드라이버를 한꺼번에 바꾼 커밋 ${data.broad.length}건·반복 패턴 ${data.campaigns.length}건`, conversions.join('\n')));
+  const added = areas.filter((a) => a.added.length).map((a) => `- **${a.title}** ${a.added.length}개: ${a.added.slice(0, 30).map(code).join(', ')}${a.added.length > 30 ? ' …' : ''}`);
+  if (added.length) reference.push(fold('새로 생긴 함수·매크로·멤버 이름', added.join('\n')));
   const docCommits = data.docs.driverApi.filter((c) => !DOC_NOISE_RE.test(c.subject));
   if (data.docs.deprecated.trim() || docCommits.length) {
     reference.push(fold('폐기 예고·권장 방식 문서', [
-      data.docs.deprecated.trim()
-        ? `\`Documentation/process/deprecated.rst\`에 추가된 내용입니다.\n\n\`\`\`text\n${data.docs.deprecated.trim().slice(0, 4000)}\n\`\`\``
-        : '이번 범위에서 `Documentation/process/deprecated.rst`는 바뀌지 않았습니다.',
-      docCommits.length ? `\`Documentation/driver-api/\`를 바꾼 커밋(오타·링크 수정 제외) ${docCommits.length}개:\n\n${docCommits.slice(0, 20).map((c) => `- ${commitLink(c)}`).join('\n')}` : '',
+      data.docs.deprecated.trim() ? `\`Documentation/process/deprecated.rst\`에 추가된 내용:\n\n\`\`\`text\n${data.docs.deprecated.trim().slice(0, 4000)}\n\`\`\`` : '',
+      docCommits.length ? docCommits.slice(0, 20).map((c) => `- ${commitLink(c, c.subject)}`).join('\n') : '',
     ].filter(Boolean).join('\n\n')));
   }
-  const restPulls = input.pulls.filter((p) => !(active && p.mine));
-  const restPullNotes = pullNotes(restPulls);
-  if (restPullNotes) {
-    reference.push(fold(notes.subsystems.size ? `서브시스템별 pull 요약 ${restPulls.filter((p) => notes.subsystems.has(p.id)).length}건` : `드라이버를 많이 바꾼 pull ${restPulls.length}건`, [
-      notes.subsystems.size ? '각 메인테이너가 pull 요청에 쓴 요약에서 드라이버에 영향 있는 점만 추렸습니다. 헤더로 확인한 내용이 아닙니다.' : '드라이버 파일을 많이 바꾼 pull 순서입니다.',
-      restPullNotes,
-    ].join('\n\n')));
-  }
-  const added = areas.filter((a) => a.added.length).map((a) => `- **${a.title}** ${a.added.length}개: ${a.added.slice(0, 30).map(code).join(', ')}${a.added.length > 30 ? ' …' : ''}`);
-  if (added.length) reference.push(fold('중점 영역에 새로 생긴 함수·매크로·멤버', `이름만 적습니다. 용도는 각 헤더와 커밋을 봅니다.\n\n${added.join('\n')}`));
-  if (reference.length) {
-    sections.push({ heading: '트리 전체 참고', body: ['독자의 드라이버와 거리가 먼 변화와 목록성 자료입니다. 필요한 것만 펼쳐 봅니다.', ...reference].join('\n\n') });
-  }
 
-  // 점검 명령은 줄이지 않는다: 위 표에서 뺀 이름까지 모두 넣어야 "안 나오면 안 걸린다"가 성립한다.
+  // 점검 명령은 줄이지 않는다: 표에서 뺀 이름까지 모두 넣어야 "안 나오면 안 걸린다"가 성립한다.
   const usedNames = new Set(used.map((e) => e.name));
+  const areaRows = rows.filter((r) => !r.loose);
   const sigNames = [...new Set(areaRows.filter((r) => r.kind !== 'member' && !(r.kind === 'export' && r.change === 'changed') && !usedNames.has(r.name)).map((r) => r.name))];
   const structNames = [...new Set(areaRows.filter((r) => r.kind === 'member').map((r) => r.struct))];
   const grepList = (title, list) => (list.length ? `# ${title} ${list.length}개\ngit grep -nwF -f - <<'EOF'\n${list.join('\n')}\nEOF` : '');
@@ -1254,53 +1380,38 @@ export function buildPost(data, input, notes = EMPTY_NOTES, { lts = false, profi
     grepList('라이선스·네임스페이스가 바뀐 export', data.exports.changed.map((c) => c.name)),
     driverKconfig.length ? `# 사라진 드라이버 Kconfig 심볼 ${driverKconfig.length}개\ngrep -rnwE '(CONFIG_)?(${driverKconfig.map((k) => k.name).join('|')})' --include='Kconfig*' --include='Makefile' --include='*defconfig' .` : '',
   ].filter(Boolean);
-  if (commands.length) {
-    sections.push({
-      heading: '내 드라이버 점검 명령',
-      body: [
-        '드라이버 소스 디렉터리(git 저장소)에서 실행하면 이 글이 다룬 이름을 쓰는 곳을 찾습니다. 위 표에서 뺀 이름까지 모두 들어 있습니다. '
-          + '아무것도 나오지 않으면 이 목록에는 걸리지 않습니다. 이 글이 보지 않는 헤더의 시그니처 변경은 잡지 못하므로 빌드로 마저 확인합니다.',
-        fold('명령 펼치기', `\`\`\`sh\n${commands.join('\n')}\n\`\`\``),
-      ].join('\n\n'),
-    });
-  }
+  if (commands.length) reference.push(fold('내 드라이버 점검 명령 (드라이버 소스의 git 저장소에서 실행)', `\`\`\`sh\n${commands.join('\n')}\n\`\`\``));
+  if (reference.length) sections.push({ heading: '참고', body: reference.join('\n\n') });
 
-  const topNames = new Set(top.map((r) => r.name));
-  const focusCount = inFocus.size;
-  // 출처는 펼쳐 보이는 항목이 기댄 pull 만: 독자와 가까운 pull 과, 위쪽 두 섹션에 항목이 나온 영역의 pull.
-  const openAreas = new Set([...top, ...generic].map((r) => r.area).filter(Boolean));
-  const cited = [...input.pulls.filter((p) => active && p.mine), ...[...openAreas].flatMap((a) => a.pulls.map((p) => pullById.get(shortSha(p.sha)))).filter(Boolean)];
-  const sources = (cited.length ? cited : input.pulls.slice(0, 10)).filter((p, i, all) => all.findIndex((q) => q.id === p.id) === i);
+  const views = modules.flatMap((m) => m.views);
+  const tally = `빌드 실패 ${count(views, 'break')}건, 확인 필요 ${count(views, 'check')}건, 그대로 빌드 ${count(views, 'ok')}건`;
+  const broken = modules.filter((m) => count(m.views, 'break')).map((m) => m.title);
+  const cited = [...input.pulls.filter((p) => p.mine), ...input.pulls.filter((p) => notes.subsystems.has(p.id))].filter((p, i, all) => all.findIndex((q) => q.id === p.id) === i);
   return {
     id: lts ? `${kstDate(toDate)}-linux-${from}-${to}-lts-driver-impact` : `${kstDate(toDate)}-linux-${to}-driver-impact`,
     topic: 'linux-driver-impact',
     title: lts ? `Linux ${from.replace(/^v/, '')} → ${version} LTS 드라이버 영향 노트` : `Linux ${version} 드라이버 영향 노트`,
-    headline: notes.overview[0]?.text
-      || (active ? `${label}: ${profile.title}에서 볼 변경 ${topNames.size}건` : `${label}: 드라이버 개발자가 확인할 변경`),
+    headline: views.length ? `${label}: ${tally}${broken.length ? ` (${broken.slice(0, 4).join(', ')}${broken.length > 4 ? ' 등' : ''})` : ''}` : `${label}: 표에 올릴 API 변경 없음`,
     date: kstDate(toDate),
-    summary: `${label}: 커밋 ${commits}개, pull ${merges}개. `
-      + (active ? `${profile.title}에서 볼 API 변경이 ${topNames.size}건, 여러 서브시스템이 쓰는 API 변경이 ${generic.length}건입니다. ` : '')
-      + `트리 전체로는 드라이버가 쓰던 API ${used.length}개와 드라이버 Kconfig 심볼 ${driverKconfig.length}개가 사라졌고, `
-      + `중점 영역에서 드라이버가 쓰던 API ${focusCount}개가 바뀌거나 사라졌습니다.`,
+    summary: `커밋 ${commits}개·pull ${merges}개 범위에서 드라이버가 쓰던 API 변경 ${views.length}건을 모듈별 표로 정리했습니다.`,
     tags: ['리눅스', '커널', '드라이버', ...(lts ? ['LTS', from] : []), to],
     sections,
     confidence: {
       level: '자동 생성',
-      note: `${from}..${to} git 기록에서 코드가 뽑은 사실과, 그 커밋·pull 문구만 본 AI 요약입니다(웹 검색 없음). `
-        + `사용 수는 ${from} drivers/·sound/에서 그 이름을 쓴 파일 수이고, 구조체 멤버는 타입을 확인하지 않은 상한값입니다.`
-        + (active ? ' 어느 항목을 위에 둘지는 메인라인에 있는 같은 종류 드라이버의 사용처로 가른 근사치이고, 트리 밖 드라이버는 보지 않았습니다.' : ''),
+      note: '기존·변경은 두 버전의 헤더를 코드가 비교한 것이고, 영향은 그 시그니처만 보고 가른 것입니다(삭제·인자 변경·콜백 타입 변경은 빌드 실패). 설명은 커밋 메시지를 AI가 줄였습니다. '
+        + (active ? '표에는 메인라인의 미디어·Samsung SoC 드라이버가 쓰던 API와 여러 서브시스템이 쓰는 API만 올렸고, 트리 밖 드라이버는 보지 않았습니다.' : '표에는 여러 서브시스템이 쓰는 API만 올렸습니다.'),
     },
-    sources: sources.map((p) => ({ title: p.title, url: commitUrl(p.id), note: 'merge' })),
+    sources: (cited.length ? cited : input.pulls.slice(0, 10)).map((p) => ({ title: p.title, url: commitUrl(p.id), note: 'merge' })),
     draftMetadata: {
       source: 'kernel-git',
       ...(lts ? { kind: 'lts' } : {}),
       range: `${from}..${to}`,
       ...(active ? { profile: profile.id } : {}),
-      ai: notes.overview.length > 0 || notes.apiNotes.size > 0 || notes.subsystems.size > 0,
+      ai: notes.apiNotes.size > 0 || notes.subsystems.size > 0,
       counts: {
-        commits, merges, focusChanges: focusCount, removedApis: apis.length, usedRemovedApis: used.length,
-        ...(active ? { profileChanges: topNames.size } : {}), genericChanges: generic.length,
-        exportChanges: data.exports.changed.length, driverKconfig: driverKconfig.length, campaigns: data.campaigns.length, broad: data.broad.length,
+        commits, merges, tableRows: views.length, breaking: count(views, 'break'), check: count(views, 'check'), compatible: count(views, 'ok'),
+        explained: views.filter((v) => v.rows.some((r) => notes.apiNotes.has(r.name))).length, folded: other.length,
+        removedApis: apis.length, usedRemovedApis: used.length, exportChanges: data.exports.changed.length, driverKconfig: driverKconfig.length,
       },
     },
   };
