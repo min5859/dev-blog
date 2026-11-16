@@ -29,6 +29,15 @@ const option = (name) => {
 };
 const readJson = async (file) => JSON.parse(await readFile(file, 'utf8'));
 
+// 이 글만 일일 파이프라인과 다른 Cursor 모델을 쓴다(config/ai-provider.json 의 adapters.cursor.driverImpactModel).
+// 릴리스마다 한두 번만 부르고 사람 검토 없이 게시되므로 설명 품질을 우선한다. CURSOR_MODEL 을 주면 그것이 이긴다.
+// 2026-11-16 v6.12 → v6.18 비교: Composer 2.5 와 설명 수는 같았고(50행 중 45), 금지 표현·깨진 말이 없고 이유를 더 분명히 썼다.
+async function useDriverImpactModel() {
+  const config = await readJson(path.join(root, 'config', 'ai-provider.json')).catch(() => ({}));
+  const model = config.adapters?.cursor?.driverImpactModel;
+  if (model && !process.env.CURSOR_MODEL) process.env.CURSOR_MODEL = model;
+}
+
 const usable = (notes) => notes.apiNotes.size > 0 || notes.subsystems.size > 0;
 const isNotes = (v) => Array.isArray(v?.apiNotes);
 
@@ -59,7 +68,7 @@ async function askAi(input) {
     raw.subsystems.push(...(Array.isArray(answer.subsystems) ? answer.subsystems : []));
   }
   const { notes, dropped } = cleanNotes(raw, input);
-  console.log(`[driver-impact] AI: ${parts.length} call(s), notes for ${notes.apiNotes.size} of ${names} names, ${notes.subsystems.size} pulls${dropped ? `, dropped ${dropped} items that cited unknown ids or broke limits` : ''}`);
+  console.log(`[driver-impact] AI (${process.env.CURSOR_MODEL || "default model"}): ${parts.length} call(s), notes for ${notes.apiNotes.size} of ${names} names, ${notes.subsystems.size} pulls${dropped ? `, dropped ${dropped} items that cited unknown ids or broke limits` : ''}`);
   if (!usable(notes)) throw new Error('AI notes unusable: nothing passed the checks');
   return { raw, notes };
 }
@@ -89,6 +98,7 @@ async function main() {
   const reuse = process.argv.includes('--reuse-notes')
     ? await savedNotes(path.join(outDir, file), input) || await savedNotes(path.join(postsDir, file), input)
     : undefined;
+  if (!reuse) await useDriverImpactModel();
   const ai = reuse || await askAi(input);
   const post = buildPost(data, input, ai?.notes, { lts, profile });
   if (ai) post.draftMetadata.aiNotes = ai.raw; // 감사·재생성용 AI 원본. 글과 함께 게시되어야 다음에 AI 없이 다시 만들 수 있다.
