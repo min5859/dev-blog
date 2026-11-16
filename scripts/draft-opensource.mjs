@@ -73,17 +73,20 @@ function scoreRecord(record) {
 // GitHub 트렌딩(HN/검색)에 중국어권 레포가 섞여 들어오면 rewrite 후 quality-guard 의
 // FOREIGN_CJK 검사(scripts/lib/quality-guard.mjs)에 걸려 topic 전체가 게시 누락된다.
 // opensource-curation 과 동일하게, 스코어링 전에 이름+설명 기준으로 걸러낸다.
-function filterOutForeignCjk(records) {
+// 설명은 영어인데 README 가 중국어면 rewrite 가 README 를 인용해 같은 검사에 걸리므로,
+// main() 이 README 를 받은 뒤 README 기준으로 한 번 더 거른다.
+const nameAndDescription = (record) => `${record.metadata?.fullName || record.title || ''} ${record.metadata?.description || ''}`;
+
+function filterOutForeignCjk(records, textOf = nameAndDescription, field = 'name+description') {
   const kept = [];
   const excluded = [];
   for (const record of records) {
-    const text = `${record.metadata?.fullName || record.title || ''} ${record.metadata?.description || ''}`;
-    if (foreignCjkRatio(text) > FOREIGN_CJK_MAX_RATIO) excluded.push(record);
+    if (foreignCjkRatio(textOf(record)) > FOREIGN_CJK_MAX_RATIO) excluded.push(record);
     else kept.push(record);
   }
   if (excluded.length) {
     console.warn(
-      `Filtered ${excluded.length} repo(s) by foreign-CJK ratio: ${excluded.map((r) => r.metadata?.fullName || r.title).join(', ')}`
+      `Filtered ${excluded.length} repo(s) by foreign-CJK ratio in ${field}: ${excluded.map((r) => r.metadata?.fullName || r.title).join(', ')}`
     );
   }
   return kept;
@@ -227,6 +230,7 @@ function toPostDraft(candidates, sourceData) {
       ageDays: Math.round(daysSince(record.metadata?.createdAt)),
       pushAgeDays: Math.round(daysSince(record.metadata?.pushedAt)),
       hn: record.metadata?.hn || null,
+      readmeExcerpt: record.readmeExcerpt,
     })),
   };
 }
@@ -236,9 +240,10 @@ async function main() {
   if (!Array.isArray(sourceData.records)) {
     throw new Error(`${path.relative(root, inputPath)} does not contain records[]`);
   }
-  const candidates = pickCandidates(sourceData.records);
+  const picked = pickCandidates(sourceData.records);
+  await enrichCandidatesWithReadme(picked, { concurrency: 3, limit: 10 });
+  const candidates = filterOutForeignCjk(picked, (record) => record.readmeExcerpt || '', 'README');
   const draft = toPostDraft(candidates, sourceData);
-  await enrichCandidatesWithReadme(draft.candidateBodies, { concurrency: 3, limit: 10 });
 
   await mkdir(generatedDir, { recursive: true });
   const candidatePayload = { topic, generatedAt, sourceRecordCount: sourceData.recordCount, candidateCount: candidates.length, candidates };

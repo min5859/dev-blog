@@ -27,3 +27,17 @@ test('filterOutForeignCjk drops repos whose name+description is mostly Chinese',
   ];
   assert.deepEqual(filterOutForeignCjk(records).map((r) => r.id), ['gh:example/repo']);
 });
+
+test('filterOutForeignCjk can drop repos whose README is mostly Chinese despite an English description', () => {
+  const readme = (record) => record.readmeExcerpt || '';
+  const records = [
+    repo({ readmeExcerpt: 'A fast media player. Install it with cargo.' }),
+    repo({
+      id: 'gh:readme-cjk',
+      metadata: { fullName: 'Minireel/HGhub', description: 'Plug-in media player' },
+      readmeExcerpt: 'HGhub 一个通过插件连接内容的通用视频播放器。开始使用',
+    }),
+  ];
+  assert.deepEqual(filterOutForeignCjk(records).map((r) => r.id), ['gh:example/repo', 'gh:readme-cjk']);
+  assert.deepEqual(filterOutForeignCjk(records, readme, 'README').map((r) => r.id), ['gh:example/repo']);
+});
