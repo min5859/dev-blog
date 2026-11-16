@@ -948,6 +948,23 @@ const isScalar = (type) => { const t = typeTokens(type).filter((x) => x !== 'con
  * - 콜백이 아닌 멤버의 타입, 그 밖의 반환형, 인자에서 const 가 빠진 것, export 의 라이선스·네임스페이스는 check
  * AI 는 이 판정에 끼지 않는다. v6.18 `v4l2_ctrl_handler_free()`(void → int)를 AI 가 "반환값을 받도록 고친다"로 썼다.
  */
+/**
+ * 함수 포인터 인자가 typedef 이름으로 바뀐 것(`int (*)(struct device *, void *)` → `device_iter_t`)은 글자만 보면 인자 타입 변경이다.
+ * typedef 가 예전 타입과 같으면 기존 코드는 그대로 빌드되므로, 새 이름의 정의를 찾아 풀어서 비교해야 한다.
+ * 이 함수는 풀어 볼 이름(after 에만 있는 `*_t` 식별자)을 고른다. 이전 시그니처에 함수 포인터가 있을 때만.
+ */
+export function typedefCandidates(r) {
+  if (r.change !== 'changed' || !/\(\*\)/.test(r.before || '')) return [];
+  const had = new Set((r.before || '').match(/\b[A-Za-z_]\w*_t\b/g) || []);
+  return [...new Set((r.after || '').match(/\b[A-Za-z_]\w*_t\b/g) || [])].filter((t) => !had.has(t));
+}
+
+/** `typedef int (*device_iter_t)(struct device *dev, void *data);` → `int (*)(struct device *, void *)`. 함수 포인터 typedef 가 아니면 null. */
+export function fnTypedef(line, name) {
+  const m = new RegExp(`^\\s*typedef\\s+(.*\\(\\s*\\*\\s*${name}\\s*\\)\\s*\\(.*\\))\\s*;`).exec(line);
+  return m ? paramType(m[1]) : null;
+}
+
 export function impactOf(r) {
   if (r.change === 'removed') return 'break';
   if (r.kind === 'macro') return 'break';
@@ -955,10 +972,14 @@ export function impactOf(r) {
   if (r.kind !== 'function') return 'check';
   const [was, now] = [splitSig(r.before, r.name), splitSig(r.after, r.name)];
   if (!was || !now) return 'check';
+  if (r.typedefs) now.params = now.params.map((p) => r.typedefs[p.trim()] || p);
   if (was.params.length !== now.params.length) return 'break';
   let level = was.ret === now.ret || was.ret === 'void' || (was.ret === 'int' && now.ret === 'bool') ? 'ok' : 'check';
   for (const [i, p] of was.params.entries()) {
-    if (p === now.params[i] || addsOuterConst(p, now.params[i]) || (isScalar(p) && isScalar(now.params[i]))) continue;
+    if (p === now.params[i]) continue;
+    // 함수 포인터 인자는 타입이 똑같아야 한다: 콜백 인자에 const 가 더해지면 기존 콜백 함수를 넘기는 호출이 깨진다(device_find_child).
+    if (/\(\*\)/.test(`${p} ${now.params[i]}`)) return 'break';
+    if (addsOuterConst(p, now.params[i]) || (isScalar(p) && isScalar(now.params[i]))) continue;
     if (!addsOuterConst(now.params[i], p)) return 'break';
     level = 'check'; // const 가 빠졌다: const 포인터를 넘기던 호출만 깨진다
   }
@@ -1099,7 +1120,11 @@ const SPECULATION_RE = /영향을 (?:줄|미칠) 수 있|점검한다|점검해�
 const META_RE = /메시지에 (?:적힌|따르면)|메시지대로|요약에 (?:적힌|따르면)|입력(?:에 |된 | JSON)/;
 // 기존 코드가 그대로 빌드되는 변화(impact ok)를 "고쳐야 한다"고 쓴 문장.
 // 지시하는 말끝만 본다: "받도록 맞춘 뒤 …"처럼 커널 쪽이 한 일을 말하는 문장까지 버리지 않는다.
-const BUILDS_AS_IS_RE = /(?:^|\s)(?:기존|이전|지금까지의?) 코드(?:는|도)? (?:수정 없이 )?그대로 빌드(?:된다|됩니다)\.?/g;
+// 영향 칸이 이미 말하는 것을 되풀이한 문장: "기존 코드는 그대로 빌드된다", "드라이버에 남은 `x()` 호출은 빌드되지 않는다",
+// "드라이버가 이 멤버를 읽는 코드는 쓸 수 없다". "~쓸 수 없다"는 드라이버·기존 코드를 가리킬 때만 되풀이로 본다
+// ("인터럽트 문맥에서는 쓸 수 없다"는 정보다).
+const RESTATES_IMPACT = (sentence) => /(?:그대로 빌드(?:된다|됩니다)|빌드되지 않는다|컴파일되지 않는다)\.?$/.test(sentence)
+  || (/(?:쓸|참조할) 수 없다\.?$/.test(sentence) && /드라이버|남은|기존/.test(sentence));
 const MUST_FIX_RE = /(?:고친다|고쳐야 한다|맞춘다|맞춰야 한다|수정한다|수정해야 한다|바꿔야 한다)(?:[.\s]|$)/;
 
 /**
@@ -1134,9 +1159,9 @@ export function cleanNotes(raw, input) {
   const text = (s, max) => (typeof s === 'string' && s.trim() && s.length <= max && !/https?:\/\//.test(s)
     && !GARBLED_RE.test(s) && !INPUT_FIELD_RE.test(s) && !SPECULATION_RE.test(s) && !META_RE.test(s) && grounded(s) && !contradicts(s) ? s.trim() : null);
   // 대체 이름만 달랑 준 답("delay_read_timer")은 문장 꼴로 바꾼다. 백틱이 붙으므로 다른 문장과 똑같이 근거를 검사한다.
-  // 영향 칸이 이미 말하는 것("기존 코드는 그대로 빌드된다")은 설명에서 뺀다. 그 말뿐인 설명은 버린다.
+  // 영향 칸이 이미 말하는 것(RESTATES_IMPACT)은 설명에서 문장째 뺀다. 그 말뿐인 설명은 버린다.
   const note = (raw) => {
-    const s = typeof raw === 'string' ? raw.replace(BUILDS_AS_IS_RE, ' ').replace(/\s+/g, ' ').trim() : raw;
+    const s = typeof raw === 'string' ? raw.split(/(?<=다\.)\s+/).filter((x) => !RESTATES_IMPACT(x.trim())).join(' ').replace(/\s+/g, ' ').trim() : raw;
     const bare = /^`?([A-Za-z_]\w*)(?:\(\))?`?\.?$/.exec(typeof s === 'string' ? s : '');
     return text(bare ? `대신 쓸 것: \`${bare[1]}\`` : s, 300);
   };

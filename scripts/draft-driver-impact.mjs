@@ -8,11 +8,13 @@
 //   node scripts/draft-driver-impact.mjs --from v6.12 --to v6.18 --lts   (LTS → 다음 LTS 노트)
 //   --reuse-notes   AI 를 다시 부르지 않고 지난 AI 원본(게시된 글의 draftMetadata.aiNotes)으로 글만 다시 만든다(표현·구조만 바꿀 때).
 //   --out <dir>     글을 content/ 대신 다른 디렉터리에 쓴다(게시 전 미리보기). daily-deploy.sh 는 content/ 를 통째로 게시한다.
+import { execFile } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { extractJsonObject, resolveAiAdapter, runAiAdapterPrompt } from './lib/ai-rewrite-adapter.mjs';
-import { buildAiInput, buildPost, cleanNotes, RAW_SCHEMA, splitAiInput } from './lib/driver-impact.mjs';
+import { buildAiInput, buildPost, cleanNotes, fnTypedef, RAW_SCHEMA, splitAiInput, typedefCandidates } from './lib/driver-impact.mjs';
 import { loadProfile } from './lib/driver-impact-profile.mjs';
 import { auditPostQuality } from './lib/quality-guard.mjs';
 
@@ -82,12 +84,34 @@ async function savedNotes(postFile, input) {
   return usable(notes) ? { raw, notes } : undefined;
 }
 
+/**
+ * 함수 포인터 인자가 typedef 이름으로 바뀐 행에 그 typedef 의 정의(끝 태그 기준)를 붙인다. 영향 판정이 풀어서 비교한다.
+ * 커널 저장소(DRIVER_IMPACT_REPO, 기본 /srv/linux-kernel/linux.git)가 없으면 건너뛰고 글자대로 판정한다.
+ */
+async function attachTypedefs(data) {
+  const repo = process.env.DRIVER_IMPACT_REPO || '/srv/linux-kernel/linux.git';
+  if (!existsSync(repo)) return;
+  const items = (data.focus || []).flatMap((a) => a.items).filter((i) => typedefCandidates(i).length);
+  const found = new Map();
+  for (const name of new Set(items.flatMap(typedefCandidates))) {
+    const out = await new Promise((resolve) => execFile('git', ['-C', repo, 'grep', '-h', '-E', `typedef[^;]*\\(\\*[[:space:]]*${name}[[:space:]]*\\)`, data.range.to, '--', 'include/'],
+      { maxBuffer: 1 << 24 }, (err, stdout) => resolve(err ? '' : stdout)));
+    const defs = [...new Set(out.split('\n').map((l) => fnTypedef(l, name)).filter(Boolean))];
+    if (defs.length === 1) found.set(name, defs[0]); // 정의가 여럿이면(아키텍처별 등) 풀지 않는다
+  }
+  for (const i of items) {
+    const typedefs = Object.fromEntries(typedefCandidates(i).filter((t) => found.has(t)).map((t) => [t, found.get(t)]));
+    if (Object.keys(typedefs).length) i.typedefs = typedefs;
+  }
+}
+
 async function main() {
   const range = `${option('from')}..${option('to')}`;
   const lts = process.argv.includes('--lts');
   const data = await readJson(path.join(root, 'data', 'raw', 'driver-impact', `${range}.json`));
   if (data.schema !== RAW_SCHEMA) throw new Error(`raw data for ${range} is from an older collector (schema ${data.schema ?? 1}, need ${RAW_SCHEMA}); run collect-driver-impact.mjs again`);
   const profile = await loadProfile(root);
+  await attachTypedefs(data);
   const input = buildAiInput(data, profile);
   console.log(`[driver-impact] profile ${profile.id}; AI input ${Buffer.byteLength(JSON.stringify(input))} bytes: ${input.pulls.length} pulls, `
     + `${input.apiRemovals.length} removals outside the areas, `

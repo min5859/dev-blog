@@ -4,7 +4,7 @@ import {
   areaDefs, broadCommits, buildAiInput, buildPost, cleanNotes, compatibleChange, compileProfile, declaredName, diffExports, diffHeaderApi, exportName, filesByWord,
   findCampaigns, FOCUS_AREAS, headerStatus, ltsPair, memberGreps, memberUsers, mergeHeaderApis, normalizeSubject, parseExports, parseHeaderApi, parseKconfig, parsePull,
   patchLines, pendingTags, postedRanges, relevance, removalCommits, structGrep, defineGrep, fixExamples, impactOf, moduleOf, renamedInExamples, splitAiInput,
-  changeCommit,
+  changeCommit, typedefCandidates, fnTypedef,
 } from './lib/driver-impact.mjs';
 
 test('exports: removed, GPL/namespace changes and macro definitions are told apart', () => {
@@ -250,6 +250,14 @@ test('impact: whether existing code still builds, from the signatures alone', ()
   assert.equal(impactOf(fn('get', 'int get(void)', 'void get(void)')), 'check'); // 반환값을 쓰던 호출만 깨진다
   assert.equal(impactOf(fn('size', 'unsigned long size(struct page *)', 'unsigned long size(const struct page *)')), 'ok'); // 바깥 const 추가
   assert.equal(impactOf(fn('grp', 'int grp(struct d *, const struct g **)', 'int grp(struct d *, const struct g * const *)')), 'ok');
+  // 함수 포인터 인자가 같은 타입의 typedef 로 바뀐 것은 그대로 빌드되고, 콜백 인자에 const 가 더해진 것은 깨진다.
+  const iter = fn('each', 'int each(struct device *, void *, int (*)(struct device *, void *))', 'int each(struct device *, void *, device_iter_t)');
+  assert.deepEqual(typedefCandidates(iter), ['device_iter_t']);
+  assert.equal(fnTypedef('typedef int (*device_iter_t)(struct device *dev, void *data);', 'device_iter_t'), 'int (*)(struct device *, void *)');
+  assert.equal(impactOf(iter), 'break'); // 정의를 모르면 예전처럼
+  assert.equal(impactOf({ ...iter, typedefs: { device_iter_t: 'int (*)(struct device *, void *)' } }), 'ok');
+  const find = fn('find', 'struct device *find(struct device *, void *, int (*)(struct device *, void *))', 'struct device *find(struct device *, const void *, device_match_t)');
+  assert.equal(impactOf({ ...find, typedefs: { device_match_t: 'int (*)(struct device *, const void *)' } }), 'break');
   assert.equal(impactOf(fn('deep', 'int deep(struct g **)', 'int deep(const struct g **)')), 'break'); // 안쪽 const 는 호출 쪽에서 오류다
   assert.equal(impactOf(fn('smp', 'int smp(int, smp_call_func_t, void *, int)', 'int smp(int, smp_call_func_t, void *, bool)')), 'ok'); // 숫자형끼리는 넘기던 값이 변환된다
   assert.equal(impactOf(fn('ptr', 'int ptr(int *)', 'int ptr(bool *)')), 'break'); // 포인터는 아니다
@@ -356,6 +364,12 @@ test('AI notes: only sentences the input supports survive', () => {
   // 영향 칸과 같은 말("기존 코드는 그대로 빌드된다")은 지우고, 그 말뿐이면 설명을 버린다.
   const asIs = cleanNotes({ apiNotes: [{ name: 'v4l2_free', note: '오류 코드를 돌려주게 했다. 기존 코드는 그대로 빌드된다.' }, { name: 'old_api', note: '기존 코드는 그대로 빌드된다.' }] }, input);
   assert.deepEqual([...asIs.notes.apiNotes], [['v4l2_free', '오류 코드를 돌려주게 했다.']]);
+  const restated = cleanNotes({ apiNotes: [
+    { name: 'v4l2_free', note: '쓰는 곳이 없어 지웠다. 드라이버에 남은 `v4l2_free()` 호출은 빌드되지 않는다.' },
+    { name: 'old_api', note: '쓰는 곳이 없어 지웠다. 기존 콜백은 그대로 빌드된다.' },
+    { name: 'wq_ops.old', note: '쓰는 곳이 없어 지웠다. 인터럽트 문맥에서는 쓸 수 없다.' },
+  ] }, input);
+  assert.deepEqual([...restated.notes.apiNotes], [['v4l2_free', '쓰는 곳이 없어 지웠다.'], ['old_api', '쓰는 곳이 없어 지웠다.'], ['wq_ops.old', '쓰는 곳이 없어 지웠다. 인터럽트 문맥에서는 쓸 수 없다.']]);
   // 예전 필드 이름(replacement)으로 저장된 AI 원본도 읽는다.
   assert.equal(cleanNotes({ apiNotes: [{ name: 'old_api', replacement: '`new_api()`를 쓴다.' }] }, input).notes.apiNotes.get('old_api'), '`new_api()`를 쓴다.');
 });
