@@ -1141,7 +1141,8 @@ function paramsHtml(params, keep) {
 function typeDiffHtml(before, after) {
   const [a, b] = [typeTokens(before), typeTokens(after)];
   const [ka, kb] = commonMarks(a, b);
-  const join = (tokens, keep) => tokens.map((t, i) => (keep[i] ? esc(t) : strong(t))).join(' ');
+  // 토큰 사이는 띄우되 괄호·대괄호 안쪽과 쉼표 앞은 붙인다(`struct tunertype[]`, `int (*)(void)`).
+  const join = (tokens, keep) => tokens.map((t, i) => `${i > 0 && !/^[\])[,]$/.test(t) && !/^[[(]$/.test(tokens[i - 1]) && !(t === '[' || t === '(' && tokens[i - 1] === ')') ? ' ' : ''}${keep[i] ? esc(t) : strong(t)}`).join('');
   return [join(a, ka), join(b, kb)];
 }
 
