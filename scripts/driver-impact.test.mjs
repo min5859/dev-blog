@@ -466,6 +466,9 @@ test('post with a profile: changed parts in bold, repeated changes in one row, r
   for (const name of ['lone_api_69', 'sgi_api_59', 'cam_helper', 'old_api', 'x86_only']) assert.match(ref, new RegExp(`\\n${name}\\n`), name);
   assert.match(ref, /# 중점 영역에서 바뀌거나 사라진 API 3개\ngit grep -nwF -f - <<'EOF'\nv4l2_fh_add\nv4l2_free\ndel_timer_sync\nEOF/);
   assert.match(ref, /# 멤버가 바뀌거나 사라진 구조체 1개\ngit grep -nwF -f - <<'EOF'\nv4l2_subdev_pad_ops\nEOF/);
+  // 점검 명령에는 구조체 이름만 있으므로, 어느 멤버가 바뀌었는지는 멤버 목록에 모두 적는다(접힌 표의 상한에 밀린 것도).
+  assert.match(ref, /<summary><strong>구조체별로 바뀌거나 사라진 멤버 \(구조체 1개\)<\/strong><\/summary>\n\n\| 구조체 \| 사라진 멤버 \| 타입이 바뀐 멤버 \|\n\|---\|---\|---\|\n\| `v4l2_subdev_pad_ops` \| — \| `\.get_selection`, `\.set_fmt` \|\n\n<\/details>\n\n<details>\n<summary><strong>내 드라이버 점검 명령/);
+  assert.match(ref, /이름은 모두 점검 명령에 있습니다\. 구조체 멤버는 아래 "구조체별로 바뀌거나 사라진 멤버"에 모두 있습니다\./);
 
   assert.equal(post.headline, 'v1.0 → v1.1-rc1: 빌드 실패 5건, 확인 필요 0건, 그대로 빌드 1건 (V4L2, 디바이스 모델, 타이머, 그 밖의 API)');
   assert.deepEqual(post.draftMetadata.counts, { commits: 100, merges: 2, tableRows: 6, breaking: 5, check: 0, compatible: 1, explained: 1, folded: 132,

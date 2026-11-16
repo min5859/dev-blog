@@ -1367,7 +1367,7 @@ export function buildPost(data, input, notes = EMPTY_NOTES, { lts = false, profi
       : [`| ${g.slice(0, 3).map((r) => code(displayName(r))).join(', ')}${g.length > 3 ? ` 외 ${g.length - 3}개` : ''} | ${g[0].module.title} | ${labelOf(g[0])}${g.some((r) => labelOf(r) !== labelOf(g[0])) ? ' 등' : ''} | ${g[0].driverUses ?? '—'} | ${commitLink(g[0].commit, g[0].commit.subject)} |`]));
     reference.push(fold(`다른 서브시스템 안에서만 쓰이던 변경 ${other.length}건`, [
       ['| 이름 | 모듈 | 변화 | 사용 파일 | 커밋 |', '|---|---|---|---:|---|', ...lines.slice(0, TABLE_CAP)].join('\n'),
-      lines.length > TABLE_CAP ? `사용 수가 적은 나머지 ${lines.length - TABLE_CAP}줄은 뺐습니다. 이름은 모두 점검 명령에 있습니다.` : '',
+      lines.length > TABLE_CAP ? `사용 수가 적은 나머지 ${lines.length - TABLE_CAP}줄은 뺐습니다. 이름은 모두 점검 명령에 있습니다.${rows.some((r) => r.kind === 'member') ? ' 구조체 멤버는 아래 "구조체별로 바뀌거나 사라진 멤버"에 모두 있습니다.' : ''}` : '',
     ].filter(Boolean).join('\n\n')));
   }
   const inTables = new Set(rows.map((r) => r.name));
@@ -1426,6 +1426,18 @@ export function buildPost(data, input, notes = EMPTY_NOTES, { lts = false, profi
     grepList('라이선스·네임스페이스가 바뀐 export', data.exports.changed.map((c) => c.name)),
     driverKconfig.length ? `# 사라진 드라이버 Kconfig 심볼 ${driverKconfig.length}개\ngrep -rnwE '(CONFIG_)?(${driverKconfig.map((k) => k.name).join('|')})' --include='Kconfig*' --include='Makefile' --include='*defconfig' .` : '',
   ].filter(Boolean);
+  // 점검 명령에는 구조체 이름만 들어가고, 접힌 표는 상한(TABLE_CAP)이 있어 사용 수가 적은 멤버 변경은 줄로 나오지 않는다.
+  // 구조체 이름이 걸렸을 때 어느 멤버를 볼지는 여기에 모두 적는다(표에 올린 것 포함). 찾아보기 쉽게 이름순이다.
+  const members = new Map();
+  for (const r of areaRows.filter((x) => x.kind === 'member')) {
+    if (!members.has(r.struct)) members.set(r.struct, { removed: [], changed: [] });
+    members.get(r.struct)[r.change === 'removed' ? 'removed' : 'changed'].push(code(`.${r.member}`));
+  }
+  if (members.size) {
+    reference.push(fold(`구조체별로 바뀌거나 사라진 멤버 (구조체 ${members.size}개)`,
+      ['| 구조체 | 사라진 멤버 | 타입이 바뀐 멤버 |', '|---|---|---|', ...[...members].sort(([a], [b]) => a.localeCompare(b))
+        .map(([name, m]) => `| ${code(name)} | ${m.removed.join(', ') || '—'} | ${m.changed.join(', ') || '—'} |`)].join('\n')));
+  }
   if (commands.length) reference.push(fold('내 드라이버 점검 명령 (드라이버 소스의 git 저장소에서 실행)', `\`\`\`sh\n${commands.join('\n')}\n\`\`\``));
   if (reference.length) sections.push({ heading: '참고', body: reference.join('\n\n') });
 
