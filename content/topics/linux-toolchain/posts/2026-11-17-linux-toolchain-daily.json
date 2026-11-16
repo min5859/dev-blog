@@ -1,0 +1,108 @@
+{
+  "id": "2026-11-17-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-11-17 .cmd 선행기록 — 툴체인",
+  "headline": "Kbuild가 .cmd에 make_prereqs를 기록하고 Rust for Linux는 Ownable API를 제안하며, x86은 Clang 23 Werror를 막는 수정이 올라왔습니다.",
+  "date": "2026-11-17",
+  "summary": "kbuild·KernelSbom과 Rust 커널 바인딩, 모듈 LZ4 압축, ClangBuiltLinux x86 빌드 경로가 메일링 리스트에서 동시에 움직였습니다. mainline 머지 시점과 배포 순서는 아직 확인이 필요합니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "kbuild: .cmd에 make_prereqs 기록",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "kbuild·KernelSbom 유지보수자, distro 재현 가능 빌드 담당",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20261116175215.1337416-1-luis.augenstein@tngtech.com/",
+      "if": "SBOM이나 빌드 그래프를 .cmd에서 재구성한다면",
+      "do": "KernelSbom과 make_fit.py 등 .cmd 소비 경로가 새 필드를 읽도록 검증하세요",
+      "verify": "lore.kernel.org linux-kbuild 스레드에서 savedcmd 파서 제거와 호환 주장을 원문으로 확인하세요"
+    },
+    {
+      "title": "rust: Ownable·Owned 소유권 모델",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust for Linux 코어·in-kernel Rust 드라이버 개발자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20261116-unique-ref-v22-0-12029383206d@kernel.org/",
+      "if": "C 측 타입 래핑과 ARef/AlwaysRefCounted 경계를 설계 중이라면",
+      "do": "v22 시리즈의 OwnableIntoShared/TryFromShared 제안과 RefCounted 분리 diff를 따라가세요",
+      "verify": "rust-for-linux 스레드 인용문과 패치 1–3 단독 머지 가능 여부를 추적하세요"
+    },
+    {
+      "title": "x86/cfi: cfi_debug __maybe_unused",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "Clang 커널 빌드·x86 CFI 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/llvm/20261116173027.229752-1-A.Nasrolahi01@gmail.com/",
+      "if": "CONFIG_WERROR=y·W=1로 Clang 23 x86 빌드를 돌린다면",
+      "do": "CONFIG_FINEIBT 비활성 구성에서 alternative.c가 통과하는지 이 패치 머지를 지켜보세요",
+      "verify": "llvm 리스트 스레드에서 -Wunused-but-set-global 실패 원인을 원문으로 확인하세요"
+    },
+    {
+      "title": "module: LZ4 모듈 압축 v2",
+      "priority": "하",
+      "impactType": "performance",
+      "affectedAudience": "kbuild·배포판 모듈 압축 정책 담당자, kmod/mkinitcpio 유지보수자",
+      "verifyLink": "https://github.com/kmod-project/kmod/pull/505",
+      "if": "MODULE_COMPRESS_XZ 부팅·modprobe CPU 지연을 줄이려 한다면",
+      "do": "커널 .ko.lz4와 kmod LZ4 frame 지원 PR을 함께 검토하세요",
+      "verify": "kmod PR과 linux-kbuild LZ4 스레드에서 디스크·CPU 수치를 원문으로 대조하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**kbuild: record cmd-prereqs in .cmd files**\n\nv5 시리즈는 Kbuild가 알고 있는 $(real-prereqs)를 .cmd 파일에 make_prereqs_<target> 필드로 기록하고, KernelSbom이 savedcmd 셸 명령 파서 대신 이 필드를 읽도록 바꿉니다.\n\n영향: SBOM·빌드 그래프를 .cmd에서 재구성하는 담당자는 셸 명령별 파서 유지 부담이 줄고 make_fit.py 등 .cmd 소비자 호환 검증을 따라가야 합니다. mainline 머지 시점과 out-of-tree .cmd 파서 마이그레이션 필요 여부는 미확인입니다.\n\n> Kbuild already knows these inputs as $(real-prereqs), the non-phony prerequisites of the Make rule. This series records them in .cmd files using a new metadata field:\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20261116175215.1337416-1-luis.augenstein@tngtech.com/)\n\n**rust: add `Ownable` trait and `Owned` type**\n\nv22 시리즈는 C 측 타입과의 소유권 모델을 위해 Ownable 트레이트·Owned 타입을 추가하고, RefCounted 분리와 Owned↔ARef 변환 트레이트(OwnableIntoShared/TryFromShared)를 제안합니다.\n\n영향: Rust for Linux에서 C 객체 래핑·ARef/AlwaysRefCounted 경계를 설계하는 담당자는 새 소유권 API가 머지되면 기존 드라이버 바인딩 추상화를 재검토해야 합니다. 패치 1–3 단독 머지 가능 여부와 llvm-kernel rust-next 반영 일정은 미확인입니다.\n\n> Add a new trait `Ownable` and type `Owned` for types that specify their own way of performing allocation and destruction. This is useful for types from the C side.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20261116-unique-ref-v22-0-12029383206d@kernel.org/)\n\n**module: Add LZ4 module compression**\n\nv2 패치는 lz4(1) LZ4 frame(.ko.lz4)로 압축된 모듈을 커널이 블록 단위로 디코드해 로드하고, modules_install에 lz4 -12 -B4 -BD 사용을 제안합니다. kmod 측 PR은 .ko.lz4 및 LZ4 frame 지원을 추가합니다.\n\n영향: MODULE_COMPRESS_XZ로 인한 부팅·modprobe CPU 지연을 줄이려면 디스크 증가(약 11→20 MB)와 userspace kmod LZ4 지원을 함께 봐야 합니다. 커널 패치와 kmod PR 동시 머지·배포 순서는 미확인입니다.\n\n> decompressing and checking the signatures of the 237 modules loaded during boot takes 624 ms of CPU time with XZ (i915: 91 ms) and 131 ms with LZ4 (i915: 12 ms)\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20261115120416.256087-1-pmenzel@molgen.mpg.de/)\n\n**x86/cfi: mark cfi_debug as __maybe_unused**\n\nCONFIG_FINEIBT 비활성 시 읽히지 않는 cfi_debug가 alternative_instructions()에서 쓰기만 되어 Clang 23의 -Wunused-but-set-global이 CONFIG_WERROR=y·W=1 빌드를 깨뜨립니다. __maybe_unused로 표시합니다.\n\n영향: ClangBuiltLinux·x86 W=error 빌드를 돌리는 툴체인 담당자는 FineIBT 꺼진 구성에서도 alternative.c가 최신 Clang으로 통과하는지 이 수정 머지를 추적해야 합니다. x86 트리 머지 여부와 다른 unused-but-set-global 스윕 범위는 미확인입니다.\n\n> Clang 23 diagnoses this as -Wunused-but-set-global with W=1, causing a build failure when CONFIG_WERROR=y.\n\n[원문 확인](https://lore.kernel.org/llvm/20261116173027.229752-1-A.Nasrolahi01@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "kbuild: record cmd-prereqs in .cmd files",
+      "url": "https://lore.kernel.org/linux-kbuild/20261116175215.1337416-1-luis.augenstein@tngtech.com/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: add Ownable trait and Owned type",
+      "url": "https://lore.kernel.org/rust-for-linux/20261116-unique-ref-v22-0-12029383206d@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "module: Add LZ4 module compression",
+      "url": "https://lore.kernel.org/linux-kbuild/20261115120416.256087-1-pmenzel@molgen.mpg.de/",
+      "note": "thread"
+    },
+    {
+      "title": "kmod: LZ4 compressed kernel modules",
+      "url": "https://github.com/kmod-project/kmod/pull/505",
+      "note": "article"
+    },
+    {
+      "title": "x86/cfi: mark cfi_debug as __maybe_unused",
+      "url": "https://lore.kernel.org/llvm/20261116173027.229752-1-A.Nasrolahi01@gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-16T18:31:47.412Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

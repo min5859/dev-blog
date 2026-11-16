@@ -1,0 +1,121 @@
+{
+  "id": "2026-11-17-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-11-17 BPF·panic 덤프 — 리눅스 성능·RT",
+  "headline": "preempt=full에서 raw tracepoint BPF가 잘못된 태스크로 귀속되고, panic·sys_info 덤프 경로가 RT 분석 신뢰도를 흔든다.",
+  "date": "2026-11-17",
+  "summary": "linux-rt-devel·bpf 스레드에 arm64 KVM lockdep, BPF 선점 차단, slab nolock·KASAN, DEADLINE irq-off, panic·hrtimer sys_info 정리 논의가 올라왔다. 머지·ACK 일정은 일부만 확인됐으며 원문 링크로 추적하는 것이 좋다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "PREEMPT_RT",
+    "BPF",
+    "KVM"
+  ],
+  "highlights": [
+    {
+      "title": "bpf: Disable preemption while a raw tracepoint regs slot is in use",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "raw tracepoint BPF·bpftrace로 PREEMPT 커널을 프로파일하는 성능·RT 엔지니어",
+      "verifyLink": "https://lore.kernel.org/bpf/20261116-bpf-raw-tp-regs-preempt-v1-1-d01b6dd8573c@gmail.com/",
+      "if": "preempt=full·CONFIG_PREEMPT=y에서 bpftrace·perf로 RT 지연을 본다면",
+      "do": "raw tracepoint 기반 프로파일 결과가 이상하면 해당 스레드 패치 적용 여부와 wrong IP 재현 수치를 대조하세요",
+      "verify": "lore BPF 스레드에서 preempt_disable 구간과 maintainer ACK·bpf-next 일정을 확인하세요"
+    },
+    {
+      "title": "KVM: arm64: Give the host timer interrupts a separate lockdep class",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "arm64 KVM·PREEMPT_RT lockdep를 다루는 가상화·RT 엔지니어",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20261116071304.2037895-2-justin.he@arm.com/",
+      "if": "PREEMPT_RT+lockdep로 arm64 KVM GICv4/5를 브링업 중이라면",
+      "do": "mlx5 affinity notifier와 스케줄러 잠금 간 허위 lockdep 순환을 타이머 IRQ 전용 클래스 패치로 분리해 보세요",
+      "verify": "linux-rt-devel 스레드와 GICv5 Fixes 커밋 링크에서 kvmarm 리뷰·머지 타깃은 추가 확인이 필요합니다"
+    },
+    {
+      "title": "sched/deadline: Keep departing bandwidth across a root domain rebuild",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "SCHED_DEADLINE·cpuset 기반 멀티 RT 워크로드 설계자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/avrZGPNdCwZMd3B4@jlelli-thinkpadt14gen4.remote.csb/",
+      "if": "컨테이너별 exclusive root domain에서 DEADLINE을 쓴다면",
+      "do": "파티션 재구성 시 irq-off가 0.3ms·1.2ms까지 늘 수 있다는 측정치를 다른 RT 워크로드 SLA와 함께 검토하세요",
+      "verify": "Juri Lelli 스레드의 1만 태스크 irq-off 표와 RFC 축소 rebuild 반영 여부를 확인하세요"
+    },
+    {
+      "title": "panic, sys_info: Fix duplicate and dropped all-CPU backtraces in panic",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "panic·sys_info·kexec crash 분석을 하는 커널·RT 디버깅 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/avshouTNBIeM5qtP@pathway.suse.cz/",
+      "if": "RT 프로덕션에서 다중 CPU hang panic 덤프를 본다면",
+      "do": "이중 trigger_all_cpu_backtrace와 NMI 10초 대기·드롭 가능성을 sysctl panic_print 설정과 함께 점검하세요",
+      "verify": "Petr Mladek의 sys_info API 일원화 제안과 v2 방향 합의는 미확인이므로 원문을 따라가세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**bpf: Disable preemption while a raw tracepoint regs slot is in use**\n\nraw tracepoint·tracing 프로그램이 공유 per-CPU pt_regs 슬롯을 쓸 때 선점이 끼어들면 get/put 순서가 뒤섞여 다른 태스크 레지스터가 샘플·스택에 기록됩니다.\n\n영향: preempt=full에서 bpftrace·perf 기반 RT 관측이 조용히 잘못된 태스크에 귀속되면 지연·스케줄 분석 신뢰도가 무너집니다.\n\n> B sends a sample or a stack trace with the registers of C. Profilers and tracers then attribute it to the wrong task, and nothing reports an error.\n\n[원문 확인](https://lore.kernel.org/bpf/20261116-bpf-raw-tp-regs-preempt-v1-1-d01b6dd8573c@gmail.com/)\n\n**mm/slab: handle SLAB_FREE_NOLOCK in slab_free_hook() instead of open coding**\n\nkmalloc_nolock() 시리즈 v3 3/7 패치는 SLAB_FREE_NOLOCK 처리를 slab_free_hook()으로 모으며, allow_spin이 false일 때 kasan_slab_free()에 no_quarantine를 넘깁니다.\n\n영향: PREEMPT_RT·IRQ 경로의 kfree_nolock()에서 KASAN 격리·init_on_free 메타데이터가 어긋나면 lockdep·메모리 안전 검증과 RT 슬랩 free 경로 신뢰도에 직결됩니다.\n\n> Skip quarantine when spinning is not allowed as it uses a spinlock.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/sashiko-outbox-216530@kernel.org/)\n\n**panic, sys_info: Fix duplicate and dropped all-CPU backtraces in panic**\n\nsys_info() 분리 이후 panic 경로에서 all-CPU backtrace가 이중 호출되거나 panic_cpu 상태 때문에 다른 CPU NMI 백트레이스가 조용히 드롭되는 문제를 고칩니다.\n\n영향: RT·프로덕션 장애 분석에서 백트레이스가 빠지거나 지연되면 다중 CPU hang 원인 추적이 어려워지고 sysctl panic_print 설정과도 경합합니다.\n\n> stalling for up to 10 seconds waiting for offline CPUs to respond to NMIs.\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/avshouTNBIeM5qtP@pathway.suse.cz/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**KVM: arm64: Give the host timer interrupts a separate lockdep class**\n\nGICv5 KVM 게스트에서 kvm_sched_out()이 rq 잠금을 잡은 채 호스트 타이머 IRQ의 irq_desc 잠금을 건드리면 공유 lockdep 클래스 때문에 mlx5 등 affinity notifier 경로와 스케줄러 잠금 순환(false positive)이 보고됩니다. 패치는 KVM 호스트 타이머 IRQ에 전용 lockdep 클래스를 부여합니다.\n\n영향: PREEMPT_RT·lockdep 검증 환경에서 arm64 KVM(GICv4/5) 허위 deadlock 사이클이 RT 브링업과 CI를 막을 수 있습니다.\n\n> On preemption this runs from kvm_sched_out() with the runqueue lock held: &rq->__lock --> &irq_desc_lock_class\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20261116071304.2037895-2-justin.he@arm.com/)\n\n**sched/deadline: Keep departing bandwidth across a root domain rebuild**\n\nSCHED_DEADLINE root domain 재구성 시 태스크 전체 순회로 irq-off 구간이 태스크 수에 비례해 길어질 수 있음이 제기되었고, Juri Lelli는 0.3ms·1.2ms irq-off가 PREEMPT_RT에서 모두 실질적으로 중요하다고 답했습니다.\n\n영향: 대형 서버에서 컨테이너별 exclusive root domain 사용 시 한 파티션 재구성이 다른 RT 워크로드 irq-off 지연을 키울 수 있습니다.\n\n> 10000    7.4ms, under 0.1ms (0.3ms once)     0.9ms (1.2ms worst)\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/avrZGPNdCwZMd3B4@jlelli-thinkpadt14gen4.remote.csb/)\n\n**timers: Avoid blocking on hrtimer_cpu_base lock during Oops or panic**\n\nThomas Gleixner는 panic/Oops 중 timer_list가 hrtimer_cpu_base 잠금을 trylock 없이 잡는 방식을 비판했고, Aaron Tomlin은 enum sysinfo_context를 sys_info()에 넘겨 호출 컨텍스트별로 잠금·출력을 결정하는 리팩터를 약속했습니다.\n\n영향: panic·Oops·NMI에서 hrtimer 잠금 대기는 RT 시스템 장애 덤프 경로를 막거나 오해를 키우며 sys_info 설계가 PREEMPT_RT 디버깅 품질과 연결됩니다.\n\n> I will introduce enum sysinfo_context, plumb it through sys_info() down to the consumers\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/cg4idz5t5eh4yptrte5xvyhpk4jrp7ckch3iezeto2enkai7id@jqv4w5gkpagu/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "KVM: arm64: Give the host timer interrupts a separate lockdep class",
+      "url": "https://lore.kernel.org/linux-rt-devel/20261116071304.2037895-2-justin.he@arm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM: arm64: gic-v5: Enlighten arch timer for GICv5",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=9491c63b6cd7",
+      "note": "commit"
+    },
+    {
+      "title": "bpf: Disable preemption while a raw tracepoint regs slot is in use",
+      "url": "https://lore.kernel.org/bpf/20261116-bpf-raw-tp-regs-preempt-v1-1-d01b6dd8573c@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "mm/slab: handle SLAB_FREE_NOLOCK in slab_free_hook()",
+      "url": "https://lore.kernel.org/linux-rt-devel/sashiko-outbox-216530@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "sched/deadline: Keep departing bandwidth across a root domain rebuild",
+      "url": "https://lore.kernel.org/linux-rt-devel/avrZGPNdCwZMd3B4@jlelli-thinkpadt14gen4.remote.csb/",
+      "note": "thread"
+    },
+    {
+      "title": "panic, sys_info: Fix duplicate and dropped all-CPU backtraces in panic",
+      "url": "https://lore.kernel.org/linux-rt-devel/avshouTNBIeM5qtP@pathway.suse.cz/",
+      "note": "thread"
+    },
+    {
+      "title": "timers: Avoid blocking on hrtimer_cpu_base lock during Oops or panic",
+      "url": "https://lore.kernel.org/linux-rt-devel/cg4idz5t5eh4yptrte5xvyhpk4jrp7ckch3iezeto2enkai7id@jqv4w5gkpagu/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-16T18:43:22.534Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,136 @@
+{
+  "id": "2026-11-17-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-11-17 SCMI 재부팅 데드락 — Arch/Platform 렌즈",
+  "headline": "arm_scmi 재부팅 데드락 수정이 stable 추적 대상으로 올라왔고, KVM Realm·arm-smmu-v3·플랫폼 DT 쪽 패치가 이어집니다.",
+  "date": "2026-11-17",
+  "summary": "SCMI System Power Control 경로의 notifier–forceful work 데드락을 고치는 2패치 시리즈 1/2가 제출됐으며 Cc: stable@가 붙었습니다. RISC-V EFI stub 공통화, KVM arm64 CCA 런타임 fault, SMMU v3 ASID 분리, RK3588 IEP2 DT 등 플랫폼·아키 관련 변경도 메일링 리스트에서 논의 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "arm64",
+    "riscv",
+    "플랫폼"
+  ],
+  "highlights": [
+    {
+      "title": "arm_scmi: reboot notifier와 forceful work 데드락",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "firmware/arm_scmi·SCMI System Power 유지보수 및 arm64 플랫폼 BSP 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/16/1064",
+      "if": "SCMI로 graceful timeout 후 forceful reboot/shutdown을 쓰는 arm64 서버·임베디드 이미지를 운영한다면",
+      "do": "제출된 2/2 시리즈와 stable 백포트 요청 범위를 distro 커널 추적 목록에 올리세요",
+      "verify": "재부팅 경로에서 wedged 사례가 있는지 테스트 트리에 패치를 얹어 재현 여부를 확인하세요"
+    },
+    {
+      "title": "KVM arm64 CCA: Realm 런타임 memory fault",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "KVM/arm64 Realm·guest_memfd·linux-coco 스택 개발자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/16/2858",
+      "if": "Confidential Compute Realm VMM에서 lazy 매핑·guest_memfd 속성을 다룬다면",
+      "do": "v3 09/11의 stage-2 fault·KVM_EXIT_MEMORY_FAULT 경로를 VMM 코드와 대조해 리뷰하세요",
+      "verify": "리스트 스레드에서 v2 대비 mmu_lock·RTT·pre-fault 변경이 반영됐는지 원문을 확인하세요"
+    },
+    {
+      "title": "arm-smmu-v3: SMMU 인스턴스별 ASID 공간",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "arm-smmu-v3·GPU/NIC IOMMU·kdump 연동 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/16/1259",
+      "if": "Grace·GH100처럼 SMMU가 여러 개인 SoC에서 SVA·IOMMU attach를 쓴다면",
+      "do": "v12 03/12 인스턴스별 asid_map 시리즈 진행을 워크로드 재현 환경에서 추적하세요",
+      "verify": "John Garry Reviewed-by가 달린 패치 설명과 ASID aliasing 논거를 스레드에서 확인하세요"
+    },
+    {
+      "title": "Rockchip RK3588: IEP2 deinterlacer DT",
+      "priority": "중",
+      "impactType": "project",
+      "affectedAudience": "Rockchip RK3588·arm64 DT 및 미디어 스택 maintainer",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/16/1912",
+      "if": "RK3588 미디어 파이프라인 DT를 유지한다면",
+      "do": "IEP2·IOMMU 노드 배치와 soc 노드 관례 질문에 대한 리뷰 의견을 반영할지 결정하세요",
+      "verify": "Heiko Stübner의 Rockchip soc 노드 관례 설명 스레드를 읽고 노드 위치 합의 여부를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**firmware: arm_scmi: Fix deadlock between reboot notifier and forceful work**\n\nSCMI System Power Control의 reboot notifier가 state_mtx를 잡은 채 cancel_delayed_work_sync()를 호출하고 forceful work 쪽도 같은 뮤텍스·reboot 체인 rwsem을 건드려 재부팅이 멈추던 경로를, notifier는 판단 후 락을 놓고 cancel하고 callback은 실제 force 전환 시에만 unregister하도록 2패치 시리즈 1/2가 고칩니다.\n\n영향: SCMI로 플랫폼 전원 전환을 받는 arm64 서버·임베디드는 graceful timeout 후 forceful reboot/shutdown 경로에서 커널이 영구히 wedged될 수 있어 Cc: stable@ 대상 수정으로 배포 추적이 필요합니다. 2/2 removal 경로 수정과 stable 백포트 요청 범위는 확인이 필요합니다.\n\n> If a forceful transition work is in flight when the reboot notifier fires, the notifier holds the lock and waits for the callback while the callback waits for the lock: deadlock\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/16/1064)\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=2c4b97fee94a)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**efi/libstub: riscv: Use struct efi_image_info to access image properties**\n\nRISC-V EFI stub가 링커 스크립트로 노출하던 심볼 대신 공용 struct efi_image_info와 PC-relative 참조로 이미지 속성에 접근하도록 v3 시리즈 10/15가 바꿉니다.\n\n영향: 아키텍처 간 EFI stub 코드 재사용과 새 참조 추가 비용을 줄여 RISC-V 부트·이미지 빌드 쪽 공통화 작업의 기반이 됩니다. v3 15패치 EFI 통합 시리즈의 머지 창구와 arm64 등 타 arch와의 정렬 시점은 확인이 필요합니다.\n\n> use the generic struct efi_image_info, which accesses the original symbols via PC-relative references from the stub itself\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20261116142618.1687025-27-ardb+git@google.com/)\n\n**KVM: arm64: CCA: Support runtime faulting of memory**\n\nRealm 게스트의 stage-2 미매핑 IPA 접근 시 protected/shared 영역별로 guest_memfd·RMM·non-secure 매핑을 나누고 불일치 시 KVM_EXIT_MEMORY_FAULT로 VMM에 넘기는 로직이 v3 09/11로 올라왔으며 v2 리뷰에서는 mmu_lock 쓰기·RTT 생성·Realm pre-fault 비활성화가 반영됐습니다.\n\n영향: Confidential Compute Realm VMM은 lazy 매핑·memslot/guest_memfd 속성 불일치 시 userspace 변환 경로를 이해해야 하며 arm64 KVM CCA 시리즈의 핵심 런타임 동작입니다. v3 11패치 stage-2 MMU ops와의 통합 머지 순서는 확인이 필요합니다.\n\n> At runtime, if the realm guest accesses an IPA without a stage-2 mapping, then KVM fixes up the stage-2 mapping for the backing memory\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/16/2858)\n\n**perf/arm_pmu: Use ACPI CPU affinity in IRQ handling**\n\nACPI PMUs에서 platform_get_irq_affinity()로 IRQ 자원별 CPU 마스크를 읽고 SPI는 singleton 마스크 CPU를 쓰며, 공통 probe가 supported_cpus를 IRQ 요청 전에 채워 cpu_possible_mask 폴백을 제거하는 v1 시리즈가 제출됐습니다.\n\n영향: 이질 ACPI·HMP SoC에서 PMU overflow IRQ가 잘못된 CPU에 묶이면 perf 카운터 이벤트가 조용히 깨질 수 있어 Leo Yan 쪽 heterogeneous MADT 시리즈와 함께 봐야 할 것으로 보입니다. Johnny.Fan/Leo Yan heterogeneous ACPI PMU 시리즈와의 통합·중복 여부 및 스레드 인용 검증은 확인이 필요합니다.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20261116-acpi_arm_pmu_registration_hmp-v1-7-0371d4eca626@arm.com/)\n\n**riscv: sunxi: describe the wider Allwinner SoC family**\n\nV861까지 ARCH_SUNXI로 묶는 Kconfig 문구 변경에 Guo Ren이 SoC 모델 나열 대신 generic help를 제안했고, Conor Dooley가 동의하며 Andes CPU 기반 향후 Allwinner 확장도 언급했습니다.\n\n영향: RISC-V Allwinner 계열 sun20i·V861·추가 SoC를 하나의 ARCH_SUNXI로 관리하는 Kconfig 정책이 V861 19패치 시리즈 리뷰에 직결됩니다. series v2에서 Kconfig help가 generic 문구로 실제 반영되는지는 확인이 필요합니다.\n\n> Perhaps we could keep the help text generic and omit the specific SoC models\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/14/1048)\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20261116-myth-sponge-9a8cb0627b65@spud/)\n\n**arm64: dts: rockchip: Add IEP2 deinterlacer to RK3588**\n\nArun Iyengar 패치가 rk3588-base.dtsi에 IEP2 deinterlacer·IOMMU 노드를 추가했고 Krzysztof Kozlowski가 soc 노드 밖 배치를 질문했으며 Heiko Stübner는 RK3288 이후 soc 노드 없는 Rockchip 관례와 RK3576부터 재도입을 설명했습니다.\n\n영향: RK3588 미디어 파이프라인 DT는 deinterlacer 드라이버 바인딩 전제이며 Rockchip DT soc 노드 정책 혼선은 review 블로커가 될 수 있습니다. IEP2 노드가 soc 밖에 두는 것이 이 시리즈에서 수용되는지는 확인이 필요합니다.\n\n> Add the IEP2 deinterlacer and its IOMMU to the RK3588 base dtsi\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/16/1912)\n\n> Except in time for the RK3576, the tune has changed, so socs from then on have a soc node again\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/yRxnTArhQFiS4u_tncJj-g@sntech.de/)\n\n**iommu/arm-smmu-v3: Make the ASID space per SMMU instance**\n\n전역 arm_smmu_asid_xa 대신 SMMU 인스턴스별 asid_map·devres 정리로 다중 SMMU에서 한 인스턴스가 ASID를 고갈해 다른 인스턴스를 막던 문제를 v12 03/12가 고치며 John Garry가 Reviewed-by를 달았습니다.\n\n영향: Grace·GH100 클래스처럼 SMMU가 여러 개인 SoC와 SVA·향후 kdump STE 승계는 인스턴스별 ASID 풀 분리 없이 IOMMU attach가 실패하거나 ID 고갈이 납니다. v12 시리즈 전체 머지 시기와 global arm_smmu_asid_lock 주석 정리 반영 여부는 확인이 필요합니다.\n\n> An ASID tags the TLB entries within one SMMU, so two instances can use the same ASID without ever aliasing each other\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/16/1259)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "arm_scmi reboot notifier deadlock fix (thread)",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/16/1064",
+      "note": "thread"
+    },
+    {
+      "title": "SCMI System Power Control driver introduction",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=2c4b97fee94a",
+      "note": "commit"
+    },
+    {
+      "title": "RISC-V EFI stub efi_image_info (thread)",
+      "url": "https://lore.kernel.org/linux-riscv/20261116142618.1687025-27-ardb+git@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM arm64 CCA runtime memory fault v3 (thread)",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/16/2858",
+      "note": "thread"
+    },
+    {
+      "title": "perf arm_pmu ACPI CPU affinity v1 (thread)",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20261116-acpi_arm_pmu_registration_hmp-v1-7-0371d4eca626@arm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "ARCH_SUNXI generic Kconfig help (thread)",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/14/1048",
+      "note": "thread"
+    },
+    {
+      "title": "Allwinner ARCH_SUNXI discussion (thread)",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20261116-myth-sponge-9a8cb0627b65@spud/",
+      "note": "thread"
+    },
+    {
+      "title": "RK3588 IEP2 deinterlacer DT (thread)",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/16/1912",
+      "note": "thread"
+    },
+    {
+      "title": "Rockchip soc node convention (thread)",
+      "url": "https://lore.kernel.org/linux-arm-kernel/yRxnTArhQFiS4u_tncJj-g@sntech.de/",
+      "note": "thread"
+    },
+    {
+      "title": "arm-smmu-v3 per-instance ASID v12 (thread)",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/16/1259",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-16T18:49:44.262Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
