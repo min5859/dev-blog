@@ -1,0 +1,123 @@
+{
+  "id": "2026-11-18-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-11-18 RISC-V W^X·SCMI — 아키텍처·플랫폼",
+  "headline": "RISC-V mm 보안·회귀 수정과 arm_scmi v2 데드락 재도입 가능성, pKVM stage-2 헬퍼가 한날에 겹쳤습니다.",
+  "date": "2026-11-18",
+  "summary": "Mike Rapoport RISC-V set_memory v2는 linear map 실행 가능화와 하이버네이션 present 오판을 막고, Chengyu Liu 리뷰가 arm_scmi v2의 reboot notifier·rwsem 역전을 다시 짚었습니다. Vincent Donnefort pKVM mem_protect v4는 kvm_pgtable_stage2_table_install()로 stage-2 분할 경로를 재정의합니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "riscv: mm: fix set_memory_x() and kernel_page_present()",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "RISC-V mm·pageattr·하이버네이션·모듈/BPF 텍스트 매핑 담당",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20261117-fixes-riscv-v2-0-5edc9bdc54fd@kernel.org/",
+      "if": "RISC-V에서 모듈·BPF 텍스트 pageattr나 스왑/하이버네이션 경로를 다룬다면",
+      "do": "v2 커버레터와 Jisheng Zhang Reviewed-by 시리즈 응답을 함께 읽고 generic set_memory API와의 머지 순서는 확인이 필요합니다",
+      "verify": "lore RISC-V 스레드에서 set_memory_x() linear map 별칭과 kernel_page_present() valid 비트 수정을 원문으로 확인하세요"
+    },
+    {
+      "title": "firmware: arm_scmi: Fix deadlock between reboot notifier and forceful work",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "firmware/arm_scmi·SCMI 플랫폼 전원·arm64 서버/임베디드 BSP 담당",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/avyS2OLs3XGcKXXn@pluto/",
+      "if": "SCMI graceful timeout 이후 forceful reboot/shutdown 경로를 arm64 BSP에서 검증 중이라면",
+      "do": "v2가 state_mtx 보유 중 unregister_reboot_notifier()를 호출하는지 스레드에서 다시 짚고 머지 전 재현 테스트를 하세요",
+      "verify": "Cristian Marussi가 인정한 rwsem 측 미해결 이슈와 Chengyu Liu 역전 시나리오를 lore 원문에서 확인하세요"
+    },
+    {
+      "title": "KVM: arm64: Introduce kvm_pgtable_stage2_table_install()",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "KVM/arm64 pKVM·hyp/mem_protect·Android kernel-team",
+      "verifyLink": "https://lore.kernel.org/linux-arm-kernel/20261117174403.58762-19-vdonnefort@google.com/",
+      "if": "pKVM mem_protect나 stage-2 block split 호출부를 추적한다면",
+      "do": "kvm_pgtable_stage2_split() 대신 table_install() 도입 패치와 v4 0/23 시리즈 규모를 짝지어 읽으세요",
+      "verify": "패치 본문 인용과 18 files changed 커버레터를 lore에서 확인하세요"
+    },
+    {
+      "title": "riscv: mm: Skip the icache flush for special PTEs",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "RISC-V mm·pagetable·/dev/mem·MMIO mmap 사용자·QEMU/보드 bring-up",
+      "verifyLink": "https://lore.kernel.org/linux-riscv/20261116022433.49952-1-nickolai@csail.mit.edu/",
+      "if": "/dev/mem MMIO 창에 PROT_EXEC mmap을 쓰는 bring-up이나 PCIe ECAM 매핑을 다룬다면",
+      "do": "v2의 special PTE icache flush 생략과 Ze Huang SpacemiT K3 Tested-by 코멘트를 대조하세요",
+      "verify": "arm64 71fdb6bf61bf와 동일 정책 인용 및 MMIO mmap oops 재현 문구를 lore에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**riscv: mm: fix set_memory_x() and kernel_page_present()**\n\nMike Rapoport v2 2패치가 set_memory_x()가 모듈·BPF 텍스트의 linear map 별칭까지 실행 가능하게 만들던 문제를 막고, linear map에서 제거된 페이지를 kernel_page_present()가 여전히 present로 보고 하이버네이션이 매핑 없이 복사할 수 있던 경로를 valid 비트 검사로 고칩니다.\n\n영향: RISC-V set_memory API 일반화 작업과 함께 W^X 정책·스왑/하이버네이션 정확성에 직결되며 Jisheng Zhang이 시리즈에 Reviewed-by를 달았습니다.\n\n> The first one stops set_memory_x() from making the linear map alias of module and BPF text executable.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20261117-fixes-riscv-v2-0-5edc9bdc54fd@kernel.org/)\n\n**firmware: arm_scmi: Fix deadlock between reboot notifier and forceful work**\n\nChengyu Liu 리뷰에 따르면 v2가 state_mtx를 잡은 채 unregister_reboot_notifier()를 호출해 reboot_notifier_list rwsem과의 락 역전 데드락을 다시 일으킬 수 있으며, Cristian Marussi는 rwsem 쪽 이슈가 아직 해결되지 않았다고 확인했습니다.\n\n영향: SCMI System Power graceful timeout 후 forceful reboot/shutdown 경로는 어제 브리핑의 데드락 수정이 v2에서 부분 회귀할 수 있어 Cc: stable@ 추적 중인 arm64 BSP에 머지 전 검증이 필요합니다.\n\n> Yes indeed Sashiko complains about the same and the second part of the issue on the rwsem is unresolved and will need more work.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/avyS2OLs3XGcKXXn@pluto/)\n\n**riscv: mm: Skip the icache flush for special PTEs**\n\nNickolai Zeldovich v2가 실행 가능한 special PTE에 flush_icache_pte()를 호출하지 않도록 pgtable.h를 바꾸며, Ze Huang가 SpacemiT K3에서 /dev/mem MMIO PROT_EXEC mmap 회귀 테스트를 추가로 보고했습니다.\n\n영향: RISC-V에서 /dev/mem·PCIe ECAM 등 비-RAM PFN 매핑에 PROT_EXEC를 쓰면 page table lock을 잡은 채 oops·hang이 나던 08f051eda33b 회귀를 arm64(71fdb6bf61bf)와 동일 정책으로 막습니다.\n\n> Skip the flush for special PTEs, as arm64 does since commit 71fdb6bf61bf\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20261116022433.49952-1-nickolai@csail.mit.edu/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**KVM: arm64: Introduce kvm_pgtable_stage2_table_install()**\n\nVincent Donnefort pKVM v4 18/23이 kvm_pgtable_stage2_split() 대신 kvm_pgtable_stage2_table_install()을 추가해 pKVM이 kvm_mmu_memory_cache 없이 block split과 mem_protect.c 주석을 처리하도록 합니다.\n\n영향: pKVM protected KVM의 stage-2 페이지 테이블 분할·메모리 보호 경로는 기존 split 헬퍼와 캐시 모델이 맞지 않아, 이 API가 23패치 mem_protect 대규모 시리즈의 기반입니다.\n\n> Add the pgtable helper kvm_pgtable_stage2_table_install() so pKVM can handle block splitting in mem_protect.c.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20261117174403.58762-19-vdonnefort@google.com/)\n\n**arm64: sdei: fix entry edge cases, pseudo-NMI**\n\nAda Couprie Diaz 3패치가 SDEI 진입 시 KVM VHE에서 VBAR_EL1 설정, pseudo-NMI에서 PMR 저장/복원, 매우 이른 SDEI로 current==NULL 되는 경로를 각각 C 코드에서 고치며 v7.4-rc3 기준입니다.\n\n영향: SDEI는 언제든 선점 가능한 플랫폼 인터럽트 경로라 VHE·GICv3 pseudo-NMI·early boot 조합에서 잘못된 벡터·IRQ 마스크·NULL current가 치명적이며 patch 3은 3d8c1a013d78에 의존합니다.\n\n> Patch 2 : PMR was not handled at all when using pseudo-NMI\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20261117174814.95936-1-ada.coupriediaz@arm.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "riscv set_memory_x / kernel_page_present v2 커버레터",
+      "url": "https://lore.kernel.org/linux-riscv/20261117-fixes-riscv-v2-0-5edc9bdc54fd@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "Jisheng Zhang Reviewed-by (set_memory 시리즈)",
+      "url": "https://lore.kernel.org/linux-riscv/avxeCy_ovH1BSyOo@xhacker/",
+      "note": "thread"
+    },
+    {
+      "title": "arm_scmi reboot notifier / rwsem 데드락 논의",
+      "url": "https://lore.kernel.org/linux-arm-kernel/avyS2OLs3XGcKXXn@pluto/",
+      "note": "thread"
+    },
+    {
+      "title": "kvm_pgtable_stage2_table_install() 패치",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20261117174403.58762-19-vdonnefort@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "pKVM mem_protect v4 0/23 시리즈",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20261117174403.58762-1-vdonnefort@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "arm64 SDEI entry / pseudo-NMI 커버레터",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20261117174814.95936-1-ada.coupriediaz@arm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "RISC-V special PTE icache flush 생략 v2",
+      "url": "https://lore.kernel.org/linux-riscv/20261116022433.49952-1-nickolai@csail.mit.edu/",
+      "note": "thread"
+    },
+    {
+      "title": "SpacemiT K3 /dev/mem PROT_EXEC Tested-by",
+      "url": "https://lore.kernel.org/linux-riscv/DMXOJEFHNR8A.SHYBI0NLEFPJ@oss.qualcomm.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-17T18:32:03.603Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

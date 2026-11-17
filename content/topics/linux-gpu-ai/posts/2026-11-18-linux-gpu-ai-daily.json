@@ -1,0 +1,133 @@
+{
+  "id": "2026-11-18-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-11-18 amdkfd UAF·DSI LPM — GPU·AI 렌즈",
+  "headline": "amdkfd 이벤트 대기 UAF 수정, Mediatek DSI LPM·ingenic bridge 회귀, NT36525·amdxdna·KTD3137 패치가 dri-devel에 올라왔습니다.",
+  "date": "2026-11-18",
+  "summary": "ROCm 경로와 연결된 amdkfd destroy_event 회귀가 use-after-free로 이어질 수 있어 우선 확인할 가치가 있습니다. 모바일 DSI·내부 bridge·NPU hwctx·패널 bring-up 쪽은 각각 타이밍·reference·실패 경로 정리 패치가 제출되었습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "drm/amdkfd: destroy_event 후 wait queue UAF",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "drm/amdkfd 이벤트·대기 큐 및 ROCm/HSA 런타임 연동 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/dri-devel/20261117145406.1092636-1-shunsheng1218@gmail.com/raw",
+      "if": "ROCm/OpenCL에서 amdkfd 이벤트 destroy·signal 경로를 다루신다면",
+      "do": "74e4071665da 이후 destroy 경로에서 waiter unlink 누락 수정 패치를 리뷰 큐에 올려 두고 머지 여부를 추적하세요",
+      "verify": "스레드 원문과 stable 백포트·CVE 할당 예정 여부는 아직 확인이 필요합니다"
+    },
+    {
+      "title": "drm/mediatek: LPM 패널 pre-enable HS 클럭",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "drm/mediatek mtk_dsi 및 LPM MIPI-DSI 패널 bring-up 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/dri-devel/20261117-6768-dsi-fix-v2-1-6654a072884e@protonmail.com/raw",
+      "if": "MIPI_DSI_MODE_LPM 패널이나 Tianma NT36672A 계열 init 타이밍을 보신다면",
+      "do": "Roman Vivchar v2가 pre-enable HS 강제를 LPM일 때만 건너뛰도록 한 diff를 보드에서 suspend-resume 포함 재검증하세요",
+      "verify": "7.1.x stable 백포트 포함 여부는 Cc 태그 기준으로 확인이 필요합니다"
+    },
+    {
+      "title": "drm/ingenic: 내부 bridge 분리 등록",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "drm/ingenic 및 내부 bridge를 encoder와 함께 묶은 SoC DRM 드라이버 유지보수 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/dri-devel/20261117173822.1816385-1-f.fainelli@gmail.com/raw",
+      "if": "encoder 안에 bridge를 묻어 둔 ingenic류 드라이버를 유지하신다면",
+      "do": "devm_drm_bridge_alloc/add 패턴으로 분리한 v2를 CI20 프로브·HDMI chain attach에 적용해 보세요",
+      "verify": "mode_set에서 bridge chain 탐색 변경에 대한 추가 리뷰 요구 여부는 스레드를 따라 확인하세요"
+    },
+    {
+      "title": "accel/amdxdna: hwctx restart 실패 시 정리",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "accel/amdxdna 및 AMD XDNA/RYZEN AI NPU 스택 유지보수·사용자",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/dri-devel/20261117165731.132261-1-lizhi.hou@amd.com/raw",
+      "if": "RYZEN AI NPU에서 resume 이후 job이 멈추거나 리소스가 남는 증상을 보신다면",
+      "do": "aie2_hwctx_restart() 실패 경로 teardown 패치와 스케줄러·resume 연동 후속 패치 필요 여부를 함께 보세요",
+      "verify": "실제 워크로드에서 해당 실패 경로 재현 빈도는 아직 확인이 필요합니다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm/amdkfd: unlink destroyed event waiters from the wait queue**\n\nYaohan Li 패치는 destroy_event()가 wake_up_all() 후 runnable waiter를 wait queue에서 빼지 않아 free_waiters()와 kfree_rcu() 이후 UAF가 날 수 있던 74e4071665da 회귀를, lock 보유 상태에서 남은 엔트리를 unlink하도록 고칩니다.\n\n영향: amdkfd 이벤트 대기는 ROCm/OpenCL 경로에서 흔하고, destroy 직후 RCU reader가 waiter->activated를 쓰면 use-after-free가 되므로 AMDGPU compute 스택 안정성·보안 관점에서 우선 추적할 가치가 있습니다.\n\n> ev itself is released with kfree_rcu(), so a reader that reaches it through RCU -- kfd_set_event() or the GPU signal interrupt path -- can take ev->lock afterwards and walk ev->wq in set_event()\n\n> That unlink was lost when the code was converted to wait_queue_entry_t by 74e4071665da, which moved the removal into free_waiters() and left the destroyed path without one.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/20261117145406.1092636-1-shunsheng1218@gmail.com/raw)\n\n**drm/mediatek: mtk_dsi: do not enable HS clock in pre-enable for LPM panels**\n\nRoman Vivchar v2는 mtk_dsi_bridge_atomic_pre_enable()에서 HS 클럭을 무조건 켜던 76255024cadb·3e191eddbdcb 흐름을 고치고, MIPI_DSI_MODE_LPM이 켜진 경우에만 pre-enable에서 HS를 건너뛰며 mtk_output_dsi_enable()에서 다시 HS를 켭니다.\n\n영향: LPM 패널은 prepare() 동안 LP 모드로 init 명령을 보내야 하는데 pre-enable HS 강제가 mtk_dsi_lane_ready()의 clk_hs_mode(0)을 덮어 Tianma NT36672A 등에서 명령 전송이 깨질 수 있어 Mediatek DSI·모바일 디스플레이 백포트 범위를 추적해야 합니다.\n\n> However, mtk_dsi_lane_ready() explicitly sets mtk_dsi_clk_hs_mode(dsi, 0) so that DSI panels with MIPI_DSI_MODE_LPM can transmit initialization commands in Low-Power mode\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/20261117-6768-dsi-fix-v2-1-6654a072884e@protonmail.com/raw)\n\n> This resolves a regression that was seen on the aforementioned machine, which was happening only after a suspend-resume cycle.\n\n[원문 확인](https://patchwork.kernel.org/project/linux-mediatek/patch/20260728153145.578404-1-angelogioacchino.delregno@collabora.com/)\n\n**drm/ingenic: Allocate and register the internal bridge separately**\n\nFlorian Fainelli v2는 ingenic LCD 내부 bridge를 drmm_encoder_alloc() 안에 묻지 않고 devm_drm_bridge_alloc()·devm_drm_bridge_add()로 분리 등록해 drm_bridge_attach()의 reference 획득과 encoder 수명을 맞춥니다.\n\n영향: 94d50c1a2ca3에서 drm_bridge_attach()가 reference를 잡도록 바뀐 뒤 bridge kref가 0인 상태로 attach되면 CI20에서 addition-on-zero·underflow로 HDMI bridge chain 부착이 실패하므로 devm bridge 할당 패턴을 따라가야 합니다.\n\n> Since drm_bridge_attach() takes a reference, probing the CI20 display produces addition-on-zero and underflow warnings and fails to attach the HDMI bridge chain.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/20261117173822.1816385-1-f.fainelli@gmail.com/raw)\n\n> drm_bridge_attach() adds the bridge to the encoder chain, so take a reference for that. Vice versa in drm_bridge_detach().\n\n[원문 확인](https://lore.kernel.org/r/20250620-drm-bridge-alloc-getput-drm-bridge-c-v9-2-ca53372c9a84@bootlin.com)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/panel: add Novatek NT36525 (Samsung Galaxy XCover5)**\n\nAdil Hüsrev Tepe v3 0/2는 novatek,nt36525 DT binding과 Galaxy XCover5(SM-G525F, Exynos850)용 720×1480 MIPI-DSI video-mode panel 드라이버를 v7.4-rc1 기준 standalone 시리즈로 재제출했습니다.\n\n영향: Exynos850 단말의 NT36525 DSI 패널 mainline bring-up이 panel 서브시스템에 들어오며, DCS init·backlight 연동 패턴이 다른 Samsung DSI 패널 포팅의 참고가 됩니다.\n\n> This series adds a DRM panel driver and its DT binding for MIPI-DSI video-mode panels based on the Novatek NT36525 controller, as fitted on the Samsung Galaxy XCover5 (SM-G525F, Exynos850).\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/20261117173319.1852638-1-tadilhusrev@gmail.com/raw)\n\n> Tested on a Samsung Galaxy XCover5 running 7.4-rc1 plus this series (re-confirmed 2026-11-17): the DSI panel connector probes and reports \"connected\"\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/20261117173319.1852638-1-tadilhusrev@gmail.com/raw)\n\n**accel/amdxdna: Destroy the context when hwctx restart fails**\n\nLizhi Hou V1은 aie2_hwctx_restart()가 FW context 생성 후 버퍼 매핑·CU 설정이 실패할 때 context·mbox·hwctx_num을 정리하지 않던 오류 경로를 teardown하도록 수정합니다.\n\n영향: 실패한 hwctx가 살아 있으면 aie2_sched_job_run()이 mailbox만 보고 job을 계속 넣어 NPU 실행이 교착·리소스 누수로 이어질 수 있어 amdxdna 스케줄러·resume 경로를 함께 봐야 합니다.\n\n> aie2_sched_job_run() only tests hwctx->priv->mbox_chann the scheduler keeps submitting jobs to a context which has no host buffer mapped and no CU configured.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/20261117165731.132261-1-lizhi.hou@amd.com/raw)\n\n**dt-bindings: leds: backlight: add Kinetic KTD3137**\n\nRoman Vivchar v3 1/2는 모바일 디스플레이 백라이트용 Kinetic KTD3137 LED IC에 대한 devicetree binding YAML을 추가하고 datasheet 링크를 담습니다.\n\n영향: 동일 시리즈 0/2가 ktd3137 backlight 드라이버를 함께 제출해, 패널·DSI 외에 백라이트 PMIC binding이 먼저 리뷰되는 전형적인 모바일 display 스택 패턴입니다.\n\n> Kinetic KTD3137 is an LED IC, used in various mobile devices for the display backlight. Add devicetree bindings documentation for this chip.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/20261117-6768-ktd3137-v3-1-b4fd957e3b00@protonmail.com/raw)\n\n> Subject: [PATCH v3 0/2] backlight: add ktd3137 support\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/20261117-6768-ktd3137-v3-0-b4fd957e3b00@protonmail.com/raw)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/amdkfd destroy_event wait queue UAF fix",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/20261117145406.1092636-1-shunsheng1218@gmail.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "drm/mediatek mtk_dsi LPM HS clock v2",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/20261117-6768-dsi-fix-v2-1-6654a072884e@protonmail.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "Mediatek DSI pre-enable HS regression context",
+      "url": "https://patchwork.kernel.org/project/linux-mediatek/patch/20260728153145.578404-1-angelogioacchino.delregno@collabora.com/",
+      "note": "changelog"
+    },
+    {
+      "title": "drm/ingenic internal bridge separate registration",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/20261117173822.1816385-1-f.fainelli@gmail.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "drm_bridge_attach reference get/put",
+      "url": "https://lore.kernel.org/r/20250620-drm-bridge-alloc-getput-drm-bridge-c-v9-2-ca53372c9a84@bootlin.com",
+      "note": "commit"
+    },
+    {
+      "title": "drm/panel Novatek NT36525 XCover5 series",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/20261117173319.1852638-1-tadilhusrev@gmail.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "accel/amdxdna hwctx restart failure teardown",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/20261117165731.132261-1-lizhi.hou@amd.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "accel/amdxdna Add command execution",
+      "url": "https://patchwork.freedesktop.org/patch/msgid/20241118172942.2014541-8-lizhi.hou@amd.com",
+      "note": "commit"
+    },
+    {
+      "title": "dt-bindings Kinetic KTD3137 v3 1/2",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/20261117-6768-ktd3137-v3-1-b4fd957e3b00@protonmail.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "backlight ktd3137 support v3 0/2",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/20261117-6768-ktd3137-v3-0-b4fd957e3b00@protonmail.com/raw",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-17T18:33:59.087Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
