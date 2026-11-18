@@ -1,0 +1,151 @@
+{
+  "id": "2026-11-19-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-11-19 BBML3·kCFI 수정 — Arch·Platform",
+  "headline": "arm64 BBML3 허용 목록 축소와 kCFI kexec 수정이 fixes에 올랐고, EFI zboot·RISC-V 보드 DT가 함께 움직였습니다.",
+  "date": "2026-11-19",
+  "summary": "Neoverse-V3·Cortex-X4 BBML3 예외가 SDEN 갱신에 맞춰 정리되었고, CONFIG_CFI 빌드 kexec oops는 typed entry 패치로 for-next/fixes에 적용되었습니다. EFI image 메타데이터 공통화와 eswin·SpacemiT K3 devicetree 시리즈도 리뷰 중입니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "arm64",
+    "RISC-V",
+    "EFI"
+  ],
+  "highlights": [
+    {
+      "title": "BBML3 errata 허용 목록·Kconfig 정리",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "arm64 cpufeature·errata·BBML3/mm 담당, Neoverse·Cortex-X4/X925 플랫폼",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/13/2169",
+      "if": "Neoverse-V3/V3AE·Cortex-X4 등에서 break-before-make 없는 MM 경로를 쓰는 플랫폼을 다룬다면",
+      "do": "6패치 시리즈와 for-next/fixes 적용분을 대조하고 stable 백포트 추적 범위를 확인하세요.",
+      "verify": "커버레터와 erratum Kconfig 변경이 대상 MIDR·코어에 맞는지 원문 스레드를 열어 보세요."
+    },
+    {
+      "title": "kexec relocation kCFI type hash fault",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "arm64 kexec/hibernate·kCFI(Clang) 빌드·QA",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/11/3840",
+      "if": "CONFIG_CFI=y에서 kexec 이미지 재배치 후 machine_kexec() oops를 재현한다면",
+      "do": "SYM_TYPED_FUNC_START()·섹션 오프셋 진입 수정이 포함된 v2와 fixes 머지 여부를 확인하세요.",
+      "verify": "패치 본문 인용대로 복사본 진입점이 심볼 오프셋을 쓰는지 빌드·kexec 테스트로 검증하세요."
+    },
+    {
+      "title": "보조 CPU ID 레지스터 override 검증",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "arm64 cpufeature·SMP bring-up·pKVM/heterogeneous 클러스터",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/13/1060",
+      "if": "cpuinfo 저장 전 capability 검사에서 command-line override를 쓰는 heterogeneous SKU를 bring-up한다면",
+      "do": "arm64_ftr_reg_override() 적용 패치 리뷰 상태와 v7.5 머지 창 가능성을 추적하세요.",
+      "verify": "보조 CPU가 boot CPU와 동일한 override 안전 검사를 받는지 패치 스레드와 리뷰 코멘트를 확인하세요."
+    },
+    {
+      "title": "efi_image_info로 zboot 메타데이터 공통화",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "EFI stub/zboot·arm64/RISC-V 부트·earlycon/DRTM 연동",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/linux-efi/20261116142618.1687025-26-ardb+git@google.com/t/",
+      "if": "arm64·RISC-V EFI zboot에서 압축 후 image 속성·실제 kernel entry가 필요하다면",
+      "do": "v3 15패치 시리즈의 struct efi_image_info와 arm64 linker/objcopy 해크 제거 범위를 검토하세요.",
+      "verify": "zboot가 loaded image 0x0이 아니 실제 kernel entry로 들어가는지 인용된 변경과 부트 로그로 맞춰 보세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**arm64: use typed entries into copied code for kCFI**\n\nBen Cressey v2는 kexec relocation 복사본에 SYM_TYPED_FUNC_START()와 C 프로토타입을 쓰고, 섹션 오프셋으로 진입해 TTBR0 단일 페이지에서 kCFI type hash 로드 fault를 고칩니다.\n\n영향: CONFIG_CFI=y 빌드에서 이미지 재배치 kexec는 매번 \"Bye!\" 이후 machine_kexec()에서 oops가 났고, stable Cc 대상이므로 CFI·kexec 검증 스택에 바로 영향 있습니다.\n\n> Fix by typing the routine with SYM_TYPED_FUNC_START() and a C prototype, and entering the copy at the symbol's offset in the section.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/11/3840)\n\n**arm64: cpufeature: Check the override in __read_sysreg_by_encoding()**\n\nFuad Tabba 패치는 보조 CPU가 cpuinfo 저장 전 capability 검사에서 ID 레지스터 override를 무분별 OR하지 않고 arm64_ftr_reg_override()로 boot CPU와 동일한 안전 검사를 적용합니다.\n\n영향: override가 boot CPU에서만 허용된 필드를 보조 CPU가 그대로 통과하면 기능 없이 online 되는 asymmetry가 나며, pKVM·heterogeneous SKU에서 cpufeature/command-line override 추적과 맞닿습니다.\n\n> A secondary whose field is below an override the boot CPU accepted passes verification and comes online without the feature.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/13/1060)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**[PATCH v1 0/6] arm64: BBML3 errata workarounds and cleanup**\n\nRyan Roberts 6패치 시리즈는 Neoverse-V3/V3AE와 Cortex-X4를 BBML3 MIDR 허용 목록에서 제거하고, 10개 BBML3 배제 erratum을 Kconfig로 추적하며 Cortex-A320·A520·A720에 BBML3를 켭니다.\n\n영향: 갱신된 Arm SDEN에 따르면 이전에 안전하다고 본 리비전도 BBM 관련 라이브락 erratum에 걸려 BBML3 no-abort MM 경로를 쓰면 교착이 날 수 있어, 서버/모바일 SoC에서 break-before-make 강제와 stable 백포트 추적이 달라집니다.\n\n> The first two patches remove Neoverse-V3/AE and Cortex-X4: their latest SDENs show that revisions previously treated as unaffected still suffer from BBM-related livelock errata.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/13/2169)\n\n**efi: Expose loaded image properties via info struct**\n\nArd Biesheuvel v3 15패치는 struct efi_image_info로 zboot·일반 EFI stub가 로드된 vmlinux의 code size·엔트리·sysfb 등을 공통 접근하도록 하고 arm64 zboot의 linker/objcopy 해크를 정리합니다.\n\n영향: arm64·RISC-V EFI zboot는 압축 후에만 image 메타데이터에 닿을 수 있어, DRTM·efifb earlycon·실제 kernel entry 진입 등 부트 경로 변경이 플랫폼 bring-up에 직결됩니다.\n\n> Clean up the arm64 build script and linker hacks that zboot uses to obtain properties of the loaded image (which it cannot access directly via a relative reference like the ordinary EFI stub).\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-efi/20261116142618.1687025-26-ardb+git@google.com/t/)\n\n**dt-bindings: riscv: eswin: Add Milk-V Megrez**\n\nHan Gao v2는 eswin.yaml에 milkv,megrez 호환을 추가하고 EIC7700X 기반 Mini-ITX 보드용 최소 DTS(UART0 콘솔) 시리즈를 linux-riscv에 올렸습니다.\n\n영향: Megrez는 ESWIN EIC7700 라인업의 또 다른 보드 문자열이므로 upstream DT·defconfig 선택이 distro/RISC-V 하드웨어 매트릭스에 추가됩니다.\n\n> Add the compatible for the Milk-V Megrez, a Mini-ITX board based on the ESWIN EIC7700X SoC.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/17/3477)\n\n**dt-bindings: bus: Add SpacemiT K3 eSPI controller**\n\nWang Yang 9패치의 첫 패치는 spacemit,k3-espi YAML로 K3 SoC의 EC용 peripheral shared-memory 창·클럭·리셋·링크 옵션을 문서화합니다(드라이버는 별도 패치).\n\n영향: SpacemiT K3 FML13V05 등 ChromeOS 호환 EC 키보드는 일반 cros_ec_spi가 아닌 이 버스가 없으면 linux-next에서 bring-up이 막히며, 이름이 Intel eSPI/SPI와 헷갈릴 수 있어 binding 리뷰가 중요합니다.\n\n> The K3 eSPI controller connects the application processor to an embedded controller. Child registers are accessed through a peripheral shared-memory window, translated by ranges.\n\n[원문 확인](https://lore.landau.one/lkml/20261118085742.1817536-2-yang.wang@deepcomputing.io/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "arm64 BBML3 errata workarounds and cleanup (커버레터)",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/13/2169",
+      "note": "thread"
+    },
+    {
+      "title": "Cortex-X4 erratum 3043263",
+      "url": "https://lore.landau.one/lkml/20261113145022.2592454-3-ryan.roberts@arm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "BBML3 시리즈 for-next/fixes 적용",
+      "url": "https://lore.kernel.org/linux-arm-kernel/179502639862.2187887.16636130062052880342.b4-ty@b4/",
+      "note": "thread"
+    },
+    {
+      "title": "kCFI kexec typed entry 패치",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/11/3840",
+      "note": "thread"
+    },
+    {
+      "title": "kCFI 패치 for-next/fixes 적용",
+      "url": "https://lore.kernel.org/linux-arm-kernel/179502639864.2187887.8685436920018120058.b4-ty@b4/",
+      "note": "thread"
+    },
+    {
+      "title": "cpufeature override 검사 패치",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/13/1060",
+      "note": "thread"
+    },
+    {
+      "title": "Catalin Marinas 7.5 defer 리뷰",
+      "url": "https://lore.landau.one/lkml/av3sjKa4g6-pRE-K@arm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "efi_image_info v3 시리즈",
+      "url": "https://lore-kernel.gnuweeb.org/linux-efi/20261116142618.1687025-26-ardb+git@google.com/t/",
+      "note": "thread"
+    },
+    {
+      "title": "Milk-V Megrez dt-binding",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/17/3477",
+      "note": "thread"
+    },
+    {
+      "title": "Megrez v2 최소 DTS",
+      "url": "https://lore.landau.one/lkml/20261118-eic7700-megrez-v2-0-0113ebc5b670@iscas.ac.cn/",
+      "note": "thread"
+    },
+    {
+      "title": "SpacemiT K3 eSPI binding",
+      "url": "https://lore.landau.one/lkml/20261118085742.1817536-2-yang.wang@deepcomputing.io/",
+      "note": "thread"
+    },
+    {
+      "title": "K3 eSPI vs fsl,espi 질문",
+      "url": "https://lore.landau.one/lkml/20261118-backdrop-scrap-1bee34e06336@spud/",
+      "note": "thread"
+    },
+    {
+      "title": "SpacemiT K3 EC keyboard 시리즈",
+      "url": "https://lore.landau.one/lkml/20261118085742.1817536-8-yang.wang@deepcomputing.io/T/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-18T18:31:56.408Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

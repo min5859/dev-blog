@@ -1,0 +1,128 @@
+{
+  "id": "2026-11-19-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-11-19 RISC-V 원자연산 — 리눅스 퍼포먼스·RT",
+  "headline": "RISC-V에서 AMO 트랩 비용을 피하는 LR/SC 전용 빌드와 BPF verifier·XDP 경로 보안·회귀 패치가 동시에 논의됐습니다.",
+  "date": "2026-11-19",
+  "summary": "Mobileye 제안은 ZAAMO를 끄고 커널 원자 연산을 LR/SC로 고정해 futex·sched 벤치에서 최대 44% 개선을 보고합니다. bpf 메일링에서는 kptr 덮기·offload map-in-map·libbpf enum CO-RE와 STMMAC·provider queue XDP 변경이 이어졌습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "riscv: restrict the ISA used for atomics to avoid unsupported or slow AMO",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "RISC-V 임베디드·ADAS(eyeQ7h 클래스)·PREEMPT_RT futex 경로 추적자",
+      "verifyLink": "https://lore.kernel.org/bpf/20261118-lrsc-only-v7-0-602dcf4c1921@mobileye.com/",
+      "if": "RISC-V SoC에서 AMO가 M-mode 트랩으로 에뮬레이션되어 futex·스케줄러 지연이 커진다면",
+      "do": "RISCV_ISA_ZAAMO(Kconfig, 기본 y) 설정과 -march 선택을 검토하고 LR/SC 전용 커널로 측정해 보세요.",
+      "verify": "커버레터의 futex·sched 벤치와 fw_illegal_insn 카운터를 lore 스레드에서 직접 확인하세요."
+    },
+    {
+      "title": "bpf: Check variable-offset accesses against special fields",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "BPF verifier·PTR_TO_BTF_ID·kptr 프로그램 작성·리뷰 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20261118162108.178069-1-shlomojune6@gmail.com/",
+      "if": "수동 BTF에서 변수 오프셋으로 겹치는 필드를 쓰는 BPF 프로그램을 운영한다면",
+      "do": "btf_struct_access() 수정안이 머지되기 전까지 겹침 레이아웃·__kptr 접근 패턴을 코드 리뷰에서 차단하세요.",
+      "verify": "스레드의 arr[i]가 __kptr를 덮는 시나리오와 선행 커밋 89e72f81a455 맥락을 원문에서 확인하세요."
+    },
+    {
+      "title": "bpf: Reject offloaded maps as map-in-map inner maps",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF map offload·NIC 드라이버 map-in-map 사용자",
+      "verifyLink": "https://lore.kernel.org/bpf/20261118161632.177820-1-shlomojune6@gmail.com/",
+      "if": "map-in-map에 offloaded inner map을 쓰는 NIC offload 스택을 가진다면",
+      "do": "패치 적용 전까지 해당 조합을 배포하지 말고 verifier/JIT가 software 레이아웃을 쓰지 않는지 검증하세요.",
+      "verify": "HASH lookup이 htab 할당 밖을 읽는 설명과 a38845729ea3 offload 인프라 커밋을 링크에서 확인하세요."
+    },
+    {
+      "title": "net: stmmac: fix num tx queues in stmmac_xdp_get_tx_queue()",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "stmmac·XDP_TX·tc-mqprio 드라이버 유지보수 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/sashiko-outbox-221383@kernel.org/",
+      "if": "STMMAC에서 XDP_TX와 tc-mqprio offload를 함께 쓴다면",
+      "do": "priv->xmit_qdisc.num_tx_queues 기준 래핑 패치와 머지 여부를 추적하고 큐 인덱스 오동작을 재현 테스트하세요.",
+      "verify": "Sashiko outbox 스레드의 diff 설명과 num_tx_queues 레이스 가능성 질문을 원문에서 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**bpf: Check variable-offset accesses against special fields**\n\nbtf_struct_access()가 겹치는 수동 BTF 멤버에서 변수 오프셋 쓰기를 min_off만 검사해 __kptr가 덮이던 경로를, reg->step 간격으로 min_off부터 max_off까지 모든 필드와 대조하도록 고칩니다.\n\n영향: 허용된 BPF 프로그램이 kptr를 깨뜨리고 bpf_obj_free_fields()에서 이중 해제·UAF로 이어질 수 있어 verifier 경로를 따라가는 RT·XDP 워크로드도 동일한 검증 규칙 영향을 받습니다.\n\n> A 4-byte store to arr[i] passes the check at offset 0 and overwrites p at run time for i == 2 or 3\n\n[원문 확인](https://lore.kernel.org/bpf/20261118162108.178069-1-shlomojune6@gmail.com/)\n\n**bpf: Reject offloaded maps as map-in-map inner maps**\n\nbpf_map_meta_equal()이 offloaded map을 software 템플릿과 같다고 보던 문제를, offload ops의 map_meta_equal을 제거하고 ops 포인터까지 비교해 map-in-map inner 및 템플릿 매칭을 거부합니다.\n\n영향: 잘못 매칭되면 verifier/JIT가 software 레이아웃으로 offloaded 객체를 다루며 ARRAY/HASH lookup이 dev_priv·htab 영역 밖을 읽고 쓰거나 NULL map_lookup_elem로 이어질 수 있습니다.\n\n> a HASH lookup reads bpf_htab fields past the 320-byte allocation\n\n[원문 확인](https://lore.kernel.org/bpf/20261118161632.177820-1-shlomojune6@gmail.com/)\n\n**net: stmmac: fix num tx queues in stmmac_xdp_get_tx_queue()**\n\nstmmac_xdp_get_tx_queue()의 CPU→TX 큐 래핑이 plat->tx_queues_to_use 대신 priv->xmit_qdisc.num_tx_queues를 써서 tc-mqprio offload 시 real_num_tx_queues 범위를 벗어나지 않게 합니다.\n\n영향: XDP_TX와 mqprio offload를 함께 쓰는 STMMAC 경로에서 잘못된 큐 인덱스는 패킷 드롭·드라이버 오동작으로 이어져 XDP 성능·지연 측정을 왜곡합니다.\n\n> bounds the CPU-based TX queue selection ... by priv->xmit_qdisc.num_tx_queues instead of priv->plat->tx_queues_to_use\n\n[원문 확인](https://lore.kernel.org/bpf/sashiko-outbox-221383@kernel.org/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**riscv: restrict the ISA used for atomics to avoid unsupported or slow AMO**\n\nRISC-V 커널 빌드에 RISCV_ISA_ZAAMO(Kconfig, 기본 y)을 두고, 끄면 -march에서 \"a\" 대신 _zalrsc만 쓰며 커널 원자 연산을 AMO 대신 LR/SC 루프로 컴파일 타임 선택합니다.\n\n영향: AMO가 M-mode 트랩으로 에뮬레이션되는 SoC에서는 futex·스케줄러 등 원자 연산 비용이 수백 사이클로 치솟아 RT·네트워킹 지연에 직결되므로, LR/SC 전용 커널로 18~44% 수준의 futex·sched 벤치 개선이 보고됩니다.\n\n> futex requeue, 24 threads         0.064 ms    0.036 ms    -44%\n\n[원문 확인](https://lore.kernel.org/bpf/20261118-lrsc-only-v7-0-602dcf4c1921@mobileye.com/)\n\n> AMO emulated by an M-mode trap           about 600 cycles\n\nv7 시리즈 머지·hwprobe AMO 보고 패치와의 통합 일정은 확인이 필요합니다.\n\n**libbpf: Zero-extend unsigned 32-bit enum values in CO-RE relocations**\n\nbpf_core_calc_enumval_relo()가 32비트 enum을 __s32로만 읽어 부호 확장하던 동작을 btf_enum_value()(kflag 반영)로 바꾸고, 동일 로직을 커널 include/linux/btf.h·relo_core.c에도 맞춥니다.\n\n영향: 0x80000000 이상 부호 없는 enum CO-RE(예: dentry_flags)가 로드 실패하거나 잘못 패치되어 XDP·perf selftest의 CO-RE 오브젝트 빌드·런타임 상수가 깨질 수 있습니다.\n\n> libbpf: prog 'p': relo #0: unexpected insn #0 (LDIMM64) value: got 2147483648\n\n[원문 확인](https://lore.kernel.org/bpf/20261118161053.1768878-1-yonghong.song@linux.dev/)\n\n**net: Admit native XDP on provider queues**\n\nnetif_xdp_mp_ok()가 native(XDP_MODE_DRV)와 xdp_unreadable provider만 허용하도록 하고, netif_xdp_propagate()가 memory provider 사용 중에도 조건부로 XDP_SETUP_PROG 전파를 허용합니다.\n\n영향: devmem·zero-copy RX provider와 native XDP를 같은 netdev에서 쓰는 고성능 경로의 첨부 규칙이 바뀌어 page pool·XDP selftest·드라이버 마이그레이션 계획에 영향을 줍니다.\n\n> allows native XDP programs to run alongside unreadable memory providers on drivers that set netdev_queue_mgmt_ops.xdp_unreadable\n\n[원문 확인](https://lore.kernel.org/bpf/sashiko-outbox-221553@kernel.org/)\n\n> Does netif_xdp_mp_ok() miss native XDP programs propagated from an upper device such as bonding or hv_netvsc?\n\nd33c78f94dc0 커밋의 mainline 반영 여부와 bonding/hv_netvsc 상위 전파에 대한 maintainer 응답은 확인이 필요합니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "riscv LR/SC-only atomics v7 cover letter",
+      "url": "https://lore.kernel.org/bpf/20261118-lrsc-only-v7-0-602dcf4c1921@mobileye.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf variable-offset BTF access fix",
+      "url": "https://lore.kernel.org/bpf/20261118162108.178069-1-shlomojune6@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Relax requirements for PTR_TO_BTF_ID variable reads",
+      "url": "https://github.com/torvalds/linux/commit/89e72f81a455",
+      "note": "commit"
+    },
+    {
+      "title": "bpf reject offloaded map-in-map inner",
+      "url": "https://lore.kernel.org/bpf/20261118161632.177820-1-shlomojune6@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "BPF map offload infrastructure",
+      "url": "https://github.com/torvalds/linux/commit/a38845729ea3",
+      "note": "commit"
+    },
+    {
+      "title": "libbpf unsigned enum CO-RE zero-extend",
+      "url": "https://lore.kernel.org/bpf/20261118161053.1768878-1-yonghong.song@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "libbpf enum64 relocation support",
+      "url": "https://github.com/torvalds/linux/commit/23b2a3a8f63a",
+      "note": "commit"
+    },
+    {
+      "title": "stmmac XDP TX queue index fix",
+      "url": "https://lore.kernel.org/bpf/sashiko-outbox-221383@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "native XDP on provider queues",
+      "url": "https://lore.kernel.org/bpf/sashiko-outbox-221553@kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-18T18:28:37.621Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,138 @@
+{
+  "id": "2026-11-19-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-11-19 ashmem 회귀 백포트 — Android 커널",
+  "headline": "android16-6.12에 ashmem unpinned 합산 overflow 수정이 백포트되고, mainline 회귀·머지 항목이 dossier에 재수집되었습니다.",
+  "date": "2026-11-19",
+  "summary": "신규로는 6.12 ACK에 mainline과 동일한 ashmem unpinned 페이지 u128 합산 수정이 들어왔습니다. 나머지 10건은 seenBefore로 이전 브리핑과 같은 커밋이며, 회귀·릴리스·빌드 신호가 함께 유지됩니다.",
+  "tags": [
+    "안드로이드",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "ashmem: unpinned 페이지 합산 overflow",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "ashmem_rust/LRU·shrinker를 쓰는 앱·프레임워크 및 ACK mainline",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/95156276348a48af839866ac2abaf0008028e775",
+      "if": "대량 sparse unpinned ashmem을 동시에 다루는 경로를 테스트한다면",
+      "do": "mainline ACK에 해당 커밋이 포함된 빌드에서 shrinker·ioctl 합산 경로를 재현해 보세요.",
+      "verify": "원문 커밋에서 u128 추적과 포화 usize 노출 변경을 확인하세요."
+    },
+    {
+      "title": "ashmem: vmfile fops에서 mmap_prepare 제거",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "/dev/ashmem 사용 프로세스 및 GKI ashmem 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/08a3efe1ff960a381689797f790dda3070ffe70f",
+      "if": "panic_on_warn=1 환경에서 ashmem mmap·remap 경로를 검증한다면",
+      "do": "WARN_ON_ONCE 없이 mmap만 쓰는지 해당 빌드로 회귀 테스트를 수행하세요.",
+      "verify": "커밋 본문의 can_mmap_file() WARN_ON_ONCE 설명을 대조하세요."
+    },
+    {
+      "title": "init: pid 1에 CLONE_FS 복원",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Android 부트/init 및 ACK mainline 통합 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/d82b1e9acccf66dcebefedad2635d28e1d63d895",
+      "if": "init 마운트 unshare 이후 펌웨어 로드가 실패한다면",
+      "do": "해당 커밋 반영 빌드에서 kworker 루트 FS 접근과 부트 시퀀스를 확인하세요.",
+      "verify": "openQuestions에 적힌 업스트림 대응·hack 제거 계획은 원문에서 추가 확인이 필요합니다."
+    },
+    {
+      "title": "ashmem: android16-6.12 overflow 백포트",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "android16-6.12 ACK 및 ashmem_rust 사용자",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/5228562af4fa87e987989e0a55f5c01d71f2aae1",
+      "if": "6.12 ACK에서 ashmem unpinned 대량 시나리오를 다룬다면",
+      "do": "브랜치에 백포트된 u128 합산·shrinker/ioctl 경계 수정이 들어간 커널로 재테스트하세요.",
+      "verify": "인용문과 mainline 동일 수정 여부를 커밋 diff에서 확인하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Merge tag 'erofs-for-7.4-rc1' into android-mainline**\n\nerofs-for-7.4-rc1 태그를 android-mainline에 머지해 erofs 업데이트를 반영했습니다.\n\n영향: 파일 백드 마운트 superblock 공유·iomap 경로 등 erofs 개선이 ACK mainline에 들어와 스토리지/읽기 전용 루트 이미지 동작에 영향을 줍니다.\n\n> Support superblock sharing for file-backed mounts\n\n  - Use iomap for file-backed mounts on unencoded inodes\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/7b9498b77066bd2a55f607e82a05b0888dde990a)\n\n**Merge drm-fixes-2026-09-05 into android-mainline**\n\ndrm-fixes-2026-09-05 태그를 android-mainline에 머지했고 dma-heap.c 충돌을 해결했습니다.\n\n영향: v7.3-rc2 방향 업스트림 DRM/dma-buf 수정을 가져오되, Android downstream dma_heap 헬퍼와 fd 게시 시점 보안 수정을 함께 유지합니다.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/718136b3ae37acbdcda64dc8e373b26cb5082ca1)\n\n(위 두 머지는 seenBefore 항목이며, dossier에 별도 진척 필드는 없습니다. drm 머지 인용 quote는 검증 실패로 본문에 인용하지 않았습니다.)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ANDROID: ashmem: avoid overflow when summing unpinned page counts (android16-6.12)**\n\nandroid16-6.12 브랜치에 mainline과 동일한 ashmem unpinned 페이지 합산 overflow 수정을 백포트했습니다.\n\n영향: 6.12 ACK에서도 대규모 unpinned ashmem 시 패닉과 shrinker/ioctl 계산 오류를 방지합니다.\n\n> track the exact page total in a u128 while exposing a saturated usize to the shrinker, bound the shrinker and ioctl counts\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/5228562af4fa87e987989e0a55f5c01d71f2aae1)\n\n**ANDROID: ashmem: avoid overflow when summing unpinned page counts (mainline)**\n\n전역 unpinned 페이지 합산을 u128으로 추적하고 shrinker/ioctl에는 포화된 usize를 노출하도록 변경했습니다.\n\n영향: 대량 sparse unpinned 시 usize 합산 overflow로 커널 패닉이 날 수 있어 메모리 회수 경로를 안전하게 합니다.\n\n> Unpinned page counts across all open ashmem files are summed in a usize, which overflows and panics when enough large sparse regions are unpinned simultaneously.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/95156276348a48af839866ac2abaf0008028e775)\n\n**ANDROID: ashmem: clear .mmap_prepare in vmfile fops**\n\nashmem vmfile fops에서 .mmap_prepare를 제거해 .mmap만 사용하도록 했습니다.\n\n영향: shmem mmap_prepare 도입 후 mmap+remap_file_pages 경로에서 WARN_ON_ONCE가 발생하고 panic_on_warn=1 시 패닉할 수 있습니다.\n\n> When both are set, can_mmap_file() raises WARN_ON_ONCE(). When panic_on_warn=1 is set, this results in a kernel panic.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/08a3efe1ff960a381689797f790dda3070ffe70f)\n\n**ANDROID: init: spawn pid 1 with CLONE_FS**\n\npid 1 생성 시 CLONE_FS를 다시 사용하도록 되돌렸습니다.\n\n영향: init이 마운트 네임스페이스를 unshare할 때 kworker가 루트 파일시스템에 접근하지 못해 펌웨어 로드가 깨지는 부트 회귀를 완화합니다.\n\n> When Android init then unshares its mount namespace, kworkers lose access to the root filesystem, which breaks firmware loading.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/d82b1e9acccf66dcebefedad2635d28e1d63d895)\n\n(업스트림 14adbd5341aa 대응의 영구 해결 시점과 hack 제거 계획은 openQuestions 기준으로 원문 추가 확인이 필요합니다.)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**ANDROID: wrapfd: Ensure wrap is not empty in wrapfd_put_mappable()**\n\nwrapfd_put_mappable()에서 빈 wrap에 대해 실패하도록 검사를 추가했습니다.\n\n영향: 잘못된 put 경로를 조기에 차단해 wrapfd mmap 해제 시 undefined 동작을 줄입니다.\n\n> wrapfd_put_mappable() should fail on empty wraps, so add a check to ensure that happens.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/a24ebae0f0c5f4717711af9ab310232fe1f95120)\n\n**ANDROID: fuse: Parenthesize task states passed to wait_event_state**\n\nFUSE request_wait_answer의 wait_event_state 인자에 TASK 마스크 괄호를 추가해 -Werror=parentheses 빌드 오류를 제거했습니다.\n\n영향: freezable wait 회귀 수정 후 KernelCI/gcc에서 fuse가 빌드되지 않던 문제를 해소합니다.\n\n> Wrap both masks in parentheses, as the fanotify and smb callers of wait_event_state do, to fix this.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/b2c4bcc4a8766df8a1359d799be84695658b3c76)\n\n**ANDROID: gki_defconfig: Build with DPM watchdog**\n\nGKI defconfig에 DPM watchdog를 컴파일하되 CONFIG_DPM_WATCHDOG_ENABLED는 비활성으로 두고, 타임아웃/경고 값만 기본 설정합니다.\n\n영향: 서스펜드/재개 중 잠금 감지·디버그 덤프를 opt-in(pm.dpm_watchdog_enabled=1)으로 쓸 수 있게 하면서, 기본값에서는 예기치 않은 패닉을 막습니다.\n\n> Importantly, CONFIG_DPM_WATCHDOG_ENABLED is explicitly left unset.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/866c7b3e681dfe0aa213fb8d3562d383fabe24fd)\n\n**ANDROID: ashmem: Read the pin argument for GET_PIN_STATUS**\n\nASHMEM_GET_PIN_STATUS ioctl이 struct ashmem_pin 크기만큼 사용자 버퍼를 읽도록 C 드라이버와 동일하게 맞췄습니다.\n\n영향: _IO() 정의로 _IOC_SIZE가 0이면 ioctl이 항상 -EFAULT로 실패하던 Rust ashmem 회귀를 고칩니다.\n\n> ASHMEM_GET_PIN_STATUS is defined with _IO(), so _IOC_SIZE() is zero for it, and the reader that ioctl() builds from it cannot hold a struct ashmem_pin.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/cc1c7ff323bdef240dc430508616414a9d65a91a)\n\n**ANDROID: gki_defconfig: enable REFCOUNT_INTERRUPT_KUNIT_TEST**\n\nGKI defconfig에 CONFIG_REFCOUNT_INTERRUPT_KUNIT_TEST를 켰습니다.\n\n영향: 업스트림에서 KUnit 테스트 선택용 Kconfig가 분리된 뒤에도 GKI 빌드에서 refcount interrupt KUnit 모듈이 계속 빌드·실행되도록 합니다.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/83c0e0cc2b172d5dde4d7d7f6259edd30e8748b3)\n\n(해당 항목 confidence는 medium이며, evidence quote 검증 실패로 인용문은 생략했습니다.)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ANDROID: gki_defconfig: Build with DPM watchdog",
+      "url": "https://android.googlesource.com/kernel/common/+/866c7b3e681dfe0aa213fb8d3562d383fabe24fd",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: wrapfd: Ensure wrap is not empty in wrapfd_put_mappable()",
+      "url": "https://android.googlesource.com/kernel/common/+/a24ebae0f0c5f4717711af9ab310232fe1f95120",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: fuse: Parenthesize task states passed to wait_event_state",
+      "url": "https://android.googlesource.com/kernel/common/+/b2c4bcc4a8766df8a1359d799be84695658b3c76",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: ashmem: avoid overflow when summing unpinned page counts (mainline)",
+      "url": "https://android.googlesource.com/kernel/common/+/95156276348a48af839866ac2abaf0008028e775",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: ashmem: clear .mmap_prepare in vmfile fops",
+      "url": "https://android.googlesource.com/kernel/common/+/08a3efe1ff960a381689797f790dda3070ffe70f",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: ashmem: Read the pin argument for GET_PIN_STATUS",
+      "url": "https://android.googlesource.com/kernel/common/+/cc1c7ff323bdef240dc430508616414a9d65a91a",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: gki_defconfig: enable REFCOUNT_INTERRUPT_KUNIT_TEST",
+      "url": "https://android.googlesource.com/kernel/common/+/83c0e0cc2b172d5dde4d7d7f6259edd30e8748b3",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: init: spawn pid 1 with CLONE_FS",
+      "url": "https://android.googlesource.com/kernel/common/+/d82b1e9acccf66dcebefedad2635d28e1d63d895",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: ashmem: avoid overflow when summing unpinned page counts (android16-6.12)",
+      "url": "https://android.googlesource.com/kernel/common/+/5228562af4fa87e987989e0a55f5c01d71f2aae1",
+      "note": "commit"
+    },
+    {
+      "title": "Merge drm-fixes-2026-09-05 into android-mainline",
+      "url": "https://android.googlesource.com/kernel/common/+/718136b3ae37acbdcda64dc8e373b26cb5082ca1",
+      "note": "commit"
+    },
+    {
+      "title": "Merge tag 'erofs-for-7.4-rc1' into android-mainline",
+      "url": "https://android.googlesource.com/kernel/common/+/7b9498b77066bd2a55f607e82a05b0888dde990a",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-18T18:02:54.051Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/android-newsletter-from-dossier-ko.md"
+  }
+}

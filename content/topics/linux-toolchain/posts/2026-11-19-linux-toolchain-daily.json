@@ -1,0 +1,123 @@
+{
+  "id": "2026-11-19-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-11-19 jiffies Wunsequenced — Linux 툴체인",
+  "headline": "Clang -Wunsequenced가 sched·blk 경로를 건드리고, RISC-V Zaamo와 Rust DRM file 수명 API가 툴체인·드라이버 설계를 당깁니다.",
+  "date": "2026-11-19",
+  "summary": "LLVM의 volatile 비순차 접근 경고가 CONFIG_WERROR=y 빌드에서 sched/topology와 blk-throttle을 연달아 건드렸고, RISC-V는 Zaamo 없이 LR/SC만 쓰는 빌드 옵션이 올라왔습니다. Rust DRM은 file private data를 수명 매개변수화해 unbind 시 stale 참조를 막는 방향으로 API가 움직입니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "blk-throttle: jiffies -Wunsequenced 수정 적용",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "ClangBuiltLinux 구독자, block/blk-throttle 유지보수자",
+      "verifyLink": "https://lore.kernel.org/llvm/179501805630.17649.245726738544852847.b4-ty@b4/",
+      "if": "CONFIG_WERROR=y로 block 서브시스템까지 Clang 빌드하는 CI를 운영한다면",
+      "do": "throtl_schedule_pending_timer() 수정이 block 트리에 반영된 시점과 커밋 ae1171f38098 추적을 우선하세요",
+      "verify": "Jens Axboe의 Applied 회신과 인용 커밋 해시를 lore 스레드에서 확인하세요"
+    },
+    {
+      "title": "riscv: Zaamo 비활성 시 LR/SC atomics",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "RISC-V 툴체인·Kbuild 담당, Rust for Linux·BPF JIT 유지보수자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20261118-lrsc-only-v7-0-602dcf4c1921@mobileye.com/",
+      "if": "AMO 트랩이 비싼 eyeq7h·P8700 계열에서 커널을 빌드한다면",
+      "do": "CONFIG_RISCV_ISA_ZAAMO와 in-tree Rust·BPF JIT·RUSTC_SUPPORTS_RISCV 의존 관계를 Kconfig에서 맞춰 보세요",
+      "verify": "v7 커버 레터의 -march _zalrsc 동작과 AMO 의존 설명을 rust-for-linux 스레드에서 확인하세요"
+    },
+    {
+      "title": "Rust DRM: file private data 수명 매개변수화",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust for Linux DRM 바인딩·Nova/Tyr 드라이버 개발자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20261118163203.2483856-1-dakr@kernel.org/",
+      "if": "Nova·Tyr 등 Rust DRM 드라이버에서 per-file 상태를 registration과 묶으려 한다면",
+      "do": "Driver::File 수명 매개변수와 RegistrationGuard·GEM open/close 변경에 맞춰 File 타입을 재설계하세요",
+      "verify": "Registration::drop()이 열린 file data를 먼저 폐기한다는 커버 레터 설명을 원문에서 확인하세요"
+    },
+    {
+      "title": "sched/topology: sd_init() jiffies 경고",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "Clang 커널 빌드 운영자, sched/topology 유지보수자",
+      "verifyLink": "https://lore.kernel.org/llvm/20261116-topology-wunsequenced-v2-1-54611119172b@kernel.org/",
+      "if": "ClangBuiltLinux에서 스케줄러/topology까지 W=error로 빌드한다면",
+      "do": "지역 변수로 jiffies 한 값을 쓰는 v2 패턴과 Peter Zijlstra가 제안한 캐스트 논의 후속을 함께 보세요",
+      "verify": "mainline 머지 여부와 캐스트만으로 경고 제거 가능 여부는 아직 스레드 합의가 확인되지 않았으니 lore를 직접 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**sched/topology: Avoid unsequenced accesses to jiffies in sd_init()**\n\nv2 패치는 sd_init() 지정 초기화자에서 jiffies를 두 번 읽어 Clang -Wunsequenced가 CONFIG_WERROR=y 빌드를 깨는 문제를, jiffies를 지역 변수에 담아 한 값으로 초기화하도록 고칩니다. Peter Zijlstra는 jiffies의 volatile 의미와 수정 필요성을 llvm 스레드에서 논의 중입니다.\n\n영향: ClangBuiltLinux·W=error로 스케줄러/topology까지 빌드하는 툴체인·CI 담당자는 최신 Clang 경고가 sched 코드로 확산되는지와 유지보수자가 채택할 패턴을 추적해야 합니다.\n\n> After a recent improvement in clang to warn on unsequenced accesses to\nvolatile variables [1], an instance appears in sd_init(), which can\nbreak the build with CONFIG_WERROR=y / W=e:\n\n[원문 확인](https://lore.kernel.org/llvm/20261116-topology-wunsequenced-v2-1-54611119172b@kernel.org/)\n\n**blk-throttle: Avoid unsequenced accesses to jiffies in throtl_schedule_pending_timer()**\n\nv2 패치는 throtl_schedule_pending_timer()에서 같은 함수 호출 인자 안에 jiffies가 두 번 나와 Clang -Wunsequenced에 걸리는 코드를, jiffies를 지역 변수 j에 저장한 뒤 사용하도록 바꿉니다. Jens Axboe가 Applied로 회신했고 커밋 ae1171f38098을 인용합니다.\n\n영향: CONFIG_WERROR=y로 block 서브시스템까지 Clang 빌드하는 distro·CI는 blk-throttle 경로가 최신 LLVM 경고 때문에 깨지지 않도록 block 트리 반영 시점을 봐야 합니다. ae1171f38098이 torvalds/master에 이미 있는지는 본 조사에서 cgit 본문 확인이 되지 않았습니다.\n\n> block/blk-throttle.c:469:25: error: unsequenced accesses to volatile qualified 'jiffies' [-Werror,-Wunsequenced]\n    469 |                    expires - jiffies, jiffies);\n\n[원문 확인](https://lore.kernel.org/llvm/179501805630.17649.245726738544852847.b4-ty@b4/)\n\n**riscv: build kernel atomics from LR/SC when Zaamo is disabled**\n\nv7 시리즈는 CONFIG_RISCV_ISA_ZAAMO(기본 y)를 추가하고, 끄면 -march에 _zalrsc만 쓰며 커널 atomic·bitops·futex·BPF JIT이 LR/SC 루프로 생성됩니다. AMO가 M-mode 트랩으로 느린 MIPS P8700/eyeq7h 같은 CPU를 대상으로 하며 RUSTC_SUPPORTS_RISCV 등 AMO 의존 Kconfig도 Zaamo에 묶입니다.\n\n영향: RISC-V를 Clang/GCC 최신 -march 확장과 함께 빌드하는 툴체인·임베디드 담당자는 Zaamo 비활성 커널이 in-tree Rust·BPF JIT·userspace hwcap 보고와 어떻게 맞물리는지, 그리고 GCC 15.1+ 요구를 추적해야 합니다. v7 mainline 머지 일정과 hwprobe A-less IMA 플래그 질문에 대한 maintainer 답변은 아직 확인되지 않았습니다.\n\n> With it off, -march carries _zalrsc instead of \"a\" and every\nkernel atomic is an LR/SC loop, selected with the preprocessor like\nthe other ISA options.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20261118-lrsc-only-v7-0-602dcf4c1921@mobileye.com/)\n\n**lifetime-parameterized DRM File private data**\n\nv3 7패치 시리즈는 Rust DRM의 Driver::File을 수명 매개변수화해 per-file 상태가 RegistrationData를 빌릿할 수 있게 하고, unbind 시 Registration::drop()이 열린 file data를 폐기·대기한 뒤 registration data를 내립니다. fops.open과 GEM open/close는 RegistrationGuard로 감쌉니다.\n\n영향: Nova·Tyr 등 Rust DRM 드라이버 작성자는 file-private 데이터가 등록 수명과 타입 수준에서 묶이지 않으면 unbind 후 stale 참조 위험이 있으므로, drm-rust-next 반영 시 File 타입·GEM 콜백을 재설계해야 합니다. drm-rust-next 대비 머지 순서와 maintainer Ack 여부는 본 조사에서 스레드 후속 메일이 확인되지 않았습니다.\n\n> Registration::drop()\nrevokes all open file data and waits for its destruction before dropping\nregistration data.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20261118163203.2483856-1-dakr@kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "Peter Zijlstra는 sd_init() 수정 방식으로 jiffies에 명시적 캐스트가 가능한지 llvm 리뷰 스레드에서 논의합니다.\n\n> jiffies is ancient; it stems from before we had READ_ONCE() and friends.\n\nCould it be fixed by adding an explicit cast? Say:\n\n\t.last_balance = (unsigned long)jiffies,\n\n[원문 확인](https://lore.kernel.org/llvm/20261118094726.GM1813469@noisy.programming.kicks-ass.net/)\n\nLLVM 쪽 근거로 llvm-project 커밋 955715460eaf9188c241c74750637fc82dfcc423이 volatile 비순차 접근 경고 개선으로 링크됩니다.\n\n> Warn on unsequenced accesses to volatile variables\n\n[원문 확인](https://github.com/llvm/llvm-project/commit/955715460eaf9188c241c74750637fc82dfcc423)\n\neyeq7h 타깃에서 AMO 에뮬레이션 비용 배경은 rust-for-linux 패치 1/6에서 설명합니다.\n\n> MIPS P8700 traps every AMO instruction into M-mode and emulates it there, so the extension is supported but very slow.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20261118-lrsc-only-v7-1-602dcf4c1921@mobileye.com/)\n\nDRM file 수명 작업 브랜치는 git.kernel.org dakr/linux.git의 drm/file에 공개되어 있습니다.\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/dakr/linux.git/log/?h=drm/file)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "sched/topology jiffies -Wunsequenced v2",
+      "url": "https://lore.kernel.org/llvm/20261116-topology-wunsequenced-v2-1-54611119172b@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "Peter Zijlstra jiffies volatile 논의",
+      "url": "https://lore.kernel.org/llvm/20261118094726.GM1813469@noisy.programming.kicks-ass.net/",
+      "note": "thread"
+    },
+    {
+      "title": "blk-throttle jiffies -Wunsequenced",
+      "url": "https://lore.kernel.org/llvm/179501805630.17649.245726738544852847.b4-ty@b4/",
+      "note": "thread"
+    },
+    {
+      "title": "LLVM Warn on unsequenced volatile accesses",
+      "url": "https://github.com/llvm/llvm-project/commit/955715460eaf9188c241c74750637fc82dfcc423",
+      "note": "commit"
+    },
+    {
+      "title": "RISC-V Zaamo off LR/SC v7 cover",
+      "url": "https://lore.kernel.org/rust-for-linux/20261118-lrsc-only-v7-0-602dcf4c1921@mobileye.com/",
+      "note": "thread"
+    },
+    {
+      "title": "RISC-V LR/SC eyeq7h AMO 트랩",
+      "url": "https://lore.kernel.org/rust-for-linux/20261118-lrsc-only-v7-1-602dcf4c1921@mobileye.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Rust DRM lifetime-parameterized File",
+      "url": "https://lore.kernel.org/rust-for-linux/20261118163203.2483856-1-dakr@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "dakr/linux.git drm/file 브랜치",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/dakr/linux.git/log/?h=drm/file",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-18T18:21:45.180Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
