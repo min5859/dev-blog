@@ -1,0 +1,138 @@
+{
+  "id": "2026-11-20-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-11-20 NEON해크 제거·Clang감사 — Linux 툴체인",
+  "headline": "arm64 NEON stdint 해크 정리가 for-next에 들어갔고, Clang allyesconfig 감사가 net·wireless·NCSI 런타임 버그를 연쇄로 드러냈습니다.",
+  "date": "2026-11-20",
+  "summary": "kbuild 쪽에서는 NEON 리프 유닛 분리와 rust_build_error modversions 수정이 툴체인 신뢰도와 직결됩니다. LLVM=1 W=error 빌드에서는 반환값·초기화 경고가 실제 sysfs·협상·필터 버그로 이어지는 사례가 모였습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "NEON intrinsics stdint.h 타입 해크 제거",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "arm64/arm NEON 코드 유지보수자, Clang 커널 빌드 운영자",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/179508547602.2557572.9682726373932810888.b4-ty@b4/",
+      "if": "LLVM=1로 arm64 NEON·CRC·XOR 경로를 빌드한다면",
+      "do": "Catalin Marinas가 arm64 for-next/fixes에 올린 1–3패치와 stable cc 여부를 추적하세요.",
+      "verify": "머지 후 neon-intrinsics.h 매크로 해크와 -Wincompatible-pointer-types pragma 제거 여부를 원문 스레드와 커밋으로 확인하세요."
+    },
+    {
+      "title": "rust_build_error 심볼 버전 생성",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "Rust for Linux·kbuild 담당, MODVERSIONS 사용 배포판 빌드 엔지니어",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20261119-fix-rust-build-error-modversions-v2-1-1c2271cbcab5@gmail.com/",
+      "if": "CONFIG_MODVERSIONS와 in-tree Rust를 함께 켠 CI·배포판을 운영한다면",
+      "do": "v2 패치가 build_error.o의 gendwarfksyms 건너뛰기를 고쳐 modpost zero CRC를 막는지 빌드 로그를 보세요.",
+      "verify": "mainline·rust-next 머지와 maintainer Ack는 본 조사에서 미확인이므로 스레드 후속을 직접 확인하세요."
+    },
+    {
+      "title": "mac80211 Clang 반환값 두 건",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "mac80211 유지보수자, ClangBuiltLinux allyesconfig 운영자",
+      "verifyLink": "https://lore.kernel.org/llvm/cover.1795106967.git.irogers@google.com/",
+      "if": "wireless를 LLVM allyesconfig로 스캔하는 감사 범위를 넓힌다면",
+      "do": "미초기화 res와 -EIO enum 범위 이탈 수정이 WARN_ON·협상 경로에 미치는지 패치 본문을 검토하세요.",
+      "verify": "wireless-net 머지 일정과 커버 레터 함수명 오기 정정 여부는 확인이 필요합니다."
+    },
+    {
+      "title": "NCSI set_one_vid vid 초기화",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "net/ncsi 유지보수자, Clang -Wconditional-uninitialized 감사 담당",
+      "verifyLink": "https://lore.kernel.org/llvm/20261119171009.1534335-1-irogers@google.com/",
+      "if": "네트워크 스택에서 -Wconditional-uninitialized 우선순위를 잡는다면",
+      "do": "RCU VLAN 리스트 경합 시 vid=0 초기화가 NCSI SVF 필터 스택 쓰레기를 막는지 패치를 읽으세요.",
+      "verify": "NCSI 하드웨어 런타임 검증과 net 머지 일정은 패치·조사에 명시되지 않았습니다."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**(subset) [PATCH 0/4] Get rid of all NEON intrinsics stdint.h type hacks**\n\nArd Biesheuvel 시리즈는 freestanding stdint.h와 linux/types.h의 uintXX_t 정의 불일치를 asm/neon-intrinsics.h 매크로 오버라이드로 맞추던 방식을 제거하고, NEON 리프 유닛에서 kernel 헤더 의존을 끊습니다. Catalin Marinas는 arm64 for-next/fixes에 앞의 3패치를 적용했고 stable cc를 달았으며 arm32 정리 4번 패치는 별도 경로로 남겼습니다.\n\n영향: Clang이 stdint 매크로 오버라이드를 더 엄격히 다루는 환경에서 arm64 NEON·CRC·XOR 경로를 LLVM=1로 빌드하는 툴체인 담당자는 이 머지가 neon-intrinsics.h 해크와 -Wincompatible-pointer-types pragma 제거로 이어지는지 추적해야 합니다. torvalds/master 반영 시점과 stable cherry-pick 난이도, 4/4 arm32 패치의 Russell 트리 머지 일정은 본 조사에서 확인되지 않았습니다.\n\n> Applied the first three patches to arm64 (for-next/fixes), thanks! I also added a cc stable, though it won't be a straightforward cherry-pick.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/179508547602.2557572.9682726373932810888.b4-ty@b4/)\n\n**rust: kbuild: generate a symbol version for rust_build_error**\n\nv2 패치는 CONFIG_RUST_BUILD_ASSERT_ALLOW로 export되는 rust_build_error에 대해 build_error.o가 gendwarfksyms를 건너뛰어 modpost CRC가 0이 되던 kbuild 규칙을 고쳐, 기존 Rust 라이브러리 규칙으로 심볼 버전을 생성합니다.\n\n영향: CONFIG_MODVERSIONS와 in-tree Rust를 함께 켜는 CI·배포판은 rust_build_error 미버전 경고가 모듈 로드·ABI 검증 신뢰도를 깨므로 이 수정의 kbuild 트리 반영을 봐야 합니다. v2 패치 mainline·rust-next 머지 여부는 maintainer Ack 스레드 후속이 미확인입니다.\n\n> modpost warns that the export has no symbol version and records a zero CRC because the build_error.o rule skips gendwarfksyms.\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20261119-fix-rust-build-error-modversions-v2-1-1c2271cbcab5@gmail.com/)\n\n**net: pse-pd: pd692x0: Return fw_upload_err codes from firmware upload ops**\n\n패치는 PD692x0 펌웨어 업로드 헬퍼가 i2c_master_send/recv의 음수 errno를 enum fw_upload_err에 그대로 넣어 fw_upload_error()가 sysfs에 unknown-error를 내리던 버그를 FW_UPLOAD_ERR_RW_ERROR로 통일합니다.\n\n영향: LLVM=1 W=error Clang 감사가 드라이버 반환 타입 버그를 찾아내는 사례이므로, allyesconfig Clang 빌드와 PSE 펌웨어 업로드 디버깅을 함께 하는 엔지니어는 -Wimplicit-int-enum-cast 대응 패턴을 참고할 수 있습니다. net 트리 머지와 PD692x0 하드웨어 런타임 검증은 패치에 명시되지 않았습니다.\n\n> Found via Clang -Wimplicit-int-enum-cast on an x86_64 allyesconfig build.\n\n[원문 확인](https://lore.kernel.org/llvm/20261119171014.1534691-1-irogers@google.com/)\n\n**wifi: mac80211: Two return-value fixes from Clang warning audit**\n\n2패치 시리즈는 ieee80211_reconfig_nan_offload_de() 끝의 미초기화 res 반환과 drv_can_neg_ttlm()의 -EIO 반환을 각각 0과 NEG_TTLM_RES_REJECT로 고쳐 WARN_ON 및 협상 응답 경로 오류를 막습니다.\n\n영향: Clang -Wconditional-uninitialized·-Wimplicit-int-enum-cast가 mac80211의 실제 런타임 버그를 드러내는 전형적 사례이라, wireless 서브시스템을 LLVM으로 스캔하는 툴체인 팀이 동일 감사 범위를 확장할지 판단하는 데 참고가 됩니다.\n\n> Two return-value fixes in mac80211 found while auditing Clang warnings (-Wconditional-uninitialized and -Wimplicit-int-enum-cast) on an x86_64 allyesconfig build\n\n[원문 확인](https://lore.kernel.org/llvm/cover.1795106967.git.irogers@google.com/)\n\n**ncsi: Initialize vid in set_one_vid() to handle concurrent VLAN removal**\n\n패치는 set_one_vid()가 RCU VLAN 리스트가 동시에 비워지면 vid 스택 변수가 초기화되지 않은 채 NCSI SVF 필터에 쓰일 수 있는 경합을, vid=0 초기화로 -1 반환 경로에 맞춥니다.\n\n영향: BMC NCSI 경로는 드물게 Clang 빌드 대상이지만, -Wconditional-uninitialized이 네트워크 스택의 실제 데이터 경합 버그를 잡는 사례로 LLVM 감사 우선순위에 도움이 됩니다.\n\n> Found via Clang -Wconditional-uninitialized on an x86_64 allyesconfig build.\n\n[원문 확인](https://lore.kernel.org/llvm/20261119171009.1534335-1-irogers@google.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "NEON 시리즈 arm64 for-next 적용 (Catalin Marinas)",
+      "url": "https://lore.kernel.org/linux-kbuild/179508547602.2557572.9682726373932810888.b4-ty@b4/",
+      "note": "thread"
+    },
+    {
+      "title": "NEON stdint 타입 해크 제거 커버 레터",
+      "url": "https://lore.kernel.org/linux-kbuild/20261029135020.272082-6-ardb+git@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "lib/crc: Don't include linux/types.h in NEON intrinsics code",
+      "url": "https://git.kernel.org/arm64/c/ff049836f05f",
+      "note": "commit"
+    },
+    {
+      "title": "rust_build_error modversions v2 패치",
+      "url": "https://lore.kernel.org/linux-kbuild/20261119-fix-rust-build-error-modversions-v2-1-1c2271cbcab5@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Rust-for-Linux issue 1201 — symbol version warning",
+      "url": "https://github.com/Rust-for-Linux/linux/issues/1201",
+      "note": "article"
+    },
+    {
+      "title": "gendwarfksyms + extended modversions for CONFIG_MODVERSIONS",
+      "url": "https://github.com/Rust-for-Linux/linux/commit/ac61506bf2d1",
+      "note": "commit"
+    },
+    {
+      "title": "PD692x0 fw_upload_err 반환 수정",
+      "url": "https://lore.kernel.org/llvm/20261119171014.1534691-1-irogers@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "mac80211 Clang 반환값 수정 시리즈 커버",
+      "url": "https://lore.kernel.org/llvm/cover.1795106967.git.irogers@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "mac80211 NAN offload 미초기화 res",
+      "url": "https://lore.kernel.org/llvm/d544415f-9b6c-94bc-49b0-e784d9c1b6ad",
+      "note": "thread"
+    },
+    {
+      "title": "mac80211 drv_can_neg_ttlm -EIO 수정",
+      "url": "https://lore.kernel.org/llvm/ae02ab481b5ce8259a22135255de5864777e37d9.1795106967.git.irogers@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "NCSI set_one_vid vid 초기화",
+      "url": "https://lore.kernel.org/llvm/20261119171009.1534335-1-irogers@google.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-19T18:21:20.267Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

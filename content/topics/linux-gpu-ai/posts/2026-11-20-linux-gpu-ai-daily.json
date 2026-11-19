@@ -1,0 +1,113 @@
+{
+  "id": "2026-11-20-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-11-20 sun4i DE33 plane — GPU·AI",
+  "headline": "sun4i DE33 plane·DSI enum·runtime PM 등 DRM 스택에서 bring-up·회귀·전원 경계 버그가 동시에 정리됩니다.",
+  "date": "2026-11-20",
+  "summary": "Allwinner H616 DE33용 공유 plane 드라이버 시리즈가 v6.17 mixer binding을 의도적으로 깨며 올바른 plane 할당 기반을 제시합니다. dsi-cm DCS 반환값·MediaTek OF graph·MSM/TIDSS mode_valid·analogix_dp detect 쪽 회귀·런타임 접근 이슈도 패치로 따라붙습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "drm/sun4i: update DE33 support",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "drm/sun4i·Allwinner H616 DE33·sunxi clk/DT 유지보수 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/dri-devel/20261119175437.2520400-1-jernej.skrabec@gmail.com/raw",
+      "if": "H616 DE33 듀얼 mixer·plane bring-up 또는 sunxi clk regmap 의존을 다루신다면",
+      "do": "v4 시리즈의 공유 plane 드라이버·신규 DT binding과 의도적 mixer binding 변경을 머지 순서에 맞춰 검토하세요",
+      "verify": "regmap export(63a29fbb4ecd)와 drm-misc-next 머지 순서는 스레드에서 추가 확인이 필요합니다"
+    },
+    {
+      "title": "drm/panel: dsi-cm DCS 반환값 정규화",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "drm/panel·DSI command-mode(dsi-cm)·OMAP/범용 DSI 호스트 연동 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/dri-devel/20261119170818.1528087-1-irogers@google.com/raw",
+      "if": "dsi-cm 패널 전원 시퀀스·hw_revision sysfs를 쓰거나 OMAP 경로 전환을 추적 중이시라면",
+      "do": "패치가 errno만 오류로 보고 양수 바이트 수는 성공으로 정규화하는지 빌드·부팅에서 확인하세요",
+      "verify": "하드웨어에서 dsicm_power_on 재현 여부는 아직 확인이 필요합니다"
+    },
+    {
+      "title": "drm/bridge: analogix_dp detect runtime PM",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "drm/bridge/analogix_dp·Rockchip/Exynos 등 runtime PM 사용 DP bridge 통합 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/dri-devel/20261119103742.1161858-1-m.szyprowski@samsung.com/raw",
+      "if": "DP 커넥터만 두고 bridge detect가 디스플레이 off 중에도 호출되는 보드를 다루신다면",
+      "do": "HPD 감지 전후 pm_runtime 참조와 resume 실패 시 unknown 반환 동작을 통합 테스트하세요",
+      "verify": "HPD GPIO만 있는 보드에서 폴링당 resume 비용이 과한지는 스레드에서 논의 중입니다"
+    },
+    {
+      "title": "drm/mediatek: mtk_drm_of_ddp_path_build ret 초기화",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "drm/mediatek·Device Tree display graph·MTK SoC bring-up 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/dri-devel/20261119171053.1537233-1-irogers@google.com/raw",
+      "if": "MediaTek DRM이 endpoint 없는 OF graph DT에서 probe 실패를 보신다면",
+      "do": "ret=0 초기화 한 줄 패치를 적용한 뒤 빈 ports 노드 DTS에서 probe가 통과하는지 확인하세요",
+      "verify": "shipping 제품 DTS에 빈 ports/endpoint가 실제로 있는지는 확인이 필요합니다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm/panel: dsi-cm: Normalize mipi_dsi_dcs_read/write() return values**\n\nIan Rogers 패치는 panel-dsi-cm의 DCS 래퍼가 표준 DSI 호스트의 양수 바이트 수 반환을 오류로 처리하던 버그를 고치고, 읽기 버퍼·hw_revision sysfs 경로의 미초기화 스택 사용을 막습니다.\n\n영향: OMAP 전용 dsi_vc 경로에서 표준 mipi_dsi_dcs_* 헬퍼로 바꾼 뒤에도 errno 스타일 검사가 남아 패널 전원 시퀀스·sysfs가 깨질 수 있어, DSI command-mode 패널(dsi-cm) 사용자와 LLVM 정적 검사 기반 DRM 회귀 추적에 직접 해당합니다.\n\n> A 1-byte DCS read returning 1 causes dsicm_get_id(), num_dsi_errors_show(), and hw_revision_show() to treat success as a non-zero return value (exposing 1 byte of uninitialized sysfs buffer).\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/20261119170818.1528087-1-irogers@google.com/raw)\n\n**drm/mediatek: Initialize ret in mtk_drm_of_ddp_path_build()**\n\nOF graph에 endpoint 자식이 없을 때 for_each_endpoint_of_node()가 0회 돌면서 초기화되지 않은 ret을 검사해 probe가 실패할 수 있는 경로에 ret=0 초기화 한 줄을 넣습니다.\n\n영향: MediaTek DRM의 OF graph 기반 DDP 경로 구성은 빈 ports 노드만 있는 DT에서도 graph가 present로 잡힐 수 있어, 잘못된 probe 실패·간헐적 스택 가비지 의존 버그를 제거합니다.\n\n> for_each_endpoint_of_node() in mtk_drm_of_ddp_path_build() executes zero iterations and 'if (ret)' evaluates an uninitialized stack variable, aborting probe with stack garbage.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/20261119171053.1537233-1-irogers@google.com/raw)\n\n**drm/msm/dp: Return MODE_BAD instead of -EINVAL from mode_valid callbacks**\n\nmsm_dp_display_mode_valid()와 msm_edp_bridge_mode_valid()가 enum drm_mode_status 대신 -EINVAL을 반환하던 부분을 MODE_BAD로 바꿉니다.\n\n영향: 잘못된 모드 pruning 시 drm_get_mode_status_name()이 음수 인덱스로 WARN_ON()을 쏘는 클래스의 버그를 막아, Qualcomm MSM DP/eDP 스택과 DRM core 모드 검증 경로의 로그·안정성을 보호합니다.\n\n> passing -22 to drm_get_mode_status_name() computes a negative array index and fires WARN_ON().\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/20261119171046.1536673-1-irogers@google.com/raw)\n\n**drm/tidss: Return drm_mode_status values from tidss_oldi_mode_valid()**\n\ntidss_oldi_mode_valid()가 시리얼 클럭 5% 초과 시 -EINVAL·성공 시 0을 반환하던 것을 MODE_CLOCK_RANGE와 MODE_OK로 맞춥니다.\n\n영향: TI DSS OLDI bridge의 mode_valid가 DRM core enum 계약을 어기면 모드 거절 로깅에서 WARN_ON()이 터질 수 있어, TIDSS/OLDI 내장 디스플레이 통합과 MSM 패치와 같은 Clang enum 검사 계열 회귀 수정과 한 축입니다.\n\n> When drm_mode_prune_invalid() logs rejected modes via drm_get_mode_status_name(), status == -22 computes a negative table index (-19) and triggers a WARN_ON().\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/20261119171041.1536322-1-irogers@google.com/raw)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/sun4i: update DE33 support**\n\nJernej Skrabec v4 00/5는 Allwinner H616 Display Engine 3.3용 공유 plane 드라이버·신규 DT binding을 도입하고 v6.17에 들어간 H616 DE33 mixer binding을 의도적으로 깨며, clk·CSC·VI 포맷 패치는 이미 sunxi/drm-misc-next 쪽에 적용된 상태입니다.\n\n영향: DE33는 plane이 mixer에 고정되지 않는 설계인데 기존 binding은 이를 표현하지 못해 듀얼 mixer·올바른 plane 할당 bring-up이 막혀 있었고, sunxi H616 디스플레이 파이프라인 후속 시리즈의 전제가 됩니다.\n\n> This series introduces new driver for planes management, which allows doing proper plane assignments. Note that this series intentionally breaks existing H616 DE33 mixer binding, which was released in\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/20261119175437.2520400-1-jernej.skrabec@gmail.com/raw)\n\n**drm/bridge: analogix_dp: Hold runtime PM reference in bridge detect**\n\nMarek Szyprowski v2는 analogix_dp_bridge_detect()에서 HPD 감지 전후로 pm_runtime_resume_and_get/put_autosuspend을 감싸 런타임 서스펜드 중 레지스터 접근을 막고, 재개 실패 시 connector unknown을 반환합니다.\n\n영향: drm_bridge_connector 폴링·userspace connector 조회가 디스플레이 off 상태에서도 detect를 호출해 클럭/전원이 꺼진 Analogix DP 블록에 접근할 수 있어, DP 커넥터 단독 구성(다음 bridge 없음)의 안정성·전원 관리와 직결됩니다.\n\n> When the display is disabled the controller is runtime suspended, so these are accesses to an unclocked (and possibly unpowered) IP block.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/20261119103742.1161858-1-m.szyprowski@samsung.com/raw)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/sun4i: update DE33 support",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/20261119175437.2520400-1-jernej.skrabec@gmail.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "drm/panel: dsi-cm: Normalize mipi_dsi_dcs_read/write() return values",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/20261119170818.1528087-1-irogers@google.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "drm/mediatek: Initialize ret in mtk_drm_of_ddp_path_build()",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/20261119171053.1537233-1-irogers@google.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "drm/bridge: analogix_dp: Hold runtime PM reference in bridge detect",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/20261119103742.1161858-1-m.szyprowski@samsung.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "drm/msm/dp: Return MODE_BAD instead of -EINVAL from mode_valid callbacks",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/20261119171046.1536673-1-irogers@google.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "drm/tidss: Return drm_mode_status values from tidss_oldi_mode_valid()",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/20261119171041.1536322-1-irogers@google.com/raw",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-19T18:32:55.554Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

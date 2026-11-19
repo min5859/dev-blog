@@ -1,0 +1,138 @@
+{
+  "id": "2026-11-20-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-11-20 6.12.y BPF 보안 — Linux Perf-RT",
+  "headline": "6.12.y BPF 백포트·uprobe_multi·TUN NAPI 등 보안 경계 보강이 메일리스트와 syzbot에서 동시에 논의됩니다.",
+  "date": "2026-11-20",
+  "summary": "linux-6.12.y stable 쪽에서 CVE-2024-56702 계열 nullable raw tracepoint 마스크 누락과 pkcs7 kfunc NULL 가드 백포트가 올라왔습니다. upstream·syzbot에서는 uprobe_multi override_return 거부, IFF_NAPI TUN 큐 상한, lpm_trie 8바이트 정렬 수정도 이어집니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "CVE-2024-56702: 6.12.y raw_tp_null_args[] 보강",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "6.12.y stable·BPF raw tracepoint·NFS/nfsd/Bcachefs 트레이스 추적 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/bpf/CAMcAce-4MeO8rpx2rvDu77r-OpbFd9k0geOs8wZBoaMbYVkpDw@mail.gmail.com/",
+      "if": "6.12.y에서 nfsd·nfs4·bcachefs raw tracepoint에 BPF를 붙이거나 LTS 백포트 일정을 추적한다면",
+      "do": "v6.12.118 kernel/bpf/btf.c의 raw_tp_null_args[]에 upstream c83e2d970bae 대비 마스크 누락 여부를 스레드와 CVE 공지와 대조해 확인하세요",
+      "verify": "백포트가 머지되기 전에는 nullable 인자에 의존하는 BPF의 NULL 검사 제거·역참조 위험을 가정하고 배포를 보류하세요"
+    },
+    {
+      "title": "bpf_verify_pkcs7_signature NULL dynptr 거부",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "BPF LSM·pkcs7 kfunc·6.12.y stable 유지보수 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/bpf/CAMcAce8Fc3erawRn=4SvfuZjb7rovZFN7tQZB5Zg6mLvtDKgdQ@mail.gmail.com/",
+      "if": "sleepable BPF LSM에서 pkcs7 서명 검증 kfunc를 쓰거나 6.12.y 백포트 큐를 본다면",
+      "do": "빈·비선형 dynptr 입력 시 __bpf_dynptr_data()가 NULL인 경로가 kernel/trace/bpf_trace.c 패치로 -EINVAL로 막히는지 원문 패치를 읽어보세요",
+      "verify": "stable@ 안내가 스레드마다 다를 수 있으니 최종 백포트 대상 버전은 메일 스레드를 다시 확인하세요"
+    },
+    {
+      "title": "uprobe_multi에서 override_return 프로그램 거부",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "uprobe_multi·BPF 트레이싱·사용자 공간 프로브 담당",
+      "verifyLink": "https://ci.syzbot.org/patches/b371ed9b-7625-407b-90bd-11cc84fd797b",
+      "if": "다중 uprobe 링크에 kprobe_override·bpf_override_return 조합을 시험한다면",
+      "do": "bpf_uprobe_multi_link_attach()가 prog->kprobe_override 설정 시 -EINVAL로 거부하는 syzbot 패치 동작을 기준으로 도구 체인을 맞추세요",
+      "verify": "perf uprobe와 달리 uprobe_multi에서 override_return을 허용하면 사용자 pt_regs->ip에 커널 주소가 쓰일 수 있다는 패치 설명을 재확인하세요"
+    },
+    {
+      "title": "IFF_NAPI TUN 수신 큐 상한",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "TUN/vhost-net·네임스페이스·memcg·가상화 보안 담당",
+      "verifyLink": "https://lists.openwall.net/netdev/2026/11/13/669",
+      "if": "컨테이너·user/net namespace에서 threaded NAPI TUN을 쓰는 환경을 운영한다면",
+      "do": "netdev_max_backlog 수준 큐 bound·초과 rx_dropped·poll budget 제한이 들어간 v7 패치 논의를 netdev 스레드와 syzbot 시리즈에서 추적하세요",
+      "verify": "memcg 미청구 skb로 전역 OOM이 재현될 수 있다는 reproducer 서술을 보고 다중 큐·바이트 조합 잔여 위험은 리뷰 논의를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**bpf: Add tracepoints with null-able arguments (CVE-2024-56702)**\n\nlinux-6.12.y stable 백포트 요청으로, upstream c83e2d970bae에서 추가된 nfsd/nfs4/bcachefs raw tracepoint용 raw_tp_null_args[] 마스크가 v6.12.118 kernel/bpf/btf.c에 빠져 있음을 지적하고 해당 엔트리를 보강합니다.\n\n영향: CVE-2024-56702 계열에서 검증기가 nullable raw_tp 인자를 비NULL로 가정하면 BPF의 NULL 검사가 제거되어 커널 NULL 역참조로 이어질 수 있어, 6.12.y LTS의 eBPF/트레이스포인트 보안·안정 유지보수에 직접적입니다.\n\n> In v6.12.118, raw_tp_null_args[] in kernel/bpf/btf.c lacks nullable argument masks for nfsd, nfs4, and bcachefs tracepoints introduced by upstream commit c83e2d970bae (CVE-2024-56702).\n\n[원문 확인](https://lore-kernel.gnuweeb.org/bpf/CAMcAce-4MeO8rpx2rvDu77r-OpbFd9k0geOs8wZBoaMbYVkpDw@mail.gmail.com/)\n\n> a raw tracepoint argument may end up being NULL ... causing explicit NULL checks to be deleted, and accesses to such pointers potentially crashing the kernel.\n\n[원문 확인](https://lists.openwall.net/linux-cve-announce/2024/12/28/32)\n\n6.12.y에서 raw_tp_null_args[]가 btf.c와 bpf_trace.c 중 어디에 유지되는지, netfs_donate 백포트와의 합침은 확인이 필요합니다.\n\n**bpf: Reject NULL data/sig in bpf_verify_pkcs7_signature**\n\n6.12.y 백포트로 bpf_verify_pkcs7_signature()가 __bpf_dynptr_data() 결과가 NULL인 data/sig를 검사하지 않고 verify_pkcs7_signature()에 넘기던 경로에 NULL 검사 후 -EINVAL을 반환하도록 수정합니다(kernel/trace/bpf_trace.c).\n\n영향: 빈·비선형 dynptr로 sleepable BPF LSM 경로에서 커널 NULL 역참조(asn1_ber_decoder)를 유발할 수 있어, 서명 검증 kfunc를 쓰는 LSM/보안 프로그램 배포에 영향을 줍니다.\n\n> If an empty/null dynptr or non-linear skb/xdp dynptr is passed, __bpf_dynptr_data() returns NULL, leading to a NULL pointer dereference in verify_pkcs7_signature().\n\n[원문 확인](https://lore-kernel.gnuweeb.org/bpf/CAMcAce8Fc3erawRn=4SvfuZjb7rovZFN7tQZB5Zg6mLvtDKgdQ@mail.gmail.com/)\n\n**bpf: reject override_return programs on uprobe_multi links**\n\nbpf_uprobe_multi_link_attach()에서 prog->kprobe_override가 설정된 프로그램을 거부해 bpf_override_return()이 사용자 pt_regs->ip에 커널 주소를 쓰는 uprobe_multi 부착을 막습니다.\n\n영향: perf uprobe와 달리 uprobe_multi가 override_return을 허용하면 사용자 태스크가 커널 IP로 복귀해 fault·시그널 프레임에 커널 주소가 노출될 수 있어, 다중 uprobe 기반 관측·오류주입 도구의 안전 경계를 재정의합니다.\n\n> When the probe runs, the task returns to user mode with a kernel address as its instruction pointer, faults, and exposes that address in its signal frame.\n\n[원문 확인](https://ci.syzbot.org/patches/b371ed9b-7625-407b-90bd-11cc84fd797b)\n\n**tun: bound the NAPI receive queue**\n\nIFF_NAPI 모드에서 tun의 NAPI 대기 큐를 netdev_max_backlog 수준으로 제한하고, 초과 시 rx_dropped로 폐기·NAPI 스케줄링하며 poll이 budget만큼만 가져가도록 변경합니다(v7, bpf 리스트 경유).\n\n영향: 권한 없는 사용자가 user/network namespace에서 threaded NAPI TUN에 무한 큐잉으로 memcg 미청구 skb를 쌓아 전역 OOM(~6초)을 일으킬 수 있어, 컨테이너·VIRT 기본 설정에서의 로컬 권한 상승·서비스 거부 면이 큽니다.\n\n> a uid 1000 process limited to 128 MB caused a global OOM in ~6 seconds.\n\n[원문 확인](https://ci.syzbot.org/series/8fa16d92-b67b-4b62-976b-5851f739e9eb/all_patches)\n\n> An unprivileged user can do this from its own user and network namespaces, and the queued skbs are not charged to its memcg\n\n[원문 확인](https://lists.openwall.net/netdev/2026/11/13/669)\n\n**bpf: Ensure 8-byte alignment for lpm_trie map values**\n\nlpm_trie가 map value를 8바이트 경계에 맞추지 않아 검증기가 허용한 64비트 원자 연산이 arm64에서 alignment fault로 패닉을 일으키는 불일치를 __aligned(8)와 round_up(trie->data_size, 8)로 수정합니다.\n\n영향: 검증기·JIT·하드웨어 정렬 불일치는 로드된 BPF XDP/라우팅 프로그램이 benign해 보여도 커널 패닉을 유발할 수 있어, arm64 eBPF 배포의 무결성 경계 이슈로 보입니다.\n\n> FSC = 0x21: alignment fault ... Kernel panic - not syncing: Oops: Fatal exception in interrupt\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/19/2358)\n\nmainline 머지 시기와 기존 IPv4 lpm_trie map 레이아웃 ABI 영향은 확인이 필요합니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "6.12.y 백포트: raw_tp_null_args[] nfsd/nfs4/bcachefs",
+      "url": "https://lore-kernel.gnuweeb.org/bpf/CAMcAce-4MeO8rpx2rvDu77r-OpbFd9k0geOs8wZBoaMbYVkpDw@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "CVE-2024-56702 공지",
+      "url": "https://lists.openwall.net/linux-cve-announce/2024/12/28/32",
+      "note": "cve"
+    },
+    {
+      "title": "Upstream c83e2d970bae bpf tracepoint nullable 마스크",
+      "url": "https://upd.dev/torvalds/linux/commit/c83e2d970bae8616b94c40caa43d85f2f2c7d81e.patch",
+      "note": "commit"
+    },
+    {
+      "title": "6.12.y bpf_verify_pkcs7_signature NULL 가드",
+      "url": "https://lore-kernel.gnuweeb.org/bpf/CAMcAce8Fc3erawRn=4SvfuZjb7rovZFN7tQZB5Zg6mLvtDKgdQ@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Upstream 49b18315be4e pkcs7 NULL 가드",
+      "url": "https://upd.dev/torvalds/linux/commit/49b18315be4eecfc36b75f4aecb4d40a87d68a20",
+      "note": "commit"
+    },
+    {
+      "title": "uprobe_multi override_return 거부 패치",
+      "url": "https://ci.syzbot.org/patches/b371ed9b-7625-407b-90bd-11cc84fd797b",
+      "note": "patch"
+    },
+    {
+      "title": "syzbot 시리즈: uprobe_multi override_return",
+      "url": "https://ci.syzbot.org/series/f265b947-424f-4bb6-8700-cb169439d805",
+      "note": "thread"
+    },
+    {
+      "title": "TUN NAPI 큐 bound v7 패치",
+      "url": "https://ci.syzbot.org/series/8fa16d92-b67b-4b62-976b-5851f739e9eb/all_patches",
+      "note": "patch"
+    },
+    {
+      "title": "netdev: unprivileged TUN NAPI 큐잉 취약 서술",
+      "url": "https://lists.openwall.net/netdev/2026/11/13/669",
+      "note": "thread"
+    },
+    {
+      "title": "lpm_trie 8-byte 정렬 패치 공지",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/19/2358",
+      "note": "thread"
+    },
+    {
+      "title": "syzbot 시리즈: lpm_trie alignment",
+      "url": "https://ci.syzbot.org/series/91bbf97e-2b64-46b6-bc44-5c5765fcf9b1",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-19T18:28:13.046Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
