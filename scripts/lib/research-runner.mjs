@@ -3,6 +3,7 @@ import path from 'node:path';
 
 import { runResearchAdapterPrompt, extractJsonObject } from './ai-rewrite-adapter.mjs';
 import { validateDossier, EVIDENCE_KIND_VALUES } from './dossier-schema.mjs';
+import { foreignCjkRatio } from './foreign-cjk.mjs';
 import { IMPACT_TYPE_VALUES } from './highlight-schema.mjs';
 
 // Design Ref: docs/RESEARCH-WRITE-SPLIT.md §2 — 토픽-범용 research 실행기.
@@ -83,6 +84,12 @@ export function normalizeDossier(dossier) {
   for (const entry of dossier.entries || []) {
     for (const ev of entry.evidence || []) {
       if (typeof ev.quote === 'string' && ev.quote.length > 200) ev.quote = ev.quote.slice(0, 200);
+      // 중국어/일본어 원문 quote 는 write 가 그대로 인용해 quality-guard 의 FOREIGN_CJK 검사에
+      // 걸리고 topic 전체가 게시 누락된다(2026-11-20 opensource). claim/url 은 남기고 quote 만 지운다.
+      if (typeof ev.quote === 'string' && foreignCjkRatio(ev.quote) > 0) {
+        console.warn(`[research] dropped non-Korean CJK quote from ${ev.url}`);
+        delete ev.quote;
+      }
       // research adapter 가 enum 밖의 kind(예: "patch", "blog")를 낼 수 있다. evidence.kind 는
       // 다운스트림에서 표시 라벨로만 쓰이므로(dossier-to-post.mjs, 분기 없음), throw 로 topic 전체를
       // drop 하는 대신 'other' 로 강등해 validateDossier 를 통과시킨다.

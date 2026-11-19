@@ -111,3 +111,17 @@ test('normalizeDossier: 이미 유효한 evidence.kind(patch)는 그대로 유�
   assert.equal(dossier.entries[0].evidence[0].kind, 'patch');
   assert.doesNotThrow(() => validateDossier(dossier));
 });
+
+test('normalizeDossier: 중국어·일본어가 든 evidence.quote 는 지우고 claim/url 은 남긴다', () => {
+  const evidence = [
+    { claim: 'v0.1.2 릴리스 노트는 HTTP/HTTPS 링크만 허용한다', url: 'https://github.com/deepseek-ai/chat-demo/releases/tag/v0.1.2', kind: 'changelog', quote: '回复中的搜索结果、引用和网页读取记录仅允许打开 HTTP 或 HTTPS 链接。' },
+    { claim: '브라우저가 API 에 직접 연결한다', url: 'https://github.com/deepseek-ai/chat-demo', kind: 'repo', quote: 'the browser connects directly to the configured API service.' },
+    { claim: '한국어 인용은 유지', url: 'https://x', kind: 'article', quote: '커널 7.4 에서 바뀌었다' },
+  ];
+  const dossier = { entries: [{ evidence }] };
+  normalizeDossier(dossier);
+  assert.equal('quote' in evidence[0], false);
+  assert.equal(evidence[0].claim, 'v0.1.2 릴리스 노트는 HTTP/HTTPS 링크만 허용한다');
+  assert.equal(evidence[1].quote, 'the browser connects directly to the configured API service.');
+  assert.equal(evidence[2].quote, '커널 7.4 에서 바뀌었다');
+});
