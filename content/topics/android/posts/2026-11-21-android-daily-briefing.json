@@ -1,0 +1,138 @@
+{
+  "id": "2026-11-21-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-11-21 LSM·ashmem 회귀 — Android 커널",
+  "headline": "ACK mainline에 LSM 네임스페이스 보안 갱신이 들어왔고, init·ashmem·wrapfd 회귀 수정이 이어집니다.",
+  "date": "2026-11-21",
+  "summary": "android-mainline에 drm-fixes 병합과 LSM pull이 머지되었습니다. ashmem·wrapfd·부트 경로의 panic·deadlock 회귀를 막는 패치가 mainline과 android16-6.12에 반영되었습니다.",
+  "tags": [
+    "안드로이드",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "LSM 네임스페이스·audit 갱신 병합",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "LSM/SELinux/Landlock·ACK mainline 통합",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/a804c5742bff224d4cb4d25dd383554d598be32b",
+      "if": "ACK mainline에서 SELinux·Landlock·BPF LSM 동기화를 추적한다면",
+      "do": "네임스페이스 LSM hook·inode mount idmap·ioctl audit 32비트 기록 변경이 vendor 정책에 미치는 시점을 확인하고 통합 계획을 세우세요",
+      "verify": "lsm-pr-20261016 병합 커밋에서 namespace hook·audit 인용을 원문으로 대조하세요"
+    },
+    {
+      "title": "init pid 1 CLONE_FS로 firmware 로딩 회귀 완화",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Android 부트/init·ACK mainline 통합",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/d82b1e9acccf66dcebefedad2635d28e1d63d895",
+      "if": "최근 init fs_struct 변경 이후 부트 시 firmware 로딩 실패를 본다면",
+      "do": "임시 CLONE_FS 복구 커밋이 포함된 빌드로 suspend-resume·firmware 로딩 경로를 재검증하세요",
+      "verify": "init unshare 후 kworker rootfs 접근 실패 인용이 있는 커밋 원문을 확인하세요"
+    },
+    {
+      "title": "ashmem vmfile mmap_prepare 제거로 panic_on_warn 경로 차단",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "ashmem 사용자 앱/프레임워크·GKI 검증",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/08a3efe1ff960a381689797f790dda3070ffe70f",
+      "if": "panic_on_warn=1 환경에서 /dev/ashmem mmap·remap_file_pages를 쓰는 테스트가 있다면",
+      "do": "수정 반영 커널로 WARN·panic 재현 여부를 돌려보세요",
+      "verify": "can_mmap_file() WARN_ON_ONCE 인용이 있는 ashmem 커밋을 열어보세요"
+    },
+    {
+      "title": "wrapfd release() listener deadlock 방지 (android16-6.12)",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "wrapfd listener 등록 드라이버·android16-6.12",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/7da4b199dd2dc1e1c160501f289a10f93432e841",
+      "if": "wrap 파괴 콜백에서 wrapfd_del_listener()를 호출한다면",
+      "do": "android16-6.12 ACK에 deadlock 수정이 들어간지 확인한 뒤 stress 테스트를 실행하세요",
+      "verify": "listener lock 보유 중 deadlock 가능 인용을 원문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Merge drm-fixes-2026-09-05 into android-mainline**\n\ndrm-fixes-2026-09-05를 android-mainline에 병합했고 dma-heap.c 충돌 시 downstream dma_heap_* 헬퍼는 유지하면서 upstream dma_heap_ioctl_allocate(copy_to_user 성공 후 fd publish)를 채택했습니다.\n\n영향: GKI dmabuf/dma-heap가 최신 DRM 수정을 따르면서 Android 전용 할당 헬퍼와 fd 설치 타이밍 회귀를 동시에 피합니다.\n\n> Keep the downstream dma_heap_*() helpers but take upstream's dma_heap_ioctl_allocate() from commit 30d0aff2c65a (\"dma-buf: dma-heap: don't publish fd before copy_to_user() succeeds\")\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/718136b3ae37acbdcda64dc8e373b26cb5082ca1)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**Merge tag 'lsm-pr-20261016'**\n\nandroid-mainline에 LSM 업데이트(네임스페이스 LSM hook/audit, inode hook에 mount idmap, ioctl audit 전체 32비트, cred/slab 하드닝 등)를 병합했습니다.\n\n영향: 향후 Landlock/SELinux/BPF LSM이 네임스페이스·mount idmap 기반 정책을 쓸 수 있는 기반이 ACK mainline에 들어옵니다. Android vendor 정책이 신규 hook을 언제 소비하는지는 확인이 필요합니다.\n\n> Add the necessary bits to enable LSMs to enforce access controls on the management of various kernel namespaces.\n\n> Previously only the low 16 bits were logged, ignoring the direction and size information in the upper 16 bits.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/a804c5742bff224d4cb4d25dd383554d598be32b)\n\n**ANDROID: init: spawn pid 1 with CLONE_FS**\n\npid 1 생성 시 CLONE_FS를 다시 사용해 init_task와 fs_struct 공유 동작을 임시 복구했습니다.\n\n영향: init이 mount namespace를 unshare한 뒤 kworker가 rootfs에 접근 못 해 firmware 로딩이 깨지던 Android 부트 회귀를 완화합니다. 영구 해결 머지 시점과 이 hack 제거 조건은 확인이 필요합니다.\n\n> When Android init then unshares its mount namespace, kworkers lose access to the root filesystem, which breaks firmware loading.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/d82b1e9acccf66dcebefedad2635d28e1d63d895)\n\n**ANDROID: wrapfd: Ensure wrap is not empty in wrapfd_put_mappable()**\n\nwrapfd_put_mappable()가 empty wrap에 대해 실패하도록 검사를 추가했습니다.\n\n영향: 유효하지 않은 empty wrap에 대한 mappable 해제가 성공하는 경로를 막아 wrapfd API 오용·후속 undefined 동작을 줄입니다.\n\n> wrapfd_put_mappable() should fail on empty wraps, so add a check to ensure that happens.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/a24ebae0f0c5f4717711af9ab310232fe1f95120)\n\n**ANDROID: ashmem: avoid overflow when summing unpinned page counts (mainline·android16-6.12)**\n\n전역 unpinned 페이지 합계를 u128로 추적하고 shrinker/ioctl에는 saturated usize를 노출하며 LRU scan 경계를 보강했습니다. android16-6.12에도 동일 수정이 cherry-pick되었습니다.\n\n영향: 대량 sparse unpinned 시 usize 합산 overflow로 커널 panic이 날 수 있던 ashmem_rust shrinker/LRU 경로를 안정화합니다.\n\n> Unpinned page counts across all open ashmem files are summed in a usize, which overflows and panics when enough large sparse regions are unpinned simultaneously.\n\n[원문 확인 (mainline)](https://android.googlesource.com/kernel/common/+/95156276348a48af839866ac2abaf0008028e775) · [원문 확인 (android16-6.12)](https://android.googlesource.com/kernel/common/+/5228562af4fa87e987989e0a55f5c01d71f2aae1)\n\n**ANDROID: ashmem: clear .mmap_prepare in vmfile fops**\n\nashmem vmfile fops에서 upstream shmem에서 복사된 .mmap_prepare를 제거해 .mmap만 사용합니다.\n\n영향: mmap 후 remap_file_pages() 시 can_mmap_file() WARN이 발생하고 panic_on_warn=1이면 커널 panic으로 이어지던 /dev/ashmem 경로를 막습니다.\n\n> When both are set, can_mmap_file() raises WARN_ON_ONCE(). Any process that has access to /dev/ashmem can reach this via mmap() followed by remap_file_pages().\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/08a3efe1ff960a381689797f790dda3070ffe70f)\n\n**ANDROID: wrapfd: Fix deadlock when invoking listeners on release()**\n\nwrap_release()에서 컨텍스트에서 content를 먼저 제거하는 패턴을 따르고 불필요한 listener lock을 제거했습니다.\n\n영향: wrap 파괴 콜백 안에서 wrapfd_del_listener()를 호출할 때 listener lock으로 인한 deadlock을 방지합니다.\n\n> If a client invoked wrapfd_del_listener() as part of their callback when a wrap is being destroyed, they could cause a deadlock, since their callback is invoked with the listener lock held.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/7da4b199dd2dc1e1c160501f289a10f93432e841)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**ANDROID: ashmem: Read the pin argument for GET_PIN_STATUS**\n\nASHMEM_GET_PIN_STATUS 등 pin 관련 ioctl에서 sizeof(struct ashmem_pin)을 읽도록 C 드라이버와 맞췄습니다.\n\n영향: _IO() 정의로 버퍼 크기가 0이 되어 GET_PIN_STATUS가 항상 -EFAULT로 실패하던 Rust ashmem 회귀를 제거합니다.\n\n> ASHMEM_GET_PIN_STATUS is defined with _IO(), so _IOC_SIZE() is zero for it, and the reader that ioctl() builds from it cannot hold a struct ashmem_pin. The ioctl then always fails with -EFAULT.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/cc1c7ff323bdef240dc430508616414a9d65a91a)\n\n**ANDROID: gki_defconfig: Build with DPM watchdog**\n\narm64/x86 GKI defconfig에 DPM watchdog을 빌드에 포함하고 타임아웃(25s/10s)을 설정하되, CONFIG_DPM_WATCHDOG_ENABLED는 기본 비활성으로 둡니다.\n\n영향: suspend/resume 중 lockup을 소프트웨어에서 먼저 감지·panic/dump 할 수 있게 하면서, opt-in 없이는 HW watchdog보다 먼저 panic 나는 회귀를 피합니다.\n\n> Importantly, CONFIG_DPM_WATCHDOG_ENABLED is explicitly left unset. This ensures the watchdog is compiled into the GKI kernel but remains disabled by default\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/866c7b3e681dfe0aa213fb8d3562d383fabe24fd)\n\n**ANDROID: gki_defconfig: enable REFCOUNT_INTERRUPT_KUNIT_TEST**\n\nGKI defconfig에서 CONFIG_REFCOUNT_INTERRUPT_KUNIT_TEST를 활성화했습니다.\n\n영향: 업스트림 kconfig 분리 이후 GKI 빌드·KUnit 파이프라인에서 refcount interrupt KUnit 모듈이 명시적으로 선택되도록 ACK 설정을 맞추는 변경으로 보입니다(원문 인용 검증은 실패한 항목이므로 세부 문구는 원문에서 확인하세요).\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/83c0e0cc2b172d5dde4d7d7f6259edd30e8748b3)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "높음",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. REFCOUNT_INTERRUPT_KUNIT_TEST 항목은 confidence가 medium이며 인용 검증이 실패했으므로 원문 확인을 권합니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Merge lsm-pr-20261016 into android-mainline",
+      "url": "https://android.googlesource.com/kernel/common/+/a804c5742bff224d4cb4d25dd383554d598be32b",
+      "note": "commit"
+    },
+    {
+      "title": "Merge drm-fixes-2026-09-05 into android-mainline",
+      "url": "https://android.googlesource.com/kernel/common/+/718136b3ae37acbdcda64dc8e373b26cb5082ca1",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: init: spawn pid 1 with CLONE_FS",
+      "url": "https://android.googlesource.com/kernel/common/+/d82b1e9acccf66dcebefedad2635d28e1d63d895",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: ashmem: clear .mmap_prepare in vmfile fops",
+      "url": "https://android.googlesource.com/kernel/common/+/08a3efe1ff960a381689797f790dda3070ffe70f",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: ashmem: avoid overflow (mainline)",
+      "url": "https://android.googlesource.com/kernel/common/+/95156276348a48af839866ac2abaf0008028e775",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: ashmem: avoid overflow (android16-6.12)",
+      "url": "https://android.googlesource.com/kernel/common/+/5228562af4fa87e987989e0a55f5c01d71f2aae1",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: wrapfd: Fix deadlock on release()",
+      "url": "https://android.googlesource.com/kernel/common/+/7da4b199dd2dc1e1c160501f289a10f93432e841",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: wrapfd: empty wrap in put_mappable",
+      "url": "https://android.googlesource.com/kernel/common/+/a24ebae0f0c5f4717711af9ab310232fe1f95120",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: ashmem: GET_PIN_STATUS pin argument",
+      "url": "https://android.googlesource.com/kernel/common/+/cc1c7ff323bdef240dc430508616414a9d65a91a",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: gki_defconfig DPM watchdog",
+      "url": "https://android.googlesource.com/kernel/common/+/866c7b3e681dfe0aa213fb8d3562d383fabe24fd",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: gki_defconfig REFCOUNT_INTERRUPT_KUNIT_TEST",
+      "url": "https://android.googlesource.com/kernel/common/+/83c0e0cc2b172d5dde4d7d7f6259edd30e8748b3",
+      "note": "commit"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-20T18:02:50.727Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/android-newsletter-from-dossier-ko.md"
+  }
+}
