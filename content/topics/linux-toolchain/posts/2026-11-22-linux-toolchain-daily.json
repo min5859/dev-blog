@@ -1,0 +1,123 @@
+{
+  "id": "2026-11-22-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-11-22 TPEBS 경쟁 수정 — 툴체인",
+  "headline": "perf intel-tpebs v15 경쟁·fd 수정과 kbuild SBOM .cmd 선행 스킵이 Rust·perf 빌드 신뢰도를 동시에 건드립니다.",
+  "date": "2026-11-22",
+  "summary": "Ian Rogers v15는 tools/perf intel-tpebs의 tpebs_stop·tpebs_cmd.out 이중 close와 잠금 경쟁을 condvar·generation으로 직렬화합니다. Luis Augenstein v6는 make_prereqs_.cmd 확장 전에 scripts/sbom 파서를 맞추고, Rust 쪽은 bindgen·helper·gpu buddy 리뷰가 이어집니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "perf intel-tpebs: tpebs_stop·cmd.out 경쟁",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "tools/perf·intel-tpebs 유지보수자, Clang 기반 perf 사용자",
+      "verifyLink": "https://lore.kernel.org/llvm/20261121065813.4143649-16-irogers@google.com/",
+      "if": "Intel TPEBS retire-latency로 perf record를 돌리며 간헐 크래시가 보이면",
+      "do": "v15 15/23 스레드와 Fixes 커밋 역추적로 stop·fd 수명 주기 수정을 확인하세요",
+      "verify": "로컬에서 재현 후 해당 lore 스레드의 condvar·generation 직렬화 diff를 대조하세요"
+    },
+    {
+      "title": "scripts/sbom: make_prereqs_.cmd 줄 스킵",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "kbuild·scripts/sbom 유지보수자, SBOM/공급망 파이프라인 운영자",
+      "verifyLink": "https://lore.kernel.org/linux-kbuild/20261119204457.9968-4-luis.augenstein@tngtech.com/",
+      "if": "커널 SBOM이 .cmd 메타를 파싱하는 파이프라인을 운영 중이면",
+      "do": "cmd-prereqs v6 시리즈와 선행 sbom 스킵 패치를 같은 릴리스 윈도에 묶어 검증하세요",
+      "verify": "make_prereqs_ 접두 줄 필터가 들어간 v6 3/7 diff를 열어 파서 동작을 확인하세요"
+    },
+    {
+      "title": "rust: gpu buddy Mutex 내부 할당자",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust for Linux GPU·sync 서브시스템 담당, gpu_buddy 사용자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20261119111850.33270-1-mbkchelofficialdev@gmail.com/",
+      "if": "rust/kernel/gpu buddy 래퍼 API를 추적 중이면",
+      "do": "v2의 Mutex<Opaque<gpu_buddy>> 구조와 maintainer의 inner 필드명 요청을 리뷰 코멘트에 반영하세요",
+      "verify": "fallible PinInit·Lock::new 경로와 Danilo Krummrich의 네이밍 스레드를 함께 읽어보세요"
+    },
+    {
+      "title": "rust: RUST_HELPERS modpost 검출",
+      "priority": "하",
+      "impactType": "build",
+      "affectedAudience": "Rust for Linux 라이브러리·kbuild 담당, out-of-line Rust helper를 쓰는 모듈 작성자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20261120-rust-helper-namespace-v2-1-14315658f59e@gmail.com/",
+      "if": "CONFIG_MODVERSIONS·외부 Rust 모듈에서 helper 심볼을 쓰면",
+      "do": "v2가 RUST_HELPERS export와 modpost namespace 검사를 통과하는지 빌드 로그를 점검하세요",
+      "verify": "모듈형 x86-64 KASAN modpost 통과 주장과 GitHub #216 맥락을 대조하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**perf intel-tpebs: Fix race in tpebs_stop() and tpebs_cmd.out fd handling**\n\nIan Rogers v15 15/23 패치는 tools/perf intel-tpebs에서 background perf record·샘플 리더 스레드 수명 주기에 tpebs_cmd.out fd 이중 close/누수와 tpebs_stop()·tpebs_send_record_cmd() 잠금 해제 구간의 경쟁을 고칩니다. condvar·generation으로 open/stop/teardown을 직렬화하고 제어 명령에 개행을 붙입니다.\n\n영향: LLVM/Clang perf 빌드를 쓰는 엔지니어는 Intel TPEBS retire-latency 경로에서 간헐적 use-after-close·이중 조인 같은 도구 크래시 회귀를 막기 위해 v15 시리즈 머지와 Fixes 커밋 역추적이 필요합니다.\n\n> tpebs_cmd.out is read without tpebs_mtx and closed by both perf_session__delete() in __sample_reader() and tpebs_stop()\n\n[원문 확인](https://lore.kernel.org/llvm/20261121065813.4143649-16-irogers@google.com/)\n\n**rust: bindgen: Preserve sched_statistics alignment**\n\nPeder Bergan v2는 bindgen_parameters에 sched_statistics opaque 규칙을 추가해 CONFIG_SCHEDSTATS=n일 때도 C cache-line 정렬을 Rust task_struct에 반영합니다. bindgen 0.73.2의 over-aligned 필드 패딩 변경과 맞물려 노출된 레이아웃 오류를 우회하며 Tested-by와 stable 6.12.x Cc를 달았습니다.\n\n영향: CONFIG_SCHEDSTATS=n·in-tree Rust·Binder arm64 조합에서 task_struct 오프셋 오류는 mmap EINVAL과 Waydroid 등 런타임 실패로 이어지므로, distro 툴체인·stable 백포트 여부가 빌드 신뢰도와 직결됩니다.\n\n> Make sched_statistics opaque so bindgen uses the C size and alignment.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20261120-fix-schedstats-bindgen-layout-v2-1-1c42e4a996ae@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**scripts/sbom: skip make_prereqs lines when parsing .cmd files**\n\nLuis Augenstein v6 3/7은 kbuild가 .cmd 파일에 도입할 make_prereqs_<target> 필드를 scripts/sbom cmd_graph 파서가 무시하도록 해, cmd-prereqs 시리즈가 들어와도 기존 SBOM .cmd 파싱이 깨지지 않게 합니다.\n\n영향: 커널 SBOM·kbuild 자동화를 돌리는 팀은 .cmd 형식 확장과 Python SBOM 도구를 같은 릴리스 윈도에 맞춰야 하며, 선행 스킵 패치 없으면 make_prereqs 도입 시 빌드 메타 수집이 실패할 수 있습니다.\n\n> kbuild will record the prerequisites of a target in a new make_prereqs_<target> field in .cmd files. Skip such lines\n\n[원문 확인](https://lore.kernel.org/linux-kbuild/20261119204457.9968-4-luis.augenstein@tngtech.com/)\n\n**rust: put C helper exports in a dedicated namespace**\n\nv2는 rust_helper_ C 래퍼를 RUST_HELPERS 심볼 네임스페이스로 export하고 module!이 import_ns를 공급하도록 하여 modpost가 누락된 네임스페이스 import를 빌드 시 걸러냅니다. 모듈형 x86-64 KASAN 테스트 C 메타데이터에도 import를 추가해 v1 modpost 실패를 고쳤습니다.\n\n영향: 외부 Rust 모듈·CONFIG_MODVERSIONS 환경에서 helper가 기본 네임스페이스에 노출되면 의도치 않은 심볼 의존이 통과할 수 있어, kbuild/export 경계를 추적하는 팀에 modpost 규칙 변경이 영향을 줍니다.\n\n> Export the wrappers in RUST_HELPERS so modpost can detect accidental dependencies at build time\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20261120-rust-helper-namespace-v2-1-14315658f59e@gmail.com/)\n\n**rust: gpu: buddy: store the allocator inside the Mutex**\n\nIvan Tverdokhleb v2는 GpuBuddyInner의 분리된 Opaque+Mutex<()>를 Mutex<Opaque<gpu_buddy>> 한 필드로 합쳐 fallible PinInit로 초기화해 잠금 없이 allocator에 닿지 못하게 합니다. Danilo Krummrich는 필드명 lock 대신 inner 유지를 요청했습니다.\n\n영향: Rust GPU buddy 래퍼는 드라이버 메모리 할당 핫패스의 동시성 불변식에 묶이므로, Mutex payload 타입 시스템 강화와 maintainer 네이밍 정리는 rust/kernel/gpu 추적자에게 API·리뷰 방향 신호로 보입니다.\n\n> Mutex::new() accepts a fallible initializer.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20261119111850.33270-1-mbkchelofficialdev@gmail.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "v15 perf 시리즈의 perf/tools 트리 머지 일정, bindgen v2의 mainline·rust-next Ack·upstream rust-bindgen #3549 일정, cmd-prereqs v6 전체 머지 순서 및 make_prereqs SBOM 정확도 검증, gpu buddy v3의 inner 이름 반영·drm/rust-next 머지와 런타임 GPU 테스트 범위는 확인이 필요합니다. Fixes로 표시된 bded0398ac19·8db5cabcf1b6 본문은 git.kernel.org 직접 열람이 Anubis에 막혀 있을 수 있습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "perf intel-tpebs: Fix race in tpebs_stop() and tpebs_cmd.out fd handling",
+      "url": "https://lore.kernel.org/llvm/20261121065813.4143649-16-irogers@google.com/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: bindgen: Preserve sched_statistics alignment",
+      "url": "https://lore.kernel.org/rust-for-linux/20261120-fix-schedstats-bindgen-layout-v2-1-1c42e4a996ae@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Rust-for-Linux issue #1269 — binder mmap EINVAL",
+      "url": "https://github.com/Rust-for-Linux/linux/issues/1269",
+      "note": "article"
+    },
+    {
+      "title": "rust: put C helper exports in a dedicated namespace",
+      "url": "https://lore.kernel.org/rust-for-linux/20261120-rust-helper-namespace-v2-1-14315658f59e@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Rust-for-Linux issue #216 — Rust helper namespace",
+      "url": "https://github.com/Rust-for-Linux/linux/issues/216",
+      "note": "article"
+    },
+    {
+      "title": "scripts/sbom: skip make_prereqs lines when parsing .cmd files",
+      "url": "https://lore.kernel.org/linux-kbuild/20261119204457.9968-4-luis.augenstein@tngtech.com/",
+      "note": "thread"
+    },
+    {
+      "title": "rust: gpu: buddy: store the allocator inside the Mutex",
+      "url": "https://lore.kernel.org/rust-for-linux/20261119111850.33270-1-mbkchelofficialdev@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "gpu buddy v2 — inner field naming review",
+      "url": "https://lore.kernel.org/rust-for-linux/DN0ZUECUCER4.QK2US2HOR3I4@kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-21T18:18:51.595Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

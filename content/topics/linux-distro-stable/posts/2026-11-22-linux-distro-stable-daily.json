@@ -1,0 +1,166 @@
+{
+  "id": "2026-11-22-linux-distro-stable-daily",
+  "topic": "linux-distro-stable",
+  "title": "2026-11-22 iSCSI·무선 회귀 — Distro Stable",
+  "headline": "lore stable 큐에 LIO iSCSI·mac80211·sun8i MTU·mm81x USB 무선 회귀 백포트가 쌓이는 가운데 7.3.5·LTS 태그 기준은 유지됩니다.",
+  "date": "2026-11-22",
+  "summary": "11월 17일 기준 7.3.5·6.12.118·6.18.64 태그 이후 추가 공식 stable 릴리스 신호는 dossier에 없습니다. 배포 담당자는 다중 연결 iSCSI·무선 주소 변경·임베디드 이더넷 MTU 등 lore stable 후보의 백포트·머지 시점을 패키징 일정에 반영해야 합니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "stable",
+    "LTS",
+    "배포"
+  ],
+  "highlights": [
+    {
+      "title": "scsi: target: iscsi: fix use-after-free in iscsit_stop_session()",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "kernel target/iSCSI(LIO)·다중 연결 스토리지를 운영하는 배포 담당",
+      "verifyLink": "https://lore.kernel.org/stable/179527913740.32224.2426414360492240680@gmail.com/",
+      "if": "Proxmox·엔터프라이즈 환경에서 LIO iSCSI target에 MaxConnections>1·MC/S를 쓴다면",
+      "do": "세션 종료·로그아웃 경로 stable 백포트 제출·머지 여부를 최우선으로 추적하세요",
+      "verify": "LIST_POISON1·GPF 인용과 MaxConnections=8 재현 스레드를 lore 링크로 확인하세요"
+    },
+    {
+      "title": "wifi: mac80211: handle failure to re-add interface on address change",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "mac80211·cfg80211 기반 무선을 패키징하는 배포·드라이버 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20261121170346.12440-1-25031212351@stu.xidian.edu.cn/",
+      "if": "POWERED_ADDR_CHANGE로 실행 중 station MAC을 바꾸는 이미지를 배포한다면",
+      "do": "add_interface() 실패 시 userspace 성공 반환 회귀 수정의 stable 범위를 검토하세요",
+      "verify": "인터페이스가 드라이버에 없는데 성공을 반환한다는 인용을 원문에서 대조하세요"
+    },
+    {
+      "title": "net: stmmac: dwmac-sun8i: Limit the MTU to one descriptor buffer",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "Allwinner sun8i·stmmac 이더넷이 있는 임베디드·SBC 배포 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20261121-sun8i-emac-mtu-limit-v1-1-22492842d318@gmail.com/",
+      "if": "H616 등 sun8i EMAC에서 기본 MTU·VLAN을 2033 근처로 쓴다면",
+      "do": "MTU 2018 상한 패치와 distro 기본값을 맞추도록 네트워크 정책을 점검하세요",
+      "verify": "MTU 2033에서 UDP 불통 인용과 MTU 2018 제한 문구를 스레드로 확인하세요"
+    },
+    {
+      "title": "usb-storage: alauda: track media_initialized per port",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "usb-storage·레거시 USB 매체 드라이버를 유지하는 배포 담당",
+      "verifyLink": "https://syzkaller.appspot.com/bug?extid=dc208a8cf8d37cf3e5ac",
+      "if": "Alauda xD/SmartMedia 이중 LUN 카드리더를 지원한다면",
+      "do": "포트별 media_initialized 백포트가 stable에 들어갔는지 ChangeLog·lore를 추적하세요",
+      "verify": "syzbot divide error 보고와 포트별 플래그 패치 인용을 원문 링크로 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.2.15 stable · EOL**\n\n7.2.y 최종 릴리스인 7.2.15는 이미 공개된 상태이며, 이번 수집에서 7.2.y 트리에 대한 추가 공식 릴리스 신호는 없습니다.\n\n영향: 7.2.y를 고정한 배포는 7.3.y 또는 LTS로 이전해야 하며, 마지막 7.2.15 ChangeLog에도 zerocopy·io_uring·SMB·Bluetooth 관련 백포트가 포함되어 있습니다.\n\n> Note, this is the LAST 7.2.y kernel release.  After this one the 7.2.y kernel tree is end-of-life.  Please move to 7.3.y at this time.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/01/439)\n\n> letting an unprivileged user write into the page cache of a root-owned read-only file.\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.15)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**wifi: mac80211: handle failure to re-add interface on address change**\n\nstable 백포트는 실행 중 station 인터페이스 MAC 변경 시 드라이버 remove/add 후 add_interface() 실패를 경고만 하고 userspace에는 성공을 반환하던 경로를 오류 전파·이전 주소 복구·드라이버 미등록 상태에서의 추가 변경 거부로 고칩니다.\n\n영향: POWERED_ADDR_CHANGE를 쓰는 무선 스택에서 USB Wi-Fi가 사라진 뒤에도 주소 변경이 성공으로 보이면 netlink와 드라이버 상태가 어긋납니다. lore.kernel.org 원문은 403으로 재확인하지 못했습니다.\n\n> the address change still returns success to userspace even though the interface is now running but no longer present in the driver.\n\n[원문 확인](https://lore.kernel.org/stable/20261121170346.12440-1-25031212351@stu.xidian.edu.cn/)\n\n**scsi: target: iscsi: fix use-after-free in iscsit_stop_session()**\n\n패치는 iscsit_stop_session()이 sess_conn_list를 순회할 때 conn_lock을 놓는 사이 동시 iscsit_close_connection()이 list_del()로 LIST_POISON1을 남기면 다음 list_next_entry()가 poisoned 포인터로 spinlock을 잡아 GPF가 나는 경로를 막습니다.\n\n영향: LIO iSCSI target에 MaxConnections>1·MC/S를 쓰는 환경에서 세션 종료·로그아웃이 커널 패닉으로 이어질 수 있어 stable 우선순위가 높습니다. 머지된 stable 태그·Fixes 해시의 upstream 커밋은 changelog에서 아직 확인하지 못했습니다.\n\n> passes it to iscsit_inc_conn_usage_count(), which takes a spinlock ... and faults on 0xdead000000000004.\n\n[원문 확인](https://lore.kernel.org/stable/179527913740.32224.2426414360492240680@gmail.com/)\n\n> Kernel panic - not syncing: Fatal exception in interrupt\n\n[원문 확인](https://lore.kernel.org/stable/179527913740.32224.2426414360492240680@gmail.com/)\n\n**net: stmmac: dwmac-sun8i: Limit the MTU to one descriptor buffer**\n\nArun Iyengar stable 제안은 dwmac-sun8i chain 모드에서 11-bit RX 버퍼(2044바이트)를 넘는 프레임이 드롭·절단되는데 max_mtu가 과대 설정된 문제를 MTU 2018 상한으로 맞춥니다.\n\n영향: Allwinner H616 등 sun8i EMAC에서 MTU 2033 근처면 UDP가 양방향 모두 통과하지 않을 수 있어 distro 기본 MTU·VLAN과 맞물립니다. stable 머지 시점은 Andrew Lunn 응답 기준 아직 미확인입니다.\n\n> At MTU 2033 no UDP datagram gets through in either direction.\n\n[원문 확인](https://lore.kernel.org/stable/20261121-sun8i-emac-mtu-limit-v1-1-22492842d318@gmail.com/)\n\n> Limit the MTU so that a frame with two VLAN tags and the FCS fits 2044 bytes (MTU 2018).\n\n[원문 확인](https://lore.kernel.org/stable/20261121-sun8i-emac-mtu-limit-v1-1-22492842d318@gmail.com/)\n\n**usb-storage: alauda: track media_initialized per port**\n\nmedia_initialized를 포트별로 두어 xD/SmartMedia 이중 LUN에서 한 포트만 초기화되면 다른 포트가 alauda_init_media()를 건너뛰어 uzonesize==0으로 divide-by-zero가 나는 회귀를 고칩니다.\n\n영향: 레거시 Alauda USB 카드리더를 지원하는 배포·KASAN 빌드에서 syzbot 재현 divide error가 oops로 이어질 수 있습니다.\n\n> divide error in alauda_transport\n\n[원문 확인](https://syzkaller.appspot.com/bug?extid=dc208a8cf8d37cf3e5ac)\n\n> Move media_initialized into struct alauda_media_info so each port tracks its own initialization state\n\n[원문 확인](https://lore.kernel.org/stable/20261121171956.1455-1-arbabhaider649@gmail.com/)\n\n**wifi: mm81x: kill the bulk URB when the wait is interrupted**\n\nwait_event_interruptible_timeout()가 -ERESTARTSYS로 끊길 때 in-flight bulk URB를 usb_kill_urb()로 정리하지 않으면 이후 접근이 -EBUSY로 막히는 경로를 고칩니다.\n\n영향: 시그널로 등록·메모리 접근을 중단하는 사용자 공간 도구가 mm81x 장치를 복구 불가 상태로 만들 수 있습니다.\n\n> when the wait returns -ERESTARTSYS the function returns with the URB still submitted.\n\n[원문 확인](https://lore.kernel.org/stable/20261121161631.2552-1-25031212351@stu.xidian.edu.cn/)\n\n**[REGRESSION] ublk: dispatched IO intermittently never posts its fetch completion (v7.0)**\n\nLuciano Lo Giudice 후속 메일은 ublk completion 유실 회귀에 대한 7.0 stable 백포트 가능 여부를 묻고, Ming Lei는 7.0은 stable이 아니어 7.3 stable 이전 또는 자체 백포트를 권한 것으로 수집되었습니다. 원문 인용은 검증 실패했으며 7.0용 공식 stable 백포트 패치는 아직 제출·머지 확인 못했습니다.\n\n영향: userspace ublk 블록 디바이스를 쓰는 팀은 미완료 fetch로 프로세스가 unkillable·디바이스 해제 불가 상태가 될 수 있어, 저신뢰 수집 기준으로는 7.3 stable 라인 이전을 검토해야 합니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Linux 7.3.5 stable**\n\n2026-11-17 Linux 7.3.5 short-term stable이 발표되었고 ChangeLog에는 assoc_array shortcut·GC 무결성 시리즈를 비롯해 f2fs·ACPI·PCI·media 등 약 514건의 백포트가 포함됩니다. 이번 수집에서 태그 이후 추가 short-term 릴리스 신호는 없습니다.\n\n영향: 7.2.y EOL 이후 활성 short-term stable 기준은 7.3.5이며, assoc_array 객체 유실 방지 수정은 키링 등 assoc_array 사용자 정합성과 직결됩니다.\n\n> I'm announcing the release of the 7.3.5 kernel.\n\nAll users of the 7.3 kernel series must upgrade.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/17/1538)\n\n> assoc_array: don't lose objects when a root shortcut is split at level 4\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.3.5)\n\n**wifi: mm81x: recover from bulk transfer errors**\n\n2패치 시리즈는 mm81x_usb_cmd()가 -EPIPE/-EPROTO 완료 URB를 성공으로 보고하는 버그를 고치고, stall된 bulk endpoint에 CLEAR_FEATURE(ENDPOINT_HALT) 없이 계속 실패하는 문제를 endpoint halt 해제로 복구합니다.\n\n영향: mm81x Wi-Fi HaLow USB 드라이버를 포함하는 이미지는 프로토콜 오류 후에도 데이터 페이즈를 진행해 장치가 영구적으로 망가질 수 있어 stable 반영 여부를 봐야 합니다.\n\n> a command that completed with -EPIPE or -EPROTO is reported as successful, so the data phase is submitted even though the command ... never reached the device.\n\n[원문 확인](https://lore.kernel.org/stable/20261121164923.8862-1-25031212351@stu.xidian.edu.cn/)\n\n> A stalled endpoint stays halted until CLEAR_FEATURE(ENDPOINT_HALT); without it every later transfer on that endpoint fails as well.\n\n[원문 확인](https://lore.kernel.org/stable/20261121164923.8862-1-25031212351@stu.xidian.edu.cn/)\n\n**Linux 6.12.118 longterm**\n\n2026-11-17 Linux 6.12.118 longterm이 공개되었고 ChangeLog에는 assoc_array 무결성 시리즈·lib/cmdline get_options() 오버플로·다수 드라이버 백포트 등 679건이 포함됩니다.\n\n영향: 6.12 LTS를 기준으로 하는 배포·벤더 포크의 동기화 지점이며, cmdline 파싱 수정은 부팅 파라미터 파싱 회귀에 직접적입니다.\n\n> I'm announcing the release of the 6.12.118 kernel.\n\nAll users of the 6.12 kernel series must upgrade.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/17/1527)\n\n> lib/cmdline: fix get_options() count and overflow with large ranges\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.12.118)\n\n**Linux 6.18.64 longterm**\n\n2026-11-17 Linux 6.18.64 longterm이 발표되었고 ChangeLog에는 assoc_array 시리즈·mm/vma uffd mremap 수정·media/ipu6 등 약 694건 백포트가 실렸습니다.\n\n영향: 6.18 longterm 브랜치를 추종하는 배포·임베디드 제품의 월간 동기화 태그이며, uffd merge 수정은 userfaultfd 기반 마이그레이션·CRI 도구에 영향을 줍니다.\n\n> I'm announcing the release of the 6.18.64 kernel.\n\nAll users of the 6.18 kernel series must upgrade.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/17/1507)\n\n> mm/vma: avoid broken uffd merge on mremap\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.18.64)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "medium",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Linux 7.2.15 최종 7.2.y 릴리스 공지",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/01/439",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-7.2.15",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.15",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 7.3.5 stable 공지",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/17/1538",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-7.3.5",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.3.5",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 6.12.118 longterm 공지",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/17/1527",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-6.12.118",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.12.118",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 6.18.64 longterm 공지",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/17/1507",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-6.18.64",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.18.64",
+      "note": "changelog"
+    },
+    {
+      "title": "mac80211 주소 변경 시 add_interface 실패",
+      "url": "https://lore.kernel.org/stable/20261121170346.12440-1-25031212351@stu.xidian.edu.cn/",
+      "note": "thread"
+    },
+    {
+      "title": "iscsit_stop_session() use-after-free",
+      "url": "https://lore.kernel.org/stable/179527913740.32224.2426414360492240680@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "mm81x bulk transfer 오류 복구",
+      "url": "https://lore.kernel.org/stable/20261121164923.8862-1-25031212351@stu.xidian.edu.cn/",
+      "note": "thread"
+    },
+    {
+      "title": "dwmac-sun8i MTU 상한",
+      "url": "https://lore.kernel.org/stable/20261121-sun8i-emac-mtu-limit-v1-1-22492842d318@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "syzbot alauda_transport divide error",
+      "url": "https://syzkaller.appspot.com/bug?extid=dc208a8cf8d37cf3e5ac",
+      "note": "article"
+    },
+    {
+      "title": "alauda 포트별 media_initialized",
+      "url": "https://lore.kernel.org/stable/20261121171956.1455-1-arbabhaider649@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "mm81x bulk URB kill on interrupt",
+      "url": "https://lore.kernel.org/stable/20261121161631.2552-1-25031212351@stu.xidian.edu.cn/",
+      "note": "thread"
+    },
+    {
+      "title": "ublk fetch completion 회귀 (v7.0)",
+      "url": "https://lore.kernel.org/stable/CAFS5DSEp13YPLwRut2OiQfQqO70s6whbLWmEQ14mt8_JjBfBRw@mail.gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-21T18:23:48.443Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

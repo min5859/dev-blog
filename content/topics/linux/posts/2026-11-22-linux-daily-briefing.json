@@ -1,0 +1,133 @@
+{
+  "id": "2026-11-22-linux-daily-briefing",
+  "topic": "linux",
+  "title": "2026-11-22 sched_ext 회귀 수정 — 리눅스 개발",
+  "headline": "신규 태스크 웨이크 경로에서 스케줄러 플래그가 빠져 스케줄 확장 사용자 공간 스케줄러 계약이 깨질 수 있는 수정이 정리되었습니다.",
+  "date": "2026-11-22",
+  "summary": "sched/core 패치로 fork 초기 enqueue에서 ENQUEUE_RQ_SELECTED가 설정되며 sched_ext/for-7.4-fixes와 v6.12+ stable 범위가 명시되었습니다. 활성 stable은 7.3.5 대량 백포트와 7.2.15 최종 릴리스로 이전·패치 검토 부담이 한꺼번에 올라갑니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "fork 경로 sched_ext enqueue 계약",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "sched_ext·BPF 스케줄러 개발자, 스케줄러 회귀 테스트 담당자",
+      "verifyLink": "https://lore.landau.one/lkml/20261112144935.583937-2-cui.tao@linux.dev/T/",
+      "if": "sched_ext 또는 BPF 스케줄러를 쓰는 팀",
+      "do": "fork·wakeup 경로 회귀 테스트와 for-7.4-fixes 반영 여부를 확인하세요",
+      "verify": "lore 스레드에서 패치 본문과 stable 태그 답장을 직접 확인하세요"
+    },
+    {
+      "title": "Linux 7.3.5 stable",
+      "priority": "상",
+      "impactType": "backport",
+      "affectedAudience": "7.3.y stable 추적 배포팀, 보안·회귀 백포트 검토자",
+      "verifyLink": "https://lwn.net/Articles/1108143/",
+      "if": "7.3 커널 계열을 배포·임베디드에 쓰는 경우",
+      "do": "7.3.5로 올리고 assoc_array·서브시스템 백포트를 검토하세요",
+      "verify": "LWN 공지와 ChangeLog-7.3.5에서 릴리스·주요 수정을 확인하세요"
+    },
+    {
+      "title": "7.2.15 최종 stable",
+      "priority": "중",
+      "impactType": "release",
+      "affectedAudience": "7.2 커널을 운영하는 배포·임베디드 팀과 stable/backport 담당자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/01/439",
+      "if": "아직 7.2.y를 유지하는 배포·제품",
+      "do": "7.3.y 이전과 12건 백포트 적용 여부를 계획하세요",
+      "verify": "Greg 공지와 ChangeLog-7.2.15에서 EOL·백포트를 확인하세요"
+    },
+    {
+      "title": "Linux 7.4-rc3",
+      "priority": "중",
+      "impactType": "release",
+      "affectedAudience": "mainline·distro-pre 팀, 파일시스템·네트워크(SMB/CIFS)·GPU 드라이버 담당자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/15/1528",
+      "if": "mainline 또는 프리릴리스 CI를 돌리는 팀",
+      "do": "iomap 규약·SMB writeback 회귀 테스트 우선순위를 올리세요",
+      "verify": "Linus rc3 공지와 SMB 스레드에서 수정 범위를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**7.2.15 stable EOL**\n\nGreg Kroah-Hartman이 Linux 7.2.15 stable을 공개했으며 공지상 7.2.y 최종 릴리스로 7.2 브랜치는 EOL이다.\n\n영향: 7.2.y 유지 배포는 7.3.y로 이전해야 하며 ChangeLog 12건 백포트가 포함된다.\n\n> Note, this is the LAST 7.2.y kernel release.  After this one the 7.2.y kernel tree is end-of-life.  Please move to 7.3.y at this time.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/01/439)\n\n**7.4-rc3 mainline**\n\nLinus Torvalds가 2026-11-15 Linux 7.4-rc3를 공개했으며 diffstat에서 iomap 호출 규약과 SMB 관련 패치가 두드러진다.\n\n영향: netfslib 기반 SMB writeback 무음 데이터 손실 등이 rc3에 들어가 mainline 추적 CI 회귀 우선순위에 영향을 준다.\n\n> Filesystems actually show in in the diffstat because we have a couple of bigger patches in there, notably a calling convention change for iomap\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/15/1528)\n\n**SMB 클라이언트 writeback**\n\n7.4-rc3에 SMB 클라이언트 수정이 netfslib 이후 writeback 무음 데이터 손실을 다룬다.\n\n영향: 파일시스템·SMB 사용자는 rc3 구간에서 데이터 정합성 회귀 테스트가 필요하다.\n\n> Most of them fix silent data loss in writeback since the move to netfslib\n\n[원문 확인](https://lkml.indiana.edu/hypermail/linux/kernel/2611.1/19629.html)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**sched/core: Pass ENQUEUE_RQ_SELECTED on initial enqueue**\n\nwake_up_new_task() 초기 enqueue에서 ENQUEUE_RQ_SELECTED를 설정해 sched_ext select_cpu() 계약을 wakeup 경로와 맞춘다.\n\n영향: fork 경로에서 ops.enqueue()가 플래그를 못 보면 CPU 선택·통계가 어긋날 수 있어 stable 백포트 범위 명시가 중요하다.\n\n> wake_up_new_task() also calls select_task_rq() but activates the new task without the flag, so on the fork path ops.enqueue() never sees\n\n[원문 확인](https://lore.landau.one/lkml/20261112144935.583937-2-cui.tao@linux.dev/T/)\n\n**for-7.4-fixes 적용 및 stable 태그**\n\nTejun Heo는 sched_ext/for-7.4-fixes에 적용했고 v6.12+ stable 태그를 추가했다고 답했다.\n\n영향: extensible scheduler 실험·배포 팀은 백포트 트래킹 범위를 확인할 수 있다.\n\n> Applied to sched_ext/for-7.4-fixes with a stable tag (v6.12+) added.\n\n[원문 확인](https://lore.jethome.com/lkml/3c8a9bd9ea1d3faf7a072eaf4666125c@kernel.org/T/)\n\n**7.2.15 skb_zerocopy 백포트**\n\nChangeLog에 skb_zerocopy() shared-frag 마커 미전파 수정이 포함된다.\n\n영향: 제로카피 경로와 page cache에 대한 비권한 쓰기 가능성 논의와 연결되어 stable 추적에 직접적이다.\n\n> decrypted in place, letting an unprivileged user write into the page cache of a root-owned read-only file.\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.15)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Linux 7.3.5 stable**\n\n2026-11-17 Greg Kroah-Hartman이 Linux 7.3.5 stable을 발표했으며 ChangeLog에 대량 백포트가 있다.\n\n영향: 활성 7.3.y 사용자는 업그레이드가 권고되며 assoc_array 무결성 수정은 키링 등 사용자 전반 정합성과 연결된다.\n\n> I'm announcing the release of the 7.3.5 kernel.\n\nAll users of the 7.3 kernel series must upgrade.\n\n[원문 확인](https://lwn.net/Articles/1108143/)\n\n**assoc_array 루트 shortcut 분할**\n\n루트 shortcut level-4 분할 시 기존 객체를 잃지 않도록 하는 수정이 백포트되었다.\n\n영향: assoc_array 사용자 서브시스템은 데이터 유실 회귀 여부를 점검해야 한다.\n\n> assoc_array: don't lose objects when a root shortcut is split at level 4\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.3.5)\n\n**drm/imagination: firmware idle 재검사**\n\nfirmware가 ROGUE_FWIF_POW_IDLE에 도달하지 않았을 때 suspend 콜백에서 idle 검사 후 -EBUSY와 pm_runtime_mark_last_busy()로 재스케줄하도록 바꾼 v2 패치로 보입니다.\n\n영향: runtime_idle() 거부만으로 PM 코어가 재스케줄하지 않으면 GPU가 켜진 채 남을 수 있어 전력·열 관리에 직접적이다.\n\n> Move the idle check into pvr_power_device_suspend() and return -EBUSY after pm_runtime_mark_last_busy() so the PM core reschedules the\n\n[원문 확인](https://lore.landau.one/lkml/20261111-img-pm-autosuspend-v2-1-427689f6f2f9@linux.spacemit.com/T/)"
+    },
+    {
+      "heading": "기타",
+      "body": "**next-20261120**\n\nlinux-next 스냅샷은 Linus 트리 대비 비머지 9,049커밋·438 트리 병합이며 hid 트리 빌드 실패로 전일 next-20261119를 사용했다(전일과 동일 흐름).\n\n영향: 통합 CI는 hid 빌드 실패와 충돌 백로그를 조정한다.\n\n> The hid tree acquired a build failure, I used the version from next-20261119.\n\n[원문 확인](https://lore.jethome.com/lkml/awB5LfezLBAfSkrX@sirena.org.uk/T/)\n\n**색인 미완료 후보**\n\n2026-11-21 ath10k PCI 인터럽트 해제 패치는 미러에 아직 색인되지 않아 이번 수집에서 evidence URL을 확보하지 못해 제외했습니다."
+    }
+  ],
+  "confidence": {
+    "level": "high",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "7.2.15 최종 7.2.y 릴리스 및 EOL 공지",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/01/439",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-7.2.15",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.15",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 7.4-rc3 릴리스 공지",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/15/1528",
+      "note": "thread"
+    },
+    {
+      "title": "SMB 클라이언트 netfslib writeback 수정",
+      "url": "https://lkml.indiana.edu/hypermail/linux/kernel/2611.1/19629.html",
+      "note": "thread"
+    },
+    {
+      "title": "Linux 7.3.5 stable 발표 (LWN)",
+      "url": "https://lwn.net/Articles/1108143/",
+      "note": "article"
+    },
+    {
+      "title": "ChangeLog-7.3.5",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.3.5",
+      "note": "changelog"
+    },
+    {
+      "title": "linux-next next-20261120 트리 공지",
+      "url": "https://lore.jethome.com/lkml/awB5LfezLBAfSkrX@sirena.org.uk/T/",
+      "note": "thread"
+    },
+    {
+      "title": "sched/core ENQUEUE_RQ_SELECTED 패치",
+      "url": "https://lore.landau.one/lkml/20261112144935.583937-2-cui.tao@linux.dev/T/",
+      "note": "thread"
+    },
+    {
+      "title": "sched_ext/for-7.4-fixes 적용 답장",
+      "url": "https://lore.jethome.com/lkml/3c8a9bd9ea1d3faf7a072eaf4666125c@kernel.org/T/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/imagination PM autosuspend v2",
+      "url": "https://lore.landau.one/lkml/20261111-img-pm-autosuspend-v2-1-427689f6f2f9@linux.spacemit.com/T/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-21T18:03:19.894Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,149 @@
+{
+  "id": "2026-11-22-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-11-22 stackleak·LTS — 커널 보안",
+  "headline": "x86 stackleak 소거 최적화 논의가 이어지고 6.18.64·7.3.5 등 stable·LTS 보안·정합성 백포트가 동시에 추적선에 올라왔습니다.",
+  "date": "2026-11-22",
+  "summary": "Usama Arif의 REP STOSQ 기반 __stackleak_poison() 제안이 11월 21일 리뷰에서 임계값·벤치 결과를 두고 논의됐습니다. 6.18.64 LTS와 7.3.5·6.12.118 stable은 cmdline·assoc_array·landlock·uffd 등 보안·정합성 수정이 ChangeLog에 반영됐습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "보안"
+  ],
+  "highlights": [
+    {
+      "title": "x86/kstack_erase: REP STOSQ for large stack fills",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "x86 KSTACK_ERASE·stackleak 사용자, 클라우드/가상화 호스트 커널 성능 담당",
+      "verifyLink": "https://lists.openwall.net/linux-hardening/2026/11/21/1",
+      "if": "KSTACK_ERASE·STACKLEAK을 켠 x86 호스트에서 syscall 복귀마다 stackleak_erase() 비용이 운영 사이클에 잡히면",
+      "do": "512바이트 임계와 v2.1 루프+memset64 방향의 하드닝 스레드 진행을 추적하고 벤치·머지 전 KMSAN 경로를 함께 검토하세요",
+      "verify": "작성자 답장의 Zen 5c 게스트 측정치와 초기 스레드의 Meta 호스트 1.5% 주장을 원문에서 대조하세요"
+    },
+    {
+      "title": "Linux 6.18.64 longterm",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "6.18 LTS를 채택·백포트하는 배포와 가상화·Landlock 운영팀",
+      "verifyLink": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.18.64",
+      "if": "6.18 LTS 제품의 월간 커널 기준을 맞추거나 userfaultfd·Landlock 격리를 운영 중이면",
+      "do": "686건 묶음 릴리스로 업그레이드 일정을 잡고 get_options()·landlock selftest·uffd merge 수정이 백포트 목록에 있는지 확인하세요",
+      "verify": "stable 공지와 ChangeLog의 mm/vma uffd merge 항목을 원문에서 확인하세요"
+    },
+    {
+      "title": "Linux 7.3.5 stable",
+      "priority": "중",
+      "impactType": "backport",
+      "affectedAudience": "7.3.y stable을 추적하는 배포팀과 회귀·보안 백포트 검토자",
+      "verifyLink": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.3.5",
+      "if": "단기 stable 추적선이 7.3.y이고 키링 등 assoc_array 사용자를 유지하면",
+      "do": "7.3.5로 올리고 루트 shortcut level-4 분할 시 객체 유실 수정이 포함됐는지 ChangeLog에서 대조하세요",
+      "verify": "Greg Kroah-Hartman 7.3.5 공지의 upgrade 요구와 assoc_array 인용을 확인하세요"
+    },
+    {
+      "title": "gpio: make gpiolib-shared more fwnode-centric",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "GPIO·driver-core·ACPI/DT 플랫폼 드라이버 메인테이너",
+      "verifyLink": "https://lists.openwall.net/linux-hardening/2026/11/20/34",
+      "if": "OF 밖 fwnode에서 GPIO 공유 확장이나 gpiolib-shared 정리 로드맵을 보고 있으면",
+      "do": "v3 10패치의 driver-core·GPIO 분리 머지 예정과 count_references() 추가를 스레드에서 추적하세요",
+      "verify": "하드닝 커버레터의 generic fwnode 목표와 driver-core 스레드 인용을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.2.15 stable · EOL**\n\n7.2.y 최종 릴리스로 12건 백포트가 반영됐으며, 7.2 계열은 EOL이라 7.3.y 이전이 필요합니다.\n\n영향: skb_zerocopy() SKBFL_SHARED_FRAG 누락 백포트는 OVS·nfnetlink_queue 경로에서 비권한 쓰기와 연관된 보안 수정이 ChangeLog에 포함됩니다.\n\n> Note, this is the LAST 7.2.y kernel release.  After this one the 7.2.y kernel tree is end-of-life.  Please move to 7.3.y at this time.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/01/439)\n\n> decrypted in place, letting an unprivileged user write into the page cache of a root-owned read-only file.\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.15)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**Linux 6.18.64 longterm**\n\n2026-11-17 6.18.64 LTS stable이 공개됐고 6.18.64-rc1에 686건 패치가 묶였습니다.\n\n영향: lib/cmdline·landlock selftest·mm/vma uffd merge 등이 백포트돼 보안·격리·가상 메모리 운영에 직접 영향을 줍니다.\n\n> I'm announcing the release of the 6.18.64 kernel.\n\nAll users of the 6.18 kernel series must upgrade.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/17/1507)\n\n> mm/vma: avoid broken uffd merge on mremap\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.18.64)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**x86/kstack_erase: Use REP STOSQ for large stack fills**\n\n512바이트 기준 REP STOSQ(또는 memset64) 최적화가 제안됐고 11월 21일 리뷰에서 임계값·분기·언롤 대안이 논의됐으며 작성자는 v2.1 단순 루프+memset64 선호와 게스트 측정치를 제시했습니다.\n\n영향: Meta 규모 VM 호스트에서 stackleak_erase()가 비유휴 커널 사이클 약 1.5%를 쓸 수 있어 하드닝 유지·오버헤드 절감 균형이 클라우드 운영에 중요합니다.\n\n> On Meta hosts running many small VMs, stackleak_erase() accounts for about 1.5% of non-idle host kernel cycles.\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/11/19/35)\n\n> Unpatched                     68.3 ns per erase\n  v1 / v2.1 (loop up to 512 B)  46.6 ns\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/11/21/1)\n\n**Linux 7.3.5 stable**\n\n2026-11-17 7.3.5 stable이 공개됐고 assoc_array shortcut 분할·GC 정합성 등 대량 백포트가 있습니다.\n\n영향: assoc_array 객체 유실 수정은 키링 등에서 키 조회 실패·중복 삽입으로 이어질 수 있는 정합성·보안 수정입니다.\n\n> assoc_array: don't lose objects when a root shortcut is split at level 4\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.3.5)\n\n**Linux 6.12.118 longterm**\n\n2026-11-17 6.12.118 LTS가 공개됐고 rc1 주기에 약 670건 백포트가 포함됩니다.\n\n영향: get_options() 범위 오버플로 수정은 root 제공 부트 인자 파싱 견고성, assoc_array·landlock selftest 수정은 LTS 보안·안정성 기준점입니다.\n\n> a range like \"0-2147483647\" wraps the index negative and writes outside the array.\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.12.118)\n\n**gpio: make gpiolib-shared more fwnode-centric**\n\nBartosz Golaszewski v3 10패치가 fwnode_property_get_names()·count_references() 등을 추가하고 gpiolib-shared를 OF 전용에서 일반 fwnode 경로로 옮깁니다.\n\n영향: 빈 phandle 참조 카운트 공백을 메우고 DT 스캔 오류가 공유 GPIO 검증 실패로 이어질 수 있는 하드닝 전제 작업입니다.\n\n> This series attempts to make the code more generic, ahead of extending support for sharing GPIOs to other types of firmware nodes\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/11/20/34)\n\n> Add a new fwnode callback allowing to count all references of given firmware node.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/20/1753)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "high",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Linux 7.2.15 최종 stable·EOL 공지",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/01/439",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-7.2.15",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.15",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 7.3.5 stable 공지",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/17/1538",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-7.3.5",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.3.5",
+      "note": "changelog"
+    },
+    {
+      "title": "gpiolib-shared fwnode-centric 커버레터",
+      "url": "https://lists.openwall.net/linux-hardening/2026/11/20/34",
+      "note": "thread"
+    },
+    {
+      "title": "count_references() fwnode 콜백",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/20/1753",
+      "note": "thread"
+    },
+    {
+      "title": "x86 stackleak REP STOSQ 제안",
+      "url": "https://lists.openwall.net/linux-hardening/2026/11/19/35",
+      "note": "thread"
+    },
+    {
+      "title": "stackleak 벤치·v2.1 답장",
+      "url": "https://lists.openwall.net/linux-hardening/2026/11/21/1",
+      "note": "thread"
+    },
+    {
+      "title": "Linux 6.12.118 stable 공지",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/17/1527",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-6.12.118",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.12.118",
+      "note": "changelog"
+    },
+    {
+      "title": "Linux 6.18.64 stable 공지",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/17/1507",
+      "note": "thread"
+    },
+    {
+      "title": "6.18.64-rc1 패치 시리즈",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/13/1962",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-6.18.64",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.18.64",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-21T18:16:46.773Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

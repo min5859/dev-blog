@@ -1,0 +1,108 @@
+{
+  "id": "2026-11-22-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-11-22 GRO 소켓 누수 차단 — linux-perf-rt",
+  "headline": "prefetched 소켓 skb의 GRO 우회와 XDP skb 헬퍼 분리, veth selftest·RT BPF 검증 보강이 동시에 논의됩니다.",
+  "date": "2026-11-22",
+  "summary": "TCX bpf_sk_assign·터널 GRO 경로의 소켓 참조 누수를 막는 netdev 수정과 stmmac 등이 쓸 XDP 조립 헬퍼가 메일링 리스트에 올라왔습니다. PREEMPT_RT cgroup rstat selftest lockdep 억제와 RT 부트·격리 문서 보강도 함께 추적할 만합니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "prefetched 소켓 skb의 GRO 우회",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "TC/tcX bpf_sk_assign·GRO·터널 수신 경로를 다루는 BPF·네트워킹 담당",
+      "verifyLink": "https://lists.openwall.net/netdev/2026/11/21/148",
+      "if": "TC ingress bpf_sk_assign 뒤 터널 디캡·GRO를 타는 배포를 운영한다면",
+      "do": "gro_cells_receive() 변경이 머지되기 전까지 해당 경로에서 소켓·netns 장기 점유와 장치 해제 실패 가능성을 회귀 시나리오에 넣으세요",
+      "verify": "netdev 스레드 원문에서 패치 조건과 stable Cc 범위를 확인하세요"
+    },
+    {
+      "title": "XDP skb 조립 헬퍼 분리",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "XDP 드라이버·NIC multi-buffer Rx·stmmac 계열 유지보수 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/bpf/20261117-stmmac-rx-mb-v11-1-9fa5c34ef245@oss.qualcomm.com/",
+      "if": "소프트웨어 VLAN·multi-buff Rx에서 L2를 먼저 처리하는 XDP 드라이버를 맞추고 있다면",
+      "do": "__xdp_build_skb_from_buff() 도입 후 eth_type_trans() 호출 시점을 호출자 쪽으로 옮기는 diff를 벤치마크에 반영하세요",
+      "verify": "stmmac rx multi-buff 시리즈 스레드에서 래퍼 동작 보존 문구를 대조하세요"
+    },
+    {
+      "title": "cgroup rstat selftest 선점 억제",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "PREEMPT_RT·BPF cgroup rstat·selftests/bpf 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/21/493",
+      "if": "PREEMPT_RT 트리에서 BPF cgroup hierarchical_stats selftest를 돌린다면",
+      "do": "css_rstat_updated() 전후 bpf_preempt_disable/enable 패치가 들어온 뒤 lockdep 경고 0/2 결과를 CI에 고정하세요",
+      "verify": "코어 cgroup에 선점 보호를 넣는 대안 논의가 있는지 스레드를 따라가세요"
+    },
+    {
+      "title": "RT 부트·작업 격리 문서",
+      "priority": "하",
+      "impactType": "project",
+      "affectedAudience": "PREEMPT_RT 시스템 통합·latency 검증·임베디드 RT 플랫폼 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/20/659",
+      "if": "Kconfig만으로 worst-case latency를 설명해야 하는 통합 문서를 갱신 중이라면",
+      "do": "isolcpus·nohz_full·rcu_nocbs·irqaffinity와 osnoise·timerlat·rtla 측정 절을 한 절로 묶어 팀 온보딩에 쓰세요",
+      "verify": "2026-11-21 리포스트가 v2 이후 추가 리비전인지 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Documentation: real-time: Add boot parameters and task isolation section**\n\nDocumentation/core-api/real-time/kernel-configuration.rst에 isolcpus, nohz_full, rcu_nocbs, irqaffinity, C-state 제한, sched_rt_runtime_us 등 부트·런타임 tunable과 CPU isolation 한계·측정 도구(osnoise, timerlat, rtla) 안내를 추가합니다.\n\n영향: Kconfig만으로는 worst-case latency를 보장할 수 없다는 점을 문서화해, PREEMPT_RT 통합자가 실제로 쓰는 isolation 스택을 한곳에서 따라가게 합니다.\n\n> Kernel configuration options alone do not determine a real-time system's worst-case latency.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/20/659)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**net: keep skbs with a prefetched socket out of gro_cells gro**\n\ngro_cells_receive()가 skb_sk_is_prefetched(skb)인 패킷을 GRO 대신 netif_rx()로 보내어, bpf_sk_assign으로 붙은 소켓 참조가 GRO 병합 시 destructor 없이 skb->sk가 지워지며 누수되는 문제를 막습니다.\n\n영향: TCX/tc ingress bpf_sk_assign과 터널 디캡 후 GRO 경로를 쓰는 배포에서는 소켓·netns가 영구적으로 붙잡혀 장치 해제가 막힐 수 있어, bpf_sk_assign egress 검토와 함께 필수 회귀 수정입니다.\n\n> GRO merges skbs with the same skb->sk into one flow and clears skb->sk and skb->destructor of each merged skb without calling the destructor so every merged skb leaks a socket ref.\n\n[원문 확인](https://lists.openwall.net/netdev/2026/11/21/148)\n\n**selftests/bpf: Disable preemption around css_rstat_updated()**\n\ncgroup_hierarchical_stats BPF selftest에서 css_rstat_updated() 호출 전후에 bpf_preempt_disable()/bpf_preempt_enable()을 넣어 PREEMPT_RT에서 tracepoint 하의 lockdep 경고를 없앱니다.\n\n영향: PREEMPT_RT에서 cgroup rstat kfunc selftest lockdep noise는 BPF CI·RT 검증 신뢰도를 떨어뜨리며, cgroup 쪽은 selftest 수정이 메인테이너가 선호하는 방향입니다.\n\n> cgroup_hierarchical_stats triggers a lockdep warning in __css_rstat_updated() on PREEMPT_RT.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/21/493)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**net: xdp: add __xdp_build_skb_from_buff() helper**\n\nxdp_build_skb_from_buff() 구현을 __xdp_build_skb_from_buff()로 분리해 skb 조립만 하고 eth_type_trans()는 호출자(stmmac 등 L2 전처리 드라이버)에 맡깁니다. 기존 xdp_build_skb_from_buff()는 static inline 래퍼로 동작을 유지합니다.\n\n영향: XDP rx multi-buff·소프트웨어 VLAN 경로처럼 L2 헤더를 먼저 다뤄야 하는 드라이버가 in-tree XDP 헬퍼를 쓸 수 있게 되어, stmmac XDP 시리즈와 같은 드라이버·BPF 패스 설계에 직접 연결됩니다.\n\n> xdp_build_skb_from_buff() always calls eth_type_trans() on the skb it builds, which pulls the Ethernet header and advances skb->data.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/bpf/20261117-stmmac-rx-mb-v11-1-9fa5c34ef245@oss.qualcomm.com/)\n\n**selftests: net: veth: propagate check failures to exit status**\n\nveth.sh에서 chk_channels()와 XDP·채널 관련 negative test 네 곳이 실패해도 ret를 설정하지 않던 문제를 고치고, invalid TX 테스트는 nproc+1 대신 커널 max_tx+1을 사용합니다.\n\n영향: veth selftest는 XDP·멀티큐 설정 검증에 쓰이므로 exit 0 오류나 affinity로 인한 false failure를 제거해야 BPF·네트워킹 CI가 실제 회귀를 잡을 수 있습니다.\n\n> Four checks in tools/testing/selftests/net/veth.sh report failures without setting ret, allowing the script to exit 0 even when a check fails.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/19/50)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "medium",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "netdev: prefetched socket GRO 우회",
+      "url": "https://lists.openwall.net/netdev/2026/11/21/148",
+      "note": "thread"
+    },
+    {
+      "title": "stmmac XDP multi-buff v11: __xdp_build_skb_from_buff",
+      "url": "https://lore-kernel.gnuweeb.org/bpf/20261117-stmmac-rx-mb-v11-1-9fa5c34ef245@oss.qualcomm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "veth selftest exit status 수정",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/19/50",
+      "note": "thread"
+    },
+    {
+      "title": "selftests/bpf cgroup rstat 선점 억제",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/21/493",
+      "note": "thread"
+    },
+    {
+      "title": "Documentation: real-time boot·isolation",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/20/659",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-21T18:26:17.162Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,143 @@
+{
+  "id": "2026-11-22-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-11-22 K3·SG2042 플랫폼 — 아키·플랫폼",
+  "headline": "SpacemiT K3 DPU 레지스터, SG2042 EFI RTC 회귀 수정, RISC-V KVM steal-time 개선 등 플랫폼 패치가 메일링에 올라왔습니다.",
+  "date": "2026-11-22",
+  "summary": "ARM·RISC-V 보드 지원을 위한 DT 바인딩, stmmac probe 정리, drm/spacemit·PowerVR 전력, clk·EFI 수정, KVM 성능 패치가 함께 논의되었습니다. net-next 머지·maintainer Applied 시점은 아직 스레드에서 확정되지 않은 항목이 있으니 원문을 보시기 바랍니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "riscv/clk: sophgo: Fix EFI RTC on Milk-V Pioneer",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Sophgo SG2042·Milk-V Pioneer·RISC-V EFI·clk 담당",
+      "verifyLink": "https://lkml.iu.edu/hypermail/linux/kernel/2611.2/19384.html",
+      "if": "Milk-V Pioneer에서 EFI rtc-efi GetTime()이 깨지거나 reserved 장치 clk gate가 꺼진다면",
+      "do": "PAGE_KERNEL_IO 매핑과 CLK_IS_CRITICAL 패치 스레드를 따라 재현·테스트하세요",
+      "verify": "리뷰에 언급된 reserved /soc DT 의존과 정적 clk 목록 대안을 스레드에서 확인하세요"
+    },
+    {
+      "title": "drm/spacemit: add Saturn DPU register model",
+      "priority": "상",
+      "impactType": "project",
+      "affectedAudience": "SpacemiT K3·RISC-V display·drm/spacemit 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/linux-phy/20261121-k3-display-v3-0-ec419e8e96b8@gmail.com/",
+      "if": "K3 display v3 시리즈의 이후 KMS·백엔드 패치를 준비 중이라면",
+      "do": "7/17 Saturn DPU 주소맵·필드·IRQ 테이블 패치와 시리즈 커버를 함께 읽으세요",
+      "verify": "v3 전체 리뷰·재테스트와 eDP DTS 후속 일정은 스레드에서 확인 필요합니다"
+    },
+    {
+      "title": "RISC-V: KVM: Lessen steal time update overhead",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "RISC-V KVM·SBI STA·가상화 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/kvm/20261121173526.892344-1-den@valinux.co.jp/",
+      "if": "RISC-V KVM 호스트에서 guest steal-time 경로 오버헤드를 줄이려 한다면",
+      "do": "v2 벤치 수치와 skip 로직 변경을 kvm 스레드에서 검토하세요",
+      "verify": "배리어 Fixes 패치와 Andrew Jones 리뷰 반영·v3 필요 여부를 별도 스레드에서 확인하세요"
+    },
+    {
+      "title": "net: stmmac: eic7700: Use syscon_regmap_lookup_by_phandle_args",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "Eswin EIC7700·stmmac 플랫폼 및 net-next 담당",
+      "verifyLink": "https://ci.syzbot.org/patches/7a195141-b55c-4000-b41f-bdbf30666780",
+      "if": "EIC7700 dwmac DT에서 eswin,hsp-sp-csr phandle 인자를 맞추는 중이라면",
+      "do": "syscon_regmap_lookup_by_phandle_args()로 일괄 취득하는 net-next 패치를 적용 검토하세요",
+      "verify": "net-next 머지 시점과 syzbot CI 완료 여부는 확인 필요합니다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**riscv/clk: sophgo: Fix EFI RTC on Milk-V Pioneer**\n\nMilk-V Pioneer(SG2042)에서 EFI rtc-efi GetTime()이 깨지는 두 원인을 수정하는 2패치: RISC-V EFI runtime MMIO를 PAGE_KERNEL_IO로 매핑하고, reserved DT 노드가 쓰는 sg2042 clk gate에 CLK_IS_CRITICAL를 설정합니다.\n\n영향: 펌웨어가 DS1307/I2C0를 점유한 RISC-V SG2042 보드에서 시스템 시각·EFI runtime이 동작해야 하며, clk/EFI 상호작용은 유사 플랫폼 설계의 참고 사례가 됩니다.\n\n> Two things break GetTime() in that setup: RISC-V maps EFI runtime MMIO as normal memory... Patch 2 keeps gates used by reserved devices on.\n\n[원문 확인](https://lkml.iu.edu/hypermail/linux/kernel/2611.2/19384.html)\n\n> Use PAGE_KERNEL_IO for these regions. Fixes: b91540d52a08 (\"RISC-V: Add EFI runtime services\")\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-efi/20261121-b4-sg2042-efi-rtc-v1-1-19898b8ad497@iscas.ac.cn/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**net: stmmac: eic7700: Use syscon_regmap_lookup_by_phandle_args**\n\nEswin EIC7700용 dwmac-eic7700 probe가 eswin,hsp-sp-csr syscon phandle과 세 개의 offset 인자를 syscon_regmap_lookup_by_phandle_args() 한 번으로 가져오도록 정리된 net-next 패치입니다.\n\n영향: Eswin SoC 플랫폼에서 stmmac 보드 지원을 맞출 때 DT phandle+인자 패턴이 표준 syscon 헬퍼로 통일되어, dtschema 검증과 후속 DT/드라이버 리뷰가 단순해집니다.\n\n> Use syscon_regmap_lookup_by_phandle_args() which is a wrapper over syscon_regmap_lookup_by_phandle() combined with getting the syscon argument.\n\n[원문 확인](https://ci.syzbot.org/patches/7a195141-b55c-4000-b41f-bdbf30666780)\n\n> syscon_regmap_lookup_by_phandle_args() already handles error case if the number of arguments is too low, thus switch is safe.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20261121170753.161170-2-krzysztof.kozlowski@oss.qualcomm.com/)\n\n**dt-bindings: gpu: arm,mali-utgard: add mt6572**\n\nMT6572 Mali-400 MP1용 mediatek,mt6572-mali compatible를 arm,mali-utgard DT 바인딩에 추가하는 v2(2026-11-21) 재전송으로, Krzysztof Kozlowski Acked-by를 포함합니다.\n\n영향: MT6572 기반 레거시 MediaTek 보드에서 mainline Mali Utgard DT를 쓰려면 공식 compatible 문자열이 필요하며, reset 미사용에 대한 리뷰 논의가 이미 정리된 상태입니다.\n\n> Add a compatible string for the mt6572 Mali-400 MP1 GPU. Acked-by: Krzysztof Kozlowski\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-arm-kernel/2026-November/1204977.html)\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20261121-6572-dt-mali-v2-1-1c3925ec7ad1@protonmail.com/)\n\n**drm/spacemit: add Saturn DPU register model**\n\nSpacemiT K3 display v3 17패치 시리즈의 7/17로, Saturn DPU(composer·RDMA·TMG·cmdlist·DMMU) 블록 주소맵·필드 오프셋/마스크·IRQ·composer ID 테이블을 추가합니다.\n\n영향: K3 RISC-V 보드의 display 스택(DPU→Innosilicon DP→PHY)이 mainline에 들어가는 핵심 기반이며, 이 패치는 이후 KMS/하드웨어 백엔드 패치가 의존하는 레지스터 모델입니다.\n\n> This series adds display support for the SpacemiT K3, a RISC-V SoC: a new DRM driver, a new PHY driver and three new bindings.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-phy/20261121-k3-display-v3-0-ec419e8e96b8@gmail.com/)\n\n> Add the block address map, the per-field word offset and mask tables consumed by the field accessors, the interrupt bit layout\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/21/457)\n\n**drm/imagination: re-check firmware idle state before runtime suspend**\n\nPowerVR imagination 드라이버 v2가 firmware idle(ROGUE_FWIF_POW_IDLE) 검사를 runtime_idle에서 runtime_suspend로 옮기고, busy 시 pm_runtime_mark_last_busy() 후 -EBUSY를 반환해 autosuspend 재시도가 되게 합니다.\n\n영향: SpacemiT K3 등 RISC-V PowerVR 보드에서 GPU가 idle인데도 runtime-active로 남는 전력 버그를 runtime PM 문서(section 9) 패턴으로 해결하려는 변경입니다.\n\n> Move the idle check into pvr_power_device_suspend() and return -EBUSY after pm_runtime_mark_last_busy() so the PM core reschedules the autosuspend timer.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-November/103595.html)\n\n> Agreed, v2 will follow this approach. I think this is the pattern described in Documentation/power/runtime_pm.rst, section 9.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-riscv/2026-November/103104.html)\n\n**RISC-V: KVM: Lessen steal time update overhead**\n\nKoichiro Den의 v2 3패치가 SBI STA steal-time 갱신에 쓰기 배리어 수정(Fixes)을 분리하고, user_access 배치·run_delay 불변 시 skip으로 vCPU 왕복 비용을 약 8% 줄입니다.\n\n영향: RISC-V KVM 호스트(SpacemiT K3 벤치)에서 guest steal-time(paravirt) 경로 오버헤드와 메모리 순서 버그가 함께 다뤄져, virt/hypervisor 플랫폼 담당자가 riscv_kvm_next 흐름을 추적해야 합니다.\n\n> uncontended   2900.01 ns  2669.59 ns (-7.95%)  contended     2876.42 ns  2670.01 ns (-7.18%)\n\n[원문 확인](https://lore-kernel.gnuweeb.org/kvm/20261121173526.892344-1-den@valinux.co.jp/)\n\n> Pair the read barriers in pv_time_steal_clock() with write barriers. Fixes: e9f12b5fff8a (\"RISC-V: KVM: Implement SBI STA extension\")\n\n[원문 확인](https://lore-kernel.gnuweeb.org/kvm/20261121173526.892344-2-den@valinux.co.jp/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "stmmac eic7700 syscon phandle_args — syzbot 패치",
+      "url": "https://ci.syzbot.org/patches/7a195141-b55c-4000-b41f-bdbf30666780",
+      "note": "thread"
+    },
+    {
+      "title": "stmmac eic7700 — lore 스레드",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20261121170753.161170-2-krzysztof.kozlowski@oss.qualcomm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "arm,mali-utgard mt6572 v2 — infradead",
+      "url": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-November/1204977.html",
+      "note": "thread"
+    },
+    {
+      "title": "arm,mali-utgard mt6572 v2 — lore",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20261121-6572-dt-mali-v2-1-1c3925ec7ad1@protonmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "SpacemiT K3 display v3 시리즈 커버",
+      "url": "https://lore-kernel.gnuweeb.org/linux-phy/20261121-k3-display-v3-0-ec419e8e96b8@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Saturn DPU register model 7/17",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/21/457",
+      "note": "thread"
+    },
+    {
+      "title": "SG2042 EFI RTC — hypermail 요약",
+      "url": "https://lkml.iu.edu/hypermail/linux/kernel/2611.2/19384.html",
+      "note": "thread"
+    },
+    {
+      "title": "SG2042 EFI MMIO PAGE_KERNEL_IO",
+      "url": "https://lore-kernel.gnuweeb.org/linux-efi/20261121-b4-sg2042-efi-rtc-v1-1-19898b8ad497@iscas.ac.cn/",
+      "note": "thread"
+    },
+    {
+      "title": "imagination runtime suspend idle v2",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/103595.html",
+      "note": "thread"
+    },
+    {
+      "title": "imagination runtime PM 패턴 합의",
+      "url": "https://lists.infradead.org/pipermail/linux-riscv/2026-November/103104.html",
+      "note": "thread"
+    },
+    {
+      "title": "RISC-V KVM steal-time v2 벤치",
+      "url": "https://lore-kernel.gnuweeb.org/kvm/20261121173526.892344-1-den@valinux.co.jp/",
+      "note": "thread"
+    },
+    {
+      "title": "RISC-V KVM steal-time 배리어 Fixes",
+      "url": "https://lore-kernel.gnuweeb.org/kvm/20261121173526.892344-2-den@valinux.co.jp/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-21T18:28:17.501Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
