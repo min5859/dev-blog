@@ -1,0 +1,110 @@
+{
+  "id": "2026-11-23-linux-distro-stable-daily",
+  "topic": "linux-distro-stable",
+  "title": "2026-11-23 stable 큐 4건 — 배포·Stable",
+  "headline": "stable 큐의 RISC-V CFI·sched_ext·i915·OCFS2 후보가 배포 커널 동기화와 하드닝 검토의 초점이 되었다.",
+  "date": "2026-11-23",
+  "summary": "이번 수집에서는 lore stable 스레드와 syzkaller 근거의 회귀·보안 백포트 후보 네 건이 새로 올라왔다. 7.2.y EOL 이후 기준인 7.3.5·6.12/6.18 LTS 태그는 어제와 동일한 동기화 지점으로 남아 있다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "stable",
+    "배포"
+  ],
+  "highlights": [
+    {
+      "title": "riscv usercfi: A-REWIND CFI 우회",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "RISC-V usercfi·하드닝 옵션을 포함하는 배포·보안 팀",
+      "verifyLink": "https://lore.kernel.org/stable/tencent_009592B86559C9177427E98A@qq.com/",
+      "if": "RISC-V Zicfiss(usercfi)를 켠 배포 이미지를 운영한다면",
+      "do": "restore_user_shstk()가 시그널 전달 시 기록한 shadow stack에 bind하는 stable 백포트 일정을 추적하되, 어떤 stable 브랜치에 머지됐는지는 changelog로 확인하세요",
+      "verify": "스레드 원문에서 A-REWIND 재현 조건과 패치 범위를 직접 대조하세요"
+    },
+    {
+      "title": "sched_ext: dl_server RT starvation",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "sched_ext·PREEMPT RT 조합을 검증하는 배포·커널 팀",
+      "verifyLink": "https://lore.kernel.org/stable/20261123-scx-dlsrv-v1-0-87c342d8246e@gmail.com/",
+      "if": "sched_ext 프리뷰·실험 설정을 배포 커널에 포함했다면",
+      "do": "disable 중 RT에 막혀 스케줄러가 풀리지 않는 두 경로 수정 백포트를 stable/for-7.4-fixes 흐름에서 따라가세요",
+      "verify": "stress-ng·CPU hotplug·SCHED_FIFO 재현 결과(37/300 stuck→0/300)를 원문과 비교하세요"
+    },
+    {
+      "title": "drm/i915: vm_access() vm_pgoff",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "i915·Mesa 스택을 패키징하는 배포·그래픽 담당",
+      "verifyLink": "https://lore.kernel.org/stable/20261122-access_shite-v2-2-808d8d2aa700@kernel.org/",
+      "if": "Intel GPU 크래시 분석에 ptrace·/proc/pid/mem를 쓴다면",
+      "do": "VMA 분할 후 vm_pgoff를 반영하는 gem vm_access() 수정이 패키징 커널에 들어왔는지 백포트 목록을 점검하세요",
+      "verify": "디버거가 GEM 객체의 잘못된 오프셋에 접근한다는 원문 인용과 로컬 도구 동작을 맞춰 보세요"
+    },
+    {
+      "title": "ocfs2: JBD2 shrinker 순서",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "OCFS2·클러스터 파일시스템을 패키징·백포트하는 배포 담당",
+      "verifyLink": "https://lore.kernel.org/stable/920f7558ba0e4458b74cfb107e9dd77f.1@linux-foundation.org/",
+      "if": "엔터프라이즈 이미지에 OCFS2를 포함한다면",
+      "do": "언마운트 시 JBD2 shrinker unregister를 journal_shutdown_sem 이전으로 옮기는 백포트 채택 여부를 확인하세요",
+      "verify": "syzkaller lockdep cycle 보고와 stable 스레드 설명을 함께 열람하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 새로운 release 분류 항목이 없습니다. Linux 7.2.15 EOL·7.3.5·6.12.118·6.18.64 공지는 어제 dossier와 동일하여 여기서는 생략합니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**riscv: usercfi: bind signal shadow-stack restore to the active shadow stack**\n\nrestore_user_shstk()가 사용자 sigframe의 ss_ptr만 보고 토큰 관계를 검사하던 경로를, 시그널 전달 시 커널이 기록한 shadow stack 위치에 bind하도록 고쳐 A-REWIND CFI 우회를 막는 패치가 stable 큐에 올라왔다.\n\n영향: RISC-V usercfi(Zicfiss)를 켠 배포는 shadow stack 기반 보호가 sigreturn 경로에서 무력화되지 않도록 stable 백포트 일정을 봐야 한다(패치의 stable 머지 시점은 changelog 기준 확인 필요, lore 원문은 403으로 재확인하지 못함).\n\n> without binding that pointer to the shadow-stack position the kernel itself recorded at signal delivery.\n\n[원문 확인](https://lore.kernel.org/stable/tencent_009592B86559C9177427E98A@qq.com/)\n\n**sched_ext: Fix two gaps in dl_server protection against RT starvation**\n\nsched_ext disable 중 RT에 막혀 dl_server가 idle인 구간을 고쳐, full 모드에서 fair_server 부착 지연과 ext_server 재시작이 첫 enqueue에만 걸리는 경우를 각각 해소하는 2패치가 제안되었다.\n\n영향: sched_ext 실험·프리뷰를 켠 배포는 disable hang 없이 RT+stress 조합에서 스케줄러가 풀리는지 stable/for-7.4-fixes 백포트를 추적해야 한다(bare metal 검증·stable 태그 머지 시점은 미확인).\n\n> The starved tasks then hold up the scheduler disable. It doesn't finish until the RT task stops.\n\n[원문 확인](https://lore.kernel.org/stable/20261123-scx-dlsrv-v1-0-87c342d8246e@gmail.com/)\n\n**drm/i915: consider vm_pgoff in vm_access()**\n\ni915 gem vm_access()가 VMA 분할 후 vm_pgoff를 무시해 GDB·/proc/pid/mem 접근이 GEM 객체의 잘못된 오프셋을 읽고 쓰던 버그를 fault handler와 같이 vm_pgoff를 반영하도록 수정한다.\n\n영향: Intel GPU 디버깅·크래시 분석 워크플로를 쓰는 배포 커널은 ptrace 기반 도구가 올바른 GEM 영역을 보도록 이 stable 백포트를 따라갈 필요가 있다.\n\n> Debugger reads and writes through ptrace or /proc/<pid>/mem then access the wrong bytes.\n\n[원문 확인](https://lore.kernel.org/stable/20261122-access_shite-v2-2-808d8d2aa700@kernel.org/)\n\n**ocfs2: unregister the JBD2 shrinker before journal shutdown**\n\nAndrew Morton stable 백포트는 언마운트 시 JBD2 shrinker unregister 순서를 journal_shutdown_sem 전으로 옮겨 lockdep가 보고하는 shrinker_mutex·journal_shutdown_sem 순환을 없앤다.\n\n영향: OCFS2 클러스터 FS를 쓰는 엔터프라이즈·배포 이미지는 lockdep WARNING 없는 언마운트 경로와 안전한 journal teardown 백포트 여부를 추적해야 한다(lore.kernel.org 원문은 403으로 재확인하지 못함, 수집 본문·syzkaller 기준).\n\n> sysbot reports a lockdep cycle through shrinker_mutex, filesystem reclaim and osb->journal_shutdown_sem.\n\n[원문 확인](https://lore.kernel.org/stable/920f7558ba0e4458b74cfb107e9dd77f.1@linux-foundation.org/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "7.3.5 short-term stable(약 514건 백포트), 6.12.118·6.18.64 longterm(각 679·694건)은 seenBefore 항목으로 추가 진척 신호가 없어 생략합니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "중",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "RISC-V usercfi shadow-stack restore stable 스레드",
+      "url": "https://lore.kernel.org/stable/tencent_009592B86559C9177427E98A@qq.com/",
+      "note": "thread"
+    },
+    {
+      "title": "sched_ext dl_server RT starvation stable 스레드",
+      "url": "https://lore.kernel.org/stable/20261123-scx-dlsrv-v1-0-87c342d8246e@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/i915 vm_access vm_pgoff stable 스레드",
+      "url": "https://lore.kernel.org/stable/20261122-access_shite-v2-2-808d8d2aa700@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "ocfs2 JBD2 shrinker stable 스레드",
+      "url": "https://lore.kernel.org/stable/920f7558ba0e4458b74cfb107e9dd77f.1@linux-foundation.org/",
+      "note": "thread"
+    },
+    {
+      "title": "syzkaller ocfs2 lockdep cycle",
+      "url": "https://syzkaller.appspot.com/bug?extid=38fdbb551940270021f1",
+      "note": "article"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-22T18:20:33.233Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

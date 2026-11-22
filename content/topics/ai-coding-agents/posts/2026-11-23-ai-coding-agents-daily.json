@@ -1,0 +1,143 @@
+{
+  "id": "2026-11-23-ai-coding-agents-daily",
+  "topic": "ai-coding-agents",
+  "title": "2026-11-23 하네스 보안·회귀 — AI 코딩 에이전트",
+  "headline": "클라이언트 하네스 변경이 모델 퇴행처럼 보이는 사례와 게이트웨이·웹 요청의 숨은 신호·신원 누출이 동시에 주목받고 있습니다.",
+  "date": "2026-11-23",
+  "summary": "이번 dossier는 Claude Code의 장시간 세션 품질 저하 원인 추적, git 히스토리 키워드에 따른 과금·거부, 비공식 API 엔드포인트 사용 시 프롬프트 은닉 표식 등이 한꺼번에 정리됩니다. Cowork 리서치 프리뷰와 Codex CLI skills·데몬 기본 동작도 거버넌스 검토 대상으로 묶였습니다.",
+  "tags": [
+    "AI",
+    "코딩에이전트"
+  ],
+  "highlights": [
+    {
+      "title": "장시간 코딩 세션 품질 급락과 하네스 포스트모템",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Power users running long-lived Claude Code sessions on large codebases",
+      "verifyLink": "https://www.anthropic.com/research/april-23-postmortem",
+      "if": "복잡한 저장소에서 다단계 작업 중 읽기 대비 편집 비율이 눈에 띄게 줄었다면 하네스 기본값 변경을 먼저 의심하세요.",
+      "do": "Claude Code를 v2.1.116 이상으로 올리고 기본 reasoning effort·thinking 이력·프롬프트 변경 이력을 이슈 스레드와 대조하세요.",
+      "verify": "편집 전 리서치 지표가 회복됐는지 세션 로그로 재현 여부를 확인하세요."
+    },
+    {
+      "title": "커밋 메시지 키워드에 따른 거부·추가 과금",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "Claude Code subscribers on Max/Team plans with mixed third-party agent tooling in git history",
+      "verifyLink": "https://github.com/anthropics/claude-code/issues/53262",
+      "if": "최근 커밋에 서드파티 하네스 관련 문자열이 섞인 모노레포에서 요청이 거부되거나 포함 한도 대신 추가 사용량으로 잡힌다면 저장소 텍스트 트리거를 의심하세요.",
+      "do": "문제 재현 시 최소 커밋으로 키워드를 격리하고, 공식 이슈에 빌드 버전과 청구 경로를 기록해 보고하세요.",
+      "verify": "리드 엔지니어가 과잉 anti-abuse로 확인한 HERMES.md 라우팅 수정이 본인 빌드에 반영됐는지 업데이트 후 다시 측정하세요."
+    },
+    {
+      "title": "에이전트 웹 요청 User-Agent 이메일 노출",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "Claude Code users whose agents fetch external URLs",
+      "verifyLink": "https://github.com/anthropics/claude-code/issues/107757",
+      "if": "에이전트가 외부 URL을 fetch할 때 계정 이메일이 헤더에 실릴 수 있어 스팸·피싱 위험이 있다면 즉시 버전과 privacy mod 적용 여부를 점검하세요.",
+      "do": "v2.1.317 이상에서 cc-plugin-privacy 기본 mod가 켜져 있는지 확인하고, 모델 컨텍스트에서 이메일 제거 공지 이후에도 스크립트 경유 주입 가능성은 별도로 테스트하세요.",
+      "verify": "프록시나 MITM 없이 캡처한 아웃바운드 요청 헤더에 이메일이 없는지 샘플링하세요."
+    },
+    {
+      "title": "Codex CLI + 로컬 Gemma 4 실험",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "Platform engineers wiring Codex CLI to local inference (Ollama, llama.cpp, MLX)",
+      "verifyLink": "https://news.ycombinator.com/item?id=47744255",
+      "if": "에어갭·비용 상한 때문에 로컬 소형 모델을 Codex CLI에 붙이려 한다면 도구 사용과 장문맥 한계를 가정하세요.",
+      "do": "토큰 속도보다 에이전트 도구 호출 성공률과 다단계 세션 안정성을 벤치마크해 클라우드 대비 실사용 가능 여부를 판단하세요.",
+      "verify": "원 글 설정·버전은 조사 시 403으로 확인이 어려웠으므로 본인 환경에서 동일 구성을 문서화해 재현하세요."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Cowork: Claude Code for the rest of your work**\n\nAnthropic이 코딩이 아닌 지식 업무용 에이전트 레이어 Cowork를 Claude Code와 같은 스택으로 소개했습니다.\n\n영향: 엔지니어링 터미널뿐 아니라 폴더 범위 파일 작업·커넥터·무인 스케줄 작업까지 거버넌스 범위를 넓혀야 합니다.\n\n> Claude Code is built for software engineering... Cowork is built for non-coding knowledge work — research, analysis, document creation\n\n[원문 확인](https://claude.com/blog/cowork-research-preview)\n\n**Cowork 무인 스케줄**\n\n임의 주기로 무인 실행되는 작업과 병렬 하위 작업 흐름이 광고됩니다.\n\n영향: 노트북을 닫아도 돌아가는 에이전트는 권한·커넥터 범위와 OTEL/SIEM 모니터링 없이는 승인하기 어렵습니다.\n\n> Close your laptop, it keeps going. Schedule a task for any cadence, and it runs unattended.\n\n[원문 확인](https://claude.com/blog/cowork-research-preview)\n\nCowork의 엔터프라이즈 데이터 레지던시 및 Bedrock/Foundry 대 Claude Code 배포 옵션 정합성은 확인 필요합니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**Claude Code is unusable for complex engineering tasks with Feb updates**\n\n2026년 2–3월부터 긴 다단계 세션에서 품질 급락 제보가 이어졌고, Anthropic은 단일 모델 회귀가 아니라 effort 기본값 하향·thinking 이력 버그·과도한 프롬프트 등 겹친 클라이언트 변경을 지목했습니다.\n\n영향: 대형 저장소 워크플로는 하네스 동작이 관측 가능해야 하며, 클라이언트 변경이 모델 퇴행처럼 보이고 캐시 미스로 할당량을 태울 수 있습니다.\n\n> The model went from 6.6 reads per edit to 2.0 reads per edit — a 70% reduction in research before making changes.\n\n[원문 확인](https://github.com/anthropics/claude-code/issues/42796)\n\n> On March 4, we changed Claude Code's default reasoning effort from high to medium... We reverted this change on April 7\n\n[원문 확인](https://www.anthropic.com/research/april-23-postmortem)\n\nthinking redaction 효과를 Anthropic이 되돌린 세 가지 이슈와 독립적으로 재현하는 방법은 확인 필요합니다.\n\n**Claude Code sends your email address to websites**\n\n로그인 상태 Claude Code가 웹·curl류 요청 User-Agent에 계정 이메일을 넣었고, v2.1.317+에서 cc-plugin-privacy mod로 기본 차단, 이후 모델 컨텍스트에서 이메일 제거를 발표했습니다.\n\n영향: 에이전트 웹 브라우징이 임의 사이트에 유료 고객 신원을 노출해 제품 내 감사 추적 없이 피싱을 키울 수 있습니다.\n\n> I receive dozens of scam emails per day because claude code divulged my email to arbitrary 3rd parties in the User-Agent request header while conducting web searches without my permission.\n\n[원문 확인](https://github.com/anthropics/claude-code/issues/107757)\n\n> We introduced a built-in mod called cc-plugin-privacy to deterministically block this behavior in v2.1.317 and later\n\n[원문 확인](https://github.com/anthropics/claude-code/issues/107757)\n\n에이전트가 작성·실행하는 스크립트 경유 주입이 완전히 사라졌는지는 확인 필요합니다.\n\n**Claude Code is steganographically marking requests**\n\nANTHROPIC_BASE_URL이 api.anthropic.com이 아니면 시스템 프롬프트 날짜 줄에 유니코드 아포스트로피·구분자 변형으로 프록시/리셀러 분류를 은닉합니다.\n\n영향: 내부 게이트웨이·서드파티 프록시 사용자는 매 턴마다 숨은 분류 신호를 보낼 수 있어 셸·파일시스템 권한 도구의 투명성 기대와 충돌합니다.\n\n> Claude Code can silently change two things: The apostrophe in Today's and the date separator, from - to /. This is prompt steganography, a technique used to hide data in plain sight.\n\n[원문 확인](https://thereallo.dev/blog/claude-code-prompt-steganography)\n\n서버 측이 이 표식으로 스로틀·플래그·과금을 달리하는지는 확인 필요합니다.\n\n**The Claude Code Source Leak: fake tools, frustration regexes, undercover mode**\n\nnpm v2.1.88의 cli.js.map 유출 이후 역공학으로 anti-distillation fake_tools, undercover 모드, 클라이언트 attestation, 미출시 KAIROS 플래그 등이 문서화됐습니다.\n\n영향: 조달·보안 심사는 공개되지 않은 강제 메커니즘이 서드파티 하네스·OSS 기여 규범과 맞물린다는 점을 반영해야 합니다.\n\n> Earlier today, a Claude Code release included some internal source code. No sensitive customer data or credentials were involved or exposed. This was a release packaging issue caused by human error\n\n[원문 확인](https://www.bleepingcomputer.com/news/artificial-intelligence/claude-code-source-code-accidentally-leaked-in-npm-package/)\n\n> When enabled, Claude Code sends anti_distillation: ['fake_tools'] in its API requests. There is NO force-OFF. This guards against model codename leaks.\n\n[원문 확인](https://alex000kim.com/posts/2026-03-31-claude-code-source-leak/)\n\n현행 공개 빌드에 남은 attestation·anti-distillation 검사 범위는 확인 필요합니다.\n\n**Codex CLI installs a persistent, self-updating background daemon by default**\n\nCodex CLI 0.157.0부터 대화형 세션 기본 daemon_auto_start로 백그라운드 앱 서버·약 374MB 복사·시간당 자체 업데이트가 패키지 매니저와 분리됩니다.\n\n영향: 코딩 에이전트가 선언되지 않은 인프라가 되어 엔드포인트 정책·재현 가능한 공급망과 충돌합니다.\n\n> Since 0.157.0, just opening an interactive codex session: Starts a persistent background daemon... Copies the whole platform package (~374 MB)... Starts a detached updater\n\n[원문 확인](https://github.com/openai/codex/issues/48195)\n\n0.160 이후 기본값이 opt-in으로 바뀌었는지와 daemon_auto_start 공개 문서화 여부는 확인 필요합니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Claude Code refuses requests or charges extra if your commits mention \"OpenClaw\"**\n\ngit 컨텍스트의 서드파티 하네스 키워드가 OpenClaw 스키마·HERMES.md 등을 감지하면 세션 거부나 Max 포함 한도 대신 추가 사용량 과금으로 라우팅됐습니다.\n\n영향: 런타임 행위가 아니라 저장소 텍스트만으로 청구 경로가 바뀌면 비용 예측이 깨지고 무관한 모노레포 커밋까지 벌칙받을 수 있습니다.\n\n> When a git repository's recent commit history contains the case-sensitive string HERMES.md, Claude Code routes API requests to extra usage billing instead of the included Max plan quota.\n\n[원문 확인](https://github.com/anthropics/claude-code/issues/53262)\n\n> Thanks for the report! This was an overactive anti-abuse system. Fixed.\n\n[원문 확인](https://github.com/anthropics/claude-code/issues/53262)\n\nHN 재현 스레드의 openclaw.inbound_meta 커밋 사례는 검증 플래그가 false이므로, 별도로 최소 재현 후 이슈에 첨부하는 것이 좋습니다.\n\n> git commit -m \"'{\\\"schema\\\": \\\"openclaw.inbound_meta.v1\\\"}'\" claude -p \"hi\"\n\n[원문 확인](https://news.ycombinator.com/item?id=47963204)\n\n현행 빌드에서 git 컨텍스트를 스캔하는 키워드 전체 목록은 확인 필요합니다.\n\n**OpenAI are quietly adopting skills, now available in ChatGPT and Codex CLI**\n\nChatGPT Code Interpreter와 실험적 Codex CLI에 Agent Skills 스타일 폴더(SKILL.md·리소스)가 추가됐고, ~/.codex/skills와 --enable skills로 씁니다.\n\n영향: 파일시스템 기반 확장 패턴이 벤더 간 이식성을 높일 수 있어 폴더 레이아웃·리뷰 기준을 팀 표준으로 잡을 여지가 있습니다.\n\n> skills support quietly showing up in both their Codex CLI tool and now also in ChatGPT itself.\n\n[원문 확인](https://simonwillison.net/2025/Dec/12/openai-skills/)\n\n비공식 SKILL.md 관례를 넘는 공식 교차 벤더 명세 상태는 확인 필요합니다.\n\n**I ran Gemma 4 as a local model in Codex CLI**\n\n커뮤니티 실험으로 Codex CLI가 Gemma 4 같은 로컬 오픈웨이트 모델을 대상으로 할 수 있으며, 소형 모델 속도와 약한 에이전트 도구 사용 사이 논쟁이 이어집니다.\n\n영향: 에어갭·비용 상한 팀은 토큰/초보다 하네스 품질과 도구·장문맥 실패가 병목일 수 있다는 기대를 맞춰야 합니다.\n\n> The finding I did not expect: model quality matters more than token speed for agentic coding.\n\n[원문 확인](https://news.ycombinator.com/item?id=47744255)\n\n원 작성자의 정확한 Codex 설정·버전은 조사 시 기본 URL이 HTTP 403이라 확인 필요합니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요. 본 브리핑의 설명은 GitHub 릴리스 노트·공식 블로그·Hacker News 신호에서 AI가 요약한 것입니다. 구체 명령어·플래그·옵션은 도입 전 반드시 원문으로 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Claude Code prompt steganography on non-official API hosts",
+      "url": "https://thereallo.dev/blog/claude-code-prompt-steganography",
+      "note": "article"
+    },
+    {
+      "title": "Claude Code User-Agent email disclosure",
+      "url": "https://github.com/anthropics/claude-code/issues/107757",
+      "note": "thread"
+    },
+    {
+      "title": "Claude Code npm source packaging error",
+      "url": "https://www.bleepingcomputer.com/news/artificial-intelligence/claude-code-source-code-accidentally-leaked-in-npm-package/",
+      "note": "article"
+    },
+    {
+      "title": "Leaked Claude Code anti-distillation and undercover mode",
+      "url": "https://alex000kim.com/posts/2026-03-31-claude-code-source-leak/",
+      "note": "article"
+    },
+    {
+      "title": "Complex engineering tasks quality regression",
+      "url": "https://github.com/anthropics/claude-code/issues/42796",
+      "note": "thread"
+    },
+    {
+      "title": "April postmortem on Claude Code client changes",
+      "url": "https://www.anthropic.com/research/april-23-postmortem",
+      "note": "article"
+    },
+    {
+      "title": "HN: OpenClaw commit reproduction",
+      "url": "https://news.ycombinator.com/item?id=47963204",
+      "note": "thread"
+    },
+    {
+      "title": "HERMES.md extra usage routing",
+      "url": "https://github.com/anthropics/claude-code/issues/53262",
+      "note": "thread"
+    },
+    {
+      "title": "Cowork research preview",
+      "url": "https://claude.com/blog/cowork-research-preview",
+      "note": "changelog"
+    },
+    {
+      "title": "Codex CLI default background daemon",
+      "url": "https://github.com/openai/codex/issues/48195",
+      "note": "thread"
+    },
+    {
+      "title": "OpenAI skills in ChatGPT and Codex CLI",
+      "url": "https://simonwillison.net/2025/Dec/12/openai-skills/",
+      "note": "article"
+    },
+    {
+      "title": "HN: local Gemma 4 in Codex CLI",
+      "url": "https://news.ycombinator.com/item?id=47744255",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-22T18:14:07.214Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/ai-coding-agents-newsletter-from-dossier-ko.md"
+  }
+}

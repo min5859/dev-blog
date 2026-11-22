@@ -1,0 +1,127 @@
+{
+  "id": "2026-11-23-linux-arch-platform-weekly-rollup",
+  "topic": "linux-arch-platform",
+  "title": "2026-11-23 주간 요약",
+  "headline": "RISC-V usercfi·Zicfiss 및 시그널 경로 유지보수 담당 주목: riscv: usercfi: bind signal shadow-s",
+  "date": "2026-11-23",
+  "summary": "오늘의 핵심: 릴리스/로드맵 0건, 회귀·보안 신호 8건, 핵심 변경 0건. 리서치 dossier 의 출처를 근거로 정리했습니다.",
+  "tags": [
+    "주간"
+  ],
+  "highlights": [
+    {
+      "title": "riscv: usercfi: bind signal shadow-stack restore to the active shadow stack",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "RISC-V usercfi·Zicfiss 및 시그널 경로 유지보수 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/linux-riscv/tencent_7D0AC8F176A26AB26D61F6A8@qq.com/",
+      "if": "RISC-V usercfi·Zicfiss 및 시그널 경로 유지보수 담당라면",
+      "do": "restore_user_shstk()가 sigframe의 ss_ptr만 검증하던 경로에 get_active_shstk()와의 일치 검사를 추가해",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lore-kernel.gnuweeb.org/linux-riscv/tencent_7D0AC8F176A26AB26D61F6A8@qq.com/"
+    },
+    {
+      "title": "crash: Fix crash memory reserve dead loop when low and high limits match",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "범용 crashkernel/kdump 및 arm64·kexec handover 플랫폼 담당",
+      "verifyLink": "https://ci.syzbot.org/patches/529101b3-fe7e-4526-8570-05b52cd9d265",
+      "if": "범용 crashkernel/kdump 및 arm64·kexec handover 플랫폼 담당라면",
+      "do": "reserve_crashkernel_generic()에서 CRASH_ADDR_LOW_MAX가 CRASH_ADDR_HIGH_MAX와 같을 때 빈 ",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://ci.syzbot.org/patches/529101b3-fe7e-4526-8570-05b52cd9d265"
+    },
+    {
+      "title": "riscv/clk: sophgo: Fix EFI RTC on Milk-V Pioneer",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Sophgo SG2042·Milk-V Pioneer·RISC-V EFI·clk 담당",
+      "verifyLink": "https://lkml.iu.edu/hypermail/linux/kernel/2611.2/19384.html",
+      "if": "Sophgo SG2042·Milk-V Pioneer·RISC-V EFI·clk 담당라면",
+      "do": "Milk-V Pioneer(SG2042)에서 EFI rtc-efi GetTime()이 깨지는 두 원인을 수정하는 2패치: RISC-V EFI r",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lkml.iu.edu/hypermail/linux/kernel/2611.2/19384.html"
+    },
+    {
+      "title": "arm64: DRTM, boot portion",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "arm64 EFI stub·부트 보안·플랫폼 FW(SMC DRTM) 담당",
+      "verifyLink": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-November/1204635.html",
+      "if": "arm64 EFI stub·부트 보안·플랫폼 FW(SMC DRTM) 담당라면",
+      "do": "ARM DEN 0113 v1.4b DRTM 부트 절에 맞춰 EFI stub·arm64 head.S·링커 섹션·drtm= 커맨드라인을 추가하고, ",
+      "verify": "출처를 열어 본문과 대조해 확인하세요: https://lists.infradead.org/pipermail/linux-arm-kernel/2026-November/1204635.html"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**riscv: usercfi: bind signal shadow-stack restore to the active shadow stack**\n\nrestore_user_shstk()가 sigframe의 ss_ptr만 검증하던 경로에 get_active_shstk()와의 일치 검사를 추가해, 손상된 sigframe이 다른 시그널 컨텍스트의 오래된 shadow-stack 토큰으로 복원을 우회하지 못하게 한다.\n\n영향: Zicfiss/usercfi를 켠 RISC-V 환경에서 시그널 복귀 경로가 backward-CFI 우회(A-REWIND)에 쓰일 수 있어, 보안·stable 백포트 일정을 추적하는 arch/usercfi 담당자에게 우선순위가 높다.\n\n> if (shstk_ptr != get_active_shstk(tsk)) { ... return -EINVAL; }\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-riscv/tencent_7D0AC8F176A26AB26D61F6A8@qq.com/)\n\n**crash: Fix crash memory reserve dead loop when low and high limits match**\n\nreserve_crashkernel_generic()에서 CRASH_ADDR_LOW_MAX가 CRASH_ADDR_HIGH_MAX와 같을 때 빈 high 영역으로 무한 fallback하던 분기를 건너뛰도록 kernel/crash_reserve.c를 수정한다(Federico Parola 패\n\n영향: arm64(ZONE_DMA/DMA32 없음)나 KHO 부팅에서 crashkernel=size 실패가 Initmem 이후 부트 교착으로 이어질 수 있어 kdump·crashkernel·stable 추적 담당자에게 직접적이다.\n\n> CRASH_ADDR_LOW_MAX equals CRASH_ADDR_HIGH_MAX... Boot stalls after the \"Initmem setup\" messages.\n\n[원문 확인](https://ci.syzbot.org/patches/529101b3-fe7e-4526-8570-05b52cd9d265)\n\n**riscv/clk: sophgo: Fix EFI RTC on Milk-V Pioneer**\n\nMilk-V Pioneer(SG2042)에서 EFI rtc-efi GetTime()이 깨지는 두 원인을 수정하는 2패치: RISC-V EFI runtime MMIO를 PAGE_KERNEL_IO로 매핑하고, reserved DT 노드가 쓰는 sg2042 clk gate에 CLK_IS_CR\n\n영향: 펌웨어가 DS1307/I2C0를 점유한 RISC-V SG2042 보드에서 시스템 시각·EFI runtime이 동작해야 하며, clk/EFI 상호작용은 유사 플랫폼 설계의 참고 사례가 됩니다.\n\n> Two things break GetTime() in that setup: RISC-V maps EFI runtime MMIO as normal memory... Patch 2 keeps gates used by reserved devices on.\n\n[원문 확인](https://lkml.iu.edu/hypermail/linux/kernel/2611.2/19384.html)\n\n**arm64: DRTM, boot portion**\n\nARM DEN 0113 v1.4b DRTM 부트 절에 맞춰 EFI stub·arm64 head.S·링커 섹션·drtm= 커맨드라인을 추가하고, v3에서 공용 efi_image_info 기반 시리즈(Ard) 위에 리베이스된 11패치 시리즈입니다.\n\n영향: DLME로의 직접 vmlinux 런치와 측정 부트 경로가 커널에 들어오기 시작하며, 이후 TPM/ACPI/FDT 강화와 연계되므로 arm64 EFI·보안 부트·플랫폼 FW 담당자는 실험적(CONFIG_ARM64_DRTM) 상태와 drtm= 동작을 주시해야 합니다.\n\n> This is the first series for an implementation of ARM's DEN 0113 v1.4b Dynamic Root of Trust for Measurement (DRTM) launch protocol.\n\n[원문 확인](https://lists.infradead.org/pipermail/linux-arm-kernel/2026-November/1204635.html)\n\n**crash: Fix crash memory reserve dead loop when low and high limits match**\n\nCONFIG_ZONE_DMA/DMA32가 없는 arm64에서 CRASH_ADDR_LOW_MAX와 CRASH_ADDR_HIGH_MAX가 같을 때 reserve_crashkernel_generic()이 빈 high 영역으로 무한 fallback하며 부트가 Initmem 이후 멈추는 문제를,\n\n영향: KHO·crashkernel=size 부팅에서 kdump 예약 실패가 전체 부트 교착으로 이어지며 Fixes: 0ab97169aa05와 stable Cc 대상이라 arm64·범용 crashkernel 경로를 추적하는 엔지니어에게 즉시 해당됩니다.\n\n> search_end still equals CRASH_ADDR_LOW_MAX the fallback is taken again, forever. Boot stalls after the \"Initmem setup\" messages.\n\n[원문 확인](https://ci.syzbot.org/patches/529101b3-fe7e-4526-8570-05b52cd9d265)\n\n**(subset) [PATCH v2 0/2] arm64: use typed entries into copied code for kCFI**\n\nBen Cressey v2는 kexec relocation 복사본에 SYM_TYPED_FUNC_START()와 C 프로토타입을 쓰고, 섹션 오프셋으로 진입해 TTBR0 단일 페이지에서 kCFI type hash 로드 fault를 고칩니다.\n\n영향: CONFIG_CFI=y 빌드에서 이미지 재배치 kexec는 매번 \"Bye!\" 이후 machine_kexec()에서 oops가 났고, stable Cc 대상이므로 CFI·kexec 검증 스택에 바로 영향 있습니다.\n\n> Fix by typing the routine with SYM_TYPED_FUNC_START() and a C prototype, and entering the copy at the symbol's offset in the section.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/11/3840)\n\n**arm64: cpufeature: Check the override in __read_sysreg_by_encoding()**\n\nFuad Tabba 패치는 보조 CPU가 cpuinfo 저장 전 capability 검사에서 ID 레지스터 override를 무분별 OR하지 않고 arm64_ftr_reg_override()로 boot CPU와 동일한 안전 검사를 적용합니다.\n\n영향: override가 boot CPU에서만 허용된 필드를 보조 CPU가 그대로 통과하면 기능 없이 online 되는 asymmetry가 나며, pKVM·heterogeneous SKU에서 cpufeature/command-line override 추적과 맞닿습니다.\n\n> A secondary whose field is below an override the boot CPU accepted passes verification and comes online without the feature.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/13/1060)\n\n**riscv: mm: fix set_memory_x() and kernel_page_present()**\n\nMike Rapoport v2 2패치가 set_memory_x()가 모듈·BPF 텍스트의 linear map 별칭까지 실행 가능하게 만들던 문제를 막고, linear map에서 제거된 페이지를 kernel_page_present()가 여전히 present로 보고 하이버네이션이 매핑 없이\n\n영향: RISC-V set_memory API 일반화 작업과 함께 W^X 정책·스왑/하이버네이션 정확성에 직결되며 Jisheng Zhang이 시리즈에 Reviewed-by를 달았습니다.\n\n> The first one stops set_memory_x() from making the linear map alias of module and BPF text executable.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20261117-fixes-riscv-v2-0-5edc9bdc54fd@kernel.org/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "기타",
+      "body": "국부 드라이버/플랫폼 패치는 본문에서 제외했습니다. 자기 영역 키워드로 lore.kernel.org에서 직접 검색하세요."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "riscv: usercfi: bind signal shadow-stack restore to the active shadow stack",
+      "url": "https://lore-kernel.gnuweeb.org/linux-riscv/tencent_7D0AC8F176A26AB26D61F6A8@qq.com/",
+      "note": "thread"
+    },
+    {
+      "title": "crash: Fix crash memory reserve dead loop when low and high limits match",
+      "url": "https://ci.syzbot.org/patches/529101b3-fe7e-4526-8570-05b52cd9d265",
+      "note": "thread"
+    },
+    {
+      "title": "riscv/clk: sophgo: Fix EFI RTC on Milk-V Pioneer",
+      "url": "https://lkml.iu.edu/hypermail/linux/kernel/2611.2/19384.html",
+      "note": "thread"
+    },
+    {
+      "title": "arm64: DRTM, boot portion",
+      "url": "https://lists.infradead.org/pipermail/linux-arm-kernel/2026-November/1204635.html",
+      "note": "thread"
+    },
+    {
+      "title": "crash: Fix crash memory reserve dead loop when low and high limits match",
+      "url": "https://ci.syzbot.org/patches/529101b3-fe7e-4526-8570-05b52cd9d265",
+      "note": "patch"
+    },
+    {
+      "title": "(subset) [PATCH v2 0/2] arm64: use typed entries into copied code for kCFI",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/11/3840",
+      "note": "thread"
+    },
+    {
+      "title": "arm64: cpufeature: Check the override in __read_sysreg_by_encoding()",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/13/1060",
+      "note": "thread"
+    },
+    {
+      "title": "riscv: mm: fix set_memory_x() and kernel_page_present()",
+      "url": "https://lore.kernel.org/linux-riscv/20261117-fixes-riscv-v2-0-5edc9bdc54fd@kernel.org/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "source": "research-dossier",
+    "bucketCounts": {
+      "릴리스/로드맵": 0,
+      "회귀·보안 신호": 8,
+      "핵심 변경": 0,
+      "기타": 0
+    },
+    "entryCount": 8
+  }
+}

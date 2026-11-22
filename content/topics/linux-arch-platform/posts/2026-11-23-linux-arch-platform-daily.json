@@ -1,0 +1,148 @@
+{
+  "id": "2026-11-23-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-11-23 usercfi·crashkernel — Arch·Platform",
+  "headline": "RISC-V usercfi 시그널 복귀 보강과 crashkernel 예약 무한 루프 수정이 arch·플랫폼 안정성·보안 추적의 중심입니다.",
+  "date": "2026-11-23",
+  "summary": "restore_user_shstk()가 활성 shadow stack과 sigframe ss_ptr을 대조해 A-REWIND 우회를 막는 패치와, CRASH_ADDR 한계가 같을 때 Initmem 이후 부트가 멈추던 crashkernel 예약 버그 수정이 올라왔습니다. RISC-V KVM steal-time 최적화 v2, SpacemiT K3 eFuse NVMEM, SG2042 RTC DTS, i.MX9 Toradex SDIO_B, Kconfig.kexec 정리도 함께 움직였습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "riscv usercfi: 시그널 shadow-stack 복원을 활성 스택에 고정",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "RISC-V usercfi·Zicfiss 및 시그널 경로 유지보수 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/linux-riscv/tencent_7D0AC8F176A26AB26D61F6A8@qq.com/",
+      "if": "Zicfiss/usercfi를 켠 RISC-V에서 시그널 복귀와 stable 백포트 일정을 추적한다면",
+      "do": "restore_user_shstk() 경로 변경과 -EINVAL 거부 조건을 원문 스레드에서 확인하고 리뷰·머지 시점은 아직 공개되지 않았으니 lore를 따라가세요",
+      "verify": "패치 diff에서 get_active_shstk()와 ss_ptr 일치 검사가 들어갔는지 검증하세요"
+    },
+    {
+      "title": "crashkernel: LOW/ HIGH 한계 동일 시 reserve 무한 fallback 수정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "범용 crashkernel/kdump 및 arm64·kexec handover 플랫폼 담당",
+      "verifyLink": "https://ci.syzbot.org/patches/529101b3-fe7e-4526-8570-05b52cd9d265",
+      "if": "arm64(ZONE_DMA/DMA32 없음)나 KHO 부팅에서 crashkernel=size 실패와 kdump를 다룬다면",
+      "do": "Federico Parola 패치와 Bradley Morgan Reviewed-by 여부를 확인하고 mainline·stable 반영 시점은 확인이 필요합니다",
+      "verify": "CRASH_ADDR_LOW_MAX와 HIGH_MAX가 같을 때 high 영역 fallback을 건너뛰는 분기가 kernel/crash_reserve.c에 있는지 원문에서 확인하세요"
+    },
+    {
+      "title": "SpacemiT K3 eFuse 읽기 전용 NVMEM v3",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "SpacemiT K3·NVMEM·thermal 플랫폼 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/linux-riscv/20261122173810.2409146-1-duge1256@gmail.com/",
+      "if": "K3 보드에서 thermal 보정·SoC NVMEM 연동을 준비한다면",
+      "do": "bank 0·7, DT 바인딩 v3 변경과 COM260 Kit 테스트 언급을 커버레터에서 확인하고 DT maintainer 재승인·thermal 시리즈 머지 순서는 확인이 필요합니다",
+      "verify": "drivers/nvmem/spacemit-k3-efuse.c 추가 규모와 keepout·온도 보정 셀 설명을 패치 3/3에서 대조하세요"
+    },
+    {
+      "title": "i.MX9 Toradex OSM: SDIO_B 빈 슬롯 mmc 인터럽트 폭주 DT 수정",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "NXP i.MX9 Toradex OSM 보드·mmc/SDHCI DT 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/linux-arm-kernel/20261122171931.295307-1-francesco@dolcini.it/",
+      "if": "iMX91/iMX93/iMX95 OSM 캐리어에서 Wi-Fi M.2 슬롯을 비운 채 운용한다면",
+      "do": "non-removable·1.8V 고정·suspend 전원 유지 DT 변경이 imx 공통 dtsi에 반영됐는지 확인하고 Applied 여부와 imx95 검증 범위는 확인이 필요합니다",
+      "verify": "빈 슬롯에서 mmc2가 초당 약 45회 인터럽트였다는 증상 설명과 usdhc3 속성 변경을 스레드 원문과 대조하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**riscv: usercfi: bind signal shadow-stack restore to the active shadow stack**\n\nrestore_user_shstk()가 sigframe의 ss_ptr만 검증하던 경로에 get_active_shstk()와의 일치 검사를 추가해, 손상된 sigframe이 다른 시그널 컨텍스트의 오래된 shadow-stack 토큰으로 복원을 우회하지 못하게 합니다.\n\n영향: Zicfiss/usercfi를 켠 RISC-V 환경에서 시그널 복귀 경로가 backward-CFI 우회(A-REWIND)에 쓰일 수 있어 arch/usercfi·stable 백포트 추적 우선순위가 높습니다.\n\n> if (shstk_ptr != get_active_shstk(tsk)) { ... return -EINVAL; }\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-riscv/tencent_7D0AC8F176A26AB26D61F6A8@qq.com/)\n\n**crash: Fix crash memory reserve dead loop when low and high limits match**\n\nreserve_crashkernel_generic()에서 CRASH_ADDR_LOW_MAX가 CRASH_ADDR_HIGH_MAX와 같을 때 빈 high 영역으로 무한 fallback하던 분기를 건너뛰도록 kernel/crash_reserve.c를 수정합니다(Federico Parola 패치, Bradley Morgan Reviewed-by).\n\n영향: arm64(ZONE_DMA/DMA32 없음)나 KHO 부팅에서 crashkernel=size 실패가 Initmem 이후 부트 교착으로 이어질 수 있어 kdump·crashkernel 담당자에게 직접적입니다.\n\n> CRASH_ADDR_LOW_MAX equals CRASH_ADDR_HIGH_MAX... Boot stalls after the \"Initmem setup\" messages.\n\n[원문 확인](https://ci.syzbot.org/patches/529101b3-fe7e-4526-8570-05b52cd9d265)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**RISC-V: KVM: Lessen steal time update overhead**\n\n(v2 3패치) SBI STA 공유 메모리 갱신에서 쓰기 순서 보장, uaccess 배치, run_delay 불변 시 skip을 묶어 steal-time 기록 오버헤드를 줄입니다. SpacemiT K3 벤치에서 KVM_RUN 왕복 약 8% CPU 시간 절감이 보고됩니다. riscv_kvm_next 머지 창구와 Reviewed-by 최종 상태는 확인이 필요합니다.\n\n영향: STA를 쓰는 RISC-V KVM 게스트·호스트 vCPU exit 빈도와 직결됩니다.\n\n> uncontended   2900.01 ns  2669.59 ns (-7.95%)\n\n[원문 확인](https://lore-kernel.gnuweeb.org/kvm/20261121173526.892344-1-den@valinux.co.jp/)\n\n**Add read-only SpacemiT K3 eFuse support**\n\nSpacemiT K3 eFuse bank 0·7에 대한 읽기 전용 NVMEM 드라이버, DT 바인딩, k3.dtsi 노드를 추가하는 v3 3패치 시리즈입니다(512-byte 공간, keepout, 온도 보정 셀).\n\n영향: K3 보드에서 thermal 보정·SoC 설정 데이터를 mainline NVMEM 경로로 노출해 온도 채널·플랫폼 드라이버 연동의 기반이 됩니다.\n\n> read-only NVMEM access to bank 0 and bank 7... Tested on a SpacemiT K3 COM260 Kit.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-riscv/20261122173810.2409146-1-duge1256@gmail.com/)\n\n**riscv: dts: sophgo: Enable the RTC on SG2042 EVB v1/v2**\n\nSG2042 EVB v1·v2 DTS에 I2C0의 PT7C4307 RTC 노드를 추가하는 2패치 시리즈입니다(Milk-V Pioneer와 동일 칩).\n\n영향: Sophgo EVB에서 하드웨어 RTC가 mainline에서 인식되어 시스템 시간·suspended RTC 유지 등 보드 bring-up이 단순해집니다.\n\n> Both SG2042 EVB boards have a PT7C4307 RTC on I2C0, same as the Milk-V Pioneer.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-riscv/20261122-sg2042-evb-rtc-v1-0-f222c64cc7b9@iscas.ac.cn/)\n\n**arm64: dts: freescale: imx9[135]-toradex-osm-dev: Fix SDIO_B interface**\n\nToradex OSM 개발 보드의 M.2 SDIO_B(usdhc3)를 non-removable·고정 1.8V 공급·suspend 전원 유지로 기술해 빈 슬롯 card-detect 폴링으로 인한 mmc 인터럽트 폭주를 멈춥니다.\n\n영향: iMX91/iMX93/iMX95 OSM 캐리어에서 Wi-Fi 모듈 슬롯 idle 시 ~45Hz 인터럽트가 나던 증상을 DT만으로 해소합니다.\n\n> with the slot empty, mmc2 fired about 45 interrupts per second\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-arm-kernel/20261122171931.295307-1-francesco@dolcini.it/)\n\n**arch, kexec: declare kexec and crash capabilities in Kconfig.kexec**\n\nARCH_SUPPORTS_KEXEC·ARCH_SUPPORTS_CRASH_DUMP 등을 arch별 def_bool 복제 대신 kernel/Kconfig.kexec에 한 번 선언하고 각 arch가 select하도록 정리합니다(기능 변화 없음, Ritesh Harjani LGTM).\n\n영향: kexec/crash dump Kconfig 중복이 줄어 멀티 arch defconfig·randconfig 유지보수가 쉬워집니다.\n\n> Selection conditions are preserved, so there is no functional change.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-riscv/20261119-arch-kconfig-v1-2-37c276fe4d26@kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "riscv usercfi shadow-stack restore bind",
+      "url": "https://lore-kernel.gnuweeb.org/linux-riscv/tencent_7D0AC8F176A26AB26D61F6A8@qq.com/",
+      "note": "thread"
+    },
+    {
+      "title": "RISC-V Zicfiss kernel documentation",
+      "url": "https://docs.kernel.org/arch/riscv/zicfiss.html",
+      "note": "article"
+    },
+    {
+      "title": "crashkernel reserve dead loop (syzbot patch)",
+      "url": "https://ci.syzbot.org/patches/529101b3-fe7e-4526-8570-05b52cd9d265",
+      "note": "thread"
+    },
+    {
+      "title": "crash reserve conditional fallback review thread",
+      "url": "https://lore-kernel.gnuweeb.org/linux-riscv/CAEBC780-5EA0-425E-84DA-F16817BE884C@linux.dev/",
+      "note": "thread"
+    },
+    {
+      "title": "RISC-V KVM steal time overhead v2 cover letter",
+      "url": "https://lore-kernel.gnuweeb.org/kvm/20261121173526.892344-1-den@valinux.co.jp/",
+      "note": "thread"
+    },
+    {
+      "title": "RISC-V KVM steal time uaccess batch (patch 2/3)",
+      "url": "https://lore.kernel.org/linux-riscv/20261121173526.892344-3-den@valinux.co.jp/",
+      "note": "thread"
+    },
+    {
+      "title": "SpacemiT K3 eFuse v3 cover letter",
+      "url": "https://lore-kernel.gnuweeb.org/linux-riscv/20261122173810.2409146-1-duge1256@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "SpacemiT K3 eFuse driver patch 3/3",
+      "url": "https://lore.kernel.org/linux-riscv/20261122173810.2409146-3-duge1256@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "SG2042 EVB RTC enable (patch 0/2)",
+      "url": "https://lore-kernel.gnuweeb.org/linux-riscv/20261122-sg2042-evb-rtc-v1-0-f222c64cc7b9@iscas.ac.cn/",
+      "note": "thread"
+    },
+    {
+      "title": "SG2042 EVB v2 RTC DTS (patch 2/2)",
+      "url": "https://lore.kernel.org/linux-riscv/20261122-sg2042-evb-rtc-v1-2-f222c64cc7b9@iscas.ac.cn/",
+      "note": "thread"
+    },
+    {
+      "title": "i.MX9 Toradex OSM SDIO_B DT fix",
+      "url": "https://lore-kernel.gnuweeb.org/linux-arm-kernel/20261122171931.295307-1-francesco@dolcini.it/",
+      "note": "thread"
+    },
+    {
+      "title": "Kconfig.kexec centralize capabilities (patch 2/2)",
+      "url": "https://lore-kernel.gnuweeb.org/linux-riscv/20261119-arch-kconfig-v1-2-37c276fe4d26@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "Kconfig.kexec series review (Ritesh Harjani)",
+      "url": "https://lore.kernel.org/linux-riscv/wlq5k1ox.ritesh.list@gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-22T18:24:57.565Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
