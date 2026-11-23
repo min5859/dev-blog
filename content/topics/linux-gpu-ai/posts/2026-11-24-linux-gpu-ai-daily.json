@@ -1,0 +1,131 @@
+{
+  "id": "2026-11-24-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-11-24 Adreno 프리엠션 버퍼 — GPU·AI",
+  "headline": "Qualcomm a8xx·RK3399 panfrost·dma-buf attach 회귀 수정과 SpacemiT·Renesas display 준비 패치가 dri-devel에 올라왔습니다.",
+  "date": "2026-11-24",
+  "summary": "Adreno Glymur/Mahua의 preempt_record_size 누락과 size 0 dma-buf attach가 GPU fault·잘못된 공유를 일으킬 수 있어 각각 수정안이 제출되었습니다. RK3399 panfrost는 하이버네이션 복원 hang을 고치고, SpacemiT K1 PowerVR DTS와 Renesas rz-du CRTC 인덱싱은 머지 순서·통합 검증이 남습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "drm",
+    "gpu",
+    "dma-buf"
+  ],
+  "highlights": [
+    {
+      "title": "drm/msm/a8xx: preempt_record_size 보정",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "drm/msm Adreno a8xx·Qualcomm GPU 프리엠션 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20261123181306.420017-1-robin.clark@oss.qualcomm.com/",
+      "if": "Glymur·Mahua에서 프리엠션을 켠 뒤 GMEM 저장 경로에서 GPU fault가 보이면",
+      "do": "v2 패치의 a8xx_catalog preempt_record_size(23088·17712×1K) 적용 여부와 Fixes 7fad33097e67 맥락을 확인하세요",
+      "verify": "로컬 트리에 패치를 올린 뒤 프리엠션 활성화 시 fault 재현이 사라지는지 lore 원문과 커밋 로그로 대조하세요"
+    },
+    {
+      "title": "dma-buf: size 0 attach 거부",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "dma-buf importer·GEM/DRM buffer sharing 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20261123171114.1451429-1-lizhi.hou@amd.com/",
+      "if": "importer가 attach 직후 매핑 불가·이상한 exporter 동작을 보면",
+      "do": "dma_buf_dynamic_attach()에서 size 0이 -EINVAL로 막히는 V1 동작을 기준으로 스택 트레이스를 점검하세요",
+      "verify": "WARN_ON(!dmabuf->size) 경로가 호출되는지 dmesg와 패치 스레드를 함께 확인하세요"
+    },
+    {
+      "title": "drm/panfrost: RK3399 GPU_PM_RT",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "drm/panfrost·Rockchip RK3399 Mali bring-up 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/20261123-panfrost-rk3399-pm-rt-v3-1-04c7c58d1140@iav.lv/",
+      "if": "ROCK Pi 4A 등 RK3399 보드에서 panfrost 바인딩 후 하이버네이션 복원이 genpd_restore_noirq()에서 멈추면",
+      "do": "rockchip,rk3399-mali를 default_pm_rt_data로 묶는 v3 적용과 aclk_gpu 런타임 서스펜드 동작을 시험하세요",
+      "verify": "9/9 복원 시나리오(HDMI·glmark2·idle)를 패치 설명과 동일하게 재현해 보세요"
+    },
+    {
+      "title": "drm/renesas rz-du: CRTC 인덱스",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "drm/renesas rz-du·RZ/G3E display 담당",
+      "verifyLink": "https://lore.kernel.org/dri-devel/04be21c034849955186adc9af9f6e70c9f740be0.1794502191.git.tommaso.merciai.xr@bp.renesas.com/",
+      "if": "한 DRM 디바이스에 DU 인스턴스가 둘인 RZ/G3E 통합 plane·encoder CRTC mask를 준비 중이면",
+      "do": "rzg2l_du_device::index와 crtcs_mask·possible_crtcs 오프셋 변경(v10 06/12)을 추적하세요",
+      "verify": "Biju Das가 제안한 encoder->possible_crtcs 오프셋 아이디어가 시리즈 후속 패치에 반영되는지 스레드를 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm/msm/a8xx: Add missing preempt_record_size**\n\nRob Clark v2는 a8xx_catalog에서 Glymur·Mahua용 preempt_record_size를 각각 23088·17712 MiB(×1K)로 설정해 기본 4MB로 떨어지던 문제를 고치며, Fixes: 7fad33097e67과 Connor Abbott Reported-by를 달았습니다.\n\n영향: 프리엠션 시 GMEM 내용을 저장할 버퍼가 너무 작으면 Qualcomm Adreno Glymur/Mahua에서 GPU fault가 날 수 있어, drm/msm/a8xx 추적자에게 선행 프리엠션 활성화 이후의 필수 수정입니다.\n\n> Glymur/Mahua were falling back to the default 4MB. Which is way too small for the amount of GMEM on these devices, causing faults\n\n[원문 확인](https://lore.kernel.org/dri-devel/20261123181306.420017-1-robin.clark@oss.qualcomm.com/)\n\n**dma-buf: Reject attaching a zero-sized dma-buf**\n\nLizhi Hou V1은 dma_buf_dynamic_attach()에서 size 0 dma-buf attach를 WARN_ON과 함께 -EINVAL로 거부하고, export 단계 검사는 내부용 zero-size 버퍼 회귀를 피하기 위해 넣지 않았습니다.\n\n영향: GPU·display 드라이버가 dma-buf importer로 붙을 때 크기 0 공유는 매핑 불가능한 exporter 버그 신호이므로, dma-buf를 쓰는 DRM/GEM 경로 담당자가 잘못된 attach를 조기에 잡을 수 있습니다.\n\n> Attaching to a zero-sized dma-buf does not make sense at all: there is nothing for an importer to map.\n\n[원문 확인](https://lore.kernel.org/dri-devel/20261123171114.1451429-1-lizhi.hou@amd.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/panfrost: Enable GPU_PM_RT for RK3399**\n\nIgor Velkov v3는 rockchip,rk3399-mali를 default_pm_rt_data로 매칭해 런타임 서스펜드 시 aclk_gpu를 끄도록 하며, ROCK Pi 4A에서 9/9 하이버네이션 복원과 Reviewed-by: Steven Price를 보고했습니다.\n\n영향: RK3399는 probe부터 클럭을 켠 채 두다가 하이버네이션 복원 시 genpd_restore_noirq()에서 GPU가 멈출 수 있어, Rockchip Mali·하이버네이션 조합을 쓰는 보드 담당자에게 직접적인 런타임 수정입니다.\n\n> restore from hibernation hangs in genpd_restore_noirq() of the GPU when the hibernated kernel had panfrost bound\n\n[원문 확인](https://lore.kernel.org/dri-devel/20261123-panfrost-rk3399-pm-rt-v3-1-04c7c58d1140@iav.lv/)\n\n**riscv: dts: spacemit: k1: add PowerVR GPU device node**\n\nIker Pedrosa는 SpacemiT K1 PowerVR GPU DTS 패치가 단독 적용 시 spacemit,k1-power.h·K1_PMDOMAIN_GPU 부재로 DTB 전처리가 깨지는 것이 Yixun Lan 전제 power-domain 시리즈 선행이 없어서라고 답했습니다.\n\n영향: K1 PowerVR 노드는 GPU 브링업 로드맵 신호이지만 빌드는 PM 시리즈와 묶여야 하므로, RISC-V SpacemiT·IMG PowerVR 통합을 보는 엔지니어는 시리즈 순서를 맞춰야 합니다.\n\n> Neither include/dt-bindings/power/spacemit,k1-power.h nor K1_PMDOMAIN_GPU is present in the tree yet\n\n[원문 확인](https://lore.kernel.org/dri-devel/CABdCQ=Pu=_M7wbP8SWA3ux4ztpnJoR3PzCn3bFg6ao7dxqXpUA@mail.gmail.com/)\n\n**drm: renesas: rz-du: Make the CRTC index relative to the DRM device**\n\nTommaso Merciai v10 06/12은 DU 인스턴스별 첫 CRTC 오프셋을 rzg2l_du_device::index에 두고 possible_crtcs/crtcs_mask를 DRM 디바이스 기준으로 맞추며, Biju Das는 encoder 경로에서 rcdu->index 사용을 제안했습니다.\n\n영향: RZ/G3E처럼 한 DRM 디바이스에 DU 인스턴스가 둘이면 plane/encoder CRTC 인덱스가 어긋날 수 있어, Renesas rz-du·RZ/G3E display 통합 전에 반드시 따라갈 KMS 인덱싱 작업으로 보입니다.\n\n> In preparation for supporting RZ/G3E, where two instances share one, record in each instance the index of its first CRTC\n\n[원문 확인](https://lore.kernel.org/dri-devel/04be21c034849955186adc9af9f6e70c9f740be0.1794502191.git.tommaso.merciai.xr@bp.renesas.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "drm-misc-next·drm/dma-buf 트리 머지 시점, a8xx·dma-buf 수정의 stable 백포트 필요 여부, rkvdec 런타임 PM 없이 RK3399 증상이 전 보드에서 같은지, SpacemiT PowerVR 스택과 DTS 노드 타임라인, rz-du v10 12패치 G3E 검증은 아직 공개 답이 없어 확인이 필요합니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/msm/a8xx preempt_record_size v2",
+      "url": "https://lore.kernel.org/dri-devel/20261123181306.420017-1-robin.clark@oss.qualcomm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/msm/a6xx: Enable Preemption on X2-85",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=7fad33097e67",
+      "note": "commit"
+    },
+    {
+      "title": "drm/panfrost RK3399 GPU_PM_RT v3",
+      "url": "https://lore.kernel.org/dri-devel/20261123-panfrost-rk3399-pm-rt-v3-1-04c7c58d1140@iav.lv/",
+      "note": "thread"
+    },
+    {
+      "title": "dma-buf zero-sized attach reject V1",
+      "url": "https://lore.kernel.org/dri-devel/20261123171114.1451429-1-lizhi.hou@amd.com/",
+      "note": "thread"
+    },
+    {
+      "title": "dma-buf: Introduce dma buffer sharing mechanism",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=d15bd7ee445d",
+      "note": "commit"
+    },
+    {
+      "title": "SpacemiT K1 PowerVR GPU DTS discussion",
+      "url": "https://lore.kernel.org/dri-devel/CABdCQ=Pu=_M7wbP8SWA3ux4ztpnJoR3PzCn3bFg6ao7dxqXpUA@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "K1 power-domain series v2",
+      "url": "https://lore.kernel.org/linux-riscv/20261008-04-k3-pm-support-v2-0-6f778a53dd2d@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/renesas rz-du CRTC index v10 06/12",
+      "url": "https://lore.kernel.org/dri-devel/04be21c034849955186adc9af9f6e70c9f740be0.1794502191.git.tommaso.merciai.xr@bp.renesas.com/",
+      "note": "thread"
+    },
+    {
+      "title": "rz-du encoder possible_crtcs review",
+      "url": "https://lore.kernel.org/dri-devel/TYYPR01MB6603CEBF9A3145D374663CEC86452@TYYPR01MB6603.jpnprd01.prod.outlook.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-23T18:30:33.471Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

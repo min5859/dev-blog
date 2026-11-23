@@ -1,0 +1,131 @@
+{
+  "id": "2026-11-24-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-11-24 arm64 BPF 스펙터 — Perf·RT",
+  "headline": "arm64 BPF 인터프리터 Spectre v1 완화 논쟁과 PREEMPT_RT tcpci_maxim lockdep 수정이 겹치며 x86 SMAP BPF extable 리뷰가 이어진다.",
+  "date": "2026-11-24",
+  "summary": "Ryan Roberts의 arm64 barrier_nospec 패치는 검증기 가정과 인터프리터 실효 완화 사이 간극을 다시 드러냈고, Alexei Starovoitov는 JIT 강제 Kconfig 검토로 회신을 철회했다. PREEMPT_RT에서 tcpci_maxim의 hardirq wakeup 호출을 스레드 IRQ로 옮기는 수정과 x86 BPF SMAP extable 시리즈·보장 범위 설명이 병행된다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "BPF",
+    "PREEMPT_RT",
+    "보안"
+  ],
+  "highlights": [
+    {
+      "title": "arm64: Mitigate Spectre v1 in the BPF interpreter",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "arm64 BPF·하드닝 담당, unprivileged BPF를 허용하는 배포팀",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/bpf/20261117172341.3152407-1-ryan.roberts@arm.com/",
+      "if": "arm64에서 unprivileged·interpreted BPF를 허용한다면",
+      "do": "JIT-only 정책과 barrier 패치 채택 범위를 백포트·문서에 맞춰 정하세요",
+      "verify": "Lore 스레드와 Alexei의 nack 철회·Kconfig 논의 원문을 확인하세요"
+    },
+    {
+      "title": "usb: typec: tcpm/tcpci_maxim: fix invalid wait context",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "PREEMPT_RT 및 tcpci_maxim/Type-C 드라이버 유지보수자",
+      "verifyLink": "https://ci.syzbot.org/patches/944c4534-b23e-449d-863f-6e3bf0cedac5",
+      "if": "PREEMPT_RT 또는 tcpci_maxim Type-C 스택을 추적한다면",
+      "do": "시리즈 2/2의 wakeup 초기화 순서와 lockdep 패치를 함께 리뷰하세요",
+      "verify": "syzbot 패치·시리즈 설명과 lockdep 인용문을 대조하세요"
+    },
+    {
+      "title": "x86/mm: Resolve BPF exception fixups for user address faults under SMAP",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "x86 MM·BPF JIT·특권 tracing BPF 작성자",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/10/09/154",
+      "if": "x86에서 PROBE_MEM·SMAP 경계의 tracing BPF를 검토한다면",
+      "do": "머지 전 maintainer 합의와 fixup 안전성 우려를 추적하세요",
+      "verify": "Dave Hansen·Borislav Petkov 스레드와 초기 패치 인용을 확인하세요"
+    },
+    {
+      "title": "x86/mm: BPF extable 보장 범위 (PROBE_MEM 응답)",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "특권 BPF·x86 fault 경로 검토자",
+      "verifyLink": "https://lkml.indiana.edu/hypermail/linux/kernel/2611.2/24516.html",
+      "if": "배포 정책에서 BPF nofault 읽기 의미론을 정의한다면",
+      "do": "커널 크래시 방지만 보장·SMAP 없을 때 JIT 범위 검사 유지를 기준으로 삼으세요",
+      "verify": "Kumar Kartikeya Dwivedi 답변의 copy_from_kernel_nofault()·extable 인용을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**arm64: Mitigate Spectre v1 in the BPF interpreter**\n\nRyan Roberts 패치는 arm64에서 barrier_nospec()이 실제 SB 또는 DSB+ISB를 내도록 바꿔 BPF 인터프리터의 ST_NOSPEC이 더 이상 no-op이 아니게 한다. Alexei Starovoitov는 간접 분기(goto *jumptable[]) 때문에 인터프리터 자체는 여전히 안전하지 않다고 지적했고, arm64/x86에서 BPF_JIT 비활성화를 막는 Kconfig 변경을 검토 중이다.\n\n영향: 검증기가 BPF_NOSPEC에 의존하는데 arm64 인터프리터 경로만 막혀 있으면 스펙큘레이션 완화가 깨져 unprivileged·interpreted BPF 배포에서 Spectre v1 노출이 남는다. JIT 강제 여부와 병행해 백포트·문서화 범위를 보안 정책으로 정해야 한다. ARCH_WANT_BPF_JIT_ALWAYS_ON으로 JIT-only를 강제할 때 이 arm64 패치를 드롭할지, 인터프리터 Spectre v2 등 잔존 구멍에 대한 공식 권고는 확인이 필요하다.\n\n> Programs executed by the interpreter therefore lack the Spectre-v1 barriers assumed by the verifier.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/bpf/20261117172341.3152407-1-ryan.roberts@arm.com/)\n\n> With a wrong target the CPU skips ST_NOSPEC and runs the next insn. So the interpreter is still not safe.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/23/1370)\n\n> Tested that this prevents the attack (just recovery of OOB value, did not aim for real secret) on Cavium ThunderX2\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/18/2061)\n\n**x86/mm: Resolve BPF exception fixups for user address faults under SMAP**\n\nDave Hansen가 PROBE_MEM BPF 프로그램의 NULL/부실 포인터 역참조와 SMAP 없을 때 사용자 공간 쓰레기 읽기 가능성을 질문했다. 시리즈 본체는 SMAP 하에서 BPF JIT 로드의 extable을 #PF 경로에서 처리해 JIT 앞의 주소 범위 검사를 제거하려 한다.\n\n영향: 특권 추적 BPF의 nofault 읽기 계약이 x86 페이지 폴트 핸들러에 얼마나 들어가는지는 SMAP 신뢰 경계와 직결된다. 리뷰어 우려가 남은 상태에서 머지되면 잘못된 fixup 판별이 oops를 숨길 여지가 있다. is_bpf_text_address() 대신 ex_get_fixup_type(EX_TYPE_BPF) 대안 채택·merge 전 maintainer 합의는 확인이 필요하다.\n\n> When the faulting instruction belongs to a BPF program, resolve its exception table entry instead of oopsing\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/10/09/154)\n\n> If SMAP isn't in play, can't this just go reading garbage from userspace?\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/23/2440)\n\n> Sorry, this is simply not worth the risk from where I am standing.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/22/1243)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**usb: typec: tcpm/tcpci_maxim: fix invalid wait context**\n\nPREEMPT_RT에서 max_tcpci_isr()가 hardirq에서 pm_wakeup_event()를 호출해 sleeping spinlock을 잡아 lockdep Invalid wait context가 난다. 패치는 wakeup 호출을 스레드 핸들러 max_tcpci_irq()로 옮기고 primary ISR을 제거하며, 시리즈 2/2는 devm_device_init_wakeup()을 IRQ 요청보다 먼저 수행한다.\n\n영향: RT/모바일 Type-C 스택에서 lockdep 경고는 실제 슬립 락을 IRQ에서 취득하는 설계 결함을 드러내며, wakeup 순서 버그는 조기 알림 시 suspend 방어가 빠질 수 있다. stable 백포트 대상 여부와 probe 실패 경로에서 wakeup 초기화 순서 변경 회귀는 확인이 필요하다.\n\n> Taking a sleeping lock in hard irq context is invalid, triggering the lockdep report above.\n\n[원문 확인](https://ci.syzbot.org/patches/944c4534-b23e-449d-863f-6e3bf0cedac5)\n\n> Move pm_wakeup_event() to the interrupt thread max_tcpci_irq() instead.\n\n[원문 확인](https://ci.syzbot.org/patches/944c4534-b23e-449d-863f-6e3bf0cedac5)\n\n> usb: typec: tcpm/tcpci_maxim: lockdep and PM wakeup fixes\n\n[원문 확인](https://ci.syzbot.org/series/5d7b8e03-8e30-4097-9a66-13d63b38ebf7)\n\n**x86/mm: Resolve BPF exception fixups for user address faults under SMAP (PROBE_MEM 응답)**\n\nKumar Kartikeya Dwivedi는 PROBE_MEM 로드를 copy_from_kernel_nofault()에 상응하는 best-effort 읽기로 설명하고, 보장은 커널이 죽지 않는 것뿐이며 extable은 단일 MOV 계열만 다룬다고 답했다. SMAP 미사용 시에는 기존 JIT 범위 검사가 유지된다고 명시했다.\n\n영향: 보안 독자는 데이터 무결성과 커널 무결성 보장을 구분해야 한다. Dave Hansen 추가 회신으로 설계가 바뀌는지, Alexei가 제안한 ex_get_fixup_type 경로가 최종 패치에 반영되는지는 확인이 필요하다.\n\n> The guarantee is the same as copy_from_kernel_nofault(), i.e. the read won't crash the kernel.\n\n[원문 확인](https://lkml.indiana.edu/hypermail/linux/kernel/2611.2/24516.html)\n\n> Without SMAP nothing changes: the JIT keeps the bounds check in front of the load as today\n\n[원문 확인](https://lkml.indiana.edu/hypermail/linux/kernel/2611.2/24516.html)\n\n> On a fault, ex_handler_bpf() zeroes the destination register and skips the instruction.\n\n[원문 확인](https://lkml.indiana.edu/hypermail/linux/kernel/2611.2/24516.html)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "arm64 BPF interpreter Spectre-v1 (Ryan Roberts)",
+      "url": "https://lore-kernel.gnuweeb.org/bpf/20261117172341.3152407-1-ryan.roberts@arm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Alexei Starovoitov interpreter ST_NOSPEC reply",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/23/1370",
+      "note": "thread"
+    },
+    {
+      "title": "ThunderX2 OOB recovery test (Luis Gerhorst)",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/18/2061",
+      "note": "thread"
+    },
+    {
+      "title": "tcpci_maxim lockdep and PM wakeup patches",
+      "url": "https://ci.syzbot.org/patches/944c4534-b23e-449d-863f-6e3bf0cedac5",
+      "note": "thread"
+    },
+    {
+      "title": "tcpci_maxim patch series",
+      "url": "https://ci.syzbot.org/series/5d7b8e03-8e30-4097-9a66-13d63b38ebf7",
+      "note": "thread"
+    },
+    {
+      "title": "x86 BPF extable under SMAP (patch series)",
+      "url": "https://lists.openwall.net/linux-kernel/2026/10/09/154",
+      "note": "thread"
+    },
+    {
+      "title": "Dave Hansen SMAP garbage read question",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/23/2440",
+      "note": "thread"
+    },
+    {
+      "title": "Borislav Petkov risk assessment",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/22/1243",
+      "note": "thread"
+    },
+    {
+      "title": "Kumar Kartikeya PROBE_MEM guarantee reply",
+      "url": "https://lkml.indiana.edu/hypermail/linux/kernel/2611.2/24516.html",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-23T18:25:12.487Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

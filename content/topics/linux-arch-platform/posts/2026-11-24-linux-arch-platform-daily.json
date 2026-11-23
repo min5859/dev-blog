@@ -1,0 +1,133 @@
+{
+  "id": "2026-11-24-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-11-24 SDEI·KVM 회귀 — 아키·플랫폼",
+  "headline": "arm64 SDEI·KVM nested virt 회귀 수정 패치와 Allwinner A733·MIPS P8700 DT, ARM vdsocheck 빌드 검증이 메일링에 올라왔습니다.",
+  "date": "2026-11-24",
+  "summary": "pseudo-NMI 환경에서 SDEI 경로 PMR 저장·복원과 KVM S2 TLBI TTL 힌트 승격이 회귀 수정으로 제안되었습니다. A733 Cubie A7S·Boston P8700 DT bring-up과 ARM vDSO vdsocheck 연동도 함께 추적할 가치가 있습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "arm64 SDEI에서 pseudo-NMI용 PMR 저장·복원",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "arm64 엔트리·SDEI·pseudo-NMI 유지보수 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/linux-arm-kernel/20261123171557.140944-3-ada.coupriediaz@arm.com/",
+      "if": "pseudo-NMI와 SDEI·stable 백포트를 함께 다루신다면",
+      "do": "v3 2/3 패치와 Fixes 133d05186325 맥락을 읽고 pt_regs PMR·DAIF 정렬을 검토하세요",
+      "verify": "스레드와 원인 커밋을 열어 회귀 조건이 자신의 보드·펌웨어 조합에 해당하는지 확인하세요"
+    },
+    {
+      "title": "KVM arm64 nested virt S2 TLBI TTL 힌트 승격",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "KVM arm64 nested virtualization·S2 MMU 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/linux-arm-kernel/20261123182312.4842-1-maz@kernel.org/",
+      "if": "FEAT_TTL 기반 S2 무효화 경로에서 host WARN이나 Dan Carpenter inval_range 이슈를 보셨다면",
+      "do": "작은 granule TTL 힌트를 최대 S2 granule로 승격하는 패치(Fixes d1de1576dc21) 반영 여부를 추적하세요",
+      "verify": "early stable Cc 논의와 nested.c 단독 패치 일정이 있는지 스레드를 확인하세요"
+    },
+    {
+      "title": "Allwinner A733·Radxa Cubie A7S DTS v5",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "Allwinner sunxi·A733/Cubie 보드 DT 및 PMIC 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/linux-arm-kernel/20261121-a733-cubie-a7s-dt-v5-0@gmail.com/",
+      "if": "sunxi/for-next 위 A733 bring-up·PMIC·MMC 검증을 맞추고 계시다면",
+      "do": "v5의 hosc·AXP318W·런타임 의존(8250_dw, pinctrl, fwclk 등) 정렬을 for-next 베이스와 대조하세요",
+      "verify": "실기 RAM 부팅·PMIC probe 결과가 있는 lore 스레드와 sunxi 머지 순서를 확인하세요"
+    },
+    {
+      "title": "MIPS P8700(Boston) RISC-V DT v4",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "RISC-V Boston/P8700·MIPS P8700 플랫폼 DT 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/linux-riscv/20261123-p8700-dts-v4-0-60bb7bf8a7a1@htecgroup.com/",
+      "if": "img,boston 계보 보드나 P8700 compatible 추가를 추적 중이시라면",
+      "do": "QEMU·Boston 실기 테스트와 aclint-mtimer 바인딩 정리 범위를 v4 8패치 시리즈에서 확인하세요",
+      "verify": "A 확장 ZAAMO SBI 에뮬레이션은 DT에 없다는 점과 U-Boot upstream 일정은 스레드에서 확인이 필요합니다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**arm64: entry: sdei: save and restore PMR for pseudo-NMI**\n\npseudo-NMI 사용 시 SDEI 예외 경로에서도 GIC PMR를 pt_regs에 저장·복원하고, 핸들러 진입 시 DAIF가 IRQ를 막는 상태에 맞는 알려진 PMR 값을 설정한다(Fixes: 133d05186325, v3 시리즈 2/3).\n\n영향: SDEI는 커널 임의 지점에서 끼어들 수 있는데 PMR 문맥 누락 시 regs_irqs_disabled()가 틀려져 복귀 경로가 깨질 수 있어, pseudo-NMI·SDEI·stable 백포트를 추적하는 arm64 엔트리 담당에게 중요하다.\n\n> Do the same for SDEI, as it can interrupt the kernel at any point and does not mandate firmware to touch PMR, but does mandate masking DAIF.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-arm-kernel/20261123171557.140944-3-ada.coupriediaz@arm.com/)\n\n> arm64: Make PMR part of task context\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=133d05186325)\n\nv3 시리즈 1/3·3/3와 함께 머지되는지, stable@vger.kernel.org Cc 반영 시 백포트 대상 브랜치는 확인이 필요합니다.\n\n**KVM: arm64: nv: Upgrade sub-page TTL hint to maximum size**\n\nnested virt에서 게스트 S2 TLBI의 TTL 힌트가 호스트 페이지보다 작은 granule을 가리키면, 힌트를 무시하고 최대 S2 granule 크기로 승격해 compute_tlb_inval_range의 page-align WARN을 막는다(Fixes: d1de1576dc21).\n\n영향: FEAT_TTL 기반 S2 무효화 경로에서 잘못된 힌트가 호스트 로그를 오염시키고, Dan Carpenter가 보고한 inval_range 문제의 단기 수정으로 early stable 반영이 요청된다.\n\n> detect the annoying case, and pretend that we don't have a TTL hint at all, leaving the size upgrade mechanism to take place\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-arm-kernel/20261123182312.4842-1-maz@kernel.org/)\n\n> KVM: arm64: nv: Handle FEAT_TTL hinted TLB operations\n\n[원문 확인](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=d1de1576dc21)\n\narch/arm64/kvm/nested.c 단독 패치의 mainline·stable 반영 시점과 게스트 비정상 TTL 조합 추가 하드닝 필요 여부는 확인이 필요합니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**arm64: dts: allwinner: add A733/Cubie A7S support**\n\nAllwinner A733 SoC와 Radxa Cubie A7S 보드용 DTS v5가 콘솔·AXP318W PMIC·microSD·LED·EEPROM을 기술하고, hosc 라벨·PMIC rail bounds·런타임 의존 패치(8250_dw, pinctrl, fwclk 등) 정렬을 반영한다.\n\n영향: sunxi/for-next 위에서 A733 보드 bring-up이 PMIC·MMC·LED까지 실기 검증 단계에 있어, Allwinner A계열 DT·레귤레이터·U-Boot 연동을 추적하는 플랫폼 담당에게 sunxi 머지 순서의 기준점이 된다.\n\n> Base: sunxi/for-next (2ba07dfcd45bb6ec414e68213620490548fd5aec). Changes in v5: - 1/3: Add the Cubie A7A compatible.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-arm-kernel/20261121-a733-cubie-a7s-dt-v5-0@gmail.com/)\n\n> On a Cubie A7S, a RAM boot with vendor firmware, this DTB and the runtime dependencies above reached a responsive console and probed the PMIC.\n\n[원문 확인](https://lore.kernel.org/linux-arm-kernel/20261121-a733-cubie-a7s-dt-v5-0@gmail.com/)\n\nAXP318W·pinctrl IRQ-bank 등 런타임 의존 패치 합류 후 DT 단독 머지 시점과 MMC hotplug·EEPROM 쓰기 미검증 항목은 확인이 필요합니다.\n\n**Add support for MIPS P8700**\n\nMIPS P8700(RV64GCZba_Zbb) 플랫폼과 Boston FPGA(P8700 bitfile)용 DTS·바인딩 v4 8패치가 img,boston 계보를 재사용하고 aclint-mtimer 바인딩을 정리한다; A 확장 ZAAMO는 SBI에서 에뮬레이션된다는 점은 DT에 반영하지 않는다.\n\n영향: MIPS에서 온 멀티클러스터 RISC-V SoC가 mainline DT에 들어오며 QEMU·Boston 실기 테스트가 보고되어, Boston/img 보드와 신규 compatible 추적·AMO/LR-SC 성능 시리즈와의 관계를 플랫폼 담당이 알아야 한다.\n\n> I tested this series both on QEMU and a Boston board configured with a single P8700 CPU, after applying the necessary U-Boot changes.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-riscv/20261123-p8700-dts-v4-0-60bb7bf8a7a1@htecgroup.com/)\n\n> the A extension is only partially supported, and all ZAAMO extension instructions are emulated on the SBI level.\n\n[원문 확인](https://lore.kernel.org/linux-riscv/20261123-p8700-dts-v4-0-60bb7bf8a7a1@htecgroup.com/)\n\nU-Boot 변경 upstream 일정과 Vladimir Kondratiev LR/SC 대체 시리즈와의 DT compatible 정합은 확인이 필요합니다.\n\n**ARM: vdso: Enable the vdsocheck tool**\n\ncross-arch vDSO absolute relocation 시리즈 v6 3/11에서 32-bit ARM에 VDSO_CHECK를 켜고 vdso.so 링크 단계에 vdsocheck를 묶어 호환되지 않는 relocation을 빌드 시 잡는다.\n\n영향: 컴파일러가 vDSO에 절대 relocation을 내면 런타임이 깨질 수 있는데, ARM vDSO 빌드에 검증을 통합해 arch/platform 렌즈 독자가 gettimeofday 경로 회귀를 조기에 막을 수 있다.\n\n> The vdsocheck tool validates the object files and final .so library. Wire it up for the architecture.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-riscv/20261123-vdso-absolute-reloc-v6-3-161e218dd217@linutronix.de/)\n\n> The compiler can emit absolute relocations in vDSO code, which are invalid in vDSO code. Detect them at compile-time.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-riscv/20261123-vdso-absolute-reloc-v6-0-161e218dd217@linutronix.de/)\n\nv6 시리즈 전 arch vdsocheck 통합 머지 순서와 Rust 툴체인 없을 때 CHECK 스킵이 ARM CI에서 충분한지는 확인이 필요합니다."
+    },
+    {
+      "heading": "기타",
+      "body": "clk 코어·imx/tegra/samsung 등 범용 드라이버 버그 수정 묶음 후보(lore-linux-riscv:urn:uuid:ea077042-c61d-614d-3f0e-673c5a0493b5)는 arch/platform 렌즈와 직접 연관이 약하고 실기 하드웨어 미테스트로 bring-up 영향 범위를 확정하기 어려워 이번 본문에서 제외했습니다."
+    }
+  ],
+  "confidence": {
+    "level": "high",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "arm64 SDEI PMR for pseudo-NMI (v3 2/3)",
+      "url": "https://lore-kernel.gnuweeb.org/linux-arm-kernel/20261123171557.140944-3-ada.coupriediaz@arm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "arm64: Make PMR part of task context",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=133d05186325",
+      "note": "commit"
+    },
+    {
+      "title": "KVM arm64 nv TTL hint upgrade",
+      "url": "https://lore-kernel.gnuweeb.org/linux-arm-kernel/20261123182312.4842-1-maz@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "KVM: arm64: nv: Handle FEAT_TTL hinted TLB operations",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=d1de1576dc21",
+      "note": "commit"
+    },
+    {
+      "title": "Allwinner A733 Cubie A7S DT v5 (gnuweeb)",
+      "url": "https://lore-kernel.gnuweeb.org/linux-arm-kernel/20261121-a733-cubie-a7s-dt-v5-0@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Allwinner A733 Cubie A7S DT v5 (lore.kernel.org)",
+      "url": "https://lore.kernel.org/linux-arm-kernel/20261121-a733-cubie-a7s-dt-v5-0@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "MIPS P8700 DTS v4 (gnuweeb)",
+      "url": "https://lore-kernel.gnuweeb.org/linux-riscv/20261123-p8700-dts-v4-0-60bb7bf8a7a1@htecgroup.com/",
+      "note": "thread"
+    },
+    {
+      "title": "MIPS P8700 DTS v4 (lore.kernel.org)",
+      "url": "https://lore.kernel.org/linux-riscv/20261123-p8700-dts-v4-0-60bb7bf8a7a1@htecgroup.com/",
+      "note": "thread"
+    },
+    {
+      "title": "ARM vdsocheck enable (v6 3/11)",
+      "url": "https://lore-kernel.gnuweeb.org/linux-riscv/20261123-vdso-absolute-reloc-v6-3-161e218dd217@linutronix.de/",
+      "note": "thread"
+    },
+    {
+      "title": "vDSO absolute relocation series v6 cover",
+      "url": "https://lore-kernel.gnuweeb.org/linux-riscv/20261123-vdso-absolute-reloc-v6-0-161e218dd217@linutronix.de/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-23T18:27:00.153Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

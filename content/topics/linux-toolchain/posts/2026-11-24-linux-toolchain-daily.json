@@ -1,0 +1,104 @@
+{
+  "id": "2026-11-24-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-11-24 KSTACK·bindgen — 리눅스 툴체인",
+  "headline": "x86 KSTACK_ERASE memset64 최적화·Clang 부트 링크 수정과 Rust bindgen sched_statistics 정렬이 툴체인·하드닝 빌드의 초점이다.",
+  "date": "2026-11-24",
+  "summary": "KSTACK_ERASE v2는 대형 스택 소거를 memset64()(REP STOSQ)로 바꿔 Meta VM 호스트 비유휴 커널 사이클 약 1.5% 오버헤드를 줄이고, x86 startup Makefile 잔재 수정으로 Clang·AMD MEM_ENCRYPT 빌드 링크 실패를 막습니다. Rust bindgen은 CONFIG_SCHEDSTATS=n일 때 sched_statistics 정렬을 opaque-type으로 맞춰 Binder mmap·task_struct.mm 오프셋 버그를 고칩니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "툴체인"
+  ],
+  "highlights": [
+    {
+      "title": "x86/kstack_erase v2: memset64()로 스택 소거 가속",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "x86 KSTACK_ERASE·stackleak 하드닝 빌드, KVM 다중 VM 호스트, Clang/AMD SEV 관련 x86 부트 코드 빌드 담당",
+      "verifyLink": "https://lists.openwall.net/linux-hardening/2026/11/23/34",
+      "if": "Meta 규모 다중 VM 호스트에서 KSTACK_ERASE를 켠 채 성능·하드닝 균형을 맞춰야 한다면",
+      "do": "v2 커버레터의 memset64() 변경과 Zen 5c 68ns→47ns 벤치를 검토한 뒤 자체 워크로드에서 stackleak_erase 비용을 재측정하세요",
+      "verify": "openwall linux-hardening 스레드에서 패치 2의 512B 초과 memset64()·짧은 구간 word loop 동작을 원문으로 확인하세요"
+    },
+    {
+      "title": "x86 boot startup: DISABLE_KSTACK_ERASE로 Clang 링크 회귀 수정",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "x86 KSTACK_ERASE·stackleak 하드닝 빌드, KVM 다중 VM 호스트, Clang/AMD SEV 관련 x86 부트 코드 빌드 담당",
+      "verifyLink": "https://lists.openwall.net/linux-hardening/2026/11/23/35",
+      "if": "Clang·AMD MEM_ENCRYPT 조합으로 KSTACK_ERASE_TRACK_MIN_SIZE 등 소규모 설정 빌드 시 vmlinux 링크가 깨진다면",
+      "do": "DISABLE_STACKLEAK_PLUGIN Makefile 잔재가 DISABLE_KSTACK_ERASE로 바뀌는 패치 1을 빌드 트리에 반영해 __pi___sanitizer_cov_stack_depth 미정의를 해소하세요",
+      "verify": "패치 1 스레드의 ld.lld undefined symbol 메시지와 수정 diff를 대조해 확인하세요"
+    },
+    {
+      "title": "rust bindgen: sched_statistics 정렬 보존 (v3)",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "CONFIG_RUST·Rust Binder·CONFIG_SCHEDSTATS=n arm64/모바일 커널 빌드, bindgen 0.73.2 toolchain 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/11/23/2649",
+      "if": "CONFIG_SCHEDSTATS=n에서 CONFIG_ANDROID_BINDER_IPC_RUST·Waydroid/Binder Rust 경로를 쓰는 빌드라면",
+      "do": "--opaque-type sched_statistics 적용 여부를 확인하고 bindgen 0.73.2 패딩 회귀·stable 6.12.x 백포트 Cc 명시를 릴리스 계획에 반영하세요",
+      "verify": "v3 패치 스레드와 OnePlus 6T Waydroid 사례, issue #1269의 mm 오프셋·mmgrab() 설명을 링크로 대조하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**[PATCH v2 0/2] x86/kstack_erase: Faster stack poisoning, plus a startup build fix**\n\nv2는 512바이트 초과 스택 소거에 memset64()(REP STOSQ)를 쓰도록 x86-64 __stackleak_poison()을 바꾸고, 별도 패치로 x86 boot startup Makefile의 DISABLE_STACKLEAK_PLUGIN 잔재를 DISABLE_KSTACK_ERASE로 고쳐 Clang·AMD MEM_ENCRYPT 조합에서 vmlinux 링크 실패를 막는다.\n\n영향: KSTACK_ERASE는 스택 잔여 데이터 노출을 줄이는 하드닝인데 Meta 규모 VM 호스트에서 비유휴 커널 사이클 약 1.5%가 stackleak_erase()에 쓰여 성능이 채택 장벽이 된다. 오버헤드를 줄이면 하드닝을 켠 배포·가상화 운영이 현실적이 되고, startup 빌드 수정은 소규모 KSTACK_ERASE_TRACK_MIN_SIZE·암호화 빌드의 링크 회귀를 막는다.\n\n> On Meta hosts running many small VMs, that loop costs about 1.5% of non-idle host kernel cycles.\n\n> Fill spans larger than 512 bytes with memset64(), which is a single REP STOSQ, and keep the word loop for shorter ones\n\n> ld.lld: error: undefined symbol: __pi___sanitizer_cov_stack_depth\n\n[원문 확인](https://lists.openwall.net/linux-hardening/2026/11/23/34)\n\n**rust: bindgen: Preserve sched_statistics alignment**\n\nCONFIG_SCHEDSTATS=n일 때 비어 있지만 cache-line 정렬된 struct sched_statistics의 bindgen 레이아웃 오류를 --opaque-type sched_statistics로 고쳐 task_struct 후속 필드 오프셋을 C와 맞춘다. v3(11-23)은 bindgen 0.73.2 패딩 회귀와 stable 6.12.x 백포트 Cc를 명시한다.\n\n영향: Rust Binder가 잘못된 current->mm를 읽어 mmap()이 -EINVAL로 실패하고 open()마다 bogus mm에 mmgrab()이 걸려 무관한 커널 메모리를 건드릴 수 있다. CONFIG_SCHEDSTATS=n·CONFIG_ANDROID_BINDER_IPC_RUST 빌드는 IPC 경계가 사실상 깨지므로 Android/Waydroid·Binder Rust 경로 보안·안정성에 직결된다. bindgen upstream(#3549) 수정 전까지 다른 empty cache-line 정렬 struct에도 동일 클래스 버그가 있을 수 있으며, stable 6.12.x 백포트 반영 여부는 아직 릴리스 태그에서 확인이 필요하다.\n\n> Rust Binder reads the wrong pointer via CurrentTask::mm() and rejects mmap() with -EINVAL.\n\n> Without this patch, mmap() of the binder devices fails with -EINVAL as described in the issue, and Waydroid cannot start.\n\n> calls `mmgrab()` on it at every `open()`, which increments a counter in unrelated kernel memory\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/23/2649)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "높음",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "[PATCH v2 0/2] x86/kstack_erase cover letter",
+      "url": "https://lists.openwall.net/linux-hardening/2026/11/23/34",
+      "note": "thread"
+    },
+    {
+      "title": "x86/kstack_erase memset64() poisoning patch",
+      "url": "https://lists.openwall.net/linux-hardening/2026/11/23/36",
+      "note": "thread"
+    },
+    {
+      "title": "x86 boot startup DISABLE_KSTACK_ERASE fix",
+      "url": "https://lists.openwall.net/linux-hardening/2026/11/23/35",
+      "note": "thread"
+    },
+    {
+      "title": "rust bindgen sched_statistics v3",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/23/2649",
+      "note": "thread"
+    },
+    {
+      "title": "Waydroid mmap -EINVAL without sched_statistics fix",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/20/1787",
+      "note": "thread"
+    },
+    {
+      "title": "Rust-for-Linux issue 1269 task_struct.mm offset",
+      "url": "https://github.com/Rust-for-Linux/linux/issues/1269",
+      "note": "article"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-23T18:20:22.490Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
