@@ -1,0 +1,141 @@
+{
+  "id": "2026-11-25-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-11-25 Kbuild·panthor ABI — 툴체인 렌즈",
+  "headline": "7.4 kbuild-fixes 풀의 GCC·AutoFDO 조정과 Rust-for-Linux의 panthor·nova 패치가 toolchain·바인딩 검증 포인트를 동시에 밀어냅니다.",
+  "date": "2026-11-25",
+  "summary": "Nathan Chancellor의 kbuild-fixes-7.4-2는 GCC 17 경고와 Clang AutoFDO Profi 이슈를 다룹니다. rust-for-linux 쪽에서는 mm VMA 진단, nova vGPU VRAM 풀, fwctl, panthor Mali v15 uAPI 확장이 올라왔습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "Rust-for-Linux",
+    "kbuild",
+    "CONFIG_RUST"
+  ],
+  "highlights": [
+    {
+      "title": "Kbuild fixes for 7.4 #2",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "Clang/LLVM 커널 빌드·AutoFDO·Werror CI, kbuild/linux.git fixes 트리 추적자",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/linux-kbuild/20261124035200.GA1950519@ax162/raw",
+      "if": "CONFIG_AUTOFDO·Clang ThinLTO·Werror defconfig로 배포나 CI 빌드를 돌리는 경우",
+      "do": "kbuild-fixes-7.4-2 풀과 scripts/Makefile.autofdo 변경을 fixes 트리에서 따라가세요",
+      "verify": "풀 요약과 Makefile.autofdo·GCC W=2 커밋 링크에서 Profi 비활성화와 경고 조정을 확인하세요"
+    },
+    {
+      "title": "drm/panthor: Add Mali v15 hardware support",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "CONFIG_RUST·panthor/Arm Mali 사용자 공간 바인딩 작성자, DRM uAPI semver 추적 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/rust-for-linux/20261124161952.1053586-10-karunika.choo@arm.com/raw",
+      "if": "panthor userspace 바인딩이나 rust/uapi/uapi_helper.h 기반 생성물을 유지하는 경우",
+      "do": "gpu_id_wide·l2_features_wide 필드와 drm minor 10 요구사항을 ABI 체크리스트에 반영하세요",
+      "verify": "rust-for-linux 스레드에서 v15 GPU_ID_WIDE 디코딩과 minor 버전 상승 문구를 원문으로 확인하세요"
+    },
+    {
+      "title": "gpu: nova-core: vgpu: add VRAM slot pool",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "nova-core·Rust GPU/vGPU 드라이버 개발자, Rust-for-Linux 빌드·리뷰어",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/rust-for-linux/20261124135937.18583-22-alkumar@nvidia.com/raw",
+      "if": "Rust in-tree GPU 드라이버에서 VRAM 레이아웃·오버플로 패턴을 참고하는 경우",
+      "do": "VgpuVramSlotPool의 연속 FB·fb_align 불변식을 코드 리뷰 기준으로 삼으세요",
+      "verify": "패치 시리즈 본문에서 단편화 문제 정의와 슬롯 정렬 주석을 링크로 대조하세요"
+    },
+    {
+      "title": "rust: mm: warn once on invalid VMA range",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "Rust-for-Linux mm 바인딩·VMA/zap 경로를 다루는 개발자, CONFIG_RUST kbuild 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/rust-for-linux/20261124153228.134723-1-mbkchelofficialdev@gmail.com/raw",
+      "if": "Rust mm 바인딩으로 zap_vma_range 계약을 검증하거나 bindgen 오프셋을 추적하는 경우",
+      "do": "v2에서 debug_assert!·pr_warn_once! 경로로 잘못된 VMA 범위를 재현 테스트하세요",
+      "verify": "v2 변경 목록과 virt.rs의 pr_warn_once 후 return 동작을 lore 원문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**Kbuild fixes for 7.4 #2**\n\nNathan Chancellor의 kbuild-fixes-7.4-2 풀은 GCC 17의 -Wconstant-logical-operand를 W=2로 내려 -Werror 빌드를 고치고, Clang AutoFDO에서 LLVM Profi(-fno-sample-profile-use-profi)를 꺼 C/Rust 플래그·ThinLTO 링크에도 sample-profile-use-profi=false를 넣습니다.\n\n영향: CONFIG_AUTOFDO·Clang ThinLTO·Werror defconfig CI에서 컴파일 시간·런타임 성능 회귀나 GCC 17 경고로 빌드가 깨질 수 있어 Makefile.autofdo 추적이 필요합니다.\n\n> Disable LLVM's flow-based profile inference algorithm (Profi) for AutoFDO, which can degrade runtime performance and cause pathological compilation time issues\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-kbuild/20261124035200.GA1950519@ax162/raw)\n\n**drm/panthor: Add Mali v15 hardware support**\n\npanthor v5 시리즈 마지막 패치가 Mali v15 레지스터 맵·호환 문자열·GPU_ID_WIDE 디코딩을 추가하고, uAPI drm_panthor_gpu_info에 gpu_id_wide·l2_features_wide 등 64비트 필드를 넣으며 drm minor를 10으로 올립니다.\n\n영향: rust/uapi/uapi_helper.h에 panthor 헤더가 포함된 toolchain 표면과 맞물려 Rust userspace·바인딩 생성 시 GPU ID 레이아웃 변경을 놓치면 ABI 불일치가 납니다.\n\n> read GPU_ID_WIDE when the compatibility value indicates a v15 GPU, and populate both the cached GPU_ID fields and the uAPI gpu_id_wide field.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/rust-for-linux/20261124161952.1053586-10-karunika.choo@arm.com/raw)\n\n**gpu: nova-core: vgpu: add VRAM slot pool**\n\nnova-core vGPU 시리즈(v5 21/35)에 VgpuVramSlotPool을 추가해 vGPU 타입별 framebuffer·management heap를 한 VRAM 블록에 연속 배치하고 슬롯 인덱스로 영역을 나누며, guest FB 슬롯 정렬을 보존하도록 할당·오버플로 검사를 Rust로 구현합니다.\n\n영향: nova-core는 Rust-for-Linux의 대형 in-tree 드라이버 스택이라 VRAM 레이아웃·오버플로 처리 패턴이 Rust GPU 드라이버 작성자와 CONFIG_RUST 빌드·바인딩 검증 담당자의 설계 사례가 됩니다.\n\n> Allocating these regions independently fragments VRAM and does not preserve a stable layout for the vGPU type.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/rust-for-linux/20261124135937.18583-22-alkumar@nvidia.com/raw)\n\n**gpu: nova-core: add fwctl driver for firmware control interface**\n\nnova-core에 fwctl 드라이버를 추가해 userspace가 GMC command ID·payload로 GSP에 명령을 내리게 하고 커널이 transport 헤더를 구성하며, configuration scope의 vGPU 관리 명령 7개만 허용하고 FWCTL_DEVICE_TYPE_NOVA_CORE·Rust fwctl.rs 바인딩을 갱신합니다.\n\n영향: fwctl uAPI·Rust kernel/fwctl.rs 확장은 Rust-for-Linux 공통 IPC 패턴을 nova GPU 관리에 연결하므로 bindgen·uapi_helper 재생성과 userspace GMC 클라이언트 보안 모델을 함께 검토해야 합니다.\n\n> Userspace supplies the command ID and payload while the transport headers remain internal to the kernel.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/rust-for-linux/20261124144204.19072-2-alkumar@nvidia.com/raw)\n\n**rust: mm: warn once on invalid VMA range**\n\nv2 패치는 커스텀 warn_once! 매크로·KUnit 테스트를 제거하고 Vma::zap_vma_range()에 debug_assert!()와 pr_warn_once!()를 넣어 overflow·VMA 범위 밖 zap 시도를 개발 빌드에서 즉시 드러내고 프로덕션에서는 한 번 경고한 뒤 조기 반환합니다.\n\n영향: Rust mm 바인딩이 C zap_vma_range() 경로와 같은 계약을 따르는지 추적하는 독자에게, 잘못된 주소·크기가 조용히 무시되던 TODO가 실제 진단으로 바뀝니다. mm 쪽 ACK·머지 여부는 아직 확인되지 않았습니다.\n\n> Changes in v2:\n> - Drop the `warn_once!()` macro and its KUnit test.\n> - Use `debug_assert!()` and `pr_warn_once!()` in `Vma::zap_vma_range()` as suggested by Miguel.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/rust-for-linux/20261124153228.134723-1-mbkchelofficialdev@gmail.com/raw)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "Kbuild fixes for 7.4 #2 (lore raw)",
+      "url": "https://lore-kernel.gnuweeb.org/linux-kbuild/20261124035200.GA1950519@ax162/raw",
+      "note": "thread"
+    },
+    {
+      "title": "Makefile.autofdo (kbuild/linux.git)",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/kbuild/linux.git/plain/scripts/Makefile.autofdo?id=3df238d7a9f5ac7d78115958fd7a36139f61ca34",
+      "note": "changelog"
+    },
+    {
+      "title": "kbuild: move gcc's -Wconstant-logical-operand to W=2",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/kbuild/linux.git/commit/?id=4d8996081dd19c177c44a83e74715ddf220e3452",
+      "note": "commit"
+    },
+    {
+      "title": "drm/panthor Mali v15 (lore raw)",
+      "url": "https://lore-kernel.gnuweeb.org/rust-for-linux/20261124161952.1053586-10-karunika.choo@arm.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "drm/panthor Mali v15 (lore.kernel.org)",
+      "url": "https://lore.kernel.org/rust-for-linux/20261124161952.1053586-10-karunika.choo@arm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "nova-core vgpu VRAM slot pool (lore raw)",
+      "url": "https://lore-kernel.gnuweeb.org/rust-for-linux/20261124135937.18583-22-alkumar@nvidia.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "nova-core vgpu VRAM slot pool (lore.kernel.org)",
+      "url": "https://lore.kernel.org/rust-for-linux/20261124135937.18583-22-alkumar@nvidia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "nova-core fwctl (lore raw)",
+      "url": "https://lore-kernel.gnuweeb.org/rust-for-linux/20261124144204.19072-2-alkumar@nvidia.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "nova-core fwctl (lore.kernel.org)",
+      "url": "https://lore.kernel.org/rust-for-linux/20261124144204.19072-2-alkumar@nvidia.com/",
+      "note": "thread"
+    },
+    {
+      "title": "rust mm invalid VMA range v2 (lore raw)",
+      "url": "https://lore-kernel.gnuweeb.org/rust-for-linux/20261124153228.134723-1-mbkchelofficialdev@gmail.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "rust mm invalid VMA range (lore.kernel.org)",
+      "url": "https://lore.kernel.org/rust-for-linux/20261124153228.134723-1-mbkchelofficialdev@gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-24T18:24:32.464Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

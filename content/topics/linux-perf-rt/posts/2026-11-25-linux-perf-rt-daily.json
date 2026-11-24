@@ -1,0 +1,143 @@
+{
+  "id": "2026-11-25-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-11-25 act_gate soft lockup 차단 — linux-perf-rt",
+  "headline": "TC act_gate의 cycle_time 상한·10µs 최소 간격과 cgroup rstat 선점 보정이 RT/QoS·BPF selftest 안정성의 초점입니다.",
+  "date": "2026-11-25",
+  "summary": "act_gate 설정 오류로 softirq가 끝나지 않는 soft lockup 재현에 대한 v4 수정이 netdev 쪽에서 논의되고 있습니다. PREEMPT_RT에서 cgroup BPF kfunc 선점과 IPv6 dst 검증·veth egress headroom 등 데이터패스·문서 패치도 함께 추적할 만합니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "net/sched: act_gate cycle_time·10µs 하한",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "TC act_gate·TSN/QoS·PREEMPT_RT 운영자",
+      "verifyLink": "https://ci.syzbot.org/series/46bd2987-6939-4de5-a40c-ee6a4cd95906/all_patches",
+      "if": "QoS gate·TSN 스케줄을 act_gate로 배포 중이면",
+      "do": "base_time·cycle_time이 KTIME_MAX를 넘지 않고 schedule entry가 10µs 이상인지 tc 규칙을 점검하세요",
+      "verify": "syzbot 재현 스레드와 Jamal Hadi Salim v4 패치 링크에서 거부 경로를 확인하세요"
+    },
+    {
+      "title": "cgroup/rstat: css_rstat_updated() 선점 비활성",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "BPF cgroup rstat kfunc·PREEMPT_RT selftest 유지보수자",
+      "verifyLink": "https://lkml.iu.edu/2611.2/25782.html",
+      "if": "PREEMPT_RT에서 BPF cgroup rstat kfunc selftest가 lockdep·계층 통계 경고로 깨지면",
+      "do": "v2의 guard(preempt)() 적용 여부를 빌드·selftest 로그와 대조하세요",
+      "verify": "Alexei Starovoitov 스레드와 lkml 본문에서 cgroup_hierarchical_stats 2/2→0/2 결과를 확인하세요"
+    },
+    {
+      "title": "ipv6: lookup 시점 dst stamp 검증",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "IPv6 라우팅·xfrm·네트워크 네임스페이스 담당",
+      "verifyLink": "https://lkml.indiana.edu/2611.3/01826.html",
+      "if": "FIB·xfrm 정책 변경 직후 plaintext 유출·stale dst 의심이 있으면",
+      "do": "Ralf Lici v5의 fn_sernum stamp·ip6_dst_check() 동작을 테스트 네임스페이스에서 재현해 보세요",
+      "verify": "cover의 late cookie race 인용과 David Ahern RFC 대안 스레드를 비교해 주세요"
+    },
+    {
+      "title": "net: 로컬 egress tx_extra_headroom",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "XDP/tcx·veth·CNI 네트워킹 담당",
+      "verifyLink": "https://kernelthread.org/series/cover.1794020868.git.tianyi@cloudflare.com",
+      "if": "CNI·veth에서 tcx·XDP 헤더 push로 skb 재할당 병목을 보면",
+      "do": "v3 시리즈의 tx_extra_headroom·needed_headroom 대안이 TCP·포워딩 회귀 없이 지연을 줄이는지 벤치를 설계하세요",
+      "verify": "커버레터의 needed_headroom 회귀 인용과 패치 6–8 BPF Ack 시점은 확인이 필요합니다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**net/sched: act_gate: bound the cycle time and refuse schedule entries shorter than 10 us**\n\nJamal Hadi Salim v4 3패치는 act_gate의 base_time·cycle_time을 KTIME_MAX로 제한하고 시작 시각 산술을 포화시키며, 스케줄 엔트리 최소 간격을 10µs로 거부한다.\n\n영향: U64_MAX cycle_time이나 나노초급 interval은 hrtimer softirq가 끝나지 않아 soft lockup·CPU 고갈을 낳는데, PREEMPT_RT에서 타이머 비용이 커지므로 QoS gate를 쓰는 RT/TSN 통합 환경에서 필수 회귀·DoS 차단 패치다.\n\n> Every expiry recomputes that same past time, so the softirq never finishes and the installing task spins inside _raw_spin_unlock_bh() until the watchdog reports a soft lockup.\n\n[원문 확인](https://ci.syzbot.org/series/46bd2987-6939-4de5-a40c-ee6a4cd95906/all_patches)\n\n> The gate action now bounds the base time and the cycle time at KTIME_MAX and refuses a schedule entry shorter than 10 us.\n\n[원문 확인](https://ci.syzbot.org/patches/86114831-eb46-405f-a088-06be5544077c)\n\n> An RTM_NEWACTION request installs act_gate with base_time=1, cycle_time=UINT64_MAX and one valid entry.\n\n[원문 확인](https://lists.openwall.net/netdev/2026/10/22/304)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**net: extra TX headroom for local egress**\n\nv3 시리즈는 struct net_device에 tx_extra_headroom(최대 512바이트)을 추가하고, veth XDP peer·tcx egress BTF decl tag·VETH_INFO_TX_EXTRA_HEADROOM로 로컬 생성 skb 할당 시 여유 headroom을 미리 잡아 매 패킷 재할당/복사를 줄인다.\n\n영향: 컨테이너/CNI 경로에서 tcx·XDP가 헤더를 밀 때 skb 재할당이 병목이 되므로, needed_headroom을 올리는 대안이 TCP·포워딩에 주는 회귀 없이 net-next datapath 지연을 줄이는지 추적할 가치가 있다.\n\n> Locally generated UDP, raw and AF_PACKET packets, and AF_XDP packets in copy mode, get only the headroom that needed_headroom asks for.\n\n[원문 확인](https://kernelthread.org/series/cover.1794020868.git.tianyi@cloudflare.com)\n\n**Documentation: real-time: Add boot parameters and task isolation section**\n\nZixin Wang 패치는 Documentation/core-api/real-time/kernel-configuration.rst에 부트 파라미터·런타임 튜닝 섹션을 추가해 isolcpus, nohz_full, rcu_nocbs, irqaffinity, C-state 제한을 Kconfig 안내와 묶어 문서화한다.\n\n영향: Kconfig만으로는 worst-case latency가 결정되지 않으므로, RT 통합자가 osnoise/timerlat/rtla로 검증해야 할 isolcpus·nohz_full 조합을 한 문서에 모은다.\n\n> Document the boot parameters and runtime tunables that affect the worst-case latency of a real-time system, alongside the existing kernel configuration guidance.\n\n[원문 확인](https://lkml.iu.edu/2611.2/19329.html)\n\n**cgroup/rstat: disable preemption in css_rstat_updated()**\n\nKarl Mehltretter v2는 BPF kfunc css_rstat_updated()에 guard(preempt)()를 넣어 __css_rstat_updated() 호출 전 선점을 끈다. Alexei Starovoitov가 selftest 래퍼 대신 kfunc 수정을 요청한 결과다.\n\n영향: PREEMPT_RT에서 tracepoint 아래 spin_lock_irqsave()가 선점을 남겨 lockdep이 터지고 cgroup_hierarchical_stats·iter/cgroup selftest가 실패하므로, cgroup rstat kfunc를 쓰는 BPF/RT 배포는 이 수정을 따라야 한다.\n\n> BPF programs can call css_rstat_updated() with preemption enabled. The kfunc calls __css_rstat_updated(), which requires preemption to be disabled while it queues an rstat update.\n\n[원문 확인](https://lkml.iu.edu/2611.2/25782.html)\n\n> let's fix the kfunc instead\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/23/74)\n\n**lib/percpu_counter: allow concurrent sums with an rwlock**\n\nJiebin Sun v2(2026-11-24, linux-rt-devel Cc)는 !PREEMPT_RT에서 percpu_counter 잠금을 rwlock으로 바꿔 __percpu_counter_sum()이 read lock으로 동시 합산할 수 있게 하고, PREEMPT_RT는 raw spinlock을 유지한다.\n\n영향: ext4 statfs·writeback 경로의 counter 합산이 직렬화되며 dentry/fio 워크로드 CPU를 태우는 문제를 RT에서는 건드리지 않고 일반 커널에서 완화하려는 변경이라, MM·RT 병행 추적에 해당한다.\n\n> use rwlock_t on !PREEMPT_RT to allow concurrent sums with a read lock. Global updates take the write lock. The per-CPU fast path remains lockless\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/11/16/176)\n\n**ipv6: validate dsts against the state their lookup found**\n\nRalf Lici v5(2026-11-24)는 lookup 시점에 샘플한 route node fn_sernum을 dst에 스탬프하고 ip6_dst_check()가 그 값과 대조하게 해, FIB 변경 뒤 늦게 읽힌 cookie로 stale dst가 살아남는 race를 막는다. pcpu dst는 재스탬프 없이 stamp가 맞을 때만 재사용한다.\n\n영향: xfrm 정책 삽입·blackhole 우회·plaintext 유출 같은 라우팅 캐시 race는 RT/네트워크 모두에 영향을 주고, PREEMPT_RT에서 동시 lookup이 pcpu dst를 바꿀 때도 같은 규칙을 적용한다.\n\n> a socket whose lookup ran just before a policy insertion keeps its plain dst and leaks plaintext although the policy matches\n\n[원문 확인](https://lkml.indiana.edu/2611.3/01826.html)\n\n> Stamp every dst with the counter in ip6_dst_alloc() and validate by comparison in ip6_dst_check().\n\n[원문 확인](https://lists.openwall.net/netdev/2026/11/22/315)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "net: extra TX headroom v3 커버",
+      "url": "https://kernelthread.org/series/cover.1794020868.git.tianyi@cloudflare.com",
+      "note": "thread"
+    },
+    {
+      "title": "act_gate syzbot 시리즈",
+      "url": "https://ci.syzbot.org/series/46bd2987-6939-4de5-a40c-ee6a4cd95906/all_patches",
+      "note": "thread"
+    },
+    {
+      "title": "act_gate 10µs 패치",
+      "url": "https://ci.syzbot.org/patches/86114831-eb46-405f-a088-06be5544077c",
+      "note": "thread"
+    },
+    {
+      "title": "act_gate netdev syzbot 보고",
+      "url": "https://lists.openwall.net/netdev/2026/10/22/304",
+      "note": "thread"
+    },
+    {
+      "title": "real-time boot parameters 문서화",
+      "url": "https://lkml.iu.edu/2611.2/19329.html",
+      "note": "thread"
+    },
+    {
+      "title": "CPU isolation patchew 스레드",
+      "url": "https://patchew.org/linux/20261121093740.4133-1-w1355457260@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "cgroup rstat kfunc 선점",
+      "url": "https://lkml.iu.edu/2611.2/25782.html",
+      "note": "thread"
+    },
+    {
+      "title": "let's fix the kfunc instead",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/23/74",
+      "note": "thread"
+    },
+    {
+      "title": "percpu_counter rwlock syzbot",
+      "url": "https://ci.syzbot.org/series/843efa97-b56e-4f55-90c5-ae04f2485897",
+      "note": "thread"
+    },
+    {
+      "title": "percpu_counter rwlock v2",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/16/176",
+      "note": "thread"
+    },
+    {
+      "title": "ipv6 dst stamp v5",
+      "url": "https://lkml.indiana.edu/2611.3/01826.html",
+      "note": "thread"
+    },
+    {
+      "title": "David Ahern dst stamp RFC",
+      "url": "https://lists.openwall.net/netdev/2026/11/22/315",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-24T18:29:05.632Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

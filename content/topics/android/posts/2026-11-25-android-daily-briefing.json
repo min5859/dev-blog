@@ -1,0 +1,153 @@
+{
+  "id": "2026-11-25-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-11-25 dma-heap·IOMMU — Android 커널",
+  "headline": "x86 GKI IOMMU strict 기본화와 dma-heap fd 유출 수정, ashmem·init 회귀 패치가 ACK mainline에 반영됩니다.",
+  "date": "2026-11-25",
+  "summary": "Android kernel common(mainline)에 스케줄러 코어 병합과 dma-heap·IOMMU·ashmem·Rust 빌드 관련 변경이 모였습니다. GKI·벤더 트리 담당자는 보안·회귀 항목과 ioctl/메모리 경로를 우선 확인하는 것이 좋습니다.",
+  "tags": [
+    "안드로이드",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "x86 GKI 기본 IOMMU strict 전환",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "Android x86/GKI, IOMMU·디바이스 드라이버 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/ad2eef884a7088ce5d0feaf97c9427c31d3cc51b",
+      "if": "Android x86 GKI 이미지나 Chromebook류 제품을 빌드·검증한다면",
+      "do": "기본 strict IOMMU 동작에서 NVMe 등 고처리량 I/O 경로를 벤치마크하고 필요 시 iommu.strict=0 또는 sysfs로 완화 가능 여부를 검토하세요",
+      "verify": "커밋 원문과 제품별 I/O 회귀 여부를 측정 로그로 확인하세요"
+    },
+    {
+      "title": "dma-heap fd 조기 설치 유출 수정 병합",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "ACK merge·graphics/dmabuf 담당, HAL 메모리 할당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+show/30d0aff2c65a",
+      "if": "DMA_HEAP_IOCTL_ALLOC 또는 dma-buf 할당 스택을 사용한다면",
+      "do": "drm-fixes 병합 후 allocate 경로가 copy_to_user() 성공 전 fd를 설치하지 않는지 할당·에러 경로 테스트를 수행하세요",
+      "verify": "병합 커밋과 upstream 수정 커밋을 대조해 fd 설치 시점을 확인하세요"
+    },
+    {
+      "title": "ashmem mmap_prepare 잔존 회귀 차단",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "ashmem·mmap 사용자, 디버그/strict warn 정책 보유 기기",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/08a3efe1ff960a381689797f790dda3070ffe70f",
+      "if": "panic_on_warn=1 또는 strict warn 정책 기기에서 ashmem mmap을 쓴다면",
+      "do": "mmap 후 remap_file_pages 경로에서 WARN·panic 재현 여부를 회귀 테스트에 넣으세요",
+      "verify": "vmfile fops에서 .mmap_prepare 제거 커밋과 can_mmap_file() WARN 조건을 원문에서 확인하세요"
+    },
+    {
+      "title": "init pid 1 CLONE_FS 임시 복구",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Android 부팅/init, ACK upstream 동기화 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/d82b1e9acccf66dcebefedad2635d28e1d63d895",
+      "if": "최신 upstream fs_struct 동기화 트리에서 부팅·펌웨어 로드를 검증한다면",
+      "do": "mount namespace unshare 이후 kworker 펌웨어 로드 경로가 정상인지 부팅 로그로 확인하고 upstream과의 장기 정합 일정은 별도 추적하세요",
+      "verify": "CLONE_FS 복구 커밋과 펌웨어 로드 실패 재현 조건을 원문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Merge sched-core-2026-10-18 into android-mainline**\n\nandroid-mainline에 sched-core-2026-10-18(v7.4-rc1 단계) 스케줄러 업데이트 묶음을 병합했습니다.\n\n영향: preferred CPU·steal_governor, 짧은 슬라이스 지연 개선, PREEMPT_RT irq_work 핫플러그, sched_ext proxy 준비 등 ACK 스케줄링 동작이 upstream v7.4 코어와 정렬됩니다.\n\n> Implement the steal_governor, introduce preferred CPUs and steal-driven vCPU backoff (Shrikanth Hegde)\n\n[원문 확인](https://lkml.iu.edu/2610.2/04542.html)\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/3a0360b70c6417cce6804008c11eb2fec57b54b3)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ANDROID: GKI: x86: Enable strict IOMMU mode by default**\n\nAndroid x86 GKI에서 IOMMU 기본값을 lazy에서 strict(CONFIG_IOMMU_DEFAULT_DMA_STRICT)로 바꿔 arm64 GKI와 동일한 DMA 보호 수준을 맞췄습니다.\n\n영향: Googlebook 측정상 일반 I/O에서는 lazy 이점이 거의 없어 기본 strict가 보안 이득이 크며, 필요 시 `iommu.strict=0` 또는 sysfs로 완화할 수 있습니다. 고처리량 NVMe 마이크로벤치마크만 사용하는 제품에서 strict 기본값 회귀 여부는 확인이 필요합니다.\n\n> Change the default to strict mode (CONFIG_IOMMU_DEFAULT_DMA_STRICT=y) to make Android x86 builds on par with arm64 in protecting system memory from rogue DMA-capable devices by default.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/ad2eef884a7088ce5d0feaf97c9427c31d3cc51b)\n\n**ANDROID: ashmem: clear .mmap_prepare in vmfile fops**\n\nshmem upstream의 mmap_prepare 도입 후 ashmem가 복사한 fops에 남은 .mmap_prepare를 제거해 .mmap만 사용하도록 했습니다.\n\n영향: mmap 후 remap_file_pages 시 can_mmap_file() WARN이 발생하고 panic_on_warn=1이면 커널 panic이 날 수 있는 회귀를 차단합니다.\n\n> When both are set, can_mmap_file() raises WARN_ON_ONCE(). Any process that has access to /dev/ashmem can reach this via mmap() followed by remap_file_pages().\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/08a3efe1ff960a381689797f790dda3070ffe70f)\n\n**ANDROID: init: spawn pid 1 with CLONE_FS**\n\nupstream이 pid 1에서 CLONE_FS 공유를 끊은 뒤 Android init이 mount namespace를 unshare할 때 kworker가 rootfs에 접근 못해 펌웨어 로드가 깨지는 회귀를 막기 위해 pid 1 생성 시 CLONE_FS를 임시로 복구했습니다.\n\n영향: 부팅·펌웨어 로드 실패 회귀를 즉시 완화하지만 upstream fs_struct 변경과의 장기 정합은 별도 해결책이 필요하며, 영구 fix 일정은 확인이 필요합니다.\n\n> When Android init then unshares its mount namespace, kworkers lose access to the root filesystem, which breaks firmware loading.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/d82b1e9acccf66dcebefedad2635d28e1d63d895)\n\n**FROMGIT: kbuild: rust: disable function merging unconditionally**\n\nRust 빌드에서 LLVM MergeFunctions 패스를 끄도록 kbuild를 바꿔 CFI·gendwarfksyms MODVERSIONS·백트레이스·BTF 문제를 피합니다.\n\n영향: GKI Rust 모듈에서 CFI 해시 불일치 병합으로 인한 런타임 크래시와 심볼 CRC 깨짐을 예방합니다.\n\n> turn this option off for all configurations.\n\n[원문 확인](https://patch.msgid.link/20261118-rust-merge-functions-v1-1-fe86126522b9@google.com)\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/497344b6e5d324ffe48ab44eebe061e2885eb251)\n\n**Merge drm-fixes-2026-09-05 into android-mainline**\n\nv7.3-rc2 방향 drm-fixes 병합 시 dma-heap.c 충돌을 해소했으며, downstream helper는 유지하면서 upstream dma_heap_ioctl_allocate()로 fd를 copy_to_user() 성공 전에 설치하지 않도록 했습니다.\n\n영향: DMA_HEAP_IOCTL_ALLOC 경로의 dma-buf fd 조기 설치·유출 취약성 수정이 ACK 그래픽/메모리 할당 스택에 반영됩니다.\n\n> DMA_HEAP_IOCTL_ALLOC allocates a dma-buf and installs an fd into the caller's fd table via dma_buf_fd() -> fd_install() before dma_heap_ioctl() copies the result back to userspace.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+show/30d0aff2c65a)\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/718136b3ae37acbdcda64dc8e373b26cb5082ca1)\n\n**ANDROID: ashmem: avoid overflow when summing unpinned page counts**\n\n전역 unpinned 페이지 합산을 u128으로 추적하고 shrinker·ioctl에는 포화된 usize를 노출해 오버플로우·panic을 막았습니다.\n\n영향: 대형 sparse ashmem 영역이 동시에 unpinned되면 커널 panic으로 이어질 수 있는 경로를 제거해 메모리 압박·LRU 스캔 시 안정성을 확보합니다.\n\n> Unpinned page counts across all open ashmem files are summed in a usize, which overflows and panics when enough large sparse regions are unpinned simultaneously.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/95156276348a48af839866ac2abaf0008028e775)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**ANDROID: rust: add __rust_helper to ashmem helpers**\n\nCONFIG_RUST_INLINE_HELPERS=y일 때 C/Rust 경계에서 인라인이 깨지는 ashmem 관련 helper에 __rust_helper를 붙였습니다.\n\n영향: Rust ashmem 경로의 lockdep·파일 크기 helper가 항상 인라인되도록 해 GKI Rust 빌드 안정성과 성능 예측 가능성을 높입니다.\n\n> Without `__rust_helper`, C helpers lack `__always_inline` when CONFIG_RUST_INLINE_HELPERS=y and fail to inline across the C/Rust target-attribute boundary.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/92912f85648daaffa592b05f3f0e372b15033e7c)\n\n**ANDROID: gki_defconfig: Build with DPM watchdog**\n\nGKI gki_defconfig에 DPM watchdog을 컴파일하도록 추가했으며, 타임아웃(25s/경고 10s)을 설정하지만 기본 활성화(CONFIG_DPM_WATCHDOG_ENABLED)는 두지 않습니다.\n\n영향: suspend/resume 중 락업을 조기에 panic·덤프할 수 있는 인프라가 GKI에 포함되나, 플랫폼은 커널 cmdline `pm.dpm_watchdog_enabled=1`로만 opt-in 하면 됩니다.\n\n> Compile the DPM watchdog into the kernel to detect lockups during suspend/resume, but leave it disabled by default.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/866c7b3e681dfe0aa213fb8d3562d383fabe24fd)\n\n**ANDROID: ashmem: Read the pin argument for GET_PIN_STATUS**\n\nASHMEM_GET_PIN_STATUS ioctl이 _IO()라 reader가 struct ashmem_pin을 읽지 못하던 Rust ashmem 드라이버를 C 동작과 같이 pin 인자를 읽도록 수정했습니다.\n\n영향: GET_PIN_STATUS가 항상 -EFAULT로 실패하던 사용자 공간 호환 회귀를 복구합니다.\n\n> ASHMEM_GET_PIN_STATUS is defined with _IO(), so _IOC_SIZE() is zero for it, and the reader that ioctl() builds from it cannot hold a struct ashmem_pin. The ioctl then always fails with -EFAULT.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/cc1c7ff323bdef240dc430508616414a9d65a91a)\n\n**ANDROID: gki_defconfig: enable REFCOUNT_INTERRUPT_KUNIT_TEST**\n\nupstream에서 분리된 CONFIG_REFCOUNT_INTERRUPT_KUNIT_TEST를 GKI gki_defconfig에서 켜 refcount interrupt KUnit 테스트 모듈을 선택 가능하게 한 것으로 보입니다(출처 인용 검증은 확인 필요).\n\n영향: ACK CI·KUnit 파이프라인에서 irq refcount 회귀를 자동 검출할 수 있을 것으로 예상됩니다.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/83c0e0cc2b172d5dde4d7d7f6259edd30e8748b3)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "높음",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "gki_defconfig: DPM watchdog",
+      "url": "https://android.googlesource.com/kernel/common/+/866c7b3e681dfe0aa213fb8d3562d383fabe24fd",
+      "note": "commit"
+    },
+    {
+      "title": "GKI x86 strict IOMMU default",
+      "url": "https://android.googlesource.com/kernel/common/+/ad2eef884a7088ce5d0feaf97c9427c31d3cc51b",
+      "note": "commit"
+    },
+    {
+      "title": "rust __rust_helper on ashmem helpers",
+      "url": "https://android.googlesource.com/kernel/common/+/92912f85648daaffa592b05f3f0e372b15033e7c",
+      "note": "commit"
+    },
+    {
+      "title": "ashmem unpinned page count overflow",
+      "url": "https://android.googlesource.com/kernel/common/+/95156276348a48af839866ac2abaf0008028e775",
+      "note": "commit"
+    },
+    {
+      "title": "ashmem clear .mmap_prepare",
+      "url": "https://android.googlesource.com/kernel/common/+/08a3efe1ff960a381689797f790dda3070ffe70f",
+      "note": "commit"
+    },
+    {
+      "title": "ashmem GET_PIN_STATUS pin argument",
+      "url": "https://android.googlesource.com/kernel/common/+/cc1c7ff323bdef240dc430508616414a9d65a91a",
+      "note": "commit"
+    },
+    {
+      "title": "gki_defconfig REFCOUNT_INTERRUPT_KUNIT_TEST",
+      "url": "https://android.googlesource.com/kernel/common/+/83c0e0cc2b172d5dde4d7d7f6259edd30e8748b3",
+      "note": "commit"
+    },
+    {
+      "title": "init spawn pid 1 with CLONE_FS",
+      "url": "https://android.googlesource.com/kernel/common/+/d82b1e9acccf66dcebefedad2635d28e1d63d895",
+      "note": "commit"
+    },
+    {
+      "title": "kbuild rust disable function merging",
+      "url": "https://android.googlesource.com/kernel/common/+/497344b6e5d324ffe48ab44eebe061e2885eb251",
+      "note": "commit"
+    },
+    {
+      "title": "rust merge functions patch thread",
+      "url": "https://patch.msgid.link/20261118-rust-merge-functions-v1-1-fe86126522b9@google.com",
+      "note": "thread"
+    },
+    {
+      "title": "Merge drm-fixes into android-mainline",
+      "url": "https://android.googlesource.com/kernel/common/+/718136b3ae37acbdcda64dc8e373b26cb5082ca1",
+      "note": "commit"
+    },
+    {
+      "title": "dma-heap fd before copy_to_user",
+      "url": "https://android.googlesource.com/kernel/common/+show/30d0aff2c65a",
+      "note": "commit"
+    },
+    {
+      "title": "Merge sched-core-2026-10-18",
+      "url": "https://android.googlesource.com/kernel/common/+/3a0360b70c6417cce6804008c11eb2fec57b54b3",
+      "note": "commit"
+    },
+    {
+      "title": "sched-core-2026-10-18 pull summary",
+      "url": "https://lkml.iu.edu/2610.2/04542.html",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-24T18:03:53.782Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/android-newsletter-from-dossier-ko.md"
+  }
+}
