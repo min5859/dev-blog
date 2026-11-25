@@ -1,0 +1,146 @@
+{
+  "id": "2026-11-26-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-11-26 LLVM 빌드 노출 버그 — 툴체인 렌즈",
+  "headline": "Clang·LLVM allyesconfig 감사가 TIPC 미초기화·funeth DMA 불일치·ppc cmpxchg128·mm·ext4 빌드 회귀를 동시에 밝혔다.",
+  "date": "2026-11-26",
+  "summary": "linux-llvm 스레드와 0day robot 보고가 netlink·DMA teardown·PowerPC 128비트 원자연산·헤더 include 순서·ext4 quota 동결 경로의 결함을 짚었다. 재제출 전 매크로 정리·런타임 selftest·arch별 clang 매트릭스 확인이 리뷰 요구와 맞물려 있다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "LLVM",
+    "clang",
+    "kbuild"
+  ],
+  "highlights": [
+    {
+      "title": "tipc: validate peer address attributes in tipc_nl_peer_rm()",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "TIPC·netlink 서브시스템 유지보수자, LLVM=1 allyesconfig 감사 담당",
+      "verifyLink": "https://lore.kernel.org/llvm/711567da-17c3-4ced-b7c6-e6e6b9376155@redhat.com/",
+      "if": "LLVM=1 빌드로 netlink 핸들러를 감사한다면",
+      "do": "빈 TIPC_NLA_NET 속성·이중 주소 지정 시 -EINVAL 경로를 TIPC selftest로 검증한 뒤 재제출하세요",
+      "verify": "스레드 원문에서 Paolo Abeni의 런타임 테스트 요구와 패치 diff를 확인하세요"
+    },
+    {
+      "title": "powerpc: Implement cmpxchg128()",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "powerpc/mm/BPF 개발자, clang PowerPC 백엔드·CONFIG_LLVM 빌드 담당",
+      "verifyLink": "https://lore.kernel.org/llvm/20261125174035.1412724-1-nysal@linux.ibm.com/",
+      "if": "ppc64le에서 CONFIG_LLVM 또는 구 GCC로 BPF·SLUB 경로를 돌린다면",
+      "do": "HAVE_CMPXCHG_DOUBLE·fallback asm이 selftest와 -Werror kbuild를 통과하는지 재현하세요",
+      "verify": "Nysal 0/3 시리즈와 Nick Desaulniers의 LLVM PTI 이슈 트래킹 요청 스레드를 확인하세요"
+    },
+    {
+      "title": "eth: funeth: Include FEC stats in fun_free_stats_area() DMA free size",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "CONFIG_FUN_ETH·Fungible Ethernet 드라이버 유지보수자, LLVM kbuild/드라이버 정적 분석 담당",
+      "verifyLink": "https://lore.kernel.org/llvm/3b3939f1-fa7e-42ed-ac74-c96c0bc930cb@redhat.com/",
+      "if": "FUN_ETH teardown에서 DMA-API debug를 켠다면",
+      "do": "할당·해제 바이트 수를 fun_stats_area_size() 또는 제안된 매크로로 통일해 재제출 일정을 맞추세요",
+      "verify": "upstream master funeth_main.c free 경로와 Ian Rogers 패치 스레드를 대조하세요"
+    },
+    {
+      "title": "mm: move the soft-dirty fallbacks up in pgtable.h",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "mm·pagetable 헤더 유지보수자, clang defconfig/0day-ci 소비자",
+      "verifyLink": "https://lore.kernel.org/llvm/20261126003542.QALFbvl0-lkp@intel.com/",
+      "if": "arm-allnoconfig·clang 17.0.6 W=1로 mm 헤더 변경을 검증한다면",
+      "do": "pgtable_supports_soft_dirty 선언 순서가 mm.h include 전에 오는지 v2 diff를 점검하세요",
+      "verify": "kernel test robot 빌드 로그와 패치 제목을 원문에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**tipc: validate peer address attributes in tipc_nl_peer_rm()**\n\nIan Rogers 패치는 tipc_nl_peer_rm()에서 TIPC_NLA_NET_ADDR와 TIPC_NLA_NET_NODEID가 동시에 오거나 둘 다 없을 때 -EINVAL을 반환해, 빈 netlink 속성 시 스택 addr 미초기화 사용과 이중 지정 시 덮어쓰기를 막는다.\n\n영향: Clang -Wconditional-uninitialized로 찾은 netlink 핸들러 버그는 TIPC가 아니어도 LLVM 빌드가 net 드라이버 스택 초기화 결함을 노출하는 대표 패턴이라, 제출 전 런타임 검증 요구와 맞물려 toolchain 주도 패치 품질 기준을 보여 준다.\n\n> 'addr' remains uninitialized on the stack and is passed into in_own_node() and tipc_node_find().\n\n[원문 확인](https://lore.kernel.org/llvm/711567da-17c3-4ced-b7c6-e6e6b9376155@redhat.com/)\n\n> Testing your own patch is actually required. Please resubmit in a few days, after actually testing the patch.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/llvm/711567da-17c3-4ced-b7c6-e6e6b9376155@redhat.com/raw)\n\nTIPC selftest/netlink 시나리오로 검증된 v2 도착 시점과 linux-llvm 리스트 외 tipc-devel ACK 여부는 확인 필요합니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**eth: funeth: Include FEC stats in fun_free_stats_area() DMA free size**\n\nIan Rogers 패치는 funeth 통계 DMA 버퍼 할당·해제 크기 불일치(632바이트 할당 대 616바이트 해제)를 fun_stats_area_size()로 통일하고 enum 간 덧셈에 unsigned 캐스트를 넣어 LLVM -Wenum-enum-conversion allyesconfig 감사에서 드러난 버그를 수정한다.\n\n영향: LLVM=1·W=1 빌드로 드라이버 teardown 경로를 훑는 toolchain 담당자에게 DMA-API size-mismatch는 실제 런타임 디버그 신호이며, upstream master에도 free 경로만 FEC 통계를 빼는 패턴이 남아 있어 동일 클래스 회귀 추적 가치가 있다.\n\n> fun_free_stats_area() omits PORT_MAC_FEC_STATS_MAX and passes 616 bytes to dma_free_coherent(), triggering DMA-API debug size-mismatch warnings on teardown.\n\n[원문 확인](https://lore.kernel.org/llvm/3b3939f1-fa7e-42ed-ac74-c96c0bc930cb@redhat.com/)\n\n> Please use the macro, as suggested by Daniel. Also please wait a few days before resubmitting.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/llvm/3b3939f1-fa7e-42ed-ac74-c96c0bc930cb@redhat.com/raw)\n\n> nstats = PORT_MAC_RX_STATS_MAX + PORT_MAC_TX_STATS_MAX; dma_free_coherent(&fp->pdev->dev, nstats * sizeof(u64),\n\n[원문 확인](https://github.com/torvalds/linux/blob/master/drivers/net/ethernet/fungible/funeth/funeth_main.c)\n\nDaniel이 제안한 FUN_PORT_NSTATS 매크로 형태로 정리한 v2 제출 여부와 Fungible 하드웨어 없이 런타임 검증 계획은 확인 필요합니다.\n\n**powerpc: Implement cmpxchg128()**\n\nNysal Jan 시리즈(0/3)는 little-endian POWER8+에 arch_cmpxchg128()을 추가해 HAVE_CMPXCHG_DOUBLE·SLUB lockless fast path·kmalloc_nolock()과 BPF task-local/arena 할당을 살리고, GCC PTI 모드가 없는 Clang 등에는 하드 레지스터 제약 fallback을 둔다.\n\n영향: PowerPC가 GCC 16.2+ PTI 인라인 asm에 의존하고 Clang은 fallback만 쓰는 구조는 LLVM/clang kbuild·자기시험이 ppc64le에서 BPF/mm 경로를 깨뜨릴 때 원인 분리에 핵심이며, Nick Desaulniers가 LLVM 이슈 트래킹을 요구해 도구체인 갭이 공식화될 수 있다.\n\n> kmalloc_nolock(), without which BPF task-local storage creation fails with -ENOMEM, and the selftests task_local_data_race and struct_ops_assoc (timer subtests) fail.\n\n[원문 확인](https://lore.kernel.org/llvm/20261125174035.1412724-1-nysal@linux.ibm.com/)\n\n> For older GCC releases and clang there is a fallback implementation with hard register constraints.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/llvm/20261125174035.1412724-1-nysal@linux.ibm.com/raw)\n\n> Is there a feature request in llvm's bug tracker? If not, can you please file one, then link to it?\n\n[원문 확인](https://lore.kernel.org/llvm/CAKwvOdkW5+xUCg-8Qp=1wJkNFXAJZTmTDuxBi6hKDuiNxUYiDQ@mail.gmail.com/)\n\nllvm-project에 PowerPC PTI/128비트 operand 모드 이슈 존재 여부와 fallback asm의 clang 전 버전 -Werror kbuild 통과 여부는 확인 필요합니다.\n\n**mm: move the soft-dirty fallbacks up in pgtable.h**\n\nShivank Garg의 soft-dirty fallback 이동 패치가 arm-allnoconfig에서 clang 17.0.6 W=1 빌드 시 include/linux/mm.h가 pgtable_supports_soft_dirty()를 선언 전에 호출해 implicit declaration 오류 3건으로 prepare가 실패했다고 kernel test robot이 보고했다.\n\n영향: 헤더 include 순서 리팩터는 mm 동작 자체보다 clang의 엄격한 C99 선언 규칙에 걸려 LLVM CI에서 먼저 터지는 전형적 사례라, pgtable.h 변경 리뷰 시 arm+clang 조합을 toolchain 렌즈에서 필수 확인 항목으로 둘 만하다.\n\n> error: call to undeclared function 'pgtable_supports_soft_dirty'; ISO C99 and later do not support implicit function declarations\n\n[원문 확인](https://lore.kernel.org/llvm/20261126003542.QALFbvl0-lkp@intel.com/)\n\n> patch subject: [PATCH 1/3] mm: move the soft-dirty fallbacks up in pgtable.h\n\n[원문 확인](https://lore-kernel.gnuweeb.org/llvm/20261126003542.QALFbvl0-lkp@intel.com/raw)\n\nfallback을 pgtable.h 상단으로 옮기는 v2에서 include 순서가 mm.h보다 앞서는지, linux-mm 트리 머지 전 다른 arch+clang 매트릭스 영향은 확인 필요합니다.\n\n**ext4: protect ext4_acquire_dquot against freezing**\n\nYe-Bin quota 동결 보호 패치가 hexagon-defconfig에서 clang 24.0.0git W=1 빌드 시 fs/ext4/super.c의 freeze_protected 식별자가 정의되지 않아 오류가 나고, 컴파일러가 freeze_processes 함수 포인터로 오인해 always-true 경고까지 낸다고 robot이 보고했다.\n\n영향: VFS quota·동결 경로 패치가 CONFIG_FREEZER 없는 arch에서 깨지는 것은 ext4만의 문제가 아니라 Clang 이름 근접 제안이 잘못된 식별자를 고착시키는 빌드 실패 패턴을 보여, LLVM 빌드 매트릭스가 희귀 arch를 대변한다.\n\n> error: use of undeclared identifier 'freeze_protected'; did you mean 'freeze_processes'?\n\n[원문 확인](https://lore.kernel.org/llvm/20261125231648.ZdN8QBCN-lkp@intel.com/)\n\n> [also build test ERROR on linus/master v7.4-rc4]\n\n[원문 확인](https://lore-kernel.gnuweeb.org/llvm/20261125231648.ZdN8QBCN-lkp@intel.com/raw)\n\nfreeze_protected가 의도한 매크로/필드인지 v3에서 Kconfig 가드 포함 여부와 quota 동결 시리즈 전체가 non-freezer arch에서 어떻게 정리되는지는 확인 필요합니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "funeth FEC stats DMA size mismatch (llvm thread)",
+      "url": "https://lore.kernel.org/llvm/3b3939f1-fa7e-42ed-ac74-c96c0bc930cb@redhat.com/",
+      "note": "thread"
+    },
+    {
+      "title": "funeth patch resubmit guidance (raw)",
+      "url": "https://lore-kernel.gnuweeb.org/llvm/3b3939f1-fa7e-42ed-ac74-c96c0bc930cb@redhat.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "funeth_main.c upstream master",
+      "url": "https://github.com/torvalds/linux/blob/master/drivers/net/ethernet/fungible/funeth/funeth_main.c",
+      "note": "changelog"
+    },
+    {
+      "title": "tipc_nl_peer_rm validation (llvm thread)",
+      "url": "https://lore.kernel.org/llvm/711567da-17c3-4ced-b7c6-e6e6b9376155@redhat.com/",
+      "note": "thread"
+    },
+    {
+      "title": "tipc runtime test requirement (raw)",
+      "url": "https://lore-kernel.gnuweeb.org/llvm/711567da-17c3-4ced-b7c6-e6e6b9376155@redhat.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "powerpc cmpxchg128 series 0/3",
+      "url": "https://lore.kernel.org/llvm/20261125174035.1412724-1-nysal@linux.ibm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "powerpc cmpxchg128 fallback asm (raw)",
+      "url": "https://lore-kernel.gnuweeb.org/llvm/20261125174035.1412724-1-nysal@linux.ibm.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "Nick Desaulniers LLVM PTI feature request ask",
+      "url": "https://lore.kernel.org/llvm/CAKwvOdkW5+xUCg-8Qp=1wJkNFXAJZTmTDuxBi6hKDuiNxUYiDQ@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "mm soft-dirty pgtable.h robot build report",
+      "url": "https://lore.kernel.org/llvm/20261126003542.QALFbvl0-lkp@intel.com/",
+      "note": "thread"
+    },
+    {
+      "title": "mm soft-dirty patch subject (raw)",
+      "url": "https://lore-kernel.gnuweeb.org/llvm/20261126003542.QALFbvl0-lkp@intel.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "ext4 freeze_protected hexagon clang build",
+      "url": "https://lore.kernel.org/llvm/20261125231648.ZdN8QBCN-lkp@intel.com/",
+      "note": "thread"
+    },
+    {
+      "title": "ext4 build failure on linus/master v7.4-rc4 (raw)",
+      "url": "https://lore-kernel.gnuweeb.org/llvm/20261125231648.ZdN8QBCN-lkp@intel.com/raw",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-25T18:20:13.376Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,138 @@
+{
+  "id": "2026-11-26-linux-kernel-security-daily",
+  "topic": "linux-kernel-security",
+  "title": "2026-11-26 iwlwifi net-detect — 커널 보안",
+  "headline": "kmalloc_flex 카운터 오용으로 iwlwifi WoWLAN resume 시 cfg80211 NULL 역참조 패닉 위험이 드러났습니다.",
+  "date": "2026-11-26",
+  "summary": "Intel iwlmlld net-detect와 ARM XIP hardened usercopy 회귀, SELinux xfrm oversized 컨텍스트 거부, kmalloc_flex 문서 정정이 hardening 스레드에서 이어집니다. 7.2.y EOL과 7.3.6·LTS stable 묶음은 배포 기준점으로 남습니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "iwlwifi mld net-detect kzalloc_flex 카운터 오용",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Intel iwlmlld·WoWLAN net-detect·kmalloc_flex 호출부 유지보수 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/linux-wireless/20261125110347.884775-1-benjamindornel@gmail.com/",
+      "if": "Intel BE200 등에서 WoWLAN net-detect wakeup을 쓰고 treewide kmalloc_obj 전환 빌드를 추적한다면",
+      "do": "iwl_mld_set_netdetect_info()가 로컬 인덱스 후 실제 개수만 기록하는 패치와 stable 백포트 시점을 먼저 확인하세요",
+      "verify": "메일링 스레드에서 GPF 스택과 matches NULL 상태를 원문으로 대조하세요"
+    },
+    {
+      "title": "SELinux 65535바이트 xfrm 컨텍스트 거부",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "SELinux·xfrm·PF_KEY·64K 페이지 배포 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/linux-hardening/20261124-dev-v1-1-00b99ee684ec@mbzuai.ac.ae/",
+      "if": "ARM64 64K 페이지에서 IPsec·PF_KEY·SELinux 조합을 운영한다면",
+      "do": "str_len이 ctx_len 타입에 맞지 않으면 거부하는 패치와 Fixes 86c8db86af43 stable 반영 여부를 추적하세요",
+      "verify": "KUnit으로 미패치 BUG·패치 후 -ENOMEM 결과를 스레드 인용과 맞춰 보세요"
+    },
+    {
+      "title": "kmalloc_flex() kernel-doc truncation 정정",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "slab·kmalloc_flex·__counted_by 서브시스템 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/linux-hardening/20261124-slab-doc-v1-1-9f14dfce47c8@mbzuai.ac.ae/",
+      "if": "__counted_by 카운터와 kmalloc_flex 경계를 코드·문서 양쪽에서 검증한다면",
+      "do": "NULL 반환으로 읽히던 문서를 truncation 동작에 맞게 고친 패치를 리뷰 우선순위에 올리세요",
+      "verify": "u8 카운터에 256 요소 할당 시 counter가 0이 되는 인용을 원문에서 확인하세요"
+    },
+    {
+      "title": "ARM XIP _etext hardened usercopy 회귀",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "ARM XIP·HARDENED_USERCOPY 빌드·임베디드 배포 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/linux-hardening/20261125025650.1159785-1-brad@sim.vu/",
+      "if": "XIP_KERNEL과 HARDENED_USERCOPY=y 임베디드 이미지를 배포한다면",
+      "do": "_etext를 read-only data 앞 텍스트 끝으로 옮기는 링커 스크립트 수정과 stable 백포트 일정을 확인하세요",
+      "verify": "QEMU mps2-an385·RP2350에서 디렉터리 listing 정상화 보고를 원문과 대조하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Linux 7.2.15 stable · EOL**\n\nLinux 7.2.15는 7.2.y 마지막 stable(12건 백포트)이며 Greg Kroah-Hartman 공지상 7.2.y는 EOL입니다. skb_zerocopy() SKBFL_SHARED_FRAG 전파 등 보안 연관 수정이 마지막으로 들어갔습니다.\n\n영향: 7.2.y 추가 upstream stable 보안 수정이 없으므로 7.3.y로 이전해야 하며, 마지막 skb 수정은 비권한 page cache 쓰기와 연관됩니다.\n\n> Note, this is the LAST 7.2.y kernel release. After this one the 7.2.y kernel tree is end-of-life. Please move to 7.3.y at this time.\n\n[원문 확인](https://lkml.iu.edu/hypermail/linux/kernel/2611.0/00297.html)\n\n**Linux 7.3.6 stable**\n\n2026-11-23 Linux 7.3.6 stable 태그가 올라갔고 ChangeLog에 약 2658건 백포트가 있습니다. nvmet-auth DHCHAP OOB read, hugetlb UFFD missing 시 PMD 공유 비활성화, ksmbd 복합 CREATE 버퍼 오버플로 등이 포함됩니다.\n\n영향: 7.3.y 최신 보안·안정 묶음으로 NVMe-oF 인증·userfaultfd/hugetlb·ksmbd 노출면을 한 번에 점검하는 기준점입니다.\n\n> Linux 7.3.6\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.3.6)\n\n**Linux 5.15.226 longterm**\n\n2026-11-23 Linux 5.15.226 LTS stable과 약 2168건 백포트가 공개되었습니다. AppArmor 네임스페이스 참조 누수, 소용량 sk_rcvbuf에서 netlink dump 무한 재시도 등이 포함됩니다.\n\n영향: 5.15 LTS 고정 제품의 보안·안정 기준점이며 AppArmor·netlink 수정은 격리·관리 도구 경로 리스크를 줄입니다.\n\n> Linux 5.15.226\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.226)\n\n**Linux 5.10.275 longterm**\n\n2026-11-23 Linux 5.10.275 LTS stable 태그와 약 1805건 백포트가 올라갔습니다. ab8500 power_supply_changed() use-after-free, GICv3-ITS·netlink 등 수정이 상위에 있습니다.\n\n영향: 5.10 LTS는 산업·임베디드에서 널리 쓰이며 ab8500 UAF 수정은 제거 순서 레이스로 크래시·메모리 손상을 막습니다.\n\n> Linux 5.10.275\n\n[원문 확인](https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.275)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**wifi: iwlwifi: mld: fix net-detect wakeup report after kzalloc_flex()**\n\niwl_mld_set_netdetect_info()가 kzalloc_flex()가 설정한 __counted_by 카운터를 다음 인덱스로 잘못 쓰면서 net-detect match·channel 배열을 넘어 쓰고, WoWLAN resume 시 cfg80211이 NULL match를 역참조합니다. 로컬 인덱스로 채운 뒤 실제 개수만 기록하도록 iwlmvm과 맞춥니다.\n\n영향: kmalloc_obj/treewide 전환 이후 clang·gcc의 __builtin_counted_by_ref() 동작과 맞지 않는 WiFi 드라이버 패턴이므로, iwlmlld·WoWLAN net-detect 사용자는 stable 백포트 전까지 커널 panic 또는 resume 정지 위험을 봅니다. mainline·stable 머지 시점과 69050f8d6d07 백포트·Kees Cook 보완 패치 관계는 확인이 필요합니다.\n\n> iwl_mld_set_netdetect_info() still uses those counters as the next free index, so every match and channel is written past the end of its allocation, matches[0..n-1] are left NULL\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-wireless/20261125110347.884775-1-benjamindornel@gmail.com/)\n\n**ARM: xip: end _etext before the read-only data**\n\nXIP 링커 스크립트가 _etext를 .rodata 끝에 두어 HARDENED_USERCOPY=y일 때 커널 상수 문자열의 userspace 복사가 kernel text로 오인되어 BUG()가 납니다. _etext를 텍스트 섹션 끝으로 옮깁니다.\n\n영향: XIP_KERNEL과 hardened usercopy를 함께 쓰는 임베디드 ARM 보드에서 /dev readdir 같은 기본 경로가 멈출 수 있어, usercopy 하드닝 추적 담당이 stable 백포트를 봐야 합니다. stable 백포트 일정은 아직 확인이 필요합니다.\n\n> Hardened usercopy refuses any copy to user space from _stext to _etext, so with XIP_KERNEL=y and HARDENED_USERCOPY=y, copying a const string from .rodata to user space ends in BUG().\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-hardening/20261125025650.1159785-1-brad@sim.vu/)\n\n**selinux: reject a 65535-byte xfrm context that ctx_len cannot hold**\n\nARM64 64K 페이지에서 PF_KEY 경유 65535바이트 xfrm 사용자 컨텍스트가 __u16 ctx_len에 NUL 포함 길이를 담지 못해 0으로 래핑되고, FORTIFY_SOURCE 하에서 memcpy 검사가 실패합니다. str_len이 ctx_len 타입에 맞지 않으면 거부합니다.\n\n영향: IPsec·SELinux·PF_KEY 조합에서 단일 oversized 컨텍스트가 커널 BUG까지 이를 수 있어, xfrm LSM 경로와 FORTIFY 빌드를 추적하는 보안 담당이 우선 검토해야 합니다. Fixes 86c8db86af43 stable 반영 시점과 PF_KEY 실경로 재현은 확인이 필요합니다.\n\n> With 64K pages, str_len = 65535 passes, and ctx_len = str_len + 1 wraps to 0 (kmalloc_flex() stores the same truncated value first).\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-hardening/20261124-dev-v1-1-00b99ee684ec@mbzuai.ac.ae/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**slab: fix the kernel-doc of kmalloc_flex() on counter overflow**\n\nfa5c82f4d2bb 이후에도 kmalloc_flex() 문서가 COUNT가 __counted_by 카운터보다 크면 NULL을 반환한다고 남아 있었으나, 실제 코드는 COUNT를 잘라 저장합니다. slab.h·deprecated.rst·overflows_flex_counter_type() kernel-doc를 현재 동작에 맞게 고칩니다.\n\n영향: kmalloc_flex() 계열을 쓰는 하드닝·드라이버 담당이 문서에 의존하면 잘못된 경계 검사를 가정해 UBSAN_BOUNDS나 메모리 안전 버그를 놓칠 수 있습니다. 런타임에서 counter overflow 시 NULL 반환 복원 논의 여부는 확인이 필요합니다.\n\n> The code instead allocates COUNT elements and stores COUNT into the counter, truncated to the counter's type.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-hardening/20261124-slab-doc-v1-1-9f14dfce47c8@mbzuai.ac.ae/)\n\n**docs: cve: Describe how security fixes reach users**\n\nDocumentation/process/cve.rst에 보안 수정이 stable·longterm 릴리스와 배포판 책임을 통해 사용자에게 전달되는 과정을 요약하는 절을 추가했고 Jonathan Corbet이 적용했습니다.\n\n영향: CVE 공지와 실제 패치 도달 경로를 혼동하면 배포 지연을 잘못 귀속할 수 있어, 커널 보안 프로세스·배포 정책을 맞추는 팀의 기준 문서가 됩니다. Thorsten Leemhuis가 제기한 문서 보완 사항은 확인이 필요합니다.\n\n> Fixes for security issues reach users the same way as every other fix: through the stable and longterm kernel releases listed at https://kernel.org/releases.html.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-hardening/20261111014419.i.586-kees@kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "iwlwifi mld net-detect kzalloc_flex",
+      "url": "https://lore-kernel.gnuweeb.org/linux-wireless/20261125110347.884775-1-benjamindornel@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "SELinux xfrm 65535-byte context",
+      "url": "https://lore-kernel.gnuweeb.org/linux-hardening/20261124-dev-v1-1-00b99ee684ec@mbzuai.ac.ae/",
+      "note": "thread"
+    },
+    {
+      "title": "kmalloc_flex kernel-doc",
+      "url": "https://lore-kernel.gnuweeb.org/linux-hardening/20261124-slab-doc-v1-1-9f14dfce47c8@mbzuai.ac.ae/",
+      "note": "thread"
+    },
+    {
+      "title": "ARM XIP _etext hardened usercopy",
+      "url": "https://lore-kernel.gnuweeb.org/linux-hardening/20261125025650.1159785-1-brad@sim.vu/",
+      "note": "thread"
+    },
+    {
+      "title": "CVE process documentation",
+      "url": "https://lore-kernel.gnuweeb.org/linux-hardening/20261111014419.i.586-kees@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "CVE docs applied (Jonathan Corbet)",
+      "url": "https://lore-kernel.gnuweeb.org/linux-hardening/87ik1kx41z.fsf@trenco.lwn.net/",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-7.3.6",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.3.6",
+      "note": "changelog"
+    },
+    {
+      "title": "7.2.y EOL announcement",
+      "url": "https://lkml.iu.edu/hypermail/linux/kernel/2611.0/00297.html",
+      "note": "thread"
+    },
+    {
+      "title": "ChangeLog-7.2.15",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2.15",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-5.15.226",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.15.226",
+      "note": "changelog"
+    },
+    {
+      "title": "ChangeLog-5.10.275",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v5.x/ChangeLog-5.10.275",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-25T18:18:21.567Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

@@ -1,0 +1,116 @@
+{
+  "id": "2026-11-26-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-11-26 schedutil RT 회귀 — Linux Perf-RT",
+  "headline": "PREEMPT_RT에서 schedutil irq_work 하드IRQ 실행과 Type-C·BPF 논의가 linux-rt-devel에서 이어졌습니다.",
+  "date": "2026-11-26",
+  "summary": "Qualcomm 측 schedutil v2는 PREEMPT_RT에서 정책 주파수 동결 회귀를 막기 위해 irq_work를 하드 IRQ 경로로 옮겼고, Rafael Wysocki가 cpufreq 7.5 머지 재료로 적용했습니다. tcpci_maxim RT 수정, BPF kmalloc/NMI 설계 논의, 스택 nospec 대안 시리즈도 함께 올라왔습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "PREEMPT_RT",
+    "schedutil",
+    "BPF"
+  ],
+  "highlights": [
+    {
+      "title": "schedutil: PREEMPT_RT에서 irq_work 하드 IRQ 실행",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "PREEMPT_RT·schedutil/cpufreq·모바일 SoC 전력 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/linux-rt-devel/20261125103451.1385246-1-zhongqiu.han@oss.qualcomm.com/",
+      "if": "schedutil+SCMI slow path와 RT/DL 부하를 함께 운영한다면",
+      "do": "Fixes b4c6f86ec2f6 회귀와 v2 irq_work 변경을 linux-rt 및 cpufreq 트리에서 추적하세요",
+      "verify": "SM8850 측정 수치와 7.5 머지 재료 적용 스레드를 원문에서 확인하세요"
+    },
+    {
+      "title": "tcpci_maxim: lockdep·wakeup·vbus regulator 수정",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "PREEMPT_RT·tcpci_maxim/Type-C·Android USB 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/linux-rt-devel/20261125-max77759-wait-v2-0-9914b985c00b@linaro.org/",
+      "if": "PREEMPT_RT+IRQF_ONESHOT에서 Type-C tcpci_maxim을 쓴다면",
+      "do": "threaded IRQ로 pm_wakeup_event를 옮긴 v2 4패치와 unbind 시 UAF 수정을 RT 빌드에 맞춰 검증하세요",
+      "verify": "Pixel 6 모듈 reload·CONFIG_PROVE_RAW_LOCK_NESTING 테스트 내용을 스레드에서 확인하세요"
+    },
+    {
+      "title": "BPF kmalloc: NMI·RT 컨텍스트에서 호출 시 선택 API",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "PREEMPT_RT·mm/slab·BPF kfunc/tracepoint 유지보수자",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/linux-rt-devel/20261125160409.GF2668804@noisy.programming.kicks-ass.net/",
+      "if": "RT에서 BPF kmalloc kfunc나 tracepoint 할당 경로를 설계한다면",
+      "do": "허용 컨텍스트를 tracepoint 등 클래스로 나누는 방향을 논의 스레드와 맞추세요",
+      "verify": "Peter Zijlstra·Harry Yoo 회신과 pi_lock 아래 trylock 이슈는 원문에서 재확인하세요"
+    },
+    {
+      "title": "BPF 스택: nospec_result 저장마다 nospec 삽입 대안",
+      "priority": "중",
+      "impactType": "security",
+      "affectedAudience": "BPF verifier·Spectre 완화·selftests/bpf 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/bpf/cover.1795625597.git.luis.gerhorst@fau.de/",
+      "if": "Spectre v4 완화와 verifier/JIT barrier 정책을 함께 본다면",
+      "do": "Starovoitov 4–5패치 대신 Gerhorst 시리즈의 bpf_insert_insns·selftest 차이를 비교하세요",
+      "verify": "maintainer가 어느 접근을 택할지와 insert_buf 비용은 아직 확인이 필요합니다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**cpufreq: schedutil: Run irq_work in hardirq context on PREEMPT_RT**\n\nv2는 schedutil 정책의 irq_work를 IRQ_WORK_INIT_HARD로 바꿔 PREEMPT_RT에서 sugov_irq_work가 per-CPU irq_work/N SCHED_FIFO 스레드 대신 하드 IRQ 경로에서 실행되게 한다.\n\n영향: RT/DL 부하가 irq_work 지연을 밀면 work_in_progress로 정책 전체 주파수가 얼어붙을 수 있어, 모바일·서버 RT에서 schedutil+SCMI slow path를 쓰는 팀은 Fixes b4c6f86ec2f6 회귀와 함께 추적해야 한다. Qualcomm SM8850에서 irq_work 지연·정책 동결 없음을 측정했고 cyclictest worst case는 약 2µs만 증가했다고 한다. Rafael Wysocki는 cpufreq 쪽 7.5 머지 재료로 적용했다. linux-rt 트리와 메인라인 cpufreq_schedutil.c 동기화 시점은 확인이 필요하다.\n\n> Meanwhile work_in_progress stays set, so no new frequency update is queued for any CPU of the policy: one busy RT task can freeze the frequency of its whole policy.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-rt-devel/20261125103451.1385246-1-zhongqiu.han@oss.qualcomm.com/)\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-rt-devel/CAJZ5v0h8Xn=6kjgRxJWdRw9M1VPwG+zcuFNMPFo5y=egJk7XvQ@mail.gmail.com/)\n\n**bpf: Emit nospec after every insn that stores to the stack**\n\nLuis Gerhorst 4패치 대안은 Alexei Starovoitov nospec 시리즈 4–5패치 대신, nospec_result가 있는 모든 스택 저장(메모·atomic·호출) 뒤에 일괄 nospec을 삽입하고 bpf_insert_insns()로 verifier env에 insert_buf를 둔다.\n\n영향: BPF 스택 Spectre v4 완화는 RT/데이터플레인 프로그램 검증기 동작과 맞물리므로, 인터프리터·JIT barrier 정책을 추적하는 perf-RT 독자는 대안 시리즈의 verifier·selftest 차이를 비교할 필요가 있다. maintainer가 Gerhorst 대안과 Starovoitov per-insn 접근 중 어느 쪽을 택하는지는 확인이 필요하다.\n\n> This series emits the nospec after every insn with nospec_result instead, whatever the insn is.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/bpf/cover.1795625597.git.luis.gerhorst@fau.de/)\n\n[원문 확인](https://lore.kernel.org/bpf/20261125040820.947816-1-alexei.starovoitov@gmail.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**usb: typec: tcpm/tcpci_maxim: lockdep, wakeup and vbus regulator fixes**\n\nv2 4패치는 tcpci_maxim에서 pm_wakeup_event를 threaded IRQ로 옮기고, IRQ 요청 전 wakeup 초기화, unbind 시 vbus regulator UAF, 불필요 VBUS 에러 로그를 수정한다.\n\n영향: PREEMPT_RT+IRQF_ONESHOT 조합에서 hardirq의 sleeping lock 호출은 lockdep와 실제 대기 컨텍스트 오류를 드러내며, Android Type-C 스택은 Pixel 6에서 증명된 순서·수명 버그를 RT 빌드에도 맞춰야 한다. stable 백포트 대상과 v1 대비 maintainer 머지 일정은 확인이 필요하다.\n\n> Call pm_wakeup_event() from the threaded IRQ handler instead of the hard IRQ handler (the driver uses IRQF_ONESHOT, so the primary handler runs in hard IRQ context even on PREEMPT_RT).\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-rt-devel/20261125-max77759-wait-v2-0-9914b985c00b@linaro.org/)\n\n**bpf: Add call for selecting kmalloc or kmalloc_nolock at call time**\n\nEmil Tsalapatis bpf-next 시리즈에 대해 linux-rt-devel에서 Peter Zijlstra가 NMI에서 kmalloc_nolock·spin_trylock 사용 가능성을 거부하고, Harry Yoo는 pi_lock 아래 trylock 같은 미해결 사고를 인정했다.\n\n영향: PREEMPT_RT·NMI·tracepoint/BPF 할당 경로는 슬립 락을 만질 수 없어, RT에서 BPF kmalloc kfunc를 쓰는 팀은 허용 컨텍스트를 명시적으로 나누는 설계가 필요하다. 원 패치 시리즈가 NMI callable kfunc 설계를 어떻게 바꿀지는 확인이 필요하다.\n\n> Yeah, me neither, other than creating specific classes of tracepoints/whatnot where things are explicitly allowed.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-rt-devel/20261125160409.GF2668804@noisy.programming.kicks-ass.net/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "중상",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "schedutil PREEMPT_RT irq_work v2 (Zhongqiu Han)",
+      "url": "https://lore-kernel.gnuweeb.org/linux-rt-devel/20261125103451.1385246-1-zhongqiu.han@oss.qualcomm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "cpufreq 7.5 merge material (Rafael Wysocki)",
+      "url": "https://lore-kernel.gnuweeb.org/linux-rt-devel/CAJZ5v0h8Xn=6kjgRxJWdRw9M1VPwG+zcuFNMPFo5y=egJk7XvQ@mail.gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "tcpci_maxim RT fixes v2 (Linaro)",
+      "url": "https://lore-kernel.gnuweeb.org/linux-rt-devel/20261125-max77759-wait-v2-0-9914b985c00b@linaro.org/",
+      "note": "thread"
+    },
+    {
+      "title": "BPF kmalloc/NMI RT discussion",
+      "url": "https://lore-kernel.gnuweeb.org/linux-rt-devel/20261125160409.GF2668804@noisy.programming.kicks-ass.net/",
+      "note": "thread"
+    },
+    {
+      "title": "BPF stack nospec alternative (Luis Gerhorst)",
+      "url": "https://lore-kernel.gnuweeb.org/bpf/cover.1795625597.git.luis.gerhorst@fau.de/",
+      "note": "thread"
+    },
+    {
+      "title": "Alexei Starovoitov nospec series base",
+      "url": "https://lore.kernel.org/bpf/20261125040820.947816-1-alexei.starovoitov@gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-25T18:23:36.406Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
