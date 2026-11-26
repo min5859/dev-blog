@@ -1,0 +1,116 @@
+{
+  "id": "2026-11-27-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-11-27 kmalloc RT 논쟁 — Perf-RT",
+  "headline": "RT kmalloc kfunc 논쟁, BPF TCP CC 0 나눗셈·GRO 소켓 누수, DL selftest 39건이 동시에 포착됐습니다.",
+  "date": "2026-11-27",
+  "summary": "Peter Zijlstra가 BPF kmalloc 경로 선택 설계가 PREEMPT_RT와 !RT 락 의미론을 갈라뜨릴 수 있다고 재반박했습니다. 같은 수집 주기에 tcp_cong_avoid_ai 0 나눗셈, gro_cells 소켓 refcount 누수, SCHED_DEADLINE selftest 확장, x86 SMAP BPF fault 처리 논의가 이어졌습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "PREEMPT_RT",
+    "BPF",
+    "SCHED_DEADLINE"
+  ],
+  "highlights": [
+    {
+      "title": "bpf: kmalloc vs kmalloc_nolock 런타임 선택",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "PREEMPT_RT·mm/slab·BPF kfunc/tracepoint 유지보수자",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/20261126094403.GA49833@noisy.programming.kicks-ass.net/",
+      "if": "PREEMPT_RT·tracepoint에서 BPF kfunc 할당 경로를 다루는 경우",
+      "do": "linux-rt-devel 스레드에서 RT·!RT 동등 락 의미론 요구 쪽 논의를 따라가세요",
+      "verify": "원문에서 Peter Zijlstra 재반박과 Alexei Starovoitov PREEMPT_RT 가드 설명을 대조해 확인하세요"
+    },
+    {
+      "title": "tcp: tcp_cong_avoid_ai() 0 나눗셈 수정",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "bpf-tcp-cc·TCP拥塞·네트 스택 담당",
+      "verifyLink": "https://lore.kernel.org/bpf/20261126164150.8838-1-mdshahid03@gmail.com/",
+      "if": "RT 호스트에서 bpf-tcp-cc allowlist kfunc를 쓰는 경우",
+      "do": "Mohammad Shahid v2 패치와 verifier가 w≠0을 강제하지 않는 공백을 백포트 추적 목록에 넣으세요",
+      "verify": "원문에서 w=0 시 unsigned 비교가 나눗셈을 막지 못한다는 설명을 확인하세요"
+    },
+    {
+      "title": "net: 소켓 skb의 gro_cells 우회",
+      "priority": "상",
+      "impactType": "runtime",
+      "affectedAudience": "TCX/BPF 네트워킹·GRO·bpf_sk_assign 사용자",
+      "verifyLink": "https://lore.kernel.org/bpf/20261126173034.1860377-1-razor@blackwall.org/",
+      "if": "TC ingress bpf_sk_assign와 ipip/esp/tun NAPI·GRO를 함께 쓰는 데이터플레인인 경우",
+      "do": "Nikolay Aleksandrov v2가 skb->sk가 붙은 패킷을 netif_rx로 보내는 수정을 리뷰 큐에 반영하세요",
+      "verify": "원문의 veth+ipip+bpf_sk_assign 재현 수치와 GRO 병합 시 destructor 미호출 설명을 확인하세요"
+    },
+    {
+      "title": "selftests/sched: deadline_bw_test 확장",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "SCHED_DEADLINE·PREEMPT_RT·sched selftest 담당",
+      "verifyLink": "https://lore.kernel.org/linux-rt-devel/f4340ebcf4ff6e789ad8c5272eb798b3180265d4.1795646915.git.mathieu.desnoyers@efficios.com/",
+      "if": "PREEMPT_RT에서 DL 파라미터 변경·PI boost 회귀를 조용히 놓치기 쉬운 워크로드인 경우",
+      "do": "Mathieu Desnoyers v11 42/43 selftest와 sched/deadline 시리즈를 함께 추적하세요",
+      "verify": "원문에서 v7.4-rc2 8CPU VM 기준 39케이스 실패·통과 매핑을 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**tcp: fix division by zero in tcp_cong_avoid_ai()**\n\nMohammad Shahid v2 패치는 tcp_cong_avoid_ai()에서 인자 w가 0일 때 조기 return 하여 0으로 나누기를 막는다. 해당 함수는 bpf-tcp-cc allowlist BPF kfunc이며 verifier는 w≠0을 강제하지 않는다.\n\n영향: RT 호스트에서 BPF TCP CC kfunc를 쓰면 잘못된 w로 커널 패닉·DoS로 이어질 수 있어, bpf-tcp-cc·네트 스택 백포트 추적이 필요하다.\n\n> Since w is an unsigned value, the condition tp->snd_cwnd_cnt >= w does not prevent division by zero when w is zero.\n\n[원문 확인](https://lore.kernel.org/bpf/20261126164150.8838-1-mdshahid03@gmail.com/)\n\n**selftests/sched: Test parameter changes in deadline_bw_test**\n\nMathieu Desnoyers v11 42/43은 SCHED_DEADLINE 파라미터 변경·PI boost·debt 유지 등 39개 selftest를 추가하며 v7.4-rc2 8CPU VM에서 시리즈 내 각 수정 패치와 1:1로 실패·통과를 검증한다.\n\n영향: PREEMPT_RT·DL 스케줄링 워크로드는 파라미터 변경·PI boost 버그가 침묵 회귀를 낳기 쉬워, RT 엔지니어는 이 selftest와 sched/deadline 시리즈를 함께 추적해야 한다.\n\n> These cases fail on v7.4-rc2, in each of two VMs of 8 CPUs. In the series, each one fails at the patch before the fix named, and passes from that fix on\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/f4340ebcf4ff6e789ad8c5272eb798b3180265d4.1795646915.git.mathieu.desnoyers@efficios.com/)\n\n**x86/mm: Resolve BPF exception fixups for user address faults under SMAP**\n\nAndy Lutomirski는 bpf_probe_read 논쟁에서 Starovoitov가 열거한 2009년부터의 no-fault 읽기 API 표를 인정하고, maccess.c에서 안전 매핑 식별·PKS 등 공통 수정이 필요하다고 답했다. 별도 시리즈는 SMAP 하에서 BPF JIT PROBE_MEM의 사용자 주소 fault를 exception table로 처리해 per-load 가드 코드를 줄인다.\n\n영향: RT·데이터플레인에서 BPF 관측·PROBE_MEM JIT 크기와 fault 경로는 인터럽트 지연에 영향을 줄 수 있어, x86 BPF JIT·maccess 정책 변경을 perf-RT 관점에서 볼 필요가 있다.\n\n> When the faulting instruction belongs to a BPF program, resolve its exception table entry instead of oopsing, exactly as is done for faults on kernel addresses.\n\n[원문 확인](https://lore.kernel.org/bpf/20261009024925.3169077-2-memxor@gmail.com/)\n\nallowlist의 다른 tcp cong kfunc에 유사 0 나눗셈·인자 검증 공백이 있는지, memxor BPF SMAP 시리즈의 bpf-next 머지 여부는 확인이 필요합니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**bpf: Add call for selecting kmalloc or kmalloc_nolock at call time**\n\nPeter Zijlstra가 Alexei Starovoitov의 PREEMPT_RT 가드 설명에도 불구하고, !RT에서 NMI·하드IRQ 경로의 kmalloc_nolock/spin_trylock 허용은 RT와 동작이 갈라져 RT 유지보수 부담만 키운다고 재반박했다.\n\n영향: BPF kfunc로 런타임 kmalloc 경로를 고르는 설계는 RT에서 슬립 락·NMI 규칙과 충돌할 수 있어, PREEMPT_RT·tracepoint/BPF 할당을 쓰는 팀은 !RT와 동일한 락 의미론을 요구하는 쪽 논의를 따라가야 한다.\n\n> Allowing this on !RT makes people think this is 'OK' and then the RT people get to fix endless crap again :-(\n\n[원문 확인](https://lore.kernel.org/linux-rt-devel/20261126094403.GA49833@noisy.programming.kicks-ass.net/)\n\n**net: keep skbs that carry a socket out of gro_cells gro**\n\nNikolay Aleksandrov v2는 gro_cells_receive가 GRO 병합 시 skb->sk·destructor를 지우며 소켓 refcount를 누수하던 경로를 막기 위해, skb에 소켓이 붙은 패킷은 netif_rx로 보낸다.\n\n영향: TC ingress bpf_sk_assign·ipip/esp/tun NAPI와 GRO 조합은 RT 데이터플레인에서도 흔하고, refcount 누수는 네임스페이스·디바이스가 안 내려가는 장기 runtime 장애로 이어진다.\n\n> Before: bpf_sk_assign() calls 32, sk_refcnt 32 after the burst; receiver netns deleted, 30s later its veth peer still exists\n\n[원문 확인](https://lore.kernel.org/bpf/20261126173034.1860377-1-razor@blackwall.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "linux-rt-devel: kmalloc kfunc RT 논쟁",
+      "url": "https://lore.kernel.org/linux-rt-devel/20261126094403.GA49833@noisy.programming.kicks-ass.net/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: tcp_cong_avoid_ai division by zero fix",
+      "url": "https://lore.kernel.org/bpf/20261126164150.8838-1-mdshahid03@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: gro_cells socket skb 우회",
+      "url": "https://lore.kernel.org/bpf/20261126173034.1860377-1-razor@blackwall.org/",
+      "note": "thread"
+    },
+    {
+      "title": "linux-rt-devel: deadline_bw_test selftests",
+      "url": "https://lore.kernel.org/linux-rt-devel/f4340ebcf4ff6e789ad8c5272eb798b3180265d4.1795646915.git.mathieu.desnoyers@efficios.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: bpf_probe_read·maccess 논의",
+      "url": "https://lore.kernel.org/bpf/03275761-8de2-41be-92fd-8e3012a87eeb@app.fastmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf: x86 SMAP BPF exception fixups",
+      "url": "https://lore.kernel.org/bpf/20261009024925.3169077-2-memxor@gmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-26T18:26:27.946Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

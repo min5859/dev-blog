@@ -1,0 +1,136 @@
+{
+  "id": "2026-11-27-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-11-27 panic QR 6배 단축 — linux-toolchain",
+  "headline": "drm/panic Rust QR 인코딩이 벤치 기준 약 6배 빨라졌고, sched jiffies 경고와 Clang DRM bridge 빌드 실패가 toolchain 논의를 압박합니다.",
+  "date": "2026-11-27",
+  "summary": "Peder Bergan의 drm/panic QR 3패치는 version-40 인코딩 중앙값을 약 1.78ms에서 0.28ms대로 줄이면서 6,002개 입력·KUnit 45체크 동등성을 유지했습니다. 동시에 Peter Zijlstra는 sched/topology의 -Wunsequenced silencing에 반대했고, cdns-mhdp8546 suspend/resume v4는 clang 0day에서 no_hpd 필드 오류로 깨졌습니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "툴체인",
+    "Rust",
+    "Clang"
+  ],
+  "highlights": [
+    {
+      "title": "drm/panic QR 인코더 성능",
+      "priority": "상",
+      "impactType": "performance",
+      "affectedAudience": "CONFIG_DRM_PANIC·Rust drm_panic_helper 유지보수자",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20261126-perf-drm-panic-qr-v1-0-51856937dc4d@gmail.com/",
+      "if": "CONFIG_DRM_PANIC Rust QR 경로의 지연을 추적 중이라면",
+      "do": "머지 전 version-40 벤치와 KUnit 45체크를 로컬에서 재현하세요",
+      "verify": "패치 스레드의 중앙값·동등성 수치와 lore raw 로그를 대조해 확인하세요"
+    },
+    {
+      "title": "sched/topology jiffies -Wunsequenced",
+      "priority": "상",
+      "impactType": "build",
+      "affectedAudience": "ClangBuiltLinux·CONFIG_WERROR 빌드 담당, sched/topology 유지보수자",
+      "verifyLink": "https://lore.kernel.org/llvm/20261125-topology-wunsequenced-v3-1-efa3db7e0bf8@kernel.org/",
+      "if": "LLVM=1·W=1로 sched까지 Werror 빌드를 돌린다면",
+      "do": "v3의 jiffies 단일 읽기 수정과 Peter Zijlstra의 llvm 리스트 반응을 함께 따라가세요",
+      "verify": "topology.c 2008행 -Wunsequenced 스레드와 Peter 답장 원문을 읽어 머지 경로를 확인하세요"
+    },
+    {
+      "title": "Rust DRM 표준 fdinfo",
+      "priority": "중",
+      "impactType": "api-abi",
+      "affectedAudience": "Rust DRM gem/fops 작성자, drm fdinfo 소비 도구",
+      "verifyLink": "https://lore.kernel.org/rust-for-linux/20261126-fix-drm-rust-fdinfo-v2-1-b1653edf1e4f@gmail.com/",
+      "if": "Rust GPU 드라이버 fdinfo로 drm-client-id를 읽어야 한다면",
+      "do": "v2의 show_fdinfo→drm_show_fdinfo 연결과 Reviewed-by 상태를 검토하세요",
+      "verify": "procfs fdinfo에 drm-driver·drm-client-id가 나오는지 userspace 도구로 확인하세요"
+    },
+    {
+      "title": "cdns-mhdp8546 suspend/resume 빌드 실패",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "cdns-mhdp8546·drm-misc-next 큐 담당, clang kbuild robot 소비자",
+      "verifyLink": "https://lore.kernel.org/llvm/20261127003802.xAjhLSPU-lkp@intel.com/",
+      "if": "drm-misc-next 또는 v7.4-rc4 next에서 clang randconfig를 돌린다면",
+      "do": "v4의 no_hpd 참조와 v5 필드 정리·Reported-by 여부를 큐에서 확인하세요",
+      "verify": "kernel test robot 로그와 TI 원 패치 v4 스레드를 링크해 오류 지점을 대조하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/panic: Speed up QR code encoding**\n\nPeder Bergan 3패치 시리즈가 DRM panic Rust QR 인코더의 정렬·마스크·Reed-Solomon 경로를 다듬어 version-40 인코딩만 벤치하면 중앙값이 약 1.78ms에서 0.28ms대로 줄고, 6,002개 입력 바이트 동일성·KUnit 45체크를 유지한다고 합니다.\n\n영향: 커널 panic QR은 로그 수집·프레임버퍼 그리기와 별개 병목이 인코더인데, Rust 인프라 성능이 패닉 화면 지연에 직결되므로 Rust-for-Linux·drm/panic 추적자는 머지 전 벤치·KUnit 재현을 볼 가치가 있습니다.\n\n> median version-40 encoding time fell from 1.778 ms to 0.277 ms with a 2,900-byte raw payload\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20261126-perf-drm-panic-qr-v1-0-51856937dc4d@gmail.com/)\n\n**sched/topology: Avoid unsequenced accesses to jiffies in sd_init()**\n\nPeter Zijlstra가 Nathan Chancellor v3의 jiffies 이중 접근 silencing을 “여기서는 해당 없음”으로 일축하며, Clang이 지적하는 unsequenced volatile 접근을 UB로 부르는 접근 자체에 강하게 반대했습니다.\n\n영향: LLVM=1·W=1 빌드가 sched까지 건드리는 -Wunsequenced 정책은 ClangBuiltLinux 대응과 Peter Zijlstra의 스케줄러 유지보수 관점이 충돌할 수 있어, 경고 silencing 패치의 ACK·머지 경로를 toolchain 렌즈에서 따를 필요가 있습니다.\n\n> error: unsequenced accesses to volatile qualified 'jiffies' [-Werror,-Wunsequenced]\n\n[원문 확인](https://lore.kernel.org/llvm/20261125-topology-wunsequenced-v3-1-efa3db7e0bf8@kernel.org/)\n\n**rust: drm: enable standard fdinfo for Rust drivers**\n\nPeder Bergan v2가 공통 Rust DRM fops에 show_fdinfo를 drm_show_fdinfo로 연결해 procfs fdinfo에 drm-driver·drm-client-id가 나오게 하고, Janne Grunau·Gary Guo·Alice Ryhl Reviewed-by를 달았습니다.\n\n영향: Rust DRM 클라이언트가 fdinfo에 식별자가 빠져 모니터링·디버그 도구가 C 드라이버와 다르게 동작하던 갭을 줄이는 최소 바인딩 수정이라, Rust GPU 드라이버·userspace 프로파일러 담당자에게 직접적입니다.\n\n> The common Rust DRM file operations leave show_fdinfo unset, so these entries are missing\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20261126-fix-drm-rust-fdinfo-v2-1-b1653edf1e4f@gmail.com/)\n\n**drm/bridge: cdns-mhdp8546: Add suspend resume support to the bridge driver**\n\nkernel test robot이 v4 suspend/resume 시리즈가 clang 22.1.8 W=1 randconfig에서 cdns_mhdp8546-core.c:2322의 mhdp->no_hpd 멤버 부재로 drm-misc-next와 v7.4-rc4 next에서 빌드 실패한다고 보고했습니다.\n\n영향: LLVM CI가 DRM bridge 전원 관리 패치의 구조체 필드 불일치를 먼저 잡아, TI cdns-mhdp8546·clang 0day 소비자는 v5에서 필드 정리·Reported-by 태그 여부를 확인해야 합니다.\n\n> [also build test ERROR on linus/master v7.4-rc4 next-20261125]\n\n[원문 확인](https://lore.kernel.org/llvm/20261127003802.xAjhLSPU-lkp@intel.com/)\n\n**rust: DmaFence: Remove warning about unsignaled drop**\n\nPhilipp Stanner v3가 DriverFence::drop()의 미시그널 fence pr_err! 경고를 제거해 ECANCELED 기본 teardown과 Rust RAII 관례(락·KBox drop)에 맞춥니다.\n\n영향: 과도한 drop 경고는 정상 해제 경로를 소음으로 만들어 GPU/ DMA-Buf Rust 드라이버 작성 시 로그·테스트 신뢰도를 떨어뜨리므로, dma_fence 바인딩 사용자는 v3 채택 여부를 봐야 합니다.\n\n> This warning gets in the way of canonical teardown in Rust: when you drop a lock, it unlocks itself\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20261126161144.2337064-4-phasta@kernel.org/)\n\n**rust: reset: add reset control abstractions**\n\nDaniel Almeida 7패치가 reset controller consumer API의 Rust type-state 추상화(Exclusive/Shared, array·AssertedGuard, devm_deassert)를 regulator·clk 시리즈 패턴으로 도입하고 rkvenc 등 향후 Rust 드라이버 소비를 예고합니다.\n\n영향: 아직 트리에 소비자가 없지만 reset·clk·regulator 바인딩이 맞춰지면 Rust 미디어/스토리지 드라이버 bring-up 공통 기반이 되어, Rust-for-Linux API 확장 추적에 핵심 후보입니다.\n\n> This series adds a Rust abstraction for the consumer side of the reset controller API.\n\n[원문 확인](https://lore.kernel.org/rust-for-linux/20261126-b4-rust-reset-v1-0-9c4c3d029080@collabora.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/panic QR 인코딩 성능 v1",
+      "url": "https://lore.kernel.org/rust-for-linux/20261126-perf-drm-panic-qr-v1-0-51856937dc4d@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/panic QR 패치 raw",
+      "url": "https://lore-kernel.gnuweeb.org/rust-for-linux/20261126-perf-drm-panic-qr-v1-0-51856937dc4d@gmail.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "sched/topology -Wunsequenced v3",
+      "url": "https://lore.kernel.org/llvm/20261125-topology-wunsequenced-v3-1-efa3db7e0bf8@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "Peter Zijlstra topology jiffies 반응",
+      "url": "https://lore.kernel.org/llvm/20261126120809.GA83911@noisy.programming.kicks-ass.net/",
+      "note": "thread"
+    },
+    {
+      "title": "Rust DRM fdinfo v2",
+      "url": "https://lore.kernel.org/rust-for-linux/20261126-fix-drm-rust-fdinfo-v2-1-b1653edf1e4f@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "Rust-for-Linux issue 1266",
+      "url": "https://github.com/Rust-for-Linux/linux/issues/1266",
+      "note": "article"
+    },
+    {
+      "title": "cdns-mhdp8546 clang build report",
+      "url": "https://lore.kernel.org/llvm/20261127003802.xAjhLSPU-lkp@intel.com/",
+      "note": "thread"
+    },
+    {
+      "title": "cdns-mhdp8546 suspend/resume v4",
+      "url": "https://lore.kernel.org/r/20261126060532.2379444-1-a-kumar2@ti.com/",
+      "note": "thread"
+    },
+    {
+      "title": "DmaFence unsignaled drop v3",
+      "url": "https://lore.kernel.org/rust-for-linux/20261126161144.2337064-4-phasta@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "Rust reset control abstractions",
+      "url": "https://lore.kernel.org/rust-for-linux/20261126-b4-rust-reset-v1-0-9c4c3d029080@collabora.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-26T18:22:16.458Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

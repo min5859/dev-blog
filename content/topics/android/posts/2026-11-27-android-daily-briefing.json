@@ -1,0 +1,143 @@
+{
+  "id": "2026-11-27-android-daily-briefing",
+  "topic": "android",
+  "title": "2026-11-27 ashmem·부트 회귀 — Android 커널",
+  "headline": "x86 GKI IOMMU strict 전환 추정, ashmem mmap·부트 회귀 수정, android16 wrapfd KUnit skip 등 ACK mainline·6.12 변경",
+  "date": "2026-11-27",
+  "summary": "Android ACK mainline에서 ashmem 회귀·ABI 수정과 x86 GKI IOMMU 기본 모드 변경, init 부트 우회가 이어졌습니다. android16-6.12에서는 wrapfd KUnit skip과 미사용 memcg vendor hook revert가 새로 반영되었습니다.",
+  "tags": [
+    "안드로이드",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "ANDROID: GKI: x86: Enable strict IOMMU mode by default",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "Android x86 GKI·에뮬레이터·Cuttlefish 드라이버 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/ad2eef884a7088ce5d0feaf97c9427c31d3cc51b",
+      "if": "Cuttlefish·x86 GKI에서 DMA 장치 동작이나 IOMMU 정책을 arm64와 동일하게 가정하고 있다면",
+      "do": "lazy 기본값 가정을 버리고 strict 기본 전환 영향을 에뮬레이터·드라이버 CI에서 검증하고, 필요 시 iommu.strict=0 또는 sysfs lazy 경로를 문서화하세요",
+      "verify": "커밋 원문에서 기본 모드 변경과 lazy 복구 경로를 직접 확인하세요"
+    },
+    {
+      "title": "ANDROID: ashmem: clear .mmap_prepare in vmfile fops",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "/dev/ashmem remap_file_pages 사용자·ashmem 유지보수",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/08a3efe1ff960a381689797f790dda3070ffe70f",
+      "if": "panic_on_warn=1 또는 ashmem remap·mmap 경로를 스트레스하는 빌드를 운영한다면",
+      "do": "upstream shmem mmap_prepare 도입 이후 WARN_ON_ONCE·패닉 회귀가 제거된 커밋이 베이스에 포함됐는지 빌드 태그로 맞추세요",
+      "verify": "인용문과 동일 조건에서 can_mmap_file() 경고가 더 이상 나지 않는지 원문 커밋을 따르세요"
+    },
+    {
+      "title": "ANDROID: init: spawn pid 1 with CLONE_FS",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "Android init·ACK boot·vendor 펌웨어 로드 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/d82b1e9acccf66dcebefedad2635d28e1d63d895",
+      "if": "init mount namespace unshare 이후 kworker 펌웨어 로드가 실패하는 부트 회귀를 본다면",
+      "do": "pid 1 CLONE_FS 복구 커밋 포함 여부를 ACK 이미지에 반영하고, upstream 영구 수정 랜딩 전까지 HACK 제거 일정은 별도 추적하세요",
+      "verify": "커밋 설명의 rootfs 접근 단절 시나리오와 장비 부트 로그를 대조하세요"
+    },
+    {
+      "title": "ANDROID: wrapfd_kunit: Skip tests requiring wrap creation",
+      "priority": "중",
+      "impactType": "build",
+      "affectedAudience": "ACK android16-6.12 보안·KUnit CI 담당",
+      "verifyLink": "https://android.googlesource.com/kernel/common/+/eca81db835821538de9c2c211b9dcd5cd3799c30",
+      "if": "android16-6.12 KUnit CI에서 wrapfd 관련 테스트 커버리지 공백을 허용할 수 없다면",
+      "do": "skip 처리된 테스트 목록을 CI 리포트에 고정하고, 커널 스레드 wrap 생성 허용 후속 패치·mainline 백포트 여부는 미확인 상태로 추적하세요",
+      "verify": "SELinux 도메인 권한 인용과 실제 KUnit skip 동작을 원문 커밋에서 확인하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**Merge cb95904b470d (\"Merge tag 'sched-core-2026-10-18' ...\") into android-mainline**\n\nandroid-mainline에 tip/sched-core-2026-10-18 태그(64커밋)를 머지해 fair/RT/EAS·NUMA·proxy exec·static key 등 스케줄러 대량 업데이트를 반영했습니다.\n\n영향: v7.4-rc1 동기화의 일환으로 ACK 스케줄링·EAS 정책이 upstream sched-core와 어긋날 여지를 줄이는 변경으로 보이나, 최종 Android baseline cherry-pick 타이밍은 미확인입니다.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/3a0360b70c6417cce6804008c11eb2fec57b54b3)\n\n**sched-core 태그 changelog (참고)**\n\n머지된 태그 쪽 changelog에 energy-aware·fair·PSI 등 스케줄러 변경이 포함된 것으로 기록되어 있으나, 본문 인용 검증은 실패해 세부 문구 단정은 피합니다.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/cb95904b470d)"
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ANDROID: GKI: x86: Enable strict IOMMU mode by default**\n\nAndroid x86(64) GKI에서 IOMMU 기본 DMA 모드를 lazy에서 strict(CONFIG_IOMMU_DEFAULT_DMA_STRICT)로 바꿨습니다.\n\n영향: arm64 GKI와 맞춰 DMA-capable 장치의 시스템 메모리 보호를 기본 강화하며, 필요 시 iommu.strict=0 또는 sysfs로 lazy 복구가 가능합니다(신뢰도 medium, 원문 인용 검증 실패).\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/ad2eef884a7088ce5d0feaf97c9427c31d3cc51b)\n\n**ANDROID: ashmem: clear .mmap_prepare in vmfile fops**\n\nashmem이 복사한 vmfile file_operations에서 .mmap_prepare 포인터를 NULL로 지워 .mmap만 사용하도록 했습니다.\n\n영향: upstream shmem mmap_prepare 도입 후 can_mmap_file() WARN_ON_ONCE 및 panic_on_warn=1 환경의 커널 패닉 회귀를 제거합니다.\n\n> When both are set, can_mmap_file() raises WARN_ON_ONCE(). When panic_on_warn=1 is set, this results in a kernel panic.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/08a3efe1ff960a381689797f790dda3070ffe70f)\n\n**ANDROID: init: spawn pid 1 with CLONE_FS**\n\nkernel_init이 다시 CLONE_FS로 pid 1을 생성해 init이 mount namespace를 unshare해도 kworker가 루트 파일시스템을 공유하도록 복구했습니다.\n\n영향: 최근 upstream fs 공유 변경으로 Android init 이후 펌웨어 로딩이 깨지던 부트 회귀를 임시 우회합니다. upstream permanent fix(14adbd5341aa 관련) 랜딩 시 HACK 제거 일정은 미확인입니다.\n\n> When Android init then unshares its mount namespace, kworkers lose access to the root filesystem, which breaks firmware loading.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/d82b1e9acccf66dcebefedad2635d28e1d63d895)\n\n**ANDROID: wrapfd_kunit: Skip tests requiring wrap creation**\n\nwrapfd KUnit에서 커널 스레드가 SELinux 도메인상 wrapfd anon inode 생성 권한이 없어 실패하는 테스트를 일시적으로 skip 처리했습니다.\n\n영향: android16-6.12 ACK CI/KUnit 회귀를 막지만, wrapfd 생성 지원 패치 전까지 보안 래핑 테스트 커버리지는 비어 있습니다. 후속 패치 일정·mainline 백포트는 미확인입니다.\n\n> kunit runs a test on a different kthread, which are in the kernel SELinux security domain, and that domain does not have permission to create wrapfd anon inodes\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/eca81db835821538de9c2c211b9dcd5cd3799c30)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**ANDROID: gki_defconfig: Build with DPM watchdog**\n\narm64/x86 GKI defconfig에 DPM watchdog을 빌드 인하되 CONFIG_DPM_WATCHDOG_ENABLED는 미설정, 타임아웃 기본값(25/10초)만 고정했습니다(어제도 다룬 항목, 동일 방향 유지).\n\n영향: suspend/resume 데드락 진단 코드가 GKI에 포함되지만 기본 비활성이라 벤더는 pm.dpm_watchdog_enabled=1 커널 커맨드라인으로만 opt-in 할 수 있습니다.\n\n> Importantly, CONFIG_DPM_WATCHDOG_ENABLED is explicitly left unset. Individual platforms can safely opt-in by passing `pm.dpm_watchdog_enabled=1` via the kernel command line.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/866c7b3e681dfe0aa213fb8d3562d383fabe24fd)\n\n**ANDROID: rust: add __rust_helper to ashmem helpers**\n\nashmem Rust/C helper에 __rust_helper를 붙여 CONFIG_RUST_INLINE_HELPERS=y 빌드에서 C helper 인라인·바인딩이 깨지지 않게 했습니다.\n\n영향: GKI Rust ashmem 경로가 defconfig에서 활성화될 때 rw_semaphore·i_size_read helper 노출이 빌드 실패 없이 유지됩니다.\n\n> Without `__rust_helper`, C helpers lack `__always_inline` when `CONFIG_RUST_INLINE_HELPERS=y` and fail to inline across the C/Rust target-attribute boundary.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/92912f85648daaffa592b05f3f0e372b15033e7c)\n\n**ANDROID: ashmem: avoid overflow when summing unpinned page counts**\n\n열린 ashmem 영역의 unpinned 페이지 합산을 u128로 누적하고 shrinker·IOCtl 보고 시 포화/오버플로를 막도록 수정했습니다.\n\n영향: 대형 sparse/unpinned ashmem 사용 시 nr_scanned 계산 오류·패닉을 피해 메모리 압박·LMK 관련 통계가 안정됩니다.\n\n> Unpinned page counts across all open ashmem files are summed in a usize, which overflows and panics when enough large sparse regions are unpinned simultaneously.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/95156276348a48af839866ac2abaf0008028e775)\n\n**ANDROID: ashmem: Read the pin argument for GET_PIN_STATUS**\n\nASHMEM_GET_PIN_STATUS 등 pin 관련 ioctl에서 user argument를 sizeof(struct ashmem_pin)만큼 읽도록 맞췄습니다.\n\n영향: GET_PIN_STATUS ioctl이 항상 -EFAULT로 실패하던 ABI 버그를 수정해 pin 상태 조회 API가 동작합니다.\n\n> ASHMEM_GET_PIN_STATUS is defined with _IO(), so _IOC_SIZE() is zero for it, and the reader that ioctl() builds from it cannot hold a struct ashmem_pin.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/cc1c7ff323bdef240dc430508616414a9d65a91a)\n\n**ANDROID: gki_defconfig: enable REFCOUNT_INTERRUPT_KUNIT_TEST**\n\nCONFIG_REFCOUNT_INTERRUPT_KUNIT_TEST를 GKI defconfig에 켜 refcount_interrupt kunit 테스트 모듈을 빌드 대상에 포함했습니다.\n\n영향: GKI 빌드·CI에서 refcount 인터럽트 경로 회귀를 KUnit으로 자동 검출할 수 있을 것으로 보이나, 신뢰도 medium이며 원문 인용 검증은 실패했습니다.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/83c0e0cc2b172d5dde4d7d7f6259edd30e8748b3)\n\n**Revert \"ANDROID: memcg: add vendor hook to skip psi recording on allocation throttling\"**\n\n미사용 android_vh_mem_cgroup_handle_over_high vendor hook 추가 커밋을 revert해 android16-6.12에서 hook과 심볼을 제거했습니다.\n\n영향: 벤더 미사용 hook 제거로 LTS 머지·ABI 목록 관리 비용을 줄입니다. android-mainline 등 다른 ACK 브랜치 잔존 여부는 별도 확인 필요합니다.\n\n> The hook android_vh_mem_cgroup_handle_over_high is not used by any vendor, so remove it to help with merge issues with future LTS releases.\n\n[원문 확인](https://android.googlesource.com/kernel/common/+/ea915f171d487a49941fdd2526936841c36dd568)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "ANDROID: gki_defconfig: Build with DPM watchdog",
+      "url": "https://android.googlesource.com/kernel/common/+/866c7b3e681dfe0aa213fb8d3562d383fabe24fd",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: GKI: x86: Enable strict IOMMU mode by default",
+      "url": "https://android.googlesource.com/kernel/common/+/ad2eef884a7088ce5d0feaf97c9427c31d3cc51b",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: wrapfd_kunit: Skip tests requiring wrap creation",
+      "url": "https://android.googlesource.com/kernel/common/+/eca81db835821538de9c2c211b9dcd5cd3799c30",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: rust: add __rust_helper to ashmem helpers",
+      "url": "https://android.googlesource.com/kernel/common/+/92912f85648daaffa592b05f3f0e372b15033e7c",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: ashmem: avoid overflow when summing unpinned page counts",
+      "url": "https://android.googlesource.com/kernel/common/+/95156276348a48af839866ac2abaf0008028e775",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: ashmem: clear .mmap_prepare in vmfile fops",
+      "url": "https://android.googlesource.com/kernel/common/+/08a3efe1ff960a381689797f790dda3070ffe70f",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: ashmem: Read the pin argument for GET_PIN_STATUS",
+      "url": "https://android.googlesource.com/kernel/common/+/cc1c7ff323bdef240dc430508616414a9d65a91a",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: gki_defconfig: enable REFCOUNT_INTERRUPT_KUNIT_TEST",
+      "url": "https://android.googlesource.com/kernel/common/+/83c0e0cc2b172d5dde4d7d7f6259edd30e8748b3",
+      "note": "commit"
+    },
+    {
+      "title": "ANDROID: init: spawn pid 1 with CLONE_FS",
+      "url": "https://android.googlesource.com/kernel/common/+/d82b1e9acccf66dcebefedad2635d28e1d63d895",
+      "note": "commit"
+    },
+    {
+      "title": "Revert memcg vendor hook (android16-6.12)",
+      "url": "https://android.googlesource.com/kernel/common/+/ea915f171d487a49941fdd2526936841c36dd568",
+      "note": "commit"
+    },
+    {
+      "title": "Merge sched-core-2026-10-18 into android-mainline",
+      "url": "https://android.googlesource.com/kernel/common/+/3a0360b70c6417cce6804008c11eb2fec57b54b3",
+      "note": "commit"
+    },
+    {
+      "title": "sched-core-2026-10-18 merge changelog",
+      "url": "https://android.googlesource.com/kernel/common/+/cb95904b470d",
+      "note": "changelog"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-26T18:04:49.916Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/android-newsletter-from-dossier-ko.md"
+  }
+}
