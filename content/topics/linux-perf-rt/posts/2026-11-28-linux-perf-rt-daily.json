@@ -1,0 +1,126 @@
+{
+  "id": "2026-11-28-linux-perf-rt-daily",
+  "topic": "linux-perf-rt",
+  "title": "2026-11-28 코어 kCFI BPF — Perf·RT",
+  "headline": "arm64 JIT 단독 패치는 드롭하고, PREEMPT_RT HW BP·deadline selftest·IPv4-less BPF·x86 SMAP 논의가 겹칩니다.",
+  "date": "2026-11-28",
+  "summary": "kCFI 환경 jited line info는 BPF 코어 커밋 3e4279dc5144로 정리됐고 arm64 전용 추적은 불필요합니다. RT 쪽은 HW breakpoint 신호 전달 설계가 분기 중이며, deadline_bw_test와 슬림 네트 BPF·x86 fault fixup도 함께 보시면 됩니다.",
+  "tags": [
+    "리눅스",
+    "커널",
+    "PREEMPT_RT",
+    "BPF",
+    "perf"
+  ],
+  "highlights": [
+    {
+      "title": "bpf, arm64: jited line info kCFI — 코어에서 해결",
+      "priority": "상",
+      "impactType": "release",
+      "affectedAudience": "arm64 BPF JIT·kCFI·동적 프로파일링 도구 사용자",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/bpf/awnCHo7Y0erVfoQu@willie-the-truck/",
+      "if": "CONFIG_CFI+kCFI에서 bpftrace·perf symbolization에 jited line info를 쓰는 arm64 담당이라면,",
+      "do": "arm64 전용 패치 대신 bpf_prog_fill_jited_linfo()의 cfi_get_offset() 보정(커밋 3e4279dc5144)만 트리에 반영했는지 확인하세요.",
+      "verify": "Will Deacon·Jose Fernandez 스레드와 openwall 스레드에서 v7.4-rc2 포함 여부와 stable 6.12 백포트 타이밍을 원문으로 대조하세요."
+    },
+    {
+      "title": "ARM 계열: HW BP 알림을 task_work()로 지연",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "PREEMPT_RT·perf HW breakpoint·arm64/LoongArch 아키텍처 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/linux-rt-devel/awnOAw-bnxDbljaE@arm.com/",
+      "if": "PREEMPT_RT 호스트에서 perf HW breakpoint나 ptrace 디버깅을 돌리는 팀이라면,",
+      "do": "Sebastian Siewior v5의 task_work 지연안과 Peter Zijlstra·Catalin Marinas의 el0_breakpt()/watchpt() 대안을 비교한 뒤 채택 전 회귀 테스트를 돌리세요.",
+      "verify": "linux-rt-devel 스레드에서 Russell King·Sashiko 이슈와 Mark Rutland·Will Deacon 의견이 올라왔는지 확인하세요."
+    },
+    {
+      "title": "selftests/sched: deadline_bw_test PI boost 시나리오",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "SCHED_DEADLINE·PREEMPT_RT·sched selftest 유지보수자",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/linux-rt-devel/71ce4d4febe4737b3cde658407e9c2c26c8e61c3.1795771148.git.mathieu.desnoyers@efficios.com/",
+      "if": "SCHED_DEADLINE PI·total_bw 회계가 RT·프록시 실행과 맞물리는 환경을 유지한다면,",
+      "do": "Mathieu Desnoyers v12의 열 건 PI boost/deboost 케이스가 수정 반영 후 12 VM(PREEMPT_RT·proxy·cpuset 조합)에서 통과하는지 로컬에서 재현하세요.",
+      "verify": "v7.4-rc2에서 여덟 건 실패가 재현되는지, v12 43패치 시리즈 머지 대상 브랜치는 아직 확인이 필요합니다."
+    },
+    {
+      "title": "x86/mm: SMAP 하 user fault BPF exception fixup",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "x86 BPF JIT·#PF handler·probe_read_kernel·tracing 성능 담당",
+      "verifyLink": "https://lists.openwall.net/linux-kernel/2026/10/09/154",
+      "if": "x86에서 SMAP+PROBE_MEM BPF 핫패스를 운영한다면,",
+      "do": "do_user_addr_fault() BPF extable 처리와 EX_TYPE_BPF fixup 논의를 따라가며 Alexei Starovoitov가 지적한 probe_read_kernel 근본 문제와 JIT 가속만의 한계를 구분하세요.",
+      "verify": "fault.c 머지 대상(tip vs bpf-next)과 bpf-next 로드맵의 safe-range·PKU 대안은 확인이 필요합니다."
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "**bpf, arm64: Fix jited line info off by kCFI hash**\n\nWill Deacon이 미적용 arm64 전용 패치를 추적했고, Jose Fernandez는 v2가 BPF 코어에서 cfi_get_offset() 보정으로 이미 해결됐으며 커밋 3e4279dc5144로 들어갔으니 드롭하라고 답했다.\n\n영향: CONFIG_CFI+kCFI 환경에서 jited line info로 bpftrace·perf symbolization을 쓰는 arm64 담당은 arm64 JIT 단독 패치 대신 코어 수정 한 곳만 추적하면 된다.\n\n> No, please drop it. v2 fixed this in the BPF core and landed in v7.4-rc2 as commit 3e4279dc5144 (\"bpf: Fix jited line info off by the CFI preamble\").\n\n[원문 확인](https://lore-kernel.gnuweeb.org/bpf/awnCHo7Y0erVfoQu@willie-the-truck/)\n\n**bpf: Fix jited line info (코어 공통 경로)**\n\n코어는 bpf_prog_fill_jited_linfo()에서 cfi_get_offset()을 한 번 빼 arm64·x86·riscv에 공통 적용한다.\n\n영향: 동일 kCFI 오프셋 버그를 아키텍처별 패치 없이 한 경로로 맞출 수 있다.\n\n> Subtract cfi_get_offset() once in bpf_prog_fill_jited_linfo() and drop the s390 correction.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/10/30/2280)\n\n3e4279dc5144가 사용자 트리의 v7.4-rc2 스냅샷과 동일한지, stable 6.12 백포트 타이밍은 확인이 필요합니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**ARM, ARM64, LONGARCH, XTENSA: Delay HW BP notification to task_work()**\n\nSebastian Siewior v5는 PREEMPT_RT에서 ARM64 HW breakpoint overflow 콜백이 atomic 컨텍스트에서 siglock을 잡아 sleeping-while-atomic을 유발하므로 perf_hwbp_notify()로 task_work까지 SIGTRAP 전달을 미룬다. Peter Zijlstra는 x86처럼 el0_breakpt()/watchpt()에서 신호를 보내야 한다고 반박했고, Catalin Marinas는 arm64도 local_daif_restore() 이후 el0 경로에서 처리하는 안을 제안했다.\n\n영향: PREEMPT_RT 호스트에서 perf HW breakpoint·ptrace 디버깅을 쓰는 팀은 패치 채택 전에 arm32/arm64/LoongArch 설계 분기와 Russell·Sashiko가 거론한 비판을 같이 봐야 한다.\n\n> HW breakpoints on ARM64 trigger \"sleeping while atomic\" warnings on PREEMPT_RT.\n\n> Perf overflow handlers are not the place to send signals from.\n\n> send the signal in el0_breakpt()/el0_watchpt() after local_daif_restore().\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-rt-devel/awnOAw-bnxDbljaE@arm.com/)\n\narm32 Russell King과 LoongArch Sashiko 이슈의 구체 수정 방향, Mark Rutland·Will Deacon의 arm64 최종 의견은 확인이 필요합니다."
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**net: core: add IPv4 fallback stubs and guards for CONFIG_IPV4=n**\n\nFernando Mancera v4 02/16은 CONFIG_IPV4=n 빌드를 위해 include/net/ip.h·route.h에 스텁을 두고, net/core/filter.c의 bpf_redirect_neigh·sockopt·fib_lookup·skc cast 등 IPv4 의존을 IS_ENABLED(CONFIG_IPV4)로 가드한다.\n\n영향: IPv6-only·슬림 RT/BPF 이미지를 만드는 팀은 BPF dataplane이 IPv4 없이 링크되는지, SOL_IP sockopt과 bpf_icmp_send 등이 기대대로 -ENOPROTOOPT/-EAFNOSUPPORT로 떨어지는지 확인해야 한다.\n\n> This patch provides static inline stubs in include/net/ip.h and include/net/route.h that return an error code when IPv4 is disabled.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/bpf/20261127171824.27362-3-fmancera@suse.de/)\n\nv4 16패치 시리즈의 netdev·bpf 트리 합류 경로와 PREEMPT_RT defconfig에서 CONFIG_IPV4=n CI 커버리지는 확인이 필요합니다.\n\n**selftests/sched: Test deadline boosts in deadline_bw_test**\n\nMathieu Desnoyers v12 33/43은 deadline_bw_test에 PI boost/deboost 시나리오 열 건을 추가한다. v7.4-rc2에서는 여덟 건이 실패하고, 이름 붙은 sched/deadline 수정이 들어간 뒤 PREEMPT_RT·proxy execution·cpuset·RT group·isolcpus 조합 12 VM에서 전부 통과한다.\n\n영향: SCHED_DEADLINE PI와 total_bw 회계는 RT·프록시 실행 환경에서 회귀가 잦아, RT 스케줄·deadline 담당은 새 케이스로 stable backport 범위를 미리 가늠할 수 있다.\n\n> Eight of these cases fail on v7.4-rc2, in each of two VMs of 8 CPUs.\n\n> With the fixes up to this patch, every case passes in 12 VMs of 4 to 8 CPUs: with proxy execution on and off, with PREEMPT_RT\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-rt-devel/71ce4d4febe4737b3cde658407e9c2c26c8e61c3.1795771148.git.mathieu.desnoyers@efficios.com/)\n\nv12 43패치 deadline 시리즈의 머지 대상 브랜치와 distro RT 이미지 회귀 게이트 반영 계획은 확인이 필요합니다.\n\n**x86/mm: Resolve BPF exception fixups for user address faults under SMAP**\n\nKumar Kartikeya 시리즈는 SMAP에서 JIT PROBE_MEM가 사용자 주소 fault 시 oops하지 않도록 do_user_addr_fault()에서 BPF extable을 처리하고 JIT range check를 줄인다. 11월 27일 스레드에서 Andy Lutomirski는 NMI-safe 주소 검증(RCU·latch_tree) 옵션을 제시했고 Alexei Starovoitov는 probe_read_kernel 개선 없이는 패치셋이 원래 문제를 두고 JIT만 빨라진다고 경고했다.\n\n영향: x86 SMAP+PROBE_MEM BPF는 관측성 핫패스와 보안 모델이 맞물려, tracing 담당은 fault.c EX_TYPE_BPF 접근과 probe_read_kernel 장기 설계 논의를 같이 추적해야 한다.\n\n> When the faulting instruction belongs to a BPF program, resolve its exception table entry instead of oopsing\n\n> the patchset is adding arch support to speed up a use case that isn't even correct.\n\n[원문 확인](https://lists.openwall.net/linux-kernel/2026/10/09/154)\n\n[원문 확인](https://lore-kernel.gnuweeb.org/bpf/7c7695ad-86c4-4b52-b705-71dac267cad2@app.fastmail.com/)\n\nPeter Zijlstra가 제안한 EX_TYPE_BPF 기반 fixup 검사 문구는 lore·openwall 스레드에서 추가로 대조할 수 있습니다: `ex_get_fixup_type(regs->ip) == EX_TYPE_BPF && fixup_exception(regs, X86_TRAP_PF, error_code, address)` ([thread](https://lists.openwall.net/linux-kernel/2026/11/23/611)). fault.c 변경의 tip vs bpf-next 머지와 probe_read_kernel safe-range·PKU 대안 로드맵은 확인이 필요합니다."
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "arm64 jited line info — drop arm64-only patch",
+      "url": "https://lore-kernel.gnuweeb.org/bpf/awnCHo7Y0erVfoQu@willie-the-truck/",
+      "note": "thread"
+    },
+    {
+      "title": "bpf_prog_fill_jited_linfo cfi_get_offset",
+      "url": "https://lists.openwall.net/linux-kernel/2026/10/30/2280",
+      "note": "thread"
+    },
+    {
+      "title": "PREEMPT_RT HW breakpoint task_work v5",
+      "url": "https://lore-kernel.gnuweeb.org/linux-rt-devel/awnOAw-bnxDbljaE@arm.com/",
+      "note": "thread"
+    },
+    {
+      "title": "CONFIG_IPV4=n BPF stubs v4",
+      "url": "https://lore-kernel.gnuweeb.org/bpf/20261127171824.27362-3-fmancera@suse.de/",
+      "note": "thread"
+    },
+    {
+      "title": "deadline_bw_test PI boost selftests v12",
+      "url": "https://lore-kernel.gnuweeb.org/linux-rt-devel/71ce4d4febe4737b3cde658407e9c2c26c8e61c3.1795771148.git.mathieu.desnoyers@efficios.com/",
+      "note": "thread"
+    },
+    {
+      "title": "SMAP user fault BPF extable",
+      "url": "https://lists.openwall.net/linux-kernel/2026/10/09/154",
+      "note": "thread"
+    },
+    {
+      "title": "EX_TYPE_BPF fixup discussion",
+      "url": "https://lists.openwall.net/linux-kernel/2026/11/23/611",
+      "note": "thread"
+    },
+    {
+      "title": "Starovoitov on probe_read_kernel vs JIT speedup",
+      "url": "https://lore-kernel.gnuweeb.org/bpf/7c7695ad-86c4-4b52-b705-71dac267cad2@app.fastmail.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-27T18:44:49.791Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

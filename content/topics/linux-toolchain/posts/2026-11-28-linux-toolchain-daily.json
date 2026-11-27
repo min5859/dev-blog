@@ -1,0 +1,113 @@
+{
+  "id": "2026-11-28-linux-toolchain-daily",
+  "topic": "linux-toolchain",
+  "title": "2026-11-28 Tyr 펌웨어 검증 — linux-toolchain",
+  "headline": "Rust-for-Linux DRM에서 펌웨어 파서 검증·dma-fence lockdep·panic QR 성능 패치가 lore에 올라왔습니다.",
+  "date": "2026-11-28",
+  "summary": "drm/tyr 펌웨어 파서에 KUnit과 겹침 VA·초과 섹션 거부가 제안되어 userspace 바이너리 오류 경로가 보강됩니다. drm/panic QR 마스크 인라인화와 Rust dma_buf SignallingSection이 Tyr·fence 후속 작업과 맞물립니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "drm/tyr: KUnit tests and fixes for the firmware parser",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "drm/tyr 및 Rust-for-Linux GPU 펌웨어 로딩 스택을 추적하는 DRM 개발자",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/rust-for-linux/20261127-tyr-fw-parser-v1-0-8aab2a711f9b@collabora.com/",
+      "if": "Tyr CSF 펌웨어 로딩·GPUVM VA 매핑 경로를 담당한다면",
+      "do": "겹침 loadable VA와 섹션 데이터 초과 이미지 거부 패치와 KUnit·IGT(QEMU/RK3588) 계획을 lore에서 확인하세요",
+      "verify": "머지 전 패치 3(oversized section data) 본문과 downstream(Sami Tolvanen) 수정 차이는 재확인이 필요합니다"
+    },
+    {
+      "title": "drm/panic: Apply the QR mask while drawing data modules",
+      "priority": "중",
+      "impactType": "performance",
+      "affectedAudience": "CONFIG_DRM_PANIC 및 drm_panic_helper QR 경로를 다루는 DRM/GPU 드라이버 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/rust-for-linux/20261126-perf-drm-panic-qr-v1-2-51856937dc4d@gmail.com/",
+      "if": "panic 시 kmsg QR 인코딩 스택·지연을 튜닝한다면",
+      "do": "v1-2 마스크 인라인 시리즈와 v40 벤치(약 1.778ms→0.277ms) 커버 레터를 검토하세요",
+      "verify": "drm-misc 또는 drm-rust-next 반영 일정과 maintainer 피드백은 아직 확인이 필요합니다"
+    },
+    {
+      "title": "rust: dma_buf: add dma-fence signalling sections",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "Rust-for-Linux DRM/Tyr 및 dma-buf fence 경로 개발자",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/rust-for-linux/20261127-dma-fence-signalling-v1-0-c44e8f4910ca@collabora.com/",
+      "if": "Rust DRM에서 dma-fence signal 경로와 lockdep를 맞춘다면",
+      "do": "SignallingSection 가드와 DriverFence::signal() 시그니처 변경을 lore 스레드에서 추적하세요",
+      "verify": "Philipp Stanner JobQueue 시리즈 패치 5 랜딩 후 rebase·caller 적용 시점은 확인이 필요합니다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm/tyr: KUnit tests and fixes for the firmware parser**\n\nTyr Mali CSF 펌웨어 파서(parser.rs)에 KUnit suite를 추가하고, VA 범위 겹침·섹션 데이터가 VA 범위를 초과하는 잘못된 이미지를 거부하도록 수정합니다.\n\n영향: 펌웨어 파서는 userspace 제공 바이너리를 직접 소비하는데 기존에는 linux-firmware만 가정해 오류 경로가 검증되지 않았고, 겹침 VA는 GPUVM에서 조용히 덮어쓸 수 있었습니다.\n\n> This is a bad combination for code that directly consumes userspace data.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/rust-for-linux/20261127-tyr-fw-parser-v1-0-8aab2a711f9b@collabora.com/)\n\n**drm/tyr: KUnit tests and fixes for the firmware parser** (패치 2/3)\n\n겹치는 loadable 섹션 VA를 EINVAL로 거부하고 KUnit 테스트를 추가합니다.\n\n영향: 두 범위가 겹치면 GPUVM이 이전 매핑 일부를 unmap하거나 split할 수 있어, 사전 거부가 안전합니다.\n\n> When two ranges overlap, GPUVM unmaps or splits the part of the earlier mapping that the later one covers.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/rust-for-linux/20261127-tyr-fw-parser-v1-2-8aab2a711f9b@collabora.com/)\n\n**drm/tyr: KUnit tests and fixes for the firmware parser** (패치 1/3)\n\n메모리에서 이미지를 조립해 well-formed·malformed 케이스를 검사하는 tyr_fw_parser KUnit suite를 추가합니다.\n\n영향: 오류 경로와 잘못된 이미지 수용 문제를 자동 테스트로 고정합니다.\n\n> Add the tyr_fw_parser suite. It builds an image from named fields, checks that a well-formed image parses into its sections, and checks that malformed images are rejected.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/rust-for-linux/20261127-tyr-fw-parser-v1-1-8aab2a711f9b@collabora.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/panic: Apply the QR mask while drawing data modules**\n\ndrm_panic_helper_qr.rs에서 QR 마스크 0 적용을 별도 apply_mask() 전체 스캔 대신 draw_data_module()로 데이터·나머지 모듈 배치 시점에 인라인합니다.\n\n영향: panic 시 QR 인코딩은 스택 제약 아래에서 동작하므로, 시리즈 v1-2의 마스크 경로 단순화는 대용량 kmsg URL 페이로드에서도 인코더 지연을 줄이는 핵심 패치입니다.\n\n> Apply mask 0 while drawing each data module and each zero-valued remainder module. This removes the separate image pass and its buffer read-modify-write operations.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/rust-for-linux/20261126-perf-drm-panic-qr-v1-2-51856937dc4d@gmail.com/)\n\n**drm/panic: Apply the QR mask while drawing data modules** (리뷰·벤치)\n\nJocelyn Falempe가 Reviewed-by를 달았고, panic당 1회 실행이라 최적화 우선순위는 낮지만 시리즈 승인 의사를 밝혔습니다. 커버 레터는 v40 QR median 인코딩 시간이 약 1.778ms에서 0.277ms로 줄었고 출력 바이트는 동일하다고 보고합니다.\n\n영향: 대용량 raw payload(2,900-byte)에서도 인코더 지연 개선이 측정되었습니다.\n\n> median version-40 encoding time fell from 1.778 ms to 0.277 ms with a 2,900-byte raw payload\n\n[원문 확인](https://lore-kernel.gnuweeb.org/rust-for-linux/20261126-perf-drm-panic-qr-v1-0-51856937dc4d@gmail.com/)\n\n> This code is executed only once when a panic occurs, so optimizations are clearly not a priority. But this series looks good, and keeps the code simple.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/rust-for-linux/4ccdd654-f8af-4e51-a8ac-ae7f68f0db07@redhat.com/)\n\n**rust: dma_buf: add dma-fence signalling sections**\n\nRust dma_buf에 SignallingSection 가드를 추가하고 DriverFence::signal()이 &SignallingSection을 요구하도록 해 C 쪽 dma_fence_begin/end_signalling() lockdep 규칙을 Rust에서도 쓸 수 있게 합니다.\n\n영향: Tyr 등 Rust DRM 드라이버가 dma-fence 완료 경로에서 lockdep 위반 없이 fence를 시그널하려면 이 추상화가 선행되어야 하며, 후속 JobQueue·workqueue 시리즈와 맞물립니다.\n\n> However, up until now, it was not possible to use the signalling tokens from Rust. Thus, add support for it.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/rust-for-linux/20261127-dma-fence-signalling-v1-0-c44e8f4910ca@collabora.com/)\n\n> Thus, add SignallingSection, a guard that begins a section when it is created and ends it when it is dropped.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/rust-for-linux/20261127-dma-fence-signalling-v1-1-c44e8f4910ca@collabora.com/)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/panic QR v1-2: apply mask while drawing",
+      "url": "https://lore-kernel.gnuweeb.org/rust-for-linux/20261126-perf-drm-panic-qr-v1-2-51856937dc4d@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/panic QR: Jocelyn Falempe review",
+      "url": "https://lore-kernel.gnuweeb.org/rust-for-linux/4ccdd654-f8af-4e51-a8ac-ae7f68f0db07@redhat.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/panic QR v1-0: cover letter and benchmarks",
+      "url": "https://lore-kernel.gnuweeb.org/rust-for-linux/20261126-perf-drm-panic-qr-v1-0-51856937dc4d@gmail.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/tyr firmware parser v1-0: cover letter",
+      "url": "https://lore-kernel.gnuweeb.org/rust-for-linux/20261127-tyr-fw-parser-v1-0-8aab2a711f9b@collabora.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/tyr firmware parser v1-2: overlapping VA",
+      "url": "https://lore-kernel.gnuweeb.org/rust-for-linux/20261127-tyr-fw-parser-v1-2-8aab2a711f9b@collabora.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/tyr firmware parser v1-1: KUnit suite",
+      "url": "https://lore-kernel.gnuweeb.org/rust-for-linux/20261127-tyr-fw-parser-v1-1-8aab2a711f9b@collabora.com/",
+      "note": "thread"
+    },
+    {
+      "title": "dma-fence signalling v1-0: series overview",
+      "url": "https://lore-kernel.gnuweeb.org/rust-for-linux/20261127-dma-fence-signalling-v1-0-c44e8f4910ca@collabora.com/",
+      "note": "thread"
+    },
+    {
+      "title": "dma-fence signalling v1-1: SignallingSection",
+      "url": "https://lore-kernel.gnuweeb.org/rust-for-linux/20261127-dma-fence-signalling-v1-1-c44e8f4910ca@collabora.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-27T18:39:35.635Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

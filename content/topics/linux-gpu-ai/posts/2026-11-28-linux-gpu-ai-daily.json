@@ -1,0 +1,128 @@
+{
+  "id": "2026-11-28-linux-gpu-ai-daily",
+  "topic": "linux-gpu-ai",
+  "title": "2026-11-28 Tyr·xe RAS — GPU·AI 렌즈",
+  "headline": "Tyr Rust 펌웨어 파서 검증 강화와 xe VRAM retired-pages drm-ras 노출, RAS 노드 타입 회귀 리뷰가 동시에 진행됐습니다.",
+  "date": "2026-11-28",
+  "summary": "drm/tyr는 userspace 펌웨어 이미지의 겹치는 VA·초과 데이터를 거부하고 KUnit으로 오류 경로를 덮습니다. drm/xe·drm-ras는 VRAM bad page를 netlink로 정리하고 IGT drm_ras CLI·i915 VBT DisplayID 우선 매칭까지 이어집니다.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "drm/tyr: KUnit tests and fixes for the firmware parser",
+      "priority": "상",
+      "impactType": "security",
+      "affectedAudience": "drm/tyr·Panfrost CSF·Rust DRM 펌웨어 로딩 경로 유지보수 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/dri-devel/20261127-tyr-fw-parser-v1-0-8aab2a711f9b@collabora.com/",
+      "if": "Tyr·Rust DRM 펌웨어 로딩 경로를 유지하거나 Panfrost CSF 쪽 파서 정책을 따라간다면",
+      "do": "겹치는 VA·범위를 넘는 섹션 거부 패치와 KUnit suite diff를 리뷰하고 자체 malformed 이미지로 parse 경로를 재현하세요",
+      "verify": "머지 전 lore 스레드 원문과 패치 3/3 oversized-data 범위는 확인이 필요합니다"
+    },
+    {
+      "title": "drm/xe: Expose retired VRAM pages via drm-ras",
+      "priority": "상",
+      "impactType": "api-abi",
+      "affectedAudience": "intel xe·DRM RAS netlink·VRAM TTM mgr·GPU reliability 모니터링 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/dri-devel/20261127181750.806528-5-rodrigo.vivi@intel.com/",
+      "if": "xe VRAM 아웃팅·IGT·장애 분석을 debugfs가 아닌 공용 uAPI로 맞추려 한다면",
+      "do": "v6 3패치 시리즈에서 retired-pages 노드·get-retired-pages 연산·스냅샷 덤프 동작을 읽고 자체 netlink 클라이언트로 목록·info를 호출해 보세요",
+      "verify": "Documentation/netlink/specs/drm_ras.yaml 스키마 합의와 page offlining 비활성 시 노드 미등록 백포트는 아직 확인이 필요합니다"
+    },
+    {
+      "title": "drm/ras: Check the node type in node lookups",
+      "priority": "중",
+      "impactType": "regression",
+      "affectedAudience": "drm-ras 코어·telemetry/error-counter netlink handler 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/dri-devel/20261127181750.806528-6-rodrigo.vivi@intel.com/raw",
+      "if": "telemetry 노드와 error-counter 연산을 같은 drm-ras 스택에서 다룬다면",
+      "do": "v6 1/3의 타입 검사 분리와 Sashiko Fixes 제안을 따라가며 telemetry 노드에 error-counter를 걸었을 때 errno 동작을 재현하세요",
+      "verify": "Rodrigo의 Fixes: c95c93b6e26c 수용 여부와 v6 시리즈 머지 시점은 확인이 필요합니다"
+    },
+    {
+      "title": "drm/i915/bios: Attempt to match the VBT PnP ID against DisplayID first",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "intel i915/xe 디스플레이 BIOS·VBT·panel type 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/dri-devel/20261124224621.6506-3-ville.syrjala@linux.intel.com/raw",
+      "if": "EDID·DisplayID가 어긋난 보드에서 panel type·백라이트 프로파일이 틀어진다면",
+      "do": "DisplayID product ID 우선 매칭 패치와 firmware override 스모크 로그를 비교해 VBT 선택 경로를 검증하세요",
+      "verify": "xe 스택 동일 정책 반영과 Jani Nikula 스레드 후속 Ack는 메인라인 머지 전 확인이 필요합니다"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**drm/tyr: KUnit tests and fixes for the firmware parser**\n\ndrm/tyr Rust 펌웨어 파서에 KUnit suite를 추가하고, VA 범위가 겹치거나 섹션 데이터가 VA 범위를 넘는 잘못된 이미지를 거부하도록 parser.rs를 수정합니다.\n\n영향: 펌웨어 파서는 userspace 제공 바이너리를 직접 소비하는데 기존에는 well-formed linux-firmware만 가정해 오류 경로가 거의 검증되지 않았고, 겹치는 VA는 GPUVM에서 조용히 매핑을 덮어쓸 수 있어 Tyr·Rust DRM 추적자에게 선행 검증·보안 관련 변경입니다.\n\n> This is a bad combination for code that directly consumes userspace data.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/20261127-tyr-fw-parser-v1-0-8aab2a711f9b@collabora.com/)\n\n**drm/ras: Check the node type in node lookups**\n\nSashiko가 v6 1/3 패치를 검토해 drm_ras_node_get()에 기대 노드 타입을 넘기는 수정에 Fixes: c95c93b6e26c(telemetry 노드 도입) 태그가 없다고 [Low]로 지적했습니다.\n\n영향: telemetry 노드가 xa에 섞인 뒤 error-counter 연산이 타입 없이 노드를 찾으면 -ENOENT 대신 -EOPNOTSUPP이나 빈 counter walk가 나와 userspace·드라이버가 잘못된 노드를 다룬 것으로 오해할 수 있어, RAS netlink 담당은 Fixes·stable 백포트 논의를 따라가야 합니다.\n\n> an error-counter operation on a telemetry node fails with -EOPNOTSUPP or walks its empty counter range, instead of reporting -ENOENT\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/20261127181750.806528-6-rodrigo.vivi@intel.com/raw)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**drm/xe: Expose retired VRAM pages via drm-ras**\n\nv6 3패치 시리즈가 DRM RAS에 retired-pages 노드 타입을 추가하고, intel xe가 VRAM bad page 목록·최대 retire 가능 페이지 수를 genetlink(drm-ras)로 노출합니다. v6에서는 dump 시작 시 스냅샷을 한 번에 잡아 대형 목록도 선형 시간으로 덤프합니다.\n\n영향: 지금은 vram_bad_pages debugfs에만 보이던 VRAM 페이지 아웃팅 정보가 drm-ras uAPI로 정리되면 모니터링·IGT·장애 분석 도구가 xe 외 RAS 클라이언트와 같은 netlink 패턴을 쓸 수 있어 GPU reliability 스택 담당자에게 표면이 넓어집니다.\n\n> Retired VRAM pages are only visible through the vram_bad_pages debugfs file today. Register a drm-ras retired-pages node\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/20261127181750.806528-8-rodrigo.vivi@intel.com/raw)\n\n**tools/drm_ras: Add a DRM RAS netlink tool**\n\nIGT tools에 drm_ras CLI를 추가해 DRM RAS 노드를 나열하고(-n) 지정 노드의 error counter를 출력합니다.\n\n영향: xe retired-pages·QAIC telemetry 등 drm-ras 노드가 늘어나는 만큼, 커널 빌드 없이 netlink 경로를 빠르게 확인하는 공용 도구가 CI·현장 디버깅에 필요합니다.\n\n> List the drm-ras nodes, and show the error counters of a given node\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/20261127175914.784751-11-rodrigo.vivi@intel.com/)\n\n**drm/i915/bios: Attempt to match the VBT PnP ID against DisplayID first**\n\nintel_bios.c의 VBT PnP ID 매칭을 Windows 드라이버와 같이 DisplayID product ID 블록을 먼저 시도하고, 부분 일치도 없을 때만 EDID vendor/product로 폴백하도록 바꿉니다. DisplayID 3바이트 OUI 상위 2바이트를 레거시 EISA/PNPID 필드에 맞춰 VBT 엔트리와 비교합니다.\n\n영향: 패널 타입(VBT) 선택이 EDID·DisplayID 불일치 보드에서 잘못되면 백라이트·타이밍 프로파일이 틀어지므로, i915·xe 디스플레이 bring-up 담당은 Intel 내부 정책 정렬 패치의 리뷰·백포트 여부를 봐야 합니다.\n\n> first match the VBT PnP ID against the DisplayID product ID block, and only if there is no match then attempt to match against the EDID\n\n[원문 확인](https://lore-kernel.gnuweeb.org/dri-devel/20261124224621.6506-3-ville.syrjala@linux.intel.com/raw)"
+    },
+    {
+      "heading": "기타",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "drm/tyr: firmware parser — userspace data consumption",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/20261127-tyr-fw-parser-v1-0-8aab2a711f9b@collabora.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/tyr: overlapping VA rejection in FwParser::parse()",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/20261127-tyr-fw-parser-v1-2-8aab2a711f9b@collabora.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "drm/xe: Expose retired VRAM pages via drm-ras (cover letter)",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/20261127181750.806528-5-rodrigo.vivi@intel.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/xe: retired-pages vs debugfs",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/20261127181750.806528-8-rodrigo.vivi@intel.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "drm/ras: retired-pages node type",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/20261127181750.806528-7-rodrigo.vivi@intel.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "tools/drm_ras: DRM RAS netlink tool",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/20261127175914.784751-11-rodrigo.vivi@intel.com/",
+      "note": "thread"
+    },
+    {
+      "title": "drm/i915/bios: VBT PnP ID vs DisplayID",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/20261124224621.6506-3-ville.syrjala@linux.intel.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "drm/ras: error-counter on telemetry nodes",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/20261127181750.806528-6-rodrigo.vivi@intel.com/raw",
+      "note": "thread"
+    },
+    {
+      "title": "Sashiko review: Fixes tag for node type lookup",
+      "url": "https://lore-kernel.gnuweeb.org/dri-devel/sashiko-outbox-238067@kernel.org/raw",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-27T18:48:58.221Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}

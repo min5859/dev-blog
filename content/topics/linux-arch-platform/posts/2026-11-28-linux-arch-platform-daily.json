@@ -1,0 +1,123 @@
+{
+  "id": "2026-11-28-linux-arch-platform-daily",
+  "topic": "linux-arch-platform",
+  "title": "2026-11-28 arm64 for-next — 아키·플랫폼",
+  "headline": "arm64 arch timer errata v3는 1/8만 for-next/perf에 들어갔고, HW BP는 PREEMPT_RT에서 task_work와 el0 defer 설계가 대립합니다.",
+  "date": "2026-11-28",
+  "summary": "Will Deacon 트리에는 kvmtool THP·fpsimd 정리·vec-syscfg exit 수정 등이 반영됐으나 arch timer errata와 sleep stash 매크로는 논의가 이어집니다. sleep/resume·타이머 workaround·HW BP 경로 담당은 원문 스레드를 따라가며 부분 적용 구간을 짚어 두세요.",
+  "tags": [
+    "리눅스",
+    "커널"
+  ],
+  "highlights": [
+    {
+      "title": "arm64 arch_timer errata v3 부분 적용",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "arm64 arch_timer·clocksource·PMU 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/linux-arm-kernel/179579367840.1286378.13094933579176079407.b4-ty@kernel.org/",
+      "if": "스케줄 클럭·arch timer errata workaround에 의존하는 SoC를 다룬다면",
+      "do": "Marc Zyngier v3 8패치 중 read_sched_clock_is_arch_counter() predicate(1/8)만 for-next/perf에 들어갔음을 전제로 나머지 7패치 적용 여부를 추적하세요",
+      "verify": "스레드에서 Will Deacon의 적용 공지와 v3 나머지 패치 리뷰 일정을 확인하세요"
+    },
+    {
+      "title": "PREEMPT_RT HW BP 신호 전달 경로",
+      "priority": "상",
+      "impactType": "regression",
+      "affectedAudience": "arm64 breakpoint/watchpoint·ptrace·PREEMPT_RT 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/linux-arm-kernel/awnOAw-bnxDbljaE@arm.com/",
+      "if": "arm64 HW breakpoint overflow와 ptrace·perf 경로를 맞추는 중이라면",
+      "do": "Sebastian Siewior v5의 task_work 연기안과 Catalin Marinas의 el0_breakpt/el0_watchpt defer안을 비교하며 채택 방향을 가정하지 마세요",
+      "verify": "Peter Zijlstra·Catalin Marinas 인용이 담긴 lore 스레드에서 arm64가 어느 경로로 갈지 논의를 읽으세요"
+    },
+    {
+      "title": "sleep_save_stash MPIDR lookup 매크로",
+      "priority": "중",
+      "impactType": "project",
+      "affectedAudience": "arm64 suspend/resume·PSCI 경로 유지보수 담당",
+      "verifyLink": "https://lore-kernel.gnuweeb.org/linux-arm-kernel/awnO-FqQDd97ydiP@willie-the-truck/",
+      "if": "__cpu_suspend_enter()·_cpu_resume() 스택 복구 경로를 수정하거나 리뷰한다면",
+      "do": "Bradley Morgan RESEND와 Vladimir Murzin 이의, Will Deacon의 x0 반환 함수형 매크로 제안을 따라가며 머지 전 형태를 확인하세요",
+      "verify": "get_sleep_stash_slot 매크로·compute_mpidr_hash 제거 목표가 스레드에 어떻게 반영되는지 원문을 보세요"
+    },
+    {
+      "title": "kvmtool arm64 THP와 대형 PAGE_SIZE",
+      "priority": "중",
+      "impactType": "runtime",
+      "affectedAudience": "KVM/kvmtool·arm64 virt 메모리 담당",
+      "verifyLink": "https://kernel.googlesource.com/pub/scm/linux/kernel/git/will/kvmtool.git/+show/4b4aceb1dae7",
+      "if": "16KiB/64KiB 호스트에서 kvmtool로 arm64 게스트를 돌린다면",
+      "do": "hugepage 크기를 PAGE_SIZE에서 유도하고 memoized host_page_size()를 쓰는 v2 반영이 kvmtool master에 들어갔는지 배포 트리를 맞추세요",
+      "verify": "Will Deacon 적용 공지와 commit 4b4aceb1dae7의 정렬·hugepage 로직을 대조하세요"
+    }
+  ],
+  "sections": [
+    {
+      "heading": "릴리스/로드맵",
+      "body": "이번 수집에서 해당 항목이 없습니다."
+    },
+    {
+      "heading": "회귀·보안 신호",
+      "body": "**arm64: arch_timer: Improve errata handling**\n\nMarc Zyngier v3 8패치 시리즈는 arm64 타이머 errata 처리의 버그·인프라를 다루며, 11월 27일 기준 Will Deacon은 8개 중 read_sched_clock_is_arch_counter() predicate 패치(1/8)만 arm64 for-next/perf에 적용했다고 알렸습니다.\n\n영향: 카운터 accessor·static key·cmdline 제어 등 나머지 7패치가 아직 Will 트리에 없어 타이머 workaround가 부분만 반영된 상태일 수 있습니다.\n\n> Applied PMU fix to arm64 (for-next/perf), thanks!\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-arm-kernel/179579367840.1286378.13094933579176079407.b4-ty@kernel.org/)\n\n**ARM, ARM64, LONGARCH, XTENSA: Delay HW BP notification to task_work()**\n\nSebastian Siewior v5는 PREEMPT_RT에서 arm64 HW breakpoint overflow 콜백이 atomic 컨텍스트에서 siglock을 잡는 sleeping-while-atomic을 피하려 task_work로 SIGTRAP 전달을 미룹니다. Peter Zijlstra는 perf overflow가 아니라 el0_breakpt/watchpt에서 신호를 보내야 한다고 주장했고, Catalin Marinas는 local_daif_restore() 이후 el0 경로에서 defer하는 안을 제안했습니다.\n\n영향: 패치가 코어 task_work 방식으로 갈지 arch 예외 핸들러 쪽으로 갈지에 따라 PREEMPT_RT·디버거 동작 설계가 달라집니다. Siewior v5 채택 여부와 arm64 el0 전환은 아직 확정되지 않았습니다.\n\n> Perf overflow handlers are not the place to send signals from.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-arm-kernel/awnOAw-bnxDbljaE@arm.com/)"
+    },
+    {
+      "heading": "핵심 변경",
+      "body": "**arm64: sleep: factor sleep_save_stash slot lookup into a macro**\n\nBradley Morgan이 중복된 sleep_save_stash MPIDR 해시 조회를 get_sleep_stash_slot 매크로로 묶고 compute_mpidr_hash를 인라인·삭제하는 패치를 RESEND했으며, Vladimir Murzin은 가독성·레지스터 사용에 이의를 냈고 Will Deacon은 x0에 슬롯을 돌려주는 함수형 매크로 쪽으로 정리하자고 답했습니다.\n\n영향: resume 시 컨텍스트가 깨질 수 있어 머지 전 매크로·C 분리 대안 논의를 따라가야 합니다. resume tail-call 함수화·suspend C 재작성 대안이 현재 시리즈에 반영될지는 확인이 필요합니다.\n\n> Factor it into a get_sleep_stash_slot macro ... remove compute_mpidr_hash altogether.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-arm-kernel/awnO-FqQDd97ydiP@willie-the-truck/)\n\n**arm64: THPs for systems with pages bigger than 4K**\n\nVincent Donnefort v2는 kvmtool에서 호스트 페이지가 4KiB보다 큰 환경의 arm64 게스트 THP를 위해 hugepage 크기를 PAGE_SIZE에서 유도하고 PAGE_SIZE는 memoized host_page_size()로 대체했으며, Will Deacon이 kvmtool master에 두 커밋을 적용했다고 공지했습니다.\n\n영향: 2MiB 고정 정렬 가정 때문에 THP·메모리 오버커밋이 깨질 수 있는 16KiB/64KiB 호스트 팀은 upstream kvmtool master 반영을 추적해야 합니다. 본 변경은 kvmtool 한정이며 Linux 커널 THP 자체와의 관계는 이 시리즈 범위 밖입니다.\n\n> derive the hugepage size from PAGE_SIZE and skip the alignment if the guest RAM size can't even contain a single hugepage.\n\n[원문 확인](https://kernel.googlesource.com/pub/scm/linux/kernel/git/will/kvmtool.git/+show/4b4aceb1dae7)\n\n**arm64: fpsimd: Misc cleanups**\n\nMark Rutland 3패치 시리즈는 signal/ptrace/fpsimd SVE·SME 경로의 중복 제거·문자열 단순화만 담으며 기능 변화는 없다고 설명했고, Will Deacon이 세 패치 모두 arm64 for-next/fpsimd에 적용했다고 밝혔습니다.\n\n영향: 동작은 같지만 코드 구조가 바뀌어 이후 Mark의 larger fpsimd rework 리베이스 충돌 지점을 미리 짚을 수 있습니다. for-next/fpsimd에서 mainline 머지 배치 시점은 확인이 필요합니다.\n\n> None of these should have any functional impact, but they make the code a bit easier to follow.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-arm-kernel/179580139911.1459144.14039240319708843388.b4-ty@kernel.org/)\n\n**kselftest/arm64: vec-syscfg exit status and VL inheritance coverage**\n\nAbdalla Eldoumani 시리즈는 vec-syscfg 실패 시 exit 0 버그 수정(1/2)과 PR_SVE_VL_INHERIT 다세대 VL 검증(2/2)을 담습니다. Will은 1/2만 for-next/selftests에 적용했고 2/2에는 Mark Brown TODO 의도 확인과 테스트 구조 우려를 남겼습니다.\n\n영향: exit status 수정으로 CI가 실제 실패를 잡게 되며, VL inherit 다세대 검증은 아직 적용 전이라 커버리지 공백이 남습니다.\n\n> Applied first patch to arm64 (for-next/selftests), thanks!\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-arm-kernel/179579943738.1439845.14609418363972418388.b4-ty@kernel.org/)"
+    },
+    {
+      "heading": "기타",
+      "body": "kselftest vec-syscfg 2/2(VL inheritance) 논의는 Will 트리 미적용 상태로 별도 스레드에서 진행 중입니다.\n\n**kselftest/arm64: vec-syscfg (2/2)**\n\n2/2 패치는 아직 적용되지 않았고 Mark Brown이 의도한 TODO 구현 여부·테스트 구조에 대한 리뷰가 열려 있습니다.\n\n영향: VL inherit 커버리지 공백이 Will이 1/2만 적용한 상태에서 계속됩니다.\n\n> it would be good for him to assess whether or not your patch implements what he had in mind.\n\n[원문 확인](https://lore-kernel.gnuweeb.org/linux-arm-kernel/awnPKRtczyTiEcN0@willie-the-truck/)"
+    }
+  ],
+  "confidence": {
+    "level": "자동 생성",
+    "note": "리서치 dossier 의 출처를 근거로 작성했습니다. 중요한 판단 전에는 링크된 원문을 확인하세요."
+  },
+  "sources": [
+    {
+      "title": "arm64 sleep get_sleep_stash_slot 매크로 논의",
+      "url": "https://lore-kernel.gnuweeb.org/linux-arm-kernel/awnO-FqQDd97ydiP@willie-the-truck/",
+      "note": "thread"
+    },
+    {
+      "title": "kvmtool THP PAGE_SIZE 유도 적용 공지",
+      "url": "https://lore-kernel.gnuweeb.org/linux-arm-kernel/179580213399.1767284.8136918755635870447.b4-ty@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "kvmtool hugepage from PAGE_SIZE",
+      "url": "https://kernel.googlesource.com/pub/scm/linux/kernel/git/will/kvmtool.git/+show/4b4aceb1dae7",
+      "note": "commit"
+    },
+    {
+      "title": "arm64 fpsimd Misc cleanups",
+      "url": "https://lore-kernel.gnuweeb.org/linux-arm-kernel/179580139911.1459144.14039240319708843388.b4-ty@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "kselftest vec-syscfg 1/2 적용",
+      "url": "https://lore-kernel.gnuweeb.org/linux-arm-kernel/179579943738.1439845.14609418363972418388.b4-ty@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "kselftest vec-syscfg 2/2 리뷰",
+      "url": "https://lore-kernel.gnuweeb.org/linux-arm-kernel/awnPKRtczyTiEcN0@willie-the-truck/",
+      "note": "thread"
+    },
+    {
+      "title": "arm64 arch_timer errata v3",
+      "url": "https://lore-kernel.gnuweeb.org/linux-arm-kernel/179579367840.1286378.13094933579176079407.b4-ty@kernel.org/",
+      "note": "thread"
+    },
+    {
+      "title": "HW BP notification task_work v5",
+      "url": "https://lore-kernel.gnuweeb.org/linux-arm-kernel/awnOAw-bnxDbljaE@arm.com/",
+      "note": "thread"
+    }
+  ],
+  "draftMetadata": {
+    "rewrittenAt": "2026-11-27T18:47:29.569Z",
+    "rewriteAdapter": "cursor",
+    "promptTemplate": "prompts/linux-lens-newsletter-from-dossier-ko.md"
+  }
+}
